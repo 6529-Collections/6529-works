@@ -7,7 +7,7 @@ import { IContentStore } from "./IContentStore.sol";
 /// @notice The shared registry of pinned libraries (p5.js, three.js and the like) that
 ///         generative works load by name and version from the {IContentStore} (ADR 0001 §8).
 /// @dev A `(name, version)` pair maps to one content-store file forever. The MIME type and the
-///      gzip flag are not copied here: they come from the file's manifest.
+///      encoding are not copied here: they come from the file's manifest.
 interface IDependencyRegistry {
     /// @notice A version was registered. It can never be changed or removed.
     event DependencyRegistered(
@@ -16,8 +16,8 @@ interface IDependencyRegistry {
     /// @notice A version was marked deprecated. Its content stays readable and resolvable.
     event DependencyDeprecated(bytes32 indexed name, bytes32 indexed version);
 
-    /// @notice `name` or `version` is empty, or is not left-aligned `[A-Za-z0-9._+-]` followed
-    ///         only by zero bytes.
+    /// @notice `name` or `version` is empty, or is not left-aligned `[a-z0-9._-]` followed only
+    ///         by zero bytes.
     error DependencyLabelInvalid(bytes32 label);
     /// @notice `(name, version)` is already registered. Versions are immutable.
     error DependencyVersionExists(bytes32 name, bytes32 version);

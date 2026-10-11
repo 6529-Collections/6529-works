@@ -7,10 +7,28 @@ import { ContentStore } from "src/content/ContentStore.sol";
 import { IContentStore } from "src/content/IContentStore.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 
+/// @dev The store's selectors typed so the compiler lets a test send value to `writeChunk` and an
+///      out-of-range encoding (an enum is `uint8` in the ABI, so the selectors match).
+interface IUncheckedStore {
+    function writeChunk(bytes calldata data) external payable returns (bytes32, address);
+    function registerManifest(
+        bytes32[] calldata chunkHashes,
+        uint256 length,
+        uint8 encoding,
+        string calldata mimeType,
+        bytes32 sha256Hash
+    ) external returns (bytes32);
+}
+
 /// @dev Uploads, manifests, completeness and failure modes of the content store.
 contract ContentStoreTest is ContentBase {
     IContentStore.Encoding internal constant IDENTITY = IContentStore.Encoding.Identity;
     IContentStore.Encoding internal constant GZIP = IContentStore.Encoding.Gzip;
+    IContentStore.Encoding internal constant BASE64 = IContentStore.Encoding.Base64;
+    IContentStore.Encoding internal constant GZIP_BASE64 = IContentStore.Encoding.GzipBase64;
+
+    /// @dev EIP-7825 (Fusaka): no transaction may use more gas than this.
+    uint256 internal constant TX_GAS_CAP = 16_777_216;
 
     function setUp() public {
         store = new ContentStore();
@@ -77,13 +95,13 @@ contract ContentStoreTest is ContentBase {
     }
 
     function test_NothingAcceptsValue() public {
-        vm.deal(address(this), 2 ether);
-        // The functions are non-payable (the compiler refuses `{value:}` on them), so value sent
-        // through a raw call reverts, and there is no receive or fallback to take it either.
-        (bool ok,) = address(store).call{ value: 1 }(abi.encodeCall(store.writeChunk, (hex"01")));
-        assertFalse(ok, "writeChunk takes no value");
-        (ok,) = address(store).call{ value: 1 }("");
-        assertFalse(ok, "no receive or fallback");
+        vm.deal(address(this), 3 ether);
+        // Non-payable functions and no receive or fallback: value is refused every way it can
+        // arrive.
+        vm.expectRevert();
+        IUncheckedStore(address(store)).writeChunk{ value: 1 }(hex"01");
+        vm.expectRevert();
+        payable(address(store)).transfer(1);
         assertEq(address(store).balance, 0);
     }
 
@@ -153,28 +171,58 @@ contract ContentStoreTest is ContentBase {
         bytes32 digest = sha256(file);
         uint256 length = file.length;
 
-        bytes32 honest = store.registerManifest(hashes, length, IDENTITY, HTML, digest);
         // Claims that differ in any field are different files, so none can overwrite another.
-        bytes32 otherMime = store.registerManifest(hashes, length, IDENTITY, "text/plain", digest);
-        bytes32 otherEncoding = store.registerManifest(hashes, length, GZIP, HTML, digest);
-        bytes32 otherDigest = store.registerManifest(hashes, length, IDENTITY, HTML, DIGEST);
-        bytes32 otherLength = store.registerManifest(hashes, length - 1, IDENTITY, HTML, digest);
-
-        bytes32[5] memory ids = [honest, otherMime, otherEncoding, otherDigest, otherLength];
-        for (uint256 i; i < 5; ++i) {
-            for (uint256 j = i + 1; j < 5; ++j) {
+        bytes32[8] memory ids = [
+            store.registerManifest(hashes, length, IDENTITY, HTML, digest),
+            store.registerManifest(hashes, length, IDENTITY, "text/plain", digest),
+            store.registerManifest(hashes, length, GZIP, HTML, digest),
+            store.registerManifest(hashes, length, BASE64, HTML, digest),
+            store.registerManifest(hashes, length, GZIP_BASE64, HTML, digest),
+            store.registerManifest(hashes, length, IDENTITY, HTML, DIGEST),
+            store.registerManifest(hashes, length - 1, IDENTITY, HTML, digest),
+            store.registerManifest(hashes, length + 1, IDENTITY, HTML, digest)
+        ];
+        for (uint256 i; i < ids.length; ++i) {
+            for (uint256 j = i + 1; j < ids.length; ++j) {
                 assertTrue(ids[i] != ids[j]);
             }
         }
-        assertEq(store.fileInfo(honest).mimeType, HTML);
-        assertEq(store.fileInfo(honest).sha256Hash, digest);
+        assertEq(store.fileInfo(ids[0]).mimeType, HTML);
+        assertEq(store.fileInfo(ids[0]).sha256Hash, digest);
+        assertTrue(store.fileInfo(ids[3]).encoding == BASE64);
+        assertTrue(store.fileInfo(ids[4]).encoding == GZIP_BASE64);
 
-        // The documented formula, reproducible off-chain.
-        assertEq(honest, keccak256(abi.encode(hashes, length, IDENTITY, HTML, digest)));
-        // Chunks are shared: one upload serves every claim.
+        // The documented formula, reproducible off-chain (the encoding is its uint8 value).
+        assertEq(ids[0], keccak256(abi.encode(hashes, length, IDENTITY, HTML, digest)));
+        assertEq(ids[4], keccak256(abi.encode(hashes, length, uint8(3), HTML, digest)));
+
+        // Chunks are shared: one upload serves every claim whose layout fits the chunks, and
+        // each of those reads exactly the stored bytes, with exactly the declared length.
         _uploadAll(chunks);
-        assertTrue(store.isComplete(honest));
-        assertTrue(store.isComplete(otherMime));
+        for (uint256 i; i < 6; ++i) {
+            assertTrue(store.isComplete(ids[i]));
+            bytes memory got = store.read(ids[i], 0, length);
+            assertEq(got.length, length, "returned length");
+            assertEq(got, file);
+        }
+
+        // A claim that is one byte too short or too long does not fit the honest chunks: it can
+        // never complete, and reads revert instead of returning truncated or padded bytes.
+        bytes32[2] memory misfits = [ids[6], ids[7]];
+        uint256[2] memory expected = [length - 1 - CHUNK, length + 1 - CHUNK];
+        for (uint256 i; i < 2; ++i) {
+            assertFalse(store.isComplete(misfits[i]));
+            _assertMissing(misfits[i], 1, 1);
+            bytes memory mismatch = abi.encodeWithSelector(
+                IContentStore.ContentChunkLengthMismatch.selector, misfits[i], 1, expected[i], 5
+            );
+            vm.expectRevert(mismatch);
+            store.readChunk(misfits[i], 1);
+            vm.expectRevert(mismatch);
+            store.read(misfits[i], 0, i == 0 ? length - 1 : length + 1);
+            // The first chunk is fine, and is returned in full and exactly.
+            assertEq(store.read(misfits[i], 0, CHUNK), _slice(file, 0, CHUNK));
+        }
     }
 
     function test_FileId_IsChainAndDeploymentIndependent() public {
@@ -188,6 +236,19 @@ contract ContentStoreTest is ContentBase {
         assertEq(other.manifestId(hashes, file.length, IDENTITY, HTML, sha256(file)), id);
     }
 
+    function test_Constants_ArePinned() public view {
+        // File IDs and uploaded chunks are permanent, so these must never drift.
+        assertEq(CHUNK, 24_575);
+        assertEq(store.CHUNK_SIZE(), 24_575);
+        assertEq(store.MAX_CHUNKS(), 512);
+        assertEq(store.MAX_MIME_LENGTH(), 64);
+        // Encoding values are part of every file ID.
+        assertEq(uint8(IContentStore.Encoding.Identity), 0);
+        assertEq(uint8(IContentStore.Encoding.Gzip), 1);
+        assertEq(uint8(IContentStore.Encoding.Base64), 2);
+        assertEq(uint8(IContentStore.Encoding.GzipBase64), 3);
+    }
+
     function test_RegisterManifest_ChunkCountBounds() public {
         bytes32[] memory none = new bytes32[](0);
         vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentChunkCountInvalid.selector, 0));
@@ -198,17 +259,40 @@ contract ContentStoreTest is ContentBase {
         vm.expectRevert(
             abi.encodeWithSelector(IContentStore.ContentChunkCountInvalid.selector, max + 1)
         );
-        store.registerManifest(tooMany, max * CHUNK, IDENTITY, HTML, DIGEST);
+        store.registerManifest(tooMany, (max + 1) * CHUNK, IDENTITY, HTML, DIGEST);
 
         bytes32[] memory limit = new bytes32[](max);
         for (uint256 i; i < max; ++i) {
             limit[i] = bytes32(i + 1);
         }
-        uint256 used = _gasOf(
-            abi.encodeCall(store.registerManifest, (limit, max * CHUNK, IDENTITY, HTML, DIGEST))
+        bytes32 fileId = store.registerManifest(limit, max * CHUNK, IDENTITY, HTML, DIGEST);
+        assertEq(store.fileInfo(fileId).chunkCount, max);
+        assertEq(store.fileInfo(fileId).length, max * CHUNK);
+    }
+
+    /// @dev EIP-7825 caps every transaction at 16,777,216 gas. A manifest at `MAX_CHUNKS`, with
+    ///      the longest MIME type, fresh storage for every chunk hash and incompressible hashes,
+    ///      must fit with room to spare: execution, plus 21,000, plus calldata at 16 gas per
+    ///      non-zero byte and 4 per zero byte.
+    function test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap() public {
+        uint256 max = store.MAX_CHUNKS();
+        bytes32[] memory limit = new bytes32[](max);
+        for (uint256 i; i < max; ++i) {
+            limit[i] = keccak256(abi.encode("chunk", i));
+        }
+        string memory longestMime = string.concat("a/", _repeat("b", store.MAX_MIME_LENGTH() - 2));
+        assertEq(bytes(longestMime).length, store.MAX_MIME_LENGTH());
+        bytes memory callData = abi.encodeCall(
+            store.registerManifest, (limit, max * CHUNK, GZIP_BASE64, longestMime, sha256("x"))
         );
-        console2.log("gas registerManifest, 1024 chunks (about 25 MB)", used);
-        bytes32 fileId = store.manifestId(limit, max * CHUNK, IDENTITY, HTML, DIGEST);
+
+        uint256 execution = _gasOf(callData);
+        uint256 txGas = 21_000 + _calldataGas(callData) + execution;
+        console2.log("registerManifest at MAX_CHUNKS: execution", execution);
+        console2.log("registerManifest at MAX_CHUNKS: transaction gas", txGas);
+        assertLe(txGas, TX_GAS_CAP, "fits the EIP-7825 cap");
+        assertLe(txGas, TX_GAS_CAP * 3 / 4, "keeps a quarter of the cap as margin");
+        bytes32 fileId = store.manifestId(limit, max * CHUNK, GZIP_BASE64, longestMime, sha256("x"));
         assertEq(store.fileInfo(fileId).chunkCount, max);
     }
 
@@ -238,19 +322,26 @@ contract ContentStoreTest is ContentBase {
         if (fits) assertEq(store.fileInfo(fileId).length, length);
     }
 
-    function test_RegisterManifest_RejectsZeroDigestAndBadEncoding() public {
+    function test_RegisterManifest_RejectsZeroDigest() public {
         bytes32[] memory one = new bytes32[](1);
         vm.expectRevert(IContentStore.ContentDigestMissing.selector);
         store.registerManifest(one, 10, IDENTITY, HTML, bytes32(0));
+    }
 
-        // An encoding outside {Identity, Gzip} cannot be decoded, so the call fails.
-        (bool ok,) = address(store)
-            .call(
-                abi.encodeWithSelector(
-                    IContentStore.registerManifest.selector, one, 10, uint256(2), HTML, DIGEST
-                )
-            );
-        assertFalse(ok);
+    function test_RegisterManifest_AcceptsExactlyTheFourEncodings() public {
+        bytes32[] memory one = new bytes32[](1);
+        for (uint8 e; e < 4; ++e) {
+            bytes32 id = IUncheckedStore(address(store)).registerManifest(one, 10, e, HTML, DIGEST);
+            assertEq(uint8(store.fileInfo(id).encoding), e);
+        }
+    }
+
+    function testFuzz_RegisterManifest_RejectsUnknownEncoding(uint8 encoding) public {
+        encoding = uint8(bound(encoding, 4, type(uint8).max));
+        bytes32[] memory one = new bytes32[](1);
+        // An encoding outside the enum cannot be decoded, so the call reverts.
+        vm.expectRevert();
+        IUncheckedStore(address(store)).registerManifest(one, 10, encoding, HTML, DIGEST);
     }
 
     function test_RegisterManifest_MimeValidation() public {
@@ -379,6 +470,31 @@ contract ContentStoreTest is ContentBase {
             )
         );
         store.read(fileId, 0, 5);
+    }
+
+    function test_OverLongFinalChunkNeverCompletesOrReads() public {
+        // The honest chunks of a CHUNK + 100 byte file, registered with a declared length one
+        // byte short: the final chunk is one byte longer than the layout allows.
+        bytes memory file = _data(CHUNK + 100, 40);
+        (bytes[] memory chunks, bytes32[] memory hashes) = _split(file);
+        bytes32 fileId =
+            store.registerManifest(hashes, file.length - 1, IDENTITY, HTML, sha256(file));
+        _uploadAll(chunks);
+
+        assertFalse(store.isComplete(fileId));
+        _assertMissing(fileId, 1, 1); // exactly [1]
+        bytes memory mismatch = abi.encodeWithSelector(
+            IContentStore.ContentChunkLengthMismatch.selector, fileId, 1, 99, 100
+        );
+        vm.expectRevert(mismatch);
+        store.readChunk(fileId, 1);
+        vm.expectRevert(mismatch);
+        store.read(fileId, CHUNK, 5);
+        vm.expectRevert(mismatch);
+        store.read(fileId, 0, file.length - 1);
+        // The intact chunk is unaffected and comes back exactly as asked.
+        assertEq(store.read(fileId, 0, CHUNK), _slice(file, 0, CHUNK));
+        assertEq(store.readChunk(fileId, 0), chunks[0]);
     }
 
     function test_ReadsDetectTamperedChunkCode() public {
@@ -527,70 +643,104 @@ contract ContentStoreRangeTest is ContentBase {
 
 /// @dev Gas measurements for the numbers quoted in the README. Ceilings are loose regression
 ///      guards; the logged figures are the reference (`forge test --match-contract Gas -vv`).
+///      Fixtures are built in `setUp`, a separate transaction, so every measured call starts
+///      cold: the store, its storage and the chunk contracts are all first touches, as in a fresh
+///      `eth_call`. Execution gas only, unless a test says it adds calldata and the 21,000 base.
 contract ContentStoreGasTest is ContentBase {
+    IContentStore.Encoding internal constant IDENTITY = IContentStore.Encoding.Identity;
+    uint256 internal constant LEN_100K = 100 * 1024;
+    uint256 internal constant LEN_256K = 256 * 1024;
+    uint256 internal constant LEN_1M = 1024 * 1024;
+
+    bytes32 internal id100k;
+    bytes32 internal id256k;
+    bytes32 internal id1m;
+
     function setUp() public {
         store = new ContentStore();
+        id100k = _publish(_data(LEN_100K, 31), IDENTITY, HTML);
+        id256k = _publish(_data(LEN_256K, 33), IDENTITY, HTML);
+        id1m = _publish(_data(LEN_1M, 32), IDENTITY, HTML);
     }
 
+    /// @dev Upload cost per MB: execution plus calldata (incompressible bytes, 16 gas each)
+    ///      plus the 21,000 base, per chunk. At 1 gwei, gas / 1e9 is ETH.
     function test_Gas_WriteMaxChunk() public {
-        uint256 used = _gasOf(abi.encodeCall(store.writeChunk, (_data(CHUNK, 30))));
-        console2.log("gas writeChunk, 24,575 bytes", used);
-        assertLt(used, 5_400_000);
+        bytes memory callData = abi.encodeCall(store.writeChunk, (_data(CHUNK, 30)));
+        uint256 execution = _gasOf(callData);
+        uint256 txGas = 21_000 + _calldataGas(callData) + execution;
+        uint256 perMB = txGas * LEN_1M / CHUNK;
+        console2.log("gas writeChunk, 24,575 bytes, execution", execution);
+        console2.log("gas writeChunk, 24,575 bytes, transaction", txGas);
+        console2.log("gas per MB uploaded, transaction", perMB);
+        assertLt(execution, 5_400_000);
+        // About 0.23 ETH per MB at 1 gwei.
+        assertGt(perMB, 225_000_000);
+        assertLt(perMB, 240_000_000);
+    }
+
+    function test_Gas_WriteChunkAlreadyStored() public {
+        // The first chunk of the 100 KB fixture from `setUp`, uploaded again.
+        (bytes[] memory chunks,) = _split(_data(LEN_100K, 31));
+        uint256 used = _gasOf(abi.encodeCall(store.writeChunk, (chunks[0])));
+        console2.log("gas writeChunk, bytes already stored", used);
+        assertLt(used, 40_000);
+    }
+
+    function test_Gas_RegisterManifest100KB() public {
+        (, bytes32[] memory hashes) = _split(_data(LEN_100K, 34));
+        uint256 used = _gasOf(
+            abi.encodeCall(store.registerManifest, (hashes, LEN_100K, IDENTITY, HTML, DIGEST))
+        );
+        console2.log("gas registerManifest, 100 KB (5 chunks)", used);
+        assertLt(used, 300_000);
+    }
+
+    function test_Gas_RegisterManifest1MB() public {
+        (, bytes32[] memory hashes) = _split(_data(LEN_1M, 35));
+        uint256 used = _gasOf(
+            abi.encodeCall(store.registerManifest, (hashes, LEN_1M, IDENTITY, HTML, DIGEST))
+        );
+        console2.log("gas registerManifest, 1 MB (43 chunks)", used);
+        assertLt(used, 1_300_000);
     }
 
     function test_Gas_Read100KB() public {
-        uint256 length = 100 * 1024;
-        (bytes[] memory chunks, bytes32[] memory hashes) = _split(_data(length, 31));
-        uint256 declared = _gasOf(
-            abi.encodeCall(
-                store.registerManifest,
-                (hashes, length, IContentStore.Encoding.Identity, HTML, DIGEST)
-            )
-        );
-        console2.log("gas registerManifest, 100 KB (5 chunks)", declared);
-        bytes32 fileId =
-            store.manifestId(hashes, length, IContentStore.Encoding.Identity, HTML, DIGEST);
-        _uploadAll(chunks);
-        uint256 used = _gasOf(abi.encodeCall(store.read, (fileId, 0, length)));
+        uint256 used = _gasOf(abi.encodeCall(store.read, (id100k, 0, LEN_100K)));
         console2.log("gas read, 100 KB (5 chunks)", used);
         assertLt(used, 1_000_000);
     }
 
-    /// @dev 256 KB is the planned `tokenURI` inline threshold (ADR 0001 §8).
+    /// @dev 256 KB is the planned `tokenURI` inline threshold (ADR 0001 section 8).
     function test_Gas_Read256KB() public {
-        uint256 length = 256 * 1024;
-        bytes32 fileId = _publish(_data(length, 33), IContentStore.Encoding.Identity, HTML);
-        uint256 used = _gasOf(abi.encodeCall(store.read, (fileId, 0, length)));
+        uint256 used = _gasOf(abi.encodeCall(store.read, (id256k, 0, LEN_256K)));
         console2.log("gas read, 256 KB (11 chunks)", used);
         assertLt(used, 1_500_000);
-        used = _gasOf(abi.encodeCall(store.readChunk, (fileId, 3)));
+    }
+
+    function test_Gas_ReadOneChunk() public {
+        uint256 used = _gasOf(abi.encodeCall(store.readChunk, (id256k, 3)));
         console2.log("gas readChunk, one full chunk", used);
         assertLt(used, 150_000);
     }
 
+    function test_Gas_ReadInsideOneChunk() public {
+        uint256 used = _gasOf(abi.encodeCall(store.read, (id1m, 500_000, 100)));
+        console2.log("gas read, 100 bytes inside one chunk", used);
+        assertLt(used, 100_000);
+    }
+
+    function test_Gas_IsComplete1MB() public {
+        uint256 used = _gasOf(abi.encodeCall(store.isComplete, (id1m)));
+        console2.log("gas isComplete, 1 MB (43 chunks)", used);
+        assertLt(used, 500_000);
+    }
+
     function test_Gas_Read1MB() public {
-        uint256 length = 1024 * 1024;
-        (bytes[] memory chunks, bytes32[] memory hashes) = _split(_data(length, 32));
-        uint256 declared = _gasOf(
-            abi.encodeCall(
-                store.registerManifest,
-                (hashes, length, IContentStore.Encoding.Identity, HTML, DIGEST)
-            )
-        );
-        console2.log("gas registerManifest, 1 MB (43 chunks)", declared);
-        bytes32 fileId =
-            store.manifestId(hashes, length, IContentStore.Encoding.Identity, HTML, DIGEST);
-        _uploadAll(chunks);
-
-        console2.log("gas isComplete, 1 MB", _gasOf(abi.encodeCall(store.isComplete, (fileId))));
-
-        uint256 used = _gasOf(abi.encodeCall(store.read, (fileId, 0, length)));
+        uint256 used = _gasOf(abi.encodeCall(store.read, (id1m, 0, LEN_1M)));
         console2.log("gas read, 1 MB (43 chunks)", used);
         // The returned bytes are ABI-encoded into a second buffer, so the memory (and its quadratic
         // cost) is twice the file size. Callers that only need a part should read a range.
         assertLt(used, 10_000_000);
-
-        used = _gasOf(abi.encodeCall(store.read, (fileId, 500_000, 100)));
-        console2.log("gas read, 100 bytes inside one chunk", used);
     }
 }

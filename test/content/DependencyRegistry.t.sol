@@ -143,7 +143,7 @@ contract DependencyRegistryTest is ContentBase {
     }
 
     function test_Register_LabelExamples() public {
-        bytes32[8] memory bad = [
+        bytes32[14] memory bad = [
             bytes32(0), // empty
             bytes32(hex"00746872656500"), // leading zero
             bytes32("a b"), // space
@@ -151,7 +151,14 @@ contract DependencyRegistryTest is ContentBase {
             bytes32("a\"b"), // quote
             bytes32("a\nb"), // control character
             bytes32(hex"610062"), // byte after a zero byte
-            bytes32(hex"c3a9") // non-ASCII
+            bytes32(hex"c3a9"), // non-ASCII
+            bytes32("Three"), // uppercase: names have one canonical spelling
+            bytes32("r170+build"), // plus sign
+            // Index 31 is the last byte, and it is checked like every other:
+            bytes32("abcdefghijklmnopqrstuvwxyz01234!"), // bad character
+            bytes32("abcdefghijklmnopqrstuvwxyz01234A"), // uppercase
+            bytes32("abcdefghijklmnopqrstuvwxyz01234+"), // plus sign
+            bytes32(abi.encodePacked("abc", bytes28(0), bytes1("z"))) // text after zero padding
         ];
         for (uint256 i; i < bad.length; ++i) {
             bytes memory err =
@@ -163,17 +170,37 @@ contract DependencyRegistryTest is ContentBase {
             registry.register(THREE, bad[i], fileId);
             vm.stopPrank();
         }
-        bytes32[5] memory good = [
+        bytes32[6] memory good = [
             bytes32("1.9.0"),
             bytes32("r170"),
-            bytes32("p5.min-js_1+x"),
-            bytes32("Three"),
-            bytes32("abcdefghijklmnopqrstuvwxyz012345") // all 32 bytes used
+            bytes32("p5.min-js_1"),
+            bytes32("a"),
+            bytes32("abcdefghijklmnopqrstuvwxyz012345"), // all 32 bytes used
+            bytes32("abcdefghijklmnopqrstuvwxyz0123._") // punctuation at the last byte
         ];
         for (uint256 i; i < good.length; ++i) {
             vm.prank(registrar);
             registry.register(good[i], good[i], fileId);
         }
+    }
+
+    /// @dev A bad byte at every position of an otherwise valid 32-byte label is refused, so no
+    ///      index, the last one included, escapes the check.
+    function testFuzz_Register_RejectsABadByteAtAnyIndex(uint8 index, uint8 bad) public {
+        index = uint8(bound(index, 0, 31));
+        bytes memory alphabet = "abcdefghijklmnopqrstuvwxyz0123456789._-";
+        for (uint256 i; i < alphabet.length; ++i) {
+            vm.assume(bad != uint8(alphabet[i]));
+        }
+        vm.assume(bad != 0); // a zero byte is padding, not a bad byte
+        bytes memory raw = "abcdefghijklmnopqrstuvwxyz012345";
+        raw[index] = bytes1(bad);
+        bytes32 label = bytes32(raw);
+        vm.expectRevert(
+            abi.encodeWithSelector(IDependencyRegistry.DependencyLabelInvalid.selector, label)
+        );
+        vm.prank(registrar);
+        registry.register(label, R170, fileId);
     }
 
     function testFuzz_Register_LabelValidity(bytes32 label) public {
@@ -188,7 +215,7 @@ contract DependencyRegistryTest is ContentBase {
     }
 
     function testFuzz_Register_AcceptsWellFormedLabels(uint256 seed, uint256 length) public {
-        bytes memory alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-";
+        bytes memory alphabet = "abcdefghijklmnopqrstuvwxyz0123456789._-";
         length = bound(length, 1, 32);
         bytes memory raw = new bytes(32);
         for (uint256 i; i < length; ++i) {
@@ -280,7 +307,7 @@ contract DependencyRegistryTest is ContentBase {
 
     /// @dev Independent oracle: the label is 1 to 32 characters from the alphabet, then zeros.
     function _wellFormed(bytes32 label) internal pure returns (bool) {
-        bytes memory alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._+-";
+        bytes memory alphabet = "abcdefghijklmnopqrstuvwxyz0123456789._-";
         uint256 used;
         while (used < 32 && label[used] != 0) ++used;
         if (used == 0) return false;

@@ -11,21 +11,37 @@ pragma solidity ^0.8.24;
 ///      exists. Integrity is per chunk (keccak256, checked on every read). The declared SHA-256 is
 ///      NOT recomputed on-chain: hashing a large file in memory costs quadratic gas, so it is
 ///      for off-chain verification only.
+///
+///      The file ID commits to the exact stored bytes (through the chunk hashes) and to the MIME
+///      type and encoding, so it is a permanent name for one encoded stream. It is NOT a
+///      content-uniqueness key: the same media stored as `Identity` and as `Gzip`, or with a
+///      different MIME type, has different file IDs. Uniqueness checks belong on the decoded
+///      media's SHA-256.
 interface IContentStore {
-    /// @notice How the stored bytes relate to the original file.
-    /// @dev `Gzip` means the stored bytes are an RFC 1952 gzip stream of the original file.
+    /// @notice How the stored bytes relate to the original media. The values are part of the file
+    ///         ID, so they are permanent.
+    /// @dev `Identity`: the stored bytes are the media. `Gzip`: an RFC 1952 gzip stream of the
+    ///      media. `Base64`: RFC 4648 section 4 base64 text of the media (standard alphabet, `=`
+    ///      padding, no line breaks), so a renderer can concatenate the stored bytes into a
+    ///      `data:<mime>;base64,` URI without encoding anything on-chain. `GzipBase64`: that
+    ///      base64 text of a gzip stream. Base64 storage costs about 33% more to upload than the
+    ///      raw bytes and makes inline rendering cheap, because on-chain base64 encoding
+    ///      dominates `tokenURI` gas.
     enum Encoding {
         Identity,
-        Gzip
+        Gzip,
+        Base64,
+        GzipBase64
     }
 
     /// @notice What a manifest declares about a file.
-    /// @param sha256Hash SHA-256 of the DECODED file (after gunzip when `encoding` is `Gzip`).
-    ///        This is the hash a work record commits to as the media hash. Off-chain only.
+    /// @param sha256Hash SHA-256 of the fully DECODED media: base64-decoded and then gunzipped, as
+    ///        `encoding` requires. This is the hash a work record commits to as the media hash.
+    ///        Off-chain only.
     /// @param length Length in bytes of the STORED data, which `read` returns.
     /// @param chunkCount Number of chunks, `ceil(length / CHUNK_SIZE)`.
     /// @param encoding How to decode the stored bytes.
-    /// @param mimeType MIME type of the decoded file: lowercase `type/subtype`, no parameters.
+    /// @param mimeType MIME type of the decoded media: lowercase `type/subtype`, no parameters.
     struct FileInfo {
         bytes32 sha256Hash;
         uint256 length;
@@ -82,9 +98,9 @@ interface IContentStore {
     ///         Anyone may call this. Registering a manifest again is a no-op.
     /// @param chunkHashes Ordered keccak256 hashes of the file's chunks.
     /// @param length Total stored length in bytes.
-    /// @param encoding Identity or gzip.
-    /// @param mimeType Lowercase `type/subtype`.
-    /// @param sha256Hash SHA-256 of the decoded file, for off-chain verification.
+    /// @param encoding How the stored bytes encode the media.
+    /// @param mimeType Lowercase `type/subtype` of the decoded media.
+    /// @param sha256Hash SHA-256 of the fully decoded media, for off-chain verification.
     /// @return fileId The identifier from {manifestId}.
     function registerManifest(
         bytes32[] calldata chunkHashes,
@@ -94,7 +110,7 @@ interface IContentStore {
         bytes32 sha256Hash
     ) external returns (bytes32 fileId);
 
-    /// @notice The file ID of a manifest:
+    /// @notice The file ID of a manifest (`encoding` is its enum value as a `uint8`):
     ///         `keccak256(abi.encode(chunkHashes, length, encoding, mimeType, sha256Hash))`.
     ///         It depends on nothing but the manifest (no chain ID, no address), so it can be
     ///         computed off-chain and is identical on every chain and deployment.
@@ -105,6 +121,13 @@ interface IContentStore {
         string calldata mimeType,
         bytes32 sha256Hash
     ) external pure returns (bytes32);
+
+    /// @notice Bytes in every chunk except a file's last: 24,575, EIP-170 minus the STOP byte.
+    function CHUNK_SIZE() external view returns (uint256);
+
+    /// @notice The most chunks one manifest may list. Chosen so that registering a manifest at
+    ///         the limit fits the EIP-7825 transaction gas cap of 16,777,216 with margin.
+    function MAX_CHUNKS() external view returns (uint256);
 
     /// @notice Whether every chunk of the file is stored with the length the manifest requires,
     ///         which means {read} succeeds for the whole file. Reverts for an unknown file.

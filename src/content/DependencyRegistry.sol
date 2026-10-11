@@ -70,9 +70,10 @@ contract DependencyRegistry is IDependencyRegistry, AccessManaged {
         if (entry.fileId == bytes32(0)) revert DependencyUnknown(name, version);
     }
 
-    /// @dev Non-empty ASCII from `[A-Za-z0-9._+-]`, left-aligned, then zero padding.
+    /// @dev Non-empty lowercase ASCII from `[a-z0-9._-]`, left-aligned, then zero padding, so
+    ///      every name and version has one canonical spelling.
     function _requireLabel(bytes32 label) private pure {
-        bool ended;
+        bool ended = false;
         for (uint256 i; i < 32; ++i) {
             bytes1 c = label[i];
             if (c == 0) {
@@ -80,11 +81,9 @@ contract DependencyRegistry is IDependencyRegistry, AccessManaged {
             } else if (
                 ended
                     || !((c >= "a" && c <= "z")
-                        || (c >= "A" && c <= "Z")
                         || (c >= "0" && c <= "9")
                         || c == "."
                         || c == "_"
-                        || c == "+"
                         || c == "-")
             ) {
                 revert DependencyLabelInvalid(label);

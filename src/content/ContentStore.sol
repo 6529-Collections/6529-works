@@ -18,10 +18,13 @@ import { SSTORE2 } from "../libraries/SSTORE2.sol";
 ///      to chunks by division, and a manifest whose chunk lengths break the rule never completes
 ///      and never reads (it reverts, it does not return wrong bytes).
 contract ContentStore is IContentStore {
-    /// @notice Bytes per chunk (all but the last chunk of a file): EIP-170 minus the STOP byte.
+    /// @inheritdoc IContentStore
     uint256 public constant CHUNK_SIZE = SSTORE2.MAX_CHUNK_LENGTH;
-    /// @notice Most chunks one manifest may list (about 25 MB), which bounds every file loop.
-    uint256 public constant MAX_CHUNKS = 1024;
+    /// @inheritdoc IContentStore
+    /// @dev 512 chunks is about 12.58 MB. Registering a manifest at the limit costs about 11.8M
+    ///      gas including calldata, inside the 16,777,216 cap that EIP-7825 (Fusaka) puts on every
+    ///      transaction, with room for repricing. The limit also bounds every file loop.
+    uint256 public constant MAX_CHUNKS = 512;
     /// @notice Longest accepted MIME type.
     uint256 public constant MAX_MIME_LENGTH = 64;
 
@@ -209,11 +212,12 @@ contract ContentStore is IContentStore {
     }
 
     /// @dev Lowercase `type/subtype` from `[a-z0-9+._-]` with exactly one interior slash, so the
-    ///      value is safe to embed in JSON, `data:` URIs and HTML without escaping surprises.
+    ///      value is safe to embed in JSON, `data:` URIs and HTML without escaping surprises. One
+    ///      interior slash already forces at least three bytes, so there is no separate minimum.
     function _requireMime(string calldata mimeType) private pure {
         bytes calldata m = bytes(mimeType);
-        if (m.length < 3 || m.length > MAX_MIME_LENGTH) revert ContentMimeInvalid();
-        uint256 slashes;
+        if (m.length > MAX_MIME_LENGTH) revert ContentMimeInvalid();
+        uint256 slashes = 0;
         for (uint256 i; i < m.length; ++i) {
             bytes1 c = m[i];
             if (c == "/") {

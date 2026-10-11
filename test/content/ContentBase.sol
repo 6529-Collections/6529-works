@@ -85,6 +85,15 @@ abstract contract ContentBase is Test {
         assertTrue(ok, "measured call failed");
     }
 
+    /// @dev Calldata gas of a transaction: 16 per non-zero byte, 4 per zero byte (EIP-2028). The
+    ///      EIP-7623 floor (10 per zero byte, 40 per non-zero byte) only applies when execution
+    ///      is cheaper than that, which is never the case for the calls measured here.
+    function _calldataGas(bytes memory callData) internal pure returns (uint256 gas) {
+        for (uint256 i; i < callData.length; ++i) {
+            gas += callData[i] == 0 ? 4 : 16;
+        }
+    }
+
     /// @dev A complete, readable file.
     function _publish(bytes memory file, IContentStore.Encoding encoding, string memory mime)
         internal
