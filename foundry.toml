@@ -22,10 +22,12 @@ via_ir = false
 # ADR 0001: CBOR metadata with an IPFS hash so Sourcify/Etherscan report exact matches.
 bytecode_hash = "ipfs"
 cbor_metadata = true
-# Read-only access to the committed deployment configuration (config/), and read-write access
-# to deployment records only (deployments/, written by script/Deploy.s.sol).
+# Read-only access to the committed deployment configuration (config/) and test fixtures
+# (test/fixtures/: the CC0 legal code the deploy stores), and read-write access to deployment
+# records only (deployments/, written by script/Deploy.s.sol).
 fs_permissions = [
     { access = "read", path = "./config" },
+    { access = "read", path = "./test/fixtures" },
     { access = "read-write", path = "./deployments" },
 ]
 # EIP-170/EIP-3860 stay enforced: code_size_limit is deliberately not raised.
