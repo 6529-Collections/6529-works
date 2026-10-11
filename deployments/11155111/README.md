@@ -8,6 +8,8 @@ Deployment records for 6529 Works on Sepolia. Each record is written by
 These are testnet rehearsals with throwaway signers. The code is pre-audit and nothing
 here is a mainnet deployment.
 
+Flow gas under Glamsterdam: [flows.md](flows.md).
+
 ## sepolia-r2: 11 October 2026 (current)
 
 r2 is the full v1 scope on `main`, including the contested-override recovery and the Editions
