@@ -40,9 +40,11 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///        notice and wait {OVERRIDE_DELAY}; ESTATE and LOST_KEY need {DORMANCY} without signed
 ///        activity. One that changes the authority carries the new authority's
 ///        `Typehashes.OVERRIDE_ACCEPTANCE`, nonce-free (so a held key cannot void it by burning
-///        nonces) and consumed once by digest. Only captured wallets (never the previous
-///        authority) or the guardian stop overrides. An override replaces a pending STANDARD
-///        change, so a key holder cannot block one by keeping a change staged.
+///        nonces) and consumed once by digest. The previous authority can never stop an
+///        override; a captured wallet's cancel during the notice contests it (a TDH vote then
+///        decides, through {resolveContested}), and the guardian may veto it. An override
+///        replaces a pending STANDARD change, so a key holder cannot block one by keeping a
+///        change staged.
 ///      Every staging consumes the per-artist nonce (replay protection never keys on signature
 ///      bytes); {revokeNonce} burns it to retract an unused signature. The guardian can only
 ///      veto: no guardian path writes an identity.
@@ -152,10 +154,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    /// @dev The statement log does not implement ERC-165, so only code and no EIP-7702 are
-    ///      checked.
+    /// @dev The statement log does not implement ERC-165: code, no EIP-7702, and its
+    ///      `artistResolver()` naming this registry are checked instead.
     function bindStatementLog(address target) external restricted {
         _checkBinding(target, bytes4(0));
+        (bool ok, bytes memory resolver) =
+            target.staticcall(abi.encodeWithSignature("artistResolver()"));
+        if (!ok || resolver.length != 32 || abi.decode(resolver, (address)) != address(this)) {
+            revert InvalidBinding(target);
+        }
         statementLog = _bind("STATEMENT_LOG", statementLog, target);
     }
 
@@ -258,7 +265,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     /// @dev Records activity (the caller is the artist's old key or a captured wallet), except
-    ///      for the no-op cancel of an already contested override.
+    ///      for the no-op cancel of an already contested override. A contest snapshots the
+    ///      artist's latest DISPUTE_OUTCOME, which can then not resolve it.
     function cancelChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
         bool allowed = p.kind == ChangeKind.STANDARD && msg.sender == p.previousAuthority;
@@ -268,13 +276,19 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         }
         if (!allowed) revert NotAuthorized(artistId, msg.sender);
         if (p.contestedAt != 0) return;
-        _recordActivity(artistId, _artists[artistId]);
         if (p.kind == ChangeKind.STANDARD) {
+            _recordActivity(artistId, _artists[artistId]);
             _clear(artistId, msg.sender, false);
             return;
         }
-        p.contestedBy = msg.sender;
+        // Cancels happen during the notice; a late contest could front-run a due execution.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp >= p.executableAt) {
+            revert ContestWindowClosed(artistId, p.executableAt);
+        }
+        _recordActivity(artistId, _artists[artistId]);
         p.contestedAt = uint64(block.timestamp);
+        p.priorOutcome = _latestOutcome(artistId);
         emit ChangeContested(artistId, msg.sender);
     }
 
@@ -285,18 +299,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     {
         PendingChange storage p = _pending[artistId];
         if (p.contestedAt == 0 || _lapsed(p)) revert NotContested(artistId);
-        address log = statementLog;
-        if (
-            outcomeRef == bytes32(0) || log == address(0)
-                || outcomeRef != IStatementLog(log).latestDisputeOutcome(address(this), artistId)
-        ) revert OutcomeNotRecorded(artistId, outcomeRef);
+        if (outcomeRef == bytes32(0) || outcomeRef != _latestOutcome(artistId)) {
+            revert OutcomeNotRecorded(artistId, outcomeRef);
+        }
+        if (outcomeRef == p.priorOutcome) revert OutcomePredatesContest(artistId, outcomeRef);
         // forge-lint: disable-next-line(block-timestamp)
         if (uphold && block.timestamp < p.executableAt) {
             revert ChangeNotDue(artistId, p.executableAt);
         }
-        emit ContestResolved(artistId, uphold, outcomeRef);
-        if (uphold) _apply(artistId, p);
-        else _clear(artistId, msg.sender, true);
+        bool executed = uphold && _apply(artistId, p);
+        if (!uphold) _clear(artistId, msg.sender, true);
+        emit ContestResolved(artistId, uphold, executed, outcomeRef);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -329,12 +342,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _apply(artistId, p);
     }
 
-    /// @dev Applies `p` after the D18 and payout re-checks, or clears it if they fail.
-    function _apply(uint256 artistId, PendingChange storage p) private {
+    /// @dev Applies `p` after the D18 and payout re-checks, or clears it if they fail; returns
+    ///      whether it was applied.
+    function _apply(uint256 artistId, PendingChange storage p) private returns (bool) {
         ArtistIdentity memory next = p.next;
         if (!_payoutAllowed(next.payout) || _taken(artistId, next.authority)) {
             _clear(artistId, address(this), false);
-            return;
+            return false;
         }
         Artist storage a = _artists[artistId];
         ArtistIdentity memory previous = a.identity;
@@ -344,6 +358,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _recordActivity(artistId, a);
         emit ChangeExecuted(artistId, previous, next);
         _refresh(artistId, next.authority);
+        return true;
     }
 
     /// @inheritdoc IArtistRegistry
@@ -664,6 +679,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             if (s[i].wallet == wallet) return true;
         }
         return false;
+    }
+
+    /// @dev The artist's latest DISPUTE_OUTCOME entry in the bound statement log, or zero.
+    function _latestOutcome(uint256 artistId) private view returns (bytes32) {
+        address log = statementLog;
+        if (log == address(0)) return bytes32(0);
+        return IStatementLog(log).latestDisputeOutcome(address(this), artistId);
     }
 
     /// @dev Whether `p` is a contest nobody resolved within {CONTEST_TIMEOUT}.

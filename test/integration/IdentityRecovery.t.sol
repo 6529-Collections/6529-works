@@ -252,10 +252,10 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.prank(thiefWallet);
         artists.cancelChange(artistId);
         PendingChange memory p = artists.pendingChange(artistId);
-        assertEq(p.contestedBy, thiefWallet, "contested, not killed");
+        assertEq(p.contestedAt, block.timestamp, "contested, not killed");
         assertEq(artists.payoutAddress(artistId), address(0), "frozen during the dispute");
         vm.prank(artist); // the thief cannot pull with the payout key
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
         ISplitWallet(seller).release(CURRENCY_ETH, 0);
 
         bytes32 vote = _platformStatement(

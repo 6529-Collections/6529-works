@@ -27,7 +27,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     function setUp() public override {
         super.setUp();
         SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
-        DisputeOutcomeLogMock outcomes = new DisputeOutcomeLogMock();
+        DisputeOutcomeLogMock outcomes = new DisputeOutcomeLogMock(address(registry));
         vm.startPrank(admin);
         registry.bindSplitFactory(address(factory));
         registry.bindStatementLog(address(outcomes));
@@ -83,15 +83,29 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(keccak256(abi.encode(p.cancellers)), handler.ghostCancellers());
         assertTrue(p.next.authority != address(0) && p.next.payout != address(0));
         if (p.contestedAt == 0) {
-            assertEq(p.contestedBy, address(0));
+            assertEq(p.priorOutcome, bytes32(0));
             return;
         }
         assertTrue(p.kind > ChangeKind.STANDARD, "only overrides are contested");
-        bool captured;
-        for (uint256 i; i < p.cancellers.length; ++i) {
-            captured = captured || p.cancellers[i] == p.contestedBy;
-        }
-        assertTrue(captured, "contested by a captured wallet");
+        assertTrue(p.contestedAt >= p.stagedAt && p.contestedAt < p.executableAt, "in the notice");
+    }
+
+    /// @dev The handler's contest paths work end to end: a fixed walk contests an override,
+    ///      records a vote and voids it, then contests another and lets it lapse. (The random
+    ///      campaign reaches each path too, though not every run reaches all of them.)
+    function test_HandlerReachesContestResolveAndLapse() public {
+        handler.stageOverride(0, 2, 0); // CONTESTED, to the fresh key
+        handler.cancel(1); // the artist's recorded wallet contests
+        handler.recordOutcome(1);
+        handler.resolve(false, 1); // a fresh vote voids it
+        handler.stageOverride(3, 2, 0); // another CONTESTED override, new evidence
+        handler.cancel(1);
+        handler.warp(200 days);
+        handler.warp(200 days);
+        handler.expire(); // lapsed after a year
+        assertEq(handler.contested(), 2);
+        assertEq(handler.resolved(), 1);
+        assertEq(handler.lapsed(), 1);
     }
 
     /// @dev The authority resolves to the artist, and the standing snapshot stays bounded and

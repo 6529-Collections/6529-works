@@ -167,16 +167,27 @@ contract ArtistRegistryHandler is Test {
         for (uint256 i; i < p.cancellers.length; ++i) {
             allowed = allowed || p.cancellers[i] == caller;
         }
-        if (p.kind == ChangeKind.NONE) _expect(_noPending());
-        else if (!allowed) _expect(_notAuthorized(caller));
-        bool contests = allowed && p.kind > ChangeKind.STANDARD && p.contestedAt == 0;
+        bool overrideOpen = allowed && p.kind > ChangeKind.STANDARD && p.contestedAt == 0;
+        bool late = overrideOpen && block.timestamp >= p.executableAt;
+        if (p.kind == ChangeKind.NONE) {
+            _expect(_noPending());
+        } else if (!allowed) {
+            _expect(_notAuthorized(caller));
+        } else if (late) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.ContestWindowClosed.selector, artistId, p.executableAt
+                )
+            );
+        }
+        bool contests = overrideOpen && !late;
         if (contests) {
             vm.expectEmit(address(registry));
             emit IArtistRegistry.ChangeContested(artistId, caller);
         }
         vm.prank(caller);
         registry.cancelChange(artistId);
-        if (p.kind == ChangeKind.NONE || !allowed) return;
+        if (p.kind == ChangeKind.NONE || !allowed || late) return;
         PendingChange memory q = registry.pendingChange(artistId);
         if (p.contestedAt != 0) {
             // A cancel of a contested override does nothing.
@@ -185,8 +196,8 @@ contract ArtistRegistryHandler is Test {
         }
         ghostLastActivity = uint64(block.timestamp);
         if (!contests) return;
-        assertEq(q.contestedBy, caller);
         assertEq(q.contestedAt, block.timestamp);
+        assertEq(q.priorOutcome, outcomes.latestDisputeOutcome(address(registry), artistId));
         ++contested;
     }
 
@@ -207,6 +218,12 @@ contract ArtistRegistryHandler is Test {
         } else if (ref == bytes32(0) || ref != recorded) {
             _expect(
                 abi.encodeWithSelector(IArtistRegistry.OutcomeNotRecorded.selector, artistId, ref)
+            );
+        } else if (ref == p.priorOutcome) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.OutcomePredatesContest.selector, artistId, ref
+                )
             );
         } else if (uphold && block.timestamp < p.executableAt) {
             _expect(

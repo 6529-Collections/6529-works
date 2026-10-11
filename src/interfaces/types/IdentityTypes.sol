@@ -43,17 +43,18 @@ struct Standing {
 ///      staged (ADR 0001 section 11 "Canceller set captured at staging"); a later revocation of
 ///      a consolidation does not remove them; at most `Limits.MAX_CANCELLERS` are captured.
 ///      `previousAuthority` may cancel a STANDARD change but never an override. `evidenceHash`
-///      is zero for STANDARD changes. An override a captured wallet cancelled is contested:
-///      `contestedBy` and `contestedAt` record the first such cancel (zero otherwise), and a
-///      governed, TDH-vote-backed action resolves it.
+///      is zero for STANDARD changes. An override a captured wallet cancelled during its notice
+///      is contested: `contestedAt` records the first such cancel (zero otherwise), and
+///      `priorOutcome` the artist's latest DISPUTE_OUTCOME entry at that moment, so only a vote
+///      recorded after the contest can resolve it. `contestedAt` shares `executableAt`'s slot.
 struct PendingChange {
     ChangeKind kind;
     ArtistIdentity next;
     address previousAuthority;
     uint64 stagedAt;
     uint64 executableAt;
-    address contestedBy;
     uint64 contestedAt;
+    bytes32 priorOutcome;
     bytes32 evidenceHash;
     address[] cancellers;
 }

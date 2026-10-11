@@ -464,8 +464,8 @@ contract ArtistRegistryTest is IdentityFixture {
             previousAuthority: artist,
             stagedAt: uint64(block.timestamp),
             executableAt: uint64(block.timestamp + 180 days),
-            contestedBy: address(0),
             contestedAt: 0,
+            priorOutcome: bytes32(0),
             evidenceHash: keccak256("evidence"),
             cancellers: _walletOnly()
         });
@@ -1171,8 +1171,8 @@ contract ArtistRegistryTest is IdentityFixture {
             previousAuthority: artist,
             stagedAt: uint64(block.timestamp),
             executableAt: uint64(block.timestamp + 7 days),
-            contestedBy: address(0),
             contestedAt: 0,
+            priorOutcome: bytes32(0),
             evidenceHash: bytes32(0),
             cancellers: _walletOnly()
         });

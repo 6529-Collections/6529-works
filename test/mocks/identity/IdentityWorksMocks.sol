@@ -81,10 +81,10 @@ contract OversizedConsolidationSource is InterfaceStub {
     function consolidations(address)
         external
         pure
-        returns (address[] memory wallets, uint64[] memory effectiveAt)
+        returns (address[] memory wallets, uint64[] memory times)
     {
         wallets = new address[](33);
-        effectiveAt = new uint64[](33);
+        times = new uint64[](33);
     }
 
     function isEstablished(address, address) external pure returns (bool) {
@@ -128,9 +128,14 @@ contract PullOnlyPayeeMock {
     }
 }
 
-/// @notice The statement log's `latestDisputeOutcome`, settable by tests.
+/// @notice The statement log's `latestDisputeOutcome` (settable by tests) and `artistResolver`.
 contract DisputeOutcomeLogMock {
+    address public immutable artistResolver;
     mapping(address => mapping(uint256 => bytes32)) public latestDisputeOutcome;
+
+    constructor(address resolver) {
+        artistResolver = resolver;
+    }
 
     function setOutcome(address token, uint256 id, bytes32 outcome) external {
         latestDisputeOutcome[token][id] = outcome;
