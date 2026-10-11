@@ -17,7 +17,14 @@ import { Editions } from "src/editions/Editions.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { DeployHarness, MockSafe, MockZeroThresholdSafe, VerifyHarness } from "./ScriptHarness.sol";
+import {
+    DeployHarness,
+    MockSafe,
+    MockSafeWithoutOwners,
+    MockSharedSignerSafe,
+    MockZeroThresholdSafe,
+    VerifyHarness
+} from "./ScriptHarness.sol";
 
 /// @notice `Deploy.s.sol` and `Verify.s.sol` run end to end, with their outside inputs
 ///         (environment, files, the RPC's chain ID, the pinned CC0 digest) set by the test. The
@@ -31,17 +38,20 @@ contract DeployScriptTest is Test {
     /// Filled holders keep their suffix behind a high digit: above the placeholder range.
     string internal constant FILLED_PREFIX = "0x100000000000000000000000000000000000b0";
     uint256 internal constant SEPOLIA = 11_155_111;
-    bytes internal constant CC0 = "CC0 1.0 Universal (test copy of the legal code)";
+    /// The committed CC0 1.0 legal code: the deploy's default text.
+    string internal constant CC0_FIXTURE = "test/fixtures/cc0-legalcode.txt";
     bytes internal constant MANIFEST = '{"schema":"6529-works/governance-manifest/1","epoch":0}';
 
     DeployHarness internal deployer;
     VerifyHarness internal verifier;
     string internal example;
+    bytes internal cc0;
 
     function setUp() public {
         deployer = new DeployHarness();
         verifier = new VerifyHarness();
         example = vm.readFile(EXAMPLE);
+        cc0 = vm.readFileBinary(CC0_FIXTURE);
     }
 
     // ------------------------------------------------------------------ helpers
@@ -75,9 +85,6 @@ contract DeployScriptTest is Test {
         deployer.setEnv("MARKETPLACE_OWNER", vm.toString(makeAddr("owner")));
         delegation = new DelegationManagementMock();
         deployer.setEnv("DELEGATION_CONTRACT", vm.toString(address(delegation)));
-        deployer.setFile("config/cc0.txt", CC0);
-        deployer.setEnv("CC0_TEXT_PATH", "config/cc0.txt");
-        deployer.setCc0Digest(sha256(CC0));
         vm.etch(DeployV1.CANONICAL_PERMIT2, address(delegation).code); // code at Permit2
         deployer.setEnv("NO_VRF", "1");
         deployer.setFile("config/manifest.json", MANIFEST);
@@ -127,7 +134,7 @@ contract DeployScriptTest is Test {
         p.feeRecipient = makeAddr("fee");
         p.marketOwner = makeAddr("owner");
         p.delegation = address(new DelegationManagementMock());
-        p.cc0Text = CC0;
+        p.cc0Text = cc0;
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
@@ -139,7 +146,11 @@ contract DeployScriptTest is Test {
         (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
         assertFalse(vm.parseJsonBool(record, ".confirmed"), "unconfirmed until Verify");
         assertTrue(vm.parseJsonBool(record, ".placeholders"));
-        assertTrue(vm.parseJsonBool(record, ".delegationMock"));
+        assertTrue(vm.parseJsonBool(record, ".delegationMock"), "anvil's mock");
+        assertEq(
+            vm.parseJsonBytes32(record, ".delegationCodeHash"),
+            vm.parseJsonAddress(record, ".params.delegation").codehash
+        );
         assertEq(vm.parseJsonString(record, ".entropy"), "none");
         assertEq(vm.parseJsonStringArray(record, ".standIns").length, 0, "no stand-ins");
         assertEq(vm.parseJsonStringArray(record, ".pendingLanes").length, 0, "no pending lanes");
@@ -208,7 +219,7 @@ contract DeployScriptTest is Test {
         assertFalse(r.local);
         assertEq(r.p.deployer, address(this));
         assertEq(r.p.vrfCoordinator, address(0), "declined with NO_VRF=1");
-        assertEq(keccak256(r.p.cc0Text), keccak256(CC0));
+        assertEq(sha256(r.p.cc0Text), DeployV1.CC0_LEGALCODE_SHA256, "the canonical text");
         assertEq(r.manifest.digest, sha256(MANIFEST));
         assertEq(r.manifest.uri, "ar://epoch-0");
 
@@ -217,24 +228,25 @@ contract DeployScriptTest is Test {
         verifier.addLogs(vm.getRecordedLogs());
         string memory record = deployer.lastRecord();
         assertFalse(vm.parseJsonBool(record, ".placeholders"));
-        assertTrue(vm.parseJsonBool(record, ".delegationMock"), "the Sepolia mock");
+        assertTrue(vm.parseJsonBool(record, ".delegationMock"), "not the canonical code");
         assertEq(vm.parseJsonString(record, ".entropy"), "none");
         assertEq(d.renderer.inlineThreshold(), DeployV1.RENDERER_INLINE_THRESHOLD);
 
-        // Verify reads the same inputs: the genesis copy, the manifest file and the CC0 pin.
+        // Verify reads the same inputs: the genesis copy and the manifest file.
         verifier.setFile(GENESIS, bytes(_filled()));
         verifier.setFile("config/manifest.json", MANIFEST);
-        verifier.setCc0Digest(sha256(CC0));
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 14);
         assertEq(calls, 18);
         assertEq(holders, 17);
-        // Without the manifest file, or with the anvil CC0 pin, it does not verify.
+        // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Verify.Cc0NotCanonical.selector, sha256(CC0), keccak256("another text")
+                Verify.Cc0NotCanonical.selector,
+                DeployV1.CC0_LEGALCODE_SHA256,
+                keccak256("another text")
             )
         );
         verifier.verify(record);
@@ -242,19 +254,17 @@ contract DeployScriptTest is Test {
 
     function test_OffAnvilEveryRequiredInputIsRequired() public {
         _sepolia();
-        string[6] memory names = [
+        string[5] memory names = [
             "GENESIS_CONFIG",
             "NETWORK_FEE_RECIPIENT",
             "MARKETPLACE_OWNER",
-            "CC0_TEXT_PATH",
             "MANIFEST_PATH",
             "MANIFEST_URI"
         ];
-        string[6] memory values = [
+        string[5] memory values = [
             GENESIS,
             vm.toString(makeAddr("fee")),
             vm.toString(makeAddr("owner")),
-            "config/cc0.txt",
             "config/manifest.json",
             "ar://epoch-0"
         ];
@@ -346,11 +356,12 @@ contract DeployScriptTest is Test {
 
     function test_OffAnvilSystemAddressesCannotHoldRoles() public {
         _sepolia();
-        address[4] memory system = [
+        address[5] memory system = [
             DeployGuards.CREATE2_FACTORY,
             0x000F3df6D732807Ef1319fB7B8bB8522d0Beac02,
             DeployV1.CANONICAL_PERMIT2,
-            DeployGuards.CANONICAL_DELEGATION
+            DeployGuards.CANONICAL_DELEGATION,
+            DeployGuards.SEPOLIA_DELEGATION
         ];
         for (uint256 i; i < system.length; ++i) {
             _genesisFile(
@@ -361,6 +372,57 @@ contract DeployScriptTest is Test {
             );
             deployer.prepare();
         }
+    }
+
+    /// Owner decision 2: a hot and a cold admin Safe, at least.
+    function test_OffAnvilNeedsTwoAdminSafes() public {
+        _sepolia();
+        string memory cold = string.concat(FILLED_PREFIX, "02");
+        _genesisFile(
+            vm.replace(
+                _filled(),
+                string.concat('"role": "ADMIN",\n      "account": "', cold),
+                string.concat('"role": "KEEPER",\n      "account": "', cold)
+            )
+        );
+        vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewAdmins.selector, 1));
+        deployer.prepare();
+    }
+
+    /// Owner decision 2: the cold admin's signers differ from the hot admin's and the
+    /// guardians'.
+    function test_OffAnvilAdminSafesShareNoSigner() public {
+        _sepolia();
+        bytes memory shared = address(new MockSharedSignerSafe()).code;
+        address signer = MockSharedSignerSafe(address(new MockSharedSignerSafe())).SHARED();
+        // The hot and the cold admin share a signer.
+        vm.etch(_account("01"), shared);
+        vm.etch(_account("02"), shared);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector, _account("01"), _account("02"), signer
+            )
+        );
+        deployer.prepare();
+        // The cold admin and a guardian share a signer.
+        vm.etch(_account("01"), address(new MockSafe()).code);
+        vm.etch(_account("12"), shared);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector, _account("02"), _account("12"), signer
+            )
+        );
+        deployer.prepare();
+        // Guardians may share signers with each other.
+        vm.etch(_account("02"), address(new MockSafe()).code);
+        vm.etch(_account("11"), shared);
+        deployer.prepare();
+        // A Safe must list its owners.
+        vm.etch(_account("02"), address(new MockSafeWithoutOwners()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "ADMIN", _account("02"))
+        );
+        deployer.prepare();
     }
 
     function test_OffAnvilNeedsThreeGuardiansAndTwoCurationSigners() public {
@@ -385,6 +447,35 @@ contract DeployScriptTest is Test {
         );
         vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewCurationSigners.selector, 1));
         deployer.prepare();
+    }
+
+    /// The 6529 delegation contract: the canonical code, and the official Sepolia deployment.
+    function test_TheCanonicalDelegationIsPinned() public {
+        assertEq(DeployGuards.CANONICAL_DELEGATION, 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d);
+        assertEq(
+            DeployGuards.CANONICAL_DELEGATION_CODEHASH,
+            0x28e32b740f699e25d2a1afac207a84e31197c0d4b87c1432c9c5c52c4c1e74e0
+        );
+        assertEq(DeployGuards.SEPOLIA_DELEGATION, 0x8f86c644f845A077999939C69Bc787662377d915);
+        // On Sepolia the official deployment is the default.
+        _sepolia();
+        deployer.setEnv("DELEGATION_CONTRACT", "");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.NoCode.selector, "DELEGATION_CONTRACT", DeployGuards.SEPOLIA_DELEGATION
+            )
+        );
+        deployer.params(false);
+        vm.etch(DeployGuards.SEPOLIA_DELEGATION, address(new DelegationManagementMock()).code);
+        assertEq(deployer.params(false).delegation, DeployGuards.SEPOLIA_DELEGATION);
+        // Elsewhere off mainnet, the canonical address (which has no code here).
+        vm.chainId(17_000);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.NoCode.selector, "DELEGATION_CONTRACT", DeployGuards.CANONICAL_DELEGATION
+            )
+        );
+        deployer.params(false);
     }
 
     function test_OffAnvilDependenciesMustHaveCode() public {
@@ -430,10 +521,12 @@ contract DeployScriptTest is Test {
         deployer.setEnv("CC0_TEXT_PATH", "config/README.md");
         bytes32 actual = sha256(vm.readFileBinary("config/README.md"));
         vm.expectRevert(
-            abi.encodeWithSelector(Deploy.Cc0TextMismatch.selector, actual, sha256(CC0))
+            abi.encodeWithSelector(
+                Deploy.Cc0TextMismatch.selector, actual, DeployV1.CC0_LEGALCODE_SHA256
+            )
         );
         deployer.prepare();
-        // Until the canonical digest is pinned, nothing off anvil can deploy.
+        // Without a pinned digest, nothing off anvil can deploy.
         deployer.setCc0Digest(bytes32(0));
         vm.expectRevert(Deploy.Cc0DigestNotPinned.selector);
         deployer.prepare();
@@ -453,17 +546,28 @@ contract DeployScriptTest is Test {
         assertEq(new Verify().cc0Digest(), canonical);
     }
 
-    function test_AnvilChecksAGivenCc0FileOnceTheDigestIsPinned() public {
-        deployer.setCc0Digest(sha256(CC0));
+    /// The committed fixture is that file, byte for byte: the deploy's default CC0 text.
+    function test_TheCc0FixtureIsTheCanonicalLegalCode() public view {
+        assertEq(cc0.length, DeployV1.CC0_LEGALCODE_LENGTH, "7,048 bytes");
+        assertEq(sha256(cc0), DeployV1.CC0_LEGALCODE_SHA256, "the pinned digest");
+        assertEq(keccak256(deployer.cc0Text(false)), keccak256(cc0), "the default text");
+    }
+
+    function test_AnvilChecksTheCc0TextToo() public {
+        // The default is the committed fixture, on anvil as elsewhere.
+        assertEq(keccak256(deployer.cc0Text(true)), keccak256(cc0));
         deployer.setEnv("CC0_TEXT_PATH", "config/README.md");
         bytes32 actual = sha256(vm.readFileBinary("config/README.md"));
         vm.expectRevert(
-            abi.encodeWithSelector(Deploy.Cc0TextMismatch.selector, actual, sha256(CC0))
+            abi.encodeWithSelector(
+                Deploy.Cc0TextMismatch.selector, actual, DeployV1.CC0_LEGALCODE_SHA256
+            )
         );
         deployer.cc0Text(true);
-        deployer.setFile("config/cc0.txt", CC0);
+        // An explicit copy of the same bytes passes.
+        deployer.setFile("config/cc0.txt", cc0);
         deployer.setEnv("CC0_TEXT_PATH", "config/cc0.txt");
-        assertEq(keccak256(deployer.cc0Text(true)), keccak256(CC0));
+        assertEq(keccak256(deployer.cc0Text(true)), keccak256(cc0));
     }
 
     function test_ReviewPoC_TheEntropyModuleIsAnExplicitChoice() public {
@@ -733,15 +837,18 @@ contract DeployScriptTest is Test {
             _tamper(record, vm.toString(recorded), vm.toString(keccak256("other text")));
         vm.expectRevert(abi.encodeWithSelector(VerifyV1.Cc0Mismatch.selector, "SHA-256"));
         verifier.verify(tampered);
-        // Off anvil the recorded digest must be the pinned canonical one: the anvil
-        // placeholder text is not.
+        // The anvil run stores the canonical text, so it passes the off-anvil check too.
+        assertEq(recorded, DeployV1.CC0_LEGALCODE_SHA256);
+        verifier.checkCc0External(d, record, false);
+        // Another pin is refused...
+        verifier.setCc0Digest(keccak256("another text"));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Verify.Cc0NotCanonical.selector, recorded, DeployV1.CC0_LEGALCODE_SHA256
+                Verify.Cc0NotCanonical.selector, recorded, keccak256("another text")
             )
         );
         verifier.checkCc0External(d, record, false);
-        // No pin at all is refused too.
+        // ...and so is no pin at all.
         verifier.setCc0Digest(bytes32(0));
         vm.expectRevert(abi.encodeWithSelector(Verify.Cc0NotCanonical.selector, recorded, 0));
         verifier.checkCc0External(d, record, false);
