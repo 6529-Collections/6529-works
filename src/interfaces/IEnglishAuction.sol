@@ -5,29 +5,33 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 import { Payment } from "./types/SaleTypes.sol";
 
 /// @title IEnglishAuction
-/// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5, 9
-///         and 12).
-/// @dev Starting is permissionless: anyone may submit the start, which mints the token into this
-///      adapter's custody through `IMintTarget.mint` and starts the clock. The start never
-///      deploys a split wallet (about 1.6M gas): the seller and royalty wallets are predicted
-///      CREATE2 addresses, paid by plain transfer and deployed later by anyone. For a VRF work the
-///      start requests the seed from the entropy module and the clock starts in `activate`, once
-///      the seed is delivered; no bid is accepted before. Bids must reach `minimumBid`: the
-///      opening bid while there is none, then the high bid plus `max(incrementShare, the
-///      currency's increment floor)`, the floor read from the economics lane's asset allowlist
-///      and locked at start. A bid in the last `extensionWindow` seconds moves the end
-///      to `extensionWindow` seconds after it. An outbid bidder is credited (pull). Settlement
-///      is permissionless after the end and never depends on the winner accepting the token:
-///      a failed delivery leaves a pending claim. With no bids the token goes to the lead artist.
-///      The guardian may pause a live auction for at most 7 days in total; bidders may withdraw
-///      while it is paused; an upheld dispute cancels it, refunds the bid and burns the token;
-///      a rejected dispute, or no outcome within the allowance, resumes it.
-///      `saleKind()` is `SaleKind.ENGLISH_AUCTION`.
+/// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
+///         12).
+/// @dev Starting is permissionless: anyone submits the start, which mints the token into this
+///      adapter's custody through `IMintTarget.mint` and starts the clock. A VRF work's seed is
+///      requested beforehand (`IEntropyModule.requestSeed`), so the start never waits on
+///      randomness and nothing is ever in custody without a clock. The start never deploys a
+///      split wallet. Sale IDs are derived: `saleIdOf(token, tokenId)`. Per sale the adapter
+///      keeps two or three storage words; the seller and fee terms are read back from the token
+///      (`IMintTarget.primaryTerms`) at settlement.
+///
+///      Bidding: the first bid must be at least `max(openingBid(currency), 1)`; later bids must
+///      reach the high bid plus `max(incrementShare, the currency's increment floor)`, the floor
+///      read from the economics lane's asset allowlist and locked at start. A bid in the last
+///      `extensionWindow` seconds moves the end to `extensionWindow` seconds after it. Outbid
+///      bidders are credited (pull). Settlement is permissionless after the end and never
+///      depends on the winner accepting the token: a failed delivery leaves a pending claim.
+///      With no bids the token goes to the artist's current authority, resolved at settlement.
+///
+///      Disputes: the guardian may pause a live auction for at most 7 days in total; bidders may
+///      withdraw while it is paused; an upheld dispute cancels it, refunds the bid and burns the
+///      token; a rejected dispute, or no outcome within the allowance, resumes it.
+///      `saleKind()` is `SaleKind.ENGLISH_AUCTION`. PERMIT2 bids use the `Typehashes.BID_WITNESS`
+///      and `Typehashes.START_BID_WITNESS` witnesses.
 interface IEnglishAuction is ISaleAdapter {
     /// @notice An auction's lifecycle. ENDED is derived: ACTIVE with the end passed.
     enum AuctionState {
         NONE,
-        AWAITING_SEED,
         ACTIVE,
         PAUSED,
         ENDED,
@@ -36,7 +40,7 @@ interface IEnglishAuction is ISaleAdapter {
     }
 
     /// @notice Governed auction parameters (ADR 0001 section 5).
-    /// @param duration Seconds from activation to the end (24 hours at launch).
+    /// @param duration Seconds from start to end (24 hours at launch).
     /// @param extensionWindow The anti-snipe window and extension, in seconds.
     /// @param incrementShare The minimum relative increment, out of 100,000 (5,000 at launch).
     struct AuctionConfig {
@@ -45,8 +49,7 @@ interface IEnglishAuction is ISaleAdapter {
         uint32 incrementShare;
     }
 
-    /// @notice One auction; `seller`, `feeRecipient`, `feeShare`, `creator`, `currency` and
-    ///         `incrementFloor` are locked at start.
+    /// @notice One auction, as stored; `currency` and `incrementFloor` are locked at start.
     /// @param bidder The high bidder (the payer of the high bid), or zero.
     /// @param recipient Who receives the token if the high bid wins.
     /// @param pausedAt When the current pause began, or zero.
@@ -56,22 +59,15 @@ interface IEnglishAuction is ISaleAdapter {
         uint256 tokenId;
         address currency;
         uint256 incrementFloor;
-        address seller;
-        address feeRecipient;
-        uint32 feeShare;
-        address creator;
         address bidder;
         address recipient;
         uint256 bid;
-        uint64 startTime;
         uint64 endTime;
         uint64 pausedAt;
         uint64 pausedTotal;
         AuctionState state;
     }
 
-    /// @notice An auction awaiting its VRF seed started its clock.
-    event AuctionActivated(uint256 indexed saleId, uint64 startTime, uint64 endTime);
     /// @notice A bid was placed; `endTime` includes any anti-snipe extension.
     event BidPlaced(
         uint256 indexed saleId,
@@ -101,75 +97,59 @@ interface IEnglishAuction is ISaleAdapter {
     error InvalidAuctionState(uint256 saleId, AuctionState state);
     /// @notice The bid is below `minimumBid`.
     error BidTooLow(uint256 required, uint256 offered);
-    /// @notice The VRF seed has not been delivered.
-    error SeedPending(uint256 saleId);
     /// @notice The 7-day pause allowance is used up.
     error PauseExhausted(uint256 saleId);
+    /// @notice `outcomeRef` is not the token's latest DISPUTE_OUTCOME statement.
+    error OutcomeNotRecorded(uint256 saleId, bytes32 outcomeRef);
     /// @notice Nothing is pending delivery for the caller.
     error NoPendingDelivery(uint256 saleId);
-    /// @notice A compare-and-set setter's expected current value is stale.
-    error ExpectedValueMismatch();
 
     /// @notice Mints a work into custody and opens its auction. Permissionless.
-    /// @param token An admitted token contract.
+    /// @param token A served token contract.
     /// @param mintData The token-specific mint request (for 6529 Stream,
     ///        `abi.encode(StreamMintRequest)`).
-    /// @return saleId The new auction.
+    /// @return saleId `saleIdOf(token, tokenId)`.
     function start(address token, bytes calldata mintData) external returns (uint256 saleId);
-
-    /// @notice `start` plus a first bid in one transaction. Reverts for a VRF work.
+    /// @notice `start` plus a first bid in one transaction.
     function startWithBid(
         address token,
         bytes calldata mintData,
         address recipient,
         Payment calldata payment
     ) external payable returns (uint256 saleId);
-
-    /// @notice Starts the clock of an auction whose VRF seed has been delivered. Permissionless.
-    function activate(uint256 saleId) external;
-
     /// @notice Bids `payment.amount` for `recipient` (the payer when zero).
     function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
-
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
     ///         the seller and the network fee. Permissionless.
     function settle(uint256 saleId) external;
-
     /// @notice The pending recipient claims its token to `to`.
     function claimDelivery(uint256 saleId, address to) external;
 
     /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
     function pause(uint256 saleId, bytes32 disputeRef) external;
-
-    /// @notice Resumes a paused auction with its remaining time (anti-sniping still applies),
-    ///         after a rejected dispute. UNPAUSER role (pause and unpause have separate holders).
-    ///         A pause also ends by itself once the 7-day allowance runs out: from then on the
-    ///         auction behaves as resumed at that moment, without any call.
+    /// @notice Resumes a paused auction with its remaining time after a rejected dispute.
+    ///         UNPAUSER role (pause and unpause have separate holders). A pause also ends by itself
+    ///         once the 7-day allowance runs out, without any call.
     function resume(uint256 saleId) external;
-
-    /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back,
-    ///         burns the token and records `outcomeRef`. PARAMETER_SETTER role; it must execute
-    ///         while the auction is paused. `outcomeRef` must be nonzero and equal
-    ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`, so no auction is cancelled
-    ///         without a public DISPUTE_OUTCOME statement on record.
+    /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
+    ///         burns the token. PARAMETER_SETTER role, while paused. `outcomeRef` must be nonzero
+    ///         and equal `IStatementLog.latestDisputeOutcome(token, tokenId)`.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
-
-    /// @notice The high bidder withdraws its bid while the auction is paused; the bid is
-    ///         credited back and the auction has no bid.
+    /// @notice The high bidder withdraws its bid while the auction is paused; it is credited back
+    ///         and the auction has no bid.
     function withdrawBid(uint256 saleId) external;
 
     /// @notice Sets the auction parameters, within the implementation's ceilings.
     ///         PARAMETER_SETTER role, compare-and-set.
     function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next) external;
-
-    /// @notice Sets a currency's opening bid (zero at launch). PARAMETER_SETTER role,
-    ///         compare-and-set.
+    /// @notice Sets a currency's opening bid (zero at launch; the first bid is still at least 1).
+    ///         PARAMETER_SETTER role, compare-and-set.
     function setOpeningBid(address currency, uint256 expected, uint256 next) external;
 
+    /// @notice The derived sale ID: `uint256(keccak256(abi.encode(token, tokenId)))`.
+    function saleIdOf(address token, uint256 tokenId) external pure returns (uint256);
     /// @notice An auction. Reverts for an unknown sale ID.
     function auction(uint256 saleId) external view returns (Auction memory);
-    /// @notice The auction of a token, or zero.
-    function saleOf(address token, uint256 tokenId) external view returns (uint256 saleId);
     /// @notice The smallest bid accepted now.
     function minimumBid(uint256 saleId) external view returns (uint256);
     /// @notice The governed auction parameters.
@@ -178,8 +158,6 @@ interface IEnglishAuction is ISaleAdapter {
     function openingBid(address currency) external view returns (uint256);
     /// @notice The recipient whose delivery is pending, or zero.
     function pendingDelivery(uint256 saleId) external view returns (address);
-    /// @notice The entropy module used for VRF works (immutable).
-    function entropyModule() external view returns (address);
     /// @notice The revenue escrow that receives failed payouts (immutable).
     function escrow() external view returns (address);
     /// @notice The statement log whose DISPUTE_OUTCOME entries `cancel` cites (immutable).

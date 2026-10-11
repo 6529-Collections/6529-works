@@ -20,8 +20,8 @@ bytes32 constant PRODUCT_EDITIONS = keccak256("PRODUCT_EDITIONS");
 bytes32 constant PRODUCT_FEDERATED = keccak256("PRODUCT_FEDERATED");
 
 /// @notice One share holder of a split wallet: an exact mirror of the economics lane's
-///         `ISplitWallet.Payee` (ADR 0001 sections 7 and 11), to be deduplicated when that
-///         interface moves here.
+///         `ISplitWallet.Payee` (ADR 0001 sections 7 and 11). PR #11 is not merged yet; when it
+///         is, this mirror and `SHARE_DENOMINATOR` are replaced by its types (decision D25).
 /// @dev Exactly one of `artistId` and `account` is nonzero. A fixed payee names its `account`;
 ///      an artist-resolved payee names its `artistId` and is paid at
 ///      `IArtistRegistry.payoutAddress(artistId)` when funds are released, so recovery and
@@ -49,7 +49,8 @@ struct ProductEconomics {
 /// @notice The terms a new work locks at mint (ADR 0001 section 7 "locked at mint").
 /// @dev `seller` is the split wallet of the item's payees (the artist portion). `royaltyReceiver`
 ///      is the split wallet paying `SHARE_DENOMINATOR - feeShare` to `seller` and `feeShare` to
-///      `feeRecipient`. Both are predicted CREATE2 addresses: they may not be deployed yet, which
+///      `feeRecipient`; when `feeShare` is zero the fee payee is omitted rather than created, and
+///      `royaltyReceiver` is `seller` itself. Both are predicted CREATE2 addresses: they may not be deployed yet, which
 ///      is safe because ETH and ERC-20 transfers to them are held until anyone deploys the
 ///      wallet, and a sale start never pays the roughly 1.6M gas a deployment costs.
 struct WorkTerms {

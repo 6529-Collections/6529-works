@@ -14,13 +14,7 @@ import {
     SaleTerms,
     SeedPolicy
 } from "../../src/interfaces/types/PackageTypes.sol";
-import {
-    Attribute,
-    ContentFile,
-    DependencyRef,
-    FileRole,
-    Work
-} from "../../src/interfaces/types/ContentTypes.sol";
+import { FileRole, MediaFile } from "../../src/interfaces/types/ContentTypes.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -40,20 +34,29 @@ contract WorksHashingTest is Test {
     address internal constant A2 = 0x2222222222222222222222222222222222222222;
     address internal constant A3 = 0x3333333333333333333333333333333333333333;
 
+    bytes32 internal constant GOLDEN_MEDIA_HASH =
+        0x0a5c4982d55e403ee21588e7c9851a93c5898c87550395b244dca3b145c735c3;
     bytes32 internal constant GOLDEN_ITEM_HASH =
-        0x5dda82c6b05dcd646e378abc10196f6b6f4ab5720fc4d807899955818f56d733;
+        0x8c3d40f88019da4b66062bbc721b27d9fad44e3061e87d6e8d39cfe4ba0feb55;
     bytes32 internal constant GOLDEN_LEAF =
-        0x76436c9263904eb16f08569ad40b2c4291b12cb13e50381498be657cc05680ae;
-    bytes32 internal constant GOLDEN_WORK_HASH =
-        0x6b4de16764850366c1b437cbb70a951bd364b5419f7af48a390a5a3e654e7a53;
+        0x4304572d88646e921991ab525d4ebf5b92a7d306d21581ca070f1affc3aa9e37;
+    bytes32 internal constant GOLDEN_CC0_KEY =
+        0xc524702ec980d5da7df189fec7f0c9b69529a70700cfd88d07f8cc34d042ad71;
+
+    function _media() internal pure returns (MediaFile[] memory media) {
+        media = new MediaFile[](2);
+        media[0] = MediaFile(keccak256("file1"), keccak256("sha1"), FileRole.PRIMARY);
+        media[1] = MediaFile(keccak256("file2"), keccak256("sha2"), FileRole.PREVIEW);
+    }
 
     /// @dev A lead artist, a credited and paid collaborator (artist-resolved), and a fixed payee
     ///      who is also a party, in canonical payee order: fixed first, then by artist ID.
     function _item() internal pure returns (PackageItem memory item) {
         item.kind = ItemKind.EDITION_MASTER;
         item.collectionId = 7;
-        item.contentId = keccak256("content");
-        item.metadataHash = keccak256("metadata");
+        item.contentHash = keccak256("sha1");
+        item.mediaHash = WorksHashing.mediaHash(_media());
+        item.recordFileId = keccak256("record");
         item.parties = new Party[](3);
         item.parties[0] = Party(A1, PartyRole.ARTIST);
         item.parties[1] = Party(A2, PartyRole.COLLABORATOR);
@@ -71,27 +74,9 @@ contract WorksHashingTest is Test {
         );
     }
 
-    function _work() internal pure returns (Work memory work) {
-        work.title = "Title";
-        work.description = "Desc";
-        work.artists = new string[](2);
-        work.artists[0] = "Alice";
-        work.artists[1] = "Bob";
-        work.year = 2026;
-        work.medium = "Digital";
-        work.dimensions = "1920 x 1080 px";
-        work.attributes = new Attribute[](1);
-        work.attributes[0] = Attribute("Palette", "Warm");
-        work.media = new ContentFile[](2);
-        work.media[0] = ContentFile(keccak256("file1"), FileRole.PRIMARY, "index.png");
-        work.media[1] = ContentFile(keccak256("file2"), FileRole.PREVIEW, "preview.png");
-        work.dependencies = new DependencyRef[](1);
-        work.dependencies[0] = DependencyRef(bytes32("p5"), bytes32("1.9.0"));
-    }
-
     function test_domainLabels() public pure {
         assertEq(WorksHashing.PACKAGE_ITEM_DOMAIN, keccak256("6529WORKS_PACKAGE_ITEM_V1"));
-        assertEq(WorksHashing.WORK_RECORD_DOMAIN, keccak256("6529WORKS_WORK_RECORD_V1"));
+        assertEq(WorksHashing.MEDIA_DOMAIN, keccak256("6529WORKS_MEDIA_V1"));
     }
 
     function test_constants() public pure {
@@ -110,6 +95,13 @@ contract WorksHashingTest is Test {
         );
     }
 
+    function test_mediaHash_golden() public pure {
+        assertEq(WorksHashing.mediaHash(_media()), GOLDEN_MEDIA_HASH);
+        MediaFile[] memory media = _media();
+        media[1].role = FileRole.AUXILIARY;
+        assertTrue(WorksHashing.mediaHash(media) != GOLDEN_MEDIA_HASH);
+    }
+
     function test_itemHash_golden() public pure {
         bytes32 itemHash = WorksHashing.itemHash(_item());
         assertEq(itemHash, GOLDEN_ITEM_HASH);
@@ -117,8 +109,32 @@ contract WorksHashingTest is Test {
         assertEq(WorksHashing.leaf(itemHash), keccak256(abi.encode(itemHash)));
     }
 
-    function test_workRecordHash_golden() public pure {
-        assertEq(WorksHashing.workRecordHash(_work()), GOLDEN_WORK_HASH);
+    /// @dev External entry so the item arrives in calldata.
+    function hashCalldata(PackageItem calldata item) external pure returns (bytes32) {
+        return WorksHashing.itemHashCalldata(item);
+    }
+
+    function test_itemHashCalldata_matchesMemory() public view {
+        assertEq(this.hashCalldata(_item()), GOLDEN_ITEM_HASH);
+    }
+
+    function test_licenseKey_isCaseInsensitive() public pure {
+        assertEq(WorksHashing.CC0_LICENSE_KEY, GOLDEN_CC0_KEY);
+        assertEq(WorksHashing.licenseKey("CC0-1.0"), GOLDEN_CC0_KEY);
+        assertEq(WorksHashing.licenseKey("cc0-1.0"), GOLDEN_CC0_KEY);
+        assertEq(WorksHashing.licenseKey("Cc0-1.0"), GOLDEN_CC0_KEY);
+        assertTrue(WorksHashing.licenseKey("CC-BY-4.0") != GOLDEN_CC0_KEY);
+    }
+
+    function testFuzz_licenseKey_matchesLowercase(bytes32 raw) public pure {
+        bytes memory id = new bytes(32);
+        bytes memory lower = new bytes(32);
+        for (uint256 i; i < 32; ++i) {
+            bytes1 c = raw[i];
+            id[i] = c;
+            lower[i] = (c >= "A" && c <= "Z") ? bytes1(uint8(c) + 32) : c;
+        }
+        assertEq(WorksHashing.licenseKey(string(id)), keccak256(lower));
     }
 
     /// @dev Package roots are chain-independent: no chain ID enters the item hash.
@@ -142,9 +158,13 @@ contract WorksHashingTest is Test {
         assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
     }
 
-    function test_itemHash_bindsPayeeKindCurrencyAndKind() public pure {
+    function test_itemHash_bindsMediaPayeeKindAndCurrency() public pure {
         PackageItem memory item = _item();
-        // The same account as a fixed payee instead of artist-resolved is a different item.
+        MediaFile[] memory media = _media();
+        media[1].fileId = keccak256("swapped");
+        item.mediaHash = WorksHashing.mediaHash(media);
+        assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
+        item = _item();
         item.payees[1] = Payee(0, A1, 65_000);
         assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
         item = _item();
@@ -160,8 +180,7 @@ contract WorksHashingTest is Test {
         PackageItem memory item = _item();
         assertTrue(WorksHashing.itemHash(item) != keccak256(abi.encode(item)));
         assertTrue(
-            WorksHashing.itemHash(item)
-                != keccak256(abi.encode(WorksHashing.WORK_RECORD_DOMAIN, item))
+            WorksHashing.itemHash(item) != keccak256(abi.encode(WorksHashing.MEDIA_DOMAIN, item))
         );
     }
 
@@ -179,7 +198,7 @@ contract WorksHashingTest is Test {
         for (uint256 i; i < 3; ++i) {
             PackageItem memory item = _item();
             item.collectionId = i + 1;
-            item.contentId = keccak256(abi.encode("content", i));
+            item.contentHash = keccak256(abi.encode("content", i));
             hashes[i] = WorksHashing.itemHash(item);
             leaves[i] = WorksHashing.leaf(hashes[i]);
         }

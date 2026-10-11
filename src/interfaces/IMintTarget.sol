@@ -8,17 +8,20 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///         6529 Editions, or a future 6529 Stream Federated template (ADR 0001 sections 5 and
 ///         16). Adapters are written against this and nothing else.
 /// @dev The token, not the adapter, decides what may be minted and on what terms, so an adapter
-///      can never sell outside the approved package. `mint` and `burn` are restricted to admitted
-///      adapters (the MINTER role, granted per adapter by a timelocked AccessManager action).
-///      The token checks that the calling adapter's `ISaleAdapter.saleKind()` equals
-///      `terms.saleKind`.
+///      can never sell outside the approved package. `mint` and `burn` accept only the adapters
+///      the token admits (for 6529 Stream and 6529 Editions, through a timelocked governed
+///      action; for a federated template, as its deployment records). The token checks that the
+///      calling adapter's `ISaleAdapter.saleKind()` equals `terms.saleKind`.
 interface IMintTarget {
+    /// @notice The calling adapter's sale kind is not the one the terms require.
+    error SaleKindMismatch(bytes32 expected, bytes32 actual);
+
     /// @notice Mints `amount` of token `id` to `to` for a sale run by the calling adapter, and
     ///         returns the minted ID and the terms the adapter must apply.
-    /// @dev MINTER role. 6529 Stream: `id` must be 0 (Stream assigns the next global token ID),
-    ///      `amount` must be 1, `to` is the adapter's own custody, and `data` is
-    ///      `abi.encode(StreamMintRequest)`; the call consumes the package item. 6529 Editions:
-    ///      `id` is the edition ID, `to` the buyer's recipient, and `data` is empty.
+    /// @dev 6529 Stream: `id` must be 0 (Stream assigns the next global token ID), `amount` 1,
+    ///      `to` the adapter's own custody, and `data` `abi.encode(StreamMintRequest)`; the call
+    ///      consumes the package item, and reverts for a VRF item whose seed is not delivered.
+    ///      6529 Editions: `id` is the edition ID, `to` the buyer's recipient, `data` empty.
     /// @param to The recipient of the minted tokens.
     /// @param id The token ID to mint, or 0 where the token assigns it.
     /// @param amount The number of tokens.
@@ -29,12 +32,10 @@ interface IMintTarget {
         external
         returns (uint256 tokenId, PrimaryTerms memory terms);
 
-    /// @notice The terms `mint` would return for the same `id` and `data` now, without minting.
-    /// @dev A preview only: it does not verify approvals, signatures or supply, which `mint`
-    ///      does. Reverts when the terms cannot be computed (for example an unknown edition).
-    /// @param id As for `mint`.
-    /// @param data As for `mint`.
-    /// @return The primary-sale terms.
+    /// @notice The primary-sale terms of `id`. For a minted token they are the terms locked at
+    ///         its mint (`data` is ignored), with `creator` resolved now; for a 6529 Stream item
+    ///         not yet minted (`id` 0), a preview computed from `data` without verifying it.
+    ///         Reverts when no terms exist (for example an unknown edition).
     function primaryTerms(uint256 id, bytes calldata data)
         external
         view
@@ -42,9 +43,6 @@ interface IMintTarget {
 
     /// @notice Burns `amount` of token `id` from the calling adapter's own balance after its sale
     ///         was cancelled (ADR 0001 section 12: an upheld dispute burns the token, leaving a
-    ///         gap in the ID sequence).
-    /// @dev MINTER role, and only tokens the caller holds.
-    /// @param id The token ID.
-    /// @param amount The number of tokens (1 for 6529 Stream).
+    ///         gap in the ID sequence). Admitted adapters only.
     function burn(uint256 id, uint256 amount) external;
 }

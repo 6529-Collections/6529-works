@@ -18,17 +18,19 @@ library SaleKind {
 /// @notice How a buyer or bidder pays (ADR 0001 section 5 "Asset admission").
 /// @dev DIRECT: ETH sent as `msg.value`, or an ERC-20 the payer approved beforehand.
 ///      PERMIT: an EIP-2612 permit (`signature` is the 65-byte `r || s || v`), then a pull.
-///      PERMIT2: a Permit2 `permitWitnessTransferFrom`, whose witness binds the exact action, so
-///      a relayer can submit it for the payer (the signed payment intent).
+///      PERMIT2: a Permit2 `permitWitnessTransferFrom` whose witness (see `Typehashes`) binds the
+///      action, so a relayer can submit it for the payer (the signed payment intent).
 enum PaymentMethod {
     DIRECT,
     PERMIT,
     PERMIT2
 }
 
-/// @notice One payment. Adapters pull exactly `amount` and check the exact balance delta.
-/// @dev For DIRECT and PERMIT, `payer` must be `msg.sender`; for PERMIT2 it is the signer and
-///      may differ from `msg.sender`. ETH payments use DIRECT with `msg.value == amount`.
+/// @notice One payment, pulled with an exact balance-delta check.
+/// @dev `amount` is the exact amount for a bid or a fixed-price purchase, and the most the payer
+///      will pay for a Dutch purchase, which charges exactly the current price (ETH overpayment
+///      is credited back). For DIRECT and PERMIT, `payer` must be `msg.sender`; for PERMIT2 it is
+///      the signer and may differ from `msg.sender`. ETH uses DIRECT with `msg.value == amount`.
 ///      `deadline` and `signature` are the permit's; `nonce` is the Permit2 nonce (zero
 ///      otherwise). The payer is the bidder or buyer of record: refunds and credits go to it.
 struct Payment {
@@ -40,18 +42,15 @@ struct Payment {
     bytes signature;
 }
 
-/// @notice What a token contract tells a sale adapter about one primary sale.
-/// @dev Returned by `IMintTarget.mint` and previewed by `IMintTarget.primaryTerms`. Adapters
-///      lock these values when a sale starts (ADR 0001 section 5 "Each sale locks its currency
-///      when it starts"). `currency` is already resolved: `CURRENCY_ETH` or an active allowlisted
-///      ERC-20, never `CURRENCY_DEFAULT`. `price` is the unit price for FIXED_PRICE, the starting
-///      price for DUTCH and zero for ENGLISH_AUCTION (whose opening bid is governed). `seller`
-///      receives the artist portion (the work's split wallet, a predicted CREATE2 address
-///      that may not be deployed yet), `feeRecipient` the network
-///      portion, `feeShare` out of `SHARE_DENOMINATOR`. `creator` is the lead artist's current
-///      authority: it receives an auction token that drew no bids and may schedule edition
-///      sales. `revealPending` is true while a VRF seed is outstanding; no bid or purchase is
-///      accepted until it is delivered.
+/// @notice What a token contract tells a sale adapter about a primary sale.
+/// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms`. `currency` is resolved:
+///      `CURRENCY_ETH` or an active allowlisted ERC-20, never `CURRENCY_DEFAULT`. `price` is the
+///      unit price for FIXED_PRICE, the starting price for DUTCH and zero for ENGLISH_AUCTION.
+///      `seller` receives the artist portion (a split wallet's predicted CREATE2 address, which
+///      may not be deployed), `feeRecipient` the network portion, `feeShare` out of
+///      `SHARE_DENOMINATOR`. `creator` is the lead artist's current authority, resolved through
+///      the artist registry when the terms are read: it receives an auction token that drew no
+///      bids, and may open edition sales.
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;
@@ -61,7 +60,19 @@ struct PrimaryTerms {
     address feeRecipient;
     uint32 feeShare;
     address creator;
-    bool revealPending;
+}
+
+/// @notice The terms a sale adapter locks for one sale, in the same shape in every adapter.
+/// @dev `id` is the token ID (an edition ID for 6529 Editions). `price` is the package unit price
+///      (fixed price), the starting price (Dutch) or zero (English auction).
+struct LockedTerms {
+    address token;
+    uint256 id;
+    address currency;
+    uint256 price;
+    address seller;
+    address feeRecipient;
+    uint32 feeShare;
 }
 
 /// @notice The `params` of a DUTCH sale: `abi.encode(DutchParams)` (ADR 0001 section 5).

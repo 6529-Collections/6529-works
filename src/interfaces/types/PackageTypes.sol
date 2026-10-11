@@ -5,7 +5,7 @@ import { Payee } from "./EconomicsTypes.sol";
 
 /// @notice What a package item mints on 6529 Stream (ADR 0001 sections 3 and 6).
 /// @dev ORIGINAL is a 1/1. EDITION_MASTER is a 1/1 that also anchors exactly one 6529 Editions
-///      edition, created from the same item after the master is minted.
+///      edition, created from the same item once the master's sale has settled.
 enum ItemKind {
     ORIGINAL,
     EDITION_MASTER
@@ -22,8 +22,8 @@ enum PartyRole {
 
 /// @notice Where a seeded work's seed comes from (ADR 0001 section 9).
 /// @dev NONE: unseeded, `seed` is zero. ARTIST: `seed` is chosen by the artist and committed in
-///      the package. VRF: `seed` is zero in the package; the optional entropy module delivers it
-///      before bidding opens.
+///      the package. VRF: `seed` is zero in the package; the entropy module delivers it, keyed by
+///      the item hash, before the sale can start.
 enum SeedPolicy {
     NONE,
     ARTIST,
@@ -39,19 +39,22 @@ enum EditionFormat {
 }
 
 /// @notice A party named by a package item: someone credited, paid, or both.
-/// @dev `account` is the address that signs the package root (ADR 0001 section 3 "every listed
-///      party signs"). It maps to an artist identity in the artist registry, created on first
-///      acceptance with the artist ID `uint256(uint160(account))`, so tools know every artist ID
-///      before any transaction and later payouts follow that identity through recovery.
+/// @dev `account` signs the package root (ADR 0001 section 3 "every listed party signs"). Its
+///      artist ID is `IArtistRegistry.artistIdOf(account)` if nonzero, otherwise
+///      `uint256(uint160(account))` (the ID its first acceptance creates), so tools know every
+///      artist ID before any transaction.
 struct Party {
     address account;
     PartyRole role;
 }
 
 /// @notice A work's license (ADR 0001 section 8, owner direction 11 October 2026).
-/// @dev `spdxId` is an SPDX identifier or `LicenseRef-` expression, for example `CC0-1.0`.
-///      `textFileId` is the `IContentStore` file ID of the full license text, so the text is
-///      permanent and its hash is part of the work. Editions carry their master's license.
+/// @dev `spdxId` is an SPDX identifier or `LicenseRef-` expression (at most
+///      `Limits.MAX_LICENSE_ID_BYTES`), for example `CC0-1.0`; its canonical key is
+///      `WorksHashing.licenseKey(spdxId)` (keccak256 of the ASCII-lowercased ID), and a license
+///      is identified by that key plus `textFileId`, the `IContentStore` file ID of the full
+///      license text. CC0 irrevocability is checked on the key. Editions carry their master's
+///      license.
 struct License {
     string spdxId;
     bytes32 textFileId;
@@ -62,9 +65,8 @@ struct License {
 /// @dev `saleKind` is a `SaleKind` label; only an adapter reporting the same kind may sell the
 ///      work, and 6529 Stream accepts only `SaleKind.ENGLISH_AUCTION`. `currency` is
 ///      `CURRENCY_ETH` (`address(0)`), an allowlisted ERC-20, or `CURRENCY_DEFAULT` for the
-///      product's default currency at the time the sale starts. `params` is the ABI encoding the
-///      kind defines; the English auction takes none (its terms are governed), so it must be
-///      empty.
+///      product's default currency when the sale starts. `params` is the encoding the kind
+///      defines; the English auction takes none, so it must be empty.
 struct SaleTerms {
     bytes32 saleKind;
     address currency;
@@ -72,8 +74,8 @@ struct SaleTerms {
 }
 
 /// @notice The edition an EDITION_MASTER item anchors (ADR 0001 section 6).
-/// @dev `price` is the unit price for FIXED_PRICE sales and the starting price for DUTCH
-///      sales. `saleKind` is `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`; `params` is that kind's
+/// @dev `price` is the unit price for FIXED_PRICE sales and the starting price for DUTCH sales.
+///      `saleKind` is `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`; `params` is that kind's
 ///      encoding (empty for fixed price, `abi.encode(DutchParams)` for Dutch). For an ORIGINAL
 ///      item every field is zero or empty.
 struct EditionTerms {
@@ -87,24 +89,26 @@ struct EditionTerms {
 }
 
 /// @notice One item of an approved package: everything voters approve and every party signs.
-/// @dev Hashed as `WorksHashing.itemHash`, and the package root is a Merkle root over
-///      `WorksHashing.leaf(itemHash)` (see `WorksHashing` for the exact convention).
-///      `contentId` is the `IContentStore` file ID of the primary media, which must be
-///      registered in the content store before the sale starts. The item's content hash (the
-///      ADR's uniqueness key) is the SHA-256 of the decoded primary media that the store declares
-///      for it, `IContentStore.sha256Of(contentId)`: it does not depend on MIME type or
-///      encoding, so the same media re-encoded is still the same content. 6529 Stream and
-///      6529 Editions each reject a content hash already used in that product.
-///      `metadataHash` is `WorksHashing.workRecordHash` of the approved work record. `parties`
-///      holds 1 to `Limits.MAX_PARTIES` distinct accounts. `payees` is the canonical payee list
-///      of the split wallet that receives the artist portion (shares out of 100,000); every payee
-///      is a party, either by its account (fixed) or by its artist ID (artist-resolved), so
-///      nobody is paid without having signed. `seed` is nonzero only under `SeedPolicy.ARTIST`.
+/// @dev Hashed as `WorksHashing.itemHash`; the package root is a Merkle root over
+///      `WorksHashing.leaf(itemHash)`.
+///      - `contentHash`: the decoded SHA-256 of the primary media, the per-product uniqueness key.
+///      - `mediaHash`: `WorksHashing.mediaHash` of every media file (file IDs and decoded SHA-256,
+///        primary first), so media is fixed by approval; the list's first entry carries
+///        `contentHash`.
+///      - `recordFileId`: the `IContentStore` file ID of the approved descriptive record (JSON);
+///        the artist may point the work at a new record file until finalize.
+///      - `parties`: 1 to `Limits.MAX_PARTIES` distinct accounts, lead ARTIST first.
+///      - `payees`: the canonical payee list of the artist portion; every payee is a party, by
+///        account (fixed) or by artist ID (artist-resolved), so nobody is paid without signing.
+///        Payees never change after mint; only the royalty rate may, by agreement.
+///      - `collectionId`: a 6529 Stream collection (chain-specific, below 2^32).
+///      - `seed`: nonzero only under `SeedPolicy.ARTIST`.
 struct PackageItem {
     ItemKind kind;
     uint256 collectionId;
-    bytes32 contentId;
-    bytes32 metadataHash;
+    bytes32 contentHash;
+    bytes32 mediaHash;
+    bytes32 recordFileId;
     Party[] parties;
     Payee[] payees;
     License license;
@@ -115,10 +119,10 @@ struct PackageItem {
 }
 
 /// @notice The lead artist's revocable "move to Stream" authorization (ADR 0001 section 3).
-/// @dev An EIP-712 signature by the lead artist's current authority over
-///      `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)` in
-///      the package registry's domain. The nonce is single-use per artist ID and can be revoked
-///      before use.
+/// @dev An EIP-712 `Typehashes.MOVE_TO_STREAM` signature by the lead artist's current authority
+///      in the package registry's domain. The nonce is single-use per artist ID and revocable;
+///      the registry tracks nonces in a bitmap of 255 per word (word `nonce / 255`, bit
+///      `nonce % 255`), so any `uint256` nonce works.
 struct MoveAuthorization {
     uint256 nonce;
     uint64 deadline;
@@ -126,11 +130,10 @@ struct MoveAuthorization {
 }
 
 /// @notice A party's acceptance of a package root (ADR 0001 sections 3 and 11).
-/// @dev An EIP-712 signature over `PackageAcceptance(bytes32 packageRoot,address account,
-///      bytes32 profileId,bytes32 profileDocHash,uint64 deadline)` in the package registry's
-///      domain, by `account` when it has no artist ID yet (the acceptance then creates one), or
-///      by the current authority of `account`'s artist ID. The profile fields must match the
-///      artist record when one exists.
+/// @dev An EIP-712 `Typehashes.PACKAGE_ACCEPTANCE` signature in the package registry's domain,
+///      by `account` when it has no artist ID yet (the acceptance then creates one), or by the
+///      current authority of `account`'s artist ID. `profileId` is the artist's unverified claim
+///      of a 6529 profile; it must match the record when one exists.
 struct PartyAcceptance {
     address account;
     bytes32 profileId;
@@ -138,8 +141,8 @@ struct PartyAcceptance {
     uint64 deadline;
 }
 
-/// @notice The `data` a sale adapter passes to `IStream.mint` to start a curated work.
-/// @dev The adapter treats it as opaque bytes: `abi.encode(StreamMintRequest)`.
+/// @notice The `data` a sale adapter passes to `IStream.mint` to start a curated work: opaque to
+///         the adapter, `abi.encode(StreamMintRequest)`.
 struct StreamMintRequest {
     bytes32 packageRoot;
     PackageItem item;

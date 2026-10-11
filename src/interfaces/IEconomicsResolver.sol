@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { License } from "./types/PackageTypes.sol";
 import { Payee, ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
 
@@ -14,7 +15,7 @@ import { Payee, ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
 ///      its `ISplitFactory`. Changes apply to works and sales that start afterwards only: works
 ///      lock their terms at mint and sales lock their currency at start. Every setter is
 ///      governed, non-payable and compare-and-set, and emits the old and new values.
-interface IEconomicsResolver {
+interface IEconomicsResolver is IERC165 {
     /// @notice A product's economics changed.
     event EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next);
     /// @notice A product's default license changed.
@@ -29,8 +30,8 @@ interface IEconomicsResolver {
 
     /// @notice The terms a new work of `product` locks at mint, for the artist-portion payees of
     ///         its package item. Both wallets are predicted CREATE2 addresses; nothing is
-    ///         deployed, so the auction start stays within its gas budget. Reverts for a payee
-    ///         list the split factory would not accept.
+    ///         deployed, so the auction start stays within its gas budget; a zero fee share omits
+    ///         the fee payee. Reverts for a payee list the split factory would not accept.
     function newWorkTerms(bytes32 product, Payee[] calldata payees)
         external
         view

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
 /// @title IFederationRegistry
 /// @notice Placeholder for v1.1: the public on-chain directory of 6529 Stream Federated
 ///         contracts (ADR 0001 section 16). v1 ships no implementation; the interface fixes
@@ -8,8 +10,9 @@ pragma solidity ^0.8.24;
 /// @dev Only the federation factory adds entries, so only genuine template deployments are
 ///      listed. Shared adapters accept federated sales only while `isActive`, and settle the
 ///      fee recorded in the entry. A TDH vote delists a contract or a whole artist identity;
-///      tokens, content and ownership are never touched.
-interface IFederationRegistry {
+///      tokens, content and ownership are never touched. On registration it lists the contract
+///      under its artist in the artist registry (`IArtistRegistry.listFederatedContract`).
+interface IFederationRegistry is IERC165 {
     /// @notice What a federated deployment is.
     enum Form {
         ERC721,
@@ -54,8 +57,4 @@ interface IFederationRegistry {
     function entry(address token) external view returns (Entry memory);
     /// @notice Whether the contract and its artist identity are both listed.
     function isActive(address token) external view returns (bool);
-    /// @notice How many contracts an artist identity registered.
-    function contractCountOf(uint256 artistId) external view returns (uint256);
-    /// @notice The `index`-th contract an artist identity registered.
-    function contractOfAt(uint256 artistId, uint256 index) external view returns (address);
 }
