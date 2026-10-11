@@ -55,7 +55,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
         cfg.grants = _grants();
         cfg.targets = new GovernanceConfig.Target[](1);
         cfg.targets[0] = GovernanceConfig.Target(address(module), functions);
-        configurator.configure(cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST, _noWiring());
         _settle();
     }
 

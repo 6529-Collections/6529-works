@@ -18,7 +18,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
 
     function _expectConfigureRevert(GovernanceConfig.Config memory cfg, bytes memory err) internal {
         vm.expectRevert(err);
-        configurator.configure(cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST, _noWiring());
     }
 
     function _withGrant(uint64 role, address account)
@@ -64,7 +64,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function _configured() internal {
-        configurator.configure(_config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST, _noWiring());
         _settle();
     }
 
@@ -76,9 +76,12 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         emit IAccessManager.RoleLabel(Roles.GUARDIAN, "GUARDIAN");
         vm.expectEmit(address(configurator));
         emit GovernanceConfigurator.GovernanceConfigured(
-            address(manager), keccak256(abi.encode(cfg)), MANIFEST
+            address(manager),
+            keccak256(abi.encode(cfg)),
+            MANIFEST,
+            keccak256(abi.encode(_noWiring()))
         );
-        configurator.configure(cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST, _noWiring());
 
         (bool stillAdmin,) = manager.hasRole(Roles.ADMIN, address(configurator));
         assertFalse(stillAdmin, "configurator renounced");
@@ -107,13 +110,13 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function test_ReadbackFailsBeforeDelaysSettle() public {
-        configurator.configure(_config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST, _noWiring());
         vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.ADMIN));
         configurator.verify(_config());
     }
 
     function test_InitialGrantsAreActiveImmediately() public {
-        configurator.configure(_config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST, _noWiring());
         vm.prank(guardianA);
         target.pause();
         assertTrue(target.paused());
@@ -179,11 +182,11 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
             abi.encodeWithSelector(GovernanceConfigurator.NotDeployer.selector, attacker)
         );
         vm.prank(attacker);
-        configurator.configure(cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST, _noWiring());
     }
 
     function test_ConfigureIsOneShot() public {
-        configurator.configure(_config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST, _noWiring());
         _expectConfigureRevert(
             _config(),
             abi.encodeWithSelector(
@@ -211,7 +214,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
 
     function test_AcceptsTheTwoGuardianFloor() public {
         GovernanceConfig.Config memory cfg = _without(_config(), Roles.GUARDIAN, guardianC);
-        configurator.configure(cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST, _noWiring());
         _settle();
         configurator.verify(cfg);
     }
@@ -424,7 +427,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
 
     function test_ReadbackDetectsPauserGrantedUnpause() public {
         GovernanceConfig.Config memory cfg = _withGrant(Roles.PAUSER, keeper);
-        configurator.configure(cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST, _noWiring());
         _settle();
         configurator.verify(cfg);
         _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.UNPAUSER, keeper, 48 hours)));

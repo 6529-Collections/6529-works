@@ -129,6 +129,13 @@ jobs:
       - name: Budget checker unit tests
         run: python -m tools.test_check_budgets
 
+      - name: Genesis configuration
+        # config/genesis.example.json against forge's method IDs and every restricted function.
+        run: python tools/check_genesis.py
+
+      - name: Genesis checker unit tests
+        run: python -m tools.test_check_genesis
+
       - name: Content tooling tests
         # tools/content (standard library only). test_anvil.py sends the emitted calldata to the
         # compiled ContentStore on a local Anvil node, installed with Foundry above; with
