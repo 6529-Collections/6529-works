@@ -5,6 +5,9 @@
 - Repository created for the 6529 network's art protocol: 6529 Stream, 6529
   Editions and 6529 Stream Federated.
 - ADR 0001 records the accepted v1 scope (originally 6529Stream ADR 0055).
+- ADR 0002 records how the AccessManager hardening in ADR 0001 §13 is implemented:
+  a guardian-cancellable subclassed manager, guardian rules, a cold recovery admin
+  and the selector delay classes decided during the build.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
