@@ -80,7 +80,7 @@ class PlanCommandTest(TempDirCase):
         self.assertEqual(code, 0, err)
         manifest = json.loads((self.dir / "art.png.content.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["storedFile"], "art.png")
-        self.assertEqual([p.name for p in self.dir.iterdir()], ["art.png", "art.png.content.json"])
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["art.png", "art.png.content.json"])
 
     def test_refuses_to_overwrite_without_force(self) -> None:
         source = self.media_file()
