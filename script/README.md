@@ -10,10 +10,9 @@ Not built yet: a deployed-bytecode verifier that matches the chain against a rep
 build. Verify checks code hashes against the deployment record only.
 
 6529 Works is pre-audit and not deployed. A Sepolia run is a testnet rehearsal, not a
-launch, and it is **not runnable yet**. Off anvil, the deploy refuses to proceed until the real
-`ArtistRegistry` from identity (#16) merges (`ArtistRegistryPending`). Stream and WorkRecords
-(#22), Editions (#14) and the Renderer (#20) join the deploy as each one merges. Steps that
-depend on a pending lane are marked.
+launch, and it is **not runnable yet**. Off anvil, the deploy refuses to proceed until the
+Renderer (#20) merges (`RendererPending`). Editions (#14) joins the deploy when it merges.
+The library already deploys identity (#16), Stream and WorkRecords (#22).
 
 | File | Purpose |
 | --- | --- |
@@ -21,7 +20,7 @@ depend on a pending lane are marked.
 | [`VerifyV1.sol`](VerifyV1.sol) | Library: static readback of a deployment against its configuration. |
 | [`Deploy.s.sol`](Deploy.s.sol) | Deploys, configures, and records `deployments/<chainId>/<timestamp>.json`. |
 | [`Verify.s.sol`](Verify.s.sol) | Reads back a recorded deployment, and checks its events over RPC. |
-| [`standins/ArtistRegistryStandIn.sol`](standins/ArtistRegistryStandIn.sol) | Anvil-only stand-in for the artist registry until identity (#16) merges. |
+| [`standins/RendererStandIn.sol`](standins/RendererStandIn.sol) | Anvil-only stand-in for the renderer until #20 merges. 6529 Stream pins its default renderer at construction. |
 
 ## Using the library from tests
 
@@ -35,6 +34,8 @@ VerifyV1.check(d, cfg, calls);
 ```
 
 - `json` is the genesis configuration, for example `vm.readFile("config/genesis.example.json")`.
+- `p.delegation` must have code. Tests pass a `DelegationManagementMock`
+  (`test/mocks/identity/`). `p.marketOwner` is Stream's marketplace `owner()`.
 - `p.deployer` must be the account that calls `install`; only that account can run `configure`.
 - A test can add calls to `calls` before `install`, such as listing a mock token with
   `setTarget`, if each call is on the genesis allow-list
@@ -46,7 +47,7 @@ VerifyV1.check(d, cfg, calls);
 
 ```bash
 anvil --port 8545
-forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast \
+forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --slow \
   --unlocked --sender 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 cast rpc evm_increaseTime 432000 --rpc-url http://127.0.0.1:8545   # minSetback: 5 days
 cast rpc evm_mine --rpc-url http://127.0.0.1:8545
@@ -54,9 +55,14 @@ DEPLOYMENT=deployments/31337/<timestamp>.json \
   forge script script/Verify.s.sol --rpc-url http://127.0.0.1:8545
 ```
 
-- **Placeholders.** Anvil runs on placeholders: the example genesis, a placeholder CC0 text,
-  manifest and fee recipient, and the artist-registry stand-in. The record says
-  `"placeholders": true`.
+- **Placeholders.** Anvil runs on placeholders and stand-ins. The placeholders are the example
+  genesis, the CC0 text, the manifest, the fee recipient and the marketplace owner. The
+  stand-ins are the renderer, and a `DelegationManagementMock` deployed first because the
+  canonical delegation address has no code. The record says `"placeholders": true` and lists
+  the stand-ins.
+- **Use `--slow`.** Without it, anvil can pack a block until the next deploy transaction no
+  longer fits. That transaction then waits for a block that automine never produces;
+  `cast rpc evm_mine` frees it.
 - **No key is handled.** The anvil node unlocks its own dev account.
 - **Restart, don't reset.** Restart anvil rather than calling `anvil_reset`, which removes the
   CREATE2 deployer.
@@ -89,6 +95,7 @@ or stores a key:
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | Any address |
+| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it | Safe or EOA |
 | VRF subscription owner | No role; owns the Chainlink subscription (only with the entropy module) | EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
@@ -126,10 +133,10 @@ Checked read-only on Sepolia on 11 October 2026. Check again before broadcasting
 cast code 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d --rpc-url "$SEPOLIA_RPC_URL"
 ```
 
-### 4. The delegation contract (lands with identity #16)
+### 4. The delegation contract
 
-`ConsolidationAdapter` reads consolidations from the 6529 delegation contract and pins that
-contract's code hash. Its constructor requires code at the address. The canonical contract is
+`ConsolidationAdapter` reads consolidations from the 6529 delegation contract, and its
+constructor requires code at that address. The `ArtistRegistry` pins the adapter's code hash. The canonical contract is
 absent on Sepolia, so the rehearsal uses `DelegationManagementMock`
 (`test/mocks/identity/DelegationManagementMock.sol`). The mock is a faithful reduction of the
 6529 contract: the same storage, getters, and register and revoke semantics, and permissionless
@@ -143,8 +150,9 @@ like the original.
      --rpc-url "$SEPOLIA_RPC_URL" --account <deployer> --broadcast
    ```
 
-3. Pass the address as `DELEGATION_CONTRACT`. The identity swap in `DeployV1` reads that
-   variable; mainnet must use the canonical contract.
+3. Pass the address as `DELEGATION_CONTRACT`. Off anvil, the script refuses an address
+   without code. On mainnet it refuses anything but the canonical contract. The record
+   lists the mock as a stand-in.
 
 To consolidate two wallets on the mock, each one calls
 `registerDelegationAddress(0x8888888888888888888888888888888888888888, <other wallet>, <expiry>, 999, true, 0)`:
@@ -155,8 +163,7 @@ use case 999, all collections, in both directions. Then run the keeper (step 11)
 The default license for new works is CC0 1.0, and WorkRecords requires its text in the content
 store. The file must be registered when WorkRecords is constructed, and complete before any
 work finalizes. Genesis therefore stores it first, right after the content store
-(`DeployV1._content`). Genesis passes the file ID to the `EconomicsResolver`, and to WorkRecords
-once that lands.
+(`DeployV1._content`), and passes the file ID to the `EconomicsResolver` and to WorkRecords.
 
 1. Save the plain-text CC0 1.0 Universal legal code, as published by Creative Commons
    (<https://creativecommons.org/publicdomain/zero/1.0/legalcode>), under `config/`. The
@@ -225,10 +232,10 @@ Genesis appends it to the statement log as the manager's first governance statem
 ```bash
 export SEPOLIA_RPC_URL=...                          # the operator's own endpoint
 export GENESIS_CONFIG=config/genesis.sepolia.json
-export NETWORK_FEE_RECIPIENT=0x...
+export NETWORK_FEE_RECIPIENT=0x... MARKETPLACE_OWNER=0x...
 export CC0_TEXT_PATH=config/<file> CC0_TEXT_SHA256=0x...
 export MANIFEST_SHA256=0x... MANIFEST_URI=ar://...
-# export DELEGATION_CONTRACT=0x...                  # step 4, once identity lands
+export DELEGATION_CONTRACT=0x...                    # step 4: the mock on Sepolia
 # export VRF_COORDINATOR=... VRF_SUBSCRIPTION_ID=... VRF_KEY_HASH=...   # step 6, optional
 
 # Simulation: nothing leaves the machine. It prints the addresses and the gas estimate.
@@ -246,9 +253,9 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
   addresses are already taken.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
-- **Gas.** Today's set is 19 transactions and about 38.3M gas on anvil; the largest
-  transaction is 5.1M, under the 16.8M EIP-7825 cap. The pending contracts add more, so use
-  the simulation's estimate.
+- **Gas.** On anvil, today's set is 24 transactions and about 53.1M gas, including the
+  delegation mock and the renderer stand-in. The largest transaction is 5.1M, under the 16.8M
+  EIP-7825 cap. The renderer and Editions add more, so use the simulation's estimate.
 - **The record.** The run writes `deployments/11155111/<timestamp>.json`, which holds addresses
   and hashes only. Commit it with the Sepolia genesis file.
 
@@ -275,7 +282,7 @@ It checks:
 - that no account outside the configuration was granted a role;
 - every recorded code hash.
 
-### 11. Keeper: `refreshStanding` (lands with identity #16)
+### 11. Keeper: `refreshStanding`
 
 `ArtistRegistry.refreshStanding(artistId)` is permissionless and does not count as artist
 activity.
@@ -300,6 +307,8 @@ activity.
 | `GENESIS_CONFIG` | `config/genesis.example.json` | Required; not the example; no placeholder holder |
 | `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Optional; changes every address |
 | `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required |
+| `MARKETPLACE_OWNER` | Placeholder `0xC002` | Required |
+| `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet |
 | `CC0_TEXT_PATH` | Placeholder text | Required, under `config/` |
 | `CC0_TEXT_SHA256` | Unchecked | Recommended |
 | `MANIFEST_SHA256` | Placeholder | Required |
