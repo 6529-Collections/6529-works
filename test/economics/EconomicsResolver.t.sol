@@ -323,6 +323,33 @@ contract EconomicsResolverTest is EconomicsBase {
         );
     }
 
+    /// @dev Stream's review requirement: the receiver the resolver computes equals what Stream
+    ///      derives from the seller and the fee terms alone, built here by hand against the real
+    ///      factory: salt zero, the two payees sorted ascending by address, or the seller itself
+    ///      for a zero fee. Both sort orders are exercised.
+    function test_RoyaltyReceiverMatchesTheSharedDerivation() public {
+        ISplitWallet.Payee[] memory payees = _artistPayees();
+        address seller = factory.walletFor(payees, bytes32(0));
+        address[2] memory recipients = [address(1), address(type(uint160).max)];
+        for (uint256 i; i < 2; ++i) {
+            (uint64 revision,,) = econ.revisions(PRODUCT_STREAM);
+            econ.setFeeTerms(PRODUCT_STREAM, revision, recipients[i], 25_000);
+            WorkTerms memory t = econ.newWorkTerms(PRODUCT_STREAM, payees);
+            ISplitWallet.Payee[] memory list = new ISplitWallet.Payee[](2);
+            ISplitWallet.Payee memory s = _fixed(seller, D - 25_000);
+            ISplitWallet.Payee memory f = _fixed(recipients[i], 25_000);
+            (list[0], list[1]) = uint160(seller) < uint160(recipients[i]) ? (s, f) : (f, s);
+            assertEq(t.seller, seller);
+            assertEq(t.royaltyReceiver, factory.walletFor(list, bytes32(0)), "non-zero fee");
+            assertEq(factory.createWallet(list, bytes32(0)), t.royaltyReceiver);
+        }
+        (uint64 rev,,) = econ.revisions(PRODUCT_STREAM);
+        econ.setFeeTerms(PRODUCT_STREAM, rev, network, 0);
+        WorkTerms memory zero = econ.newWorkTerms(PRODUCT_STREAM, payees);
+        assertEq(zero.royaltyReceiver, seller, "zero fee: the seller itself");
+        assertEq(zero.seller, seller);
+    }
+
     function test_ZeroFeeShareOmitsTheFeePayee() public {
         econ.setFeeTerms(PRODUCT_STREAM, 1, network, 0);
         WorkTerms memory t = econ.newWorkTerms(PRODUCT_STREAM, _artistPayees());

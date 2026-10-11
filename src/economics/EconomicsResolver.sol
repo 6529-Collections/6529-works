@@ -122,8 +122,8 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     }
 
     /// @inheritdoc IEconomicsResolver
-    /// @dev The royalty wallet's payee list is `Splits.royaltyPayees(seller, feeRecipient,
-    ///      feeShare)`, salt zero: deploy it with exactly that list.
+    /// @dev Implements the derivation documented on the interface; deploy the royalty wallet with
+    ///      exactly `Splits.royaltyPayees(seller, feeRecipient, feeShare)` and salt zero.
     function newWorkTerms(bytes32 product, ISplitWallet.Payee[] calldata payees)
         external
         view
