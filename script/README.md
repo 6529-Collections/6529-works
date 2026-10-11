@@ -353,7 +353,30 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 # Owner only: broadcast, signing with the keystore or the Ledger.
 forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer> \
   --broadcast --slow --account <deployer>            # or --ledger
+
+# On a chain that reprices state creation (Glamsterdam: Sepolia since 6 October 2026), add
+# --skip-simulation, and optionally a lower priority fee:
+forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer> \
+  --broadcast --slow --skip-simulation --priority-gas-price 0.05gwei --account <deployer>
 ```
+
+- **Why `--skip-simulation` on Glamsterdam chains.** Sepolia activated Glamsterdam on
+  6 October 2026, which reprices state creation. These are Sepolia r1's measurements
+  (`eth_estimateGas`), with the Prague cost in brackets:
+  - code deposit: about 1,542 gas per byte (200);
+  - a new storage slot: about 111K gas (22.1K);
+  - an empty `CREATE`: about 210K gas (53K);
+  - a zero-value call to an empty account: 15,000 gas.
+
+  Foundry 1.7.1 has no `amsterdam` EVM, so forge's own simulation prices the transactions
+  with Prague costs. Its gas limits are then far too low: r1's first broadcast ran out of
+  gas creating the configurator, whose limit was 6.96M when the node needed 33.8M.
+
+  `--skip-simulation` skips only forge's replay of the collected transactions. The script
+  itself, with every check below, still runs before anything is sent. With `--slow`, forge
+  then takes each transaction's gas limit from the node's `eth_estimateGas` just before
+  sending it. The simulation command above stays as it is: it runs the checks and prints the
+  addresses.
 
 - **Everything is checked before anything is sent.** Forge simulates the whole run first, so
   any failed check aborts it with nothing broadcast. The checks:
@@ -369,9 +392,18 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
   a rehearsal from the same deployer, use a new `DEPLOY_NAMESPACE`.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
-- **Gas.** On anvil, the whole system is 25 transactions and about 64.8M gas, including the
-  delegation mock. The largest transaction is the renderer's creation, at about 5.4M, under
-  the 16.8M EIP-7825 cap. Use the simulation's estimate for the chain's gas price.
+- **Gas.**
+  - **On anvil, with Prague costs,** the whole system is 25 transactions and about 64.8M gas,
+    including the delegation mock. The largest transaction is the renderer's creation, at
+    about 5.4M, within the 16,777,216-gas EIP-7825 cap.
+  - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
+    6.19 times the Prague estimate. That cost about 0.022 ETH at a 0.05 gwei priority fee.
+    The per-transaction table is `deployments/11155111/README.md`, added in
+    [PR #43](https://github.com/6529-Collections/6529-works/pull/43).
+  - **The cap on Glamsterdam.** The cap applies to regular gas. Transactions whose
+    state-creation gas takes them above 16,777,216 were accepted: r1's largest used 38.1M.
+    That is an observation from r1, not a statement of the EIP rules; budget each chain from
+    its own estimates.
 - **The record.** The run writes `deployments/11155111/<timestamp>.json`. It holds:
   - every address and code hash;
   - every constructor parameter (`params`), including the CREATE2 deployer;
@@ -417,8 +449,9 @@ The record is only an index; each check is made against the chain or the committ
 
 `ArtistRegistry.refreshStanding(artistId)` is permissionless and does not count as artist
 activity. One refresh any time after a consolidation records the wallet; a consolidation
-younger than 30 days is recorded as pending. The worst case is about 6.8M gas, under the
-EIP-7825 cap.
+younger than 30 days is recorded as pending. The worst case was measured at about 6.8M gas
+with Prague costs. A refresh writes new storage slots, which Glamsterdam reprices, so
+re-measure it on Sepolia before relying on that figure.
 
 - **Artists pay (owner decision).** Right after an artist links a wallet (a two-way
   use-case-999 consolidation), 6529.io prompts the artist to call `refreshStanding` from their
