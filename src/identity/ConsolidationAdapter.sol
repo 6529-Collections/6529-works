@@ -42,13 +42,17 @@ interface IDelegationManagement {
 ///      registration of the pair, so a registration that is still stored has been live since its
 ///      registration date. Specific-collection consolidations do not count.
 ///
-///      Every read is a {BoundedCall} that forwards exactly {READ_GAS}, several times what either
-///      getter costs, and reverts when the caller cannot forward it, so a caller choosing its gas
-///      limit cannot truncate a walk. A failed read is therefore the end of the array. Walks are
-///      bounded: {MAX_DELEGATES_SCANNED} delegates per account and {MAX_REGISTRATIONS_READ}
-///      registrations per direction. Only an account's own keys can append to its delegate list,
-///      and appends go to the end, so wallets consolidated before a key compromise keep their
-///      places at the front.
+///      Every read is a {BoundedCall} that forwards exactly {READ_GAS} and reverts when the caller
+///      cannot forward it, so a caller choosing its gas limit cannot truncate a walk. The getters
+///      cost at most about 16K gas cold (a `GlobalData` read is seven cold slots); the 50K
+///      stipend assumes no repricing triples that. A failed read is therefore the end of the
+///      array. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
+///      {MAX_REGISTRATIONS_READ} registrations per direction.
+///
+///      This is a live view, and the account's keys control it: its own key, and any use-case-998
+///      sub-delegate of it (`registerDelegationAddressUsingSubDelegation`), can add, revoke or
+///      reorder its delegate list (revocation is swap-and-pop). The registry's sticky standing
+///      snapshot, not this list, protects an artist's wallets from a key thief.
 contract ConsolidationAdapter is IConsolidationSource {
     /// @notice The delegation contract's "all collections" collection address.
     address public constant ALL_COLLECTIONS = 0x8888888888888888888888888888888888888888;
