@@ -16,6 +16,7 @@ from pathlib import Path
 
 from tools.content import abi, calls
 from tools.content import plan as pl
+from tools.content import verify as verify_module
 from tools.content.address import checksum_address
 from tools.content.cli import main
 from tools.content.encoding import Encoding
@@ -106,6 +107,16 @@ class PlanCommandTest(TempDirCase):
         code, _, err = run("plan", str(source), "--mime", "a/b", "--encoding", "gzip")
         self.assertEqual(code, 0, err)
 
+    def test_a_refusal_leaves_no_partial_output(self) -> None:
+        source = self.media_file()
+        manifest = self.dir / "m.json"
+        manifest.write_text("keep", encoding="utf-8")  # the manifest exists, the stored file does not
+        code, _, err = run(
+            "plan", str(source), "--mime", "a/b", "--encoding", "gzip", "-o", str(manifest)
+        )
+        self.assertEqual((code, "already exists" in err), (2, True))
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["art.bin", "m.json"])
+
     def test_invalid_input_is_refused_cleanly(self) -> None:
         source = self.media_file()
         code, _, err = run("plan", str(source), "--mime", "Text/Plain", "--encoding", "identity")
@@ -178,7 +189,10 @@ class CallsCommandTest(TempDirCase):
         self.assertEqual(run("calls", str(manifest), "--store", STORE)[0], 0)
         code, _, err = run("calls", str(manifest), "--store", STORE)
         self.assertEqual((code, "not empty" in err), (2, True))
+        stale = self.dir / "m.calls" / "999-writeChunk-999.calldata"
+        stale.write_text("0x00", encoding="utf-8")
         self.assertEqual(run("calls", str(manifest), "--store", STORE, "--force")[0], 0)
+        self.assertFalse(stale.exists(), "a previous run's calldata file was left behind")
         code, _, err = run("calls", str(manifest), "--store", "0x1234")
         self.assertEqual((code, "20-byte address" in err), (2, True))
 
@@ -432,6 +446,13 @@ class VerifyAndRebuildTest(TempDirCase):
         self.assertEqual(code, 0, out)
 
 
+class ReportFormattingTest(unittest.TestCase):
+    def test_missing_chunk_ranges(self) -> None:
+        self.assertEqual(verify_module._ranges([]), "")
+        self.assertEqual(verify_module._ranges([4]), "4")
+        self.assertEqual(verify_module._ranges([0, 1, 2, 5, 7, 8]), "0-2, 5, 7-8")
+
+
 class RpcClientTest(TempDirCase):
     def test_only_http_and_https_endpoints_are_accepted(self) -> None:
         for url in ("file:///etc/passwd", "ftp://host/", "ws://host/", "localhost:8545", "", "http://"):
@@ -478,24 +499,12 @@ class RpcClientTest(TempDirCase):
 
     def test_the_tool_only_issues_read_only_methods(self) -> None:
         # No method that signs or sends: eth_call, eth_getCode only.
-        methods: list[str] = []
         with FakeChain() as chain:
-            handler = type(chain.RequestHandlerClass)
-            original = chain.RequestHandlerClass._dispatch
-
-            def spy(self, method, params):  # type: ignore[no-untyped-def]
-                methods.append(method)
-                return original(self, method, params)
-
-            chain.RequestHandlerClass._dispatch = spy  # type: ignore[method-assign]
-            try:
-                plan = pl.plan_from_media(b"read only", "a/b", Encoding.IDENTITY)
-                chain.store.register(plan)
-                chain.store.upload(plan)
-                run("verify", "--rpc", chain.url, "--store", STORE, "0x" + plan.file_id.hex(), "-q")
-            finally:
-                chain.RequestHandlerClass._dispatch = original  # type: ignore[method-assign]
-            del handler
+            plan = pl.plan_from_media(b"read only", "a/b", Encoding.IDENTITY)
+            chain.store.register(plan)
+            chain.store.upload(plan)
+            run("verify", "--rpc", chain.url, "--store", STORE, "0x" + plan.file_id.hex(), "-q")
+            methods = list(chain.methods)
         self.assertTrue(methods)
         self.assertEqual(set(methods), {"eth_call", "eth_getCode"})
 

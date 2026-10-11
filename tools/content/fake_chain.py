@@ -159,6 +159,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _dispatch(self, method: str, params: list[Any]) -> Any:
         store = self.server.store
+        self.server.methods.append(method)
         if method == "eth_chainId":
             return "0x7a69"
         if method == "eth_getCode":
@@ -178,6 +179,7 @@ class FakeChain(ThreadingHTTPServer):
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), _Handler)
         self.store = FakeStore()
+        self.methods: list[str] = []  # every JSON-RPC method received, for assertions
         self._thread = threading.Thread(target=self.serve_forever, daemon=True)
 
     @property

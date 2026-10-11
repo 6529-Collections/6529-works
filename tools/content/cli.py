@@ -85,12 +85,18 @@ def cmd_plan(args: argparse.Namespace) -> int:
 
     manifest_path = Path(args.out) if args.out else source.with_name(source.name + ".content.json")
     manifest_dir = manifest_path.resolve().parent
-    if plan.stored == data and source.resolve().parent == manifest_dir:
-        stored_path = source  # the stream is the input file itself: no copy
-    else:
+    copy_stored = not (plan.stored == data and source.resolve().parent == manifest_dir)
+    if copy_stored:
         name = manifest_path.name
         stem = name[: -len(".json")] if name.endswith(".json") else name
         stored_path = manifest_path.with_name(stem + ".stored")
+    else:
+        stored_path = source  # the stream is the input file itself: no copy
+    # Refuse before writing anything, so a refusal never leaves half of the output behind.
+    for target in (manifest_path, stored_path) if copy_stored else (manifest_path,):
+        if target.exists() and not args.force:
+            raise ToolError(f"{target} already exists (use --force to overwrite)")
+    if copy_stored:
         write_new_file(stored_path, plan.stored, args.force)
     write_new_file(
         manifest_path,
@@ -157,8 +163,12 @@ def cmd_calls(args: argparse.Namespace) -> int:
         skipped_chunks=len(present),
     )
     out_dir = Path(args.out_dir) if args.out_dir else manifest_path.with_suffix(".calls")
-    if out_dir.exists() and any(out_dir.iterdir()) and not args.force:
-        raise ToolError(f"{out_dir} is not empty (use --force to overwrite)")
+    if out_dir.exists() and any(out_dir.iterdir()):
+        if not args.force:
+            raise ToolError(f"{out_dir} is not empty (use --force to overwrite)")
+        # Drop the previous run's files so none is left behind that no longer matches calls.json.
+        for stale in [*out_dir.glob("*.calldata"), out_dir / "send.sh", out_dir / "calls.json"]:
+            stale.unlink(missing_ok=True)
     for call in plan:
         text = calls_module.calldata_file_text(call)
         write_new_file(out_dir / call.filename, text.encode(), True)
