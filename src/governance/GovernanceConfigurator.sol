@@ -53,6 +53,21 @@ contract GovernanceConfigurator {
         bytes32 manifestHash,
         GovernanceConfig.Call[] calldata wiring
     ) external {
+        _configure(cfg, manifestHash, wiring);
+    }
+
+    /// @notice {configure} with no genesis wiring.
+    /// @param cfg Holders and target selector mappings; delays come from {Roles}.
+    /// @param manifestHash Hash of the signed governance manifest describing `cfg`.
+    function configure(GovernanceConfig.Config calldata cfg, bytes32 manifestHash) external {
+        _configure(cfg, manifestHash, new GovernanceConfig.Call[](0));
+    }
+
+    function _configure(
+        GovernanceConfig.Config calldata cfg,
+        bytes32 manifestHash,
+        GovernanceConfig.Call[] memory wiring
+    ) private {
         if (msg.sender != deployer) revert NotDeployer(msg.sender);
         GovernanceConfig.install(worksManager, cfg, wiring);
         worksManager.renounceRole(Roles.ADMIN, address(this));

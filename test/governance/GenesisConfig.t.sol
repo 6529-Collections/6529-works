@@ -280,8 +280,7 @@ contract GenesisConfigTest is Test {
                 );
         }
 
-        uint256 calldataBytes =
-            abi.encodeCall(GovernanceConfigurator.configure, (cfg, MANIFEST, wiring)).length;
+        uint256 calldataBytes = 4 + abi.encode(cfg, MANIFEST, wiring).length;
         uint256 before = gasleft();
         configurator.configure(cfg, MANIFEST, wiring);
         uint256 execution = before - gasleft();

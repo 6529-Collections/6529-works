@@ -120,6 +120,21 @@ contract GenesisWiringTest is GovernanceFixture {
         assertEq(wired.bound(1), address(0));
     }
 
+    function test_TwoArgumentConfigureMeansNoWiring() public {
+        GovernanceConfig.Config memory cfg = _wiredConfig();
+        vm.expectEmit(address(configurator));
+        emit GovernanceConfigurator.GovernanceConfigured(
+            address(manager),
+            keccak256(abi.encode(cfg)),
+            MANIFEST,
+            keccak256(abi.encode(_noWiring()))
+        );
+        configurator.configure(cfg, MANIFEST);
+        assertEq(wired.bound(1), address(0));
+        (bool stillAdmin,) = manager.hasRole(Roles.ADMIN, address(configurator));
+        assertFalse(stillAdmin);
+    }
+
     // ------------------------------------------------------------------ failures abort all
 
     function test_RevertingWiringCallAbortsTheWholeConfiguration() public {

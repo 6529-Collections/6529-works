@@ -767,10 +767,17 @@
     },
     {
       "name": "EntropyModule",
-      "interface": "IEntropyModule",
+      "interface": "VrfEntropyModule",
       "address": "0x000000000000000000000000000000000000a00f",
-      "status": "pending lane: entropy (optional module; interface on main)",
+      "status": "implemented on main (optional module)",
       "functions": [
+        {
+          "signature": "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))",
+          "selector": "0x058832db",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
         {
           "signature": "setCoordinator(address,address,bytes32)",
           "selector": "0xf1fb02ec",
@@ -936,7 +943,7 @@
     {
       "contract": "EntropyModule",
       "lane": "entropy",
-      "note": "Optional; omit the target if the module is not deployed."
+      "note": "Implemented (VrfEntropyModule). Optional: omit the target if the module is not deployed."
     },
     {
       "contract": "FederationRegistry",
