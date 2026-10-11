@@ -98,8 +98,9 @@ the [delivery plan](ops/DELIVERY_PLAN.md) holds the current state.
   every contract behind delay classes (immediate, 48 hours, 14 days, 30 days). Setters
   for funds, recipients, verifiers and renderers are compare-and-set, and governed
   functions are non-payable. Guardians can veto and pause, never redirect.
-- **Money moves by pull.** No push refunds. Token transfers are checked by exact balance
-  delta, and a failed payment falls back to an escrow.
+- **Money moves by pull.** Refunds are claimed, never pushed. Payouts collect in split
+  wallets that payees release from, token transfers are checked by exact balance delta,
+  and a payment that fails falls back to an escrow.
 - **Signatures are bound.** EIP-712 domains, `abi.encode` hashing, storage-backed replay
   protection, and one shared verifier (low-s ECDSA, ERC-2098, ERC-1271, EIP-7702 aware).
 - **Fail closed, and say so in events.** Custom errors, no soft-failing reads, an event
@@ -113,7 +114,7 @@ the [delivery plan](ops/DELIVERY_PLAN.md) holds the current state.
 | --- | --- | --- |
 | Solidity under `src/` | At most 12,000 non-comment lines (the ADR targets 8–12K) | `tools/check_budgets.py` |
 | Linked libraries | At most 5 | `tools/check_budgets.py` |
-| `delegatecall` and proxies | None in `src/` | `tools/check_budgets.py`; no proxies by design |
+| `delegatecall` and proxies | None in `src/`; the one sanctioned exception is OpenZeppelin's `Multicall` in `lib/` ([ADR 0002](docs/adr/0002-access-manager-hardening.md)) | `tools/check_budgets.py`; no proxies by design |
 | Contract size | EIP-170 (24,576 bytes runtime) and EIP-3860 (49,152 bytes initcode), every contract | `tools/check_budgets.py` on `forge build --sizes` |
 | Auction start | At most 350,000 gas at steady state ([ADR 0003](docs/adr/0003-build-time-decisions.md); ADR 0001 said 300K) | `test/sales/auction/EnglishAuctionGas.t.sol` |
 | Transaction cap | Every transaction fits 16,777,216 gas (EIP-7825, Fusaka) for worst-case inputs | Gas-cap tests; `Limits` bounds every array |
