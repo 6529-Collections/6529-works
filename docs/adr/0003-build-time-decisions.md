@@ -274,9 +274,18 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **The start-gas gate is for a single artist.** The 350K steady-state gate
   applies to `start` and `startWithBid` for a work with one artist. Each extra
   party adds a few thousand gas, which is measured and reported but not gated.
-  Measured on the integrated stack:
-  - steady-state `start` costs about 287K;
-  - the first work ever costs about 449K (a one-time cost).
+  Measured on the integrated stack, steady state, whole transaction:
+
+  | Measure | Gas |
+  | --- | --- |
+  | `start` | about 276K |
+  | `startWithBid` | about 319K |
+  | Two-party `startWithBid` | about 327K |
+  | `settle` | about 176K |
+
+  One-time costs are measured but not gated:
+  - the first work ever, about 437K;
+  - the first bid under a new set of sale terms, about 387K, which happens after genesis, a new currency, or a change to the opening bid or the auction configuration.
 - **Default currencies are set at genesis.** Genesis wiring may call
   `AssetAllowlist.setDefaultCurrency`, so each product's default (ETH) exists
   from the first block. Without it, default-currency works could not start for
