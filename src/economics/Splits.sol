@@ -44,6 +44,23 @@ library Splits {
         return Math.mulDiv(observed, share, DENOMINATOR);
     }
 
+    /// @notice The canonical payee list of a work's royalty wallet (ADR 0001 section 7): the
+    ///         seller wallet takes `DENOMINATOR - feeShare` and the network fee recipient takes
+    ///         `feeShare`, both as fixed payees in address order. `feeShare` must be non-zero and
+    ///         below {DENOMINATOR}; with a zero fee share the seller wallet is the royalty wallet.
+    function royaltyPayees(address seller, address feeRecipient, uint32 feeShare)
+        internal
+        pure
+        returns (ISplitWallet.Payee[] memory payees)
+    {
+        ISplitWallet.Payee memory sellerPayee =
+            ISplitWallet.Payee(0, seller, DENOMINATOR - feeShare);
+        ISplitWallet.Payee memory feePayee = ISplitWallet.Payee(0, feeRecipient, feeShare);
+        payees = new ISplitWallet.Payee[](2);
+        (payees[0], payees[1]) =
+            seller < feeRecipient ? (sellerPayee, feePayee) : (feePayee, sellerPayee);
+    }
+
     function _sortsBefore(ISplitWallet.Payee memory a, ISplitWallet.Payee memory b)
         private
         pure

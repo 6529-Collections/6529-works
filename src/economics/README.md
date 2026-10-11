@@ -14,6 +14,7 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 | `ReleaseVerifier` | The singleton for signed releases (EIP-712, ERC-1271, EIP-7702 through the shared `SignatureVerifier`). An authorization binds wallet, asset, payee, account, recipient, amount, nonce and deadline; the domain binds the chain. Nonces are unordered, single use, per account across all wallets, and revocable. |
 | `AssetAllowlist` | Governed currency allowlist: a status per asset (`Active`, `Deprecated`), a per-currency increment floor and a default currency per product. ETH is admitted at deployment. Admission is compare-and-set on status and floor. |
 | `RevenueEscrow` | Credits a wallet when a payment to it fails. Anyone flushes a credit to its wallet. Governed `recover` moves a credit only to an equivalent replacement wallet. |
+| `EconomicsResolver` | Implements `IEconomicsResolver`: governed per-product economics for new works (Stream and Editions 75/25, Federated 90/10, royalty 6.529%), the network fee recipient, the default license (CC0), `newWorkTerms` (predicted seller and royalty wallets) and `resolveCurrency` through the allowlist. Changes apply to new works only: works lock their terms at mint. |
 | `RevenuePayment` | Internal library for payers: pay the wallet, else credit the escrow. |
 | `ClaimRouter` | Stateless batch claims: up to 50 plain items (fixed payees) or 20 signed items (any payee). |
 | `TokenTransfer`, `Splits` | Internal libraries: strict ERC-20 moves with exact balance deltas; payee-list rules and share maths. |
@@ -105,12 +106,26 @@ recorded in ADR 0003. Every allowlist setter is compare-and-set on a per-asset
 | `AssetAllowlist.setIncrementFloor` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
 | `AssetAllowlist.deprecateAsset` | `Roles.GUARDIAN` | Immediate (tightening) |
 | `RevenueEscrow.recover` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
+| `EconomicsResolver.setFeeTerms` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
+| `EconomicsResolver.setRoyaltyRate` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
+| `EconomicsResolver.setDefaultLicense` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
 
 Withdrawals never read the allowlist: a deprecated or never-admitted asset
 stays withdrawable from wallets and the escrow (fixes RC1 Medium M-3).
 Deprecation is reversible only through a compare-and-set re-admission.
 
+## New work terms
+
+`EconomicsResolver.newWorkTerms(product, payees)` predicts, without deploying:
+- `seller`: `walletFor(payees, 0)`, the artist portion's wallet;
+- `royaltyReceiver`: `walletFor(Splits.royaltyPayees(seller, feeRecipient, feeShare), 0)`,
+  which pays `100,000 - feeShare` to the seller wallet and `feeShare` to the
+  network. It is the seller wallet itself when the fee share is zero.
+
+Deploy either wallet later with exactly those payee lists. Funds sent to the
+predicted addresses before deployment are split once they exist.
+
 ## Not here yet
 
-Royalty and revenue resolvers with scoped assignments, and the settlement
-recorder (single-use settlement keys), are not part of this module yet.
+The settlement recorder (single-use settlement keys) is not part of this
+module yet.
