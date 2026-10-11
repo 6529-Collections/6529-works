@@ -13,11 +13,7 @@ import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
-import {
-    CURRENCY_DEFAULT,
-    PRODUCT_EDITIONS,
-    PRODUCT_STREAM
-} from "../interfaces/types/EconomicsTypes.sol";
+import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "../interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "../interfaces/types/IdentityTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import {
@@ -34,6 +30,7 @@ import {
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { EditionRules } from "../editions/EditionRules.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
 /// @title PackageRegistry
@@ -389,8 +386,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @dev Content, seed and edition fields: a nonzero content hash; an artist seed exactly
     ///      under `SeedPolicy.ARTIST`; an ORIGINAL with empty edition terms; an EDITION_MASTER
-    ///      naming a sale kind, an explicit currency for a nonzero price, and either a fixed size
-    ///      with no window or an open window.
+    ///      with edition terms `EditionRules.isValid` accepts, the same rule 6529 Editions applies
+    ///      at `createEdition`, so a master that mints can always get its edition.
     function _checkTerms(PackageItem calldata item, bytes32 itemHash) private pure {
         EditionTerms calldata e = item.edition;
         bool fixedSize = e.format == EditionFormat.FIXED;
@@ -400,8 +397,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
             bad = bad || !fixedSize || e.size != 0 || e.window != 0 || e.price != 0
                 || e.currency != address(0) || e.saleKind != 0 || e.params.length != 0;
         } else {
-            bad = bad || e.saleKind == 0 || (e.price != 0 && e.currency == CURRENCY_DEFAULT)
-                || (fixedSize ? e.size == 0 || e.window != 0 : e.window == 0);
+            bad = bad || !EditionRules.isValid(e);
         }
         if (bad) revert InvalidItem(itemHash);
     }
