@@ -54,6 +54,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Import-Module $SignerModule -Force
+# .NET file calls resolve relative paths against the process directory, not PowerShell's.
+$State = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($State)
 
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Script = 'script/sepolia/Flows.s.sol:Flows'

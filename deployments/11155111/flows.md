@@ -422,13 +422,18 @@ Two behaviors are worth knowing:
 
 **Real settlement and editions.**
 - r2's auctions end on 12 October 2026, from 20:45:36 UTC (token 1) to 20:47:48 UTC
-  (token 8).
+  (token 8). Token 3, the anti-snipe target below, ends at 20:46:12.
 - r1's auctions end from 19:54:12 to 19:56:36 UTC.
 
-Run these from the repository root after the end. `<module>` is the operator's signer
-module (see the script header). Use a separate state file per instance. Each step
-records the receipt, and `prague` adds the replayed Prague gas. Run `prague` within
-minutes, because the public RPC keeps only recent state.
+The runs' state files are committed:
+- [`flows/r2.json`](flows/r2.json) and [`flows/r1.json`](flows/r1.json) hold each run's
+  addresses, receipts and Prague replays;
+- in `r2.json`, the content rows sent by the second relayer say `relay2`.
+
+The driver appends each new receipt to the state file it is given. Run these from the
+repository root:
+- `<module>` is the operator's signer module (see the script header);
+- run `prague` within minutes, because the public RPC keeps only recent state.
 
 ```powershell
 function Flow {
@@ -436,24 +441,38 @@ function Flow {
         -SignerModule '<module>' @args
     if ($LASTEXITCODE -ne 0) { throw "flow step failed ($LASTEXITCODE)" }
 }
-# r2 (the default record)
-$r2 = @('-State', '<r2-state>')
-foreach ($t in 6, 4, 1, 7, 2, 3, 5, 8) { Flow @r2 -Step settle -TokenId $t }
+$r2 = @('-State', 'deployments/11155111/flows/r2.json')
+$r1 = @('-State', 'deployments/11155111/flows/r1.json', '-Record', 'deployments/11155111/1791746472.json')
+
+# r2, only between 20:31:12 and 20:46:12 UTC: a real anti-snipe bid (token 3 has no bid).
+Flow @r2 -Step bid -TokenId 3 -Bidder bidder1 -Amount 1000000000000000 -Label bid-3-antisnipe
+
+# r2, after 20:47:48 UTC. Token 6 goes first, so its row is the first payout to the seller.
+foreach ($t in 6, 4, 1, 7, 2, 5, 8) { Flow @r2 -Step settle -TokenId $t }
+Flow @r2 -Step settle -TokenId 3   # after its end: 15 minutes after the anti-snipe bid
 Flow @r2 -Step createEdition -TokenId 6
 Flow @r2 -Step openSale -TokenId 6
-Flow @r2 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 1
+Flow @r2 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 1 -Label purchase-first-copy
 Flow @r2 -Step purchase -SaleId 1 -Bidder bidder2 -Quantity 1 -Label purchase-later-copy
 Flow @r2 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 2 -Label purchase-two-copies
 Flow @r2 -Step prague
-# r1: the same steps with
-$r1 = @('-State', '<r1-state>', '-Record', 'deployments/11155111/1791746472.json')
+
+# r1 (ended at 19:56:36 UTC): the same steps without the anti-snipe bid.
+foreach ($t in 6, 4, 1, 7, 2, 3, 5, 8) { Flow @r1 -Step settle -TokenId $t }
+Flow @r1 -Step createEdition -TokenId 6
+Flow @r1 -Step openSale -TokenId 6
+Flow @r1 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 1 -Label purchase-first-copy
+Flow @r1 -Step purchase -SaleId 1 -Bidder bidder2 -Quantity 1 -Label purchase-later-copy
+Flow @r1 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 2 -Label purchase-two-copies
+Flow @r1 -Step prague
 ```
 
 - **Fixed-price sale ID.** `openSale` returns it. It was 1 in simulation on both
   instances, and it stays 1 if nobody opens another fixed-price sale first.
-- **Anti-snipe.** A real anti-snipe bid needs a bid in the last 15 minutes of an auction.
-  Bid on token 2, 3, 5, 7 or 8 in the 15 minutes before its end:
-  `Flow @r2 -Step bid -TokenId <id> -Bidder bidder1 -Amount 1000000000000000 -Label bid-antisnipe`.
+- **Anti-snipe timing.** A real anti-snipe bid needs a bid in the last 15 minutes of an
+  auction. After 20:46:12 UTC on r2, and after 19:56:36 on r1, no auction in this
+  package is live. The simulated row then stands, and a later package would need a new
+  24-hour auction.
 
 **Needs a scheduled operation (not done).**
 - **A shorter auction.** `EnglishAuction.setConfig` is PARAMETER_SETTER (48 hours).
