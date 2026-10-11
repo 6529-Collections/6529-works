@@ -13,51 +13,36 @@ import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
-import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
-import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
-import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
-import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
-import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
+import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
-import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { IStatementLog } from "src/interfaces/IStatementLog.sol";
-import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
-import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
+import { DeployV1 } from "script/DeployV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { MockPermit2, PermitToken } from "../mocks/sales/SaleMocks.sol";
 
-/// @notice Test-only deployment of the whole v1 system, wired exactly as
-///         `config/genesis.example.json` and `config/README.md` describe (integration lane B).
-/// @dev Lane A's deploy library (`script/`, branch `claude/deploy`) was not on `origin` when this
-///      lane started, so this fixture stands in for it. It follows the same rule as the deploy
-///      plan:
-///      - constructor arguments supply every immutable or pinned dependency (the curation
-///        verifier in the package registry, the resolver and escrow in each sale adapter, the
-///        consolidation source in the artist registry, the artist resolver in the statement log,
-///        the initial economics and default license in the economics resolver);
-///      - `GovernanceConfigurator.configure` then applies the committed configuration: the
-///        role, delay and selector map read from the JSON, and the JSON's own wiring calldata
-///        (binds, admitted minters, sale targets and the epoch-0 manifest), with each placeholder
-///        address replaced by the deployed contract it names.
+/// @notice The whole v1 system for the end-to-end flows (integration lane B), deployed and
+///         configured by Lane A's deploy library, `script/DeployV1.sol`: the same code the
+///         deploy script broadcasts.
+/// @dev `DeployV1.deploy` creates every contract in dependency order with CREATE2, immutable
+///      dependencies as constructor arguments; `DeployV1.install` then runs
+///      `GovernanceConfigurator.configure` with `config/genesis.example.json`'s role and selector
+///      map and its wiring (binds, admitted minters, sale targets, default currencies and the
+///      epoch-0 manifest). The JSON's placeholder holders are replaced by this test's actors,
+///      so the curation signers are keys the test holds.
+///
 ///      Only external systems are mocked: the 6529 delegation contract (the identity lane's
 ///      faithful reduction), the Chainlink VRF v2.5 coordinator (the entropy lane's), Permit2
 ///      (the sales lane's faithful reproduction, placed at the canonical address) and an
@@ -80,11 +65,11 @@ abstract contract WorksDeployment is Test {
     MockPermit2 internal permit2;
     PermitToken internal usd;
 
-    // ------------------------------------------------------------------ governance
+    // ------------------------------------------------------------------ the deployment
+    DeployV1.Deployment internal deployment;
+    DeployV1.Manifest internal manifest;
     GovernanceConfigurator internal configurator;
     WorksAccessManager internal manager;
-
-    // ------------------------------------------------------------------ v1 contracts
     ContentStore internal store;
     DependencyRegistry internal dependencies;
     ConsolidationAdapter internal consolidation;
@@ -131,123 +116,96 @@ abstract contract WorksDeployment is Test {
     function _deployWorks() internal {
         signer1 = vm.addr(signer1Pk);
         signer2 = vm.addr(signer2Pk);
-        genesisJson = vm.readFile(GENESIS_PATH);
-        _deployExternals();
-        configurator = new GovernanceConfigurator();
-        manager = configurator.worksManager();
-        _deployContent();
-        _deployIdentityAndEconomics();
-        _deployCuration();
-        _deployCore();
-        _deploySales();
-        if (!deferGenesis) {
-            configurator.configure(_genesisConfig(), MANIFEST_HASH, _genesisWiring());
-        }
-    }
-
-    // ------------------------------------------------------------------ deployment, in order
-
-    function _deployExternals() private {
         delegation = new DelegationManagementMock();
         coordinator = new MockVrfCoordinator();
         deployCodeTo("SaleMocks.sol:MockPermit2", PERMIT2);
         permit2 = MockPermit2(PERMIT2);
         usd = new PermitToken();
+
+        DeployV1.Deployment memory d = DeployV1.deploy(_params());
+        deployment = d;
+        _adopt(d);
+        genesisJson = _withHolders(vm.readFile(GENESIS_PATH));
+        manifest = DeployV1.Manifest(MANIFEST_HASH, "ar://integration-epoch-0-manifest");
+        if (!deferGenesis) DeployV1.install(d, _genesisConfig(), manifest, _genesisWiring());
     }
 
-    function _deployContent() private {
-        store = new ContentStore();
-        cc0TextFileId = _storeText(CC0_TEXT, "text/plain");
-        dependencies = new DependencyRegistry(address(manager), IContentStore(address(store)));
+    function _params() internal view returns (DeployV1.Params memory p) {
+        p.deployer = address(this);
+        p.namespace = keccak256("6529-works/integration-lane-b");
+        p.feeRecipient = networkFee;
+        p.marketOwner = marketOwner;
+        p.delegation = address(delegation);
+        p.cc0Text = CC0_TEXT;
+        p.ethIncrementFloor = ETH_INCREMENT_FLOOR;
+        p.permit2 = PERMIT2;
+        p.auction =
+            IEnglishAuction.AuctionConfig(AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE);
+        p.vrfCoordinator = address(coordinator);
+        p.vrfCoordinatorCodeHash = address(coordinator).codehash;
+        p.vrf = VrfEntropyModule.VrfConfig(1, keccak256("vrf key hash"), 500_000, 3, false);
+        p.vrfRetryDelay = 3 days;
     }
 
-    function _deployIdentityAndEconomics() private {
-        consolidation = new ConsolidationAdapter(IDelegationManagement(address(delegation)));
-        artists = new ArtistRegistry(
-            address(manager),
-            IConsolidationSource(address(consolidation)),
-            address(consolidation).codehash
-        );
-        releaseVerifier = new ReleaseVerifier();
-        splitFactory = new SplitFactory(
-            IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(releaseVerifier))
-        );
-        claimRouter = new ClaimRouter();
-        allowlist = new AssetAllowlist(address(manager), ETH_INCREMENT_FLOOR);
-        economics = new EconomicsResolver(
-            address(manager),
-            IAssetAllowlist(address(allowlist)),
-            ISplitFactory(address(splitFactory)),
-            networkFee,
-            cc0TextFileId
-        );
-        escrow = new RevenueEscrow(address(manager), ISplitFactory(address(splitFactory)));
+    function _adopt(DeployV1.Deployment memory d) private {
+        cc0TextFileId = d.cc0TextFileId;
+        configurator = d.configurator;
+        manager = d.manager;
+        store = d.contentStore;
+        dependencies = d.dependencyRegistry;
+        consolidation = d.consolidationAdapter;
+        artists = d.artistRegistry;
+        releaseVerifier = d.releaseVerifier;
+        splitFactory = d.splitFactory;
+        claimRouter = d.claimRouter;
+        allowlist = d.assetAllowlist;
+        economics = d.economicsResolver;
+        escrow = d.revenueEscrow;
+        verifier = d.curationVerifier;
+        registry = d.packageRegistry;
+        statements = d.statementLog;
+        renderer = Renderer(address(d.renderer));
+        entropy = d.entropyModule;
+        stream = d.stream;
+        records = d.workRecords;
+        editions = Editions(address(d.editions));
+        auction = d.englishAuction;
+        fixedSale = d.fixedPriceSale;
+        dutchSale = d.dutchSale;
     }
 
-    function _deployCuration() private {
-        verifier = new Eip712CurationVerifier(address(manager));
-        registry = new PackageRegistry(
-            address(manager),
-            ICurationVerifier(address(verifier)),
-            address(verifier).codehash,
-            address(artists),
-            address(artists).codehash
-        );
-        statements = new StatementLog(address(manager), address(artists), address(artists).codehash);
-        renderer = new Renderer(
-            IContentStore(address(store)), IStatementLog(address(statements)), INLINE_THRESHOLD
-        );
-        entropy = new VrfEntropyModule(
-            address(manager),
-            address(coordinator),
-            address(coordinator).codehash,
-            VrfEntropyModule.VrfConfig(1, keccak256("vrf key hash"), 500_000, 3, false),
-            3 days,
-            IPackageRegistry(address(registry)),
-            address(registry).codehash
-        );
+    /// @dev The committed genesis JSON with each placeholder holder (`0x...b0xx`) replaced by
+    ///      this test's actor for it.
+    function _withHolders(string memory json) internal view returns (string memory) {
+        address[10] memory actors = [
+            hotAdmin,
+            coldAdmin,
+            guardian1,
+            guardian2,
+            guardian3,
+            signer1,
+            signer2,
+            storageOperator,
+            platform,
+            curator
+        ];
+        uint16[10] memory placeholders =
+            [0xb001, 0xb002, 0xb011, 0xb012, 0xb013, 0xb021, 0xb022, 0xb031, 0xb051, 0xb061];
+        for (uint256 i; i < 10; ++i) {
+            string memory from = vm.toLowercase(vm.toString(address(uint160(placeholders[i]))));
+            json = vm.replace(json, from, vm.toString(actors[i]));
+        }
+        return json;
     }
 
-    function _deployCore() private {
-        stream = new Stream(
-            address(manager),
-            address(registry),
-            address(artists),
-            address(economics),
-            address(entropy),
-            address(renderer),
-            address(renderer).codehash,
-            marketOwner
-        );
-        records = new WorkRecords(
-            address(manager), address(stream), address(store), License("CC0-1.0", cc0TextFileId)
-        );
-        editions =
-            new Editions(address(manager), address(stream), address(stream).codehash, marketOwner);
+    /// @dev The genesis configuration `install` applies: holders and governed selectors.
+    function _genesisConfig() internal view returns (GovernanceConfig.Config memory) {
+        return DeployV1.config(deployment, genesisJson);
     }
 
-    function _deploySales() private {
-        auction = new EnglishAuction(
-            address(manager),
-            address(escrow),
-            IAssetAllowlist(address(allowlist)),
-            address(statements),
-            PERMIT2,
-            IEnglishAuction.AuctionConfig(AUCTION_DURATION, EXTENSION_WINDOW, INCREMENT_SHARE),
-            new address[](0)
-        );
-        fixedSale = new FixedPriceSale(
-            address(manager),
-            IRevenueEscrow(address(escrow)),
-            ISignatureTransfer(PERMIT2),
-            IEconomicsResolver(address(economics))
-        );
-        dutchSale = new DutchSale(
-            address(manager),
-            IRevenueEscrow(address(escrow)),
-            ISignatureTransfer(PERMIT2),
-            IEconomicsResolver(address(economics))
-        );
+    /// @dev The genesis wiring `install` runs, re-encoded with the deployed addresses.
+    function _genesisWiring() internal view returns (GovernanceConfig.Call[] memory) {
+        return DeployV1.wiring(deployment, genesisJson, manifest);
     }
 
     // ------------------------------------------------------------------ content helpers
@@ -303,140 +261,6 @@ abstract contract WorksDeployment is Test {
         out = new bytes(n);
         for (uint256 i; i < n; ++i) {
             out[i] = data[from + i];
-        }
-    }
-
-    // ------------------------------------------------------------------ the committed genesis
-
-    function _at(string memory base, uint256 i) internal pure returns (string memory) {
-        return string.concat(base, "[", vm.toString(i), "]");
-    }
-
-    function _count(string memory base) internal view returns (uint256 n) {
-        while (vm.keyExistsJson(genesisJson, _at(base, n))) ++n;
-    }
-
-    function _jsonString(string memory key) internal view returns (string memory) {
-        return vm.parseJsonString(genesisJson, key);
-    }
-
-    function _eq(string memory a, string memory b) internal pure returns (bool) {
-        return keccak256(bytes(a)) == keccak256(bytes(b));
-    }
-
-    function _roleId(string memory name) internal pure returns (uint64) {
-        if (_eq(name, "ADMIN")) return Roles.ADMIN;
-        for (uint64 role = 1; role < Roles.COUNT; ++role) {
-            if (_eq(name, Roles.label(role))) return role;
-        }
-        revert(string.concat("unknown role ", name));
-    }
-
-    /// @dev The deployed contract (or peer) a JSON name stands for.
-    function _deployed(string memory name) internal view returns (address) {
-        if (_eq(name, "Stream")) return address(stream);
-        if (_eq(name, "WorkRecords")) return address(records);
-        if (_eq(name, "Editions")) return address(editions);
-        if (_eq(name, "PackageRegistry")) return address(registry);
-        if (_eq(name, "CurationVerifier")) return address(verifier);
-        if (_eq(name, "ArtistRegistry")) return address(artists);
-        if (_eq(name, "StatementLog")) return address(statements);
-        if (_eq(name, "EnglishAuction")) return address(auction);
-        if (_eq(name, "FixedPriceSale")) return address(fixedSale);
-        if (_eq(name, "DutchSale")) return address(dutchSale);
-        if (_eq(name, "EconomicsResolver")) return address(economics);
-        if (_eq(name, "AssetAllowlist")) return address(allowlist);
-        if (_eq(name, "RevenueEscrow")) return address(escrow);
-        if (_eq(name, "DependencyRegistry")) return address(dependencies);
-        if (_eq(name, "EntropyModule")) return address(entropy);
-        if (_eq(name, "SplitFactory")) return address(splitFactory);
-        if (_eq(name, "WorksAccessManager")) return address(manager);
-        revert(string.concat("no deployment for ", name));
-    }
-
-    /// @dev The genesis holder a placeholder account (`0x...b0xx`) stands for.
-    function _holder(address placeholder) internal view returns (address) {
-        uint160 p = uint160(placeholder);
-        if (p == 0xb001) return hotAdmin;
-        if (p == 0xb002) return coldAdmin;
-        if (p == 0xb011) return guardian1;
-        if (p == 0xb012) return guardian2;
-        if (p == 0xb013) return guardian3;
-        if (p == 0xb021) return signer1;
-        if (p == 0xb022) return signer2;
-        if (p == 0xb031) return storageOperator;
-        if (p == 0xb051) return platform;
-        if (p == 0xb061) return curator;
-        revert(string.concat("unknown holder ", vm.toString(placeholder)));
-    }
-
-    /// @dev The deployed address behind a contract or peer placeholder, or zero for none.
-    function _placeholderTarget(uint256 word) internal view returns (address) {
-        if (word >> 16 != 0 || (word & 0xff00) != 0xa000) return address(0);
-        string[2] memory lists = [".contracts", ".peers"];
-        for (uint256 l; l < 2; ++l) {
-            for (uint256 i; i < _count(lists[l]); ++i) {
-                string memory c = _at(lists[l], i);
-                address location = vm.parseJsonAddress(genesisJson, string.concat(c, ".address"));
-                if (uint160(location) == word) {
-                    return _deployed(_jsonString(string.concat(c, ".name")));
-                }
-            }
-        }
-        return address(0);
-    }
-
-    /// @dev `cfg` from the JSON: every holder, and every contract's mapped selectors, with the
-    ///      placeholders replaced by this deployment's addresses.
-    function _genesisConfig() internal view returns (GovernanceConfig.Config memory cfg) {
-        uint256 holders = _count(".holders");
-        cfg.grants = new GovernanceConfig.Grant[](holders);
-        for (uint256 i; i < holders; ++i) {
-            string memory h = _at(".holders", i);
-            cfg.grants[i] = GovernanceConfig.Grant(
-                _roleId(_jsonString(string.concat(h, ".role"))),
-                _holder(vm.parseJsonAddress(genesisJson, string.concat(h, ".account")))
-            );
-        }
-        uint256 contracts = _count(".contracts");
-        cfg.targets = new GovernanceConfig.Target[](contracts);
-        for (uint256 i; i < contracts; ++i) {
-            string memory c = _at(".contracts", i);
-            string memory fnBase = string.concat(c, ".functions");
-            uint256 n = _count(fnBase);
-            GovernanceConfig.FunctionRole[] memory fns = new GovernanceConfig.FunctionRole[](n);
-            for (uint256 j; j < n; ++j) {
-                string memory f = _at(fnBase, j);
-                bytes memory raw = vm.parseJsonBytes(genesisJson, string.concat(f, ".selector"));
-                fns[j] = GovernanceConfig.FunctionRole(
-                    bytes4(raw), _roleId(_jsonString(string.concat(f, ".role")))
-                );
-            }
-            cfg.targets[i] =
-                GovernanceConfig.Target(_deployed(_jsonString(string.concat(c, ".name"))), fns);
-        }
-    }
-
-    /// @dev The JSON's wiring calls, its committed calldata with every placeholder word replaced.
-    function _genesisWiring() internal view returns (GovernanceConfig.Call[] memory wiring) {
-        uint256 n = _count(".wiring");
-        wiring = new GovernanceConfig.Call[](n);
-        for (uint256 i; i < n; ++i) {
-            string memory w = _at(".wiring", i);
-            bytes memory data = vm.parseJsonBytes(genesisJson, string.concat(w, ".calldata"));
-            for (uint256 offset = 4; offset + 32 <= data.length; offset += 32) {
-                uint256 word;
-                assembly ("memory-safe") {
-                    word := mload(add(add(data, 0x20), offset))
-                }
-                address real = _placeholderTarget(word);
-                if (real == address(0)) continue;
-                assembly ("memory-safe") {
-                    mstore(add(add(data, 0x20), offset), real)
-                }
-            }
-            wiring[i] =
-                GovernanceConfig.Call(_deployed(_jsonString(string.concat(w, ".contract"))), data);
         }
     }
 

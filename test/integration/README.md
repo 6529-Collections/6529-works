@@ -15,17 +15,17 @@ forge test --match-contract IntegrationGasReport -vv   # prints the gas table
 
 ## Deployment
 
-[`WorksDeployment.sol`](WorksDeployment.sol) deploys every v1 contract in
-dependency order. It follows the rule in [`config/README.md`](../../config/README.md):
-- constructor arguments supply the immutable and pinned dependencies;
-- `GovernanceConfigurator.configure` applies the committed
-  [`config/genesis.example.json`](../../config/genesis.example.json).
+[`WorksDeployment.sol`](WorksDeployment.sol) deploys the system with Lane A's
+deploy library, [`script/DeployV1.sol`](../../script/DeployV1.sol), the same code
+the deploy script broadcasts:
+- `DeployV1.deploy` creates every v1 contract in dependency order, with the immutable
+  and pinned dependencies as constructor arguments;
+- `DeployV1.install` runs `GovernanceConfigurator.configure` with the committed
+  [`config/genesis.example.json`](../../config/genesis.example.json): its role and
+  selector map and its genesis wiring.
 
-The configuration step uses the JSON's role and selector map and its own wiring
-calldata, with each placeholder address replaced by the deployed contract it names.
-This fixture stands in for Lane A's `DeployV1` library (PR #31). That library cannot
-deploy the pending lanes yet, so it cannot wire them at genesis either. The fixture
-should switch to it once those lanes slot into it.
+The JSON's placeholder holders are replaced by the tests' actors, so the curation
+signers are keys the tests hold.
 
 [`IntegrationBase.sol`](IntegrationBase.sol) adds the actors and package building.
 It signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees
@@ -47,20 +47,20 @@ acts directly; any other role is scheduled, waited out and executed.
 | [`Helpers.t.sol`](Helpers.t.sol) | The helpers themselves: the package Merkle trees agree with OpenZeppelin's `MerkleProof` for 1 to 17 leaves. |
 | [`GasReport.t.sol`](GasReport.t.sol) | The budgets: `start`, `startWithBid`, `settle`, `bid`, `consume`, `royaltyInfo`, the first start in a new collection, and `tokenURI` by size. |
 
-## Open findings
+## Findings
 
-Each open finding has a test named `test_Finding_*`. That test passes while the
-finding stands, and fails with "finding fixed" once it is resolved. The check is
-then promoted to a regular test.
+Every integration finding was resolved in the lane that owned it. Each one is now a
+regular test.
 
-| ID | Where | Finding |
+| ID | Resolved by | Test |
 | --- | --- | --- |
-| G-1 | Genesis configuration, `AssetAllowlist` | No default currency is configured at genesis. An item naming `CURRENCY_DEFAULT` cannot start for 14 days, and a free edition in the default currency cannot open. |
+| G-1: no default currency at genesis | #31 wires ETH as each product's default | `Genesis.t.sol` `test_DefaultCurrencyIsEthFromGenesis` |
+| G-2: two-party `startWithBid` over 350K | #34 and #33 | `GasReport.t.sol` `test_Gas_StartWithBid_TwoPartyWork` |
+| E-1: an edition did not take its master's rate | #14 | `MasterEdition.t.sol` `test_EditionTakesTheMastersCurrentRate` |
+| L-1: zero-fee terms blocked edition sales | #35 | `MasterEdition.t.sol` `test_ZeroFeeEditionSaleOpensAndSettles` |
 
-Resolved findings are regular tests now:
-- E-1, an edition did not take its master's royalty rate: fixed by #14.
-- G-2, a two-party `startWithBid` cost more than 350K: fixed by #34 and #33.
-- L-1, zero-fee terms blocked edition sales: fixed by #35.
+While a finding is open, its test is named `test_Finding_*`. That test passes while
+the finding stands, and fails with "finding fixed" once it is resolved.
 
 `GasReport.t.sol` also tracks one observation, G-3, as its own row. The first bid
 under a new set of sale terms pays once to record the terms with their increment
