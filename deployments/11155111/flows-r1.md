@@ -49,8 +49,10 @@ recovery work. That matters for the Editions rows below.
     calldata is longer than a Windows command line.
 - **Sepolia gas** is the receipt's `gasUsed`.
 - **Prague gas** is the same transaction replayed on its parent block's state with
-  Prague costs: `cast run <tx> --quick --evm-version prague` (Foundry 1.7.1). For the
-  rows checked, an anvil fork with `--hardfork prague` gives identical results.
+  Prague costs: `cast run <tx> --quick --evm-version prague` (Foundry 1.7.1). An anvil
+  fork of the parent block with `--hardfork prague` gives the same gas for 26 of the 27
+  rows checked. The exception is the `refreshStanding` that changes nothing: 76,478
+  here, against 86,653 on anvil, which replayed it with a 30M gas limit.
 - **New slots** are the storage slots the transaction writes from zero. They are
   counted from anvil's `prestateTracer` diff of the Prague replay.
 - **Simulated rows** are calls run on the live state with `eth_simulateV1` (reth),
