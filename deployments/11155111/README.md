@@ -91,10 +91,12 @@ Safe. The owners of each Safe are listed in the epoch-0 manifest.
 - The entropy module is the only consumer.
 - Transactions: created [`0xfae30277…`](https://sepolia.etherscan.io/tx/0xfae30277775300db15ae55d7938341077e32989055e9ab727b4194d17a225d32), funded [`0xc6e69fcf…`](https://sepolia.etherscan.io/tx/0xc6e69fcfc38953b00c6c11150b4cfe12f93678024751391aa42148ab5447cd8b), consumer added [`0x112c8d35…`](https://sepolia.etherscan.io/tx/0x112c8d3529bc03974a34b1909af13e512391a2d01605a288a23e8cb8e362dedd).
 
-**The record's `delegationMock` is `true`.** The script compares the address with the
-mainnet one, so any other address counts as a mock. Here it is the official contract with
-the mainnet bytecode. The record will compare code hashes once the deploy-lane change lands;
-this record is left as generated.
+**The record's `delegationMock` is `true`.** When r1 ran, the script compared the address
+with the mainnet one, so any other address counted as a mock. Here it is the official
+contract with the mainnet bytecode. Since
+[#42](https://github.com/6529-Collections/6529-works/pull/42) the script compares code hashes
+and records the delegation's code hash, so later records get this right. This record is left
+as generated.
 
 ### Glamsterdam: gas on Sepolia
 
