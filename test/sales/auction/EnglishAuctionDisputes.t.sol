@@ -78,7 +78,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _expectState(ended, IEnglishAuction.AuctionState.ENDED);
         auction.pause(ended, bytes32(0));
         vm.prank(guardian);
-        _expectState(_saleIdOf(99), IEnglishAuction.AuctionState.NONE);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, _saleIdOf(99)));
         auction.pause(_saleIdOf(99), bytes32(0));
     }
 
@@ -488,7 +488,7 @@ contract EnglishAuctionFederationTest is AuctionBase {
         registry.register(address(federated), e);
         assertTrue(auction.isTarget(address(federated)));
         uint256 saleId = auction.start(address(federated), "");
-        (LockedTerms memory lt,) = auction.lockedTerms(saleId);
+        LockedTerms memory lt = auction.lockedTerms(saleId);
         assertEq(lt.feeShare, 10_000, "the registry's fee, not the token's");
         _bidEth(saleId, alice, 1 ether);
         vm.warp(block.timestamp + DURATION);

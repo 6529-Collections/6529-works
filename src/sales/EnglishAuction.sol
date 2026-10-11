@@ -149,15 +149,8 @@ contract EnglishAuction is
     mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
-    /// @notice The emergency pause stopped new sales from starting.
-    event Paused(address account);
-    /// @notice New sales may start again.
-    event Unpaused(address account);
-
-    /// @notice Starts are paused.
-    error EnforcedPause();
-    /// @notice Starts are not paused.
-    error ExpectedPause();
+    /// @notice `unpause` was called while the adapter is not paused.
+    error NotPaused();
     /// @notice A dependency has no code, is a delegated account, or lacks its ERC-165 interface.
     error InvalidDependency(address dependency);
     /// @notice A configuration is outside the bounds above.
@@ -208,7 +201,7 @@ contract EnglishAuction is
     // ------------------------------------------------------------------------------- start
 
     /// @inheritdoc IEnglishAuction
-    /// @dev Reverts with `EnforcedPause` while the emergency pause is on.
+    /// @dev Reverts with `SalePaused` while the emergency pause is on.
     function start(address token, bytes calldata mintData)
         external
         nonReentrant
@@ -277,7 +270,7 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     function minimumBid(uint256 saleId) external view returns (uint256) {
         Sale storage s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert InvalidAuctionState(saleId, AuctionState.NONE);
+        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
         return _minimumBid(s, _terms[s.termsId]);
     }
 
@@ -392,24 +385,25 @@ contract EnglishAuction is
 
     // -------------------------------------------------------------------------- governance
 
-    /// @notice Stops new sales from starting (`start`, `startWithBid`). PAUSER role, immediate.
-    /// @dev Auctions already started are untouched: bids, settlement, claims, refunds and
-    ///      withdrawals go on, because stopping a live auction near its end would distort its
-    ///      outcome. The per-auction dispute pause, `pause(saleId, disputeRef)`, is separate.
+    /// @inheritdoc ISaleAdapter
+    /// @dev On the auction the pause stops only `start` and `startWithBid`. Auctions already
+    ///      started are untouched: bids, settlement, claims, refunds and withdrawals go on,
+    ///      because stopping a live auction near its end would distort its outcome. The
+    ///      per-auction dispute pause, `pause(saleId, disputeRef)`, is separate.
     function pause() external restricted {
-        if (_settings.paused) revert EnforcedPause();
+        if (_settings.paused) revert SalePaused();
         _settings.paused = true;
         emit Paused(msg.sender);
     }
 
-    /// @notice Lets new sales start again. UNPAUSER role.
+    /// @inheritdoc ISaleAdapter
     function unpause() external restricted {
-        if (!_settings.paused) revert ExpectedPause();
+        if (!_settings.paused) revert NotPaused();
         _settings.paused = false;
         emit Unpaused(msg.sender);
     }
 
-    /// @notice Whether new sales are stopped from starting.
+    /// @inheritdoc ISaleAdapter
     function paused() external view returns (bool) {
         return _settings.paused;
     }
@@ -473,7 +467,7 @@ contract EnglishAuction is
     function auction(uint256 saleId) external view returns (Auction memory a) {
         Sale storage s = _sales[saleId];
         a.state = _state(s);
-        if (a.state == AuctionState.NONE) revert InvalidAuctionState(saleId, a.state);
+        if (a.state == AuctionState.NONE) revert UnknownSale(saleId);
         Terms storage t = _terms[s.termsId];
         a.token = s.token;
         a.tokenId = s.tokenId;
@@ -494,18 +488,13 @@ contract EnglishAuction is
         }
     }
 
-    /// @notice A sale's terms in the shared shape: the locked currency, and the seller and fee
-    ///         terms the token reports (the registry's fee share for a federated token).
-    /// @return lt The terms; `price` is zero, as for every English auction.
-    /// @return creator The artist's current authority, who receives the token if no one bids.
-    function lockedTerms(uint256 saleId)
-        external
-        view
-        returns (LockedTerms memory lt, address creator)
-    {
+    /// @inheritdoc IEnglishAuction
+    /// @dev `price` is zero, as for every English auction; a federated token's fee share is its
+    ///      registry entry's, locked at start.
+    function lockedTerms(uint256 saleId) external view returns (LockedTerms memory lt) {
         Sale storage s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert InvalidAuctionState(saleId, AuctionState.NONE);
-        return _lockedTerms(s);
+        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
+        (lt,) = _lockedTerms(s);
     }
 
     /// @inheritdoc IEnglishAuction
@@ -557,7 +546,7 @@ contract EnglishAuction is
 
     function _start(address token, bytes calldata mintData) private returns (uint256 saleId) {
         Settings memory c = _settings;
-        if (c.paused) revert EnforcedPause();
+        if (c.paused) revert SalePaused();
         bool listed = _listed[token];
         if (!listed && !isTarget(token)) revert TargetNotAllowed(token);
         (uint256 tokenId, PrimaryTerms memory terms) =
@@ -832,6 +821,7 @@ contract EnglishAuction is
             _endPause(saleId, s, MAX_PAUSE);
         }
         AuctionState state = _state(s);
+        if (state == AuctionState.NONE) revert UnknownSale(saleId);
         if (state != wanted) revert InvalidAuctionState(saleId, state);
     }
 

@@ -295,7 +295,7 @@ contract EnglishAuctionTest is AuctionBase {
 
     function test_LockedTerms_ReadBackFromTheToken() public {
         uint256 saleId = _start();
-        (LockedTerms memory lt, address creator) = auction.lockedTerms(saleId);
+        LockedTerms memory lt = auction.lockedTerms(saleId);
         assertEq(lt.token, address(stream));
         assertEq(lt.id, 1);
         assertEq(lt.currency, ETH);
@@ -303,12 +303,8 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(lt.seller, seller);
         assertEq(lt.feeRecipient, network);
         assertEq(lt.feeShare, FEE);
-        assertEq(creator, artist);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEnglishAuction.InvalidAuctionState.selector, 7, IEnglishAuction.AuctionState.NONE
-            )
-        );
+        assertEq(stream.primaryTerms(1, "").creator, artist);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 7));
         auction.lockedTerms(7);
     }
 
@@ -927,17 +923,9 @@ contract EnglishAuctionTest is AuctionBase {
     // ------------------------------------------------------------------------------ views
 
     function test_Views_UnknownSale() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEnglishAuction.InvalidAuctionState.selector, 7, IEnglishAuction.AuctionState.NONE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 7));
         auction.auction(7);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IEnglishAuction.InvalidAuctionState.selector, 7, IEnglishAuction.AuctionState.NONE
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 7));
         auction.minimumBid(7);
         assertEq(auction.saleIdOf(address(stream), 7), uint256(keccak256(abi.encode(stream, 7))));
         assertEq(auction.pendingDelivery(7), address(0));
@@ -951,16 +939,16 @@ contract EnglishAuctionTest is AuctionBase {
         _bidEth(live, alice, 1 ether);
         uint256 quiet = _start();
         vm.expectEmit(address(auction));
-        emit EnglishAuction.Paused(pauser);
+        emit ISaleAdapter.Paused(pauser);
         vm.prank(pauser);
         auction.pause();
         assertTrue(auction.paused());
 
-        vm.expectRevert(EnglishAuction.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         _start();
         vm.deal(carol, 1 ether);
         vm.prank(carol);
-        vm.expectRevert(EnglishAuction.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         auction.startWithBid{ value: 1 ether }(
             address(stream), "", address(0), _direct(carol, 1 ether)
         );
@@ -977,7 +965,7 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(seller.balance, 1.5 ether);
 
         vm.expectEmit(address(auction));
-        emit EnglishAuction.Unpaused(unpauser);
+        emit ISaleAdapter.Unpaused(unpauser);
         vm.prank(unpauser);
         auction.unpause();
         assertFalse(auction.paused());
@@ -991,12 +979,12 @@ contract EnglishAuctionTest is AuctionBase {
         );
         auction.pause();
         vm.prank(unpauser);
-        vm.expectRevert(EnglishAuction.ExpectedPause.selector);
+        vm.expectRevert(EnglishAuction.NotPaused.selector);
         auction.unpause();
         vm.prank(pauser);
         auction.pause();
         vm.prank(pauser);
-        vm.expectRevert(EnglishAuction.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         auction.pause();
         vm.prank(pauser);
         vm.expectRevert(
