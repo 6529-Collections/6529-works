@@ -13,8 +13,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         `forge test --match-contract IntegrationGasReport -vv` to print the table.
 /// @dev Every figure is a whole transaction: 21,000 intrinsic, the calldata (EIP-2028, or the
 ///      EIP-7623 floor when higher) and the execution measured with every contract cooled first.
-///      The execution includes a cold call into the target (2,600 gas a real transaction does not
-///      pay), so the figures are slightly pessimistic.
+///      The execution is the called frame's own gas (`vm.lastCallGas`), which is what a
+///      transaction to the target executes: the test's cold call into the target and its value
+///      transfer are paid by the caller's frame and are not counted. Refunds are not deducted.
 ///
 ///      Steady state (ADR 0003): Stream, the collection, the auction's custody balance, the
 ///      artist's move-nonce word and the auction's shared sale terms (with and without the

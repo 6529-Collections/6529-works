@@ -31,8 +31,9 @@ import { WorksDeployment } from "./WorksDeployment.sol";
 
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
 /// @dev Every helper drives the real contracts the way an off-chain tool or a wallet would: it
-///      signs EIP-712 digests read from the contracts, builds OpenZeppelin `MerkleProof` trees over
-///      `WorksHashing.leaf(itemHash)` and submits ordinary transactions.
+///      signs EIP-712 digests read from the contracts, builds sorted-pair Merkle trees over
+///      `WorksHashing.leaf(itemHash)` (checked against OpenZeppelin `MerkleProof` in
+///      `Helpers.t.sol`) and submits ordinary transactions.
 abstract contract IntegrationBase is WorksDeployment {
     /// @dev A package item with the media list its `mediaHash` commits to.
     struct Work {
@@ -481,9 +482,7 @@ abstract contract IntegrationBase is WorksDeployment {
         for (uint256 i; i < 6; ++i) {
             (, ids[i]) = _start(root, works, i);
             records.openRecord(ids[i], works[i].item, works[i].media);
-            if (i < 4) {
-                while (!store.attestBase64(works[i].media[0].fileId)) { }
-            }
+            if (i < 4) _attestAll(works[i].media[0].fileId);
             records.syncOnChain(ids[i]);
         }
         console2.log("Stream.tokenURI gas, cold (stored bytes of the primary file)");
@@ -576,13 +575,30 @@ abstract contract IntegrationBase is WorksDeployment {
 
     /// @dev `vm.lastCallGas().gasTotalUsed`, read by hand: the pinned forge-std declares a sixth
     ///      `Gas` field (`gasStateUsed`) that Foundry 1.7.1 does not return yet, so the typed
-    ///      call fails to decode.
+    ///      call fails to decode. The layout is checked, so a drift fails instead of reading the
+    ///      wrong field: five or six words, a used gas below the frame's limit and the cap, and
+    ///      limit = used + remaining.
     function _lastCallGasUsed() internal view returns (uint256 used) {
         (bool ok, bytes memory ret) =
             address(vm).staticcall(abi.encodeWithSignature("lastCallGas()"));
-        require(ok && ret.length >= 64, "lastCallGas");
+        require(ok && (ret.length == 160 || ret.length == 192), "lastCallGas: layout");
+        uint256 limit;
+        uint256 remaining;
         assembly ("memory-safe") {
+            limit := mload(add(ret, 0x20))
             used := mload(add(ret, 0x40))
+            remaining := mload(add(ret, 0xa0))
         }
+        require(used != 0 && used < TX_GAS_CAP && limit == used + remaining, "lastCallGas: values");
+    }
+
+    /// @dev Runs the permissionless base64 attestation to completion, bounded: each call checks
+    ///      `ATTEST_CHUNKS_PER_CALL` chunks, so a file of at most `MAX_CHUNKS` needs few calls.
+    function _attestAll(bytes32 fileId) internal {
+        uint256 calls = store.MAX_CHUNKS() / store.ATTEST_CHUNKS_PER_CALL() + 1;
+        for (uint256 i; i < calls; ++i) {
+            if (store.attestBase64(fileId)) return;
+        }
+        revert("attestBase64 did not complete");
     }
 }

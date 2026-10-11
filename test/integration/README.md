@@ -44,6 +44,7 @@ acts directly; any other role is scheduled, waited out and executed.
 | [`Dispute.t.sol`](Dispute.t.sol) | 5. Guardian pause; the PLATFORM `DISPUTE_OUTCOME` statement shown by the renderer; the 48-hour governed `cancel` (refund, then burn); `releaseContent`; the rightful artist's item consumes. Also a rejected dispute, a lapsed pause, an after-sale dispute and the emergency pause. |
 | [`VrfWork.t.sol`](VrfWork.t.sol) | 6. `requestSeed`, the mock fulfilment, `start`, and the seed in the metadata. Also the 3-day retry and the artist seed. |
 | [`Genesis.t.sol`](Genesis.t.sol) | 7. Deploy, configure and wire. The readback passes and the configurator keeps no ADMIN. Guardians cancel hostile admin operations, the cold admin removes the hot admin, and `configure` fits the transaction cap. |
+| [`Helpers.t.sol`](Helpers.t.sol) | The helpers themselves: the package Merkle trees agree with OpenZeppelin's `MerkleProof` for 1 to 17 leaves. |
 | [`GasReport.t.sol`](GasReport.t.sol) | The budgets: `start`, `startWithBid`, `settle`, `bid`, `consume`, `royaltyInfo`, the first start in a new collection, and `tokenURI` by size. |
 
 ## Open findings
