@@ -52,10 +52,11 @@ contract EnglishAuctionGasTest is Test {
     uint256 internal constant AUCTION_SHARE_BUDGET = 50_000;
     /// @dev The first `startWithBid` after governance changes the config, an opening bid or a
     ///      floor writes up to two new terms records (the start record and the one with the
-    ///      floor), once per change: a bound, not the steady-state gate (PR #33 review).
+    ///      floor), once per change: a ceiling with headroom (measured about 433K), not an
+    ///      expected value and not the steady-state gate (PR #33 review).
     uint256 internal constant FIRST_AFTER_CHANGE_BOUND = 450_000;
     /// @dev A cold first bid (about 56K) plus one new terms record: its key, two words and the
-    ///      counter (about 70K).
+    ///      counter (about 70K). A ceiling with headroom (measured about 126K), not a target.
     uint256 internal constant FIRST_BID_NEW_RECORD_BOUND = 140_000;
 
     AccessManager internal manager;

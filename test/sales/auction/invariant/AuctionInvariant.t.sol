@@ -209,8 +209,12 @@ abstract contract AuctionInvariantBase is AuctionHandlerFixture {
         assertEq(handler.ghostDeposited(), _out());
     }
 
-    /// @dev Decodes the sale's slot 0 and its terms record (see `EnglishAuction.Sale` and
-    ///      `EnglishAuction.Terms` for the packing).
+    /// @dev Decodes the sale's slot 0 and its terms record. Bit offsets, as `forge inspect
+    ///      EnglishAuction storageLayout --json` reports them: `Sale` slot 0 is token 0..159,
+    ///      tokenId 160..191, endTime 192..223, termsId 224..239; `Terms` slot 0 is currency
+    ///      0..159, incrementFloor 160..255; slot 1 is openingBid 0..95, incrementShare 96..119,
+    ///      extensionWindow 120..143. A wrong offset fails the invariant on correct code, since
+    ///      the handler's expectations are independent nonzero values.
     function _storedTerms(uint256 saleId) internal view returns (StoredTerms memory t) {
         uint256 sale = uint256(vm.load(address(auction), keccak256(abi.encode(saleId, SALES_SLOT))));
         t.token = address(uint160(sale));
