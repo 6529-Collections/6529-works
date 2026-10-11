@@ -51,7 +51,7 @@ contract TypehashesTest is Test {
         );
         assertEq(
             Typehashes.OVERRIDE_ACCEPTANCE,
-            0xcccdd16a86d667337789cb112f688c2a3aabcf081e5b281efc5ea2c4ed5e26f0
+            0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
         );
         assertEq(
             Typehashes.PHASE, 0x921a1eebb9b36af81620ff4a1a8cefecb30f1bef4e32aa373c694354dc051290

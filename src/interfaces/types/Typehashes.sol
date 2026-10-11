@@ -54,11 +54,12 @@ library Typehashes {
         "IdentityChange(uint256 artistId,address authority,address payout,bytes32 profileId,"
         "bytes32 profileDocHash,uint256 nonce,uint64 deadline)"
     );
-    /// @notice The new authority accepts a network override (artist registry domain).
+    /// @notice The new authority accepts a network override (artist registry domain). It binds
+    ///         no change nonce, so a key holder cannot void it by burning nonces; the registry
+    ///         consumes it once by digest.
     bytes32 internal constant OVERRIDE_ACCEPTANCE = keccak256(
         "OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,"
-        "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint256 nonce,"
-        "uint64 deadline)"
+        "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
     );
     /// @notice One fixed-price phase, as typed inside `PHASE_CONFIGURATION`.
     bytes32 internal constant PHASE = keccak256(

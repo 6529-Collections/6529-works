@@ -88,7 +88,7 @@ falls back to `ADMIN`.
 - **Pending contracts:** a configured contract whose artifact source is not in the
   repository yet is reported as pending and passes. It is mapped ahead from its lane's
   branch, so its merge never turns `main` red, and it is checked in full once its source
-  lands. Today these are Stream, WorkRecords, Editions and ArtistRegistry.
+  lands. Today these are Stream, WorkRecords and Editions.
 
 Selectors and wiring calldata are generated from the build artifacts and `cast calldata`,
 not typed by hand. When a lane merges, add its contract's `implementation` and its

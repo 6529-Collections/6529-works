@@ -233,8 +233,13 @@ default when the sale starts".
 1. A lost or stolen key: an established consolidated wallet (6529 delegation,
    use case 999, at least 30 days old, not expired) stages a STANDARD change,
    with the new authority's signed acceptance.
-2. The registry captures the established consolidated wallets at staging as
-   cancellers. An authority can also burn its current change nonce
+2. The registry captures cancellers at staging: the effective wallets in the
+   artist's sticky standing snapshot. A refresh records every two-way
+   consolidation, a young one as pending until it is 30 days old; a keeper or
+   the 6529.io UI refreshes after consolidation events. A wallet that is no
+   longer consolidated keeps standing until a refresh at least 30 days after it
+   went missing, so revoking the artist's consolidations cannot strip their
+   standing. An authority can also burn its current change nonce
    (`revokeNonce`) so that a change it pre-signed can never be staged.
    - For 7 days, the previous authority or any captured wallet can cancel.
    - The guardian can veto (`vetoChange`), which blocks a change but never
