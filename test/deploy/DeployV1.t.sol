@@ -10,9 +10,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
-import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
@@ -24,13 +22,18 @@ import {
     PRODUCT_FEDERATED,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
-import { LockedTerms, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
+import { License } from "src/interfaces/types/PackageTypes.sol";
+import { DeployGuards } from "script/DeployGuards.sol";
+import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
+import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
-import { MockMintTarget } from "../mocks/auction/AuctionMocks.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { MockEditionTarget } from "../mocks/sales/SaleMocks.sol";
 
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
@@ -93,6 +96,44 @@ contract DeployV1Test is Test {
         VerifyV1.checkWired(d, call);
     }
 
+    function checkPlatformPathExternal(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory cfg
+    ) external view {
+        VerifyV1.checkPlatformPath(d, cfg);
+    }
+
+    function checkExternal(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        GovernanceConfig.Call[] memory calls
+    ) external view {
+        VerifyV1.check(d, cfg, calls);
+    }
+
+    function checkCc0External(DeployV1.Deployment memory d, bytes32 digest) external view {
+        VerifyV1.checkCc0(d, digest);
+    }
+
+    function checkAddressesExternal(
+        DeployV1.Deployment memory predicted,
+        DeployV1.Deployment memory recorded
+    ) external pure {
+        VerifyV1.checkAddresses(predicted, recorded);
+    }
+
+    function configExternal(DeployV1.Deployment memory d, string memory genesis)
+        external
+        view
+        returns (GovernanceConfig.Config memory)
+    {
+        return DeployV1.config(d, genesis);
+    }
+
+    function requireEditionsExternal() external view {
+        DeployV1.requireEditions();
+    }
+
     function wiringExternal(DeployV1.Deployment memory d, string memory genesis)
         external
         view
@@ -145,120 +186,6 @@ contract DeployV1Test is Test {
         for (uint256 i; i < products.length; ++i) {
             assertEq(d.assetAllowlist.defaultCurrency(products[i]), address(0), "ETH");
         }
-    }
-
-    // ------------------------------------------------- default currency (finding G-1)
-
-    /// @dev Genesis with a mock Stream on the auction and a mock Editions on the fixed-price
-    ///      sale, both listed by genesis wiring (`setTarget`, as the JSON does for the real
-    ///      tokens once they land). Both mocks price in `CURRENCY_DEFAULT`. Without
-    ///      `withDefaults`, the JSON's `setDefaultCurrency` calls are dropped.
-    function _genesisWithDefaultCurrencyItems(bool withDefaults)
-        internal
-        returns (DeployV1.Deployment memory d, MockMintTarget stream, MockEditionTarget editions)
-    {
-        DeployV1.Params memory p = _params();
-        d = DeployV1.deploy(p);
-        stream = new MockMintTarget();
-        editions = new MockEditionTarget();
-        stream.setAdmittedMinter(address(d.englishAuction), true);
-        stream.setTerms(
-            PrimaryTerms(
-                SaleKind.ENGLISH_AUCTION,
-                CURRENCY_DEFAULT,
-                0,
-                "",
-                makeAddr("seller"),
-                p.feeRecipient,
-                5_000,
-                makeAddr("artist")
-            )
-        );
-        editions.setTerms(
-            1,
-            PrimaryTerms(
-                SaleKind.FIXED_PRICE,
-                CURRENCY_DEFAULT,
-                0, // a gift: CURRENCY_DEFAULT is for zero-price sales only
-                "",
-                makeAddr("seller"),
-                p.feeRecipient,
-                5_000,
-                makeAddr("artist")
-            ),
-            100
-        );
-
-        GovernanceConfig.Call[] memory json_ = DeployV1.wiring(d, json, manifest);
-        GovernanceConfig.Call[] memory calls = new GovernanceConfig.Call[](json_.length + 2);
-        uint256 n;
-        for (uint256 i; i < json_.length; ++i) {
-            if (
-                !withDefaults
-                    && bytes4(json_[i].data) == IAssetAllowlist.setDefaultCurrency.selector
-            ) {
-                continue;
-            }
-            calls[n++] = json_[i];
-        }
-        calls[n++] = GovernanceConfig.Call(
-            address(d.englishAuction),
-            abi.encodeCall(ISaleAdapter.setTarget, (address(stream), true))
-        );
-        calls[n++] = GovernanceConfig.Call(
-            address(d.fixedPriceSale),
-            abi.encodeCall(ISaleAdapter.setTarget, (address(editions), true))
-        );
-        assembly ("memory-safe") {
-            mstore(calls, n)
-        }
-        DeployV1.install(d, DeployV1.config(d, json), manifest, calls);
-    }
-
-    function _giftPhase() internal view returns (IFixedPriceSale.Phase[] memory phases) {
-        phases = new IFixedPriceSale.Phase[](1);
-        phases[0] = IFixedPriceSale.Phase(
-            uint64(block.timestamp), uint64(block.timestamp + 1 days), bytes32(0), 0, false, false
-        );
-    }
-
-    /// G-1: a `CURRENCY_DEFAULT` item starts in the genesis block, with no governance delay.
-    function test_CurrencyDefaultItemsStartRightAfterGenesis() public {
-        (DeployV1.Deployment memory d, MockMintTarget stream, MockEditionTarget editions) =
-            _genesisWithDefaultCurrencyItems(true);
-        uint256 genesisTime = block.timestamp;
-
-        // A 6529 Stream auction: EnglishAuction reads AssetAllowlist.defaultCurrency directly.
-        uint256 saleId = d.englishAuction.start(address(stream), "");
-        assertEq(d.englishAuction.lockedTerms(saleId).currency, CURRENCY_ETH, "auction in ETH");
-
-        // A 6529 Editions gift: MintSaleBase resolves through EconomicsResolver.resolveCurrency.
-        vm.prank(makeAddr("artist"));
-        uint256 giftId = d.fixedPriceSale
-            .openSale(address(editions), 1, _giftPhase(), IFixedPriceSale.ArtistConsent(0, 0, ""));
-        (LockedTerms memory terms,,) = d.fixedPriceSale.sale(giftId);
-        assertEq(terms.currency, CURRENCY_ETH, "gift in ETH");
-
-        assertEq(block.timestamp, genesisTime, "no time passed");
-    }
-
-    /// The control: without the genesis defaults, both items wait out FUNDS_SETTER's delay.
-    function test_WithoutGenesisDefaultsCurrencyDefaultItemsCannotStart() public {
-        (DeployV1.Deployment memory d, MockMintTarget stream, MockEditionTarget editions) =
-            _genesisWithDefaultCurrencyItems(false);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, PRODUCT_STREAM)
-        );
-        d.englishAuction.start(address(stream), "");
-
-        IFixedPriceSale.Phase[] memory phases = _giftPhase();
-        vm.prank(makeAddr("artist"));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, CURRENCY_DEFAULT)
-        );
-        d.fixedPriceSale
-            .openSale(address(editions), 1, phases, IFixedPriceSale.ArtistConsent(0, 0, ""));
     }
 
     function test_GenesisStoresTheCc0TextCompleteOnChain() public {
@@ -343,6 +270,40 @@ contract DeployV1Test is Test {
         );
         assertEq(address(d.configurator), configurator);
         assertEq(address(d.manager), vm.computeCreateAddress(configurator, 1));
+        // Every contract, recomputed from its initcode (M-5); this test deploys from itself.
+        DeployV1.Deployment memory predicted = DeployV1.predict(p, d.cc0TextFileId, address(this));
+        assertEq(keccak256(abi.encode(predicted)), keccak256(abi.encode(d)), "predict == deploy");
+        this.checkAddressesExternal(predicted, d);
+    }
+
+    function test_PredictionFollowsEveryConstructorParameter() public {
+        DeployV1.Params memory p = _params();
+        MockVrfCoordinator coordinator = new MockVrfCoordinator();
+        p.vrfCoordinator = address(coordinator);
+        p.vrfCoordinatorCodeHash = address(coordinator).codehash;
+        p.vrf = VrfEntropyModule.VrfConfig(1, keccak256("key hash"), 200_000, 3, false);
+        p.vrfRetryDelay = 3 days;
+        DeployV1.Deployment memory d = DeployV1.deploy(p);
+        this.checkAddressesExternal(DeployV1.predict(p, d.cc0TextFileId, address(this)), d);
+        // A recorded parameter that differs moves the contracts that take it, and every one
+        // that pins them after it.
+        p.marketOwner = makeAddr("someone else");
+        vm.expectPartialRevert(VerifyV1.AddressMismatch.selector);
+        this.checkAddressesExternal(DeployV1.predict(p, d.cc0TextFileId, address(this)), d);
+        p = _params();
+        p.vrfCoordinator = address(coordinator);
+        p.vrfCoordinatorCodeHash = address(coordinator).codehash;
+        p.vrf = VrfEntropyModule.VrfConfig(1, keccak256("key hash"), 200_000, 3, false);
+        p.vrfRetryDelay = 4 days;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.AddressMismatch.selector,
+                "EntropyModule",
+                DeployV1.predict(p, d.cc0TextFileId, address(this)).entropyModule,
+                address(d.entropyModule)
+            )
+        );
+        this.checkAddressesExternal(DeployV1.predict(p, d.cc0TextFileId, address(this)), d);
     }
 
     function test_RecordedAddressesReload() public {
@@ -363,6 +324,51 @@ contract DeployV1Test is Test {
         vm.chainId(11_155_111); // Sepolia
         vm.expectRevert(DeployV1.RendererPending.selector);
         this.deployExternal(p);
+    }
+
+    function test_EditionsIsRequiredOffAnvil() public {
+        this.requireEditionsExternal(); // anvil: the pending lane may be missing
+        vm.chainId(11_155_111);
+        vm.expectRevert(DeployV1.EditionsPending.selector);
+        this.requireEditionsExternal();
+    }
+
+    function test_TheRolesTableMustBeRolesSol() public {
+        DeployV1.Deployment memory d = DeployV1.deploy(_params());
+        // FUNDS_SETTER's 14 days shortened to 48 hours in the published table.
+        string memory edited = vm.replace(
+            json,
+            '"name": "FUNDS_SETTER",\n      "id": 10,\n      "executionClass": "funds",\n      "executionDelay": 1209600',
+            '"name": "FUNDS_SETTER",\n      "id": 10,\n      "executionClass": "funds",\n      "executionDelay": 172800'
+        );
+        assertTrue(keccak256(bytes(edited)) != keccak256(bytes(json)), "edited");
+        vm.expectRevert(abi.encodeWithSelector(DeployV1.RoleTableMismatch.selector, "FUNDS_SETTER"));
+        this.configExternal(d, edited);
+    }
+
+    function test_TheRolesTableMustListEveryRoleOnce() public {
+        DeployV1.Deployment memory d = DeployV1.deploy(_params());
+        // The last role (CURATOR) removed from the published table.
+        string memory curator = string.concat(
+            "    },\n    {\n      \"name\": \"CURATOR\",\n      \"id\": 12,\n",
+            "      \"executionClass\": \"immediate\",\n      \"executionDelay\": 0,\n",
+            "      \"grantClass\": \"successor\",\n      \"grantDelay\": 2592000\n    }\n  ],"
+        );
+        string memory missing = vm.replace(json, curator, "    }\n  ],");
+        assertTrue(keccak256(bytes(missing)) != keccak256(bytes(json)), "edited");
+        vm.expectRevert(abi.encodeWithSelector(DeployV1.RoleTableMismatch.selector, "count"));
+        this.configExternal(d, missing);
+    }
+
+    function test_DroppedListsWhatTheDeploymentLacks() public {
+        DeployV1.Deployment memory d = DeployV1.deploy(_params());
+        string[] memory gone = DeployV1.dropped(d, json);
+        // Editions (pending) and the entropy module (no coordinator) are not deployed: their
+        // targets, and every wiring call on or naming Editions.
+        assertEq(gone.length, 9);
+        assertEq(gone[0], "Editions");
+        assertEq(gone[1], "EntropyModule");
+        assertEq(gone[2], "Stream.bindEditions(address)");
     }
 
     function test_ADelegationAddressWithoutCodeIsRefused() public {
@@ -446,9 +452,166 @@ contract DeployV1Test is Test {
         this.wiringExternal(d, broken);
     }
 
+    // ------------------------------------------------------------------ readback guards
+
+    function test_ReadbackNeedsAPlatformHolder() public {
+        (DeployV1.Deployment memory d, GovernanceConfig.Config memory cfg,) = _genesis(_params());
+        _settle(d);
+        GovernanceConfig.Config memory without = _withoutRole(cfg, Roles.PLATFORM);
+        vm.expectRevert(VerifyV1.PlatformHolderMissing.selector);
+        this.checkPlatformPathExternal(d, without);
+    }
+
+    function test_ReadbackNeedsPlatformsImmediatePath() public {
+        (DeployV1.Deployment memory d, GovernanceConfig.Config memory cfg,) = _genesis(_params());
+        _settle(d);
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            if (cfg.grants[i].role == Roles.PLATFORM) cfg.grants[i].account = makeAddr("no role");
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.PlatformPathClosed.selector,
+                address(d.fixedPriceSale),
+                IFixedPriceSale.openSale.selector
+            )
+        );
+        this.checkPlatformPathExternal(d, cfg);
+    }
+
+    function test_ReadbackCatchesARoleGrantedToTheConfigurator() public {
+        (
+            DeployV1.Deployment memory d,
+            GovernanceConfig.Config memory cfg,
+            GovernanceConfig.Call[] memory calls
+        ) = _genesis(_params());
+        // The hot admin grants the configurator a role (30-day ADMIN delay, not vetoed).
+        _adminExecutes(
+            d,
+            address(d.manager),
+            abi.encodeCall(IAccessManager.grantRole, (Roles.KEEPER, address(d.configurator), 0))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.ConfiguratorHoldsRole.selector, Roles.KEEPER)
+        );
+        this.checkExternal(d, cfg, calls);
+    }
+
+    function test_ReadbackCatchesATargetMovedToAnotherAuthority() public {
+        (
+            DeployV1.Deployment memory d,
+            GovernanceConfig.Config memory cfg,
+            GovernanceConfig.Call[] memory calls
+        ) = _genesis(_params());
+        address elsewhere = address(new AccessManager(address(this)));
+        _adminExecutes(
+            d,
+            address(d.manager),
+            abi.encodeCall(IAccessManager.updateAuthority, (address(d.stream), elsewhere))
+        );
+        assertEq(IAccessManaged(address(d.stream)).authority(), elsewhere);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.WrongAuthority.selector, address(d.stream), elsewhere)
+        );
+        this.checkExternal(d, cfg, calls);
+    }
+
+    function test_ReadbackChecksTheDefaultLicenseText() public {
+        (DeployV1.Deployment memory d,,) = _genesis(_params());
+        bytes32 digest = sha256(_params().cc0Text);
+        this.checkCc0External(d, digest);
+
+        bytes32 wrong = sha256("another text");
+        vm.expectRevert(abi.encodeWithSelector(VerifyV1.Cc0Mismatch.selector, "SHA-256"));
+        this.checkCc0External(d, wrong);
+
+        DeployV1.Deployment memory other = d;
+        other.cc0TextFileId = bytes32(0);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.Cc0Mismatch.selector, "no CC0 file recorded")
+        );
+        this.checkCc0External(other, digest);
+
+        // A file that WorkRecords does not name.
+        other.cc0TextFileId = keccak256("another file");
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.Cc0Mismatch.selector, "WorkRecords.cc0TextFileId")
+        );
+        this.checkCc0External(other, digest);
+
+        // WorkRecords names it but the resolver does not; then both name an incomplete file.
+        bytes32[] memory chunks = new bytes32[](1);
+        chunks[0] = keccak256("never uploaded");
+        bytes32 neverSha = sha256("never uploaded");
+        bytes32 incomplete = d.contentStore
+            .registerManifest(chunks, 14, IContentStore.Encoding.Identity, "text/plain", neverSha);
+        Cc0Views views = new Cc0Views(incomplete, d.cc0TextFileId);
+        other.cc0TextFileId = incomplete;
+        other.workRecords = WorkRecords(address(views));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.Cc0Mismatch.selector, "EconomicsResolver.defaultLicense"
+            )
+        );
+        this.checkCc0External(other, digest);
+        other.economicsResolver = EconomicsResolver(address(new Cc0Views(incomplete, incomplete)));
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.Cc0Mismatch.selector, "incomplete in the content store")
+        );
+        this.checkCc0External(other, digest);
+    }
+
+    function _withoutRole(GovernanceConfig.Config memory cfg, uint64 role)
+        internal
+        pure
+        returns (GovernanceConfig.Config memory out)
+    {
+        out.targets = cfg.targets;
+        uint256 n;
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            if (cfg.grants[i].role != role) ++n;
+        }
+        out.grants = new GovernanceConfig.Grant[](n);
+        uint256 k;
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            if (cfg.grants[i].role != role) out.grants[k++] = cfg.grants[i];
+        }
+    }
+
+    /// @dev The hot admin schedules `data` on `target`, waits the 30-day ADMIN delay unvetoed
+    ///      and executes it.
+    function _adminExecutes(DeployV1.Deployment memory d, address target, bytes memory data)
+        internal
+    {
+        vm.prank(HOT_ADMIN);
+        d.manager.schedule(target, data, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(HOT_ADMIN);
+        d.manager.execute(target, data);
+    }
+
     function test_ReadbackFailsBeforeTheDelaysSettle() public {
         (DeployV1.Deployment memory d, GovernanceConfig.Config memory cfg,) = _genesis(_params());
         vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.ADMIN));
         d.configurator.verify(cfg);
+    }
+}
+
+/// @dev Answers the two CC0 views `VerifyV1.checkCc0` reads: WorkRecords' file ID and every
+///      product's default license.
+contract Cc0Views {
+    bytes32 internal immutable _records;
+    bytes32 internal immutable _license;
+
+    constructor(bytes32 records, bytes32 license) {
+        _records = records;
+        _license = license;
+    }
+
+    function cc0TextFileId() external view returns (bytes32) {
+        return _records;
+    }
+
+    function defaultLicense(bytes32) external view returns (License memory) {
+        return License("CC0-1.0", _license);
     }
 }

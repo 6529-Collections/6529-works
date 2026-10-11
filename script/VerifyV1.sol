@@ -15,6 +15,11 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import {
+    PRODUCT_EDITIONS,
+    PRODUCT_FEDERATED,
+    PRODUCT_STREAM
+} from "src/interfaces/types/EconomicsTypes.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
 /// @title VerifyV1
@@ -32,6 +37,43 @@ library VerifyV1 {
     error GetterFailed(address target, string signature);
     error PlatformPathClosed(address target, bytes4 selector);
     error PlatformHolderMissing();
+    /// @notice A recorded address is not where CREATE2 puts that contract given the recorded
+    ///         parameters (or the manager is not the configurator's first CREATE).
+    error AddressMismatch(string name, address predicted, address recorded);
+    /// @notice The default license text is inconsistent: `what` names the failing check.
+    error Cc0Mismatch(string what);
+
+    /// @notice Every contract in `recorded` is at the address `predicted` computes
+    ///         (`DeployV1.predict` from the recorded constructor parameters), and nothing is
+    ///         recorded that was not predicted.
+    function checkAddresses(
+        DeployV1.Deployment memory predicted,
+        DeployV1.Deployment memory recorded
+    ) internal pure {
+        string[] memory names = DeployV1.names();
+        for (uint256 i; i < names.length; ++i) {
+            address p = DeployV1.addressOf(predicted, names[i]);
+            address r = DeployV1.addressOf(recorded, names[i]);
+            if (p != r) revert AddressMismatch(names[i], p, r);
+        }
+    }
+
+    /// @notice The default license (M-3): WorkRecords and every product's default license name
+    ///         the same CC0 file, the recorded one, and it is complete in the content store with
+    ///         SHA-256 `digest`.
+    function checkCc0(DeployV1.Deployment memory d, bytes32 digest) internal view {
+        bytes32 id = d.cc0TextFileId;
+        if (id == bytes32(0)) revert Cc0Mismatch("no CC0 file recorded");
+        if (d.workRecords.cc0TextFileId() != id) revert Cc0Mismatch("WorkRecords.cc0TextFileId");
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
+        for (uint256 i; i < products.length; ++i) {
+            if (d.economicsResolver.defaultLicense(products[i]).textFileId != id) {
+                revert Cc0Mismatch("EconomicsResolver.defaultLicense");
+            }
+        }
+        if (!d.contentStore.isComplete(id)) revert Cc0Mismatch("incomplete in the content store");
+        if (d.contentStore.sha256Of(id) != digest) revert Cc0Mismatch("SHA-256");
+    }
 
     /// @notice Reverts on the first difference between the deployment and `cfg` / `calls`.
     /// @dev Run at least `minSetback()` after genesis, when grant and target-admin delays are
@@ -41,18 +83,20 @@ library VerifyV1 {
         GovernanceConfig.Config memory cfg,
         GovernanceConfig.Call[] memory calls
     ) internal view {
-        // Roles, delays, holders and selectors; the configurator renounced ADMIN.
-        d.configurator.verify(cfg);
-        for (uint64 role; role < Roles.COUNT; ++role) {
-            if (GovernanceConfig.hasRecord(d.manager, role, address(d.configurator))) {
-                revert ConfiguratorHoldsRole(role);
-            }
-        }
-        // Every configured target answers to this manager.
+        // Every configured target answers to this manager. Checked first: the configurator's
+        // `verify` also rejects a moved target, but only as `InvalidTarget(target)`.
         for (uint256 i; i < cfg.targets.length; ++i) {
             address authority = IAccessManaged(cfg.targets[i].target).authority();
             if (authority != address(d.manager)) {
                 revert WrongAuthority(cfg.targets[i].target, authority);
+            }
+        }
+        // Roles, delays, holders and selectors; the configurator renounced ADMIN.
+        d.configurator.verify(cfg);
+        // ...and holds no other role (`verify` checks only ADMIN for it).
+        for (uint64 role; role < Roles.COUNT; ++role) {
+            if (GovernanceConfig.hasRecord(d.manager, role, address(d.configurator))) {
+                revert ConfiguratorHoldsRole(role);
             }
         }
         // Every wiring call left its mark.
@@ -153,6 +197,8 @@ library VerifyV1 {
     /// @dev The `index`th 32-byte argument word of `data` (after the selector), bounds-checked.
     function _word(bytes memory data, uint256 index) private pure returns (bytes32 word) {
         uint256 end = 4 + 32 * (index + 1);
+        // Casting to bytes4 is safe: it keeps the selector, the first four bytes.
+        // forge-lint: disable-next-line(unsafe-typecast)
         if (data.length < end) revert MalformedWiringCall(bytes4(data));
         assembly ("memory-safe") {
             word := mload(add(data, end))

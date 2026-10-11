@@ -13,18 +13,15 @@ import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
-import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
-import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
-import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
+import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
-import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
@@ -41,12 +38,14 @@ import { RendererStandIn } from "./standins/RendererStandIn.sol";
 ///         configuration. `script/Deploy.s.sol` broadcasts it; the integration tests call it
 ///         directly, so both exercise the same deployment.
 /// @dev Immutable dependencies are constructor arguments; one-shot binds, admitted minters,
-///      sale targets and the epoch-0 manifest are genesis wiring (config/README.md). Every
-///      contract is created with CREATE2 under `Params.namespace`, so its address depends only
-///      on the namespace, its constructor arguments and the CREATE2 deployer. The governance
-///      map and the wiring come from the committed genesis JSON, with the deployed addresses
-///      substituted by contract name; contracts not deployed (pending lanes, the optional
-///      entropy module) are left out of both, together with any wiring that names them.
+///      sale targets, first default currencies and the epoch-0 manifest are genesis wiring
+///      (config/README.md). Every contract is created with CREATE2 under `Params.namespace`, so
+///      its address depends only on the namespace, its initcode (`initcode`) and the CREATE2
+///      deployer, and `predict` recomputes it. The governance map and the wiring come from the
+///      genesis JSON, with the deployed addresses substituted by contract name. Contracts not
+///      deployed (a pending lane on anvil, the optional entropy module) are left out of both,
+///      with any wiring that names them; `dropped` lists them, and `Deploy.s.sol` refuses any
+///      off anvil except an explicitly declined entropy module.
 library DeployV1 {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -56,6 +55,14 @@ library DeployV1 {
     address internal constant CANONICAL_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     /// @notice Schema of the governance manifest statements in the statement log.
     bytes32 internal constant MANIFEST_SCHEMA = keccak256("6529-works/governance-manifest/1");
+    /// @notice Where the CC0 1.0 Universal legal code is published in plain text.
+    string internal constant CC0_LEGALCODE_URL =
+        "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt";
+    /// @notice The SHA-256 of the file at `CC0_LEGALCODE_URL`, the default license text of every
+    ///         work. NOT PINNED YET: it could not be verified from the build environment, so it
+    ///         is zero, and `Deploy.s.sol` and `Verify.s.sol` refuse every chain but anvil until
+    ///         a maintainer fetches the file, checks it and sets this constant.
+    bytes32 internal constant CC0_LEGALCODE_SHA256 = bytes32(0);
 
     struct Params {
         /// The operator account that broadcasts the genesis and alone may call `configure`.
@@ -75,7 +82,7 @@ library DeployV1 {
         bytes cc0Text;
         /// Minimum ETH bid increment, 0.001 ether at launch (ADR 0001 §5).
         uint256 ethIncrementFloor;
-        /// Permit2; the auction gets it only where it has code.
+        /// Permit2 for the sale adapters (`auctionPermit2` for the English auction).
         address permit2;
         IEnglishAuction.AuctionConfig auction;
         /// Chainlink VRF v2.5 coordinator, or zero to deploy without the entropy module.
@@ -111,7 +118,8 @@ library DeployV1 {
         address renderer;
         Stream stream;
         WorkRecords workRecords;
-        /// Zero until Editions (#14) merges; its slot in `deploy` is marked.
+        /// Zero until Editions (#14) merges; its slot in `deploy` is marked, and off anvil
+        /// `deploy` refuses to run without it (`EditionsPending`).
         address editions;
     }
 
@@ -128,38 +136,264 @@ library DeployV1 {
     /// @notice The renderer (#20) has not merged: only a local dry run may deploy, with the
     ///         `RendererStandIn`.
     error RendererPending();
+    /// @notice Editions (#14) has not merged: only a local dry run may deploy without it.
+    error EditionsPending();
     error EmptyText();
+    /// @notice CREATE2 produced no contract and no revert reason (the address is taken).
+    error Create2Failed(string name);
+    /// @notice The genesis JSON's `roles` disagree with `Roles.sol` (count, ID or a delay).
+    error RoleTableMismatch(string name);
 
     // ------------------------------------------------------------------ deploy
 
-    /// @notice Deploys the system. Every contract's authority is the configurator's manager.
+    /// @notice Deploys the system, contract by contract in `order(p)`, each with CREATE2 under
+    ///         `p.namespace` from the calling context: a broadcasting script goes through the
+    ///         CREATE2 deployer, a test deploys from itself. Every contract's authority is the
+    ///         configurator's manager. `predict` recomputes the same addresses from the same
+    ///         initcode.
     function deploy(Params memory p) internal returns (Deployment memory d) {
-        d.configurator =
-            new GovernanceConfigurator{ salt: salt(p, "GovernanceConfigurator") }(p.deployer);
-        d.manager = d.configurator.worksManager();
-        _content(p, d);
-        _identity(p, d);
-        _economics(p, d);
-        _curationAndRecords(p, d);
-        _entropy(p, d);
-        _renderer(p, d);
-        _stream(p, d);
-        _sales(p, d);
-        // Editions (#14) slots in here as it merges:
-        //   d.editions = Editions(manager, stream, stream.codehash, p.marketOwner)
+        string[] memory list = order(p);
+        for (uint256 i; i < list.length; ++i) {
+            string memory name = list[i];
+            assign(d, name, _create2(name, salt(p, name), initcode(p, d, name)));
+            if (_eq(name, "GovernanceConfigurator")) {
+                d.manager = d.configurator.worksManager();
+            } else if (_eq(name, "ContentStore")) {
+                d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
+            }
+        }
+        // Editions (#14) joins `order` after WorkRecords as it merges:
+        //   Editions(manager, stream, stream.codehash, p.marketOwner)
+        requireEditions();
+    }
+
+    /// @notice The addresses `deploy(p)` creates through CREATE2 deployer `factory`, recomputed
+    ///         from each contract's creation code and constructor arguments. The code hashes a
+    ///         constructor pins are read from the chain at the addresses predicted before it, so
+    ///         a substituted dependency changes every later address. `cc0TextFileId` is the
+    ///         recorded CC0 file ID (the content store derives it from the manifest).
+    function predict(Params memory p, bytes32 cc0TextFileId, address factory)
+        internal
+        view
+        returns (Deployment memory d)
+    {
+        d.cc0TextFileId = cc0TextFileId;
+        string[] memory list = order(p);
+        for (uint256 i; i < list.length; ++i) {
+            string memory name = list[i];
+            address a =
+                vm.computeCreate2Address(salt(p, name), keccak256(initcode(p, d, name)), factory);
+            assign(d, name, a);
+            if (_eq(name, "GovernanceConfigurator")) {
+                d.manager = WorksAccessManager(vm.computeCreateAddress(a, 1));
+            }
+        }
+    }
+
+    /// @notice The contracts `deploy` creates with CREATE2, in order. The entropy module is
+    ///         included only with a VRF coordinator; the manager is created by the configurator.
+    function order(Params memory p) internal pure returns (string[] memory list) {
+        string[20] memory all = [
+            "GovernanceConfigurator",
+            "ContentStore",
+            "DependencyRegistry",
+            "ConsolidationAdapter",
+            "ArtistRegistry",
+            "ReleaseVerifier",
+            "SplitFactory",
+            "ClaimRouter",
+            "AssetAllowlist",
+            "EconomicsResolver",
+            "RevenueEscrow",
+            "CurationVerifier",
+            "PackageRegistry",
+            "StatementLog",
+            "Renderer",
+            "Stream",
+            "WorkRecords",
+            "EnglishAuction",
+            "FixedPriceSale",
+            "DutchSale"
+        ];
+        bool vrf = p.vrfCoordinator != address(0);
+        list = new string[](all.length + (vrf ? 1 : 0));
+        uint256 k;
+        for (uint256 i; i < all.length; ++i) {
+            if (vrf && _eq(all[i], "Renderer")) list[k++] = "EntropyModule";
+            list[k++] = all[i];
+        }
+    }
+
+    /// @notice The creation code and ABI-encoded constructor arguments of contract `name`, given
+    ///         the contracts deployed before it in `d`. `deploy` and `predict` both use it.
+    function initcode(Params memory p, Deployment memory d, string memory name)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 n = keccak256(bytes(name));
+        address m = address(d.manager);
+        if (n == keccak256("GovernanceConfigurator")) {
+            return _code(type(GovernanceConfigurator).creationCode, abi.encode(p.deployer));
+        }
+        if (n == keccak256("ContentStore")) return type(ContentStore).creationCode;
+        if (n == keccak256("DependencyRegistry")) {
+            return _code(type(DependencyRegistry).creationCode, abi.encode(m, d.contentStore));
+        }
+        if (n == keccak256("ConsolidationAdapter")) {
+            return _code(type(ConsolidationAdapter).creationCode, abi.encode(p.delegation));
+        }
+        if (n == keccak256("ArtistRegistry")) {
+            address adapter = address(d.consolidationAdapter);
+            return
+                _code(type(ArtistRegistry).creationCode, abi.encode(m, adapter, adapter.codehash));
+        }
+        if (n == keccak256("ReleaseVerifier")) return type(ReleaseVerifier).creationCode;
+        if (n == keccak256("SplitFactory")) {
+            return _code(
+                type(SplitFactory).creationCode, abi.encode(d.artistRegistry, d.releaseVerifier)
+            );
+        }
+        if (n == keccak256("ClaimRouter")) return type(ClaimRouter).creationCode;
+        if (n == keccak256("AssetAllowlist")) {
+            return _code(type(AssetAllowlist).creationCode, abi.encode(m, p.ethIncrementFloor));
+        }
+        if (n == keccak256("EconomicsResolver")) {
+            return _code(
+                type(EconomicsResolver).creationCode,
+                abi.encode(m, d.assetAllowlist, d.splitFactory, p.feeRecipient, d.cc0TextFileId)
+            );
+        }
+        if (n == keccak256("RevenueEscrow")) {
+            return _code(type(RevenueEscrow).creationCode, abi.encode(m, d.splitFactory));
+        }
+        return _initcodeLater(p, d, n, name);
+    }
+
+    function _initcodeLater(Params memory p, Deployment memory d, bytes32 n, string memory name)
+        private
+        view
+        returns (bytes memory)
+    {
+        address m = address(d.manager);
+        address artists = address(d.artistRegistry);
+        if (n == keccak256("CurationVerifier")) {
+            return _code(type(Eip712CurationVerifier).creationCode, abi.encode(m));
+        }
+        if (n == keccak256("PackageRegistry")) {
+            address verifier = address(d.curationVerifier);
+            return _code(
+                type(PackageRegistry).creationCode,
+                abi.encode(m, verifier, verifier.codehash, artists, artists.codehash)
+            );
+        }
+        if (n == keccak256("StatementLog")) {
+            return _code(type(StatementLog).creationCode, abi.encode(m, artists, artists.codehash));
+        }
+        if (n == keccak256("EntropyModule")) {
+            address registry = address(d.packageRegistry);
+            return _code(
+                type(VrfEntropyModule).creationCode,
+                abi.encode(
+                    m,
+                    p.vrfCoordinator,
+                    p.vrfCoordinatorCodeHash,
+                    p.vrf,
+                    p.vrfRetryDelay,
+                    registry,
+                    registry.codehash
+                )
+            );
+        }
+        if (n == keccak256("Renderer")) {
+            // The renderer (#20) replaces the stand-in as it merges:
+            //   Renderer(contentStore, statementLog, inlineThreshold)
+            requireRenderer();
+            return type(RendererStandIn).creationCode;
+        }
+        return _initcodeCore(p, d, n, name);
+    }
+
+    function _initcodeCore(Params memory p, Deployment memory d, bytes32 n, string memory name)
+        private
+        view
+        returns (bytes memory)
+    {
+        address m = address(d.manager);
+        if (n == keccak256("Stream")) {
+            // 6529 Stream pins the default renderer's code hash.
+            return _code(
+                type(Stream).creationCode,
+                abi.encode(
+                    m,
+                    d.packageRegistry,
+                    d.artistRegistry,
+                    d.economicsResolver,
+                    d.entropyModule,
+                    d.renderer,
+                    d.renderer.codehash,
+                    p.marketOwner
+                )
+            );
+        }
+        if (n == keccak256("WorkRecords")) {
+            // The CC0 text `deploy` uploads right after the content store is the default license.
+            return _code(
+                type(WorkRecords).creationCode,
+                abi.encode(m, d.stream, d.contentStore, License("CC0-1.0", d.cc0TextFileId))
+            );
+        }
+        if (n == keccak256("EnglishAuction")) {
+            // Targets are genesis wiring, not constructor arguments (config/README.md).
+            return _code(
+                type(EnglishAuction).creationCode,
+                abi.encode(
+                    m,
+                    d.revenueEscrow,
+                    d.assetAllowlist,
+                    d.statementLog,
+                    auctionPermit2(p),
+                    p.auction,
+                    new address[](0)
+                )
+            );
+        }
+        if (n == keccak256("FixedPriceSale")) {
+            return _code(
+                type(FixedPriceSale).creationCode,
+                abi.encode(m, d.revenueEscrow, p.permit2, d.economicsResolver)
+            );
+        }
+        if (n == keccak256("DutchSale")) {
+            return _code(
+                type(DutchSale).creationCode,
+                abi.encode(m, d.revenueEscrow, p.permit2, d.economicsResolver)
+            );
+        }
+        revert UnknownContract(name);
+    }
+
+    /// @notice Permit2 for the English auction, which takes zero where Permit2 has no code (a
+    ///         local chain). The fixed-price and Dutch sales always take `p.permit2`; off anvil
+    ///         `Deploy.s.sol` requires code there.
+    function auctionPermit2(Params memory p) internal view returns (address) {
+        return p.permit2.code.length != 0 ? p.permit2 : address(0);
+    }
+
+    /// @notice Off anvil, refuses to deploy until the renderer (#20) merges: until then the
+    ///         `RendererStandIn` takes its place, on anvil only.
+    function requireRenderer() internal view {
+        if (block.chainid != LOCAL_CHAIN_ID) revert RendererPending();
+    }
+
+    /// @notice Off anvil, refuses to deploy until Editions (#14) merges.
+    function requireEditions() internal view {
+        if (block.chainid != LOCAL_CHAIN_ID) revert EditionsPending();
     }
 
     /// @notice The CREATE2 salt of contract `name` under `p.namespace`.
     function salt(Params memory p, string memory name) internal pure returns (bytes32) {
         return keccak256(abi.encode(p.namespace, name));
-    }
-
-    function _content(Params memory p, Deployment memory d) private {
-        d.contentStore = new ContentStore{ salt: salt(p, "ContentStore") }();
-        d.dependencyRegistry = new DependencyRegistry{ salt: salt(p, "DependencyRegistry") }(
-            address(d.manager), d.contentStore
-        );
-        d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
     }
 
     /// @notice Stores `text` in `store` (identity encoding, `CHUNK_SIZE` chunks) and registers its
@@ -185,108 +419,28 @@ library DeployV1 {
         );
     }
 
-    /// @dev The adapter reads `p.delegation` (its constructor requires code there); the
-    ///      registry pins the adapter's code hash.
-    function _identity(Params memory p, Deployment memory d) private {
-        d.consolidationAdapter = new ConsolidationAdapter{ salt: salt(p, "ConsolidationAdapter") }(
-            IDelegationManagement(p.delegation)
-        );
-        d.artistRegistry = new ArtistRegistry{ salt: salt(p, "ArtistRegistry") }(
-            address(d.manager),
-            IConsolidationSource(address(d.consolidationAdapter)),
-            address(d.consolidationAdapter).codehash
-        );
+    /// @dev CREATE2 from the calling context; a constructor's revert is bubbled up.
+    function _create2(string memory name, bytes32 salt_, bytes memory code)
+        private
+        returns (address a)
+    {
+        assembly ("memory-safe") {
+            a := create2(0, add(code, 0x20), mload(code), salt_)
+        }
+        if (a == address(0)) {
+            assembly ("memory-safe") {
+                if returndatasize() {
+                    let ptr := mload(0x40)
+                    returndatacopy(ptr, 0, returndatasize())
+                    revert(ptr, returndatasize())
+                }
+            }
+            revert Create2Failed(name);
+        }
     }
 
-    function _economics(Params memory p, Deployment memory d) private {
-        address m = address(d.manager);
-        d.releaseVerifier = new ReleaseVerifier{ salt: salt(p, "ReleaseVerifier") }();
-        d.splitFactory = new SplitFactory{ salt: salt(p, "SplitFactory") }(
-            IArtistPayoutResolver(address(d.artistRegistry)), d.releaseVerifier
-        );
-        d.claimRouter = new ClaimRouter{ salt: salt(p, "ClaimRouter") }();
-        d.assetAllowlist =
-            new AssetAllowlist{ salt: salt(p, "AssetAllowlist") }(m, p.ethIncrementFloor);
-        d.economicsResolver = new EconomicsResolver{ salt: salt(p, "EconomicsResolver") }(
-            m, d.assetAllowlist, d.splitFactory, p.feeRecipient, d.cc0TextFileId
-        );
-        d.revenueEscrow = new RevenueEscrow{ salt: salt(p, "RevenueEscrow") }(m, d.splitFactory);
-    }
-
-    function _curationAndRecords(Params memory p, Deployment memory d) private {
-        address m = address(d.manager);
-        d.curationVerifier = new Eip712CurationVerifier{ salt: salt(p, "CurationVerifier") }(m);
-        d.packageRegistry = new PackageRegistry{ salt: salt(p, "PackageRegistry") }(
-            m,
-            d.curationVerifier,
-            address(d.curationVerifier).codehash,
-            address(d.artistRegistry),
-            address(d.artistRegistry).codehash
-        );
-        d.statementLog = new StatementLog{ salt: salt(p, "StatementLog") }(
-            m, address(d.artistRegistry), address(d.artistRegistry).codehash
-        );
-    }
-
-    function _entropy(Params memory p, Deployment memory d) private {
-        if (p.vrfCoordinator == address(0)) return; // optional module (ADR 0001 §9)
-        d.entropyModule = new VrfEntropyModule{ salt: salt(p, "EntropyModule") }(
-            address(d.manager),
-            p.vrfCoordinator,
-            p.vrfCoordinatorCodeHash,
-            p.vrf,
-            p.vrfRetryDelay,
-            d.packageRegistry,
-            address(d.packageRegistry).codehash
-        );
-    }
-
-    function _renderer(Params memory p, Deployment memory d) private {
-        // The renderer (#20) replaces the stand-in as it merges:
-        //   d.renderer = Renderer(contentStore, statementLog, inlineThreshold)
-        if (block.chainid != LOCAL_CHAIN_ID) revert RendererPending();
-        d.renderer = address(new RendererStandIn{ salt: salt(p, "Renderer") }());
-    }
-
-    /// @dev 6529 Stream pins the default renderer's code hash; WorkRecords takes the CC0 text
-    ///      uploaded by `_content` as the default license.
-    function _stream(Params memory p, Deployment memory d) private {
-        d.stream = new Stream{ salt: salt(p, "Stream") }(
-            address(d.manager),
-            address(d.packageRegistry),
-            address(d.artistRegistry),
-            address(d.economicsResolver),
-            address(d.entropyModule),
-            d.renderer,
-            d.renderer.codehash,
-            p.marketOwner
-        );
-        d.workRecords = new WorkRecords{ salt: salt(p, "WorkRecords") }(
-            address(d.manager),
-            address(d.stream),
-            address(d.contentStore),
-            License("CC0-1.0", d.cc0TextFileId)
-        );
-    }
-
-    function _sales(Params memory p, Deployment memory d) private {
-        address m = address(d.manager);
-        // Targets are genesis wiring, not constructor arguments (config/README.md).
-        d.englishAuction = new EnglishAuction{ salt: salt(p, "EnglishAuction") }(
-            m,
-            address(d.revenueEscrow),
-            d.assetAllowlist,
-            address(d.statementLog),
-            p.permit2.code.length != 0 ? p.permit2 : address(0),
-            p.auction,
-            new address[](0)
-        );
-        d.fixedPriceSale = new FixedPriceSale{ salt: salt(p, "FixedPriceSale") }(
-            m, d.revenueEscrow, ISignatureTransfer(p.permit2), d.economicsResolver
-        );
-        d.dutchSale = new DutchSale{ salt: salt(p, "DutchSale") }(
-            m, d.revenueEscrow, ISignatureTransfer(p.permit2), d.economicsResolver
-        );
+    function _code(bytes memory creation, bytes memory args) private pure returns (bytes memory) {
+        return bytes.concat(creation, args);
     }
 
     // ------------------------------------------------------------------ names
@@ -417,6 +571,7 @@ library DeployV1 {
         view
         returns (GovernanceConfig.Config memory cfg)
     {
+        checkRoles(json);
         cfg.grants = _grants(json);
         uint256 contracts = _count(json, ".contracts");
         uint256 deployed;
@@ -430,6 +585,59 @@ library DeployV1 {
             if (target != address(0)) {
                 cfg.targets[k++] = GovernanceConfig.Target(target, _functions(json, i));
             }
+        }
+    }
+
+    /// @notice Reverts unless the JSON's `roles` table is exactly `Roles.sol`: every role once,
+    ///         with its ID, execution delay and grant delay. `configure` takes the delays from
+    ///         `Roles.sol`; this keeps the published table honest.
+    function checkRoles(string memory json) internal view {
+        uint256 n = _count(json, ".roles");
+        if (n != Roles.COUNT) revert RoleTableMismatch("count");
+        for (uint256 i; i < n; ++i) {
+            string memory r = _at(".roles", i);
+            string memory name = vm.parseJsonString(json, string.concat(r, ".name"));
+            uint64 id = _roleId(name);
+            if (
+                vm.parseJsonUint(json, string.concat(r, ".id")) != id
+                    || vm.parseJsonUint(json, string.concat(r, ".executionDelay"))
+                        != Roles.executionDelay(id)
+                    || vm.parseJsonUint(json, string.concat(r, ".grantDelay"))
+                        != Roles.grantDelay(id)
+            ) revert RoleTableMismatch(name);
+        }
+    }
+
+    /// @notice What the genesis JSON names that `d` did not deploy: governed contracts left out
+    ///         of `config`, then wiring calls left out of `wiring` (as `Contract.signature`).
+    function dropped(Deployment memory d, string memory json)
+        internal
+        view
+        returns (string[] memory out)
+    {
+        uint256 contracts = _count(json, ".contracts");
+        uint256 calls = _count(json, ".wiring");
+        out = new string[](contracts + calls);
+        uint256 k;
+        for (uint256 i; i < contracts; ++i) {
+            if (_deployedAt(d, json, i) == address(0)) {
+                out[k++] = vm.parseJsonString(json, string.concat(_at(".contracts", i), ".name"));
+            }
+        }
+        Manifest memory none;
+        for (uint256 i; i < calls; ++i) {
+            (bool kept,) = _wiringCall(d, json, i, none);
+            if (!kept) {
+                string memory w = _at(".wiring", i);
+                out[k++] = string.concat(
+                    vm.parseJsonString(json, string.concat(w, ".contract")),
+                    ".",
+                    vm.parseJsonString(json, string.concat(w, ".signature"))
+                );
+            }
+        }
+        assembly ("memory-safe") {
+            mstore(out, k)
         }
     }
 
@@ -571,6 +779,10 @@ library DeployV1 {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    function _eq(string memory a, string memory b) private pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
+    }
 
     function _isUint(string memory t) private pure returns (bool) {
         bytes memory b = bytes(t);
