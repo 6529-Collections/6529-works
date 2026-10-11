@@ -24,7 +24,8 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   existing collection, a coherent seed policy, and a delivered VRF seed.
 - **IDs.** One chronological global counter from 1; collections keep their own
   serials from 1. A burn (an upheld dispute, from the minting adapter's
-  custody) leaves a gap; IDs are never reused.
+  custody, before the sale settles; never after a sale) leaves a gap; IDs are
+  never reused. `releaseContent` then frees the burned work's content hash.
 - **Start gas.** A mint writes the ERC-721 owner and balance, one shared counter
   word, the collection's counter word and three work words: the seller, serial,
   collection, kind, seed policy and flags; the lead artist ID, royalty rate, fee
@@ -55,9 +56,13 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   version bumps only on a real change; identical re-publishes are no-ops, and
   permissionless actions never change it.
 - **Amendments.** Relicensing and royalty-rate changes need every party's
-  EIP-712 consent, each by its current authority, plus a governed action. CC0 is
-  irrevocable. A repin needs the lead artist and the 30-day class, and binds the
-  renderer's code hash.
+  EIP-712 consent, each by its current authority, plus a governed action. Only
+  CC0 irrevocability is enforced on-chain, on the canonical license key; whether
+  a new license is more permissive is the judgement of the parties' consent plus
+  governance, and the contract does not order licenses. A repin needs the lead
+  artist and the 30-day class, and binds the renderer's code hash.
+- **Finalize** needs the record file complete in the content store, so a
+  finalized record is always readable on-chain.
 - **Locators.** Append-only ARWEAVE and IPFS copies of media files, at most 16
   per file. Preferred location: the file's index, then the collection's kind,
   then the global kind, then the first registered locator, then the implicit

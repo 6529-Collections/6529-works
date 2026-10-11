@@ -10,6 +10,7 @@ import {
 } from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -122,8 +123,9 @@ contract StreamTest is StreamFixture {
         stream.setAdmittedMinter(address(other), true);
         assertTrue(stream.isAdmittedMinter(address(other)));
         (uint256 tokenId,) = other.start(stream, _request(_item(1)));
+        (uint256 disputed,) = other.start(stream, _request(_item(3)));
 
-        // Removal stops new mints and burns, but the minting adapter still settles.
+        // Removal stops new mints; the minting adapter still finishes its running sales.
         vm.expectEmit(address(stream));
         emit IMintTarget.AdmittedMinterSet(address(other), false);
         vm.prank(governor);
@@ -134,12 +136,10 @@ contract StreamTest is StreamFixture {
             abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(other))
         );
         other.start(stream, data);
-        vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(other))
-        );
-        other.burn(stream, tokenId, 1);
         other.settle(stream, tokenId);
         assertTrue(stream.primarySaleSettled(tokenId));
+        other.burn(stream, disputed, 1);
+        assertEq(stream.totalSupply(), 1);
     }
 
     function test_setAdmittedMinter_reverts() public {
@@ -479,7 +479,6 @@ contract StreamTest is StreamFixture {
         auction.settle(stream, 1);
         assertEq(vm.getRecordedLogs().length, 0);
 
-        auction.settle(stream, 2);
         auction.burn(stream, 2, 1);
         assertFalse(stream.primarySaleSettled(2));
         assertFalse(stream.primarySaleSettled(3));
@@ -574,6 +573,35 @@ contract StreamTest is StreamFixture {
         stream.releaseContent(tokenId, contentHash);
     }
 
+    /// @dev After a sale nothing is confiscated (ADR 0001 section 12): a settled token can
+    ///      never be burned, even back in the minting adapter's custody.
+    function test_burn_neverAfterSettlement() public {
+        _mint(1);
+        auction.settle(stream, 1);
+        vm.expectRevert(abi.encodeWithSelector(Stream.SaleAlreadySettled.selector, 1));
+        auction.burn(stream, 1, 1);
+        address collector = makeAddr("collector");
+        auction.deliver(address(stream), 1, collector);
+        vm.prank(collector);
+        stream.transferFrom(collector, address(auction), 1);
+        vm.expectRevert(abi.encodeWithSelector(Stream.SaleAlreadySettled.selector, 1));
+        auction.burn(stream, 1, 1);
+    }
+
+    /// @dev Only the adapter that minted a token may burn it, even if another admitted adapter
+    ///      holds it.
+    function test_burn_onlyByMintingAdapter() public {
+        _mint(1);
+        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(other), true);
+        auction.deliver(address(stream), 1, address(other));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(other))
+        );
+        other.burn(stream, 1, 1);
+    }
+
     function test_burn_reverts() public {
         _mint(1);
         vm.expectRevert(IStream.InvalidMintRequest.selector);
@@ -651,6 +679,41 @@ contract StreamTest is StreamFixture {
         assertEq(ra, _royaltyWallet(high, low, 25_000));
         assertEq(rb, _royaltyWallet(low, high, 25_000));
         assertTrue(ra != rb);
+    }
+
+    /// @dev The receiver is exactly the royalty wallet the sale side pays: the real
+    ///      `SplitFactory` deploys it at that address, salt zero, for the canonical list of the
+    ///      fee recipient's share and the seller's rest; with no fee it is the seller itself.
+    function testFuzz_royaltyInfo_isTheFactoryWallet(
+        address sellerWallet,
+        address fee,
+        uint32 feeShare
+    ) public {
+        vm.assume(sellerWallet != address(0) && fee != address(0) && sellerWallet != fee);
+        feeShare = uint32(bound(feeShare, 1, 99_999));
+        econ.setTerms(WorkTerms(sellerWallet, fee, feeShare, address(0), 6_529));
+        uint256 tokenId = _mint(1);
+        (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
+
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
+        ISplitWallet.Payee memory feePayee = ISplitWallet.Payee(0, fee, feeShare);
+        ISplitWallet.Payee memory sellerPayee =
+            ISplitWallet.Payee(0, sellerWallet, 100_000 - feeShare);
+        (payees[0], payees[1]) =
+            fee < sellerWallet ? (feePayee, sellerPayee) : (sellerPayee, feePayee);
+        address deployed = splitFactory.createWallet(payees, bytes32(0));
+        assertEq(receiver, deployed);
+        assertTrue(splitFactory.isWallet(receiver));
+        assertEq(splitFactory.configOf(receiver), keccak256(abi.encode(payees)));
+        assertEq(stream.work(tokenId).royaltyReceiver, deployed);
+    }
+
+    function test_royaltyInfo_noFeeIsTheSeller() public {
+        econ.setTerms(WorkTerms(seller, feeRecipient, 0, address(0), 6_529));
+        uint256 tokenId = _mint(1);
+        (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(receiver, seller);
+        assertFalse(splitFactory.isWallet(receiver));
     }
 
     function testFuzz_royaltyInfo_matchesMulDiv(uint256 price, uint32 rate) public {

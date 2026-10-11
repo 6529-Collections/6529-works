@@ -55,6 +55,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     error WorkNotFinalized(uint256 tokenId);
     /// @notice The file has no registered locator and is not on-chain complete.
     error NoLocator(uint256 tokenId, bytes32 fileId);
+    /// @notice The record file still lacks chunks, so it cannot be finalized.
+    error RecordFileIncomplete(bytes32 recordFileId);
 
     /// @dev Word 0: the pin, version, media count and flags. `roles` packs each file's role in
     ///      eight bits, file `i` at bits `8i`.
@@ -179,11 +181,16 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
+    /// @dev The record file must be complete in the content store, so a finalized record is
+    ///      always readable on-chain.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external {
         RecordData storage r = _open(tokenId);
         if (r.finalized) revert WorkIsFinalized(tokenId);
         _onlyArtist(tokenId);
         _checkState(tokenId, expectedStateHash);
+        if (!IContentStore(contentStore).isComplete(r.recordFileId)) {
+            revert RecordFileIncomplete(r.recordFileId);
+        }
         address renderer = IStream(stream).defaultRenderer();
         r.renderer = renderer;
         r.finalized = true;
@@ -288,9 +295,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // ------------------------------------------------------------------------------ amendments
 
     /// @inheritdoc IWorkRecords
-    /// @dev Whether `next` is more permissive is not decidable on-chain; every party's consent
-    ///      and the governed action carry that judgement, and CC0 can never be left. A license
-    ///      with the current key and text is a no-op.
+    /// @dev Only CC0 irrevocability is enforced on-chain (on the canonical key). Whether `next`
+    ///      is more permissive than the current license is a judgement the artist's and every
+    ///      party's consent plus the governed action carry; the contract does not order licenses.
+    ///      A license with the current key and text is a no-op.
     function relicense(
         uint256 tokenId,
         License calldata next,

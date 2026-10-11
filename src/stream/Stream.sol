@@ -74,6 +74,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     error InvalidRoyaltyRate(uint32 rate);
     /// @notice The token was never minted, or is still live.
     error NotBurned(uint256 tokenId);
+    /// @notice The primary sale settled, so the token can no longer be burned.
+    error SaleAlreadySettled(uint256 tokenId);
 
     /// @dev A token's three words. `feeRecipientId` and `minterId` index `_feeRecipients` and
     ///      the admitted minters, both from 1.
@@ -242,13 +244,18 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev Admitted minters only, and only for the caller's own token: the auction custody
-    ///      path after an upheld dispute (ADR 0001 section 12). The ID is never reused.
+    /// @dev Only the adapter that minted the token, while it still holds it in custody and
+    ///      before the primary sale settled: the auction's cancel after an upheld dispute
+    ///      (ADR 0001 section 12). Like `markPrimarySettled`, it works even after the adapter
+    ///      was removed, so a running dispute can still finish. After a sale nothing is
+    ///      confiscated. The ID is never reused.
     function burn(uint256 id, uint256 amount) external {
-        if (!_minters[msg.sender].admitted) revert NotAdmittedMinter(msg.sender);
         address holder = _ownerOf(id);
         if (amount != 1) revert InvalidMintRequest();
         if (holder != msg.sender) revert ERC721IncorrectOwner(msg.sender, id, holder);
+        TokenData storage t = _tokens[id];
+        if (_minters[msg.sender].id != t.minterId) revert NotAdmittedMinter(msg.sender);
+        if (t.primarySaleSettled) revert SaleAlreadySettled(id);
         ++_counts.burned;
         _burn(id);
     }

@@ -113,6 +113,13 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     function burn(uint256 seed) external {
         (bool ok, uint256 tokenId) = _held(seed, address(auction));
         if (!ok) return;
+        if (settled[tokenId]) {
+            // After a sale nothing is confiscated: the burn must revert.
+            try auction.burn(stream, tokenId, 1) {
+                ++violations;
+            } catch { }
+            return;
+        }
         auction.burn(stream, tokenId, 1);
         burned[tokenId] = true;
         ++ghostBurned;

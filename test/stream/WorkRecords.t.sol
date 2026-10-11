@@ -331,6 +331,23 @@ contract WorkRecordsTest is RecordsFixture {
         records.finalize(tokenId, signed);
     }
 
+    function test_finalize_needsCompleteRecordFile() public {
+        (uint256 tokenId,) = _work(1);
+        bytes memory json = '{"name":"pending"}';
+        bytes32 pending = _file(json, "application/json", false);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.setRecord(tokenId, pending, state);
+        state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(WorkRecords.RecordFileIncomplete.selector, pending));
+        records.finalize(tokenId, state);
+        store.writeChunk(json);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        assertTrue(records.record(tokenId).finalized);
+    }
+
     function test_finalize_reverts() public {
         (uint256 tokenId,) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
