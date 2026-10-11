@@ -26,6 +26,10 @@ library VerifyV1 {
     error WrongAuthority(address target, address authority);
     error WiringNotApplied(address target, bytes4 selector);
     error UnknownWiringSelector(bytes4 selector);
+    /// @notice A wiring call's calldata is shorter than its selector's arguments.
+    error MalformedWiringCall(bytes4 selector);
+    /// @notice A bind's getter reverted or returned something other than one word.
+    error GetterFailed(address target, string signature);
     error PlatformPathClosed(address target, bytes4 selector);
     error PlatformHolderMissing();
 
@@ -58,7 +62,9 @@ library VerifyV1 {
         checkPlatformPath(d, cfg);
     }
 
-    /// @notice Reverts unless the wired getter reflects `call`.
+    /// @notice Reverts unless the wired getter reflects `call`. This is genesis readback: a
+    ///         default currency must still be at the revision its wiring produced, so a later
+    ///         (14-day) FUNDS_SETTER change makes it fail by design.
     function checkWired(DeployV1.Deployment memory d, GovernanceConfig.Call memory call)
         internal
         view
@@ -73,22 +79,14 @@ library VerifyV1 {
             (uint64 count,) = IStatementLog(target).chainOf(address(d.manager), 0);
             ok = count != 0;
         } else if (selector == IAssetAllowlist.setDefaultCurrency.selector) {
-            bytes32 product;
-            address asset;
-            assembly ("memory-safe") {
-                product := mload(add(data, 36))
-                asset := mload(add(data, 100))
-            }
-            (bool configured, address current,) =
+            bytes32 product = _word(data, 0);
+            uint256 expected = uint256(_word(data, 1));
+            address asset = address(uint160(uint256(_word(data, 2))));
+            (bool configured, address current, uint64 revision) =
                 IAssetAllowlist(target).defaultCurrencyConfig(product);
-            ok = configured && current == asset;
+            ok = configured && current == asset && revision == expected + 1;
         } else {
-            address arg;
-            bool flag;
-            assembly ("memory-safe") {
-                arg := mload(add(data, 36))
-                flag := mload(add(data, 68))
-            }
+            address arg = address(uint160(uint256(_word(data, 0))));
             if (selector == IStream.bindWorkRecords.selector) {
                 ok = _getter(target, "workRecords()") == arg;
             } else if (selector == IStream.bindEditions.selector) {
@@ -102,9 +100,9 @@ library VerifyV1 {
             } else if (selector == IArtistRegistry.bindFederationRegistry.selector) {
                 ok = _getter(target, "federationRegistry()") == arg;
             } else if (selector == IMintTarget.setAdmittedMinter.selector) {
-                ok = IMintTarget(target).isAdmittedMinter(arg) == flag;
+                ok = IMintTarget(target).isAdmittedMinter(arg) == (_word(data, 1) != 0);
             } else if (selector == ISaleAdapter.setTarget.selector) {
-                ok = ISaleAdapter(target).isTarget(arg) == flag;
+                ok = ISaleAdapter(target).isTarget(arg) == (_word(data, 1) != 0);
             } else {
                 revert UnknownWiringSelector(selector);
             }
@@ -144,9 +142,20 @@ library VerifyV1 {
         if (!immediate) revert PlatformPathClosed(target, selector);
     }
 
+    /// @dev Fails closed: a getter that reverts or returns anything but one word is an error,
+    ///      never a zero address that could match a zero argument.
     function _getter(address target, string memory signature) private view returns (address) {
         (bool ok, bytes memory ret) = target.staticcall(abi.encodeWithSignature(signature));
-        if (!ok || ret.length != 32) return address(0);
+        if (!ok || ret.length != 32) revert GetterFailed(target, signature);
         return abi.decode(ret, (address));
+    }
+
+    /// @dev The `index`th 32-byte argument word of `data` (after the selector), bounds-checked.
+    function _word(bytes memory data, uint256 index) private pure returns (bytes32 word) {
+        uint256 end = 4 + 32 * (index + 1);
+        if (data.length < end) revert MalformedWiringCall(bytes4(data));
+        assembly ("memory-safe") {
+            word := mload(add(data, end))
+        }
     }
 }

@@ -40,6 +40,9 @@ contract Deploy is Script {
     error ExampleGenesisOffAnvil();
     error PlaceholderHolder(string role, address account);
     error NonCanonicalDelegationOnMainnet(address delegation);
+    /// @notice `--sender` was not given: the script's sender is Foundry's default, not the
+    ///         signing account, so the configurator would name the wrong deployer.
+    error SenderNotSet();
 
     function run() external returns (DeployV1.Deployment memory d) {
         bool local = block.chainid == DeployV1.LOCAL_CHAIN_ID;
@@ -48,6 +51,7 @@ contract Deploy is Script {
         string memory json = vm.readFile(path);
         checkGenesis(path, json, local);
         DeployV1.Params memory p = params(local);
+        if (msg.sender == DEFAULT_SENDER) revert SenderNotSet();
         p.deployer = msg.sender;
         DeployV1.Manifest memory manifest = DeployV1.Manifest(
             _bytes32("MANIFEST_SHA256", PLACEHOLDER_MANIFEST, local),
@@ -113,6 +117,10 @@ contract Deploy is Script {
         p.cc0Text = _cc0Text(local);
         p.ethIncrementFloor = vm.envOr("ETH_INCREMENT_FLOOR", uint256(0.001 ether));
         p.permit2 = vm.envOr("PERMIT2", DeployV1.CANONICAL_PERMIT2);
+        // The fixed-price and Dutch sales require a nonzero Permit2; off anvil it must be real.
+        if (!local && p.permit2.code.length == 0) {
+            revert MissingParameter("PERMIT2 (no code at the address)");
+        }
         p.auction = IEnglishAuction.AuctionConfig(
             uint32(vm.envOr("AUCTION_DURATION", uint256(24 hours))),
             uint32(vm.envOr("AUCTION_EXTENSION_WINDOW", uint256(15 minutes))),

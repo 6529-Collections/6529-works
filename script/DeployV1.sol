@@ -479,6 +479,8 @@ library DeployV1 {
             (bool ok, GovernanceConfig.Call memory c) = _wiringCall(d, json, i, manifest);
             if (ok) calls[k++] = c;
         }
+        // Shrink the array to the calls kept. The dropped tail stays allocated but unreachable:
+        // the array's length word is all that callers and `abi.encode` read.
         assembly ("memory-safe") {
             mstore(calls, k)
         }
@@ -603,7 +605,8 @@ library DeployV1 {
     function _paramTypes(string memory sig) private pure returns (string[] memory types) {
         bytes memory s = bytes(sig);
         uint256 open;
-        while (s[open] != "(") ++open;
+        while (open < s.length && s[open] != "(") ++open;
+        if (open + 1 >= s.length || s[s.length - 1] != ")") revert UnsupportedWiringSignature(sig);
         uint256 count = s[open + 1] == ")" ? 0 : 1;
         for (uint256 i = open + 1; i < s.length; ++i) {
             if (s[i] == "(") revert UnsupportedWiringSignature(sig);

@@ -16,6 +16,7 @@ import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -90,6 +91,14 @@ contract DeployV1Test is Test {
         view
     {
         VerifyV1.checkWired(d, call);
+    }
+
+    function wiringExternal(DeployV1.Deployment memory d, string memory genesis)
+        external
+        view
+        returns (GovernanceConfig.Call[] memory)
+    {
+        return DeployV1.wiring(d, genesis, manifest);
     }
 
     function _settle(DeployV1.Deployment memory d) internal {
@@ -379,6 +388,62 @@ contract DeployV1Test is Test {
             )
         );
         this.checkWiredExternal(d, fake);
+    }
+
+    function test_ReadbackChecksTheDefaultCurrencyRevision() public {
+        (DeployV1.Deployment memory d,,) = _genesis(_params());
+        // Genesis wired revision 0, so the allowlist is at revision 1; a call claiming to have
+        // wired revision 1 would have left it at 2.
+        GovernanceConfig.Call memory claimed = GovernanceConfig.Call(
+            address(d.assetAllowlist),
+            abi.encodeCall(IAssetAllowlist.setDefaultCurrency, (PRODUCT_STREAM, 1, CURRENCY_ETH))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.WiringNotApplied.selector,
+                address(d.assetAllowlist),
+                IAssetAllowlist.setDefaultCurrency.selector
+            )
+        );
+        this.checkWiredExternal(d, claimed);
+    }
+
+    function test_ReadbackRejectsTruncatedWiringCalldata() public {
+        (DeployV1.Deployment memory d,,) = _genesis(_params());
+        // setTarget(address,bool) without its bool.
+        GovernanceConfig.Call memory truncated = GovernanceConfig.Call(
+            address(d.englishAuction),
+            abi.encodePacked(ISaleAdapter.setTarget.selector, abi.encode(address(d.stream)))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.MalformedWiringCall.selector, ISaleAdapter.setTarget.selector
+            )
+        );
+        this.checkWiredExternal(d, truncated);
+    }
+
+    function test_ReadbackFailsClosedWhenAGetterIsMissing() public {
+        (DeployV1.Deployment memory d,,) = _genesis(_params());
+        // A zero bind argument must not match a getter that does not exist.
+        GovernanceConfig.Call memory wrongTarget = GovernanceConfig.Call(
+            address(d.assetAllowlist), abi.encodeCall(IStream.bindWorkRecords, (address(0)))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.GetterFailed.selector, address(d.assetAllowlist), "workRecords()"
+            )
+        );
+        this.checkWiredExternal(d, wrongTarget);
+    }
+
+    function test_AMalformedWiringSignatureIsReported() public {
+        DeployV1.Deployment memory d = DeployV1.deploy(_params());
+        string memory broken = vm.replace(json, '"bindWorkRecords(address)"', '"bindWorkRecords"');
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployV1.UnsupportedWiringSignature.selector, "bindWorkRecords")
+        );
+        this.wiringExternal(d, broken);
     }
 
     function test_ReadbackFailsBeforeTheDelaysSettle() public {
