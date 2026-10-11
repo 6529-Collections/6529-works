@@ -873,11 +873,17 @@ contract EditionsTest is EditionsBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
         editions.setContractURI("ipfs://x");
+        vm.expectEmit(false, false, false, true, address(editions));
+        emit Editions.ContractURISet("", "ipfs://contract");
         vm.expectEmit(false, false, false, false, address(editions));
         emit IEditions.ContractURIUpdated();
         vm.prank(governor);
         editions.setContractURI("ipfs://contract");
         assertEq(editions.contractURI(), "ipfs://contract");
+        vm.expectEmit(false, false, false, true, address(editions));
+        emit Editions.ContractURISet("ipfs://contract", "ipfs://v2");
+        vm.prank(governor);
+        editions.setContractURI("ipfs://v2");
     }
 
     function test_SetOwner_CompareAndSet() public {

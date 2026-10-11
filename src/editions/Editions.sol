@@ -105,6 +105,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     event EditionWindowOpened(uint256 indexed editionId, uint64 start, uint256 end);
     /// @notice ERC-4906: the metadata of edition `_tokenId` changed.
     event MetadataUpdate(uint256 _tokenId);
+    /// @notice The contract URI changed from `previous` to `next` (beside ERC-7572's
+    ///         `ContractURIUpdated`, which carries no values).
+    event ContractURISet(string previous, string next);
     /// @notice The work-records satellite was bound, permanently, with its reviewed code hash.
     event WorkRecordsBound(address indexed workRecords, bytes32 codeHash);
 
@@ -353,7 +356,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     function setContractURI(string calldata uri_) external restricted {
+        string memory previous = _contractURI;
         _contractURI = uri_;
+        emit ContractURISet(previous, uri_);
         emit ContractURIUpdated();
     }
 

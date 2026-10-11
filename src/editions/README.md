@@ -2,8 +2,8 @@
 
 The single shared 6529 Editions ERC-1155 (`Editions.sol`, implementing `IEditions`
 and `IMintTarget`). Every edition is anchored by a Stream work of kind
-`EDITION_MASTER`; the edition token records `(stream, workId, contentHash)`,
-renders the master's `ContentStore` bytes, carries the master's license, and is
+`EDITION_MASTER`; the edition token records `(stream, workId, contentId)` and
+the master's claimed content hash (`contentHashOf`), renders the master's `ContentStore` bytes, carries the master's license, and is
 created only from the approved package. Edition sales use the shared fixed-price
 (allowlist phases with the recipient-bound leaf fix, ERC-20 permits) and Dutch
 adapters from `sales/`. Governed by
