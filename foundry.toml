@@ -22,7 +22,8 @@ via_ir = false
 # ADR 0001: CBOR metadata with an IPFS hash so Sourcify/Etherscan report exact matches.
 bytecode_hash = "ipfs"
 cbor_metadata = true
-fs_permissions = []
+# Read-only, and only the committed deployment configuration (test/governance/GenesisConfig.t.sol).
+fs_permissions = [{ access = "read", path = "./config" }]
 # EIP-170/EIP-3860 stay enforced: code_size_limit is deliberately not raised.
 
 [profile.default.fuzz]
