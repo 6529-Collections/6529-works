@@ -1,0 +1,291 @@
+# ADR 0003: Build-time decisions for v1
+
+Status: Accepted by the delivery owner (Claude Code, acting for the repository
+owner), 11 October 2026. Amends [ADR 0001](0001-v1-scope.md) and extends
+[ADR 0002](0002-access-manager-hardening.md).
+
+Decisions marked **Owner decision pending** are not settled. They are listed in
+[Open items](#open-items) for the repository owner.
+
+## Problem
+
+ADR 0001 fixed v1's scope before any v1 code existed. Building the modules
+showed four kinds of gap:
+- some rules could not be met as written;
+- some rules were ambiguous;
+- some rules were unsafe in detail;
+- some rules conflicted with the 16,777,216-gas per-transaction cap that
+  EIP-7825 (Fusaka) introduced.
+
+Independent adversarial reviews of each module produced the decisions below.
+Each records what changed and why, so the code, the tests and the ADRs agree.
+
+## Decision
+
+### Package format and curation (amends ADR 0001 §3)
+
+- **Hashing is ABI encoding, not RFC 8785 JSON.**
+  - Package items are hashed with `abi.encode` through `WorksHashing`: a
+    domain-separated, double-hashed leaf, compatible with OpenZeppelin's
+    `StandardMerkleTree`.
+  - Contracts cannot canonicalise JSON within the auction-start gas budget.
+    Off-chain tools compute the same bytes with standard ABI encoders.
+- **Media is fixed at approval.**
+  - An item commits to a hash over every media file (file ID and decoded
+    SHA-256), not just the primary file.
+  - Descriptive metadata (the work record) stays editable until finalize.
+- **Uniqueness and its limits.**
+  - Uniqueness keys on the item's declared content hash, the decoded SHA-256 of
+    the primary media.
+  - The on-chain check is defence in depth. The curation signer must verify
+    every declared SHA-256 against the decoded bytes, and its tooling must
+    simulate `openRecord` before attesting.
+  - Base64 is decoded strictly.
+- **Releasing content after a dispute.**
+  - After an upheld dispute burns a token, anyone may call
+    `IStream.releaseContent`.
+  - That frees the content hash for its rightful artist and tombstones the
+    copier's item, so it can never be consumed again.
+- **Guardian controls over curation.**
+  - The guardian can revoke a package before it is registered.
+  - The guardian can disable a curation signer immediately and one way.
+    Re-enabling is in the 30-day class.
+  - At least two signers are provisioned at genesis.
+- **Allowlist prices below the package price need the artist's consent.**
+  - The signed phase configuration binds the resolved currency, the package
+    price and a typed phase list.
+- **Statement subjects before mint.**
+  - A statement about a work that is not yet minted uses the subject
+    `(address(0), uint256(itemHash))`.
+  - Artist statements need a minted token.
+
+### Token model and storage (amends ADR 0001 §4 and §8)
+
+- **Stream is split in two.**
+  - **Core token (`Stream`):** the ERC-721, mint and burn, royalties,
+    collections, the edition link and `tokenURI` forwarding.
+  - **Records satellite (`WorkRecords`):** the work record, finalize, licence,
+    renderer pin, locators and preferred location.
+  - One contract with the full surface would exceed EIP-170.
+- **The work record is a content-store file** (JSON, `Identity` encoding, one
+  chunk at most).
+- **Record access.**
+  - Views and mutators for a token revert with `RecordNotOpen` until
+    `openRecord` runs.
+  - `openRecord` is permissionless and checks the committed media.
+  - The renderer falls back to core-only metadata until the record is open.
+  - An invalid record also renders as core-only metadata, marked
+    `"record_status":"invalid"`. It never reverts.
+- **Preferred location: the most specific setting wins.** The order is:
+  1. the file override;
+  2. the collection setting;
+  3. the global setting;
+  4. the first registered locator.
+
+  ADR 0001 §8 listed these in the opposite order.
+- **Locator kinds.**
+  - Locators are ARWEAVE and IPFS only. HTTPS is dropped because its content can
+    change.
+  - On-chain copies are served once the file is complete.
+  - The artist and the platform each have a quota of 8 locators.
+- **Content store.**
+  - A file holds at most 512 chunks (about 12.58 MB). Registering a manifest
+    must fit the Fusaka transaction cap.
+  - Two full chunks (about 49 KB) fit in one transaction, not the 72 KB stated
+    in ADR 0001 §8.
+  - Encodings are `Identity`, `Gzip`, `Base64` and `GzipBase64`.
+  - The file ID binds the chunk list, length, encoding, MIME type and decoded
+    SHA-256.
+- **Rendering inline media.**
+  - Inline media must be stored as base64 and attested once through
+    `ContentStore.attestBase64`, a permissionless strict-alphabet check, before
+    the renderer copies it.
+  - `Identity` media inlines only up to about 32 KiB, because encoding it
+    on-chain costs about 80 gas per byte.
+  - Gzip media is never inlined in v1.
+  - `fullTokenURI` inlines up to 1 MiB of base64-stored media.
+  - `tokenURI` stays at or under 8M gas for every record within bounds. The
+    JSON scanner caps values, escapes and nesting.
+- **Licence identifiers.**
+  - `spdxId` keeps its original case, from the character set `[A-Za-z0-9.+-]`.
+  - Comparisons use `licenseKey = keccak256(lowercase(spdxId))`. CC0
+    irrevocability is enforced on that key.
+  - Other "more permissive" judgements rest on the artist's consent plus
+    governance.
+  - `license_url` links to spdx.org, which is HTTPS and can change. It is an
+    accepted deviation, and the licence text stays in the content store.
+- **Finalize** requires the record file to be complete on-chain.
+
+### Sales and auctions (amends ADR 0001 §5, §6 and §9)
+
+- **Starting an auction costs at most 350K gas at steady state, not 300K.**
+  - Reaching 300K would need every optimisation at once. The measured design
+    sits at about 270–300K.
+  - The first start in an empty collection or custody is measured separately.
+- **Opening bid and increments.**
+  - The first bid must be at least `max(openingBid, 1 wei)`, so a zero bid
+    cannot claim a work.
+  - The increment floor is locked at the first bid.
+  - The opening bid is a governed compare-and-set value. It can move in both
+    directions, under a ceiling. The raise-only rule in ADR 0001 §13 covers gas
+    parameters.
+- **Currency.**
+  - The adapter resolves and locks the currency.
+  - A non-zero fixed price must name an explicit currency. The default currency
+    is allowed only for zero-price sales.
+  - Deprecating a currency halts running sales in it. Refunds and withdrawals
+    are never blocked.
+- **No-bid outcome.** With no bids, the token goes to the artist's current
+  authority, resolved at settlement.
+- **Delivery.** The winner may name a delivery address. A failed delivery
+  becomes a pending claim.
+- **Emergency pause.**
+  - Every sale adapter has one: PAUSER pauses and UNPAUSER unpauses.
+  - On the auction it blocks only new starts. Bids on live auctions continue.
+- **Editions.**
+  - An edition opens only after its master's sale settles.
+  - It takes the master's current royalty rate.
+- **Fixed-price allowlists.**
+  - The allowlist leaf binds chain, adapter, token, ID, phase, account, cap and
+    price.
+  - Per-wallet counts persist across reopened sales.
+  - One sale may be open per edition, and anyone may close a sale whose phases
+    have all ended.
+- **Dutch sales** have no clearing price and no rebate.
+- **Randomness requests happen before minting (amends §9).**
+  - Anyone may call `requestSeed` for an approved, unconsumed VRF item. Starting
+    the auction requires the seed to have been delivered.
+  - Chainlink VRF v2.5 never expires a request, so a retry adds a request and
+    the first delivery wins. The minimum retry delay is 3 days.
+  - The module uses a dedicated subscription. Chainlink's `migrate` cannot be
+    used with it.
+
+### Economics (amends ADR 0001 §7)
+
+- **Split wallets.**
+  - A split wallet has at most 64 payees, not "any number", to fit the
+    transaction gas cap.
+  - Artist-resolved payees are pull-only. Only the artist's current payout
+    address, or its signature, can release their share. Recovery therefore
+    covers balances already accrued.
+  - A split wallet cannot be an artist's payout address.
+- **Escrow recovery.**
+  - Escrow terminal recovery moves credits to a replacement wallet with an
+    identical payee configuration.
+  - No account's share changes, so the consent ADR 0001 §7 requires is
+    satisfied trivially.
+- **Asset allowlist.** Every admission, deprecation and floor change carries a
+  revision counter for compare-and-set.
+- **Royalty receiver.**
+  - The receiver is derived from the payee configuration through the pinned
+    split factory, not stored.
+  - It costs one external view call in `royaltyInfo` (about 25K gas), which
+    reverts and never returns zero when gas runs short.
+  - This is an accepted deviation from ADR 0001 §7's "no external call" wording.
+
+### Identity and recovery (amends ADR 0001 §11)
+
+- **Artist IDs.** An artist ID is `uint256(uint160(first authority))`. The
+  registry address never changes, and the consolidation source can be swapped
+  inside it.
+- **Override acceptance.** An override that changes the authority needs the new
+  authority's acceptance. The acceptance is single-use by digest, not by nonce:
+  a nonce would let a key thief stall recovery.
+- **Sticky standing.**
+  - The registry keeps a snapshot of each artist's established wallets.
+  - A wallet that stops being consolidated keeps its standing to cancel for 30
+    days, with public events.
+  - This makes good on ADR 0001's rule that a thief cannot strip the artist's
+    wallets of standing, even before staging.
+- **Payout freeze.** The payout returns zero only while a pending change or
+  override would move it. A change that cannot execute is cleared rather than
+  left blocking.
+- **Activity that resets the one-year dormancy clock:**
+  - registration;
+  - a staged change;
+  - a heartbeat;
+  - a cancel by the old key or a captured wallet;
+  - a nonce revocation;
+  - an executed change.
+
+  Governed overrides and guardian vetoes do not count.
+
+### Disputes and statements (amends ADR 0001 §12)
+
+- **Upheld disputes.**
+  - Upheld is a 48-hour governed `cancel`. It must cite the recorded
+    `DISPUTE_OUTCOME` statement, and is accepted while the pause is live
+    (inclusive of its last second).
+- **Reserved statement kinds.**
+  - `DISPUTE_OUTCOME` is reserved to PLATFORM, and `CURATION_EVIDENCE` to
+    CURATOR.
+  - Each subject stores its latest dispute outcome, so metadata can show it.
+- **Governance manifests.** `GOVERNANCE_MANIFEST` statements are written only
+  through `appendGovernanceManifest` (30-day class). That is the only path the
+  AccessManager may sign.
+- **Artist statements and the resolver.**
+  - An artist statement records the resolver that vouched for it.
+  - The resolver is replaced in the 30-day class.
+
+### Governance (extends ADR 0002)
+
+- **No shared SYSTEM role.**
+  - Contract-to-contract calls use per-pair, one-time bindings. Each binding
+    checks ERC-165, rejects EIP-7702 delegated accounts and verifies the
+    satellite points back to the same token.
+- **Genesis wiring.**
+  - The genesis configurator holds ADMIN with no delay until it renounces.
+  - Before renouncing, it performs every binding and minter admission, so the
+    system can operate from genesis.
+- **Minting.**
+  - Minting checks an admitted-adapter mapping, set in the 30-day class.
+  - The adapter that minted a token may still burn it after an upheld dispute,
+    even if it has since been removed.
+- **Selector classes added to the ADR 0002 table:**
+
+| Function | Class |
+| --- | --- |
+| `RevenueEscrow.recover` | Funds and recipients (14 days) |
+| `StatementLog.appendGovernanceManifest` | Verifier and successor (30 days) |
+| `StatementLog.appendCurator`, `appendPlatform` | Zero-delay CURATOR, PLATFORM |
+| `AssetAllowlist.deprecateAsset` | Immediate, GUARDIAN |
+| Sale adapters `openSale`, `closeSale` | Zero-delay PLATFORM |
+| Sale adapters `setTarget`, `setFederationRegistry` | Verifier and successor (30 days) |
+| Sale adapters `pause` / `unpause` | PAUSER (immediate) / UNPAUSER |
+| Auction opening bid | Standard (48 hours), compare-and-set, ceiling |
+| Entropy `setCoordinator` | Verifier and successor (30 days) |
+| Entropy `setConfig` | Standard (48 hours) |
+| Stream and Editions `setAdmittedMinter` | Verifier and successor (30 days) |
+
+## Security impact
+
+- **Closed:**
+  - JSON injection through unchecked base64 media;
+  - unbounded `tokenURI` gas;
+  - a zero bid claiming unsold works;
+  - allowlist cap resets;
+  - sale prices that change meaning when the default currency changes;
+  - a thief stripping an artist's cancellers before staging;
+  - keepers pushing an artist's accrued balance to a lost key;
+  - selective re-rolls of late randomness deliveries;
+  - a content hash locked forever by a copier;
+  - unopenable records freezing a work.
+- **Residual and accepted:**
+  - Before the 6529 chain, curation rests on a trusted signer and its tooling
+    obligations.
+  - A hostile approved package can spend one randomness draw per VRF item until
+    a guardian revokes it.
+  - Zero-price artist-approved allowlist entries pay no network fee.
+  - After a successful hijack, the thief's prepared wallets can cancel recovery
+    overrides. See [Open items](#open-items).
+
+## Open items
+
+- **Owner decision pending:** mitigation for override cancels after a hijack.
+  Either cap override cancels, after which only the guardian can stop an
+  override, or escalate contested overrides to a TDH vote.
+- **Owner decision pending:** a cold recovery admin Safe, as recommended in
+  ADR 0002.
+- **Owner decision pending:** three or more guardian Safes at deployment.
+- **Re-measure on the integrated stack:** start gas against the real contracts,
+  and the `tokenURI` and inline-threshold matrix on Sepolia.

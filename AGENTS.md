@@ -22,7 +22,9 @@ Instructions for automated coding agents working in this repository.
 - EIP-170 respected, measured on the explicit `--profile default` build.
 - No unreviewed High or Medium Slither finding (`docs/security/slither-triage.md`).
 - CI under 15 minutes.
-- Starting an auction costs 300K gas or less; `tokenURI` costs 8M gas or less.
+- Starting an auction costs 350K gas or less at steady state ([ADR 0003](docs/adr/0003-build-time-decisions.md));
+  `tokenURI` costs 8M gas or less.
+- Every transaction fits the 16,777,216-gas cap (EIP-7825) for worst-case bounded inputs.
 
 **Solidity:** the pinned 0.8.x compiler in `foundry.toml`, OpenZeppelin 5, and
 custom errors.
