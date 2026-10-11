@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+/// @title Roles
+/// @notice Canonical OpenZeppelin 5 `AccessManager` role IDs and delay classes for every
+///         6529 Works contract (ADR 0001 §13). Import these constants; never hard-code a role ID.
+/// @dev In `AccessManager` a delay belongs to a (role, holder) pair, not to a function. A delay
+///      class is therefore a role whose holders always carry the class delay as their execution
+///      delay, and "one selector, one class" means every governed selector maps to exactly one
+///      of these roles. IDs are contiguous from 0 to `COUNT - 1`, so callers may loop over them.
+library Roles {
+    // ----------------------------------------------------------------- delay classes
+
+    /// @notice Tightening actions and pauses.
+    uint32 internal constant IMMEDIATE = 0;
+    /// @notice Standard actions: sale parameters, defaults for new works, dispute outcomes.
+    uint32 internal constant STANDARD = 48 hours;
+    /// @notice Funds and network-level recipients.
+    uint32 internal constant FUNDS = 14 days;
+    /// @notice Verifier and successor-level swaps, one-way freezes, and meta-governance.
+    uint32 internal constant SUCCESSOR = 30 days;
+
+    // --------------------------------------------------------------------- role IDs
+
+    /// @notice `AccessManager.ADMIN_ROLE`: the admin Safe, 30-day execution delay.
+    uint64 internal constant ADMIN = 0;
+    /// @notice Guardian Safes (at least two): guardian of every other role, so they can cancel
+    ///         any scheduled operation; also mapped to immediate veto functions (dispute pause,
+    ///         identity veto). Never a proposer.
+    uint64 internal constant GUARDIAN = 1;
+    /// @notice Immediate `pause` selectors. Held by the guardian Safes, never by an unpauser.
+    uint64 internal constant PAUSER = 2;
+    /// @notice `unpause` selectors, standard class so a guardian can cancel a hostile unpause.
+    uint64 internal constant UNPAUSER = 3;
+    /// @notice Curation signer keys whose EIP-712 attestations the v1 verifier accepts.
+    uint64 internal constant CURATION_SIGNER = 4;
+    /// @notice Switches preferred locations among registered, hash-equal locators.
+    uint64 internal constant STORAGE_OPERATOR = 5;
+    /// @notice Shared sale adapters allowed to mint.
+    uint64 internal constant MINTER = 6;
+    /// @notice Maintenance bots for permissionless-equivalent upkeep.
+    uint64 internal constant KEEPER = 7;
+    /// @notice Platform operations: registering locators and posting platform statements.
+    uint64 internal constant PLATFORM = 8;
+    /// @notice Standard-class governed setters (48 hours).
+    uint64 internal constant PARAMETER_SETTER = 9;
+    /// @notice Funds-and-recipients-class governed setters (14 days).
+    uint64 internal constant FUNDS_SETTER = 10;
+    /// @notice Verifier, renderer, successor and freeze setters (30 days).
+    uint64 internal constant SUCCESSOR_SETTER = 11;
+    /// @notice The manager's own admin selectors, held by the admin Safe. Authorization for
+    ///         those selectors stays with `ADMIN`; the mapping makes `GUARDIAN` their canceller
+    ///         under stock OpenZeppelin rules and makes `canCall` report the 30-day delay.
+    uint64 internal constant META = 12;
+    /// @notice Number of role IDs defined here (0 through 12).
+    uint64 internal constant COUNT = 13;
+    /// @notice `AccessManager.PUBLIC_ROLE`. Never map a governed selector to it.
+    uint64 internal constant PUBLIC = type(uint64).max;
+
+    /// @notice `role` is not one of the IDs defined here.
+    error UnknownRole(uint64 role);
+
+    /// @notice The execution delay every holder of `role` must carry.
+    function executionDelay(uint64 role) internal pure returns (uint32) {
+        if (role == ADMIN || role == SUCCESSOR_SETTER || role == META) return SUCCESSOR;
+        if (role == FUNDS_SETTER) return FUNDS;
+        if (role == PARAMETER_SETTER || role == UNPAUSER) return STANDARD;
+        if (role < COUNT) return IMMEDIATE;
+        revert UnknownRole(role);
+    }
+
+    /// @notice The delay before a newly granted holder of `role` becomes active. Never shorter
+    ///         than the role's execution delay (ADR 0001 §13.1).
+    function grantDelay(uint64 role) internal pure returns (uint32) {
+        if (
+            role == ADMIN || role == GUARDIAN || role == CURATION_SIGNER || role == MINTER
+                || role == SUCCESSOR_SETTER || role == META
+        ) return SUCCESSOR;
+        if (role == FUNDS_SETTER) return FUNDS;
+        if (role < COUNT) return STANDARD;
+        revert UnknownRole(role);
+    }
+
+    /// @notice Whether holders of `role` schedule delayed operations. Guardians hold none.
+    function isProposer(uint64 role) internal pure returns (bool) {
+        return executionDelay(role) != IMMEDIATE;
+    }
+
+    /// @notice The label emitted for `role` at configuration. `ADMIN` cannot be labelled.
+    function label(uint64 role) internal pure returns (string memory) {
+        if (role == GUARDIAN) return "GUARDIAN";
+        if (role == PAUSER) return "PAUSER";
+        if (role == UNPAUSER) return "UNPAUSER";
+        if (role == CURATION_SIGNER) return "CURATION_SIGNER";
+        if (role == STORAGE_OPERATOR) return "STORAGE_OPERATOR";
+        if (role == MINTER) return "MINTER";
+        if (role == KEEPER) return "KEEPER";
+        if (role == PLATFORM) return "PLATFORM";
+        if (role == PARAMETER_SETTER) return "PARAMETER_SETTER";
+        if (role == FUNDS_SETTER) return "FUNDS_SETTER";
+        if (role == SUCCESSOR_SETTER) return "SUCCESSOR_SETTER";
+        if (role == META) return "META";
+        revert UnknownRole(role);
+    }
+}
