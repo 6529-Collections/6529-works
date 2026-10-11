@@ -21,15 +21,17 @@ edition ID is the master's token ID, and nothing changes or removes a link.
 **Minting.** Only MINTER adapters whose `saleKind()` matches the package's may
 mint. FIXED editions stop at `size` copies; OPEN editions sell for `window`
 seconds from the first mint, capped at `size` when it is nonzero. Burned copies
-still count toward the size. The package's currency is resolved when the terms
-are read (`CURRENCY_DEFAULT` to the product default, every currency checked
-active), so an adapter locks it when it opens a sale, from `primaryTerms`.
+still count toward the size. The sale adapter owns the currency: `primaryTerms`
+and `mint` return the package's stored currency (possibly `CURRENCY_DEFAULT`),
+and the adapter resolves and locks it when it opens a sale.
 
 **Reads.** `royaltyInfo` uses the receiver and rate (out of 100,000) locked at
 creation, from local storage. `licenseOf` and `uri` read through the master:
 `uri` is served by `IStream.rendererOf(id)`. ERC-4906 `MetadataUpdate` is emitted
 at creation and whenever the bound work-records satellite calls
-`notifyMasterUpdated` for a master with an edition.
+`notifyMasterUpdated` for a master with an edition; Stream's
+`notifyAllUpdated` (a default-renderer change) emits one `BatchMetadataUpdate`
+over every ID.
 
 **Wiring.** Stream is checked at deployment (code, no EIP-7702 delegation,
 ERC-165 for ERC-721, the reviewed code hash), and the package registry, economics

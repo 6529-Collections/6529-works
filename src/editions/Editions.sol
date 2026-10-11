@@ -58,15 +58,17 @@ interface IMasterSale {
 ///
 ///      Copies are minted only by MINTER adapters whose sale kind matches the package's, at
 ///      most `size` copies ever (burns do not free supply), and for OPEN editions only during
-///      `window` seconds from the first mint. The package's currency is resolved whenever the
-///      terms are read (`CURRENCY_DEFAULT` to the product default, and every currency checked
-///      active), so a sale adapter locks the currency when it opens a sale, from `primaryTerms`
-///      (ADR 0001 section 5: each sale locks its currency when it starts). Royalties are the terms
-///      locked at creation, read from this contract's storage with no external call. The license
-///      and `uri` come from the master: `uri` is served by the master's renderer, which reads the
-///      master's content-store bytes. ERC-4906 `MetadataUpdate` is emitted when an edition is
-///      created and whenever the bound work-records contract reports that its master's record,
-///      license or renderer changed.
+///      `window` seconds from the first mint. The currency has one owner, the sale adapter:
+///      `primaryTerms` and `mint` return the package's stored currency, possibly
+///      `CURRENCY_DEFAULT`, without resolving or re-validating it; the adapter resolves it once
+///      when it opens a sale, locks it, and checks on each purchase that the locked asset is still
+///      active (ADR 0001 section 5: each sale locks its currency when it starts). Royalties are
+///      the terms locked at creation, read from this contract's storage with no external call.
+///      The license and `uri` come from the master: `uri` is served by the master's renderer,
+///      which reads the master's content-store bytes. ERC-4906 `MetadataUpdate` is emitted when an
+///      edition is created and whenever the bound work-records contract reports that its master's
+///      record, license or renderer changed; Stream may signal a default-renderer change, which
+///      emits one `BatchMetadataUpdate` over every ID.
 ///
 ///      Wiring is immutable. Stream is checked at deployment (code, no EIP-7702 delegation,
 ///      ERC-165 for ERC-721, pinned code hash), and the package registry, economics resolver and
@@ -105,6 +107,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     event EditionWindowOpened(uint256 indexed editionId, uint64 start, uint256 end);
     /// @notice ERC-4906: the metadata of edition `_tokenId` changed.
     event MetadataUpdate(uint256 _tokenId);
+    /// @notice ERC-4906: the metadata of editions `_fromTokenId` to `_toTokenId` changed.
+    event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
     /// @notice The contract URI changed from `previous` to `next` (beside ERC-7572's
     ///         `ContractURIUpdated`, which carries no values).
     event ContractURISet(string previous, string next);
@@ -122,6 +126,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     error AlreadyBound();
     /// @notice The caller is not the bound work-records satellite.
     error NotWorkRecords(address caller);
+    /// @notice The caller is not Stream.
+    error NotStream(address caller);
     /// @notice The master's auction has not settled.
     error MasterNotSettled(uint256 workId);
     /// @notice The master's package is revoked or its item is not consumed.
@@ -227,6 +233,14 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     function notifyMasterUpdated(uint256 workId) external {
         if (msg.sender != workRecords) revert NotWorkRecords(msg.sender);
         if (exists(workId)) emit MetadataUpdate(workId);
+    }
+
+    /// @notice Reports that Stream's default renderer changed, which can change every edition
+    ///         whose master is not finalized. Only Stream may call; emits one ERC-4906
+    ///         `BatchMetadataUpdate(0, type(uint256).max)` and changes no state.
+    function notifyAllUpdated() external {
+        if (msg.sender != stream) revert NotStream(msg.sender);
+        emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
     /// @inheritdoc IEditions
@@ -412,7 +426,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     {
         return PrimaryTerms({
             saleKind: e.terms.saleKind,
-            currency: economics.resolveCurrency(PRODUCT_EDITIONS, e.terms.currency),
+            currency: e.terms.currency,
             price: e.terms.price,
             params: e.terms.params,
             seller: e.seller,

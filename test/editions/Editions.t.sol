@@ -12,7 +12,6 @@ import {
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { Editions } from "src/editions/Editions.sol";
-import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -308,10 +307,10 @@ contract EditionsTest is EditionsBase {
         editions.createEdition(id, item);
     }
 
-    /// @dev ADR 0001 section 5: each sale locks its currency when it starts. The edition keeps
-    ///      the package's `CURRENCY_DEFAULT`; the terms resolve it when read, so a sale opened
-    ///      after a default change locks the new default.
-    function test_PrimaryTerms_ResolveDefaultCurrencyWhenRead() public {
+    /// @dev The sale adapter owns the currency (ADR 0001 section 5): Editions returns the stored
+    ///      `CURRENCY_DEFAULT` unresolved, whatever the default is now, so `mint` can never
+    ///      disagree with the currency an adapter locked when its sale opened.
+    function test_PrimaryTerms_ReturnStoredDefaultCurrency() public {
         address usdc = makeAddr("usdc");
         economics.setAllowed(usdc, true);
         economics.setDefaultCurrency(usdc);
@@ -319,27 +318,19 @@ contract EditionsTest is EditionsBase {
         item.edition.currency = CURRENCY_DEFAULT;
         uint256 id = _create(item);
         assertEq(editions.edition(id).terms.currency, CURRENCY_DEFAULT, "stored as approved");
-        assertEq(editions.primaryTerms(id, "").currency, usdc);
-        (, PrimaryTerms memory terms) = fixedAdapter.buy(editions, id, buyer, 1);
-        assertEq(terms.currency, usdc);
+        assertEq(editions.primaryTerms(id, "").currency, CURRENCY_DEFAULT);
         economics.setDefaultCurrency(CURRENCY_ETH);
-        assertEq(editions.primaryTerms(id, "").currency, CURRENCY_ETH);
+        (, PrimaryTerms memory terms) = fixedAdapter.buy(editions, id, buyer, 1);
+        assertEq(terms.currency, CURRENCY_DEFAULT);
     }
 
-    /// @dev A currency that is not active cannot open a sale (or mint), but does not block
-    ///      creating the edition: it can be admitted later.
-    function test_PrimaryTerms_RefuseInactiveCurrency() public {
+    /// @dev Editions never validates the currency: an inactive or deprecated asset neither
+    ///      blocks creation nor minting. The adapter checks that its locked asset is active.
+    function test_PrimaryTerms_DoNotValidateCurrency() public {
         address token = makeAddr("unlisted");
         PackageItem memory item = _fixedItem(10);
         item.edition.currency = token;
         uint256 id = _create(item);
-        bytes memory notAllowed =
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, token);
-        vm.expectRevert(notAllowed);
-        editions.primaryTerms(id, "");
-        vm.expectRevert(notAllowed);
-        fixedAdapter.buy(editions, id, buyer, 1);
-        economics.setAllowed(token, true);
         assertEq(editions.primaryTerms(id, "").currency, token);
         (, PrimaryTerms memory terms) = fixedAdapter.buy(editions, id, buyer, 1);
         assertEq(terms.currency, token);
@@ -863,6 +854,23 @@ contract EditionsTest is EditionsBase {
         vm.prank(address(stream));
         vm.expectRevert(abi.encodeWithSelector(Editions.NotWorkRecords.selector, address(stream)));
         editions.notifyMasterUpdated(id);
+    }
+
+    function test_NotifyAllUpdated_OnlyStream() public {
+        vm.expectEmit(false, false, false, true, address(editions));
+        emit Editions.BatchMetadataUpdate(0, type(uint256).max);
+        vm.prank(address(stream));
+        editions.notifyAllUpdated();
+
+        _bindWorkRecords();
+        vm.prank(address(workRecordsMock));
+        vm.expectRevert(
+            abi.encodeWithSelector(Editions.NotStream.selector, address(workRecordsMock))
+        );
+        editions.notifyAllUpdated();
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(Editions.NotStream.selector, outsider));
+        editions.notifyAllUpdated();
     }
 
     // ------------------------------------------------------------------ governed setters
