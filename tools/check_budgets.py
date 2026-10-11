@@ -5,12 +5,15 @@ Checks:
   1. at most 12,000 non-comment, non-blank Solidity lines under src/ (lib/ excluded);
   2. no `delegatecall` (or the equivalent legacy `callcode`) in src/ code;
   3. at most 5 libraries with public or external functions (each would be linked);
-  4. every contract built by the v1 profile fits EIP-170 (24,576-byte runtime) and
-     EIP-3860 (49,152-byte initcode), read from `forge build --sizes --json`.
+  4. every contract built by the measured Foundry profile fits EIP-170 (24,576-byte
+     runtime) and EIP-3860 (49,152-byte initcode), read from
+     `forge build --sizes --json`.
 
 Run from anywhere: `python tools/check_budgets.py`. Standard library only. The
-repository root is the nearest ancestor with a foundry.toml, and sizes come from the
-`v1` profile when foundry.toml defines one, otherwise from the default profile.
+repository root is the nearest ancestor with a foundry.toml. Sizes always come from
+the profile named by `--profile`, which is `default` unless given; the measured
+profile is never inferred from foundry.toml, so adding a profile cannot silently
+change which bytecode the gate measures. CI passes `--profile default` explicitly.
 """
 
 from __future__ import annotations
@@ -28,6 +31,8 @@ MAX_LINES = 12_000
 MAX_LINKED_LIBRARIES = 5
 MAX_RUNTIME_BYTES = 24_576
 MAX_INITCODE_BYTES = 49_152
+DEFAULT_PROFILE = "default"
+SIZE_FIELDS = ("runtime_size", "init_size")
 
 FORBIDDEN_CALL = re.compile(r"\b(delegatecall|callcode)\b")
 LIBRARY = re.compile(r"\blibrary\s+([A-Za-z_$][\w$]*)\s*\{")
@@ -160,26 +165,44 @@ def check_sources(src: Path, report: Report, max_lines: int, max_linked: int) ->
     )
 
 
+def _is_size_entry(entry: object) -> bool:
+    """True for an object whose runtime_size and init_size are non-negative integers."""
+    return isinstance(entry, dict) and all(
+        type(entry.get(key)) is int and entry[key] >= 0 for key in SIZE_FIELDS
+    )
+
+
 def check_sizes(sizes: dict, report: Report) -> None:
+    """Check every contract in forge's size JSON, failing cleanly on unexpected shapes.
+
+    The gate is the only EIP-170 enforcement in CI, so a changed or truncated forge
+    output must produce a FAIL line naming the contract, never an exception.
+    """
     if not isinstance(sizes, dict):
         report.check(False, "contract sizes: expected a JSON object from forge")
         return
-    over = []
+    problems = []
+    valid: dict[str, dict] = {}
     for name, entry in sorted(sizes.items()):
-        runtime = int(entry["runtime_size"])
-        init = int(entry["init_size"])
-        if runtime > MAX_RUNTIME_BYTES:
-            over.append(f"{name} runtime {runtime} > {MAX_RUNTIME_BYTES}")
-        if init > MAX_INITCODE_BYTES:
-            over.append(f"{name} initcode {init} > {MAX_INITCODE_BYTES}")
-    for message in over:
+        if not _is_size_entry(entry):
+            problems.append(
+                f"{name}: malformed size entry, expected an object with integer"
+                " runtime_size and init_size"
+            )
+            continue
+        valid[name] = entry
+        if entry["runtime_size"] > MAX_RUNTIME_BYTES:
+            problems.append(f"{name} runtime {entry['runtime_size']} > {MAX_RUNTIME_BYTES}")
+        if entry["init_size"] > MAX_INITCODE_BYTES:
+            problems.append(f"{name} initcode {entry['init_size']} > {MAX_INITCODE_BYTES}")
+    for message in problems:
         report.check(False, message)
-    if sizes:
-        largest = max(sizes.items(), key=lambda item: int(item[1]["runtime_size"]))
+    if valid:
+        largest = max(valid.items(), key=lambda item: item[1]["runtime_size"])
         detail = f"largest {largest[0]} {largest[1]['runtime_size']} bytes"
     else:
         detail = "no contracts"
-    report.check(not over, f"{len(sizes)} contracts within EIP-170/EIP-3860 ({detail})")
+    report.check(not problems, f"{len(sizes)} contracts within EIP-170/EIP-3860 ({detail})")
 
 
 def find_root(start: Path) -> Path:
@@ -187,11 +210,6 @@ def find_root(start: Path) -> Path:
         if (candidate / "foundry.toml").is_file():
             return candidate
     raise SystemExit(f"no foundry.toml above {start}")
-
-
-def detect_profile(root: Path) -> str:
-    toml = (root / "foundry.toml").read_text(encoding="utf-8")
-    return "v1" if re.search(r"^\[profile\.v1\]", toml, re.MULTILINE) else "default"
 
 
 def forge_sizes(root: Path, profile: str) -> dict:
@@ -217,7 +235,11 @@ def forge_sizes(root: Path, profile: str) -> dict:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, help="repository root (default: auto-detected)")
-    parser.add_argument("--profile", help="Foundry profile for sizes (default: v1 if defined)")
+    parser.add_argument(
+        "--profile",
+        default=DEFAULT_PROFILE,
+        help=f"Foundry profile whose bytecode is measured (default: {DEFAULT_PROFILE})",
+    )
     parser.add_argument("--sizes-json", type=Path, help="read sizes from this file, not forge")
     parser.add_argument("--skip-sizes", action="store_true", help="skip the contract-size check")
     parser.add_argument("--max-lines", type=int, default=MAX_LINES)
@@ -234,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.sizes_json:
             sizes = json.loads(args.sizes_json.read_text(encoding="utf-8"))
         else:
-            sizes = forge_sizes(root, args.profile or detect_profile(root))
+            sizes = forge_sizes(root, args.profile)
         check_sizes(sizes, report)
 
     for line in report.notes + report.failures:

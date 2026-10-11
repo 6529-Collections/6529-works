@@ -19,7 +19,7 @@ Instructions for automated coding agents working in this repository.
 - 8–12K non-comment lines of Solidity under `src/`.
 - At most 5 linked libraries.
 - No delegatecall and no proxies.
-- EIP-170 respected.
+- EIP-170 respected, measured on the explicit `--profile default` build.
 - CI under 15 minutes.
 - Starting an auction costs 300K gas or less; `tokenURI` costs 8M gas or less.
 

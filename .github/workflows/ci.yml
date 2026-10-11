@@ -99,7 +99,9 @@ jobs:
         run: forge test
 
       - name: Budget gates
-        run: python tools/check_budgets.py
+        # The measured profile is explicit: adding a Foundry profile must not silently
+        # change which bytecode the EIP-170 gate measures.
+        run: python tools/check_budgets.py --profile default
 
       - name: Budget checker unit tests
         run: python -m tools.test_check_budgets
