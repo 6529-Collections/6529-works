@@ -10,7 +10,9 @@ import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import {
     PRODUCT_EDITIONS,
     PRODUCT_STREAM,
@@ -139,16 +141,29 @@ contract EditionsRendererMock {
     }
 }
 
-/// @dev The work-records satellite: each master's license (CC0 unless set), and its calls into
-///      Editions as the bound satellite.
+/// @dev The work-records satellite: opened records, each master's license (CC0 unless set;
+///      `RecordNotOpen` until opened, decision E9), and its calls into Editions as the bound
+///      satellite.
 contract EditionsWorkRecordsMock {
     mapping(uint256 => License) internal _licenses;
+    mapping(uint256 => bool) public isOpen;
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IERC165).interfaceId
+                || interfaceId == type(IWorkRecords).interfaceId;
+    }
+
+    function openRecord(uint256 id) external {
+        isOpen[id] = true;
+    }
 
     function setLicense(uint256 id, License calldata next) external {
         _licenses[id] = next;
     }
 
     function licenseOf(uint256 id) external view returns (License memory l) {
+        if (!isOpen[id]) revert IWorkRecords.RecordNotOpen(id);
         l = _licenses[id];
         if (bytes(l.spdxId).length == 0) l = License("CC0-1.0", keccak256("CC0 1.0 legal code"));
     }
@@ -159,6 +174,10 @@ contract EditionsWorkRecordsMock {
 
     function setRate(Editions editions, uint256 editionId, uint32 rate) external {
         editions.setRoyaltyRate(editionId, rate);
+    }
+
+    function notifyAll(Editions editions) external {
+        editions.notifyAllUpdated();
     }
 }
 
@@ -301,6 +320,10 @@ contract EditionsAdapterMock is ERC1155Holder {
 
     constructor(bytes32 kind) {
         saleKind = kind;
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(ISaleAdapter).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function buy(IMintTarget target, uint256 id, address to, uint256 amount)

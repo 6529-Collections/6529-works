@@ -39,14 +39,15 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 /// @dev The edition ID equals the master's Stream token ID. `createEdition` is permissionless:
 ///      it accepts only the exact package item the master was minted from (its item hash is the
 ///      one Stream stored), and only after the master's sale has settled
-///      (`IStream.primarySaleSettled`), so a disputed or burned master never gets an edition. It
+///      (`IStream.primarySaleSettled`, which the minting adapter marks at settle), so a disputed
+///      or burned master never gets an edition. It
 ///      locks the edition's economics (seller, network fee, royalty), claims the master's
 ///      content hash in the package registry (which accepts only the item Stream consumed for
 ///      that hash, and only once), and writes both directions of the link in one transaction,
 ///      verifying Stream's side afterwards. Nothing ever changes or removes a link.
 ///
-///      Copies are minted only by admitted adapters (MINTER) whose sale kind matches the
-///      package's, at most `size` copies ever (burns do not free supply), for OPEN editions only
+///      Copies are minted only by admitted adapters (`isAdmittedMinter`, written by a governed
+///      setter in the 30-day class, decision E4) whose sale kind matches the package's, at most `size` copies ever (burns do not free supply), for OPEN editions only
 ///      during `window` seconds from the first mint, and never once the master is burned. The
 ///      currency has one owner, the sale adapter: `primaryTerms` and `mint` return the package's
 ///      stored currency, possibly `CURRENCY_DEFAULT`; the adapter resolves and locks it when it
@@ -54,13 +55,14 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      no external call; payees never change, and only the bound work-records satellite may
 ///      change the rate, after every party's consent and a governed action (decision D19). The
 ///      license and `uri` come from the master. ERC-4906 events follow the master: one per
-///      edition from the work-records satellite, and a batch over every ID from Stream when its
-///      default renderer changes.
+///      edition from the work-records satellite, and a batch over every ID when Stream's default
+///      renderer or a global or collection preferred location changes (decision E11).
 ///
 ///      Wiring is immutable. Stream is checked at deployment (code, no EIP-7702 delegation,
 ///      ERC-165 for ERC-721, pinned code hash), and the package registry, economics resolver and
 ///      artist registry are taken from it. The package registry and Stream must bind Editions as
-///      their Editions caller, and genesis binds the work-records satellite here once.
+///      their Editions caller, and genesis binds the work-records satellite here once, with
+///      ERC-165 and EIP-7702 checks (decision E7).
 contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev `abi.encode(DutchParams)`: three static words.
     uint256 private constant DUTCH_PARAMS_LENGTH = 96;
@@ -82,6 +84,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     address public workRecords;
+    /// @notice Whether a sale adapter may mint and burn (decision E4).
+    mapping(address adapter => bool) public isAdmittedMinter;
     string private _contractURI;
     address private _owner;
     mapping(uint256 editionId => Record) private _records;
@@ -92,6 +96,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     /// @notice An edition's royalty rate changed, by every party's agreement plus a governed
     ///         action, relayed by the work-records satellite.
     event RoyaltyRateChanged(uint256 indexed editionId, uint32 previous, uint32 next);
+    /// @notice A sale adapter was admitted to, or removed from, minting and burning.
+    event MinterAdmissionSet(address indexed adapter, bool admitted);
 
     /// @notice A required address is zero.
     error ZeroAddress();
@@ -106,8 +112,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     error LinkFailed(uint256 workId);
     /// @notice A mint carried data, or a mint or burn a zero amount.
     error InvalidMintRequest();
-    /// @notice The caller is not Stream.
-    error NotStream(address caller);
+    /// @notice The caller is neither Stream nor the bound work-records satellite.
+    error NotNotifier(address caller);
+    /// @notice The caller is not an admitted sale adapter.
+    error NotAdmittedMinter(address caller);
     /// @notice A royalty rate above 100,000.
     error InvalidRoyaltyRate(uint32 rate);
 
@@ -119,10 +127,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ERC1155("")
         AccessManaged(authority_)
     {
-        if (
-            stream_.code.length == 0 || DelegatedEOA.isDelegated(stream_)
-                || !ERC165Checker.supportsInterface(stream_, type(IERC721).interfaceId)
-        ) revert InvalidDependency(stream_);
+        if (!_installable(stream_, type(IERC721).interfaceId)) revert InvalidDependency(stream_);
         if (stream_.codehash != streamCodeHash) {
             revert CodeHashMismatch(streamCodeHash, stream_.codehash);
         }
@@ -183,15 +188,29 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IEditions
-    /// @dev Also requires the satellite Stream bound, with code and no EIP-7702 delegation.
+    /// @dev Requires the satellite Stream bound, supporting `IWorkRecords` by ERC-165 and not an
+    ///      EIP-7702 delegated account (decision E7).
     function bindWorkRecords(address workRecords_) external restricted {
         if (workRecords != address(0)) revert AlreadyBound();
         if (
-            workRecords_ == address(0) || workRecords_ != IStream(stream).workRecords()
-                || workRecords_.code.length == 0 || DelegatedEOA.isDelegated(workRecords_)
+            workRecords_ != IStream(stream).workRecords()
+                || !_installable(workRecords_, type(IWorkRecords).interfaceId)
         ) revert InvalidDependency(workRecords_);
         workRecords = workRecords_;
         emit WorkRecordsBound(workRecords_);
+    }
+
+    /// @notice Admits or removes a sale adapter for minting and burning (decision E4).
+    ///         Governed, in the 30-day class. An admitted adapter must support `ISaleAdapter` by
+    ///         ERC-165 and not be an EIP-7702 delegated account; removal is unchecked.
+    /// @param adapter The sale adapter.
+    /// @param admitted Whether it may mint and burn.
+    function setAdmittedMinter(address adapter, bool admitted) external restricted {
+        if (admitted && !_installable(adapter, type(ISaleAdapter).interfaceId)) {
+            revert InvalidDependency(adapter);
+        }
+        isAdmittedMinter[adapter] = admitted;
+        emit MinterAdmissionSet(adapter, admitted);
     }
 
     /// @inheritdoc IEditions
@@ -200,11 +219,12 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (exists(workId)) emit MetadataUpdate(workId);
     }
 
-    /// @notice Reports that Stream's default renderer changed, which can change every edition
-    ///         whose master is not finalized. Only Stream may call; emits one ERC-4906
-    ///         `BatchMetadataUpdate(0, type(uint256).max)` and changes no state.
+    /// @notice Reports a change that can alter every edition's metadata: Stream's default renderer,
+    ///         or a global or collection preferred location in the work-records satellite
+    ///         (decision E11). Only Stream or the bound work-records satellite may call; emits one
+    ///         ERC-4906 `BatchMetadataUpdate(0, type(uint256).max)` and changes no state.
     function notifyAllUpdated() external {
-        if (msg.sender != stream) revert NotStream(msg.sender);
+        if (msg.sender != stream && msg.sender != workRecords) revert NotNotifier(msg.sender);
         emit BatchMetadataUpdate(0, type(uint256).max);
     }
 
@@ -250,13 +270,13 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     // ----------------------------------------------------------------------- minting
 
     /// @inheritdoc IMintTarget
-    /// @dev MINTER role. `data` must be empty. Effects precede the ERC-1155 acceptance call, so a
-    ///      reentering receiver sees the updated supply.
+    /// @dev Admitted adapters only. `data` must be empty. Effects precede the ERC-1155 acceptance
+    ///      call, so a reentering receiver sees the updated supply.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
-        restricted
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
+        if (!isAdmittedMinter[msg.sender]) revert NotAdmittedMinter(msg.sender);
         if (amount == 0 || data.length != 0) revert InvalidMintRequest();
         Edition storage e = _edition(id);
         bytes32 kind = ISaleAdapter(msg.sender).saleKind();
@@ -295,8 +315,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev MINTER role. Burned copies still count toward the edition size.
-    function burn(uint256 id, uint256 amount) external restricted {
+    /// @dev Admitted adapters only. Burned copies still count toward the edition size.
+    function burn(uint256 id, uint256 amount) external {
+        if (!isAdmittedMinter[msg.sender]) revert NotAdmittedMinter(msg.sender);
         if (amount == 0) revert InvalidMintRequest();
         _edition(id);
         _burn(msg.sender, id, amount);
@@ -317,6 +338,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IEditions
+    /// @dev Reverts with the satellite's `RecordNotOpen` until the master's record is opened
+    ///      (decision E9).
     function licenseOf(uint256 editionId) external view returns (License memory) {
         _edition(editionId);
         return IWorkRecords(workRecords).licenseOf(editionId);
@@ -372,6 +395,12 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     // ----------------------------------------------------------------------- internals
+
+    /// @dev ADR 0001 section 13.6: code, no EIP-7702 delegation, and ERC-165 support.
+    function _installable(address target, bytes4 interfaceId) private view returns (bool) {
+        return target.code.length != 0 && !DelegatedEOA.isDelegated(target)
+            && ERC165Checker.supportsInterface(target, interfaceId);
+    }
 
     function _edition(uint256 editionId) private view returns (Edition storage e) {
         e = _records[editionId].edition;

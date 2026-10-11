@@ -32,11 +32,13 @@ import {
 /// @dev Deploys 6529 Editions against mocks of Stream, the package registry, the economics
 ///      resolver, the artist registry, the work-records satellite and the renderer, under a plain
 ///      OpenZeppelin AccessManager with the role IDs of `src/governance/Roles.sol` and zero
-///      delays, plus a fixed-price and a Dutch adapter holding MINTER. Genesis wiring is complete:
+///      delays, plus a fixed-price and a Dutch adapter admitted as minters (decision E4) through
+///      the governed setter, mapped here to the 30-day SUCCESSOR_SETTER role. Genesis wiring is
+///      complete:
 ///      Stream and the registry bind Editions, and Editions binds the work-records satellite
 ///      (ADMIN, the default role of unmapped selectors).
 abstract contract EditionsBase is Test {
-    uint64 internal constant MINTER = 6;
+    uint64 internal constant SUCCESSOR_SETTER = 11;
     uint64 internal constant PARAMETER_SETTER = 9;
     uint64 internal constant FUNDS_SETTER = 10;
     uint256 internal constant PRICE = 0.01 ether;
@@ -86,21 +88,23 @@ abstract contract EditionsBase is Test {
         dutchAdapter = new EditionsAdapterMock(SaleKind.DUTCH);
 
         vm.startPrank(admin);
-        bytes4[] memory minting = new bytes4[](2);
-        minting[0] = IMintTarget.mint.selector;
-        minting[1] = IMintTarget.burn.selector;
-        manager.setTargetFunctionRole(address(editions), minting, MINTER);
+        manager.setTargetFunctionRole(
+            address(editions), _one(Editions.setAdmittedMinter.selector), SUCCESSOR_SETTER
+        );
         manager.setTargetFunctionRole(
             address(editions), _one(IEditions.setContractURI.selector), PARAMETER_SETTER
         );
         manager.setTargetFunctionRole(
             address(editions), _one(IEditions.setOwner.selector), FUNDS_SETTER
         );
-        manager.grantRole(MINTER, address(fixedAdapter), 0);
-        manager.grantRole(MINTER, address(dutchAdapter), 0);
+        manager.grantRole(SUCCESSOR_SETTER, governor, 0);
         manager.grantRole(PARAMETER_SETTER, governor, 0);
         manager.grantRole(FUNDS_SETTER, governor, 0);
         editions.bindWorkRecords(address(workRecordsMock));
+        vm.stopPrank();
+        vm.startPrank(governor);
+        editions.setAdmittedMinter(address(fixedAdapter), true);
+        editions.setAdmittedMinter(address(dutchAdapter), true);
         vm.stopPrank();
     }
 

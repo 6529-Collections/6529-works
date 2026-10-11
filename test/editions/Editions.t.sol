@@ -16,6 +16,7 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import {
     CURRENCY_DEFAULT,
@@ -38,6 +39,7 @@ import { DutchParams, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTy
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionsBase } from "./EditionsBase.sol";
 import {
+    EditionsAdapterMock,
     EditionsRendererMock,
     EditionsStreamMock,
     GasBurnerReceiver1155,
@@ -450,22 +452,53 @@ contract EditionsTest is EditionsBase {
         assertEq(keccak256(abi.encode(editions.primaryTerms(id, ""))), keccak256(abi.encode(terms)));
     }
 
-    function test_Mint_OnlyMinter() public {
+    function test_Mint_OnlyAdmittedMinter() public {
         uint256 id = _create(_fixedItem(10));
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, outsider));
+        editions.mint(outsider, id, 1, "");
+        // An adapter that was removed can no longer mint.
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(fixedAdapter), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, address(fixedAdapter))
+        );
+        fixedAdapter.buy(editions, id, buyer, 1);
+    }
+
+    /// @dev E4: admission is a governed setter (the 30-day class in deployment); an admitted
+    ///      adapter must support `ISaleAdapter` by ERC-165 and not be an EIP-7702 account.
+    function test_SetAdmittedMinter_GovernedAndChecked() public {
+        address adapter = address(new EditionsAdapterMock(SaleKind.FIXED_PRICE));
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        editions.mint(outsider, id, 1, "");
-        // An adapter that lost its role can no longer mint.
-        vm.prank(admin);
-        manager.revokeRole(MINTER, address(fixedAdapter));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessManaged.AccessManagedUnauthorized.selector, address(fixedAdapter)
-            )
-        );
-        fixedAdapter.buy(editions, id, buyer, 1);
+        editions.setAdmittedMinter(adapter, true);
+
+        vm.startPrank(governor);
+        _expectNotAdmissible(outsider); // an EOA
+        _expectNotAdmissible(address(renderer)); // code, but not an ISaleAdapter
+        address delegated = makeAddr("delegatedAdapter");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", adapter));
+        _expectNotAdmissible(delegated);
+
+        vm.expectEmit(true, false, false, true, address(editions));
+        emit Editions.MinterAdmissionSet(adapter, true);
+        editions.setAdmittedMinter(adapter, true);
+        assertTrue(editions.isAdmittedMinter(adapter));
+        // Removal is unchecked, so even an unadmissible address can be cleared.
+        vm.expectEmit(true, false, false, true, address(editions));
+        emit Editions.MinterAdmissionSet(outsider, false);
+        editions.setAdmittedMinter(outsider, false);
+        editions.setAdmittedMinter(adapter, false);
+        vm.stopPrank();
+        assertFalse(editions.isAdmittedMinter(adapter));
+    }
+
+    function _expectNotAdmissible(address adapter) internal {
+        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, adapter));
+        editions.setAdmittedMinter(adapter, true);
     }
 
     function test_Mint_RequiresMatchingSaleKind() public {
@@ -627,9 +660,7 @@ contract EditionsTest is EditionsBase {
         uint256 id = _create(_fixedItem(5));
         fixedAdapter.buy(editions, id, buyer, 2);
         vm.prank(buyer);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, buyer)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, buyer));
         editions.burn(id, 1);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -727,6 +758,10 @@ contract EditionsTest is EditionsBase {
     function test_LicenseOf_InheritsMaster() public {
         PackageItem memory item = _fixedItem(5);
         uint256 id = _create(item);
+        // E9: the master's record must be opened first; Editions inherits the satellite's error.
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.RecordNotOpen.selector, id));
+        editions.licenseOf(id);
+        workRecordsMock.openRecord(id);
         License memory l = editions.licenseOf(id);
         assertEq(l.spdxId, "CC0-1.0");
         assertEq(l.textFileId, item.license.textFileId);
@@ -818,7 +853,7 @@ contract EditionsTest is EditionsBase {
         fixedAdapter.buy(editions, id, address(r), 1);
         assertEq(
             r.reentryError(),
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, address(r))
+            abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, address(r))
         );
         assertEq(editions.edition(id).minted, 1);
     }
@@ -849,6 +884,8 @@ contract EditionsTest is EditionsBase {
         vm.startPrank(admin);
         _expectInvalidBinding(fresh, address(0));
         _expectInvalidBinding(fresh, address(renderer)); // not the satellite Stream bound
+        stream.bind(address(renderer), address(editions)); // bound, but no IWorkRecords ERC-165
+        _expectInvalidBinding(fresh, address(renderer));
         stream.bind(outsider, address(editions)); // Stream bound an EOA
         _expectInvalidBinding(fresh, outsider);
         address delegated = makeAddr("delegatedRecords");
@@ -899,20 +936,27 @@ contract EditionsTest is EditionsBase {
         editions.notifyMasterUpdated(id);
     }
 
-    function test_NotifyAllUpdated_OnlyStream() public {
+    /// @dev E11: Stream (default renderer) and the bound work-records satellite (global or
+    ///      collection preferred location) may each signal a batch refresh; nobody else.
+    function test_NotifyAllUpdated_StreamOrWorkRecords() public {
         vm.expectEmit(false, false, false, true, address(editions));
         emit IEditions.BatchMetadataUpdate(0, type(uint256).max);
         vm.prank(address(stream));
         editions.notifyAllUpdated();
 
-        vm.prank(address(workRecordsMock));
-        vm.expectRevert(
-            abi.encodeWithSelector(Editions.NotStream.selector, address(workRecordsMock))
-        );
-        editions.notifyAllUpdated();
+        vm.expectEmit(false, false, false, true, address(editions));
+        emit IEditions.BatchMetadataUpdate(0, type(uint256).max);
+        workRecordsMock.notifyAll(editions);
+
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(Editions.NotStream.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(Editions.NotNotifier.selector, outsider));
         editions.notifyAllUpdated();
+        // An unbound Editions accepts only Stream.
+        Editions fresh = _freshEditions();
+        vm.expectRevert(
+            abi.encodeWithSelector(Editions.NotNotifier.selector, address(workRecordsMock))
+        );
+        workRecordsMock.notifyAll(fresh);
     }
 
     // ------------------------------------------------------------------ governed setters
