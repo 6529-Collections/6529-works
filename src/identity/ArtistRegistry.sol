@@ -13,7 +13,12 @@ import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
-import { ArtistIdentity, ChangeKind, PendingChange } from "../interfaces/types/IdentityTypes.sol";
+import {
+    ArtistIdentity,
+    ChangeKind,
+    PendingChange,
+    Standing
+} from "../interfaces/types/IdentityTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
@@ -33,9 +38,10 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      - Overrides (CONTESTED, ESTATE, LOST_KEY) are governed, carry an evidence hash as public
 ///        notice and wait {OVERRIDE_DELAY}; ESTATE and LOST_KEY need {DORMANCY} without signed
 ///        activity. One that changes the authority carries the new authority's
-///        `Typehashes.OVERRIDE_ACCEPTANCE`, bound to the change nonce. Only captured wallets
-///        (never the previous authority) or the guardian stop overrides. An override replaces a
-///        pending STANDARD change, so a key holder cannot block one by keeping a change staged.
+///        `Typehashes.OVERRIDE_ACCEPTANCE`, nonce-free (so a held key cannot void it by burning
+///        nonces) and consumed once by digest. Only captured wallets (never the previous
+///        authority) or the guardian stop overrides. An override replaces a pending STANDARD
+///        change, so a key holder cannot block one by keeping a change staged.
 ///      Every staging consumes the per-artist nonce (replay protection never keys on signature
 ///      bytes); {revokeNonce} burns it to retract an unused signature. The guardian can only
 ///      veto: no guardian path writes an identity.
@@ -59,21 +65,14 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
 ///      (which restarts the clock for the identity it installs). Overrides and vetoes never do.
 contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
-    /// @notice A wallet with recovery standing; `missingSince` is when a refresh first found it
-    ///         no longer established, or zero.
-    struct Standing {
-        address wallet;
-        uint64 missingSince;
-    }
-
     /// @notice The wait before a STANDARD change can execute.
     uint64 public constant CHANGE_DELAY = 7 days;
     /// @notice The public notice before an override can execute.
     uint64 public constant OVERRIDE_DELAY = 180 days;
     /// @notice The time without signed activity before an ESTATE or LOST_KEY override.
     uint64 public constant DORMANCY = 365 days;
-    /// @notice How long a missing wallet keeps standing.
-    uint64 public constant STANDING_GRACE = 30 days;
+    /// @inheritdoc IArtistRegistry
+    uint64 public constant override STANDING_GRACE = 30 days;
     /// @notice The most federated contracts listed per artist.
     uint256 public constant MAX_FEDERATED = 64;
 
@@ -87,6 +86,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     mapping(uint256 artistId => PendingChange) private _pending;
     mapping(uint256 artistId => Standing[]) private _standing;
     mapping(uint256 artistId => address[]) private _federated;
+    mapping(bytes32 digest => bool) private _acceptanceUsed;
 
     /// @inheritdoc IArtistRegistry
     mapping(address account => uint256) public override artistIdOf;
@@ -100,16 +100,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     address public override federationRegistry;
     /// @inheritdoc IArtistRegistry
     address public override splitFactory;
-
-    /// @notice A wallet gained (or regained) recovery standing for an artist.
-    event StandingAdded(uint256 indexed artistId, address indexed wallet);
-    /// @notice A wallet is no longer established; it keeps standing for {STANDING_GRACE}.
-    event StandingMissing(uint256 indexed artistId, address indexed wallet);
-    /// @notice A wallet lost recovery standing after its grace period.
-    event StandingRemoved(uint256 indexed artistId, address indexed wallet);
-
-    /// @notice The artist already lists {MAX_FEDERATED} federated contracts.
-    error FederatedListFull(uint256 artistId);
 
     /// @param initialAuthority The AccessManager.
     /// @param source The consolidation source (the v1 `ConsolidationAdapter`).
@@ -231,13 +221,14 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             revert NotDormant(artistId, a.lastActivity);
         }
         if (next.authority != a.identity.authority) {
-            bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, a.nonce, deadline);
+            bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, deadline);
             // forge-lint: disable-next-line(block-timestamp)
             bool expired = block.timestamp > deadline;
-            if (expired || !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance))
-            {
-                revert InvalidSignature();
-            }
+            if (
+                expired || _acceptanceUsed[digest]
+                    || !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance)
+            ) revert InvalidSignature();
+            _acceptanceUsed[digest] = true;
         }
         ChangeKind pending = _pending[artistId].kind;
         if (pending > ChangeKind.STANDARD) revert ChangePending(artistId);
@@ -308,8 +299,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _recordActivity(artistId, a);
     }
 
-    /// @notice Folds the authority's currently established wallets into the artist's standing
-    ///         snapshot and ages out missing ones. Permissionless; not activity.
+    /// @inheritdoc IArtistRegistry
     function refreshStanding(uint256 artistId) external {
         _refresh(artistId, _artist(artistId).identity.authority);
     }
@@ -398,7 +388,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return _federated[artistId];
     }
 
-    /// @notice The artist's standing snapshot, including missing wallets not yet removed.
+    /// @inheritdoc IArtistRegistry
     function standingOf(uint256 artistId) external view returns (Standing[] memory) {
         return _standing[artistId];
     }
@@ -432,7 +422,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         ChangeKind kind,
         ArtistIdentity calldata next,
         bytes32 evidenceHash,
-        uint256 nonce,
         uint64 deadline
     ) public view returns (bytes32) {
         return _hashTypedDataV4(
@@ -446,7 +435,6 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                     next.profileId,
                     next.profileDocHash,
                     evidenceHash,
-                    nonce,
                     deadline
                 )
             )

@@ -2,7 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
-import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
+import {
+    ArtistIdentity,
+    ChangeKind,
+    PendingChange,
+    Standing
+} from "src/interfaces/types/IdentityTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ArtistRegistryHandler, IdentityActors } from "./ArtistRegistryHandler.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
@@ -69,7 +74,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     ///      free of duplicates.
     function invariant_AuthorityAndStandingAreConsistent() public view {
         assertEq(registry.artistIdOf(registry.authorityOf(artistId)), artistId);
-        ArtistRegistry.Standing[] memory s = registry.standingOf(artistId);
+        Standing[] memory s = registry.standingOf(artistId);
         assertLe(s.length, Limits.MAX_CANCELLERS);
         for (uint256 i; i < s.length; ++i) {
             for (uint256 j = i + 1; j < s.length; ++j) {

@@ -26,6 +26,16 @@ enum ChangeKind {
     LOST_KEY
 }
 
+/// @notice A wallet with recovery standing in an artist's sticky snapshot (ADR 0001 section 11
+///         "Canceller set captured at staging").
+/// @dev `missingSince` is when a refresh first found the wallet no longer established, or zero.
+///      A missing wallet keeps standing until a refresh at least `STANDING_GRACE` later removes
+///      it.
+struct Standing {
+    address wallet;
+    uint64 missingSince;
+}
+
 /// @notice A staged identity change.
 /// @dev `cancellers` are the established consolidated wallets captured when the change was
 ///      staged (ADR 0001 section 11 "Canceller set captured at staging"); a later revocation of

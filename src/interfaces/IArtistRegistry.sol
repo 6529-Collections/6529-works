@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../economics/interfaces/IArtistPayoutResolver.sol";
 import { IArtistRoleResolver } from "./IArtistRoleResolver.sol";
-import { ArtistIdentity, ChangeKind, PendingChange } from "./types/IdentityTypes.sol";
+import { ArtistIdentity, ChangeKind, PendingChange, Standing } from "./types/IdentityTypes.sol";
 
 /// @title IConsolidationSource
 /// @notice Where the artist registry learns an account's established consolidated wallets
@@ -42,6 +42,14 @@ interface IConsolidationSource is IERC165 {
 ///        a 180-day public notice; ESTATE and LOST_KEY need a year without signed activity; only
 ///        captured wallets (never the previous authority) may cancel, and the guardian may veto.
 ///      One change may be pending per artist. `executeChange` is permissionless once due.
+///
+///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS` wallets
+///      with recovery standing, refreshed on registration, staging, heartbeats, executions and by
+///      anyone (`refreshStanding`). A refresh adds the authority's established wallets; a wallet
+///      no longer established is marked missing but keeps standing, and only a refresh at least
+///      `STANDING_GRACE` later removes it. The cancellers captured at staging are the snapshot's
+///      wallets with standing plus the currently established ones, so revoking or reordering the
+///      artist's consolidations cannot strip their standing before staging.
 ///      Dormancy counts the artist's own activity only: registration (the first package
 ///      acceptance), a staged change, a heartbeat, a cancellation by the old key or a captured
 ///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian
@@ -78,6 +86,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     event NonceRevoked(uint256 indexed artistId, uint256 nonce);
     /// @notice A federated contract was listed under an artist (ADR 0001 section 16).
     event FederatedContractListed(uint256 indexed artistId, address indexed token);
+    /// @notice A wallet gained (or regained) recovery standing for an artist.
+    event StandingAdded(uint256 indexed artistId, address indexed wallet);
+    /// @notice A wallet is no longer established; it keeps standing for `STANDING_GRACE`.
+    event StandingMissing(uint256 indexed artistId, address indexed wallet);
+    /// @notice A wallet lost recovery standing after its grace period.
+    event StandingRemoved(uint256 indexed artistId, address indexed wallet);
 
     /// @notice No artist has this ID.
     error UnknownArtist(uint256 artistId);
@@ -109,6 +123,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error InvalidSource(address source);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice The artist already lists the maximum number of federated contracts.
+    error FederatedListFull(uint256 artistId);
 
     /// @notice Binds the package registry (the only `register` caller), once. ADMIN role.
     function bindPackageRegistry(address target) external;
@@ -140,7 +156,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Stages a network override (CONTESTED, ESTATE or LOST_KEY) with a 180-day notice.
     ///         PARAMETER_SETTER role. `evidenceHash` commits to the public record. When the
     ///         authority changes, `authorityAcceptance` is the new authority's
-    ///         `Typehashes.OVERRIDE_ACCEPTANCE` signature, which binds the change nonce.
+    ///         `Typehashes.OVERRIDE_ACCEPTANCE` signature with `deadline`; it binds no change
+    ///         nonce and is consumed once by digest, so a replay reverts with `InvalidSignature`.
     function stageOverride(
         uint256 artistId,
         ChangeKind kind,
@@ -154,7 +171,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function cancelChange(uint256 artistId) external;
     /// @notice Vetoes the pending change. GUARDIAN role; it can block, never redirect.
     function vetoChange(uint256 artistId) external;
-    /// @notice Applies a due change. Permissionless.
+    /// @notice Applies a due change. Permissionless. If the next identity is no longer valid (its
+    ///         authority was taken or its payout is now rejected), the change is cleared with
+    ///         `ChangeCancelled(artistId, address(this), false)` instead of reverting, so a stale
+    ///         change cannot keep the payout frozen.
     function executeChange(uint256 artistId) external;
     /// @notice Records signed activity. Callable by the authority or an established consolidated
     ///         wallet. Never on the auction-start path.
@@ -163,8 +183,11 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         be staged (preventive revocation).
     function revokeNonce(uint256 artistId) external;
     /// @notice Lists `token` as one of the artist's federated contracts. Bound federation
-    ///         registry only.
+    ///         registry only; reverts with `FederatedListFull` past the bound.
     function listFederatedContract(uint256 artistId, address token) external;
+    /// @notice Folds the authority's established wallets into the artist's standing snapshot and
+    ///         ages out missing ones. Permissionless; not signed activity.
+    function refreshStanding(uint256 artistId) external;
     /// @notice Swaps the consolidation source: ERC-165 checked, code hash `nextCodeHash`, not an
     ///         EIP-7702 delegated account. SUCCESSOR_SETTER role, compare-and-set.
     function setConsolidationSource(
@@ -198,4 +221,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function federationRegistry() external view returns (address);
     /// @notice The bound split factory.
     function splitFactory() external view returns (address);
+    /// @notice The artist's standing snapshot, including missing wallets not yet removed.
+    function standingOf(uint256 artistId) external view returns (Standing[] memory);
+    /// @notice How long a missing wallet keeps standing (30 days).
+    function STANDING_GRACE() external view returns (uint64);
 }

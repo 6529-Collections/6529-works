@@ -47,8 +47,9 @@ replaced.
 - are staged by the PARAMETER_SETTER role with an evidence hash;
 - wait 180 days;
 - if they change the authority, carry the new authority's
-  `Typehashes.OVERRIDE_ACCEPTANCE` signature, which binds the change nonce and
-  a deadline;
+  `Typehashes.OVERRIDE_ACCEPTANCE` signature with a deadline. It binds no change
+  nonce, so a key holder cannot void it by burning nonces, and the registry
+  consumes it once by digest (a replay reverts);
 - for ESTATE and LOST_KEY, need a year without signed activity.
 
 Only captured wallets and the guardian can stop an override, never the old
@@ -56,8 +57,8 @@ key. An override replaces a pending STANDARD change, so a key holder cannot
 block one by keeping a change staged.
 
 **Preventive revocation.** The authority's `revokeNonce` burns the current
-nonce, voiding every unused payload signed for it, including a new authority's
-override acceptance.
+nonce, voiding every unused STANDARD payload signed for it. Override
+acceptances are unaffected (`test_Override_AcceptanceSurvivesANonceBurn`).
 
 ## Recovery standing (sticky snapshot)
 
@@ -216,11 +217,10 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   override canceller (`test_PoC8_OldKeyConsolidatedWithTheNewAuthorityIsCaptured`).
   The artist should revoke the N-to-A consolidation after rotating. A keeps
   standing for the 30-day grace after a refresh records it missing.
-- **Override nonce binding.** The new authority's override acceptance binds
-  the change nonce. Whoever holds the authority key can burn the nonce before a
-  scheduled override executes, which voids the acceptance
-  (`test_Override_AcceptanceVoidedByANonceBurn`). Governance then needs a fresh
-  acceptance.
+- **Override acceptances.** They are nonce-free and single-use by digest. A
+  key holder cannot void a scheduled override by burning nonces, and the same
+  acceptance cannot stage twice, after a veto or a cancel
+  (`test_Override_SameAcceptanceCannotBeConsumedTwice`).
 - **Statements before mint (v1 limitation).** `isArtist` returns false for
   pre-mint subjects `(address(0), uint256(itemHash))`, because the registry
   cannot map an item hash to its lead artist. ARTIST statements start once a

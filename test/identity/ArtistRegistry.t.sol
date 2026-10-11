@@ -598,7 +598,7 @@ contract ArtistRegistryTest is IdentityFixture {
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest =
-            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, 0, deadline);
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
         vm.startPrank(governor);
         vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, "");
@@ -618,16 +618,15 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.stopPrank();
     }
 
-    /// @dev E11: the acceptance binds the change nonce, so it is single-use (a replay after a veto
-    ///      fails). The flip side, flagged for the integrator: whoever holds the authority key can
-    ///      void a scheduled override's acceptance by burning the nonce first.
-    function test_Override_AcceptanceIsSingleUseAndNonceBound() public {
+    /// @dev E11 (reverted to nonce-free): the acceptance is consumed once by digest, so the same
+    ///      acceptance cannot stage twice, after a veto or after a cancel.
+    function test_Override_AcceptanceIsSingleUseByDigest() public {
         ArtistIdentity memory next = _identity(newAuthority, payout);
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 3 days);
         bytes memory acceptance = _sign(
             newKey,
-            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, 0, deadline)
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
         );
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
@@ -638,19 +637,51 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
     }
 
-    function test_Override_AcceptanceVoidedByANonceBurn() public {
+    function test_Override_SameAcceptanceCannotBeConsumedTwice() public {
         ArtistIdentity memory next = _identity(newAuthority, payout);
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 3 days);
         bytes memory acceptance = _sign(
             newKey,
-            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, 0, deadline)
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
+        vm.prank(governor);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        // The same digest, even in its ERC-2098 compact form, is consumed.
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(
+            newKey,
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
+        bytes32 vs = bytes32(uint256(v - 27) << 255 | uint256(s));
+        vm.startPrank(governor);
+        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
+        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        registry.stageOverride(
+            artistId, ChangeKind.CONTESTED, next, evidence, deadline, abi.encodePacked(r, vs)
+        );
+        vm.stopPrank();
+    }
+
+    /// @dev E11 inverted: burning the nonce (as a key holder could between scheduling and
+    ///      execution) does not void a scheduled override's acceptance.
+    function test_Override_AcceptanceSurvivesANonceBurn() public {
+        ArtistIdentity memory next = _identity(newAuthority, payout);
+        bytes32 evidence = keccak256("evidence");
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes memory acceptance = _sign(
+            newKey,
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
         );
         vm.prank(artist); // the key holder, between scheduling and execution
         registry.revokeNonce(artistId);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.prank(artist);
+        registry.revokeNonce(artistId);
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.CONTESTED));
     }
 
     function test_Override_RevertsIfTheNewAuthorityBelongsToAnotherArtist() public {
@@ -1045,7 +1076,7 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         assertEq(
             Typehashes.OVERRIDE_ACCEPTANCE,
-            0xcccdd16a86d667337789cb112f688c2a3aabcf081e5b281efc5ea2c4ed5e26f0
+            0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
         );
         assertEq(type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793));
         (, string memory name, string memory version,,,,) = registry.eip712Domain();
@@ -1093,12 +1124,11 @@ contract ArtistRegistryTest is IdentityFixture {
                 next.profileId,
                 next.profileDocHash,
                 keccak256("e"),
-                uint256(3),
                 uint64(9)
             )
         );
         assertEq(
-            registry.overrideDigest(artistId, ChangeKind.ESTATE, next, keccak256("e"), 3, 9),
+            registry.overrideDigest(artistId, ChangeKind.ESTATE, next, keccak256("e"), 9),
             keccak256(abi.encodePacked(hex"1901", domain, acceptance))
         );
     }

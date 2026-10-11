@@ -25,7 +25,7 @@ struct IdentityActors {
 /// @notice Drives one artist identity through every path and asserts each outcome: before every
 ///         call it predicts, from the registry's current state, whether the call succeeds or which
 ///         error it reverts with, then makes the call and checks it. Covered: signed STANDARD
-///         changes by the authority, a consolidated wallet and a thief; nonce-bound overrides;
+///         changes by the authority, a consolidated wallet and a thief; two-sided overrides;
 ///         cancels by every kind of caller; guardian vetoes and redirect attempts; replays of used
 ///         payloads and acceptances; heartbeats; nonce burns; standing refreshes; consolidation
 ///         revocations and renewals; and time. Ghosts of the identity, nonce and last activity
@@ -62,13 +62,15 @@ contract ArtistRegistryHandler is Test {
         ChangeKind kind;
         ArtistIdentity next;
         bytes32 evidence;
-        uint256 nonce;
+        bytes32 digest;
         uint64 deadline;
         bytes acceptance;
     }
 
     Used internal lastUsed;
     Accepted internal lastAcceptance;
+    /// @dev Override acceptance digests the registry has consumed.
+    mapping(bytes32 => bool) public usedDigest;
 
     constructor(IdentityActors memory a) {
         registry = a.registry;
@@ -120,16 +122,13 @@ contract ArtistRegistryHandler is Test {
         uint256 nextKey = keys[authoritySeed % 4];
         u.next = ArtistIdentity(vm.addr(nextKey), payouts[payoutSeed % 3], PROFILE, bytes32(0));
         u.evidence = keccak256(abi.encode(kindSeed));
-        u.nonce = ghostNonce;
         u.deadline = uint64(block.timestamp + 3 days);
-        u.acceptance = _sign(
-            nextKey,
-            registry.overrideDigest(artistId, u.kind, u.next, u.evidence, u.nonce, u.deadline)
-        );
+        u.digest = registry.overrideDigest(artistId, u.kind, u.next, u.evidence, u.deadline);
+        u.acceptance = _sign(nextKey, u.digest);
         if (_tryOverride(u)) lastAcceptance = u;
     }
 
-    /// @dev A used acceptance never stages again (its nonce is consumed), unless the override no
+    /// @dev A used acceptance never stages again (its digest is consumed), unless the override no
     ///      longer changes the authority and so needs none.
     function replayAcceptance() external {
         Accepted memory u = lastAcceptance;
@@ -241,11 +240,14 @@ contract ArtistRegistryHandler is Test {
     /// @dev Predicts and checks one override staging; returns whether it succeeded.
     function _tryOverride(Accepted memory u) private returns (bool ok) {
         bytes memory err = _overrideError(u);
+        bool consumes = u.next.authority != ghostAuthority;
         if (err.length != 0) vm.expectRevert(err);
         vm.prank(governor);
         registry.stageOverride(artistId, u.kind, u.next, u.evidence, u.deadline, u.acceptance);
         ok = err.length == 0;
-        if (ok) _onStaged(u.kind);
+        if (!ok) return ok;
+        if (consumes) usedDigest[u.digest] = true;
+        _onStaged(u.kind);
     }
 
     /// @dev The registry's check order for `stageChange` up to the signature.
@@ -268,7 +270,7 @@ contract ArtistRegistryHandler is Test {
         }
         if (
             u.next.authority != ghostAuthority
-                && (block.timestamp > u.deadline || u.nonce != ghostNonce)
+                && (block.timestamp > u.deadline || usedDigest[u.digest])
         ) return _sel(IArtistRegistry.InvalidSignature.selector);
         if (registry.pendingChange(artistId).kind > ChangeKind.STANDARD) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);

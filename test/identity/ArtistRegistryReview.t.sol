@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { ArtistIdentity, ChangeKind } from "src/interfaces/types/IdentityTypes.sol";
+import { ArtistIdentity, ChangeKind, Standing } from "src/interfaces/types/IdentityTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import {
     FederationRegistryStub,
@@ -18,7 +18,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
     // ----------------------------------------------------------------- H1: sticky standing
 
     function test_Standing_RecordedAtRegistration() public view {
-        ArtistRegistry.Standing[] memory s = registry.standingOf(artistId);
+        Standing[] memory s = registry.standingOf(artistId);
         assertEq(s.length, 1);
         assertEq(s[0].wallet, wallet);
         assertEq(s[0].missingSince, 0);
@@ -67,7 +67,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
     function test_Standing_LostOnlyAfterAPublicThirtyDayGrace() public {
         _revoke(artist, wallet);
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.StandingMissing(artistId, wallet);
+        emit IArtistRegistry.StandingMissing(artistId, wallet);
         vm.prank(stranger);
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp);
@@ -80,7 +80,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
 
         vm.warp(block.timestamp + 1);
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.StandingRemoved(artistId, wallet);
+        emit IArtistRegistry.StandingRemoved(artistId, wallet);
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId).length, 0);
         _stage(artistKey, _identity(artist, payout), 0);
@@ -105,7 +105,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         _delegate(artist, wallet, FAR);
         vm.warp(block.timestamp + 30 days);
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.StandingAdded(artistId, wallet);
+        emit IArtistRegistry.StandingAdded(artistId, wallet);
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId)[0].missingSince, 0);
     }
@@ -130,7 +130,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 7 days);
         registry.executeChange(artistId);
-        ArtistRegistry.Standing[] memory s = registry.standingOf(artistId);
+        Standing[] memory s = registry.standingOf(artistId);
         assertEq(s.length, 2);
         assertEq(s[0].wallet, wallet);
         assertEq(s[0].missingSince, block.timestamp);
@@ -281,7 +281,9 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         for (uint256 i; i < registry.MAX_FEDERATED(); ++i) {
             registry.listFederatedContract(artistId, address(uint160(0xF000 + i)));
         }
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.FederatedListFull.selector, artistId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.FederatedListFull.selector, artistId)
+        );
         registry.listFederatedContract(artistId, stranger);
         vm.stopPrank();
     }
