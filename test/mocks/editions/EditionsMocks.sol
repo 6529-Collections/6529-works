@@ -20,7 +20,7 @@ import {
     ProductEconomics,
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
-import { ItemKind, License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { ItemKind, License, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
@@ -297,8 +297,9 @@ contract EditionsStreamMock {
 
     /// @dev An upheld dispute burns the master in custody.
     function burnMaster(uint256 id) external {
+        // As 6529 Stream: a settled token is never burned (after a sale nothing is confiscated).
+        if (_settled[id]) revert IStream.SaleAlreadySettled(id);
         delete _owners[id];
-        delete _settled[id];
     }
 
     function pinRenderer(uint256 id, address renderer) external {
@@ -308,12 +309,23 @@ contract EditionsStreamMock {
     // ----- the IStream slice Editions reads
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId;
+        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId
+            || interfaceId == type(IStream).interfaceId;
     }
 
     function work(uint256 id) external view returns (IStream.WorkCore memory) {
         if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
         return _works[id];
+    }
+
+    function coreOf(uint256 id)
+        external
+        view
+        returns (bytes32, uint256, uint256, ItemKind, SeedPolicy, uint32)
+    {
+        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
+        IStream.WorkCore storage w = _works[id];
+        return (w.itemHash, w.artistId, w.collectionId, w.kind, w.seedPolicy, w.royaltyRate);
     }
 
     function primarySaleSettled(uint256 id) external view returns (bool) {
@@ -337,7 +349,10 @@ contract EditionsStreamMock {
 
     function linkEdition(uint256 tokenId, uint256 editionId) external {
         if (msg.sender != editions) revert IStream.UnboundCaller(msg.sender);
-        if (_works[tokenId].kind != ItemKind.EDITION_MASTER || _linked[tokenId] != 0) {
+        if (
+            editionId != tokenId || _works[tokenId].kind != ItemKind.EDITION_MASTER
+                || _linked[tokenId] != 0
+        ) {
             revert IStream.EditionLinkInvalid(tokenId);
         }
         if (linkMode == LinkMode.IGNORE) return;

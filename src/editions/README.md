@@ -29,7 +29,8 @@ the governed `setAdmittedMinter` in the 30-day class, with ERC-165 and EIP-7702
 checks) whose `saleKind()` matches the package's may mint; an adapter removed
 since may still burn the copies it holds. FIXED editions stop at `size` copies;
 OPEN editions sell for `window` seconds from the first mint, capped at `size`
-when it is nonzero; minting stops if the master is burned. Burned copies still
+when it is nonzero. A master with an edition has settled and is never burned
+(Stream refuses), so minting reads nothing from Stream. Burned copies still
 count toward the size. The sale adapter owns the currency: `primaryTerms` and
 `mint` return the package's stored currency (possibly `CURRENCY_DEFAULT`, which
 is allowed only with a zero price), and the adapter resolves and locks it when
@@ -54,8 +55,9 @@ change) or the satellite (a global or collection preferred location), emits
 one `BatchMetadataUpdate` over every ID.
 
 **Wiring.** Stream is checked at deployment (code, no EIP-7702 delegation,
-ERC-165 for ERC-721, the reviewed code hash), and the package registry,
+ERC-165 for `IStream`, the reviewed code hash), and the package registry,
 economics resolver and artist registry are read from it. Genesis binds Editions
 in Stream and in the package registry (their one-shot `bindEditions`), and then
 binds Stream's work-records satellite here once (`bindWorkRecords`, ADMIN, with
-ERC-165 and EIP-7702 checks; `Bound("WORK_RECORDS", target)`).
+ERC-165 and EIP-7702 checks; `Bound("WORK_RECORDS", target)`). No edition can be
+created before that bind (`WorkRecordsUnbound`).
