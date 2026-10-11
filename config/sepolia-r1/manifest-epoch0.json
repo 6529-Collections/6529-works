@@ -1,0 +1,140 @@
+{
+  "schema": "6529-works/governance-manifest/1",
+  "epoch": 0,
+  "chainId": 11155111,
+  "deployment": "sepolia-r1",
+  "status": "Testnet rehearsal with throwaway signers. Pre-audit; not for mainnet.",
+  "signatures": "Unsigned: testnet rehearsal. A mainnet manifest is signed by the admin Safe signers.",
+  "source": {
+    "repository": "https://github.com/6529-Collections/6529-works",
+    "commit": "60edd9b4a98ef0355247b42cb67f9862c18b81b3",
+    "compiler": "solc 0.8.37, evm prague, optimizer 200 runs, via-ir off"
+  },
+  "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",
+  "namespace": {
+    "label": "6529-works/sepolia/r1",
+    "keccak256": "0x5d0566b3b4854d5a8d38387508bfc2b14e37a9fd718f27cf58d3a402c4ce2454"
+  },
+  "genesis": {
+    "path": "config/sepolia-r1/genesis.json",
+    "sha256": "b4e40fa557d90bfdfa462a6269f38b79b81118496d7d17b51300014a6c8bd290"
+  },
+  "policy": {
+    "path": "config/genesis.example.json",
+    "sha256": "4e5728e00f9fd54b37529a17cb435cdb18e37c8e929e0b47c75786406d913d92"
+  },
+  "safes": {
+    "hot-admin": {
+      "address": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "threshold": 2,
+      "owners": [
+        "0xa708B26E5C8ad1c2bc9cB7Eb69C8F10Ba2c1D16E",
+        "0xf9822706316173B85549E5DFe26089C5ffb181Bc",
+        "0x80D6FA7C81E928C1EA942f393E2f2fBab90Ca16D"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "cold-admin": {
+      "address": "0x5090272f56f9139CfE91aa927bc547244FC0d6B9",
+      "threshold": 3,
+      "owners": [
+        "0x971B0fd34b1a18153Dfe05898c0AF36728c6A93A",
+        "0xC6da2A36a008016Cc0d005F5a163A8dF0f5C92e1",
+        "0x97e1b9E4B6398Aa944c145284aCEf2ED286cdf5D",
+        "0x0AC22B14a8E0a7C34649d6A9af04A74C74b1009E",
+        "0xb0B78F6F62daa9026c249A08308fC8f0f774BD87"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "guardian-1": {
+      "address": "0x5d1103f2FC0ce8D0E81a918A3819182208B6E916",
+      "threshold": 2,
+      "owners": [
+        "0xAeB27Fef5B862a3f2cAbcDac3a11232e16af9E7D",
+        "0x520FD0fe169aADb081EbF8E9c296463623C07d4a",
+        "0x9565E99550ad64b994f7B38c19eCA4ccc52FA877"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "guardian-2": {
+      "address": "0x894D246cA153Be5a9b125d694e52cdD146f5be8C",
+      "threshold": 2,
+      "owners": [
+        "0x6A310CDC7Ee650ced8501b67A5A1D457a0703971",
+        "0x5FC95a7b9358E00c37C9395fF3D4e1Cf9d09ce4F",
+        "0x3E9db48e5B66EDBa73FE6f0C40ecBD48608F39F1"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "guardian-3": {
+      "address": "0x708A1Eb9D5ea5678D5168752ee0bfe3D58f4bA7e",
+      "threshold": 2,
+      "owners": [
+        "0x0406123046572c750008495905A0e37B881B83D0",
+        "0xcdeaF63C70142F2eC0b50A83c2501a47642bC0a1",
+        "0xc77970569C06008F26789F57d09E49c68ae9de90"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    }
+  },
+  "keys": {
+    "curationSigners": [
+      "0xc7091A91Fa76f7494a3b847B6A08f164C7097830",
+      "0x148F83Bd54Ef232d8e7056a21Ca777C6e8Bac709"
+    ],
+    "storageOperator": "0x4484CEBA86645575Fd1E48Ac06dCc8c6CEe44ACd",
+    "platform": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D",
+    "curator": "0xBDccCcBfAF7aAE8702bD41e79f0CF0441676906a"
+  },
+  "parameters": {
+    "networkFeeRecipient": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+    "marketplaceOwner": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D"
+  },
+  "dependencies": {
+    "delegation": {
+      "address": "0x8f86c644f845A077999939C69Bc787662377d915",
+      "note": "The official 6529 NFTDelegation deployment on Sepolia (github.com/6529-Collections/nftdelegation). Its runtime bytecode is identical to mainnet 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d."
+    },
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "create2Factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "vrf": {
+      "coordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
+      "version": "Chainlink VRF v2.5",
+      "subscriptionId": "67141663544939655902710981754240722879597693570821648217296649312180545379426",
+      "keyHash": "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae",
+      "nativePayment": true,
+      "callbackGasLimit": 200000,
+      "confirmations": 3
+    }
+  },
+  "license": {
+    "default": "CC0 1.0 Universal",
+    "textSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+    "contentStoreFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b"
+  },
+  "contracts": {
+    "configurator": "0x16069B324d7adfa3007AEB08F877c5F0A3dF3EF9",
+    "manager": "0x4aa96AA18088BfaD4919F14C4b396Cb98EBa2f33",
+    "contentStore": "0x3C59350687ae2B8e5584e60C8bDdbbE60f861B9a",
+    "dependencyRegistry": "0xd4ca0655ca95CEE78bC1B5b070A4F8fDd9040AD1",
+    "consolidationAdapter": "0xd19D099F3cBeB42A11B2F58296E05D5Cc43Aa297",
+    "artistRegistry": "0xFEfCD96c3b3A95a852b475A2449Ce6E85ca6D253",
+    "releaseVerifier": "0xF58Fe3673024F7d89bd69797AB6825949d344F4a",
+    "splitFactory": "0x28533594915A45D98938d12D5725B6ff4DF0f424",
+    "claimRouter": "0x8444805f76a44FbD3161eF52E484a6b1E5CE75cA",
+    "assetAllowlist": "0x277B8aCc9dcEDB75AdE5668717e30EFe352001bb",
+    "economicsResolver": "0x556758418daF133784F9C75E7b63BaDB608aEAAd",
+    "revenueEscrow": "0x0115D20ab92ee2BAa3d83714f617854282c4f5bA",
+    "curationVerifier": "0xaDdD57B8480fBc1d85bd2427e2a58331729c93bd",
+    "packageRegistry": "0x5Af03101871EB9414f16415Dd3E7C3CEb081c5b9",
+    "statementLog": "0x4F09b03F1FB31B368C60a6518aAf3E788fCE9b63",
+    "entropyModule": "0xF1afB4772C70207423cdE19d144CDd350E1F38Bd",
+    "englishAuction": "0x6645064D9D5AcF8C674357E1B65df516F2247800",
+    "fixedPriceSale": "0xfAfFC71D691eDf722BFcEd68a647BC5d599CDE3d",
+    "dutchSale": "0x1D2326c0c4ae102943Adc532c926A70e10E2A347",
+    "renderer": "0xC506AA04EdDD7b3b3146dB9C0f78AEB50d27F2f6",
+    "stream": "0x94DB49438E3940C5Cd48F4f71c7a4A26a0eb955f",
+    "workRecords": "0xE8a653585F460bb44F4f3E0D6F1173F900b43A2C",
+    "editions": "0x29A1DEBB4DC4ABC99668C85B7D0BF37684b1B31F"
+  }
+}
