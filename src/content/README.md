@@ -113,8 +113,9 @@ for them, and nobody needs permission to complete a work's on-chain copy.
    indexes still to be uploaded, and `isComplete(fileId)` for the yes or no.
 5. **Upload chunks** with `writeChunk(bytes)`, in any order and across as many
    transactions as needed. Because `writeChunk` does not depend on the caller,
-   any batching tool works (for example Multicall3, to fit about three chunks, 72
-   KB, in one transaction). A collector, the designated payer in the product,
+   any batching tool works (for example Multicall3, to fit two full chunks, about
+   49 KB, in one transaction, at about two thirds of the 16,777,216-gas transaction
+   cap; three full chunks reach 97–99% of the cap and are not recommended). A collector, the designated payer in the product,
    finishes what the artist or platform started. Re-sending a chunk costs almost
    nothing.
 6. **Done.** When `isComplete(fileId)` is true every chunk is stored with the
