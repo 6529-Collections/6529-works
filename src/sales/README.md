@@ -33,7 +33,8 @@ adapter reads the token's `primaryTerms(id, "")` and fails closed unless:
 - the economics resolver accepts the currency (`resolveCurrency`), returning
   exactly the currency the token named unless it named `CURRENCY_DEFAULT`
   (`CurrencyMismatch`);
-- a seller and a fee recipient are set and the fee share is at most 100,000.
+- a seller is set, a fee recipient is set unless the fee share is zero, and the
+  fee share is at most 100,000.
 
 The terms are then locked as `LockedTerms`:
 - `CURRENCY_DEFAULT` is resolved once, through `resolveCurrency`. A listed
@@ -166,7 +167,8 @@ is credited to the payer and claimed with `claim`.
 ### Payouts
 
 Each purchase mints to the recipient, then pays the network fee
-(`floor(total × feeShare / 100,000)`) and the seller (the rest). The seller is
+(`floor(total × feeShare / 100,000)`) and the seller (the rest). A zero amount is
+not paid at all, so terms with a zero fee share need no fee recipient. The seller is
 the work's predicted split wallet, which may not be deployed yet. An ETH payout
 forwards 100,000 gas. A wallet that refuses, or a token that blocks it (as USDC
 can), is paid through the revenue escrow instead, so no recipient can block a

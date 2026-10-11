@@ -144,6 +144,7 @@ contract MockEconomicsResolver is IEconomicsResolver {
     /// @dev When set, `assetAllowlist()` reports this address instead (install-check tests).
     address public allowlistOverride;
     mapping(bytes32 product => ProductEconomics) internal _economics;
+    mapping(bytes32 product => bool) internal _known;
 
     constructor(MockAssetAllowlist allowlist_) {
         allowlist = allowlist_;
@@ -151,6 +152,12 @@ contract MockEconomicsResolver is IEconomicsResolver {
 
     function set(bytes32 product, address feeRecipient, uint32 feeShare) external {
         _economics[product] = ProductEconomics(feeRecipient, feeShare, 6529);
+        _known[product] = true;
+    }
+
+    function unset(bytes32 product) external {
+        delete _economics[product];
+        delete _known[product];
     }
 
     function resolveCurrency(bytes32 product, address requested)
@@ -163,8 +170,8 @@ contract MockEconomicsResolver is IEconomicsResolver {
     }
 
     function economics(bytes32 product) public view returns (ProductEconomics memory e) {
+        if (!_known[product]) revert UnknownProduct(product);
         e = _economics[product];
-        if (e.feeRecipient == address(0)) revert UnknownProduct(product);
     }
 
     function networkFeeRecipient(bytes32 product) external view returns (address) {
