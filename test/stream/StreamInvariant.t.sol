@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { IWorkRecords } from "src/stream/IWorkRecords.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamHandler } from "./StreamHandler.sol";
@@ -32,7 +34,8 @@ contract StreamInvariantTest is RecordsFixture {
             second
         );
         for (uint256 i; i < ITEMS; ++i) {
-            handler.addItem(_recordsItem(i, i % 2 == 0));
+            MediaFile[] memory media = _single(i, i % 2 == 0);
+            handler.addItem(_recordsItem(i, media), media);
         }
         for (uint256 i; i < 4; ++i) {
             handler.addSpareRecord(_record(1000 + i));
@@ -42,7 +45,7 @@ contract StreamInvariantTest is RecordsFixture {
         selectors[1] = handler.burn.selector;
         selectors[2] = handler.deliver.selector;
         selectors[3] = handler.transfer.selector;
-        selectors[4] = handler.register.selector;
+        selectors[4] = handler.openRecord.selector;
         selectors[5] = handler.setRecord.selector;
         selectors[6] = handler.finalize.selector;
         selectors[7] = handler.attackFinalized.selector;
@@ -73,7 +76,6 @@ contract StreamInvariantTest is RecordsFixture {
         lastMinted = minted;
         assertEq(handler.violations(), 0);
         for (uint256 id = 1; id <= minted; ++id) {
-            assertTrue(stream.itemHashOf(id) != bytes32(0));
             if (handler.burned(id)) {
                 vm.expectRevert(
                     abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id)
@@ -81,7 +83,8 @@ contract StreamInvariantTest is RecordsFixture {
                 stream.ownerOf(id);
             }
         }
-        assertEq(stream.itemHashOf(minted + 1), bytes32(0));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, minted + 1));
+        stream.work(minted + 1);
     }
 
     /// @dev The royalty receiver never changes after mint; the rate changes only through the
@@ -90,9 +93,8 @@ contract StreamInvariantTest is RecordsFixture {
         uint256 minted = stream.totalMinted();
         for (uint256 id = 1; id <= minted; ++id) {
             if (handler.burned(id)) continue;
-            (address receiver, uint32 rate) = stream.royaltyOf(id);
-            assertEq(receiver, handler.ghostReceiver(id));
-            assertEq(rate, handler.ghostRate(id));
+            assertEq(stream.work(id).royaltyReceiver, handler.ghostReceiver(id));
+            assertEq(stream.work(id).royaltyRate, handler.ghostRate(id));
         }
     }
 
@@ -101,11 +103,11 @@ contract StreamInvariantTest is RecordsFixture {
         uint256 minted = stream.totalMinted();
         for (uint256 id = 1; id <= minted; ++id) {
             if (handler.burned(id) || !handler.finalized(id)) continue;
-            IWorkRecords.RecordState memory s = records.recordState(id);
-            (bytes32 record, address pinned) = handler.finalSnapshot(id);
-            assertTrue(s.finalized);
-            assertEq(s.record, record);
-            assertEq(s.renderer, pinned);
+            IWorkRecords.RecordInfo memory info = records.record(id);
+            (bytes32 recordFileId, address pinned) = handler.finalSnapshot(id);
+            assertTrue(info.finalized);
+            assertEq(info.recordFileId, recordFileId);
+            assertEq(info.renderer, pinned);
             assertEq(stream.rendererOf(id), pinned);
         }
     }

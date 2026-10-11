@@ -3,15 +3,18 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
-import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
+import { IStream } from "../interfaces/IStream.sol";
+import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import {
     PRODUCT_STREAM,
     SHARE_DENOMINATOR,
@@ -19,7 +22,6 @@ import {
 } from "../interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
-    License,
     PackageItem,
     SeedPolicy,
     StreamMintRequest
@@ -27,55 +29,60 @@ import {
 import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
-import { IStreamCore } from "./IStreamCore.sol";
-import { IWorkRecords } from "./IWorkRecords.sol";
 
 /// @title Stream
-/// @notice 6529 Stream: the one shared, network-curated ERC-721 holding every curated 1/1
-///         (ADR 0001 sections 1, 4, 7 and 12; integrator decisions D1, D3 and D6).
-/// @dev The core token. It holds ownership, the royalty terms `royaltyInfo` reads, collections
-///      and serials, the license, the edition link, the marketplace owner and contract URI, and
-///      forwards `tokenURI` to the work's renderer. Descriptive records, the state hash,
-///      finalize, amendments and locators live in the bound `WorkRecords` satellite, which
-///      changes license and royalty rate here through two hooks and asks this contract to emit
-///      the ERC-4906 events marketplaces index.
+/// @notice 6529 Stream core: the one shared, network-curated ERC-721 holding every curated 1/1
+///         (ADR 0001 sections 1, 4, 7 and 12; integrator decisions D1, D3, D4, D6 and D13).
+/// @dev Holds ownership, the terms locked at mint, collections and serials, the edition link and
+///      the marketplace metadata, and forwards `tokenURI` to the work's renderer. Records,
+///      licenses, finalize and locators live in the bound `IWorkRecords` satellite.
 ///
-///      Storage is shaped by the 300K auction-start budget: a mint writes the ERC-721 owner and
-///      balance, one shared counter word, the collection's counter word and three work words,
-///      and puts everything else in `WorkMinted` (D26). Word 0 packs the lead artist ID, serial,
-///      collection ID, license index and kind; word 1 the royalty receiver and rate, which is all
-///      `royaltyInfo` reads (no external call, so it can run out of gas and revert but never
-///      return a zero royalty for lack of gas: RC1's Medium finding); word 2 the item hash.
-///      Distinct licenses are stored once and referenced by index, so a work pays for its
-///      license only if nobody used it before.
+///      Storage is shaped by the 300K auction-start budget. A mint writes the ERC-721 owner and
+///      balance, one shared counter word, the collection's counter word and four work words:
+///      the seller, serial, collection, kind, seed policy and flags; the royalty receiver, rate
+///      and fee-terms index; the lead artist ID; the item hash. An ARTIST seed adds one word.
+///      The fee recipient, fee share and currency a sale locks are stored once per distinct
+///      combination and referenced by index, so `primaryTerms` returns a minted token's locked
+///      terms (the auction reads them back at settlement) without a word per token.
+///      `royaltyInfo` reads one word and makes no external call: it can run out of gas and
+///      revert, but never return a zero royalty for lack of gas (RC1's Medium finding).
 ///
-///      Trust: the package registry, artist registry and economics resolver are immutable and
-///      trusted. Sale adapters are trusted through the MINTER role; the records satellite and
-///      the 6529 Editions contract through one-shot bindings made at genesis.
-contract Stream is ERC721, AccessManaged, IStreamCore {
+///      Trust: the package registry, artist registry, economics resolver and entropy module are
+///      immutable. Sale adapters are trusted through the MINTER role; the records satellite and
+///      6529 Editions through the one-shot `bind`.
+contract Stream is ERC721, AccessManaged, IStream {
     /// @notice The longest accepted collection name, in bytes.
     uint256 public constant MAX_NAME_BYTES = 256;
-    /// @notice The longest accepted SPDX identifier, in bytes.
-    uint256 public constant MAX_SPDX_BYTES = 64;
 
-    /// @dev The canonical key (D20) of CC0: keccak256 of the lowercase SPDX identifier.
-    bytes32 private constant CC0_KEY = keccak256("cc0-1.0");
+    /// @notice A dependency lacks code or the required ERC-165 support, or is an EIP-7702
+    ///         delegated account.
+    error InvalidDependency(address dependency);
+    /// @notice The collection name is empty, longer than `MAX_NAME_BYTES` or not UTF-8.
+    error InvalidCollectionName();
+    /// @notice The royalty rate exceeds 100,000.
+    error InvalidRoyaltyRate(uint32 rate);
 
-    /// @dev `keccak256(abi.encode(license))` of license 1, the product default at deployment,
-    ///      which most works use: matching it costs no storage read at mint.
-    bytes32 private immutable _defaultLicenseKey;
-
-    /// @dev Words 0, 1 and 2 of a token. `licenseId` indexes `_licenses` plus one.
+    /// @dev A token's four words.
     struct TokenData {
-        uint160 artistId;
+        address seller;
         uint32 serial;
         uint32 collectionId;
-        uint24 licenseId;
         ItemKind kind;
+        SeedPolicy seedPolicy;
+        bool primarySaleSettled;
+        bool editionLinked;
         address royaltyReceiver;
         uint32 royaltyRate;
-        bool editionLinked;
+        uint32 feeTermsId;
+        uint160 artistId;
         bytes32 itemHash;
+    }
+
+    /// @dev Fee terms and currency locked at mint, shared by every token minted under them.
+    struct FeeTerms {
+        address feeRecipient;
+        uint32 feeShare;
+        address currency;
     }
 
     /// @dev `exists` keeps the counter word nonzero, so each mint pays a warm rewrite.
@@ -92,60 +99,60 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         uint32 collections;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public immutable packageRegistry;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public immutable artistRegistry;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public immutable economics;
+    /// @inheritdoc IStream
+    address public immutable entropyModule;
 
-    /// @inheritdoc IStreamCore
-    address public records;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
+    address public workRecords;
+    /// @inheritdoc IStream
     address public editions;
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     address public defaultRenderer;
 
     Counts private _counts;
     address private _owner;
     string private _contractURI;
-    License[] private _licenses;
-    mapping(bytes32 licenseHash => uint24 id) private _licenseIds;
+    FeeTerms[] private _feeTerms;
+    mapping(bytes32 key => uint32 id) private _feeTermsIds;
     mapping(uint256 collectionId => CollectionData) private _collections;
     mapping(uint256 tokenId => TokenData) private _tokens;
+    mapping(uint256 tokenId => bytes32) private _seeds;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param packageRegistry_ The package registry `mint` consumes items from.
     /// @param artistRegistry_ The artist registry resolving each work's artist.
     /// @param economics_ The economics resolver whose terms works lock at mint.
+    /// @param entropyModule_ The VRF entropy module, or zero if VRF works are not supported.
     /// @param renderer_ The initial default renderer.
     /// @param owner_ The initial marketplace owner.
-    /// @param defaultLicense_ The product's default license (CC0 at launch), registered as
-    ///        license 1.
     constructor(
         address authority_,
         address packageRegistry_,
         address artistRegistry_,
         address economics_,
+        address entropyModule_,
         address renderer_,
-        address owner_,
-        License memory defaultLicense_
+        address owner_
     ) ERC721("6529 Stream", "STREAM") AccessManaged(authority_) {
-        _requireContract(packageRegistry_);
-        _requireContract(artistRegistry_);
-        _requireContract(economics_);
-        _requireContract(renderer_);
+        _requireInterface(packageRegistry_, type(IPackageRegistry).interfaceId);
+        _requireInterface(artistRegistry_, type(IArtistRegistry).interfaceId);
+        _requireInterface(economics_, type(IEconomicsResolver).interfaceId);
+        if (entropyModule_ != address(0)) {
+            _requireInterface(entropyModule_, type(IEntropyModule).interfaceId);
+        }
+        _requireInterface(renderer_, type(IRenderer).interfaceId);
         packageRegistry = packageRegistry_;
         artistRegistry = artistRegistry_;
         economics = economics_;
+        entropyModule = entropyModule_;
         defaultRenderer = renderer_;
         _owner = owner_;
-        uint256 spdx = bytes(defaultLicense_.spdxId).length;
-        if (spdx == 0 || spdx > MAX_SPDX_BYTES) revert InvalidLicense();
-        bytes32 key = keccak256(abi.encode(defaultLicense_));
-        _defaultLicenseKey = key;
-        _licenses.push(defaultLicense_);
-        _licenseIds[key] = 1;
         emit DefaultRendererSet(address(0), renderer_);
         emit OwnershipTransferred(address(0), owner_);
     }
@@ -153,39 +160,56 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     // ------------------------------------------------------------------------------- minting
 
     /// @inheritdoc IMintTarget
-    /// @dev MINTER role. The adapter mints into its own custody (`to == msg.sender`), reports
-    ///      `SaleKind.ENGLISH_AUCTION`, and passes `id = 0`, `amount = 1` and
-    ///      `data = abi.encode(StreamMintRequest)`. The registry checks the approval, consents,
-    ///      move signature, single use and content uniqueness; this contract checks the Stream
-    ///      rules and assigns the next token ID and collection serial.
+    /// @dev MINTER role. The adapter mints into its own custody (`to == msg.sender`) and passes
+    ///      `id = 0`, `amount = 1` and `data = abi.encode(StreamMintRequest)`. The registry checks
+    ///      the approval, consents, move signature, single use and content uniqueness; this
+    ///      contract checks the Stream rules and the delivered VRF seed, and assigns the next
+    ///      token ID and collection serial.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         restricted
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
         if (to != msg.sender || id != 0 || amount != 1) revert InvalidMintRequest();
-        if (ISaleAdapter(msg.sender).saleKind() != SaleKind.ENGLISH_AUCTION) {
-            revert InvalidMintRequest();
+        bytes32 kind = ISaleAdapter(msg.sender).saleKind();
+        if (kind != SaleKind.ENGLISH_AUCTION) {
+            revert SaleKindMismatch(SaleKind.ENGLISH_AUCTION, kind);
         }
         StreamMintRequest calldata req = _request(data);
-        _checkItem(req.item);
+        PackageItem calldata item = req.item;
+        _checkItem(item);
         (bytes32 itemHash, uint256 artistId) = _consume(data);
         if (artistId == 0 || artistId > type(uint160).max) revert InvalidMintRequest();
+        if (
+            item.seedPolicy == SeedPolicy.VRF
+                && !IEntropyModule(entropyModule).isDelivered(itemHash)
+        ) revert SeedNotDelivered(itemHash);
         WorkTerms memory w;
-        (terms, w) = _quote(req.item, artistId);
-        tokenId = _store(req.item, itemHash, artistId, w);
+        (terms, w) = _quote(item, artistId);
+        tokenId = _store(req, itemHash, artistId, w, _feeTermsId(terms));
         _mint(to, tokenId);
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev Resolves the lead artist through `artistIdOf`, so it reverts while the lead artist
-    ///      has no identity (no sale can start then either).
+    /// @dev For a minted token, the locked terms with the creator resolved now (the auction reads
+    ///      them at settlement). For `id` 0, a preview from `data`; it resolves the lead artist
+    ///      through `artistIdOf`, so it reverts while the lead artist has no identity.
     function primaryTerms(uint256 id, bytes calldata data)
         external
         view
         returns (PrimaryTerms memory terms)
     {
-        if (id != 0) revert InvalidMintRequest();
+        if (id != 0) {
+            TokenData storage t = _live(id);
+            FeeTerms storage f = _feeTerms[t.feeTermsId - 1];
+            terms.saleKind = SaleKind.ENGLISH_AUCTION;
+            terms.currency = f.currency;
+            terms.seller = t.seller;
+            terms.feeRecipient = f.feeRecipient;
+            terms.feeShare = f.feeShare;
+            terms.creator = IArtistRegistry(artistRegistry).authorityOf(t.artistId);
+            return terms;
+        }
         StreamMintRequest calldata req = _request(data);
         _checkItem(req.item);
         uint256 artistId = IArtistRegistry(artistRegistry).artistIdOf(req.item.parties[0].account);
@@ -204,9 +228,9 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         _burn(id);
     }
 
-    // ------------------------------------------------------------------- collections, supply
+    // ----------------------------------------------------------------- collections and works
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function createCollection(string calldata name, bytes32 metadataHash)
         external
         restricted
@@ -214,7 +238,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     {
         bytes calldata raw = bytes(name);
         if (raw.length == 0 || raw.length > MAX_NAME_BYTES || !Utf8.isValid(raw)) {
-            revert InvalidCollection();
+            revert InvalidCollectionName();
         }
         collectionId = ++_counts.collections;
         CollectionData storage c = _collections[collectionId];
@@ -224,56 +248,64 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         emit CollectionCreated(collectionId, name, metadataHash);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function collection(uint256 collectionId) external view returns (Collection memory) {
         CollectionData storage c = _collections[collectionId];
         if (!c.exists) revert UnknownCollection(collectionId);
         return Collection(c.name, c.metadataHash, c.minted);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function collectionCount() external view returns (uint256) {
         return _counts.collections;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function totalMinted() external view returns (uint256) {
         return _counts.minted;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function totalSupply() external view returns (uint256) {
         return _counts.minted - _counts.burned;
     }
 
-    // ---------------------------------------------------------------------------------- works
-
-    /// @inheritdoc IStreamCore
-    function work(uint256 tokenId) external view returns (TokenInfo memory) {
+    /// @inheritdoc IStream
+    function work(uint256 tokenId) external view returns (WorkCore memory) {
         TokenData storage t = _live(tokenId);
-        return TokenInfo(t.itemHash, t.artistId, t.collectionId, t.serial, t.kind, t.editionLinked);
+        return WorkCore(
+            t.itemHash,
+            t.artistId,
+            t.collectionId,
+            t.serial,
+            t.kind,
+            t.seedPolicy,
+            t.seller,
+            t.royaltyReceiver,
+            t.royaltyRate
+        );
     }
 
-    /// @inheritdoc IStreamCore
-    /// @dev Kept after a burn, so statements and indexers can still join a burned token to its
-    ///      item (D23). Zero for an ID never minted.
-    function itemHashOf(uint256 tokenId) external view returns (bytes32) {
-        return _tokens[tokenId].itemHash;
+    /// @inheritdoc IStream
+    function artistOf(uint256 tokenId) external view returns (uint256) {
+        return _live(tokenId).artistId;
     }
 
-    /// @inheritdoc IStreamCore
-    function licenseOf(uint256 tokenId) external view returns (License memory) {
-        return _licenses[_live(tokenId).licenseId - 1];
+    /// @inheritdoc IStream
+    function primarySaleSettled(uint256 tokenId) external view returns (bool) {
+        return _ownerOf(tokenId) != address(0) && _tokens[tokenId].primarySaleSettled;
     }
 
-    /// @inheritdoc IStreamCore
-    function royaltyOf(uint256 tokenId) external view returns (address receiver, uint32 rate) {
+    /// @inheritdoc IStream
+    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
         TokenData storage t = _live(tokenId);
-        return (t.royaltyReceiver, t.royaltyRate);
+        policy = t.seedPolicy;
+        if (policy == SeedPolicy.ARTIST) seed = _seeds[tokenId];
+        else if (policy == SeedPolicy.VRF) seed = IEntropyModule(entropyModule).seedOf(t.itemHash);
     }
 
     /// @inheritdoc IERC2981
-    /// @dev Two storage reads and no external call. `rate <= 100,000` (checked when stored), so
+    /// @dev One storage word and no external call. `rate <= 100,000` (checked when stored), so
     ///      `(p / D) * rate + (p % D) * rate / D` is exactly `floor(p * rate / D)` and cannot
     ///      overflow for any `salePrice` (RC1's overflow-free form).
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
@@ -292,90 +324,65 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         }
     }
 
-    // ------------------------------------------------------------------------- records hooks
-
-    /// @inheritdoc IStreamCore
-    /// @dev Only the bound records satellite, after it has collected every party's consent and
-    ///      the governed action. A CC0 dedication is irrevocable, checked here as well.
-    function setLicense(uint256 tokenId, License calldata next) external {
-        _onlyRecords();
-        TokenData storage t = _live(tokenId);
-        License memory previous = _licenses[t.licenseId - 1];
-        if (licenseKey(previous.spdxId) == CC0_KEY) revert LicenseIrrevocable(tokenId);
-        _checkLicense(next);
-        t.licenseId = _licenseId(next);
-        emit LicenseChanged(tokenId, previous, next);
-        emit MetadataUpdate(tokenId);
-    }
-
-    /// @inheritdoc IStreamCore
-    /// @dev Only the bound records satellite. The receiver (the payees' split wallet) is fixed
-    ///      at mint; only the rate changes (D19).
-    function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
-        _onlyRecords();
-        TokenData storage t = _live(tokenId);
-        if (rate > SHARE_DENOMINATOR) revert InvalidRoyalty();
-        emit RoyaltyChanged(tokenId, t.royaltyReceiver, t.royaltyRate, rate);
-        t.royaltyRate = rate;
-    }
-
-    /// @inheritdoc IStreamCore
-    function refreshMetadata(uint256 fromTokenId, uint256 toTokenId) external {
-        _onlyRecords();
-        if (fromTokenId == toTokenId) emit MetadataUpdate(fromTokenId);
-        else emit BatchMetadataUpdate(fromTokenId, toTokenId);
-    }
-
     // ------------------------------------------------------------------------------- rendering
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function setDefaultRenderer(address expected, address next) external restricted {
         if (defaultRenderer != expected) revert ExpectedValueMismatch();
-        _requireContract(next);
+        _requireInterface(next, type(IRenderer).interfaceId);
         defaultRenderer = next;
         emit DefaultRendererSet(expected, next);
         uint256 minted = _counts.minted;
         if (minted != 0) emit BatchMetadataUpdate(1, minted);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function rendererOf(uint256 tokenId) public view returns (address renderer) {
         _live(tokenId);
-        address bound = records;
-        if (bound != address(0)) renderer = IWorkRecords(bound).pinnedRenderer(tokenId);
+        address records = workRecords;
+        if (records != address(0)) renderer = IWorkRecords(records).pinnedRenderer(tokenId);
         if (renderer == address(0)) renderer = defaultRenderer;
     }
 
     /// @notice The token's metadata, built by its pinned renderer once finalized, else by the
-    ///         default renderer. Reverts for a burned or unminted token.
+    ///         default renderer. Reverts with `UnknownWork` for a burned or unminted token.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         return IRenderer(rendererOf(tokenId)).tokenURI(address(this), tokenId);
     }
 
-    // -------------------------------------------------------------------------------- bindings
+    // ------------------------------------------------------------------------ satellite hooks
 
-    /// @inheritdoc IStreamCore
-    function bindRecords(address records_) external restricted {
-        if (records != address(0)) revert AlreadyBound(records);
-        _requireContract(records_);
-        records = records_;
-        emit RecordsBound(records_);
-    }
-
-    /// @inheritdoc IStreamCore
-    function bindEditions(address editions_) external restricted {
-        if (editions != address(0)) revert AlreadyBound(editions);
+    /// @inheritdoc IStream
+    function bind(address workRecords_, address editions_) external restricted {
+        if (workRecords != address(0)) revert AlreadyBound();
+        _requireContract(workRecords_);
         _requireContract(editions_);
+        workRecords = workRecords_;
         editions = editions_;
-        emit EditionsBound(editions_);
+        emit Bound(workRecords_, editions_);
     }
 
-    /// @inheritdoc IStreamCore
-    /// @dev The link is written once and never changes; the edition ID must equal the token ID.
+    /// @inheritdoc IStream
+    /// @dev The receiver (the payees' split wallet) is fixed at mint (D19).
+    function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
+        _onlyBound(workRecords);
+        TokenData storage t = _live(tokenId);
+        if (rate > SHARE_DENOMINATOR) revert InvalidRoyaltyRate(rate);
+        emit RoyaltyRateChanged(tokenId, t.royaltyRate, rate);
+        t.royaltyRate = rate;
+    }
+
+    /// @inheritdoc IStream
+    function emitMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external {
+        _onlyBound(workRecords);
+        if (fromTokenId == toTokenId) emit MetadataUpdate(fromTokenId);
+        else emit BatchMetadataUpdate(fromTokenId, toTokenId);
+    }
+
+    /// @inheritdoc IStream
+    /// @dev Written once and never changed; the edition ID must equal the token ID.
     function linkEdition(uint256 tokenId, uint256 editionId) external {
-        if (msg.sender != editions || msg.sender == address(0)) {
-            revert UnboundCaller(msg.sender);
-        }
+        _onlyBound(editions);
         TokenData storage t = _live(tokenId);
         if (t.kind != ItemKind.EDITION_MASTER || t.editionLinked || editionId != tokenId) {
             revert EditionLinkInvalid(tokenId);
@@ -385,7 +392,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         emit MetadataUpdate(tokenId);
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function editionOf(uint256 tokenId)
         external
         view
@@ -396,23 +403,23 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
 
     // --------------------------------------------------------------------- marketplace metadata
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function contractURI() external view returns (string memory) {
         return _contractURI;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function setContractURI(string calldata uri) external restricted {
         _contractURI = uri;
         emit ContractURIUpdated();
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function owner() external view returns (address) {
         return _owner;
     }
 
-    /// @inheritdoc IStreamCore
+    /// @inheritdoc IStream
     function setOwner(address expected, address next) external restricted {
         if (_owner != expected) revert ExpectedValueMismatch();
         _owner = next;
@@ -428,22 +435,25 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     {
         return interfaceId == bytes4(0x49064906) || interfaceId == type(IERC2981).interfaceId
             || interfaceId == type(IMintTarget).interfaceId
-            || interfaceId == type(IStreamCore).interfaceId || super.supportsInterface(interfaceId);
-    }
-
-    /// @notice The canonical key of an SPDX identifier (D20): keccak256 of its ASCII-lowercase
-    ///         form, so `CC0-1.0` and `cc0-1.0` are one license for irrevocability.
-    function licenseKey(string memory spdxId) public pure returns (bytes32) {
-        bytes memory lower = bytes(spdxId);
-        lower = bytes.concat(lower); // copy: never modify the caller's string
-        for (uint256 i; i < lower.length; ++i) {
-            bytes1 c = lower[i];
-            if (c >= "A" && c <= "Z") lower[i] = bytes1(uint8(c) + 32);
-        }
-        return keccak256(lower);
+            || interfaceId == type(IStream).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // -------------------------------------------------------------------------------- internal
+
+    /// @dev Sets the primary-sale flag on a token's first transfer: tokens are minted into the
+    ///      adapter's custody, so the first transfer that is neither a mint nor a burn is the
+    ///      settlement (to the winner or, with no bids, to the artist).
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override
+        returns (address from)
+    {
+        from = super._update(to, tokenId, auth);
+        if (from != address(0) && to != address(0)) {
+            TokenData storage t = _tokens[tokenId];
+            if (!t.primarySaleSettled) t.primarySaleSettled = true;
+        }
+    }
 
     /// @dev Views `data` as `abi.encode(StreamMintRequest)` in place. Member offsets are
     ///      bounds-checked by the compiler on access.
@@ -466,18 +476,19 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
                 revert(add(result, 0x20), mload(result))
             }
         }
-        (itemHash, artistId,) = abi.decode(result, (bytes32, uint256, bytes32));
+        return abi.decode(result, (bytes32, uint256));
     }
 
-    /// @dev Stream rules the registry does not know: auction-only with empty parameters, an
-    ///      existing collection, a coherent seed, a usable license and a lead party.
+    /// @dev Stream rules the registry does not know: auction-only with empty parameters, a lead
+    ///      party, an existing collection, and a coherent seed policy.
     function _checkItem(PackageItem calldata item) private view {
+        SeedPolicy policy = item.seedPolicy;
         if (
             item.sale.saleKind != SaleKind.ENGLISH_AUCTION || item.sale.params.length != 0
                 || item.parties.length == 0 || !_collections[item.collectionId].exists
-                || (item.seedPolicy == SeedPolicy.ARTIST) != (item.seed != 0)
+                || (policy == SeedPolicy.ARTIST) != (item.seed != 0)
+                || (policy == SeedPolicy.VRF && entropyModule == address(0))
         ) revert InvalidMintRequest();
-        _checkLicense(item.license);
     }
 
     /// @dev The terms a work of `item` locks now, and the primary terms the adapter applies.
@@ -498,30 +509,49 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;
         terms.creator = IArtistRegistry(artistRegistry).authorityOf(artistId);
-        terms.revealPending = item.seedPolicy == SeedPolicy.VRF;
     }
 
-    /// @dev Assigns the next token ID and collection serial and writes the three work words.
+    /// @dev The index (plus one) of the terms' fee recipient, fee share and currency,
+    ///      registered on first use.
+    function _feeTermsId(PrimaryTerms memory terms) private returns (uint32 id) {
+        bytes32 key = keccak256(abi.encode(terms.feeRecipient, terms.feeShare, terms.currency));
+        id = _feeTermsIds[key];
+        if (id == 0) {
+            _feeTerms.push(FeeTerms(terms.feeRecipient, terms.feeShare, terms.currency));
+            // Fewer than 2^32 combinations can ever be registered (one per mint at most).
+            // forge-lint: disable-next-line(unsafe-typecast)
+            id = uint32(_feeTerms.length);
+            _feeTermsIds[key] = id;
+        }
+    }
+
+    /// @dev Assigns the next token ID and collection serial and writes the work words.
     function _store(
-        PackageItem calldata item,
+        StreamMintRequest calldata req,
         bytes32 itemHash,
         uint256 artistId,
-        WorkTerms memory w
+        WorkTerms memory w,
+        uint32 feeTermsId
     ) private returns (uint256 tokenId) {
+        PackageItem calldata item = req.item;
         tokenId = ++_counts.minted;
         uint32 serial = ++_collections[item.collectionId].minted;
         TokenData storage t = _tokens[tokenId];
-        // `mint` reverted above for an artist ID wider than 160 bits.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        t.artistId = uint160(artistId);
+        t.seller = w.seller;
         t.serial = serial;
         // The collection exists, so its ID is at most the uint32 collection counter.
+        // forge-lint: disable-next-line(unsafe-typecast)
         t.collectionId = uint32(item.collectionId);
-        t.licenseId = _licenseId(item.license);
         t.kind = item.kind;
+        t.seedPolicy = item.seedPolicy;
         t.royaltyReceiver = w.royaltyReceiver;
         t.royaltyRate = w.royaltyRate;
+        t.feeTermsId = feeTermsId;
+        // `mint` reverted for an artist ID wider than 160 bits.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        t.artistId = uint160(artistId);
         t.itemHash = itemHash;
+        if (item.seedPolicy == SeedPolicy.ARTIST) _seeds[tokenId] = item.seed;
         emit WorkMinted(
             tokenId,
             item.collectionId,
@@ -529,34 +559,15 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
             serial,
             artistId,
             item.kind,
-            item.contentId,
-            w.seller,
-            w.royaltyReceiver,
-            w.royaltyRate
+            req.packageRoot,
+            item.contentHash,
+            item.mediaHash,
+            item.recordFileId
         );
     }
 
-    /// @dev The index (plus one) of `license`, registering it on first use.
-    function _licenseId(License calldata license) private returns (uint24 id) {
-        bytes32 key = keccak256(abi.encode(license));
-        if (key == _defaultLicenseKey) return 1;
-        id = _licenseIds[key];
-        if (id == 0) {
-            _licenses.push(license);
-            // Reverts (checked conversion) past 16,777,215 distinct licenses.
-            id = uint24(_licenses.length);
-            if (id != _licenses.length) revert InvalidLicense();
-            _licenseIds[key] = id;
-        }
-    }
-
-    function _checkLicense(License calldata license) private pure {
-        uint256 length = bytes(license.spdxId).length;
-        if (length == 0 || length > MAX_SPDX_BYTES) revert InvalidLicense();
-    }
-
-    function _onlyRecords() private view {
-        if (msg.sender != records || msg.sender == address(0)) revert UnboundCaller(msg.sender);
+    function _onlyBound(address bound) private view {
+        if (msg.sender != bound || bound == address(0)) revert NotBound(msg.sender);
     }
 
     /// @dev A live token: minted and not burned.
@@ -565,9 +576,17 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         return _tokens[tokenId];
     }
 
-    /// @dev Installed dependencies are contracts, never EIP-7702 delegated accounts.
+    /// @dev Installed dependencies are contracts, never EIP-7702 delegated accounts (D8).
     function _requireContract(address dependency) private view {
         if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
+            revert InvalidDependency(dependency);
+        }
+    }
+
+    /// @dev `_requireContract` plus ERC-165 support for `interfaceId` (D8).
+    function _requireInterface(address dependency, bytes4 interfaceId) private view {
+        _requireContract(dependency);
+        if (!ERC165Checker.supportsInterface(dependency, interfaceId)) {
             revert InvalidDependency(dependency);
         }
     }

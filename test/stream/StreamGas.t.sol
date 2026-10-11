@@ -1,28 +1,25 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Test, console2 } from "forge-std/Test.sol";
-import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { console2 } from "forge-std/Test.sol";
+import { Roles } from "src/governance/Roles.sol";
+import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { Stream } from "src/stream/Stream.sol";
-import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import {
     ConstantArtists,
     ConstantAuction,
     ConstantEconomics,
-    ConstantPackageRegistry,
-    MockRenderer,
-    MockSaleAdapter
+    ConstantPackageRegistry
 } from "../mocks/stream/StreamMocks.sol";
-import { StreamFixture, StreamRoles } from "./StreamFixture.sol";
+import { StreamFixture } from "./StreamFixture.sol";
 
 /// @notice 6529 Stream's own share of the auction start (ADR 0001 budget: 300K for the whole
-///         start). The registry, economics and artist registry are constant mocks, so only
-///         Stream's storage, events, AccessManager check and call overhead are measured; the
-///         real registry and auction costs come on top.
+///         start). The registry, economics and artist registry are constant mocks and every
+///         account is cold, so only Stream's storage, events, AccessManager check and call
+///         overhead are measured; the real registry and auction costs come on top.
 contract StreamGasTest is StreamFixture {
-    /// @dev Stream's share of a typical start, with cold Stream and AccessManager accounts.
-    uint256 internal constant MINT_SHARE_BUDGET = 140_000;
+    /// @dev Regression guard for Stream's share of a typical start.
+    uint256 internal constant MINT_SHARE_BUDGET = 170_000;
 
     Stream internal lean;
     ConstantAuction internal adapter;
@@ -34,17 +31,15 @@ contract StreamGasTest is StreamFixture {
             address(new ConstantPackageRegistry(uint256(uint160(artist)))),
             address(new ConstantArtists()),
             address(new ConstantEconomics()),
+            address(entropy),
             address(renderer),
-            marketOwner,
-            _license("CC0-1.0")
+            marketOwner
         );
         adapter = new ConstantAuction();
-        bytes4[] memory selectors = new bytes4[](2);
-        selectors[0] = lean.mint.selector;
-        selectors[1] = lean.createCollection.selector;
-        manager.setTargetFunctionRole(address(lean), selectors, StreamRoles.MINTER);
-        manager.grantRole(StreamRoles.MINTER, address(this), 0);
-        manager.grantRole(StreamRoles.MINTER, address(adapter), 0);
+        _map(address(lean), lean.mint.selector, Roles.MINTER);
+        _map(address(lean), lean.createCollection.selector, Roles.MINTER);
+        manager.grantRole(Roles.MINTER, address(this), 0);
+        manager.grantRole(Roles.MINTER, address(adapter), 0);
         lean.createCollection("Genesis", bytes32(0));
     }
 
@@ -60,7 +55,7 @@ contract StreamGasTest is StreamFixture {
     }
 
     function test_gas_mintShare_typical() public {
-        _measure(_item(1)); // first mint: counters and adapter balance go from zero
+        _measure(_item(1)); // first mint: counters, fee terms and adapter balance from zero
         uint256 used = _measure(_item(2));
         console2.log("Stream.mint share, typical (warm counters, cold accounts):", used);
         console2.log("StreamMintRequest bytes:", _request(_item(2)).length);
@@ -82,11 +77,12 @@ contract StreamGasTest is StreamFixture {
         console2.log("Stream.mint share, first mint ever:", used);
     }
 
-    function test_gas_mintShare_newLicense() public {
+    function test_gas_mintShare_artistSeed() public {
         _measure(_item(1));
         PackageItem memory item = _item(2);
-        item.license = _license("CC-BY-4.0");
+        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seed = keccak256("seed");
         uint256 used = _measure(item);
-        console2.log("Stream.mint share, first use of a license:", used);
+        console2.log("Stream.mint share, ARTIST seed:", used);
     }
 }

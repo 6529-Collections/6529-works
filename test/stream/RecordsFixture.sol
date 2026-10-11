@@ -2,15 +2,18 @@
 pragma solidity ^0.8.24;
 
 import { ContentStore } from "src/content/ContentStore.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { Payee } from "src/interfaces/types/EconomicsTypes.sol";
 import { PackageItem, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
-import { MockEditions, MockEntropy } from "../mocks/stream/StreamMocks.sol";
-import { StreamFixture, StreamRoles } from "./StreamFixture.sol";
+import { StreamFixture } from "./StreamFixture.sol";
 
 /// @notice Adds the records satellite, a real content store and a second party to the Stream
-///         fixture, with helpers for files, items, registration and EIP-712 consents.
+///         fixture, with helpers for files, items, opening records and EIP-712 consents.
 abstract contract RecordsFixture is StreamFixture {
     bytes32 internal constant EIP712_DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
@@ -21,7 +24,6 @@ abstract contract RecordsFixture is StreamFixture {
     address internal storageOperator = makeAddr("storageOperator");
 
     ContentStore internal store;
-    MockEntropy internal entropy;
     WorkRecords internal records;
 
     function setUp() public virtual override {
@@ -29,32 +31,22 @@ abstract contract RecordsFixture is StreamFixture {
         collaborator = vm.addr(collaboratorKey);
         artists.register(collaborator);
         store = new ContentStore();
-        entropy = new MockEntropy();
         records =
-            new WorkRecords(address(manager), address(stream), address(store), address(entropy));
-        stream.bindRecords(address(records));
-        editionsMock = new MockEditions();
-        stream.bindEditions(address(editionsMock));
-        _mapRecords(records.register.selector, StreamRoles.PLATFORM);
-        _mapRecords(records.addLocator.selector, StreamRoles.PLATFORM);
-        _mapRecords(records.relicense.selector, StreamRoles.PARAMETER_SETTER);
-        _mapRecords(records.setRoyaltyRate.selector, StreamRoles.FUNDS_SETTER);
-        _mapRecords(records.repinRenderer.selector, StreamRoles.SUCCESSOR_SETTER);
-        _mapRecords(records.setPreferredKind.selector, StreamRoles.STORAGE_OPERATOR);
-        _mapRecords(records.setCollectionPreferredKind.selector, StreamRoles.STORAGE_OPERATOR);
-        _mapRecords(records.setFilePreference.selector, StreamRoles.STORAGE_OPERATOR);
-        manager.grantRole(StreamRoles.STORAGE_OPERATOR, storageOperator, 0);
-    }
-
-    function _mapRecords(bytes4 selector, uint64 role) internal {
-        bytes4[] memory selectors = new bytes4[](1);
-        selectors[0] = selector;
-        manager.setTargetFunctionRole(address(records), selectors, role);
+            new WorkRecords(address(manager), address(stream), address(store), _license("CC0-1.0"));
+        stream.bind(address(records), address(editionsMock));
+        _map(address(records), records.addLocator.selector, Roles.PLATFORM);
+        _map(address(records), records.relicense.selector, Roles.PARAMETER_SETTER);
+        _map(address(records), records.setRoyaltyRate.selector, Roles.FUNDS_SETTER);
+        _map(address(records), records.repinRenderer.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(records), records.setPreferredKind.selector, Roles.STORAGE_OPERATOR);
+        _map(address(records), records.setCollectionPreferredKind.selector, Roles.STORAGE_OPERATOR);
+        _map(address(records), records.setFilePreference.selector, Roles.STORAGE_OPERATOR);
+        manager.grantRole(Roles.STORAGE_OPERATOR, storageOperator, 0);
     }
 
     // ---------------------------------------------------------------------------------- files
 
-    /// @dev Registers a one-chunk file and, if `upload`, stores its chunk.
+    /// @dev Registers a one-chunk file declaring `sha256(data)` and, if `upload`, stores it.
     function _file(bytes memory data, string memory mime, bool upload)
         internal
         returns (bytes32 fileId)
@@ -67,31 +59,40 @@ abstract contract RecordsFixture is StreamFixture {
         if (upload) store.writeChunk(data);
     }
 
-    function _media(uint256 salt, bool upload) internal returns (bytes32) {
-        return _file(abi.encode("media", salt), "image/png", upload);
+    function _mediaBytes(uint256 salt) internal pure returns (bytes memory) {
+        return abi.encode("media", salt);
+    }
+
+    function _mediaFile(uint256 salt, FileRole role, bool upload)
+        internal
+        returns (MediaFile memory)
+    {
+        bytes memory data = _mediaBytes(salt);
+        return MediaFile(_file(data, "image/png", upload), sha256(data), role);
     }
 
     function _upload(uint256 salt) internal {
-        store.writeChunk(abi.encode("media", salt));
+        store.writeChunk(_mediaBytes(salt));
     }
 
     function _record(uint256 salt) internal returns (bytes32) {
         return _file(
-            abi.encodePacked('{"title":"work ', vm.toString(salt), '"}'), "application/json", true
+            abi.encodePacked('{"name":"work ', vm.toString(salt), '"}'), "application/json", true
         );
     }
 
     // ---------------------------------------------------------------------------------- works
 
-    /// @dev An item whose content and record are real content-store files, with the artist
-    ///      and the collaborator as parties.
-    function _recordsItem(uint256 salt, bool uploadMedia)
+    /// @dev An item committing to `media`, with a real record file and the artist and the
+    ///      collaborator as parties.
+    function _recordsItem(uint256 salt, MediaFile[] memory media)
         internal
         returns (PackageItem memory item)
     {
         item = _item(salt);
-        item.contentId = _media(salt, uploadMedia);
-        item.metadataHash = _record(salt);
+        item.contentHash = media[0].sha256Hash;
+        item.mediaHash = WorksHashing.mediaHash(media);
+        item.recordFileId = _record(salt);
         item.parties = new Party[](2);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
         item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
@@ -100,16 +101,26 @@ abstract contract RecordsFixture is StreamFixture {
         item.payees[1] = Payee(uint256(uint160(artist)), address(0), 80_000);
     }
 
-    function _one(bytes32 fileId) internal pure returns (bytes32[] memory list) {
-        list = new bytes32[](1);
-        list[0] = fileId;
+    function _single(uint256 salt, bool upload) internal returns (MediaFile[] memory media) {
+        media = new MediaFile[](1);
+        media[0] = _mediaFile(salt, FileRole.PRIMARY, upload);
     }
 
-    /// @dev Mints and registers a single-file work; returns its token ID and item.
-    function _work(uint256 salt) internal returns (uint256 tokenId, PackageItem memory item) {
-        item = _recordsItem(salt, true);
+    /// @dev Mints a single-file work without opening its record.
+    function _minted(uint256 salt, bool upload)
+        internal
+        returns (uint256 tokenId, PackageItem memory item, MediaFile[] memory media)
+    {
+        media = _single(salt, upload);
+        item = _recordsItem(salt, media);
         tokenId = _mint(item);
-        records.register(tokenId, item, _one(item.contentId));
+    }
+
+    /// @dev Mints a single-file work (media uploaded) and opens its record.
+    function _work(uint256 salt) internal returns (uint256 tokenId, PackageItem memory item) {
+        MediaFile[] memory media;
+        (tokenId, item, media) = _minted(salt, true);
+        records.openRecord(tokenId, item, media);
     }
 
     // ------------------------------------------------------------------------------- consents
@@ -118,8 +129,8 @@ abstract contract RecordsFixture is StreamFixture {
         bytes32 domain = keccak256(
             abi.encode(
                 EIP712_DOMAIN_TYPEHASH,
-                keccak256("6529 Stream Records"),
-                keccak256("1"),
+                keccak256(bytes(Typehashes.WORK_RECORDS_NAME)),
+                keccak256(bytes(Typehashes.DOMAIN_VERSION)),
                 block.chainid,
                 address(records)
             )

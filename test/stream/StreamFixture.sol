@@ -3,9 +3,8 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { Stream } from "src/stream/Stream.sol";
-import { IStreamCore } from "src/stream/IStreamCore.sol";
-import { WorkTerms, Payee } from "src/interfaces/types/EconomicsTypes.sol";
+import { Roles } from "src/governance/Roles.sol";
+import { Payee, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
@@ -19,28 +18,18 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { Stream } from "src/stream/Stream.sol";
 import {
     MockArtistRegistry,
     MockEconomics,
     MockEditions,
+    MockEntropy,
     MockPackageRegistry,
     MockRenderer,
     MockSaleAdapter,
     MockWorkRecords
 } from "../mocks/stream/StreamMocks.sol";
-
-/// @notice Role IDs mirrored from the governance lane's `src/governance/Roles.sol` (PR #7).
-/// @dev TODO(integration): import `Roles` once the governance lane is merged.
-library StreamRoles {
-    uint64 internal constant ADMIN = 0;
-    uint64 internal constant STORAGE_OPERATOR = 5;
-    uint64 internal constant MINTER = 6;
-    uint64 internal constant PLATFORM = 8;
-    uint64 internal constant PARAMETER_SETTER = 9;
-    uint64 internal constant FUNDS_SETTER = 10;
-    uint64 internal constant SUCCESSOR_SETTER = 11;
-}
 
 /// @notice Deploys 6529 Stream behind an OpenZeppelin AccessManager with mocks for every other
 ///         lane's contract, and offers item and mint helpers.
@@ -60,6 +49,7 @@ abstract contract StreamFixture is Test {
     MockPackageRegistry internal registry;
     MockArtistRegistry internal artists;
     MockEconomics internal econ;
+    MockEntropy internal entropy;
     MockRenderer internal renderer;
     MockSaleAdapter internal auction;
     MockWorkRecords internal recordsMock;
@@ -74,6 +64,7 @@ abstract contract StreamFixture is Test {
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
         econ = new MockEconomics(_defaultTerms());
+        entropy = new MockEntropy();
         renderer = new MockRenderer("default");
         auction = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         stream = new Stream(
@@ -81,10 +72,11 @@ abstract contract StreamFixture is Test {
             address(registry),
             address(artists),
             address(econ),
+            address(entropy),
             address(renderer),
-            marketOwner,
-            _license("CC0-1.0")
+            marketOwner
         );
+        editionsMock = new MockEditions();
         _configureRoles();
         artists.register(artist);
         vm.prank(platform);
@@ -96,31 +88,29 @@ abstract contract StreamFixture is Test {
     }
 
     function _configureRoles() internal {
-        _map(stream.mint.selector, StreamRoles.MINTER);
-        _map(stream.burn.selector, StreamRoles.MINTER);
-        _map(stream.createCollection.selector, StreamRoles.PLATFORM);
-        _map(stream.setContractURI.selector, StreamRoles.PARAMETER_SETTER);
-        _map(stream.setOwner.selector, StreamRoles.FUNDS_SETTER);
-        _map(stream.setDefaultRenderer.selector, StreamRoles.SUCCESSOR_SETTER);
-        manager.grantRole(StreamRoles.MINTER, address(auction), 0);
-        manager.grantRole(StreamRoles.PLATFORM, platform, 0);
-        manager.grantRole(StreamRoles.PARAMETER_SETTER, governor, 0);
-        manager.grantRole(StreamRoles.FUNDS_SETTER, governor, 0);
-        manager.grantRole(StreamRoles.SUCCESSOR_SETTER, governor, 0);
+        _map(address(stream), stream.mint.selector, Roles.MINTER);
+        _map(address(stream), stream.burn.selector, Roles.MINTER);
+        _map(address(stream), stream.createCollection.selector, Roles.PLATFORM);
+        _map(address(stream), stream.setContractURI.selector, Roles.PARAMETER_SETTER);
+        _map(address(stream), stream.setOwner.selector, Roles.FUNDS_SETTER);
+        _map(address(stream), stream.setDefaultRenderer.selector, Roles.SUCCESSOR_SETTER);
+        manager.grantRole(Roles.MINTER, address(auction), 0);
+        manager.grantRole(Roles.PLATFORM, platform, 0);
+        manager.grantRole(Roles.PARAMETER_SETTER, governor, 0);
+        manager.grantRole(Roles.FUNDS_SETTER, governor, 0);
+        manager.grantRole(Roles.SUCCESSOR_SETTER, governor, 0);
     }
 
-    function _map(bytes4 selector, uint64 role) internal {
+    function _map(address target, bytes4 selector, uint64 role) internal {
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = selector;
-        manager.setTargetFunctionRole(address(stream), selectors, role);
+        manager.setTargetFunctionRole(target, selectors, role);
     }
 
-    /// @dev Binds mock records and editions satellites (the test contract is the admin).
-    function _bindSatellites() internal {
+    /// @dev Binds a mock records satellite and the mock Editions (the test is the admin).
+    function _bindMocks() internal {
         recordsMock = new MockWorkRecords();
-        editionsMock = new MockEditions();
-        stream.bindRecords(address(recordsMock));
-        stream.bindEditions(address(editionsMock));
+        stream.bind(address(recordsMock), address(editionsMock));
     }
 
     function _license(string memory spdx) internal pure returns (License memory) {
@@ -131,8 +121,9 @@ abstract contract StreamFixture is Test {
     function _item(uint256 salt) internal view returns (PackageItem memory item) {
         item.kind = ItemKind.ORIGINAL;
         item.collectionId = collectionId;
-        item.contentId = keccak256(abi.encode("content", salt));
-        item.metadataHash = keccak256(abi.encode("record", salt));
+        item.contentHash = keccak256(abi.encode("content", salt));
+        item.mediaHash = keccak256(abi.encode("media", salt));
+        item.recordFileId = keccak256(abi.encode("record", salt));
         item.parties = new Party[](1);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
         item.payees = new Payee[](1);

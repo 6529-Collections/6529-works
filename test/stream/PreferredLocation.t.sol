@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
+import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { IWorkRecords } from "src/stream/IWorkRecords.sol";
+import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
@@ -13,9 +13,7 @@ contract PreferredLocationTest is RecordsFixture {
 
     /// @dev Maps a fuzzed byte onto a preference kind: NONE, ARWEAVE, IPFS or ONCHAIN.
     function _kind(uint8 raw) internal pure returns (LocatorKind) {
-        uint8 k = raw % 4;
-        if (k == 3) return LocatorKind.ONCHAIN;
-        return LocatorKind(k);
+        return LocatorKind(raw % 4);
     }
 
     function _modelFirst(LocatorKind[] memory kinds, LocatorKind kind, bool complete)
@@ -40,10 +38,9 @@ contract PreferredLocationTest is RecordsFixture {
         bool complete
     ) public {
         count = uint8(bound(count, 0, 16));
-        PackageItem memory item = _recordsItem(1, complete);
-        uint256 tokenId = _mint(item);
-        records.register(tokenId, item, _one(item.contentId));
-        bytes32 file = item.contentId;
+        (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, complete);
+        records.openRecord(tokenId, item, media);
+        bytes32 file = media[0].fileId;
 
         LocatorKind[] memory kinds = new LocatorKind[](count);
         vm.startPrank(platform);
@@ -73,7 +70,7 @@ contract PreferredLocationTest is RecordsFixture {
         if (!found && complete) (found, expected) = (true, NONE);
 
         if (!found) {
-            vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NoLocator.selector, tokenId, file));
+            vm.expectRevert(abi.encodeWithSelector(WorkRecords.NoLocator.selector, tokenId, file));
             records.preferredLocator(tokenId, file);
             return;
         }
@@ -94,23 +91,23 @@ contract PreferredLocationTest is RecordsFixture {
     function testFuzz_preferredLocator_staysWithinFile(uint8 globalRaw, uint8 collectionRaw)
         public
     {
-        PackageItem memory a = _recordsItem(1, false);
-        PackageItem memory b = _recordsItem(2, false);
-        uint256 idA = _mint(a);
-        uint256 idB = _mint(b);
-        records.register(idA, a, _one(a.contentId));
-        records.register(idB, b, _one(b.contentId));
+        (uint256 idA, PackageItem memory a, MediaFile[] memory mediaA) = _minted(1, false);
+        (uint256 idB, PackageItem memory b, MediaFile[] memory mediaB) = _minted(2, false);
+        records.openRecord(idA, a, mediaA);
+        records.openRecord(idB, b, mediaB);
+        bytes32 fileA = mediaA[0].fileId;
+        bytes32 fileB = mediaB[0].fileId;
         vm.startPrank(platform);
-        records.addLocator(idA, a.contentId, Locator(LocatorKind.IPFS, "ipfs://a"));
-        records.addLocator(idB, b.contentId, Locator(LocatorKind.ARWEAVE, "ar://b"));
+        records.addLocator(idA, fileA, Locator(LocatorKind.IPFS, "ipfs://a"));
+        records.addLocator(idB, fileB, Locator(LocatorKind.ARWEAVE, "ar://b"));
         vm.stopPrank();
         vm.startPrank(storageOperator);
         records.setPreferredKind(_kind(globalRaw));
         records.setCollectionPreferredKind(collectionId, _kind(collectionRaw));
         vm.stopPrank();
-        (Locator memory chosen,) = records.preferredLocator(idA, a.contentId);
+        (Locator memory chosen,) = records.preferredLocator(idA, fileA);
         assertEq(chosen.uri, "ipfs://a");
-        (chosen,) = records.preferredLocator(idB, b.contentId);
+        (chosen,) = records.preferredLocator(idB, fileB);
         assertEq(chosen.uri, "ar://b");
     }
 }

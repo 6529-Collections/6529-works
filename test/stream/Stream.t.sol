@@ -11,10 +11,10 @@ import {
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
-    License,
     PackageItem,
     Party,
     PartyRole,
@@ -23,16 +23,14 @@ import {
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
-import { IStreamCore } from "src/stream/IStreamCore.sol";
 import {
     MockEditions,
     MockPackageRegistry,
     MockRenderer,
-    MockSaleAdapter,
     MockWorkRecords,
     RoyaltyProbe
 } from "../mocks/stream/StreamMocks.sol";
-import { StreamFixture, StreamRoles } from "./StreamFixture.sol";
+import { StreamFixture } from "./StreamFixture.sol";
 
 contract StreamTest is StreamFixture {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
@@ -45,73 +43,55 @@ contract StreamTest is StreamFixture {
         assertEq(stream.packageRegistry(), address(registry));
         assertEq(stream.artistRegistry(), address(artists));
         assertEq(stream.economics(), address(econ));
+        assertEq(stream.entropyModule(), address(entropy));
         assertEq(stream.defaultRenderer(), address(renderer));
         assertEq(stream.owner(), marketOwner);
-        assertEq(stream.records(), address(0));
+        assertEq(stream.workRecords(), address(0));
         assertEq(stream.editions(), address(0));
         assertEq(stream.name(), "6529 Stream");
         assertEq(stream.symbol(), "STREAM");
         assertEq(stream.totalMinted(), 0);
         assertEq(stream.totalSupply(), 0);
+        assertEq(stream.collectionCount(), 1);
     }
 
-    function test_constructor_rejectsDependencyWithoutCode() public {
+    function _deploy(address reg, address art, address eco, address ent, address ren)
+        internal
+        returns (Stream)
+    {
+        return new Stream(address(manager), reg, art, eco, ent, ren, marketOwner);
+    }
+
+    function test_constructor_rejectsBadDependencies() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
-        new Stream(
-            address(manager),
-            eoa,
-            address(artists),
-            address(econ),
-            address(renderer),
-            marketOwner,
-            _license("CC0-1.0")
-        );
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
-        new Stream(
-            address(manager),
-            address(registry),
-            eoa,
-            address(econ),
-            address(renderer),
-            marketOwner,
-            _license("CC0-1.0")
-        );
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
-        new Stream(
-            address(manager),
-            address(registry),
-            address(artists),
-            eoa,
-            address(renderer),
-            marketOwner,
-            _license("CC0-1.0")
-        );
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
-        new Stream(
-            address(manager),
-            address(registry),
-            address(artists),
-            address(econ),
-            eoa,
-            marketOwner,
-            _license("CC0-1.0")
-        );
+        address r = address(registry);
+        address a = address(artists);
+        address e = address(econ);
+        address n = address(entropy);
+        address d = address(renderer);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        _deploy(eoa, a, e, n, d);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        _deploy(r, eoa, e, n, d);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        _deploy(r, a, eoa, n, d);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        _deploy(r, a, e, eoa, d);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        _deploy(r, a, e, n, eoa);
+        // A contract without the right ERC-165 answer is rejected too.
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, a));
+        _deploy(a, a, e, n, d);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, r));
+        _deploy(r, a, e, n, r);
+        assertEq(_deploy(r, a, e, address(0), d).entropyModule(), address(0));
     }
 
     function test_constructor_rejectsDelegatedAccount() public {
         address delegated = makeAddr("delegated");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(renderer)));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, delegated));
-        new Stream(
-            address(manager),
-            address(registry),
-            address(artists),
-            address(econ),
-            delegated,
-            marketOwner,
-            _license("CC0-1.0")
-        );
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, delegated));
+        _deploy(address(registry), address(artists), address(econ), address(entropy), delegated);
     }
 
     // -------------------------------------------------------------------------------- mint
@@ -122,17 +102,17 @@ contract StreamTest is StreamFixture {
         bytes memory data = _request(item);
 
         vm.expectEmit(address(stream));
-        emit IStreamCore.WorkMinted(
+        emit IStream.WorkMinted(
             1,
             collectionId,
             itemHash,
             1,
             uint256(uint160(artist)),
             ItemKind.ORIGINAL,
-            item.contentId,
-            seller,
-            royaltyWallet,
-            6_529
+            keccak256("root"),
+            item.contentHash,
+            item.mediaHash,
+            item.recordFileId
         );
         vm.expectEmit(address(stream));
         emit Transfer(address(0), address(auction), 1);
@@ -148,39 +128,39 @@ contract StreamTest is StreamFixture {
         assertEq(terms.feeRecipient, feeRecipient);
         assertEq(terms.feeShare, 25_000);
         assertEq(terms.creator, artist);
-        assertFalse(terms.revealPending);
 
-        IStreamCore.TokenInfo memory info = stream.work(1);
-        assertEq(info.itemHash, itemHash);
-        assertEq(info.artistId, uint256(uint160(artist)));
-        assertEq(info.collectionId, collectionId);
-        assertEq(info.serial, 1);
-        assertEq(uint8(info.kind), uint8(ItemKind.ORIGINAL));
-        assertFalse(info.editionLinked);
-        assertEq(stream.itemHashOf(1), itemHash);
-        (address receiver, uint32 rate) = stream.royaltyOf(1);
-        assertEq(receiver, royaltyWallet);
-        assertEq(rate, 6_529);
-        assertEq(stream.licenseOf(1).spdxId, "CC0-1.0");
+        IStream.WorkCore memory w = stream.work(1);
+        assertEq(w.itemHash, itemHash);
+        assertEq(w.artistId, uint256(uint160(artist)));
+        assertEq(w.collectionId, collectionId);
+        assertEq(w.serial, 1);
+        assertEq(uint8(w.kind), uint8(ItemKind.ORIGINAL));
+        assertEq(uint8(w.seedPolicy), uint8(SeedPolicy.NONE));
+        assertEq(w.seller, seller);
+        assertEq(w.royaltyReceiver, royaltyWallet);
+        assertEq(w.royaltyRate, 6_529);
+        assertEq(stream.artistOf(1), uint256(uint160(artist)));
+        assertFalse(stream.primarySaleSettled(1));
+        (SeedPolicy policy, bytes32 seed) = stream.seedOf(1);
+        assertEq(uint8(policy), uint8(SeedPolicy.NONE));
+        assertEq(seed, bytes32(0));
         assertEq(stream.totalMinted(), 1);
         assertEq(stream.totalSupply(), 1);
         assertEq(stream.collection(collectionId).minted, 1);
         assertTrue(registry.isConsumed(itemHash));
         assertEq(registry.lastRoot(), keccak256("root"));
-        assertEq(registry.lastProof().length, 2);
+        assertEq(registry.lastProofLength(), 2);
         assertEq(registry.lastMoveNonce(), 7);
     }
 
     function test_mint_assignsGlobalIdsAndPerCollectionSerials() public {
         vm.prank(platform);
         uint256 second = stream.createCollection("Second", bytes32(0));
-        PackageItem memory a = _item(1);
         PackageItem memory b = _item(2);
         b.collectionId = second;
-        PackageItem memory c = _item(3);
-        assertEq(_mint(a), 1);
+        assertEq(_mint(_item(1)), 1);
         assertEq(_mint(b), 2);
-        assertEq(_mint(c), 3);
+        assertEq(_mint(_item(3)), 3);
         assertEq(stream.work(1).serial, 1);
         assertEq(stream.work(2).serial, 1);
         assertEq(stream.work(3).serial, 2);
@@ -188,57 +168,94 @@ contract StreamTest is StreamFixture {
         assertEq(stream.collection(second).minted, 1);
     }
 
-    function test_mint_resolvesDefaultCurrencyAndFlagsVrf() public {
+    function test_mint_resolvesDefaultCurrency() public {
         PackageItem memory item = _item(1);
         item.sale.currency = address(type(uint160).max);
-        item.seedPolicy = SeedPolicy.VRF;
         (, PrimaryTerms memory terms) = auction.start(stream, _request(item));
         assertEq(terms.currency, address(0));
-        assertTrue(terms.revealPending);
     }
 
-    function test_mint_acceptsArtistSeedAndEditionMaster() public {
+    function test_mint_artistSeedAndEditionMaster() public {
         PackageItem memory item = _item(1);
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = keccak256("seed");
         item.kind = ItemKind.EDITION_MASTER;
         uint256 tokenId = _mint(item);
         assertEq(uint8(stream.work(tokenId).kind), uint8(ItemKind.EDITION_MASTER));
+        (SeedPolicy policy, bytes32 seed) = stream.seedOf(tokenId);
+        assertEq(uint8(policy), uint8(SeedPolicy.ARTIST));
+        assertEq(seed, keccak256("seed"));
+    }
+
+    function test_mint_vrfNeedsDeliveredSeed() public {
+        PackageItem memory item = _item(1);
+        item.seedPolicy = SeedPolicy.VRF;
+        bytes32 itemHash = WorksHashing.itemHash(item);
+        bytes memory data = _request(item);
+        vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
+        auction.start(stream, data);
+        entropy.deliver(itemHash, keccak256("vrf"));
+        (uint256 tokenId,) = auction.start(stream, data);
+        (SeedPolicy policy, bytes32 seed) = stream.seedOf(tokenId);
+        assertEq(uint8(policy), uint8(SeedPolicy.VRF));
+        assertEq(seed, keccak256("vrf"));
+    }
+
+    function test_mint_vrfRejectedWithoutEntropyModule() public {
+        Stream noVrf = _deploy(
+            address(registry), address(artists), address(econ), address(0), address(renderer)
+        );
+        _map(address(noVrf), noVrf.mint.selector, 6);
+        _map(address(noVrf), noVrf.createCollection.selector, 6);
+        manager.grantRole(6, address(this), 0);
+        noVrf.createCollection("c", bytes32(0));
+        PackageItem memory item = _item(1);
+        item.seedPolicy = SeedPolicy.VRF;
+        bytes memory data = _request(item);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        auction.start(noVrf, data);
     }
 
     function test_mint_revertsForOutsider() public {
+        bytes memory data = _request(_item(1));
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        stream.mint(outsider, 0, 1, _request(_item(1)));
+        stream.mint(outsider, 0, 1, data);
     }
 
     function test_mint_revertsForWrongShape() public {
         bytes memory data = _request(_item(1));
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.startRaw(stream, outsider, 0, 1, data);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.startRaw(stream, address(auction), 1, 1, data);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.startRaw(stream, address(auction), 0, 2, data);
     }
 
     function test_mint_revertsForWrongAdapterKind() public {
         auction.setSaleKind(SaleKind.FIXED_PRICE);
         bytes memory data = _request(_item(1));
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector,
+                SaleKind.ENGLISH_AUCTION,
+                SaleKind.FIXED_PRICE
+            )
+        );
         auction.start(stream, data);
     }
 
     function test_mint_revertsForMalformedData() public {
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, new bytes(159));
         bytes memory data = _request(_item(1));
         assembly ("memory-safe") {
             mstore(add(data, 0x20), 0x40)
         }
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, data);
     }
 
@@ -273,18 +290,6 @@ contract StreamTest is StreamFixture {
         _expectInvalid(item);
     }
 
-    function test_mint_revertsForInvalidLicense() public {
-        PackageItem memory item = _item(1);
-        item.license = _license("");
-        bytes memory data = _request(item);
-        vm.expectRevert(IStreamCore.InvalidLicense.selector);
-        auction.start(stream, data);
-        item.license = _license(string(new bytes(65)));
-        data = _request(item);
-        vm.expectRevert(IStreamCore.InvalidLicense.selector);
-        auction.start(stream, data);
-    }
-
     function test_mint_bubblesRegistryRevert() public {
         PackageItem memory item = _item(1);
         _mint(item);
@@ -300,10 +305,10 @@ contract StreamTest is StreamFixture {
     function test_mint_revertsForUnusableArtistId() public {
         registry.setArtistOverride(0);
         bytes memory data = _request(_item(1));
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, data);
         registry.setArtistOverride(uint256(type(uint160).max) + 1);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, data);
     }
 
@@ -332,36 +337,63 @@ contract StreamTest is StreamFixture {
         auction.start(stream, data);
     }
 
-    function test_mint_deduplicatesLicenses() public {
-        PackageItem memory a = _item(1);
-        PackageItem memory b = _item(2);
-        PackageItem memory c = _item(3);
-        c.license = _license("CC-BY-4.0");
-        _mint(a);
-        _mint(b);
-        _mint(c);
-        assertEq(stream.licenseOf(1).spdxId, "CC0-1.0");
-        assertEq(stream.licenseOf(2).spdxId, "CC0-1.0");
-        assertEq(stream.licenseOf(3).spdxId, "CC-BY-4.0");
-        assertEq(stream.licenseOf(3).textFileId, keccak256("CC-BY-4.0"));
-    }
+    // ----------------------------------------------------------------------- primaryTerms
 
-    function test_primaryTerms_matchesMint() public {
-        PackageItem memory item = _item(1);
-        bytes memory data = _request(item);
+    function test_primaryTerms_previewMatchesMint() public {
+        bytes memory data = _request(_item(1));
         PrimaryTerms memory preview = stream.primaryTerms(0, data);
         (, PrimaryTerms memory terms) = auction.start(stream, data);
         assertEq(abi.encode(preview), abi.encode(terms));
     }
 
+    function test_primaryTerms_mintedTokenKeepsLockedTerms() public {
+        PackageItem memory first = _item(1);
+        first.sale.currency = address(0xC0FFEE);
+        (, PrimaryTerms memory locked) = auction.start(stream, _request(first));
+        address otherFee = makeAddr("otherFee");
+        econ.setTerms(WorkTerms(seller, otherFee, 10_000, royaltyWallet, 6_529));
+        (, PrimaryTerms memory second) = auction.start(stream, _request(_item(2)));
+        assertEq(second.feeRecipient, otherFee);
+
+        PrimaryTerms memory read = stream.primaryTerms(1, "");
+        assertEq(abi.encode(read), abi.encode(locked));
+        assertEq(read.currency, address(0xC0FFEE));
+        assertEq(stream.primaryTerms(2, "garbage").feeShare, 10_000);
+
+        // The creator is resolved when read, so recovery redirects a no-bid return.
+        address recovered = makeAddr("recovered");
+        artists.setAuthority(uint256(uint160(artist)), recovered);
+        assertEq(stream.primaryTerms(1, "").creator, recovered);
+    }
+
     function test_primaryTerms_reverts() public {
-        bytes memory data = _request(_item(1));
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
-        stream.primaryTerms(1, data);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
+        stream.primaryTerms(1, "");
         PackageItem memory item = _item(1);
         item.parties[0] = Party(makeAddr("stranger"), PartyRole.ARTIST);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
-        stream.primaryTerms(0, _request(item));
+        bytes memory data = _request(item);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        stream.primaryTerms(0, data);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        stream.primaryTerms(0, new bytes(10));
+    }
+
+    // ---------------------------------------------------------------------- primary sale
+
+    function test_primarySaleSettled_setByFirstTransfer() public {
+        _mint(1);
+        _mint(2);
+        assertFalse(stream.primarySaleSettled(1));
+        address collector = makeAddr("collector");
+        auction.deliver(address(stream), 1, collector);
+        assertTrue(stream.primarySaleSettled(1));
+        assertFalse(stream.primarySaleSettled(2));
+        vm.prank(collector);
+        stream.transferFrom(collector, outsider, 1);
+        assertTrue(stream.primarySaleSettled(1));
+        auction.burn(stream, 2, 1);
+        assertFalse(stream.primarySaleSettled(2));
+        assertFalse(stream.primarySaleSettled(3));
     }
 
     // -------------------------------------------------------------------------------- burn
@@ -369,26 +401,26 @@ contract StreamTest is StreamFixture {
     function test_burn_leavesGapAndCountsSupply() public {
         _mint(1);
         _mint(2);
-        bytes32 itemHash = stream.itemHashOf(1);
         vm.expectEmit(address(stream));
         emit Transfer(address(auction), address(0), 1);
         auction.burn(stream, 1, 1);
         assertEq(stream.totalMinted(), 2);
         assertEq(stream.totalSupply(), 1);
         assertEq(stream.balanceOf(address(auction)), 1);
-        assertEq(stream.itemHashOf(1), itemHash);
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         stream.ownerOf(1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.work(1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
+        stream.artistOf(1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.royaltyInfo(1, 1 ether);
         assertEq(_mint(3), 3);
     }
 
     function test_burn_reverts() public {
         _mint(1);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.burn(stream, 1, 2);
         auction.deliver(address(stream), 1, outsider);
         vm.expectRevert(
@@ -414,10 +446,10 @@ contract StreamTest is StreamFixture {
 
     function test_createCollection() public {
         vm.expectEmit(address(stream));
-        emit IStreamCore.CollectionCreated(2, unicode"Ünïcode", keccak256("m"));
+        emit IStream.CollectionCreated(2, unicode"Ünïcode", keccak256("m"));
         vm.prank(platform);
         assertEq(stream.createCollection(unicode"Ünïcode", keccak256("m")), 2);
-        IStreamCore.Collection memory c = stream.collection(2);
+        IStream.Collection memory c = stream.collection(2);
         assertEq(c.name, unicode"Ünïcode");
         assertEq(c.metadataHash, keccak256("m"));
         assertEq(c.minted, 0);
@@ -426,11 +458,11 @@ contract StreamTest is StreamFixture {
 
     function test_createCollection_reverts() public {
         vm.startPrank(platform);
-        vm.expectRevert(IStreamCore.InvalidCollection.selector);
+        vm.expectRevert(Stream.InvalidCollectionName.selector);
         stream.createCollection("", bytes32(0));
-        vm.expectRevert(IStreamCore.InvalidCollection.selector);
+        vm.expectRevert(Stream.InvalidCollectionName.selector);
         stream.createCollection(string(new bytes(257)), bytes32(0));
-        vm.expectRevert(IStreamCore.InvalidCollection.selector);
+        vm.expectRevert(Stream.InvalidCollectionName.selector);
         stream.createCollection(string(bytes(hex"c0af")), bytes32(0));
         vm.stopPrank();
         vm.prank(outsider);
@@ -438,9 +470,9 @@ contract StreamTest is StreamFixture {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
         stream.createCollection("x", bytes32(0));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownCollection.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 0));
         stream.collection(0);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownCollection.selector, 2));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 2));
         stream.collection(2);
     }
 
@@ -455,7 +487,7 @@ contract StreamTest is StreamFixture {
 
     function testFuzz_royaltyInfo_matchesMulDiv(uint256 price, uint32 rate) public {
         rate = uint32(bound(rate, 0, 100_000));
-        _bindSatellites();
+        _bindMocks();
         _mint(1);
         recordsMock.setRoyaltyRate(stream, 1, rate);
         (address receiver, uint256 amount) = stream.royaltyInfo(1, price);
@@ -489,143 +521,84 @@ contract StreamTest is StreamFixture {
     }
 
     function test_royaltyInfo_revertsForUnknownToken() public {
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.royaltyInfo(1, 1 ether);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
-        stream.royaltyOf(1);
     }
 
-    // ------------------------------------------------------------------------ records hooks
-
-    function test_setLicense_fromRecords() public {
-        _bindSatellites();
-        PackageItem memory item = _item(1);
-        item.license = _license("CC-BY-4.0");
-        _mint(item);
-        License memory next = _license("CC0-1.0");
-        vm.expectEmit(address(stream));
-        emit IStreamCore.LicenseChanged(1, _license("CC-BY-4.0"), next);
-        vm.expectEmit(address(stream));
-        emit MetadataUpdate(1);
-        recordsMock.setLicense(stream, 1, next);
-        assertEq(stream.licenseOf(1).spdxId, "CC0-1.0");
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.LicenseIrrevocable.selector, 1));
-        recordsMock.setLicense(stream, 1, _license("CC-BY-4.0"));
-    }
-
-    function test_setLicense_cc0IsIrrevocableInAnyCase() public {
-        _bindSatellites();
-        PackageItem memory item = _item(1);
-        item.license = _license("cc0-1.0");
-        _mint(item);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.LicenseIrrevocable.selector, 1));
-        recordsMock.setLicense(stream, 1, _license("MIT"));
-        assertEq(stream.licenseKey("CC0-1.0"), keccak256("cc0-1.0"));
-        assertEq(stream.licenseKey("Cc0-1.0"), stream.licenseKey("cC0-1.0"));
-        assertEq(stream.licenseKey("MIT"), keccak256("mit"));
-    }
-
-    function testFuzz_licenseKey_lowercasesAsciiOnly(bytes memory raw) public view {
-        bytes memory lower = bytes.concat(raw);
-        for (uint256 i; i < lower.length; ++i) {
-            if (lower[i] >= "A" && lower[i] <= "Z") lower[i] = bytes1(uint8(lower[i]) + 32);
-        }
-        assertEq(stream.licenseKey(string(raw)), keccak256(lower));
-    }
-
-    function test_setLicense_reverts() public {
-        _bindSatellites();
-        PackageItem memory item = _item(1);
-        item.license = _license("CC-BY-4.0");
-        _mint(item);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, outsider));
-        vm.prank(outsider);
-        stream.setLicense(1, _license("CC0-1.0"));
-        vm.expectRevert(IStreamCore.InvalidLicense.selector);
-        recordsMock.setLicense(stream, 1, _license(""));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 2));
-        recordsMock.setLicense(stream, 2, _license("CC0-1.0"));
-    }
-
-    function test_hooks_revertBeforeBinding() public {
-        _mint(1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, address(this)));
-        stream.setRoyaltyRate(1, 1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, address(this)));
-        stream.refreshMetadata(1, 1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, address(this)));
-        stream.setLicense(1, _license("MIT"));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, address(this)));
-        stream.linkEdition(1, 1);
-    }
+    // ------------------------------------------------------------------------------ hooks
 
     function test_setRoyaltyRate_fromRecords() public {
-        _bindSatellites();
+        _bindMocks();
         _mint(1);
         vm.expectEmit(address(stream));
-        emit IStreamCore.RoyaltyChanged(1, royaltyWallet, 6_529, 10_000);
+        emit IStream.RoyaltyRateChanged(1, 6_529, 10_000);
         recordsMock.setRoyaltyRate(stream, 1, 10_000);
-        (address receiver, uint32 rate) = stream.royaltyOf(1);
-        assertEq(receiver, royaltyWallet);
-        assertEq(rate, 10_000);
-        vm.expectRevert(IStreamCore.InvalidRoyalty.selector);
+        IStream.WorkCore memory w = stream.work(1);
+        assertEq(w.royaltyReceiver, royaltyWallet);
+        assertEq(w.royaltyRate, 10_000);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidRoyaltyRate.selector, 100_001));
         recordsMock.setRoyaltyRate(stream, 1, 100_001);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 2));
+        recordsMock.setRoyaltyRate(stream, 2, 1);
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, outsider));
         stream.setRoyaltyRate(1, 1);
     }
 
-    function test_refreshMetadata_fromRecords() public {
-        _bindSatellites();
+    function test_emitMetadataUpdate_fromRecords() public {
+        _bindMocks();
         vm.expectEmit(address(stream));
         emit MetadataUpdate(4);
         recordsMock.refresh(stream, 4, 4);
         vm.expectEmit(address(stream));
         emit BatchMetadataUpdate(1, 9);
         recordsMock.refresh(stream, 1, 9);
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, outsider));
+        stream.emitMetadataUpdate(1, 1);
     }
 
-    // ---------------------------------------------------------------------------- bindings
+    function test_hooks_revertBeforeBinding() public {
+        _mint(1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, address(this)));
+        stream.setRoyaltyRate(1, 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, address(this)));
+        stream.emitMetadataUpdate(1, 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, address(this)));
+        stream.linkEdition(1, 1);
+    }
 
-    function test_bindings_onceAndEvents() public {
+    // ---------------------------------------------------------------------------- binding
+
+    function test_bind_onceWithEvent() public {
         MockWorkRecords r = new MockWorkRecords();
         MockEditions e = new MockEditions();
         vm.expectEmit(address(stream));
-        emit IStreamCore.RecordsBound(address(r));
-        stream.bindRecords(address(r));
-        vm.expectEmit(address(stream));
-        emit IStreamCore.EditionsBound(address(e));
-        stream.bindEditions(address(e));
-        assertEq(stream.records(), address(r));
+        emit IStream.Bound(address(r), address(e));
+        stream.bind(address(r), address(e));
+        assertEq(stream.workRecords(), address(r));
         assertEq(stream.editions(), address(e));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.AlreadyBound.selector, address(r)));
-        stream.bindRecords(address(e));
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.AlreadyBound.selector, address(e)));
-        stream.bindEditions(address(r));
+        vm.expectRevert(IStream.AlreadyBound.selector);
+        stream.bind(address(r), address(e));
     }
 
-    function test_bindings_reverts() public {
+    function test_bind_reverts() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
-        stream.bindRecords(eoa);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
-        stream.bindEditions(eoa);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        stream.bind(eoa, address(editionsMock));
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
+        stream.bind(address(editionsMock), eoa);
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
-        stream.bindRecords(address(renderer));
-        vm.prank(outsider);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
-        );
-        stream.bindEditions(address(renderer));
+        stream.bind(address(renderer), address(renderer));
     }
 
     // ---------------------------------------------------------------------------- editions
 
     function test_linkEdition() public {
-        _bindSatellites();
+        _bindMocks();
         PackageItem memory item = _item(1);
         item.kind = ItemKind.EDITION_MASTER;
         _mint(item);
@@ -633,39 +606,38 @@ contract StreamTest is StreamFixture {
         assertEq(e, address(0));
         assertEq(id, 0);
         vm.expectEmit(address(stream));
-        emit IStreamCore.EditionLinked(1, address(editionsMock), 1);
+        emit IStream.EditionLinked(1, address(editionsMock), 1);
         vm.expectEmit(address(stream));
         emit MetadataUpdate(1);
         editionsMock.link(stream, 1, 1);
         (e, id) = stream.editionOf(1);
         assertEq(e, address(editionsMock));
         assertEq(id, 1);
-        assertTrue(stream.work(1).editionLinked);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.EditionLinkInvalid.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 1));
         editionsMock.link(stream, 1, 1);
     }
 
     function test_linkEdition_reverts() public {
-        _bindSatellites();
+        _bindMocks();
         _mint(1);
         PackageItem memory master = _item(2);
         master.kind = ItemKind.EDITION_MASTER;
         _mint(master);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.EditionLinkInvalid.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 1));
         editionsMock.link(stream, 1, 1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.EditionLinkInvalid.selector, 2));
+        vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
         editionsMock.link(stream, 2, 3);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 5));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 5));
         editionsMock.link(stream, 5, 5);
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnboundCaller.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, outsider));
         stream.linkEdition(2, 2);
     }
 
     // --------------------------------------------------------------------------- rendering
 
     function test_tokenURI_forwardsToDefaultThenPin() public {
-        _bindSatellites();
+        _bindMocks();
         _mint(1);
         assertEq(stream.rendererOf(1), address(renderer));
         assertEq(stream.tokenURI(1), renderer.tokenURI(address(stream), 1));
@@ -676,9 +648,9 @@ contract StreamTest is StreamFixture {
     }
 
     function test_tokenURI_revertsForUnknownToken() public {
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.tokenURI(1);
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.UnknownWork.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         stream.rendererOf(1);
     }
 
@@ -687,7 +659,7 @@ contract StreamTest is StreamFixture {
         _mint(2);
         MockRenderer next = new MockRenderer("next");
         vm.expectEmit(address(stream));
-        emit IStreamCore.DefaultRendererSet(address(renderer), address(next));
+        emit IStream.DefaultRendererSet(address(renderer), address(next));
         vm.expectEmit(address(stream));
         emit BatchMetadataUpdate(1, 2);
         vm.prank(governor);
@@ -699,11 +671,13 @@ contract StreamTest is StreamFixture {
     function test_setDefaultRenderer_reverts() public {
         MockRenderer next = new MockRenderer("next");
         vm.startPrank(governor);
-        vm.expectRevert(IStreamCore.ExpectedValueMismatch.selector);
+        vm.expectRevert(IStream.ExpectedValueMismatch.selector);
         stream.setDefaultRenderer(address(next), address(next));
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(IStreamCore.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, eoa));
         stream.setDefaultRenderer(address(renderer), eoa);
+        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidDependency.selector, address(econ)));
+        stream.setDefaultRenderer(address(renderer), address(econ));
         vm.stopPrank();
         vm.prank(outsider);
         vm.expectRevert(
@@ -724,7 +698,7 @@ contract StreamTest is StreamFixture {
 
     function test_contractURI() public {
         vm.expectEmit(address(stream));
-        emit IStreamCore.ContractURIUpdated();
+        emit IStream.ContractURIUpdated();
         vm.prank(governor);
         stream.setContractURI("ipfs://contract");
         assertEq(stream.contractURI(), "ipfs://contract");
@@ -738,12 +712,12 @@ contract StreamTest is StreamFixture {
     function test_setOwner() public {
         address next = makeAddr("nextOwner");
         vm.expectEmit(address(stream));
-        emit IStreamCore.OwnershipTransferred(marketOwner, next);
+        emit IStream.OwnershipTransferred(marketOwner, next);
         vm.prank(governor);
         stream.setOwner(marketOwner, next);
         assertEq(stream.owner(), next);
         vm.prank(governor);
-        vm.expectRevert(IStreamCore.ExpectedValueMismatch.selector);
+        vm.expectRevert(IStream.ExpectedValueMismatch.selector);
         stream.setOwner(marketOwner, next);
         vm.prank(outsider);
         vm.expectRevert(
@@ -774,7 +748,7 @@ contract StreamTest is StreamFixture {
         assertTrue(stream.supportsInterface(type(IERC2981).interfaceId));
         assertTrue(stream.supportsInterface(bytes4(0x49064906)));
         assertTrue(stream.supportsInterface(type(IMintTarget).interfaceId));
-        assertTrue(stream.supportsInterface(type(IStreamCore).interfaceId));
+        assertTrue(stream.supportsInterface(type(IStream).interfaceId));
         assertFalse(stream.supportsInterface(0xffffffff));
         assertFalse(stream.supportsInterface(0x12345678));
     }
@@ -794,13 +768,13 @@ contract StreamTest is StreamFixture {
 
     function _expectInvalid(PackageItem memory item) internal {
         bytes memory data = _request(item);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, data);
     }
 
     function _expectBadTerms(WorkTerms memory terms, bytes memory data) internal {
         econ.setTerms(terms);
-        vm.expectRevert(IStreamCore.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, data);
         econ.setTerms(_defaultTerms());
     }

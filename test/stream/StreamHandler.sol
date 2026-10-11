@@ -4,25 +4,27 @@ pragma solidity ^0.8.24;
 import { CommonBase } from "forge-std/Base.sol";
 import { StdCheats } from "forge-std/StdCheats.sol";
 import { StdUtils } from "forge-std/StdUtils.sol";
-import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import {
     MoveAuthorization,
     PackageItem,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Stream } from "src/stream/Stream.sol";
-import { IWorkRecords } from "src/stream/IWorkRecords.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 
 /// @notice Drives 6529 Stream and its records satellite through random sequences of mints,
-///         burns, transfers, record edits, finalizes, attacks on finalized works, consented
-///         royalty changes and renderer swaps, keeping ghost state for the invariants.
+///         burns, transfers, record edits, finalizes, attacks on finalized works, consented and
+///         unconsented royalty changes and renderer swaps, keeping ghost state for the
+///         invariants.
 /// @dev Every action either succeeds or is skipped, so `fail_on_revert` holds; an action that
 ///      must revert is checked with try/catch and counted as a violation if it does not.
 contract StreamHandler is CommonBase, StdCheats, StdUtils {
     struct Snapshot {
-        bytes32 record;
+        bytes32 recordFileId;
         address renderer;
     }
 
@@ -46,7 +48,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     uint256 public ghostBurned;
     uint256 public violations;
     mapping(uint256 => bool) public burned;
-    mapping(uint256 => bool) public registered;
+    mapping(uint256 => bool) public opened;
     mapping(uint256 => address) public ghostReceiver;
     mapping(uint256 => uint32) public ghostRate;
     mapping(uint256 => bool) public finalized;
@@ -78,8 +80,8 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         }
     }
 
-    function addItem(PackageItem memory item) external {
-        _items.push(abi.encode(item));
+    function addItem(PackageItem memory item, MediaFile[] memory media) external {
+        _items.push(abi.encode(item, media));
     }
 
     function addSpareRecord(bytes32 fileId) external {
@@ -91,19 +93,20 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     }
 
     function finalSnapshot(uint256 tokenId) external view returns (bytes32, address) {
-        return (_final[tokenId].record, _final[tokenId].renderer);
+        return (_final[tokenId].recordFileId, _final[tokenId].renderer);
     }
 
     // -------------------------------------------------------------------------------- actions
 
     function mint(uint256) external {
         if (nextItem >= _items.length) return;
-        PackageItem memory item = _item(nextItem++);
+        (PackageItem memory item,) = _item(nextItem++);
         uint256 expected = stream.totalMinted() + 1;
         (uint256 tokenId,) = auction.start(stream, _request(item));
         if (tokenId != expected) ++violations;
         ++ghostMinted;
-        (ghostReceiver[tokenId], ghostRate[tokenId]) = stream.royaltyOf(tokenId);
+        ghostReceiver[tokenId] = stream.work(tokenId).royaltyReceiver;
+        ghostRate[tokenId] = stream.work(tokenId).royaltyRate;
     }
 
     function burn(uint256 seed) external {
@@ -129,19 +132,17 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         stream.transferFrom(holder, actors[actorSeed % actors.length], tokenId);
     }
 
-    function register(uint256 seed) external {
+    function openRecord(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok || registered[tokenId]) return;
-        PackageItem memory item = _item(tokenId - 1);
-        bytes32[] memory media = new bytes32[](1);
-        media[0] = item.contentId;
-        records.register(tokenId, item, media);
-        registered[tokenId] = true;
+        if (!ok || opened[tokenId]) return;
+        (PackageItem memory item, MediaFile[] memory media) = _item(tokenId - 1);
+        records.openRecord(tokenId, item, media);
+        opened[tokenId] = true;
     }
 
     function setRecord(uint256 seed, uint256 recordSeed) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok || !registered[tokenId] || finalized[tokenId]) return;
+        if (!ok || !opened[tokenId] || finalized[tokenId]) return;
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         records.setRecord(tokenId, _spareRecords[recordSeed % _spareRecords.length], state);
@@ -149,13 +150,13 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
 
     function finalize(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok || !registered[tokenId] || finalized[tokenId]) return;
+        if (!ok || !opened[tokenId] || finalized[tokenId]) return;
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         records.finalize(tokenId, state);
         finalized[tokenId] = true;
-        IWorkRecords.RecordState memory s = records.recordState(tokenId);
-        _final[tokenId] = Snapshot(s.record, s.renderer);
+        IWorkRecords.RecordInfo memory info = records.record(tokenId);
+        _final[tokenId] = Snapshot(info.recordFileId, info.renderer);
     }
 
     /// @dev The artist tries to edit or re-finalize a finalized work; both must revert.
@@ -177,37 +178,35 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     /// @dev A consented, governed royalty-rate change: the only way a rate may move.
     function changeRoyalty(uint256 seed, uint32 rate) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok || !registered[tokenId]) return;
+        if (!ok || !opened[tokenId]) return;
         rate = uint32(bound(rate, 0, 100_000));
         if (rate == ghostRate[tokenId]) return;
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 structHash =
-            keccak256(abi.encode(records.ROYALTY_TYPEHASH(), tokenId, rate, state, deadline));
+            keccak256(abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline));
         bytes[] memory sigs = new bytes[](2);
         sigs[0] = _sign(artistKey, structHash);
         sigs[1] = _sign(collaboratorKey, structHash);
+        (PackageItem memory item,) = _item(tokenId - 1);
         vm.prank(governor);
-        records.setRoyaltyRate(tokenId, _item(tokenId - 1).parties, rate, state, deadline, sigs);
+        records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs);
         ghostRate[tokenId] = rate;
     }
 
-    /// @dev An unconsented royalty change by governance alone must revert.
+    /// @dev A royalty change by governance alone, without the parties' consent, must revert.
     function forceRoyalty(uint256 seed, uint32 rate) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok || !registered[tokenId]) return;
+        if (!ok || !opened[tokenId]) return;
         rate = uint32(bound(rate, 0, 100_000));
         if (rate == ghostRate[tokenId]) return;
         bytes32 state = records.workStateHash(tokenId);
+        (PackageItem memory item,) = _item(tokenId - 1);
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = new bytes(65);
+        sigs[1] = new bytes(65);
         vm.prank(governor);
-        try records.setRoyaltyRate(
-            tokenId,
-            _item(tokenId - 1).parties,
-            rate,
-            state,
-            uint64(block.timestamp),
-            new bytes[](2)
-        ) {
+        try records.setRoyaltyRate(tokenId, rate, item, state, uint64(block.timestamp), sigs) {
             ++violations;
         } catch { }
     }
@@ -221,8 +220,9 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
 
     function addLocator(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok || !registered[tokenId]) return;
-        bytes32 file = _item(tokenId - 1).contentId;
+        if (!ok || !opened[tokenId]) return;
+        (, MediaFile[] memory media) = _item(tokenId - 1);
+        bytes32 file = media[0].fileId;
         uint256 n = records.locators(tokenId, file).length;
         if (n >= 16) return;
         vm.prank(platform);
@@ -237,8 +237,12 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
 
     // -------------------------------------------------------------------------------- helpers
 
-    function _item(uint256 index) internal view returns (PackageItem memory) {
-        return abi.decode(_items[index], (PackageItem));
+    function _item(uint256 index)
+        internal
+        view
+        returns (PackageItem memory item, MediaFile[] memory media)
+    {
+        return abi.decode(_items[index], (PackageItem, MediaFile[]));
     }
 
     function _live(uint256 seed) internal view returns (bool, uint256) {
@@ -268,8 +272,8 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
                 keccak256(
                     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
                 ),
-                keccak256("6529 Stream Records"),
-                keccak256("1"),
+                keccak256(bytes(Typehashes.WORK_RECORDS_NAME)),
+                keccak256(bytes(Typehashes.DOMAIN_VERSION)),
                 block.chainid,
                 address(records)
             )
