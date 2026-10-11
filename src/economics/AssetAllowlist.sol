@@ -47,8 +47,11 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
             if (asset.code.length == 0 || DelegatedEOA.isDelegated(asset)) {
                 revert AssetNotAdmissible(asset);
             }
-            // Fails closed unless the token answers a balance read with exactly one word.
-            TokenTransfer.balanceOf(asset, address(this));
+            // A sanity probe, not proof of a standard token (governance vets that): both reads
+            // must return exactly one word, and no balance may exceed the supply.
+            if (TokenTransfer.balanceOf(asset, address(this)) > TokenTransfer.totalSupply(asset)) {
+                revert AssetNotAdmissible(asset);
+            }
         }
         _admit(asset, floor);
     }

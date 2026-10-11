@@ -22,7 +22,7 @@ library Splits {
     function validate(ISplitWallet.Payee[] memory payees) internal pure {
         uint256 count = payees.length;
         if (count == 0 || count > MAX_PAYEES) revert ISplitWallet.PayeeCountOutOfRange(count);
-        uint256 total;
+        uint256 total = 0;
         for (uint256 i; i < count; ++i) {
             ISplitWallet.Payee memory p = payees[i];
             if ((p.artistId == 0) == (p.account == address(0)) || p.share == 0) {

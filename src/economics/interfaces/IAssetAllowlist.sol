@@ -25,7 +25,8 @@ interface IAssetAllowlist {
         bytes32 indexed product, bool wasConfigured, address previous, address current
     );
 
-    /// @notice `asset` has no code, is an EIP-7702 delegated account, or has no readable balance.
+    /// @notice `asset` has no code, is an EIP-7702 delegated account, or reports a balance above
+    ///         its total supply. Unreadable balances or supply revert with the token-read error.
     error AssetNotAdmissible(address asset);
     /// @notice The requested change does not apply to an asset in status `current`.
     error InvalidStatusTransition(address asset, Status current);

@@ -79,6 +79,18 @@ contract AssetAllowlistTest is EconomicsBase {
         allowlist.admitAsset(address(malformed), 1);
     }
 
+    function test_AdmitRejectsABalanceAboveTotalSupply() public {
+        usdc.mint(address(allowlist), 10);
+        vm.mockCall(address(usdc), abi.encodeWithSignature("totalSupply()"), abi.encode(9));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotAdmissible.selector, address(usdc))
+        );
+        allowlist.admitAsset(address(usdc), 1);
+        vm.clearMockedCalls();
+        allowlist.admitAsset(address(usdc), 1);
+        assertTrue(allowlist.isActive(address(usdc)));
+    }
+
     function test_AdmitRejectsZeroFloorAndActiveAssets() public {
         vm.expectRevert(IAssetAllowlist.InvalidIncrementFloor.selector);
         allowlist.admitAsset(address(usdc), 0);

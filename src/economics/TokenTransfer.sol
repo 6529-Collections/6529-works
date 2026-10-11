@@ -37,6 +37,11 @@ library TokenTransfer {
         return _read(asset, abi.encodeCall(IERC20.balanceOf, (account)));
     }
 
+    /// @notice The total supply of `asset`, read strictly.
+    function totalSupply(address asset) internal view returns (uint256) {
+        return _read(asset, abi.encodeCall(IERC20.totalSupply, ()));
+    }
+
     /// @notice The allowance `owner` gave `spender` in `asset`, read strictly.
     function allowance(address asset, address owner, address spender)
         internal
