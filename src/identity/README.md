@@ -55,20 +55,27 @@ replaced.
 The old key can never stop an override. An override replaces a pending
 STANDARD change, so a key holder cannot block one by keeping a change staged.
 
-**Contested overrides (owner decision C).** A captured wallet's cancel does not
-kill an override. It contests it:
-- `ChangeContested` records the wallet, and the pending change keeps
-  `contestedBy` and `contestedAt`.
+**Contested overrides (ADR 0003 owner decision 1).** A captured wallet's
+cancel during the 180-day notice does not kill an override. It contests it:
+- `ChangeContested` records the wallet. The pending change keeps `contestedAt`
+  and `priorOutcome`, the artist's latest DISPUTE_OUTCOME entry at that moment.
+- A contest is refused once the notice has ended (`ContestWindowClosed`), so it
+  cannot front-run a due execution. The worst stall is therefore 180 plus 365
+  days.
 - Further cancels do nothing, and `executeChange` refuses the override.
 - A TDH vote decides it. The PLATFORM role records the vote as a
-  DISPUTE_OUTCOME statement on the subject `(registry, artistId)`. Governance
-  then calls `resolveContested(artistId, uphold, outcomeRef)` (SUCCESSOR_SETTER,
-  30 days), citing that statement's entry hash, which must equal
-  `latestDisputeOutcome(registry, artistId)`.
+  DISPUTE_OUTCOME statement on the subject `(registry, artistId)`, after the
+  contest. Governance then calls `resolveContested(artistId, uphold,
+  outcomeRef)` (SUCCESSOR_SETTER, 30 days), citing that statement's entry hash.
+  The hash must equal `latestDisputeOutcome(registry, artistId)` and differ
+  from `priorOutcome` (`OutcomePredatesContest`). Entry hashes are unique, so
+  only a vote recorded after this contest qualifies: an earlier vote, or one
+  recorded before the contest, does not.
   - Upholding executes the override, but not before its 180-day notice ends,
     and with the same re-checks as `executeChange`.
   - Voiding deletes it.
-  - Both emit `ContestResolved`.
+  - Both emit `ContestResolved`, whose `executed` flag is false for a void, and
+    for an upheld change that the re-checks cleared.
 - The guardian can still veto a contested override, which voids it.
 - A contest nobody resolves within 365 days lapses. `payoutAddress` stops
   freezing at once, and anyone may then call `expireContest` to delete it
@@ -76,6 +83,13 @@ kill an override. It contests it:
 
 A STANDARD 7-day change still dies on a cancel by its previous authority or a
 captured wallet.
+
+**Scheduling a resolution.** `resolveContested` is a 30-day governed action:
+- Schedule an uphold no earlier than `executableAt` minus 30 days. An uphold
+  that executes before `executableAt` reverts with `ChangeNotDue`, and the
+  AccessManager drops an operation not executed within 7 days of maturing.
+- A later DISPUTE_OUTCOME on the same subject invalidates a scheduled
+  resolution: it no longer cites the latest outcome.
 
 **Preventive revocation.** The authority's `revokeNonce` burns the current
 nonce, voiding every unused STANDARD payload signed for it. Override
@@ -296,12 +310,24 @@ their consolidations are 30 days old, they are captured as cancellers.
   genuine wallets keep standing for 30 days after the hijack's refresh records
   them missing (`test_PoC3_ResidualRiskThiefWalletsCancelOverridesAfterAHijack`).
 
-**The stalemate is resolved by a vote (owner decision C).** Such a wallet's
-cancel no longer kills the network's recovery override. It only contests it:
+**The stalemate is resolved by a vote (ADR 0003 owner decision 1).** Such a
+wallet's cancel no longer kills the network's recovery override. It only
+contests it, and only during the notice:
 - the payout stays frozen while the override would move it, so the key holder
   cannot collect;
-- a TDH vote decides the contest, applied by the governed `resolveContested`;
+- a TDH vote, recorded after the contest, decides it, applied by the governed
+  `resolveContested`;
 - the guardian can still veto.
+
+**The cost to the artist.** The artist's own captured wallet can no longer end
+a rogue override alone. Its cancel only contests the override, and the payout
+stays frozen until one of three things happens:
+- a guardian veto;
+- a governed void;
+- the 365-day lapse.
+
+Guardian monitoring must therefore watch `ChangeContested` events and scheduled
+`resolveContested` operations.
 
 `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`,
 `test_Contest_VoteUpholdsAndTheArtistRecovers` and the integration test

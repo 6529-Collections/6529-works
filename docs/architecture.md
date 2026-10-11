@@ -312,7 +312,7 @@ interfaces name the role each governed selector is meant to map to:
 
 | Role | Selectors |
 | --- | --- |
-| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `bindSplitFactory`; `IEditions.bindWorkRecords` |
+| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords` |
 | GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset` |
 | UNPAUSER | `IEnglishAuction.resume` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
@@ -320,13 +320,15 @@ interfaces name the role each governed selector is meant to map to:
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
 | PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `IEntropyModule.setCoordinator`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
 to mint through each token's admitted-minter mapping (`setAdmittedMinter`), not
-the MINTER role, for the same reason. Each bind checks ERC-165 and rejects
-EIP-7702 delegated accounts. Every installed dependency
+the MINTER role, for the same reason. Each bind rejects EIP-7702 delegated
+accounts and checks ERC-165, except where the target does not implement it:
+`IArtistRegistry.bindSplitFactory` checks only for code, and `bindStatementLog`
+checks for code and that the log's artist resolver is the registry. Every installed dependency
 (verifier, renderer, consolidation source, entropy module, economics resolver,
 package registry, sale adapter, federation registry) supports ERC-165. Installs
 check it, pin the code hash and reject EIP-7702 delegated accounts.
