@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "../interfaces/IDutchSale.sol";
@@ -30,9 +29,10 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      `restingPrice` until the token's supply or window runs out or the sale is closed. A buyer
 ///      bounds the price with `maxUnitPrice`; `Payment.amount` is the most the payer will pay
 ///      (integrator decision D17): an ERC-20 payment pulls exactly the charge, and ETH above it is
-///      credited to the payer and claimed (pull). Governance: map `openSale` and `closeSale` to
-///      PLATFORM (the creator needs no role), `setTarget` and `setFederationRegistry` to
-///      SUCCESSOR_SETTER.
+///      credited to the payer and claimed (pull). `SaleStarted.endTime` is when the curve reaches
+///      its resting price. Governance: map `openSale` and `closeSale` to PLATFORM (the creator
+///      needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to
+///      PAUSER and `unpause` to UNPAUSER.
 contract DutchSale is IDutchSale, MintSaleBase {
     mapping(uint256 saleId => Schedule) private _schedules;
 
@@ -41,39 +41,47 @@ contract DutchSale is IDutchSale, MintSaleBase {
 
     /// @param authority_ The AccessManager.
     /// @param escrow_ The revenue escrow.
-    /// @param assets_ The currency allowlist.
     /// @param permit2_ The Permit2 deployment.
     /// @param economicsResolver_ The economics resolver.
     constructor(
         address authority_,
         IRevenueEscrow escrow_,
-        IAssetAllowlist assets_,
         ISignatureTransfer permit2_,
         IEconomicsResolver economicsResolver_
-    ) MintSaleBase(authority_, escrow_, assets_, permit2_, economicsResolver_) { }
+    ) MintSaleBase(authority_, escrow_, permit2_, economicsResolver_) { }
 
     /// @inheritdoc IDutchSale
     function openSale(address token, uint256 id, uint64 startTime)
         external
+        whenNotPaused
         returns (uint256 saleId)
     {
         // forge-lint: disable-next-line(block-timestamp)
         if (startTime < block.timestamp) revert InvalidSchedule();
-        (LockedTerms memory locked, PrimaryTerms memory t) = _terms(token, id, SaleKind.DUTCH);
+        (PrimaryTerms memory t, bool federated) = _terms(token, id, SaleKind.DUTCH);
         if (msg.sender != t.creator && !_isPlatform()) revert NotSaleManager(msg.sender);
         if (_openSales[token][id] != 0) revert SaleAlreadyOpen(token, id);
         DutchParams memory d = abi.decode(t.params, (DutchParams));
         if (!DutchPricing.isValid(t.price, d.restingPrice, d.duration, d.stepSeconds)) {
             revert InvalidSchedule();
         }
-        saleId = _store(locked, false);
+        saleId = _store(token, id, t, false, federated);
         _schedules[saleId] = Schedule(d.restingPrice, startTime, d.duration, d.stepSeconds);
-        emit SaleStarted(saleId, token, id, SaleKind.DUTCH, locked.currency, t.price, startTime, 0);
+        emit SaleStarted(
+            saleId,
+            token,
+            id,
+            SaleKind.DUTCH,
+            t.currency,
+            t.price,
+            startTime,
+            startTime + d.duration
+        );
     }
 
     /// @inheritdoc IDutchSale
     function closeSale(uint256 saleId) external {
-        if (!_close(saleId)) revert NotSaleManager(msg.sender);
+        if (!_close(saleId, false)) revert NotSaleManager(msg.sender);
         emit SaleClosed(saleId);
     }
 
@@ -84,10 +92,10 @@ contract DutchSale is IDutchSale, MintSaleBase {
         uint256 quantity,
         uint256 maxUnitPrice,
         Payment calldata payment
-    ) external payable nonReentrant {
+    ) external payable whenNotPaused nonReentrant {
         Listing storage l = _listings[saleId];
         if (
-            l.terms.token == address(0) || l.closed
+            l.token == address(0) || l.closed
                 // forge-lint: disable-next-line(block-timestamp)
                 || block.timestamp < _schedules[saleId].startTime
         ) revert SaleNotOpen(saleId);
@@ -96,7 +104,7 @@ contract DutchSale is IDutchSale, MintSaleBase {
         if (unit > maxUnitPrice) revert PriceAboveLimit(unit, maxUnitPrice);
         uint256 total = unit * quantity;
         uint256 excess = _collect(
-            l.terms.currency,
+            saleId,
             payment,
             total,
             keccak256(
@@ -138,7 +146,7 @@ contract DutchSale is IDutchSale, MintSaleBase {
         returns (LockedTerms memory terms, Schedule memory schedule, bool closed)
     {
         Listing storage l = _listing(saleId);
-        return (l.terms, _schedules[saleId], l.closed);
+        return (_locked(l), _schedules[saleId], l.closed);
     }
 
     /// @inheritdoc IDutchSale
@@ -164,7 +172,7 @@ contract DutchSale is IDutchSale, MintSaleBase {
     function _priceNow(uint256 saleId) private view returns (uint256) {
         Schedule storage s = _schedules[saleId];
         return DutchPricing.priceAt(
-            _listings[saleId].terms.price,
+            _listings[saleId].price,
             s.restingPrice,
             s.startTime,
             s.duration,

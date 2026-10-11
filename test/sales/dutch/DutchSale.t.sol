@@ -5,7 +5,7 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
@@ -27,9 +27,9 @@ contract DutchSaleTest is DutchBase {
     // ------------------------------------------------------------------ configuration
 
     function test_Constructor_RevertsOnZeroDependency() public {
-        (IRevenueEscrow e, IAssetAllowlist a,, IEconomicsResolver r) = _deps();
+        (IRevenueEscrow e,, IEconomicsResolver r) = _deps();
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new DutchSale(address(manager), e, a, ISignatureTransfer(address(0)), r);
+        new DutchSale(address(manager), e, ISignatureTransfer(address(0)), r);
     }
 
     function test_ConstantsAndTypehashes() public view {
@@ -56,7 +56,14 @@ contract DutchSaleTest is DutchBase {
         uint64 startTime = uint64(block.timestamp + 60);
         vm.expectEmit(address(dutch));
         emit ISaleAdapter.SaleStarted(
-            1, address(editions), STEPPED, SaleKind.DUTCH, CURRENCY_ETH, START, startTime, 0
+            1,
+            address(editions),
+            STEPPED,
+            SaleKind.DUTCH,
+            CURRENCY_ETH,
+            START,
+            startTime,
+            startTime + DURATION
         );
         vm.prank(platform);
         uint256 saleId = dutch.openSale(address(editions), STEPPED, startTime);
@@ -120,7 +127,7 @@ contract DutchSaleTest is DutchBase {
         _openNow(30);
         allowlist.set(address(usd), false);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.CurrencyNotActive.selector, address(usd))
+            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usd))
         );
         _openNow(USD_LINEAR);
     }
@@ -326,6 +333,26 @@ contract DutchSaleTest is DutchBase {
         dutch.purchase{ value: START }(saleId, bob, 1, START, _eth(bob, START));
         vm.prank(alice);
         assertEq(dutch.claim(CURRENCY_ETH, alice), 1 ether);
+    }
+
+    function test_Pause_StopsOpeningAndBuyingButNotClaimingOrClosing() public {
+        uint256 saleId = _openNow(LINEAR);
+        _buy(alice, saleId, alice, 1, START, 2 ether);
+        vm.prank(pauser);
+        dutch.pause();
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        _openNow(STEPPED);
+        vm.deal(bob, START);
+        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.prank(bob);
+        dutch.purchase{ value: START }(saleId, bob, 1, START, _eth(bob, START));
+        vm.prank(alice);
+        assertEq(dutch.claim(CURRENCY_ETH, alice), 1 ether);
+        vm.prank(platform);
+        dutch.closeSale(saleId);
+        vm.prank(unpauser);
+        dutch.unpause();
+        _openNow(LINEAR);
     }
 
     // ------------------------------------------------------------------ ERC-20

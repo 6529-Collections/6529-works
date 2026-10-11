@@ -29,7 +29,7 @@ contract FederationRegistryTest is FixedPriceBase {
         super.setUp();
         registry = new MockFederationRegistry();
         fed = new MockEditionTarget();
-        fed.setMinter(address(fixedSale), true);
+        fed.setAdmittedMinter(address(fixedSale), true);
         fed.setTerms(FED_ID, _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, ""), SIZE);
     }
 
@@ -123,7 +123,8 @@ contract FederationRegistryTest is FixedPriceBase {
     }
 
     function test_FederatedSale_ResolvesTheFederatedDefaultCurrency() public {
-        fed.setTerms(FED_ID, _terms(SaleKind.FIXED_PRICE, CURRENCY_DEFAULT, USD_PRICE, ""), SIZE);
+        // A federated gift (zero price) may leave its currency to the federated default.
+        fed.setTerms(FED_ID, _terms(SaleKind.FIXED_PRICE, CURRENCY_DEFAULT, 0, ""), SIZE);
         registry.setEntry(address(fed), FED_FEE, true);
         _install();
         allowlist.setDefault(PRODUCT_FEDERATED, address(usd));

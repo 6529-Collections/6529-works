@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
@@ -38,20 +37,18 @@ contract FixedPriceSaleTest is FixedPriceBase {
     // ------------------------------------------------------------------ configuration
 
     function test_Constructor_RevertsOnMissingOrUnfitDependency() public {
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p, IEconomicsResolver r) = _deps();
+        (IRevenueEscrow e, ISignatureTransfer p, IEconomicsResolver r) = _deps();
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new FixedPriceSale(address(manager), IRevenueEscrow(address(0)), a, p, r);
+        new FixedPriceSale(address(manager), IRevenueEscrow(address(0)), p, r);
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new FixedPriceSale(address(manager), e, IAssetAllowlist(address(0)), p, r);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new FixedPriceSale(address(manager), e, a, ISignatureTransfer(address(0)), r);
+        new FixedPriceSale(address(manager), e, ISignatureTransfer(address(0)), r);
         // The resolver must be a contract supporting IEconomicsResolver through ERC-165.
         address[3] memory unfit = [address(0), makeAddr("eoa"), address(usd)];
         for (uint256 i; i < unfit.length; ++i) {
             vm.expectRevert(
                 abi.encodeWithSelector(MintSaleBase.InvalidDependency.selector, unfit[i])
             );
-            new FixedPriceSale(address(manager), e, a, p, IEconomicsResolver(unfit[i]));
+            new FixedPriceSale(address(manager), e, p, IEconomicsResolver(unfit[i]));
         }
     }
 
@@ -59,9 +56,15 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(fixedSale.saleKind(), keccak256("FIXED_PRICE"));
         assertEq(fixedSale.ALLOWLIST_LEAF_DOMAIN(), keccak256("6529WORKS_ALLOWLIST_LEAF_V1"));
         assertEq(
-            Typehashes.PHASE_CONFIGURATION,
+            fixedSale.PHASE_TYPEHASH(),
             keccak256(
-                "PhaseConfiguration(address token,uint256 id,bytes32 phasesHash,uint256 nonce,uint64 deadline)"
+                "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
+            )
+        );
+        assertEq(
+            fixedSale.PHASE_CONFIGURATION_TYPEHASH(),
+            keccak256(
+                "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
             )
         );
         assertEq(
@@ -84,6 +87,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(fixedSale.ETH_PAYOUT_GAS(), 100_000);
         assertEq(address(fixedSale.escrow()), address(escrow));
         assertEq(address(fixedSale.assets()), address(allowlist));
+        assertFalse(fixedSale.paused());
         assertEq(address(fixedSale.permit2()), address(permit2));
         assertEq(address(fixedSale.economicsResolver()), address(resolver));
         assertEq(fixedSale.nextSaleId(), 1);
@@ -212,7 +216,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
     function test_OpenSale_RevertsOnInactiveCurrency() public {
         allowlist.set(address(usd), false);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.CurrencyNotActive.selector, address(usd))
+            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, address(usd))
         );
         _openPublic(USD_ED, 0);
     }
@@ -368,7 +372,9 @@ contract FixedPriceSaleTest is FixedPriceBase {
         IFixedPriceSale.Phase[] memory phases = _one(_phase(bytes32("r"), 0, false, true));
         uint64 deadline = uint64(block.timestamp + 1 hours);
         safe.accept(
-            fixedSale.phaseConfigurationDigest(address(editions), ETH_ED, phases, 3, deadline)
+            fixedSale.phaseConfigurationDigest(
+                address(editions), ETH_ED, CURRENCY_ETH, PRICE, phases, 3, deadline
+            )
         );
         vm.prank(platform);
         uint256 saleId = fixedSale.openSale(
@@ -382,14 +388,29 @@ contract FixedPriceSaleTest is FixedPriceBase {
         IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](2);
         phases[0] = IFixedPriceSale.Phase(1, 2, bytes32("a"), 3, true, true);
         phases[1] = IFixedPriceSale.Phase(4, 5, 0, 6, false, false);
+        bytes32 phaseType = keccak256(
+            "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
+        );
+        bytes32 phasesHash = keccak256(
+            abi.encodePacked(
+                keccak256(
+                    abi.encode(phaseType, uint64(1), uint64(2), bytes32("a"), uint32(3), true, true)
+                ),
+                keccak256(
+                    abi.encode(phaseType, uint64(4), uint64(5), bytes32(0), uint32(6), false, false)
+                )
+            )
+        );
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "PhaseConfiguration(address token,uint256 id,bytes32 phasesHash,uint256 nonce,uint64 deadline)"
+                    "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
                 ),
                 address(editions),
                 ETH_ED,
-                keccak256(abi.encode(phases)),
+                address(usd),
+                uint256(7e18),
+                phasesHash,
                 uint256(5),
                 uint64(99)
             )
@@ -406,7 +427,9 @@ contract FixedPriceSaleTest is FixedPriceBase {
             )
         );
         assertEq(
-            fixedSale.phaseConfigurationDigest(address(editions), ETH_ED, phases, 5, 99),
+            fixedSale.phaseConfigurationDigest(
+                address(editions), ETH_ED, address(usd), 7e18, phases, 5, 99
+            ),
             keccak256(abi.encodePacked("\x19\x01", domain, structHash))
         );
     }
@@ -621,8 +644,19 @@ contract FixedPriceSaleTest is FixedPriceBase {
         _buyEth(alice, saleId, 0, alice, 1, PRICE);
     }
 
-    function test_OpenSale_ResolvesTheDefaultCurrencyOnce() public {
+    function test_OpenSale_PricedSalesMustNameTheirCurrency() public {
         editions.setTerms(9, _terms(SaleKind.FIXED_PRICE, CURRENCY_DEFAULT, USD_PRICE, ""), SIZE);
+        allowlist.setDefault(PRODUCT_EDITIONS, address(usd));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MintSaleBase.PricedDefaultCurrency.selector, address(editions), 9
+            )
+        );
+        _openPublic(9, 0);
+    }
+
+    function test_OpenSale_GiftResolvesTheDefaultCurrencyOnce() public {
+        editions.setTerms(9, _terms(SaleKind.FIXED_PRICE, CURRENCY_DEFAULT, 0, ""), SIZE);
         vm.expectRevert(
             abi.encodeWithSelector(
                 MockAssetAllowlist.CurrencyNotConfigured.selector, PRODUCT_EDITIONS
@@ -637,7 +671,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
             9,
             SaleKind.FIXED_PRICE,
             address(usd),
-            USD_PRICE,
+            0,
             uint64(block.timestamp),
             uint64(block.timestamp) + DAY
         );
@@ -645,12 +679,9 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(_locked(saleId).currency, address(usd));
         // A later default change does not move the open sale.
         allowlist.setDefault(PRODUCT_EDITIONS, CURRENCY_ETH);
-        usd.mint(alice, USD_PRICE);
         vm.prank(alice);
-        usd.approve(address(fixedSale), USD_PRICE);
-        vm.prank(alice);
-        fixedSale.purchase(_p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, USD_PRICE));
-        assertEq(usd.balanceOf(seller) + usd.balanceOf(network), USD_PRICE);
+        fixedSale.purchase(_p(saleId, 0, bob, 2, 0, 0), new bytes32[](0), _eth(alice, 0));
+        assertEq(editions.balanceOf(bob, 9), 2);
     }
 
     function test_Purchase_ZeroPriceGift() public {
@@ -833,8 +864,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         _purchaseEth(alice, _p(saleId, 0, alice, 1, 2, 0), proof, PRICE);
         vm.chainId(chain);
         // Another adapter computes other leaves.
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p2, IEconomicsResolver r) = _deps();
-        FixedPriceSale twin = new FixedPriceSale(address(manager), e, a, p2, r);
+        (IRevenueEscrow e, ISignatureTransfer p2, IEconomicsResolver r) = _deps();
+        FixedPriceSale twin = new FixedPriceSale(address(manager), e, p2, r);
         assertNotEq(
             twin.allowlistLeaf(address(editions), ETH_ED, 0, alice, 2, 0),
             fixedSale.allowlistLeaf(address(editions), ETH_ED, 0, alice, 2, 0)
@@ -854,7 +885,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         IFixedPriceSale.Phase[] memory again = fixedSale.phases(saleId);
         uint256 next = _open(creator, ETH_ED, again);
         assertEq(fixedSale.purchased(next, 0, bob), 1);
-        assertEq(fixedSale.purchasedOf(address(editions), ETH_ED, 0, bob), 1);
+        assertEq(fixedSale.purchased(address(editions), ETH_ED, 0, bob), 1);
         vm.expectRevert(
             abi.encodeWithSelector(IFixedPriceSale.WalletCapExceeded.selector, next, 0, bob)
         );

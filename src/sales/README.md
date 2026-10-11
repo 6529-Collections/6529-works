@@ -14,7 +14,7 @@ minter-role grant. Governed by
 
 | File | Role |
 | --- | --- |
-| `MintSaleBase.sol` | What both adapters share: targets (listed, or active in the federation registry), `LockedTerms` at open, one open sale per `(token, id)`, payment collection, minting per purchase, payouts with the escrow fallback, pull credits, ERC-165. |
+| `MintSaleBase.sol` | What both adapters share: targets (listed, or active in the federation registry), `LockedTerms` at open, one open sale per `(token, id)`, payment collection, minting per purchase, payouts with the escrow fallback, pull credits, the emergency pause, ERC-165. |
 | `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of discounts. |
 | `DutchSale.sol` | `IDutchSale`: a descending price from the token's `DutchParams`. |
 | `DutchPricing.sol` | The price curve (internal library, ported from PR #744's `StreamDutchPricing`). |
@@ -26,26 +26,35 @@ The lead artist (the terms' `creator`) or the PLATFORM role opens a sale. The
 adapter reads the token's `primaryTerms(id, "")` and fails closed unless:
 - the token is a target;
 - the sale kind matches the adapter;
-- the currency is active on the asset allowlist;
+- a priced sale names its currency (`CURRENCY_DEFAULT` is only for zero-price
+  gifts);
+- the economics resolver accepts the currency (`resolveCurrency`);
 - a seller and a fee recipient are set and the fee share is at most 100,000.
 
 The terms are then locked as `LockedTerms`:
-- `CURRENCY_DEFAULT` is resolved once, through
-  `AssetAllowlist.defaultCurrency`. A listed token uses the 6529 Editions
-  product; a registry token uses the 6529 Stream Federated product.
+- `CURRENCY_DEFAULT` is resolved once, through `resolveCurrency`. A listed
+  token uses the 6529 Editions product; a registry token uses the 6529 Stream
+  Federated product.
 - A later change to a product default affects only sales opened afterwards.
 
 Only one sale per `(token, id)` may be open at a time, and closing it frees the
-token. Closing a sale that is already closed reverts with `SaleAlreadyClosed`. Price and supply always come from the token, which enforces size,
-window and the admitted adapters on every mint.
+token. Closing a sale that is already closed reverts with `SaleAlreadyClosed`.
+Anyone may close a fixed-price sale whose phases have all ended. Price and
+supply always come from the token, which enforces size, window and the admitted
+minters on every mint.
 
 **Targets.** Governance lists tokens (`setTarget`). From v1.1 a token is also a
-target while the federation registry reports it active (`isTarget`). For such
-a token, the network fee share comes from its registry entry, and the fee
-recipient from the economics resolver's 6529 Stream Federated economics. The
-token's own fee terms are ignored. The resolver is fixed at construction and
-must support `IEconomicsResolver` through ERC-165; EIP-7702 delegated accounts
-are rejected.
+target while the federation registry reports it active (`isTarget`). Such a
+token:
+- must run the code its registry entry records;
+- pays the network fee share of its entry to the economics resolver's
+  federated fee recipient (`networkFeeRecipient`), ignoring its own fee terms;
+- stops selling as soon as the registry delists it. Every purchase re-checks
+  `isActive`.
+
+The resolver is fixed at construction. It must support `IEconomicsResolver`
+through ERC-165, EIP-7702 delegated accounts are rejected, and its asset
+allowlist is read once.
 
 The registry is installed by compare-and-set (`setFederationRegistry`).
 Installation:
@@ -56,6 +65,10 @@ Installation:
 **Currency halts.** Every purchase requires its locked currency to be active
 on the allowlist, so deprecating an asset halts running sales in it as an
 emergency tightening. Claims are never blocked.
+
+**Emergency pause.** `pause` (PAUSER, immediate) stops `openSale` and
+`purchase` on an adapter, and `unpause` (UNPAUSER) resumes them. `closeSale`
+and `claim` always work.
 
 ### Allowlists
 
@@ -70,7 +83,8 @@ keccak256(bytes.concat(keccak256(abi.encode(
 
 over OpenZeppelin sorted-pair trees (`StandardMerkleTree` compatible), with
 proofs of at most 32 nodes. `allowlistLeaf(token, id, …)` computes it before
-the sale opens.
+the sale opens. Tooling must emit at most one leaf per account and phase:
+otherwise a relayer could choose among a wallet's leaves.
 
 **Recipient binding (the fix for PR #744's High finding).** `account` is the
 wallet that receives the tokens, or the payer in a payer-keyed phase. The payer
@@ -81,8 +95,9 @@ recipient: the tokens go to that recipient and count against its cap. That is
 how gifts are pushed, and it means a third party can spend a recipient's
 allowance by buying it for them.
 
-**Caps** count per `(token, id, phase index, keyed wallet)` across sales
-(`purchasedOf`). Reopening a token with the same tree never resets them; a
+**Caps** count per `(token, id, phase index, keyed wallet)` across sales, read
+with `purchased(token, id, phase, account)`. Public phases share counts by
+phase index too. Reopening a token with the same tree never resets them; a
 deliberately fresh drop uses new phase indices. An allowlist phase enforces the
 leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
 enforces `walletCap` per recipient.
@@ -90,16 +105,21 @@ enforces `walletCap` per recipient.
 **Discounts need the artist** (integrator decision 4). A leaf price below the
 package price is accepted only in an approved sale. A sale is approved when:
 - the creator opens it; or
-- the PLATFORM role opens it with the creator's EIP-712
-  `PhaseConfiguration(token, id, phasesHash, nonce, deadline)` signature, where
-  `phasesHash = keccak256(abi.encode(phases))`.
+- the PLATFORM role opens it with the creator's EIP-712 signature over
+  `PhaseConfiguration(token, id, currency, packagePrice, Phase[] phases, nonce,
+  deadline)`.
+
+The phases are typed (`Phase(start, end, root, walletCap, payerKeyed,
+leafPriced)`), so wallets show every window, cap and flag. The currency and
+package price are the sale's resolved terms, so an approval never carries over
+to another currency or price.
 
 The nonce is single-use and revocable (`revokeConsentNonce`), and contract
 creators sign through ERC-1271. `phaseConfigurationDigest` returns the digest
 to sign. Leaf prices at or above the package price need no approval.
 
 **Gifts** are zero-price sales: a package price of zero, or an approved leaf
-price of zero.
+price of zero. A gift pays no network fee, by design.
 
 ### Payments
 
@@ -136,6 +156,14 @@ can), is paid through the revenue escrow instead, so no recipient can block a
 sale. Nothing is kept: a fixed-price adapter holds no funds between
 transactions, and a Dutch adapter holds exactly its outstanding ETH credits.
 
+### Events for indexers
+
+A recipient's ERC-1155 hook runs inside `purchase`, and a creator's hook may
+close the sale there. So a purchase's `SaleSettled` can follow its sale's
+`SaleClosed`. Treat `SaleClosed` as "no new purchases", not as the last event
+of a sale. A Dutch `SaleStarted.endTime` is when the curve reaches its resting
+price; the sale itself continues until closed or sold out.
+
 ### Dutch clearing semantics
 
 There is no clearing price.
@@ -156,7 +184,9 @@ There is no clearing price.
 | Selector | Role |
 | --- | --- |
 | `setTarget`, `setFederationRegistry` | SUCCESSOR_SETTER (30 days) |
-| `openSale`, `closeSale` | PLATFORM (the creator needs no role) |
+| `openSale`, `closeSale` | PLATFORM (the creator needs no role; anyone closes an ended fixed-price sale) |
+| `pause` | PAUSER (immediate) |
+| `unpause` | UNPAUSER |
 | `revokeConsentNonce` | the creator itself |
 
 The PLATFORM check uses the AccessManager's `canCall` for the selector, and

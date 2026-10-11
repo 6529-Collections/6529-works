@@ -3,11 +3,10 @@ pragma solidity ^0.8.24;
 
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IFixedPriceSale } from "../interfaces/IFixedPriceSale.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { LockedTerms, Payment, PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
@@ -19,32 +18,56 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 /// @title FixedPriceSale
 /// @notice The shared fixed-price adapter with allowlist phases (ADR 0001 sections 5 and 6).
 ///         6529 Editions sells copies through it; a zero package price, or a zero leaf price the
-///         artist approved, makes it a gift.
+///         artist approved, makes it a gift (no network fee either).
 /// @dev Leaves bind `(chainid, adapter, token, id, phase, account, cap, price)` (see
-///      {allowlistLeaf}), so a tree is built before the sale opens. `account` is the wallet that
-///      receives the tokens, or the payer in a payer-keyed phase, and the payer is always
-///      authenticated (`msg.sender`, or the Permit2 signer): nobody can spend another wallet's
-///      leaf for themselves (PR #744's High finding). Anyone may still pay for an allowlisted
-///      recipient; the tokens go to that recipient and count against its cap. Caps count per
-///      `(token, id, phase, account)`, across sales, so reopening a token with the same tree
-///      never resets them; a fresh drop uses new phase indices. A leaf price below the package
-///      price needs the artist's
-///      approval: the creator opens the sale, or signs the `PhaseConfiguration` with a
-///      single-use, revocable nonce. Governance: map `openSale` and `closeSale` to PLATFORM (the
-///      creator needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER.
+///      {allowlistLeaf}), so a tree is built before the sale opens; tooling must emit at most one
+///      leaf per account and phase. `account` is the wallet that receives the tokens, or the
+///      payer in a payer-keyed phase, and the payer is always authenticated (`msg.sender`, or
+///      the Permit2 signer): nobody can spend another wallet's leaf for themselves (PR #744's
+///      High finding). Anyone may still pay for an allowlisted recipient; the tokens go to that
+///      recipient and count against its cap. Caps, public phases included, count per
+///      `(token, id, phase index, keyed wallet)` across sales, so reopening a token with the
+///      same tree never resets them; a fresh drop uses new phase indices. A leaf price below the
+///      package price needs the artist's approval: the creator opens the sale, or signs the
+///      typed {PHASE_CONFIGURATION_TYPEHASH} (token, currency, package price and every phase),
+///      with a single-use, revocable nonce. Anyone may close a sale whose phases have all
+///      ended. Governance: map `openSale` and `closeSale` to PLATFORM (the creator needs no
+///      role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to PAUSER
+///      and `unpause` to UNPAUSER.
 contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
+    /// @notice The EIP-712 struct hashed for {phaseConfigurationDigest} (phases as an array).
+    struct Configuration {
+        address token;
+        uint256 id;
+        address currency;
+        uint256 packagePrice;
+        bytes32 phasesHash;
+        uint256 nonce;
+        uint64 deadline;
+    }
+
     /// @notice Domain label of allowlist leaves.
     bytes32 public constant ALLOWLIST_LEAF_DOMAIN = keccak256("6529WORKS_ALLOWLIST_LEAF_V1");
     /// @notice The longest accepted Merkle proof (trees of up to 2**32 leaves).
     uint256 public constant MAX_PROOF_DEPTH = 32;
+    /// @notice EIP-712 type of one phase.
+    bytes32 public constant PHASE_TYPEHASH = keccak256(
+        "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,"
+        "bool leafPriced)"
+    );
+    /// @notice EIP-712 type of the creator's approval: the token, its resolved currency and
+    ///         package price, and every phase, typed so wallets display them.
+    bytes32 public constant PHASE_CONFIGURATION_TYPEHASH = keccak256(
+        "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,"
+        "Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,"
+        "uint32 walletCap,bool payerKeyed,bool leafPriced)"
+    );
 
     mapping(uint256 saleId => Phase[]) private _phases;
-
-    /// @notice Copies each keyed wallet bought, per token, ID and phase index, across sales.
     mapping(
         address token
             => mapping(uint256 id => mapping(uint256 phase => mapping(address account => uint256)))
-    ) public purchasedOf;
+    ) private _purchased;
 
     /// @inheritdoc IFixedPriceSale
     mapping(address creator => mapping(uint256 nonce => bool)) public isConsentNonceUsed;
@@ -55,17 +78,15 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     /// @param authority_ The AccessManager.
     /// @param escrow_ The revenue escrow.
-    /// @param assets_ The currency allowlist.
     /// @param permit2_ The Permit2 deployment.
     /// @param economicsResolver_ The economics resolver.
     constructor(
         address authority_,
         IRevenueEscrow escrow_,
-        IAssetAllowlist assets_,
         ISignatureTransfer permit2_,
         IEconomicsResolver economicsResolver_
     )
-        MintSaleBase(authority_, escrow_, assets_, permit2_, economicsResolver_)
+        MintSaleBase(authority_, escrow_, permit2_, economicsResolver_)
         EIP712(Typehashes.FIXED_PRICE_SALE_NAME, Typehashes.DOMAIN_VERSION)
     { }
 
@@ -75,27 +96,21 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         uint256 id,
         Phase[] calldata phases_,
         ArtistConsent calldata consent
-    ) external returns (uint256 saleId) {
-        (LockedTerms memory locked, PrimaryTerms memory t) = _terms(token, id, SaleKind.FIXED_PRICE);
+    ) external whenNotPaused returns (uint256 saleId) {
+        (PrimaryTerms memory t, bool federated) = _terms(token, id, SaleKind.FIXED_PRICE);
         bool approved = msg.sender == t.creator;
         if (!approved && !_isPlatform()) revert NotSaleManager(msg.sender);
         if (_openSales[token][id] != 0) revert SaleAlreadyOpen(token, id);
         (uint64 start, uint64 end) = _checkPhases(phases_);
         if (consent.signature.length != 0) {
-            _consume(
-                t.creator,
-                phaseConfigurationDigest(token, id, phases_, consent.nonce, consent.deadline),
-                consent
-            );
+            _consume(token, id, t, phases_, consent);
             approved = true;
         }
-        saleId = _store(locked, approved);
+        saleId = _store(token, id, t, approved, federated);
         for (uint256 i; i < phases_.length; ++i) {
             _phases[saleId].push(phases_[i]);
         }
-        emit SaleStarted(
-            saleId, token, id, SaleKind.FIXED_PRICE, locked.currency, locked.price, start, end
-        );
+        emit SaleStarted(saleId, token, id, SaleKind.FIXED_PRICE, t.currency, t.price, start, end);
         emit PhasesSet(saleId, phases_, approved);
     }
 
@@ -107,8 +122,9 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @inheritdoc IFixedPriceSale
+    /// @dev Anyone may close a sale whose phases have all ended, freeing its token.
     function closeSale(uint256 saleId) external {
-        if (!_close(saleId)) revert NotSaleManager(msg.sender);
+        if (!_close(saleId, _ended(saleId))) revert NotSaleManager(msg.sender);
         emit SaleClosed(saleId);
     }
 
@@ -116,13 +132,14 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     function purchase(Purchase calldata p, bytes32[] calldata proof, Payment calldata payment)
         external
         payable
+        whenNotPaused
         nonReentrant
     {
         address recipient = p.recipient == address(0) ? payment.payer : p.recipient;
         uint256 total = _admit(p, proof, payment.payer, recipient) * p.quantity;
         if (payment.amount != total) revert InvalidPayment();
         _collect(
-            _listings[p.saleId].terms.currency,
+            p.saleId,
             payment,
             total,
             keccak256(
@@ -149,7 +166,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         returns (LockedTerms memory terms, bool artistApproved, bool closed)
     {
         Listing storage l = _listing(saleId);
-        return (l.terms, l.approved, l.closed);
+        return (_locked(l), l.approved, l.closed);
     }
 
     /// @inheritdoc IFixedPriceSale
@@ -159,14 +176,23 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     /// @inheritdoc IFixedPriceSale
     /// @dev The count of the sale's `(token, id)` at that phase index, shared by every sale of
-    ///      the token.
+    ///      the token (see the four-argument overload).
     function purchased(uint256 saleId, uint256 phase, address account)
         external
         view
         returns (uint256)
     {
-        LockedTerms storage terms = _listing(saleId).terms;
-        return purchasedOf[terms.token][terms.id][phase][account];
+        Listing storage l = _listing(saleId);
+        return _purchased[l.token][l.id][phase][account];
+    }
+
+    /// @notice Copies `account` bought at phase index `phase` of any sale of `(token, id)`.
+    function purchased(address token, uint256 id, uint256 phase, address account)
+        external
+        view
+        returns (uint256)
+    {
+        return _purchased[token][id][phase][account];
     }
 
     /// @inheritdoc IFixedPriceSale
@@ -208,27 +234,21 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         );
     }
 
-    /// @notice The EIP-712 digest a creator signs to approve `phases_` for token `id`
-    ///         (`Typehashes.PHASE_CONFIGURATION` in this contract's domain).
+    /// @notice The EIP-712 digest a creator signs to approve `phases_` for token `id` sold in
+    ///         `currency` at `packagePrice` (the sale's resolved currency and package price).
     function phaseConfigurationDigest(
         address token,
         uint256 id,
+        address currency,
+        uint256 packagePrice,
         Phase[] calldata phases_,
         uint256 nonce,
         uint64 deadline
     ) public view returns (bytes32) {
-        return _hashTypedDataV4(
-            keccak256(
-                abi.encode(
-                    Typehashes.PHASE_CONFIGURATION,
-                    token,
-                    id,
-                    keccak256(abi.encode(phases_)),
-                    nonce,
-                    deadline
-                )
-            )
+        Configuration memory c = Configuration(
+            token, id, currency, packagePrice, _hashPhases(phases_), nonce, deadline
         );
+        return _hashTypedDataV4(keccak256(abi.encode(PHASE_CONFIGURATION_TYPEHASH, c)));
     }
 
     /// @inheritdoc MintSaleBase
@@ -242,14 +262,23 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
             || super.supportsInterface(interfaceId);
     }
 
-    /// @dev Verifies and spends the creator's approval.
-    function _consume(address creator, bytes32 digest, ArtistConsent calldata consent) private {
+    /// @dev Verifies and spends the creator's approval of `phases_` at the resolved terms.
+    function _consume(
+        address token,
+        uint256 id,
+        PrimaryTerms memory t,
+        Phase[] calldata phases_,
+        ArtistConsent calldata consent
+    ) private {
+        bytes32 digest = phaseConfigurationDigest(
+            token, id, t.currency, t.price, phases_, consent.nonce, consent.deadline
+        );
         if (
             // forge-lint: disable-next-line(block-timestamp)
-            block.timestamp > consent.deadline || isConsentNonceUsed[creator][consent.nonce]
-                || !SignatureVerifier.isValid(creator, digest, consent.signature)
+            block.timestamp > consent.deadline || isConsentNonceUsed[t.creator][consent.nonce]
+                || !SignatureVerifier.isValid(t.creator, digest, consent.signature)
         ) revert InvalidArtistConsent();
-        isConsentNonceUsed[creator][consent.nonce] = true;
+        isConsentNonceUsed[t.creator][consent.nonce] = true;
     }
 
     /// @dev Checks the phase is open, the leaf, the price and the caps; counts the purchase;
@@ -268,22 +297,22 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         }
         if (p.quantity == 0) revert InvalidQuantity();
         address account = phase.payerKeyed ? payer : recipient;
-        unit = l.terms.price;
+        unit = l.price;
         if (phase.root != 0) {
-            _verifyLeaf(p, proof, phase.root, account, l.terms);
+            _verifyLeaf(p, proof, phase.root, account, l);
             if (phase.leafPriced) {
                 if (p.leafPrice < unit && !l.approved) revert PriceBelowPackage(p.leafPrice, unit);
                 unit = p.leafPrice;
             }
         }
-        address token = l.terms.token;
-        uint256 id = l.terms.id;
-        uint256 bought = purchasedOf[token][id][p.phase][account] + p.quantity;
+        address token = l.token;
+        uint256 id = l.id;
+        uint256 bought = _purchased[token][id][p.phase][account] + p.quantity;
         if (
             (phase.root != 0 && bought > p.leafCap)
                 || (phase.walletCap != 0 && bought > phase.walletCap)
         ) revert WalletCapExceeded(p.saleId, p.phase, account);
-        purchasedOf[token][id][p.phase][account] = bought;
+        _purchased[token][id][p.phase][account] = bought;
     }
 
     function _verifyLeaf(
@@ -291,14 +320,30 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         bytes32[] calldata proof,
         bytes32 root,
         address account,
-        LockedTerms storage terms
+        Listing storage l
     ) private view {
-        bytes32 leaf = allowlistLeaf(
-            terms.token, terms.id, p.phase, account, p.leafCap, p.leafPrice
-        );
+        bytes32 leaf = allowlistLeaf(l.token, l.id, p.phase, account, p.leafCap, p.leafPrice);
         if (proof.length > MAX_PROOF_DEPTH || !MerkleProof.verifyCalldata(proof, root, leaf)) {
             revert NotAllowlisted(p.saleId, p.phase, account);
         }
+    }
+
+    /// @dev Whether every phase of the sale has ended (an unknown sale has none).
+    function _ended(uint256 saleId) private view returns (bool) {
+        Phase[] storage list = _phases[saleId];
+        for (uint256 i; i < list.length; ++i) {
+            // forge-lint: disable-next-line(block-timestamp)
+            if (list[i].end > block.timestamp) return false;
+        }
+        return true;
+    }
+
+    function _hashPhases(Phase[] calldata phases_) private pure returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](phases_.length);
+        for (uint256 i; i < phases_.length; ++i) {
+            hashes[i] = keccak256(abi.encode(PHASE_TYPEHASH, phases_[i]));
+        }
+        return keccak256(abi.encodePacked(hashes));
     }
 
     function _checkPhases(Phase[] calldata phases_)

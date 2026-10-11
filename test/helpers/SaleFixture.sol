@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
@@ -11,6 +10,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import {
     MockAssetAllowlist,
     MockEconomicsResolver,
@@ -27,6 +27,8 @@ import {
 abstract contract SaleFixture is Test {
     uint64 internal constant PLATFORM_ROLE = Roles.PLATFORM;
     uint64 internal constant SUCCESSOR_SETTER_ROLE = Roles.SUCCESSOR_SETTER;
+    uint64 internal constant PAUSER_ROLE = Roles.PAUSER;
+    uint64 internal constant UNPAUSER_ROLE = Roles.UNPAUSER;
     uint32 internal constant FEE_SHARE = 25_000;
     uint256 internal constant SIZE = 1000;
 
@@ -40,6 +42,8 @@ abstract contract SaleFixture is Test {
 
     address internal admin = makeAddr("admin");
     address internal platform = makeAddr("platform");
+    address internal pauser = makeAddr("pauser");
+    address internal unpauser = makeAddr("unpauser");
     address internal stranger = makeAddr("stranger");
     address internal relayer = makeAddr("relayer");
     address internal seller = makeAddr("predictedSplitWallet");
@@ -63,7 +67,7 @@ abstract contract SaleFixture is Test {
         allowlist = new MockAssetAllowlist();
         permit2 = new MockPermit2();
         usd = new PermitToken();
-        resolver = new MockEconomicsResolver();
+        resolver = new MockEconomicsResolver(allowlist);
         resolver.set(PRODUCT_FEDERATED, federatedNetwork, 10_000);
         allowlist.set(CURRENCY_ETH, true);
         allowlist.set(address(usd), true);
@@ -72,11 +76,10 @@ abstract contract SaleFixture is Test {
     function _deps()
         internal
         view
-        returns (IRevenueEscrow, IAssetAllowlist, ISignatureTransfer, IEconomicsResolver)
+        returns (IRevenueEscrow, ISignatureTransfer, IEconomicsResolver)
     {
         return (
             IRevenueEscrow(address(escrow)),
-            IAssetAllowlist(address(allowlist)),
             ISignatureTransfer(address(permit2)),
             IEconomicsResolver(address(resolver))
         );
@@ -93,9 +96,16 @@ abstract contract SaleFixture is Test {
         manager.setTargetFunctionRole(adapter, setter, SUCCESSOR_SETTER_ROLE);
         manager.grantRole(PLATFORM_ROLE, platform, 0);
         manager.grantRole(SUCCESSOR_SETTER_ROLE, admin, 0);
+        bytes4[] memory pausing = new bytes4[](1);
+        pausing[0] = MintSaleBase.pause.selector;
+        manager.setTargetFunctionRole(adapter, pausing, PAUSER_ROLE);
+        pausing[0] = MintSaleBase.unpause.selector;
+        manager.setTargetFunctionRole(adapter, pausing, UNPAUSER_ROLE);
+        manager.grantRole(PAUSER_ROLE, pauser, 0);
+        manager.grantRole(UNPAUSER_ROLE, unpauser, 0);
         ISaleAdapter(adapter).setTarget(address(editions), true);
         vm.stopPrank();
-        editions.setMinter(adapter, true);
+        editions.setAdmittedMinter(adapter, true);
     }
 
     function _terms(bytes32 kind, address currency, uint256 price, bytes memory params)

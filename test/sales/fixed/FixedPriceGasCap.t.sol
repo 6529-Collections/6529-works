@@ -49,7 +49,9 @@ contract FixedPriceGasCapTest is FixedPriceBase {
         }
         uint64 deadline = t + 1 hours;
         safe.accept(
-            fixedSale.phaseConfigurationDigest(address(editions), TOKEN_ID, phases, 1, deadline)
+            fixedSale.phaseConfigurationDigest(
+                address(editions), TOKEN_ID, address(token), UNIT, phases, 1, deadline
+            )
         );
         IFixedPriceSale.ArtistConsent memory consent =
             IFixedPriceSale.ArtistConsent(1, deadline, new bytes(4096));

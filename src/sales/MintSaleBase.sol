@@ -9,10 +9,12 @@ import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
+import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
@@ -24,8 +26,7 @@ import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
     PRODUCT_EDITIONS,
-    PRODUCT_FEDERATED,
-    SHARE_DENOMINATOR
+    PRODUCT_FEDERATED
 } from "../interfaces/types/EconomicsTypes.sol";
 import {
     LockedTerms,
@@ -41,25 +42,42 @@ import { ISignatureTransfer } from "./ISignatureTransfer.sol";
 ///         token contracts they serve, terms locked when a sale opens, payment in ETH or an
 ///         allowlisted ERC-20 (direct, EIP-2612 permit, or a Permit2 signed payment intent),
 ///         minting per purchase through `IMintTarget`, proceeds pushed to the seller split
-///         wallet and the network with the revenue-escrow fallback, and pull-based credits.
-/// @dev A sale copies the token's `PrimaryTerms` into `LockedTerms` when it opens, so a later
-///      change to a product default only affects sales opened afterwards. `CURRENCY_DEFAULT` is
-///      resolved once, at open, through the asset allowlist (6529 Editions for listed tokens,
-///      6529 Stream Federated for registry tokens). A purchase still requires its locked
-///      currency to be active, so deprecating an asset halts running sales in it as an
-///      emergency tightening; claims are never blocked. A token served through the federation
-///      registry pays the network fee share of its registry entry to the network fee recipient
-///      of the economics resolver (6529 Stream Federated product), not the token's. The token
-///      decides what may be minted (size, window, admitted adapters). At most one sale per
+///         wallet and the network with the revenue-escrow fallback, pull-based credits, and an
+///         emergency pause.
+/// @dev A sale copies the token's `PrimaryTerms` when it opens, so a later change to a product
+///      default only affects sales opened afterwards. The currency is resolved once, at open,
+///      through `IEconomicsResolver.resolveCurrency` (6529 Editions for listed tokens, 6529
+///      Stream Federated for registry tokens); `CURRENCY_DEFAULT` is accepted only with a zero
+///      price, so a priced sale always names its currency. A purchase still requires its locked
+///      currency to be active, so deprecating an asset halts running sales in it as an emergency
+///      tightening; claims are never blocked. A token served through the federation registry
+///      must run the code its entry records, pays the entry's network fee share to the
+///      resolver's federated fee recipient, and stops selling when the registry delists it. The
+///      token decides what may be minted (size, window, admitted minters). At most one sale per
 ///      `(token, id)` is open at a time. Every ERC-20 movement is checked by exact balance
-///      delta, and every entry point that moves value is non-reentrant.
-abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, ReentrancyGuardTransient {
-    /// @notice A sale: its locked terms, whether the artist approved its phases (fixed price
-    ///         only), and whether it is closed.
+///      delta, and every entry point that moves value is non-reentrant. While paused, sales
+///      neither open nor sell; closing and claiming always work.
+abstract contract MintSaleBase is
+    ISaleAdapter,
+    ERC165,
+    AccessManaged,
+    Pausable,
+    ReentrancyGuardTransient
+{
+    /// @notice A sale's locked terms and state, packed so the flags share the first slot.
+    /// @dev `approved` is the artist's approval of a fixed-price phase configuration;
+    ///      `federated` marks a token served through the federation registry.
     struct Listing {
-        LockedTerms terms;
+        address token;
+        uint32 feeShare;
         bool approved;
         bool closed;
+        bool federated;
+        uint256 id;
+        address currency;
+        uint256 price;
+        address seller;
+        address feeRecipient;
     }
 
     /// @notice Gas forwarded with an ETH payout; a wallet that needs more is paid in escrow.
@@ -67,12 +85,12 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
 
     /// @notice Where a payout goes when the wallet or the token refuses it.
     IRevenueEscrow public immutable escrow;
-    /// @notice The governed currency allowlist.
-    IAssetAllowlist public immutable assets;
     /// @notice The Permit2 contract that executes signed payment intents.
     ISignatureTransfer public immutable permit2;
-    /// @notice The economics resolver: the network fee recipient of federated sales.
+    /// @notice The economics resolver: currency resolution and the federated fee recipient.
     IEconomicsResolver public immutable economicsResolver;
+    /// @notice The resolver's asset allowlist, read on every purchase.
+    IAssetAllowlist public immutable assets;
 
     /// @notice The ID the next sale gets; sale IDs start at 1.
     uint256 public nextSaleId = 1;
@@ -93,9 +111,12 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     /// @notice No sale has this ID.
     error UnknownSale(uint256 saleId);
     /// @notice The token's terms are unusable: no seller or fee recipient, a fee share above the
-    ///         denominator, or a mint that returned another token ID.
+    ///         denominator, federated code that differs from its registry entry, or a mint that
+    ///         returned another token ID.
     error InvalidSaleTerms(address token, uint256 id);
-    /// @notice The currency is not active on the asset allowlist.
+    /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
+    error PricedDefaultCurrency(address token, uint256 id);
+    /// @notice The locked currency is no longer active on the asset allowlist.
     error CurrencyNotActive(address currency);
     /// @notice A purchase must buy at least one copy.
     error InvalidQuantity();
@@ -109,30 +130,30 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     /// @notice The sale is already closed.
     error SaleAlreadyClosed(uint256 saleId);
 
-    /// @param authority_ The AccessManager governing `setTarget`, `setFederationRegistry` and
-    ///        the PLATFORM role.
+    /// @param authority_ The AccessManager governing the setters, the pause and the PLATFORM
+    ///        role.
     /// @param escrow_ The revenue escrow for refused payouts.
-    /// @param assets_ The currency allowlist.
     /// @param permit2_ The Permit2 deployment.
-    /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated).
+    /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated); its
+    ///        asset allowlist is read once here.
     constructor(
         address authority_,
         IRevenueEscrow escrow_,
-        IAssetAllowlist assets_,
         ISignatureTransfer permit2_,
         IEconomicsResolver economicsResolver_
     ) AccessManaged(authority_) {
-        if (
-            address(escrow_) == address(0) || address(assets_) == address(0)
-                || address(permit2_) == address(0)
-        ) revert InvalidAddress();
+        if (address(escrow_) == address(0) || address(permit2_) == address(0)) {
+            revert InvalidAddress();
+        }
         if (!_fits(address(economicsResolver_), type(IEconomicsResolver).interfaceId)) {
             revert InvalidDependency(address(economicsResolver_));
         }
+        address allowlist = economicsResolver_.assetAllowlist();
+        if (allowlist.code.length == 0) revert InvalidDependency(allowlist);
         escrow = escrow_;
-        assets = assets_;
         permit2 = permit2_;
         economicsResolver = economicsResolver_;
+        assets = IAssetAllowlist(allowlist);
     }
 
     /// @inheritdoc ISaleAdapter
@@ -153,6 +174,16 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         federationRegistry = next;
         federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
         emit FederationRegistrySet(expected, next);
+    }
+
+    /// @notice Stops new sales and purchases. PAUSER role (immediate).
+    function pause() external restricted {
+        _pause();
+    }
+
+    /// @notice Resumes sales and purchases. UNPAUSER role.
+    function unpause() external restricted {
+        _unpause();
     }
 
     /// @inheritdoc ISaleAdapter
@@ -189,32 +220,50 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     function _terms(address token, uint256 id, bytes32 kind)
         internal
         view
-        returns (LockedTerms memory locked, PrimaryTerms memory t)
+        returns (PrimaryTerms memory t, bool federated)
     {
-        bool listed = isListed[token];
-        if (!listed && !_federated(token)) revert TargetNotAllowed(token);
+        federated = !isListed[token];
+        if (federated && !_federated(token)) revert TargetNotAllowed(token);
         t = IMintTarget(token).primaryTerms(id, "");
         if (t.saleKind != kind) revert IMintTarget.SaleKindMismatch(kind, t.saleKind);
-        if (!listed) {
-            t.feeShare = IFederationRegistry(federationRegistry).entry(token).feeShare;
-            t.feeRecipient = economicsResolver.economics(PRODUCT_FEDERATED).feeRecipient;
+        if (t.currency == CURRENCY_DEFAULT && t.price != 0) {
+            revert PricedDefaultCurrency(token, id);
         }
-        if (t.currency == CURRENCY_DEFAULT) {
-            t.currency = assets.defaultCurrency(listed ? PRODUCT_EDITIONS : PRODUCT_FEDERATED);
+        bytes32 product = federated ? PRODUCT_FEDERATED : PRODUCT_EDITIONS;
+        t.currency = economicsResolver.resolveCurrency(product, t.currency);
+        if (federated) {
+            IFederationRegistry.Entry memory e =
+                IFederationRegistry(federationRegistry).entry(token);
+            if (e.codeHash != token.codehash) revert InvalidSaleTerms(token, id);
+            t.feeShare = e.feeShare;
+            t.feeRecipient = economicsResolver.networkFeeRecipient(product);
         }
-        if (!assets.isActive(t.currency)) revert CurrencyNotActive(t.currency);
         if (
-            t.seller == address(0) || t.feeRecipient == address(0) || t.feeShare > SHARE_DENOMINATOR
+            t.seller == address(0) || t.feeRecipient == address(0)
+                || t.feeShare > Splits.DENOMINATOR
         ) revert InvalidSaleTerms(token, id);
-        locked = LockedTerms(token, id, t.currency, t.price, t.seller, t.feeRecipient, t.feeShare);
     }
 
-    /// @dev Locks `locked` under a new sale ID as the open sale of its `(token, id)`; the caller
-    ///      has checked that none is open.
-    function _store(LockedTerms memory locked, bool approved) internal returns (uint256 saleId) {
+    /// @dev Locks `t` under a new sale ID as the open sale of `(token, id)`; the caller has
+    ///      checked that none is open.
+    function _store(address token, uint256 id, PrimaryTerms memory t, bool approved, bool federated)
+        internal
+        returns (uint256 saleId)
+    {
         saleId = nextSaleId++;
-        _openSales[locked.token][locked.id] = saleId;
-        _listings[saleId] = Listing(locked, approved, false);
+        _openSales[token][id] = saleId;
+        _listings[saleId] = Listing(
+            token,
+            t.feeShare,
+            approved,
+            false,
+            federated,
+            id,
+            t.currency,
+            t.price,
+            t.seller,
+            t.feeRecipient
+        );
     }
 
     /// @dev Whether the caller may run the current selector through the PLATFORM mapping now.
@@ -224,33 +273,37 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         return immediate && delay == 0;
     }
 
-    /// @dev Closes an open sale if the caller is PLATFORM or the token's current creator.
-    function _close(uint256 saleId) internal returns (bool authorized) {
+    /// @dev Closes an open sale if `anyone` may, or the caller is PLATFORM or the token's
+    ///      current creator.
+    function _close(uint256 saleId, bool anyone) internal returns (bool authorized) {
         Listing storage l = _listing(saleId);
         if (l.closed) revert SaleAlreadyClosed(saleId);
-        LockedTerms storage terms = l.terms;
         if (
-            !_isPlatform()
-                && msg.sender != IMintTarget(terms.token).primaryTerms(terms.id, "").creator
+            !anyone && !_isPlatform()
+                && msg.sender != IMintTarget(l.token).primaryTerms(l.id, "").creator
         ) return false;
         l.closed = true;
-        delete _openSales[terms.token][terms.id];
+        delete _openSales[l.token][l.id];
         return true;
     }
 
-    /// @dev Takes `charge` of the sale's currency from `pay.payer` and returns the ETH sent above
-    ///      it. `value` is the payable entry point's `msg.value`. DIRECT and PERMIT need
+    /// @dev Takes `charge` of sale `saleId`'s currency from `pay.payer` and returns the ETH sent
+    ///      above it. `value` is the payable entry point's `msg.value`. The locked currency must
+    ///      be active and a federated token still listed. DIRECT and PERMIT need
     ///      `pay.payer == msg.sender`; PERMIT2 authenticates the payer by its signature over
     ///      `witness`, and both balance deltas are checked here because Permit2 does not.
     function _collect(
-        address currency,
+        uint256 saleId,
         Payment calldata pay,
         uint256 charge,
         bytes32 witness,
         string memory witnessType,
         uint256 value
     ) internal returns (uint256 excess) {
+        Listing storage l = _listings[saleId];
+        address currency = l.currency;
         if (!assets.isActive(currency)) revert CurrencyNotActive(currency);
+        if (l.federated && !_federated(l.token)) revert TargetNotAllowed(l.token);
         if (pay.amount < charge) revert InvalidPayment();
         if (currency == CURRENCY_ETH) {
             if (
@@ -264,24 +317,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             revert PaymentExpired(pay.deadline);
         }
         if (pay.method == PaymentMethod.PERMIT2) {
-            uint256 ours = TokenTransfer.balanceOf(currency, address(this));
-            uint256 theirs = TokenTransfer.balanceOf(currency, pay.payer);
-            permit2.permitWitnessTransferFrom(
-                ISignatureTransfer.PermitTransferFrom(
-                    ISignatureTransfer.TokenPermissions(currency, pay.amount),
-                    pay.nonce,
-                    pay.deadline
-                ),
-                ISignatureTransfer.SignatureTransferDetails(address(this), charge),
-                pay.payer,
-                witness,
-                witnessType,
-                pay.signature
-            );
-            if (
-                TokenTransfer.balanceOf(currency, address(this)) != ours + charge
-                    || TokenTransfer.balanceOf(currency, pay.payer) != theirs - charge
-            ) revert TokenTransfer.TokenBalanceMismatch(currency);
+            _permit2(currency, pay, charge, witness, witnessType);
             return 0;
         }
         if (pay.payer != msg.sender) revert InvalidPayment();
@@ -304,10 +340,10 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         uint256 quantity,
         uint256 total
     ) internal {
-        LockedTerms storage l = _listings[saleId].terms;
+        Listing storage l = _listings[saleId];
         (uint256 minted,) = IMintTarget(l.token).mint(recipient, l.id, quantity, "");
         if (minted != l.id) revert InvalidSaleTerms(l.token, l.id);
-        uint256 fee = Math.mulDiv(total, l.feeShare, SHARE_DENOMINATOR);
+        uint256 fee = Math.mulDiv(total, l.feeShare, Splits.DENOMINATOR);
         _pay(l.currency, l.feeRecipient, fee);
         _pay(l.currency, l.seller, total - fee);
         emit SaleSettled(
@@ -329,7 +365,12 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     /// @dev The listing of an existing sale.
     function _listing(uint256 saleId) internal view returns (Listing storage l) {
         l = _listings[saleId];
-        if (l.terms.token == address(0)) revert UnknownSale(saleId);
+        if (l.token == address(0)) revert UnknownSale(saleId);
+    }
+
+    /// @dev The locked terms of an existing sale.
+    function _locked(Listing storage l) internal view returns (LockedTerms memory) {
+        return LockedTerms(l.token, l.id, l.currency, l.price, l.seller, l.feeRecipient, l.feeShare);
     }
 
     /// @dev Whether `token` is active in the installed federation registry, with its code
@@ -338,6 +379,32 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         address registry = federationRegistry;
         return registry != address(0) && registry.codehash == federationRegistryCodeHash
             && IFederationRegistry(registry).isActive(token);
+    }
+
+    /// @dev Pulls `charge` through a Permit2 witness transfer and checks both balance deltas.
+    function _permit2(
+        address currency,
+        Payment calldata pay,
+        uint256 charge,
+        bytes32 witness,
+        string memory witnessType
+    ) private {
+        uint256 ours = TokenTransfer.balanceOf(currency, address(this));
+        uint256 theirs = TokenTransfer.balanceOf(currency, pay.payer);
+        permit2.permitWitnessTransferFrom(
+            ISignatureTransfer.PermitTransferFrom(
+                ISignatureTransfer.TokenPermissions(currency, pay.amount), pay.nonce, pay.deadline
+            ),
+            ISignatureTransfer.SignatureTransferDetails(address(this), charge),
+            pay.payer,
+            witness,
+            witnessType,
+            pay.signature
+        );
+        if (
+            TokenTransfer.balanceOf(currency, address(this)) != ours + charge
+                || TokenTransfer.balanceOf(currency, pay.payer) != theirs - charge
+        ) revert TokenTransfer.TokenBalanceMismatch(currency);
     }
 
     /// @dev Whether `dependency` has code, is not EIP-7702 delegated, and supports `interfaceId`.

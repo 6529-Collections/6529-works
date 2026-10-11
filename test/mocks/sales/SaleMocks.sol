@@ -11,7 +11,12 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { Payee, ProductEconomics, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import {
+    CURRENCY_DEFAULT,
+    ProductEconomics,
+    WorkTerms
+} from "src/interfaces/types/EconomicsTypes.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
@@ -23,7 +28,6 @@ import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
 /// @dev An `IMintTarget` shaped like 6529 Editions: per-ID terms and size, a minter allowlist,
 ///      the adapter's `saleKind()` check, and real ERC-1155 receiver checks on mint.
 contract MockEditionTarget is ERC1155, IMintTarget {
-    error NotMinter(address caller);
     error KindMismatch(bytes32 adapterKind, bytes32 termsKind);
     error EditionUnavailable(uint256 id);
     error UnknownEdition(uint256 id);
@@ -31,7 +35,7 @@ contract MockEditionTarget is ERC1155, IMintTarget {
     mapping(uint256 id => PrimaryTerms) internal _terms;
     mapping(uint256 id => uint256) public size;
     mapping(uint256 id => uint256) public minted;
-    mapping(address adapter => bool) public minters;
+    mapping(address adapter => bool) public isAdmittedMinter;
     /// @dev Added to the returned token ID, to simulate a token that mints something else.
     uint256 public idOffset;
 
@@ -50,8 +54,9 @@ contract MockEditionTarget is ERC1155, IMintTarget {
         _terms[id].currency = currency;
     }
 
-    function setMinter(address adapter, bool allowed) external {
-        minters[adapter] = allowed;
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+        emit AdmittedMinterSet(adapter, admitted);
     }
 
     function setIdOffset(uint256 offset) external {
@@ -62,7 +67,7 @@ contract MockEditionTarget is ERC1155, IMintTarget {
         external
         returns (uint256, PrimaryTerms memory t)
     {
-        if (!minters[msg.sender]) revert NotMinter(msg.sender);
+        if (!isAdmittedMinter[msg.sender]) revert NotAdmittedMinter(msg.sender);
         t = _terms[id];
         if (t.saleKind == 0) revert UnknownEdition(id);
         bytes32 kind = ISaleAdapter(msg.sender).saleKind();
@@ -129,33 +134,52 @@ contract MockAssetAllowlist {
     }
 }
 
-/// @dev The economics resolver's `economics(product)` read, set by the test; the rest is unused.
+/// @dev The economics resolver's reads the adapters use: `resolveCurrency` over the mock
+///      allowlist, `networkFeeRecipient`, `economics` and `assetAllowlist`; the rest is unused.
 contract MockEconomicsResolver is IEconomicsResolver {
+    MockAssetAllowlist public immutable allowlist;
     mapping(bytes32 product => ProductEconomics) internal _economics;
+
+    constructor(MockAssetAllowlist allowlist_) {
+        allowlist = allowlist_;
+    }
 
     function set(bytes32 product, address feeRecipient, uint32 feeShare) external {
         _economics[product] = ProductEconomics(feeRecipient, feeShare, 6529);
     }
 
-    function economics(bytes32 product) external view returns (ProductEconomics memory e) {
+    function resolveCurrency(bytes32 product, address requested)
+        external
+        view
+        returns (address currency)
+    {
+        currency = requested == CURRENCY_DEFAULT ? allowlist.defaultCurrency(product) : requested;
+        if (!allowlist.isActive(currency)) revert CurrencyNotAllowed(currency);
+    }
+
+    function economics(bytes32 product) public view returns (ProductEconomics memory e) {
         e = _economics[product];
         if (e.feeRecipient == address(0)) revert UnknownProduct(product);
     }
 
-    function newWorkTerms(bytes32, Payee[] calldata) external pure returns (WorkTerms memory) {
-        revert("unused");
+    function networkFeeRecipient(bytes32 product) external view returns (address) {
+        return economics(product).feeRecipient;
     }
 
-    function resolveCurrency(bytes32, address) external pure returns (address) {
+    function assetAllowlist() external view returns (address) {
+        return address(allowlist);
+    }
+
+    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
+        external
+        pure
+        returns (WorkTerms memory)
+    {
         revert("unused");
     }
 
     function defaultLicense(bytes32) external pure returns (License memory) {
         revert("unused");
-    }
-
-    function assetAllowlist() external pure returns (address) {
-        return address(0);
     }
 
     function splitFactory() external pure returns (address) {
@@ -183,8 +207,13 @@ contract MockFederationRegistry is IFederationRegistry {
     mapping(address token => Entry) internal _entries;
 
     function setEntry(address token, uint32 feeShare, bool active) external {
+        _entries[token].codeHash = token.codehash;
         _entries[token].feeShare = feeShare;
         _entries[token].status = active ? Status.ACTIVE : Status.DELISTED;
+    }
+
+    function setCodeHash(address token, bytes32 codeHash) external {
+        _entries[token].codeHash = codeHash;
     }
 
     function register(address token, Entry calldata e) external {

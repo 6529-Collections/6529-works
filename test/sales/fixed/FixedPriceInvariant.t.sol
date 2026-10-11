@@ -50,6 +50,9 @@ contract FixedPriceHandler is Test {
     uint256 public tokenFees;
     mapping(uint256 id => uint256) public minted;
     uint256 internal nonce;
+    /// @dev Set if an over-cap or foreign-leaf purchase ever succeeds.
+    bool public breached;
+    uint256 public attacks;
 
     constructor(
         FixedPriceSale sale_,
@@ -157,6 +160,42 @@ contract FixedPriceHandler is Test {
         minted[TOKEN_ID] += quantity;
     }
 
+    /// @dev Tries to buy one copy more than a leaf's remaining allowance.
+    function attackOverCap(uint256 leafSeed, uint256 payerSeed) external {
+        uint256 i = leafSeed % 4;
+        uint256 quantity = caps0[i] - sale.purchased(ethSale, 0, actors[i]) + 1;
+        _attack(
+            actors[payerSeed % 4],
+            IFixedPriceSale.Purchase(ethSale, 0, actors[i], quantity, caps0[i], prices0[i]),
+            SaleMerkle.proof(leaves0, i),
+            prices0[i] * quantity
+        );
+    }
+
+    /// @dev Tries to use another wallet's leaf for the attacker: minting to itself in the
+    ///      recipient-keyed phase, or paying as itself in the payer-keyed phase.
+    function attackForeignLeaf(uint256 leafSeed, uint256 attackerSeed, bool payerKeyed) external {
+        uint256 i = leafSeed % 4;
+        uint256 j = attackerSeed % 4;
+        if (j == i) j = (j + 1) % 4;
+        address attacker = actors[j];
+        if (payerKeyed) {
+            _attack(
+                attacker,
+                IFixedPriceSale.Purchase(ethSale, 1, actors[i], 1, caps1[i], 0),
+                SaleMerkle.proof(leaves1, i),
+                PRICE
+            );
+        } else {
+            _attack(
+                attacker,
+                IFixedPriceSale.Purchase(ethSale, 0, attacker, 1, caps0[i], prices0[i]),
+                SaleMerkle.proof(leaves0, i),
+                prices0[i]
+            );
+        }
+    }
+
     function setWallet(bool acceptsEth, bool blockedByToken) external {
         wallet.setOpen(acceptsEth);
         token.setBlocked(address(wallet), blockedByToken);
@@ -189,6 +228,22 @@ contract FixedPriceHandler is Test {
         ethPaid += total;
         ethFees += total * FEE_SHARE / 100_000;
         minted[ETH_ID] += purchase.quantity;
+    }
+
+    function _attack(
+        address payer,
+        IFixedPriceSale.Purchase memory purchase,
+        bytes32[] memory proof,
+        uint256 total
+    ) internal {
+        ++attacks;
+        vm.deal(payer, total);
+        vm.prank(payer);
+        try sale.purchase{ value: total }(
+            purchase, proof, Payment(PaymentMethod.DIRECT, payer, total, 0, 0, "")
+        ) {
+            breached = true;
+        } catch { }
     }
 
     function _intent(uint256 p, IFixedPriceSale.Purchase memory purchase, uint256 total)
@@ -260,13 +315,15 @@ contract FixedPriceInvariantTest is StdInvariant, FixedPriceBase {
         uint256 tokenSale = _open(platform, handler.TOKEN_ID(), tokenPhases);
         handler.setSales(ethSale, tokenSale);
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](8);
         selectors[0] = FixedPriceHandler.buyAllowlisted.selector;
         selectors[1] = FixedPriceHandler.buyPayerKeyed.selector;
         selectors[2] = FixedPriceHandler.buyPublic.selector;
         selectors[3] = FixedPriceHandler.buyToken.selector;
         selectors[4] = FixedPriceHandler.setWallet.selector;
         selectors[5] = FixedPriceHandler.warp.selector;
+        selectors[6] = FixedPriceHandler.attackOverCap.selector;
+        selectors[7] = FixedPriceHandler.attackForeignLeaf.selector;
         targetSelector(FuzzSelector(address(handler), selectors));
         targetContract(address(handler));
     }
@@ -285,7 +342,11 @@ contract FixedPriceInvariantTest is StdInvariant, FixedPriceBase {
             handler.buyPayerKeyed(i, i + 2, 1);
             handler.buyPublic(i, i + 3, 1);
             handler.buyToken(i, i + 1, 1, i % 2 == 0);
+            handler.attackOverCap(i, i + 1);
+            handler.attackForeignLeaf(i, i + 2, i % 2 == 0);
         }
+        assertEq(handler.attacks(), 16);
+        assertFalse(handler.breached());
         assertGt(escrow.owed(address(wallet), CURRENCY_ETH), 0);
         assertGt(escrow.owed(address(wallet), address(token)), 0);
         assertEq(editions.minted(handler.ETH_ID()), handler.SIZE());
@@ -297,6 +358,10 @@ contract FixedPriceInvariantTest is StdInvariant, FixedPriceBase {
         invariant_FeesAreExact();
         invariant_MintedWithinSupplyAndAccounted();
         invariant_PerWalletCapsHold();
+    }
+
+    function invariant_NoOverCapOrForeignLeafPurchaseSucceeds() public view {
+        assertFalse(handler.breached());
     }
 
     function invariant_EthIsPaidOrEscrowedNeverKept() public view {

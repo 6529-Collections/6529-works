@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
@@ -29,8 +28,8 @@ abstract contract DutchBase is SaleFixture {
 
     function setUp() public virtual {
         _setUpBase();
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p, IEconomicsResolver r) = _deps();
-        dutch = new DutchSale(address(manager), e, a, p, r);
+        (IRevenueEscrow e, ISignatureTransfer p, IEconomicsResolver r) = _deps();
+        dutch = new DutchSale(address(manager), e, p, r);
         bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = IDutchSale.openSale.selector;
         selectors[1] = IDutchSale.closeSale.selector;

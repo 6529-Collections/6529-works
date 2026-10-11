@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { LockedTerms, Payment, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    CURRENCY_DEFAULT,
+    CURRENCY_ETH,
+    PRODUCT_EDITIONS
+} from "src/interfaces/types/EconomicsTypes.sol";
+import { LockedTerms, Payment, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
@@ -25,8 +28,8 @@ abstract contract FixedPriceBase is SaleFixture {
 
     function setUp() public virtual {
         _setUpBase();
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p, IEconomicsResolver r) = _deps();
-        fixedSale = new FixedPriceSale(address(manager), e, a, p, r);
+        (IRevenueEscrow e, ISignatureTransfer p, IEconomicsResolver r) = _deps();
+        fixedSale = new FixedPriceSale(address(manager), e, p, r);
         bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = IFixedPriceSale.openSale.selector;
         selectors[1] = IFixedPriceSale.closeSale.selector;
@@ -81,9 +84,13 @@ abstract contract FixedPriceBase is SaleFixture {
         uint256 nonce,
         uint64 deadline
     ) internal view returns (IFixedPriceSale.ArtistConsent memory) {
+        PrimaryTerms memory t = editions.primaryTerms(id, "");
+        address currency = t.currency == CURRENCY_DEFAULT
+            ? allowlist.defaultCurrency(PRODUCT_EDITIONS)
+            : t.currency;
         bytes32 digest = fixedSale.phaseConfigurationDigest(
-                address(editions), id, phases, nonce, deadline
-            );
+            address(editions), id, currency, t.price, phases, nonce, deadline
+        );
         return IFixedPriceSale.ArtistConsent(nonce, deadline, _sig(key, digest));
     }
 
