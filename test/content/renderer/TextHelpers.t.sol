@@ -227,7 +227,8 @@ contract TextHelpersTest is Test {
 
     /// @dev The bytes after the end of the text, in the last word of its memory, are not part of
     ///      it, whatever they are: a `<` or a `%` there is neither counted nor rewritten.
-    function test_BytesPastTheEndAreNotRead() public view {
+    ///      (The libraries are called directly: through the harness the memory would be clean.)
+    function test_BytesPastTheEndAreNotRead() public pure {
         for (uint256 length = 1; length < 70; ++length) {
             bytes memory text = new bytes(length);
             for (uint256 i; i < length; ++i) {
@@ -240,7 +241,7 @@ contract TextHelpersTest is Test {
                     mstore8(add(add(text, add(0x20, length)), i), 0x3c)
                 }
             }
-            (bool ok, string memory out) = h.neutralizeUpTo(string(text), 0);
+            (bool ok, string memory out) = HtmlScript.neutralize(string(text), 0);
             assertTrue(ok, "no `<` in the text");
             assertEq(out, string(text));
             assembly ("memory-safe") {
@@ -248,7 +249,7 @@ contract TextHelpersTest is Test {
                     mstore8(add(add(text, add(0x20, length)), i), 0x25)
                 }
             }
-            (ok, out) = h.percentUpTo(string(text), 0);
+            (ok, out) = DataUri.escape(string(text), 0);
             assertTrue(ok, "no `%` in the text");
             assertEq(out, string(text));
         }
