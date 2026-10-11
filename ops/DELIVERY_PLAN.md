@@ -19,7 +19,7 @@
   - `tokenURI` costs 8M gas or less.
 - **Port, don't merge.** Reuse comes from the ADR 0001 §17 keep list, rewritten
   to the budgets. The RC1 reference
-  ([6529Stream](https://github.com/6529-Collections/6529Stream)) and its PR #744
+  (the private 6529Stream repository) and its PR #744
   are reference material only.
 - **Tests come with the code:**
   - stateful invariants for every contract that moves money (≥256 runs × depth

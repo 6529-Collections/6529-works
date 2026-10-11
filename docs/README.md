@@ -26,8 +26,8 @@ an ADR disagree, the accepted ADR wins, and a later ADR amends an earlier one. T
 | [0002: AccessManager hardening](adr/0002-access-manager-hardening.md) | How guardians cancel any scheduled operation, guardian rules, the cold recovery admin, manifests after genesis, and the selector delay classes |
 | [0003: build-time decisions](adr/0003-build-time-decisions.md) | What building the modules changed: ABI package hashing, the Stream and WorkRecords split, the 350K start-gas budget, pull-only artist payouts, base64 attestation, and the EIP-7825 transaction cap |
 
-Earlier decisions for the RC1 reference implementation are in the
-[6529Stream ADR index](https://github.com/6529-Collections/6529Stream/tree/main/docs/adr).
+Earlier decisions for the RC1 reference implementation are in the ADR index of the
+private 6529Stream repository.
 
 ## Modules
 
@@ -88,5 +88,5 @@ pinned in [`requirements-tools.in`](../requirements-tools.in) and hash-locked fo
 ## Project history
 
 [CHANGELOG.md](../CHANGELOG.md) records what changed. The RC1 reference implementation,
-which runs on Sepolia and predates this repository, is in
-[6529Stream](https://github.com/6529-Collections/6529Stream).
+which runs on Sepolia and predates this repository, is kept in the private 6529Stream
+repository.

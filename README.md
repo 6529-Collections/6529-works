@@ -201,8 +201,8 @@ in `lib/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and, for automated agents, [AG
 - **Where to look.** The [delivery plan](ops/DELIVERY_PLAN.md) is the single source of
   delivery state, the [launch checklist](https://github.com/6529-Collections/6529-works/issues/1)
   tracks what remains before launch, and the [docs index](docs/README.md) lists everything
-  else. The earlier RC1 reference implementation, deployed on Sepolia, lives in
-  [6529Stream](https://github.com/6529-Collections/6529Stream).
+  else. The earlier RC1 reference implementation, deployed on Sepolia, is kept in the
+  private 6529Stream repository.
 
 ## Security
 
