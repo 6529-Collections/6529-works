@@ -126,6 +126,13 @@ contract GenesisConfigTest is Test {
 
     // ------------------------------------------------------------------ compiled selectors
 
+    function _s9(bytes4[9] memory xs) internal pure returns (bytes4[] memory out) {
+        out = new bytes4[](9);
+        for (uint256 i; i < 9; ++i) {
+            out[i] = xs[i];
+        }
+    }
+
     function _s(bytes4[7] memory xs, uint256 n) internal pure returns (bytes4[] memory out) {
         require(n <= xs.length, "_s: n exceeds the listed selectors");
         out = new bytes4[](n);
@@ -209,17 +216,18 @@ contract GenesisConfigTest is Test {
             );
         }
         if (_eq(name, "ArtistRegistry")) {
-            return _s(
+            return _s9(
                 [
                     IArtistRegistry.vetoChange.selector,
                     IArtistRegistry.stageOverride.selector,
                     IArtistRegistry.setConsolidationSource.selector,
+                    IArtistRegistry.resolveContested.selector,
                     IArtistRegistry.bindPackageRegistry.selector,
                     IArtistRegistry.bindStream.selector,
                     IArtistRegistry.bindSplitFactory.selector,
+                    IArtistRegistry.bindStatementLog.selector,
                     IArtistRegistry.bindFederationRegistry.selector
-                ],
-                7
+                ]
             );
         }
         if (_eq(name, "StatementLog")) {
@@ -421,7 +429,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 68, "59 mapped, 8 genesis-only, 1 deferred");
+        assertEq(total, 70, "60 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

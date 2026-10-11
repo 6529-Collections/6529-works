@@ -2,15 +2,15 @@
   "cc0TextFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
   "cc0TextSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
   "chainId": 31337,
-  "configHash": "0x9a659d708cad093f66b01d11a46db656705d54f28ac9d29b09ccd4ac7a4c1bfb",
+  "configHash": "0xe3b8da1045ae651e38b4611c407f4172f62a14624e7a01cccb3ff613a78165e6",
   "confirmed": false,
   "contracts": {
     "ArtistRegistry": {
-      "address": "0x15f586f20028ef8Fe9576BD7630Cc17Fa598D475",
-      "codehash": "0x8e80e26ed529ee8e6e3d7d9e4b2d9cc53462294d7f0b0bedb5dc70ed473142ee"
+      "address": "0xb44d19Ce8ad97b9D68266e2f63C38dB382e667aF",
+      "codehash": "0x44d3ba186a997f8331a345ccfa8692a18e3267f6a9c150b7af8515b79b8b66ac"
     },
     "AssetAllowlist": {
-      "address": "0xe2BEfed747199a2fF939890A262a0509cD1881ef",
+      "address": "0x4209d1bF97fC907db95CCf992cAd634b6621f3F2",
       "codehash": "0x54d75443d560b206836eafe946e23bfd54c09415e3cb7a8c0ca67fe4203aa1ff"
     },
     "ClaimRouter": {
@@ -18,79 +18,79 @@
       "codehash": "0x23e41b2773f3cb18a74aa5c45114ef10ae66874fea7eb7d87cd0b1fa4b5d8898"
     },
     "ConsolidationAdapter": {
-      "address": "0x7270AB31F519C57c122D9E171DaA70112eb169BE",
-      "codehash": "0xd49134b755f6001b9292801995562b9facda5dfc927582abca29f5e8a5f58ae2"
+      "address": "0xf2474E7B6Da9ACEBfdd3a096d411EC50ad4d9768",
+      "codehash": "0x96ae34e8ebf660b2babb4683d0774e220e150bf89dc914dd50158e16aa13cee7"
     },
     "ContentStore": {
       "address": "0x90dab9862487FAaeDBeF52542148E5983CC155c5",
       "codehash": "0x8fb0a2c67e7a7096fb8fa1e87be9fdc54cc7e7fba486d094999f2bd25df7cc50"
     },
     "CurationVerifier": {
-      "address": "0x45AD0bE1CE37143989558AdEE4Cb763c6D70454f",
-      "codehash": "0xfbb34319653b906de4eb3b91aaee28dc0c3af38bb9c48d281aa1489d6eb7f08c"
+      "address": "0x5411D871B1BFc8558e7fbA0803f5a046b6FCf16d",
+      "codehash": "0xbbe0504e997daca6b75103248231c32fa79af5198b7f8da22b3f94c837b182a6"
     },
     "DependencyRegistry": {
-      "address": "0x50916b0b4B50d9c400BD761cCFDFddcf707c4542",
+      "address": "0x013dDB7B43f058Ee1AF2421d099d12Eb6aEf645D",
       "codehash": "0x6ccb25a2c362e0e55bcbe3946467e7390bc1aec97a15774d10051db7e4228e48"
     },
     "DutchSale": {
-      "address": "0x3870D602c4d6CdE94982dE827C0170BBdc534273",
-      "codehash": "0x877917deeb1a4a9b8e86d40ff09a4c1291645e06009423b405c355617c53c8eb"
+      "address": "0xd397711DdEb77BB7E07809e69BFaCB7687DA9203",
+      "codehash": "0xe2fc1809085da4d0d1b469fcd5e98fe29b3bb99e5d9ad6e54d7bc3156743a6cf"
     },
     "EconomicsResolver": {
-      "address": "0x7A995C48ECB2c0Bb6915e5CD96017f5BC50103D7",
-      "codehash": "0x0b8245e8992700c011a6e9075d06d2eaada95babf740fa7aa5668960f6d3b830"
+      "address": "0x2a5C62CB21fBAb99bac81598B0Dc25Cc8e085Ee9",
+      "codehash": "0x4d6072412e0855b87d7f68f5c58003eee8aedc75266ddcf7feb51b2a555afd53"
     },
     "Editions": {
-      "address": "0x3142720d166007d67650486F76927E3fDC172AC6",
-      "codehash": "0xccc0fc02f50f50504207bcdde40389107ef214fc537916eb95d6ec846e664b90"
+      "address": "0x0671fE0985bf59a9408a1f86E4702D4b621478e2",
+      "codehash": "0x45008a0b27b92e936fe2d7e09aa809afffd072755537ccb519bcc2d93918b96f"
     },
     "EnglishAuction": {
-      "address": "0x81cA3a0C73f2C577D39f6EbADF5d1Eb9Eb62e13e",
-      "codehash": "0x3bc6de88250b794bf2d1bc29f3a52f19a0daacf874ea4324d6b37ed45a2c05c4"
+      "address": "0x29F826B6d1EFeC53Ae6068ac38A0dF4a39981609",
+      "codehash": "0x0321fae4047b0e30a1611585020fa8bc402b23ff0af4df5e4e869d82246a1e61"
     },
     "FixedPriceSale": {
-      "address": "0x80221D7b70c02cD12d326FFBcb3fe2cbcA9aB282",
-      "codehash": "0x6c76683af26d24690bd4857c54663ecb86e53d5f1221dac5928bfa7106cb4435"
+      "address": "0x40e804F494f0d02126d182448b5430b439aF8c27",
+      "codehash": "0xd135bd5b470111d8474435a8cec04ef321d4ee6cf9e63e6b29abbe33708502e0"
     },
     "GovernanceConfigurator": {
-      "address": "0xC8Cd434F1Cef60f0C24da0376820D9ace2817Ee0",
-      "codehash": "0x75c9711a9e5751cd262b117844197245c01c4d5a8196af940a27664c35bfd7df"
+      "address": "0xAE691A9C33cA28B88d53dF5de6d423f7665dF47A",
+      "codehash": "0xd7f2824d2e772f10857e11b7eef60aff2c2002153c62d5160dff870e92fa706b"
     },
     "PackageRegistry": {
-      "address": "0x536E1bC0DFfD82dde8601212C0F90BE0Ab91973b",
-      "codehash": "0x1235839f7ff5eb99c60d73dc6607d7090fdd6c2125256d465f9ec36fb68322d5"
+      "address": "0xe0eA1210B1E8AdA272F0944A9482A12A72423E62",
+      "codehash": "0x38aa2625a70a650a70507128344328d0ca345704083f2cfcad825621d0e9a441"
     },
     "ReleaseVerifier": {
       "address": "0xD3761cb127F84Ce20C2223B9eC610f963Bf105ce",
       "codehash": "0x967b26c538650997e7047581cef20d4496122d0986c8bbc34550cc29160e26c0"
     },
     "Renderer": {
-      "address": "0x7Eb78b9CF27c6f38B1AA79AaF7C7E1f5BA445d37",
-      "codehash": "0x209d30d870725f1256271ad3f28a5e758e20662739f56308f338ac71547e0e5a"
+      "address": "0x7d6958a6D9246Fce6CE7313f0493CDd3A4Da3f80",
+      "codehash": "0x84517e9b42285d001cc019deda051a4869c80c3e38299928f641074b3a7bfdcc"
     },
     "RevenueEscrow": {
-      "address": "0x1fD03B740C4a99aAD69fc330ED39fB5935C566d5",
-      "codehash": "0xc2cf74c54f58fb881ec1ec717d30dc052de42a63955349adb8e5c0f054079d37"
+      "address": "0x6378cE57734Fe04532Eec0a2fa03f8D324188773",
+      "codehash": "0x34320eccb06073c7bc0a50b5ae1424b098c731e15955831506c034bd82d1f42c"
     },
     "SplitFactory": {
-      "address": "0xd0636a32d7eeb40e8c8C495A5CB01dEB9f7484a3",
-      "codehash": "0x0b405f24713adaf7bf5f585d1c17afbd637de8b8bd0509e4496ec0b1024989b6"
+      "address": "0xE3767318ADb97b9a9336327e8f019dAf432cec10",
+      "codehash": "0xef3fcaacd2b82393522198332f43dfdf70192b6cf40471c28713e39d30550bc7"
     },
     "StatementLog": {
-      "address": "0xaD1467a4f67b16700209e2a8Fec600B06Fee060d",
-      "codehash": "0xd955998e511d04d09c72b811c8567183b4e4a44ebcda440d0050a6f6f2669872"
+      "address": "0x7512C246947dEC802b8bb713eAeC3DBB8887D19b",
+      "codehash": "0xec1e9ab4669dc9976713ca77c8570bb4324a5047609556ef19a380ceba802fb4"
     },
     "Stream": {
-      "address": "0x12A54A6e34860f62C6A02C3202d2971d14e9951D",
-      "codehash": "0x0de740cbca9f5b270df694606fcf593984d7715770fcc3bf814b24dc5fe40707"
+      "address": "0x1cAFCC61F72bC6a57472b0F15595DC72BB073662",
+      "codehash": "0xc7417b6ea0598f385d964ed874f09651b6259e4f6cdb367666f841540fb593d9"
     },
     "WorkRecords": {
-      "address": "0x6a851b3A83f8B5A9C0fBC3ED5D2Eff62b23E8FB9",
-      "codehash": "0x08da60b68b2fb69db744a34f556468dfd3db3421791b5ea39c7e7b9fd5fcb0df"
+      "address": "0xe186eBB8495c28A65C5C639e9B090A7b89B44567",
+      "codehash": "0x6c53cc7881ea494a21663e0a9eccc7da28aa5aa815c5508290258219c3a37bc9"
     },
     "WorksAccessManager": {
-      "address": "0x94C6ab32855774E07f953b5404B3AEaFEBC7a6C4",
+      "address": "0xfb19514E37234D435575f0da4af648060d117255",
       "codehash": "0x323db4674fa36f5b5ca30e0cd77fc228bba5a500a6d50a2316922d89a95139b1"
     }
   },
@@ -127,7 +127,7 @@
   "placeholders": true,
   "standIns": [],
   "startBlock": 0,
-  "timestamp": 1791747292,
-  "wiringCalls": 18,
-  "wiringHash": "0x698f05e581c5e3183fc6de6ed54d94cb4185f5a8c1889998c891bdeb44fe7dba"
+  "timestamp": 1791749341,
+  "wiringCalls": 19,
+  "wiringHash": "0xa5d978d6fb527fecb41eff42fd40eb89f0140401bdcc65733da8268e7827d7fc"
 }

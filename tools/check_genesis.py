@@ -44,8 +44,8 @@ CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "success
 # selectors themselves.
 GENESIS_FUNCTIONS = frozenset({
     "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
-    "bindFederationRegistry", "setAdmittedMinter", "setTarget", "setDefaultCurrency",
-    "appendGovernanceManifest",
+    "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
+    "setDefaultCurrency", "appendGovernanceManifest",
 })
 
 # What a deployment's copy of the configuration may change (check 6).

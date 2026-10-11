@@ -151,9 +151,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(_cancellers()[0], wallet, "the oldest standing first");
     }
 
-    /// @dev PoC-3, the residual risk (owner decision): once a hijack executes, the thief's own
-    ///      prepared wallets gain standing for the new authority and can cancel each override.
-    ///      The artist's genuine wallet keeps standing for the 30-day grace after the hijack.
+    /// @dev PoC-3, the residual exposure: once a hijack executes, the thief's own prepared
+    ///      wallets gain standing for the new authority, so they are captured and can contest
+    ///      each override (a TDH vote then decides; ADR 0003 owner decision 1). The artist's
+    ///      genuine wallet keeps standing for the 30-day grace after the hijack.
     function test_PoC3_ResidualRiskThiefWalletsCancelOverridesAfterAHijack() public {
         address thiefWallet = makeAddr("thiefWallet");
         _consolidate(thief, thiefWallet);
@@ -170,7 +171,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(c[1], thiefWallet);
         vm.prank(thiefWallet);
         registry.cancelChange(artistId);
-        assertEq(registry.authorityOf(artistId), thief, "the override was killed");
+        assertTrue(registry.pendingChange(artistId).contestedAt != 0, "contested, not killed");
+        assertEq(registry.authorityOf(artistId), thief);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
 
         // After the grace, only the thief's wallet is captured.
         vm.warp(block.timestamp + 30 days);
@@ -192,6 +196,9 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(thief, thief), thiefKey);
         vm.prank(artist);
         registry.cancelChange(artistId);
+        assertTrue(registry.pendingChange(artistId).contestedAt != 0, "the old key contests");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
 
         _revoke(newAuthority, artist);
         registry.refreshStanding(artistId);
@@ -436,6 +443,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         vm.prank(wallet);
         registry.cancelChange(artistId);
         _assertActivityNow();
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(governor);

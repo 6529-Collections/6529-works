@@ -464,6 +464,8 @@ contract ArtistRegistryTest is IdentityFixture {
             previousAuthority: artist,
             stagedAt: uint64(block.timestamp),
             executableAt: uint64(block.timestamp + 180 days),
+            contestedAt: 0,
+            priorOutcome: bytes32(0),
             evidenceHash: keccak256("evidence"),
             cancellers: _walletOnly()
         });
@@ -975,6 +977,9 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), address(0));
         vm.prank(wallet);
         registry.cancelChange(artistId);
+        assertEq(registry.payoutAddress(artistId), address(0), "still frozen while contested");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
         assertEq(registry.payoutAddress(artistId), artist);
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, artist), newKey);
         assertEq(registry.payoutAddress(artistId), artist, "an override keeping it");
@@ -1166,6 +1171,8 @@ contract ArtistRegistryTest is IdentityFixture {
             previousAuthority: artist,
             stagedAt: uint64(block.timestamp),
             executableAt: uint64(block.timestamp + 7 days),
+            contestedAt: 0,
+            priorOutcome: bytes32(0),
             evidenceHash: bytes32(0),
             cancellers: _walletOnly()
         });

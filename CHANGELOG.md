@@ -30,6 +30,13 @@
   surface, `FederatedListFull` and `AcceptanceUsed`; `IConsolidationSource`
   gains `consolidations` and `effectiveAt`; `OVERRIDE_ACCEPTANCE` is nonce-free
   and consumed once by digest.
+- Identity: contested overrides (ADR 0003 owner decision 1). A captured wallet's
+  cancel during the notice turns a 180-day override into a contest that a TDH
+  vote decides through the governed `resolveContested`, which cites the vote's
+  DISPUTE_OUTCOME statement, recorded after the contest.
+  The payout stays frozen meanwhile, the guardian may veto, and an unresolved
+  contest lapses after a year (`expireContest`). `bindStatementLog` is a new
+  genesis wiring call.
 - Deployment: `script/` deploys the merged v1 contracts with CREATE2 (`DeployV1`),
   installs the genesis configuration, records the deployment, and confirms it against the
   chain (`Verify.s.sol`), which recomputes every address from the recorded constructor

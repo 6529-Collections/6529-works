@@ -11,7 +11,10 @@ import {
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ArtistRegistryHandler, IdentityActors } from "./ArtistRegistryHandler.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
-import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
+import {
+    DisputeOutcomeLogMock,
+    SplitFactoryWalletsMock
+} from "../mocks/identity/IdentityWorksMocks.sol";
 
 /// @notice Stateful invariants for the artist registry (ADR 0001 section 11). The handler stages,
 ///         overrides, cancels, vetoes, replays, executes, refreshes standing and moves time and
@@ -24,17 +27,22 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     function setUp() public override {
         super.setUp();
         SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
-        vm.prank(admin);
+        DisputeOutcomeLogMock outcomes = new DisputeOutcomeLogMock(address(registry));
+        vm.startPrank(admin);
         registry.bindSplitFactory(address(factory));
+        registry.bindStatementLog(address(outcomes));
+        vm.stopPrank();
         handler = new ArtistRegistryHandler(
             IdentityActors({
                 registry: registry,
                 adapter: adapter,
                 delegation: delegation,
                 factory: factory,
+                outcomes: outcomes,
                 artistId: artistId,
                 guardian: guardian,
                 governor: governor,
+                successorSetter: successorSetter,
                 keys: [artistKey, walletKey, newKey, thiefKey],
                 payouts: [artist, payout, makeAddr("estatePayout")]
             })
@@ -50,7 +58,8 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(identity.payout, handler.ghostPayout());
         assertEq(registry.authorityOf(artistId), handler.ghostAuthority());
         PendingChange memory p = registry.pendingChange(artistId);
-        bool frozen = p.kind != ChangeKind.NONE && p.next.payout != identity.payout;
+        bool lapsed = p.contestedAt != 0 && block.timestamp >= uint256(p.contestedAt) + 365 days;
+        bool frozen = p.kind != ChangeKind.NONE && p.next.payout != identity.payout && !lapsed;
         assertEq(registry.payoutAddress(artistId), frozen ? address(0) : handler.ghostPayout());
     }
 
@@ -73,6 +82,30 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertLe(p.cancellers.length, Limits.MAX_CANCELLERS);
         assertEq(keccak256(abi.encode(p.cancellers)), handler.ghostCancellers());
         assertTrue(p.next.authority != address(0) && p.next.payout != address(0));
+        if (p.contestedAt == 0) {
+            assertEq(p.priorOutcome, bytes32(0));
+            return;
+        }
+        assertTrue(p.kind > ChangeKind.STANDARD, "only overrides are contested");
+        assertTrue(p.contestedAt >= p.stagedAt && p.contestedAt < p.executableAt, "in the notice");
+    }
+
+    /// @dev The handler's contest paths work end to end: a fixed walk contests an override,
+    ///      records a vote and voids it, then contests another and lets it lapse. (The random
+    ///      campaign reaches each path too, though not every run reaches all of them.)
+    function test_HandlerReachesContestResolveAndLapse() public {
+        handler.stageOverride(0, 2, 0); // CONTESTED, to the fresh key
+        handler.cancel(1); // the artist's recorded wallet contests
+        handler.recordOutcome(1);
+        handler.resolve(false, 1); // a fresh vote voids it
+        handler.stageOverride(3, 2, 0); // another CONTESTED override, new evidence
+        handler.cancel(1);
+        handler.warp(200 days);
+        handler.warp(200 days);
+        handler.expire(); // lapsed after a year
+        assertEq(handler.contested(), 2);
+        assertEq(handler.resolved(), 1);
+        assertEq(handler.lapsed(), 1);
     }
 
     /// @dev The authority resolves to the artist, and the standing snapshot stays bounded and

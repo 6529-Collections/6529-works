@@ -13,7 +13,10 @@ import {
     Standing
 } from "src/interfaces/types/IdentityTypes.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
-import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
+import {
+    DisputeOutcomeLogMock,
+    SplitFactoryWalletsMock
+} from "../mocks/identity/IdentityWorksMocks.sol";
 
 /// @notice The accounts the handler drives. `keys` are the artist key, an established
 ///         consolidated wallet, a fresh key and a thief; `payouts` are payout candidates.
@@ -22,9 +25,11 @@ struct IdentityActors {
     ConsolidationAdapter adapter;
     DelegationManagementMock delegation;
     SplitFactoryWalletsMock factory;
+    DisputeOutcomeLogMock outcomes;
     uint256 artistId;
     address guardian;
     address governor;
+    address successorSetter;
     uint256[4] keys;
     address[3] payouts;
 }
@@ -36,7 +41,8 @@ struct IdentityActors {
 ///         cancels by every kind of caller; guardian vetoes and redirect attempts; replays of used
 ///         payloads and acceptances; heartbeats; nonce burns; standing refreshes, checked against
 ///         a standing model; consolidations made and revoked between any two keys; payouts that
-///         become split wallets, so stale changes are cleared at execution; and time. Ghosts of
+///         become split wallets, so stale changes are cleared at execution; contested
+///         overrides resolved by recorded votes or lapsing after a year; and time. Ghosts of
 ///         the identity, nonce and last activity change only with the calls that may change them.
 contract ArtistRegistryHandler is Test {
     bytes32 internal constant PROFILE = keccak256("profile/punk6529");
@@ -45,6 +51,8 @@ contract ArtistRegistryHandler is Test {
     ConsolidationAdapter internal immutable adapter;
     DelegationManagementMock internal immutable delegation;
     SplitFactoryWalletsMock internal immutable factory;
+    DisputeOutcomeLogMock internal immutable outcomes;
+    address internal immutable successorSetter;
     uint256 internal immutable artistId;
     address internal immutable guardian;
     address internal immutable governor;
@@ -58,6 +66,9 @@ contract ArtistRegistryHandler is Test {
     bytes32 public ghostCancellers;
     uint256 public executed;
     uint256 public cleared;
+    uint256 public contested;
+    uint256 public resolved;
+    uint256 public lapsed;
     mapping(bytes32 pair => bool) internal consolidated;
 
     struct Used {
@@ -87,6 +98,8 @@ contract ArtistRegistryHandler is Test {
         adapter = a.adapter;
         delegation = a.delegation;
         factory = a.factory;
+        outcomes = a.outcomes;
+        successorSetter = a.successorSetter;
         artistId = a.artistId;
         guardian = a.guardian;
         governor = a.governor;
@@ -154,11 +167,102 @@ contract ArtistRegistryHandler is Test {
         for (uint256 i; i < p.cancellers.length; ++i) {
             allowed = allowed || p.cancellers[i] == caller;
         }
-        if (p.kind == ChangeKind.NONE) _expect(_noPending());
-        else if (!allowed) _expect(_notAuthorized(caller));
+        bool overrideOpen = allowed && p.kind > ChangeKind.STANDARD && p.contestedAt == 0;
+        bool late = overrideOpen && block.timestamp >= p.executableAt;
+        if (p.kind == ChangeKind.NONE) {
+            _expect(_noPending());
+        } else if (!allowed) {
+            _expect(_notAuthorized(caller));
+        } else if (late) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.ContestWindowClosed.selector, artistId, p.executableAt
+                )
+            );
+        }
+        bool contests = overrideOpen && !late;
+        if (contests) {
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.ChangeContested(artistId, caller);
+        }
         vm.prank(caller);
         registry.cancelChange(artistId);
-        if (p.kind != ChangeKind.NONE && allowed) ghostLastActivity = uint64(block.timestamp);
+        if (p.kind == ChangeKind.NONE || !allowed || late) return;
+        PendingChange memory q = registry.pendingChange(artistId);
+        if (p.contestedAt != 0) {
+            // A cancel of a contested override does nothing.
+            assertEq(keccak256(abi.encode(q)), keccak256(abi.encode(p)));
+            return;
+        }
+        ghostLastActivity = uint64(block.timestamp);
+        if (!contests) return;
+        assertEq(q.contestedAt, block.timestamp);
+        assertEq(q.priorOutcome, outcomes.latestDisputeOutcome(address(registry), artistId));
+        ++contested;
+    }
+
+    /// @dev Records (or clears) the vote outcome the statement log reports for the artist.
+    function recordOutcome(uint256 seed) external {
+        outcomes.setOutcome(address(registry), artistId, seed % 4 == 0 ? bytes32(0) : _ref(seed));
+    }
+
+    /// @dev Applies a vote to a contested override, citing the recorded outcome or a wrong one.
+    function resolve(bool uphold, uint256 seed) external {
+        PendingChange memory p = registry.pendingChange(artistId);
+        bytes32 recorded = outcomes.latestDisputeOutcome(address(registry), artistId);
+        bytes32 ref = seed % 3 == 0 ? _ref(seed) : recorded;
+        bool live = p.contestedAt != 0 && block.timestamp < uint256(p.contestedAt) + 365 days;
+        bool ok;
+        if (!live) {
+            _expect(abi.encodeWithSelector(IArtistRegistry.NotContested.selector, artistId));
+        } else if (ref == bytes32(0) || ref != recorded) {
+            _expect(
+                abi.encodeWithSelector(IArtistRegistry.OutcomeNotRecorded.selector, artistId, ref)
+            );
+        } else if (ref == p.priorOutcome) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.OutcomePredatesContest.selector, artistId, ref
+                )
+            );
+        } else if (uphold && block.timestamp < p.executableAt) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.ChangeNotDue.selector, artistId, p.executableAt
+                )
+            );
+        } else {
+            ok = true;
+        }
+        vm.prank(successorSetter);
+        registry.resolveContested(artistId, uphold, ref);
+        if (!ok) return;
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        ++resolved;
+        if (!uphold || factory.isWallet(p.next.payout)) return;
+        ghostPayout = p.next.payout;
+        ghostAuthority = p.next.authority;
+        ghostLastActivity = uint64(block.timestamp);
+        ++executed;
+    }
+
+    /// @dev Lets anyone lapse a contest nobody resolved within a year.
+    function expire() external {
+        PendingChange memory p = registry.pendingChange(artistId);
+        uint256 expiresAt = uint256(p.contestedAt) + 365 days;
+        if (p.contestedAt == 0) {
+            _expect(abi.encodeWithSelector(IArtistRegistry.NotContested.selector, artistId));
+        } else if (block.timestamp < expiresAt) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.ContestNotExpired.selector, artistId, uint64(expiresAt)
+                )
+            );
+        }
+        registry.expireContest(artistId);
+        if (p.contestedAt == 0 || block.timestamp < expiresAt) return;
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        ++lapsed;
     }
 
     function veto() external {
@@ -184,6 +288,10 @@ contract ArtistRegistryHandler is Test {
         PendingChange memory p = registry.pendingChange(artistId);
         if (p.kind == ChangeKind.NONE) {
             _expect(_noPending());
+        } else if (p.contestedAt != 0) {
+            _expect(abi.encodeWithSelector(IArtistRegistry.OverrideContested.selector, artistId));
+            registry.executeChange(artistId);
+            return;
         } else if (block.timestamp < p.executableAt) {
             _expect(
                 abi.encodeWithSelector(
@@ -353,6 +461,10 @@ contract ArtistRegistryHandler is Test {
             if (list[i].wallet == w) return i;
         }
         return type(uint256).max;
+    }
+
+    function _ref(uint256 seed) private pure returns (bytes32) {
+        return keccak256(abi.encode("outcome", seed));
     }
 
     function _pair(address x, address y) private pure returns (bytes32) {
