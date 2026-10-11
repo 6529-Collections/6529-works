@@ -39,7 +39,9 @@ import { StatementKinds } from "./StatementKinds.sol";
 ///      binds bytecode, not behaviour. So {setArtistResolver} must map to the 30-day class, and
 ///      every ARTIST entry records the resolver that vouched for it, in its hash and its event, so
 ///      a swap can never pass unnoticed. OWNER authority is only as strong as the token contract.
-///      No statement is ever attributed to the AccessManager.
+///      No statement is ever attributed to the AccessManager, with one exception: a governance
+///      manifest (ADR 0002 section 6) written by {appendGovernanceManifest}, which records the
+///      AccessManager as the signer of a statement about itself.
 contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     /// @notice The longest accepted URI, in bytes.
     uint256 public constant MAX_URI_BYTES = 2_048;
@@ -109,6 +111,26 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     ///      `src/governance/Roles.sol`. Until mapped, the AccessManager default is ADMIN_ROLE.
     function appendPlatform(Statement calldata statement) external restricted returns (bytes32) {
         return _append(Role.PLATFORM, msg.sender, statement);
+    }
+
+    /// @inheritdoc IStatementLog
+    /// @dev The one path that records `signer = authority()` (with role PLATFORM) and the only one
+    ///      that may write GOVERNANCE_MANIFEST. The subject is `(authority, 0)`, so a governance
+    ///      chain lives under the manager's address. The deploy configuration must map this
+    ///      selector to the 30-day class and schedule each call through the AccessManager with
+    ///      the epoch's operations; the log cannot enforce the delay, which belongs to the
+    ///      mapping, and a zero-delay mapping would let its role holder write at once.
+    function appendGovernanceManifest(Statement calldata statement)
+        external
+        restricted
+        returns (bytes32)
+    {
+        address manager = authority();
+        if (
+            statement.token != manager || statement.id != 0
+                || statement.kind != StatementKinds.GOVERNANCE_MANIFEST
+        ) revert InvalidGovernanceManifest();
+        return _write(Role.PLATFORM, manager, statement);
     }
 
     /// @inheritdoc IStatementLog
@@ -189,11 +211,23 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         return keccak256(abi.encode(token, id));
     }
 
+    /// @dev Every path except {appendGovernanceManifest}: the AccessManager may not sign, and the
+    ///      governance kind is not writable.
     function _append(Role role, address signer, Statement calldata statement)
         private
         returns (bytes32)
     {
         if (signer == authority()) revert AuthorityCannotSign();
+        if (statement.kind == StatementKinds.GOVERNANCE_MANIFEST) {
+            revert ReservedKind(statement.kind, role);
+        }
+        return _write(role, signer, statement);
+    }
+
+    function _write(Role role, address signer, Statement calldata statement)
+        private
+        returns (bytes32)
+    {
         _validate(statement, role);
         Entry memory e = Entry({
             key: subjectKey(statement.token, statement.id),

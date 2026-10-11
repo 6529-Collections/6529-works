@@ -3,10 +3,11 @@ pragma solidity ^0.8.24;
 
 /// @title StatementKinds
 /// @notice Well-known statement kinds. A kind is only a `bytes32` label: the log accepts any
-///         non-zero value, so new kinds need no deployment. Two kinds are reserved:
-///         DISPUTE_OUTCOME only under the PLATFORM role and CURATION_EVIDENCE only under the
-///         CURATOR role. Every other kind may be written under any role, so consumers must read
-///         a kind together with the entry's signer role.
+///         non-zero value, so new kinds need no deployment. Three kinds are reserved:
+///         DISPUTE_OUTCOME only under the PLATFORM role, CURATION_EVIDENCE only under the CURATOR
+///         role, and GOVERNANCE_MANIFEST only through the governance path. Every other kind may
+///         be written under any role, so consumers must read a kind together with the entry's
+///         signer role.
 /// @dev Constants only; nothing here is linked bytecode.
 library StatementKinds {
     /// @notice A statement by the artist about a work.
@@ -29,4 +30,8 @@ library StatementKinds {
     /// @notice The evidence hash behind a curation approval (ADR 0001 section 3). Reserved to
     ///         CURATOR.
     bytes32 internal constant CURATION_EVIDENCE = keccak256("CURATION_EVIDENCE");
+    /// @notice The manifest hash of a governance configuration epoch (ADR 0002 section 6).
+    ///         Written only by `StatementLog.appendGovernanceManifest`, which records the
+    ///         AccessManager itself as the signer; no other path may write it.
+    bytes32 internal constant GOVERNANCE_MANIFEST = keccak256("GOVERNANCE_MANIFEST");
 }

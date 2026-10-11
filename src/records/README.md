@@ -7,7 +7,9 @@ platform. It carries artist statements, interviews, exhibition and
 conservation records, storage-copy and fixity records, museum accession
 records (including package hashes), curation evidence and dispute outcomes.
 Governed by [ADR 0001](../../docs/adr/0001-v1-scope.md) §12 ("Statement log"),
-with §3 (curation evidence hash) and §15 (museum source data).
+with §3 (curation evidence hash) and §15 (museum source data), and by
+[ADR 0002](../../docs/adr/0002-access-manager-hardening.md) §6 (governance
+manifests).
 
 | File | Role |
 | --- | --- |
@@ -43,10 +45,10 @@ the package registry holds that link, and a reader joins the two chains.
 | `fileId` | A `ContentStore` file ID. **Exactly one** of a non-empty `uri` and a non-zero `fileId` is required (ADR 0001 §12: "a content hash plus URI, or a `ContentStore` file"). |
 | `supersedes` | Entry hash of an earlier entry this one corrects or replaces, or zero. |
 
-**Reserved kinds.** `DISPUTE_OUTCOME` may be written only under PLATFORM, and
-`CURATION_EVIDENCE` only under CURATOR (`ReservedKind` otherwise). Every other
-kind may be written under any role, so consumers read `kind` together with
-`role`. The log keeps the latest `DISPUTE_OUTCOME` entry hash per subject
+**Reserved kinds.** `DISPUTE_OUTCOME` may be written only under PLATFORM,
+`CURATION_EVIDENCE` only under CURATOR, and `GOVERNANCE_MANIFEST` only through
+`appendGovernanceManifest` (`ReservedKind` otherwise). Every other kind may be
+written under any role, so consumers read `kind` together with `role`. The log keeps the latest `DISPUTE_OUTCOME` entry hash per subject
 (`latestDisputeOutcome(token, id)`, one slot, written only for that kind), so a
 renderer can show dispute status (ADR 0001 §12) without scanning events.
 
@@ -85,13 +87,27 @@ rebuilt chain, and decide whose corrections to honour.
 | OWNER | `append(Role.OWNER, s)` | `ownerOf(id) == signer` (ERC-721) or `balanceOf(signer, id) > 0` (ERC-1155), each read capped at `OWNER_READ_GAS` and 32 bytes of return data. Only a full 32-byte `ownerOf` answer is an ERC-721 answer; anything else falls through to `balanceOf`. Any failure means "not the owner". Any holder of an edition may speak as its owner. A work-ID subject has no owner. |
 | CURATOR | `appendCurator(s)`, `restricted` | The AccessManager role mapped to that selector. |
 | PLATFORM | `appendPlatform(s)`, `restricted` | The AccessManager role mapped to that selector. |
+| PLATFORM, signed by the AccessManager | `appendGovernanceManifest(s)`, `restricted` | The only path for `GOVERNANCE_MANIFEST`. The subject must be `(authority(), 0)` and the kind `GOVERNANCE_MANIFEST`. Records `signer = authority()` and role PLATFORM. |
 | any | `appendSigned(role, s, signer, nonce, deadline, sig)` | EIP-712 signature by `signer`, who must hold `role` by the rules above. Anyone may submit. |
 
-**No statement is attributed to the AccessManager.** If the caller is the
-`authority()` (a scheduled `AccessManager.execute`, or the manager holding an
-edition), the append reverts with `AuthorityCannotSign`. So CURATOR and PLATFORM
-roles must have zero execution delay: a delayed role cannot write at all, and a
-relayed statement from a delayed signer is refused.
+**No statement is attributed to the AccessManager, with one exception.** If
+the caller is the `authority()` (a scheduled `AccessManager.execute`, or the
+manager holding an edition), the append reverts with `AuthorityCannotSign`. So
+CURATOR and PLATFORM roles must have zero execution delay: a delayed role cannot
+write at all, and a relayed statement from a delayed signer is refused.
+
+**The exception is the governance manifest** (ADR 0002 §6): each post-genesis
+configuration epoch publishes its manifest hash as a `GOVERNANCE_MANIFEST` entry,
+scheduled through the AccessManager alongside the epoch's operations.
+`appendGovernanceManifest` is the only path that may write that kind and the
+only one where the manager may sign: it records `signer = authority()` and role
+PLATFORM, under the subject `(authority(), 0)`, so the governance chain lives
+under the manager's address. The statement carries the content as a hash plus a
+URI or a file ID, with `supersedes` citing the previous epoch's entry. The caller
+passes the subject and kind explicitly and the log rejects any other value
+(`InvalidGovernanceManifest`), so a scheduled operation shows exactly what it
+will record. Every other path still rejects both the kind and the manager as
+signer, whoever calls.
 
 ### Trust boundary for ARTIST statements
 
@@ -123,6 +139,10 @@ Requirements that this places on other lanes:
   deploy configuration; the log cannot.
 - A resolver must be **immutable, or governed no faster than the 30-day class**,
   with every change public (see `IArtistRoleResolver`).
+- `appendGovernanceManifest` **must map to the 30-day class** and be scheduled
+  through the AccessManager with the epoch's operations. The log cannot enforce
+  the delay, which belongs to the mapping: a zero-delay mapping would let its
+  role holder write a manager-signed entry at once.
 - Wire `appendCurator` and `appendPlatform` to the curator and platform roles
   with zero execution delay. Until the manager maps them, its default applies
   and only ADMIN_ROLE can call them. TODO: use the role IDs from

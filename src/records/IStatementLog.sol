@@ -90,8 +90,12 @@ interface IStatementLog {
     error MissingLocator();
     /// @notice The kind is reserved to another role (see {StatementKinds}).
     error ReservedKind(bytes32 kind, Role role);
-    /// @notice The signer is the AccessManager; no statement may be attributed to it.
+    /// @notice The signer is the AccessManager; no statement may be attributed to it, except a
+    ///         governance manifest written by {appendGovernanceManifest}.
     error AuthorityCannotSign();
+    /// @notice A governance manifest must have the subject `(authority, 0)` and the kind
+    ///         GOVERNANCE_MANIFEST.
+    error InvalidGovernanceManifest();
     /// @notice The URI is longer than the limit or is not well-formed UTF-8.
     error InvalidUri();
     /// @notice `signer` does not hold `role` for this subject.
@@ -122,6 +126,16 @@ interface IStatementLog {
     /// @notice Appends a statement as the caller, who must hold the platform role.
     /// @return entryHash The new entry's hash.
     function appendPlatform(Statement calldata statement) external returns (bytes32 entryHash);
+
+    /// @notice Appends a governance manifest: the hash (and URI or file) of a configuration
+    ///         epoch's manifest, recorded with the AccessManager as signer and role PLATFORM.
+    /// @dev Restricted, and the only path that may write GOVERNANCE_MANIFEST or record the
+    ///      AccessManager as signer. The statement's subject must be `(authority, 0)` and its kind
+    ///      GOVERNANCE_MANIFEST, so a scheduled operation shows exactly what it will record.
+    /// @return entryHash The new entry's hash.
+    function appendGovernanceManifest(Statement calldata statement)
+        external
+        returns (bytes32 entryHash);
 
     /// @notice Appends a statement that `signer` authorised by an EIP-712 signature; anyone may
     ///         submit it.
