@@ -9,15 +9,23 @@ contract JsonScanHarness {
     function object(bytes memory json, bytes32[] memory keys)
         external
         pure
-        returns (uint256[] memory)
+        returns (bool, uint256[] memory)
     {
         return JsonScan.object(json, keys);
+    }
+
+    function members(bytes memory json, uint256 start, bytes32[] memory keys)
+        external
+        pure
+        returns (bool, uint256[] memory)
+    {
+        return JsonScan.members(json, start, keys);
     }
 
     function elements(bytes memory json, uint256 start, uint256 max)
         external
         pure
-        returns (uint256[] memory)
+        returns (bool, uint256[] memory)
     {
         return JsonScan.elements(json, start, max);
     }
@@ -27,17 +35,13 @@ contract JsonScanHarness {
     }
 
     /// @dev Whether the scanner accepts `json` as one object (no keys collected).
-    function accepts(bytes memory json) external view returns (bool) {
-        try this.object(json, new bytes32[](0)) returns (uint256[] memory) {
-            return true;
-        } catch {
-            return false;
-        }
+    function accepts(bytes memory json) external pure returns (bool ok) {
+        (ok,) = JsonScan.object(json, new bytes32[](0));
     }
 }
 
 /// @dev The strict JSON scanner: vectors, spans, limits, and a differential fuzz against
-///      Foundry's `parseJson` (serde_json), which accepts exactly RFC 8259 text.
+///      Foundry's `parseJsonKeys` (serde_json), which accepts exactly RFC 8259 text.
 contract JsonScanTest is Test {
     JsonScanHarness internal h = new JsonScanHarness();
 
@@ -48,6 +52,16 @@ contract JsonScanTest is Test {
 
     function _text(bytes memory json, uint256 span) internal view returns (string memory) {
         return string(h.slice(json, span));
+    }
+
+    function _obj(bytes memory json, bytes32[] memory keys)
+        internal
+        view
+        returns (uint256[] memory s)
+    {
+        bool ok;
+        (ok, s) = h.object(json, keys);
+        assertTrue(ok, string(json));
     }
 
     // ---------------------------------------------------------------- spans
@@ -61,7 +75,7 @@ contract JsonScanTest is Test {
         keys[3] = keccak256("missing");
         keys[4] = keccak256("f");
 
-        uint256[] memory s = h.object(json, keys);
+        uint256[] memory s = _obj(json, keys);
 
         assertEq(_text(json, s[0]), '"two"');
         assertEq(_text(json, s[1]), '{"e":null}');
@@ -76,7 +90,7 @@ contract JsonScanTest is Test {
         keys[0] = keccak256("a");
         keys[1] = keccak256("b");
 
-        uint256[] memory s = h.object(json, keys);
+        uint256[] memory s = _obj(json, keys);
 
         assertEq(_text(json, s[0]), "[ 1 , 2 ]");
         assertEq(_text(json, s[1]), "{ }");
@@ -85,21 +99,22 @@ contract JsonScanTest is Test {
     function test_Object_EmptyObject() public view {
         assertTrue(h.accepts("{}"));
         assertTrue(h.accepts(" { } "));
-        assertEq(h.object("{}", _keys1("a"))[0], 0);
+        assertEq(_obj("{}", _keys1("a"))[0], 0);
     }
 
     function test_Object_KeysMatchOnTheirTextWithoutQuotes() public view {
         bytes memory json = '{"ab":1,"a":2,"abc":3}';
-        assertEq(_text(json, h.object(json, _keys1("a"))[0]), "2");
-        assertEq(_text(json, h.object(json, _keys1("ab"))[0]), "1");
-        assertEq(h.object(json, _keys1("\"a\""))[0], 0);
+        assertEq(_text(json, _obj(json, _keys1("a"))[0]), "2");
+        assertEq(_text(json, _obj(json, _keys1("ab"))[0]), "1");
+        assertEq(_obj(json, _keys1('"a"'))[0], 0);
     }
 
-    function test_Elements_SpansAndLimit() public {
+    function test_Elements_SpansAndLimit() public view {
         bytes memory json = '{"x":["a",1,[2],{"k":"v"},null]}';
-        uint256[] memory s = h.object(json, _keys1("x"));
-        uint256[] memory e = h.elements(json, s[0] >> 128, 5);
+        uint256[] memory s = _obj(json, _keys1("x"));
+        (bool ok, uint256[] memory e) = h.elements(json, s[0] >> 128, 5);
 
+        assertTrue(ok);
         assertEq(e.length, 5);
         assertEq(_text(json, e[0]), '"a"');
         assertEq(_text(json, e[1]), "1");
@@ -107,16 +122,42 @@ contract JsonScanTest is Test {
         assertEq(_text(json, e[3]), '{"k":"v"}');
         assertEq(_text(json, e[4]), "null");
 
-        vm.expectRevert(JsonScan.JsonInvalid.selector);
-        h.elements(json, s[0] >> 128, 4);
+        (ok,) = h.elements(json, s[0] >> 128, 4);
+        assertFalse(ok, "a fifth element is one too many");
     }
 
     function test_Elements_EmptyArrayHasNoElements() public view {
         bytes memory json = '{"x":[],"y":[ ]}';
-        uint256[] memory s = h.object(json, _keys1("x"));
-        assertEq(h.elements(json, s[0] >> 128, 8).length, 0);
-        s = h.object(json, _keys1("y"));
-        assertEq(h.elements(json, s[0] >> 128, 8).length, 0);
+        uint256[] memory s = _obj(json, _keys1("x"));
+        (bool ok, uint256[] memory e) = h.elements(json, s[0] >> 128, 8);
+        assertTrue(ok);
+        assertEq(e.length, 0);
+        s = _obj(json, _keys1("y"));
+        (ok, e) = h.elements(json, s[0] >> 128, 8);
+        assertTrue(ok);
+        assertEq(e.length, 0);
+    }
+
+    function test_Elements_NotAnArrayIsNotOk() public view {
+        bytes memory json = '{"x":{"a":1}}';
+        uint256[] memory s = _obj(json, _keys1("x"));
+        (bool ok,) = h.elements(json, s[0] >> 128, 8);
+        assertFalse(ok);
+    }
+
+    function test_Members_OfANestedObject() public view {
+        bytes memory json = '{"o":{"a":"x","b":[1]}}';
+        uint256[] memory s = _obj(json, _keys1("o"));
+        bytes32[] memory keys = new bytes32[](2);
+        keys[0] = keccak256("b");
+        keys[1] = keccak256("a");
+        (bool ok, uint256[] memory m) = h.members(json, s[0] >> 128, keys);
+        assertTrue(ok);
+        assertEq(_text(json, m[0]), "[1]");
+        assertEq(_text(json, m[1]), '"x"');
+
+        (ok,) = h.members('{"o":[1]}', 5, keys); // not an object
+        assertFalse(ok);
     }
 
     // ---------------------------------------------------------------- what is accepted
@@ -132,13 +173,13 @@ contract JsonScanTest is Test {
             '{"a":true,"b":false,"c":null}',
             '{"a":""}',
             '{"a":"\\"\\\\\\/\\b\\f\\n\\r\\t"}',
-            '{"a":"\\u0000\\u12aF\\uFFFF"}',
+            '{"a":"\\u0001\\u12aF\\uFFFF\\ud83d\\ude00"}',
             '{"":1}',
             '{"a":[[[[[[[[]]]]]]]]}',
             '{"a":{"b":{"c":{"d":{"e":{"f":{"g":{}}}}}}}}',
             '{"a":"caf\xc3\xa9 \xf0\x9f\x98\x80"}',
             '{"a":1,"a":2}', // duplicates are fine unless the member is requested
-            '{"a\\n":1}'
+            '{"a":"\\ud800\\udc00\\udbff\\udfff"}'
         ];
         for (uint256 i; i < good.length; ++i) {
             assertTrue(h.accepts(bytes(good[i])), good[i]);
@@ -186,6 +227,61 @@ contract JsonScanTest is Test {
         assertFalse(h.accepts('{"a":"\\u123'));
     }
 
+    /// @dev M3: a key that reads the same to every parser. `name` is `name` to a JSON
+    ///      parser, so it is refused rather than matched as a different key.
+    function test_Keys_NoBackslash() public view {
+        assertFalse(h.accepts('{"n\\u0061me":1}'));
+        assertFalse(h.accepts('{"a\\nb":1}'));
+        assertFalse(h.accepts('{"\\\\":1}'));
+        assertTrue(h.accepts('{"a":"\\u0061"}'), "values may hold escapes");
+    }
+
+    /// @dev M4: NUL and surrogates. A high surrogate must be followed by a low one, and a low
+    ///      one must follow a high one.
+    function test_Escapes_NulAndSurrogates() public view {
+        assertFalse(h.accepts('{"a":"\\u0000"}'));
+        assertFalse(h.accepts('{"a":"x\\u0000"}'));
+        assertFalse(h.accepts('{"a":"\\ud800"}'));
+        assertFalse(h.accepts('{"a":"\\udbff"}'));
+        assertFalse(h.accepts('{"a":"\\udc00"}'));
+        assertFalse(h.accepts('{"a":"\\udfff"}'));
+        assertFalse(h.accepts('{"a":"\\ud800x"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\u0041"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\ud800"}'));
+        assertFalse(h.accepts('{"a":"\\udc00\\ud800"}'));
+        assertFalse(h.accepts('{"a":"\\udc00\\udc00"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\udc0"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\u"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\'));
+        assertFalse(h.accepts('{"a":"\\ud800'));
+        assertTrue(h.accepts('{"a":"\\ud800\\udc00"}'));
+        assertTrue(h.accepts('{"a":"\\uD83D\\uDE00\\uD83D\\uDE00"}'));
+        assertTrue(h.accepts('{"a":"\\ud7ff\\ue000"}'), "just outside the surrogate range");
+    }
+
+    /// @dev Escapes that straddle the end of the text or a 32-byte word are checked, whatever
+    ///      their offset.
+    function test_Escapes_AtEveryOffsetAndTheExactEnd() public view {
+        for (uint256 pad; pad < 70; ++pad) {
+            bytes memory a = new bytes(pad);
+            for (uint256 i; i < pad; ++i) {
+                a[i] = "a";
+            }
+            assertTrue(h.accepts(bytes.concat('{"k":"', a, '\\u00e9","z":1}')));
+            assertTrue(h.accepts(bytes.concat('{"k":"', a, '\\ud83d\\ude00","z":1}')));
+            assertTrue(h.accepts(bytes.concat('{"k":"', a, '\\"","z":1}')));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, '\\u00g9","z":1}')));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, '\\ud83d","z":1}')));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, hex"01", '","z":1}')));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, '\\"}')));
+            // The four digits (or the pair) run exactly to the end of the text, or one short.
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, "\\u00e9")));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, "\\u00e")));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, "\\ud83d\\ude0")));
+            assertFalse(h.accepts(bytes.concat('{"k":"', a, "\\ud83d\\ude00")));
+        }
+    }
+
     function test_Accepts_NestingIsLimitedToEightLevels() public view {
         // `{"a":` + n arrays: the object is level 0, so eight arrays are allowed.
         assertTrue(h.accepts(_nest(8)));
@@ -203,12 +299,46 @@ contract JsonScanTest is Test {
         json = bytes.concat(json, "}");
     }
 
-    function test_Object_DuplicateRequestedKeyIsRejected() public {
+    /// @dev H2: at most `MAX_VALUES` values: every string, number, literal, array and object.
+    function test_Accepts_ValueCap() public view {
+        // `{"a":[0,0,...]}`: the array is one value and each 0 another.
+        assertTrue(h.accepts(_zeros(JsonScan.MAX_VALUES - 1)));
+        assertFalse(h.accepts(_zeros(JsonScan.MAX_VALUES)));
+        // Members: `{"a":0,"a":0,...}` is one value per member.
+        assertTrue(h.accepts(_members(JsonScan.MAX_VALUES)));
+        assertFalse(h.accepts(_members(JsonScan.MAX_VALUES + 1)));
+        // Empty arrays and strings count too.
+        bytes memory many = "[";
+        for (uint256 i; i < 600; ++i) {
+            many = bytes.concat(many, i == 0 ? bytes("") : bytes(","), '"",[]');
+        }
+        assertFalse(h.accepts(bytes.concat('{"a":', many, "]}")));
+    }
+
+    function _zeros(uint256 n) internal pure returns (bytes memory json) {
+        // The array holds n - 1 zeros: one value for the array, the rest are its elements.
+        json = '{"a":[';
+        for (uint256 i; i < n; ++i) {
+            json = bytes.concat(json, i == 0 ? bytes("0") : bytes(",0"));
+        }
+        json = bytes.concat(json, "]}");
+    }
+
+    function _members(uint256 n) internal pure returns (bytes memory json) {
+        json = "{";
+        for (uint256 i; i < n; ++i) {
+            json = bytes.concat(json, i == 0 ? bytes('"a":0') : bytes(',"a":0'));
+        }
+        json = bytes.concat(json, "}");
+    }
+
+    function test_Object_DuplicateRequestedKeyIsRejected() public view {
         bytes memory json = '{"a":1,"b":2,"a":3}';
-        vm.expectRevert(JsonScan.JsonInvalid.selector);
-        h.object(json, _keys1("a"));
+        (bool ok,) = h.object(json, _keys1("a"));
+        assertFalse(ok);
         // Unrequested duplicates are not tracked.
-        h.object(json, _keys1("b"));
+        (ok,) = h.object(json, _keys1("b"));
+        assertTrue(ok);
     }
 
     function test_Strings_LongStringsAcrossWordBoundaries() public view {
@@ -230,10 +360,29 @@ contract JsonScanTest is Test {
             bytes32[] memory keys = new bytes32[](2);
             keys[0] = keccak256("k");
             keys[1] = keccak256("z");
-            uint256[] memory s = h.object(json, keys);
+            uint256[] memory s = _obj(json, keys);
             assertEq(h.slice(json, s[0]).length, n + 2);
             assertEq(_text(json, s[1]), "1");
         }
+    }
+
+    function test_Numbers() public view {
+        assertTrue(h.accepts('{"a":-0.0e-0}'));
+        assertFalse(h.accepts('{"a":-}'));
+        assertFalse(h.accepts('{"a":--1}'));
+        assertFalse(h.accepts('{"a":1.e5}'));
+        assertFalse(h.accepts('{"a":0x10}'));
+        assertFalse(h.accepts('{"a":Infinity}'));
+        assertFalse(h.accepts('{"a":NaN}'));
+        assertFalse(h.accepts('{"a":-01}'));
+        assertFalse(h.accepts('{"a":00}'));
+    }
+
+    function test_NotJsonWhitespaceOrBytes() public view {
+        assertFalse(h.accepts(hex"efbbbf7b7d")); // BOM + {}
+        assertFalse(h.accepts(hex"0c7b7d")); // form feed
+        assertFalse(h.accepts(hex"7b7d00")); // trailing NUL
+        assertFalse(h.accepts(hex"a07b7d")); // NBSP
     }
 
     // ---------------------------------------------------------------- differential fuzz
@@ -250,16 +399,25 @@ contract JsonScanTest is Test {
     }
 
     /// @dev Mutates a valid document at a few places and compares the verdict with serde_json's,
-    ///      for the texts both can judge: valid UTF-8 objects without surrogate escapes.
+    ///      for valid UTF-8 texts. The scanner is never more lenient than JSON: whatever it
+    ///      accepts, serde_json accepts. It is stricter in three ways, and only these may make
+    ///      it refuse what serde_json takes: a `\u0000` escape, a backslash in a key, and
+    ///      nesting above eight levels. The corpus has multi-byte UTF-8, surrogate pairs and
+    ///      depth, and the edits make lone surrogates and broken escapes, which serde_json
+    ///      refuses as well.
     function testFuzz_AgreesWithSerdeJson(uint256 seed) public view {
-        string[4] memory bases = [
+        string[8] memory bases = [
             '{"a":[1,-2.5e3,"x\\n\\"y",true,false,null,{"b":{}}],"name":"N","year":2026}',
             '{"attributes":[{"trait_type":"k","value":"v"},{"trait_type":"n","value":3}],"name":"\\u00e9"}',
             ' { "a" : [ ] , "b" : { "c" : [ 1 , 2 ] } , "d" : "\\\\ \\/" } ',
-            '{"x":{"y":{"z":[0,1,2,3,{"k":"\\t"}]}},"w":"tail"}'
+            '{"x":{"y":{"z":[0,1,2,3,{"k":"\\t"}]}},"w":"tail"}',
+            '{"name":"caf\xc3\xa9 \xe2\x82\xac \xf0\x9f\x98\x80","d":"\\ud83d\\ude00 \\u20ac"}',
+            '{"a":[[[[[[[["deep"]]]]]]]],"b":{"c":{"d":{"e":{"f":"g"}}}}}',
+            '{"s":"\\ud800\\udc00","t":"\\udbff\\udfff","u":"\\ud7ff\\ue000"}',
+            '{"p":"\xc3\xa9\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80 \\ud83d\\ude00 end","q":[{"r":{"s":[[]]}}]}'
         ];
         bytes memory json = bytes(bases[seed % bases.length]);
-        bytes memory alphabet = '{}[]",:\\ 01-+.eEtrufalsn\n\x00';
+        bytes memory alphabet = '{}[]",:\\ 01-+.eEtrufalsnduD8cA\n\x00';
         uint256 edits = 1 + (seed >> 8) % 3;
         for (uint256 k; k < edits; ++k) {
             seed = uint256(keccak256(abi.encode(seed, k)));
@@ -274,12 +432,55 @@ contract JsonScanTest is Test {
                 json = bytes.concat(_cut(json, 0, pos), _cut(json, pos + 1, json.length));
             }
         }
-        if (!Utf8.isValid(json) || json.length == 0) return;
-        // Out of scope for the oracle: a lone surrogate escape (serde_json rejects it) and a
-        // top level that is not an object (the scanner wants an object).
-        if (_hasSurrogateEscape(json) || _firstNonSpace(json) != "{") return;
+        // serde_json reads UTF-8 text; the renderer checks UTF-8 before it scans.
+        if (!Utf8.isValid(json)) return;
+        // Only objects are in scope (a bare value is no record).
+        if (_firstNonSpace(json) != "{") return;
 
-        assertEq(h.accepts(json), this.tryParse(string(json)), vm.toString(json));
+        bool mine = h.accepts(json);
+        bool theirs = this.tryParse(string(json));
+        if (mine) {
+            assertTrue(theirs, "accepted what serde_json refuses");
+        } else if (theirs) {
+            assertTrue(_stricter(json), "refused what serde_json accepts");
+        }
+    }
+
+    /// @dev For a text that is valid JSON: whether it has a backslash in a key, a `\u0000`
+    ///      escape, or more than eight levels of nesting, the three stricter rules.
+    function _stricter(bytes memory json) internal pure returns (bool) {
+        uint256 depth;
+        uint256 isObject; // bit per level: set for an object
+        bool afterOpener = true; // the last significant byte was `{` or `,` (a key may follow)
+        for (uint256 i; i < json.length; ++i) {
+            bytes1 c = json[i];
+            if (c == '"') {
+                bool key = afterOpener && depth != 0 && (isObject >> (depth - 1)) & 1 == 1;
+                for (++i; json[i] != '"'; ++i) {
+                    if (json[i] != "\\") continue;
+                    if (key) return true;
+                    ++i;
+                    if (
+                        json[i] == "u" && json[i + 1] == "0" && json[i + 2] == "0"
+                            && json[i + 3] == "0" && json[i + 4] == "0"
+                    ) return true;
+                }
+                afterOpener = false;
+            } else if (c == "{" || c == "[") {
+                if (++depth > 8) return true;
+                isObject = (isObject & ~(uint256(1) << (depth - 1)))
+                    | (c == "{" ? uint256(1) << (depth - 1) : 0);
+                afterOpener = c == "{";
+            } else if (c == "}" || c == "]") {
+                --depth;
+                afterOpener = false;
+            } else if (c == ",") {
+                afterOpener = true;
+            } else if (c != 0x20 && c != 0x09 && c != 0x0a && c != 0x0d) {
+                afterOpener = false;
+            }
+        }
+        return false;
     }
 
     function _cut(bytes memory b, uint256 from, uint256 to)
@@ -300,18 +501,6 @@ contract JsonScanTest is Test {
         return 0;
     }
 
-    function _hasSurrogateEscape(bytes memory b) internal pure returns (bool) {
-        for (uint256 i; i + 3 < b.length; ++i) {
-            if (
-                b[i] == "\\" && (b[i + 1] == "u" || b[i + 1] == "U")
-                    && (b[i + 2] == "d" || b[i + 2] == "D")
-            ) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     // ---------------------------------------------------------------- cost
 
     function test_Gas_PerByteOfPlainText() public view {
@@ -322,7 +511,8 @@ contract JsonScanTest is Test {
         bytes memory json = bytes.concat('{"k":"', text, '"}');
         uint256 before = gasleft();
         h.object(json, _keys1("k"));
-        // One long string is a handful of cheap word skips (the rest is copying 20 KB through the harness).
+        // One long string is a handful of cheap word skips (the rest is copying 20 KB through
+        // the harness).
         assertLt(before - gasleft(), 300_000);
     }
 }

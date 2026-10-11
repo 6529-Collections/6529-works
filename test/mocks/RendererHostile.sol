@@ -17,7 +17,9 @@ contract HostileStore {
         BombChunk,
         NonBoolComplete,
         BurnComplete,
-        BombInfo
+        BombInfo,
+        NonBoolAttest,
+        BurnAttest
     }
 
     uint256 internal constant CHUNK = 24_575;
@@ -52,6 +54,21 @@ contract HostileStore {
             IContentStore.Encoding.Base64,
             "image/png"
         );
+    }
+
+    /// @dev Every file is attested (so the reads after it are what the tests exercise), unless
+    ///      the mode says the answer is broken.
+    function isBase64Attested(bytes32) external view returns (bool) {
+        if (mode == Mode.NonBoolAttest) {
+            assembly ("memory-safe") {
+                mstore(0, 2)
+                return(0, 32)
+            }
+        }
+        if (mode == Mode.BurnAttest) {
+            for (;;) { }
+        }
+        return true;
     }
 
     function isComplete(bytes32 id) external view returns (bool) {

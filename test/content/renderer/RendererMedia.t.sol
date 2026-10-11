@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { RendererBase } from "./RendererBase.sol";
-import { Renderer } from "src/content/Renderer.sol";
+import { IBase64Attested, Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -124,7 +124,7 @@ contract RendererMediaTest is RendererBase {
     }
 
     /// @dev An `Identity` file costs several times a base64 file of the same size to render (it
-    ///      is encoded on-chain), so it counts four times against the threshold.
+    ///      is encoded on-chain), so it counts eight times against the threshold.
     function test_Inline_AnIdentityFileCountsEightTimes() public {
         Renderer small = new Renderer(store, IStatementLog(address(disputeLog)), 1_000);
         bytes memory fits = _data(125, 6);
@@ -178,19 +178,54 @@ contract RendererMediaTest is RendererBase {
         assertEq(_str(j, ".content_hash"), vm.toString(sha256(_data(THRESHOLD + 1, 9))));
     }
 
-    function test_Locator_AnOnChainPreferenceFallsBackToTheFirstRegisteredCopy() public {
+    /// @dev Decision M1: the satellite's answer is the preference, and an on-chain preference has
+    ///      no URL. The renderer does not look through the list for another copy.
+    function test_Locator_AnOnChainPreferenceGivesNoUrl() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 10), IDENTITY, PNG);
         _install(file);
         records.addLocator(ID, file, Locator(LocatorKind.ARWEAVE, AR));
         records.preferOnchain(ID, file, true);
 
-        assertEq(_str(_out(), ".media_url"), AR);
+        _noMedia(_out());
 
-        // With no copy registered at all there is nothing to give.
         bytes32 bare = _file(_data(THRESHOLD + 1, 11), IDENTITY, PNG);
         _install(bare);
         records.preferOnchain(ID, bare, true);
         _noMedia(_out());
+    }
+
+    /// @dev A locator of kind NONE is no locator, whatever its text (the satellite answers it for a
+    ///      file without a copy).
+    function test_Locator_KindNoneGivesNoMediaField() public {
+        bytes32 file = _file(_data(THRESHOLD + 1, 44), IDENTITY, PNG);
+        _install(file);
+        records.addLocator(ID, file, Locator(LocatorKind.NONE, ""));
+        _noMedia(_out());
+        bytes32 other = _file(_data(THRESHOLD + 1, 45), IDENTITY, PNG);
+        _install(other);
+        records.addLocator(ID, other, Locator(LocatorKind.NONE, IPFS));
+        _noMedia(_out());
+        // An empty URL of a real kind is no media either.
+        bytes32 third = _file(_data(THRESHOLD + 1, 46), IDENTITY, PNG);
+        _install(third);
+        records.addLocator(ID, third, Locator(LocatorKind.IPFS, ""));
+        _noMedia(_out());
+    }
+
+    /// @dev Decision M1: a satellite that cannot answer `preferredLocator` within its gas cap fails
+    ///      the call. Media silently dropped would be a plausible but wrong token.
+    function test_Locator_AFailedReadFailsClosed() public {
+        bytes32 file = _file(_data(THRESHOLD + 1, 47), IDENTITY, PNG);
+        _install(file);
+        records.fail(IWorkRecords.preferredLocator.selector, true);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Renderer.RendererReadFailed.selector,
+                address(records),
+                IWorkRecords.preferredLocator.selector
+            )
+        );
+        renderer.tokenURI(address(stream), ID);
     }
 
     function test_Locator_GzipFilesAreNeverInlined() public {
@@ -279,6 +314,29 @@ contract RendererMediaTest is RendererBase {
             records.addLocator(ID, previews[i], Locator(LocatorKind.ARWEAVE, "ar://preview"));
             assertEq(_str(_out(), ".image"), "ar://preview");
         }
+    }
+
+    /// @dev A small preview whose chunks are not all in the store is not inlined (reading it
+    ///      would revert), and its locator is used instead; with no locator there is no image.
+    function test_Preview_ASmallIncompletePreviewIsNotInlined() public {
+        bytes32 primary = _file(_data(THRESHOLD + 1, 48), IDENTITY, PNG);
+        // One chunk, well under the preview limit, never uploaded.
+        bytes32 preview = _incompleteFile(_data(2_000, 49), IDENTITY, PNG);
+        assertFalse(store.isComplete(preview));
+        _workWith(primary, preview);
+        records.addLocator(ID, preview, Locator(LocatorKind.ARWEAVE, "ar://preview"));
+
+        assertEq(_str(_out(), ".image"), "ar://preview");
+
+        _workWith(primary, _incompleteFile(_data(2_001, 50), IDENTITY, PNG));
+        assertFalse(_has(_out(), ".image"));
+
+        // The same for base64 text over two chunks, the second one missing.
+        bytes32 text = _incompleteFile(bytes(Base64.encode(_data(30_000, 51))), BASE64, PNG);
+        assertFalse(store.isComplete(text));
+        _workWith(primary, text);
+        records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://text"));
+        assertEq(_str(_out(), ".image"), "ar://text");
     }
 
     function test_Preview_ThePreviewLimitIsInclusiveAndCountsIdentityEightTimes() public {
@@ -452,7 +510,9 @@ contract RendererMediaTest is RendererBase {
 
     // ---------------------------------------------------------------- the HTML page of a script
 
-    bytes internal constant HEAD_MARK = "<script>window.works={v:1,tokenId:7,seed:null};";
+    /// @dev `window.works` is set in a script of its own, ahead of the artist's (decision L3).
+    bytes internal constant HEAD_MARK =
+        "<script>window.works={v:1,tokenId:7,seed:null};</script><script>";
     bytes internal constant TAIL = "</script></body></html>";
 
     function _page() internal view returns (bytes memory) {
@@ -496,7 +556,7 @@ contract RendererMediaTest is RendererBase {
         bytes memory page = _page();
 
         assertTrue(_contains(page, bytes.concat(HEAD_MARK, js, TAIL)));
-        assertTrue(_contains(page, "<!doctype html>"));
+        assertTrue(_contains(page, "<!doctype html><html lang=\"en\">"));
         assertTrue(_contains(page, 'charset="utf-8"'));
         assertTrue(_ends(page, TAIL));
         assertEq(_str(_out(), ".content_type"), "text/javascript");
@@ -524,7 +584,8 @@ contract RendererMediaTest is RendererBase {
         assertTrue(_contains(page, "var c='<\\!--<script>';"), "comment");
         assertTrue(_contains(page, "/*<\\/Script >*/<\\!--"), "comment and end tag");
         assertTrue(_ends(page, TAIL));
-        assertEq(_countOf(page, "</script"), 1, "only the page's own closing tag");
+        // Two: the page's own closing tags, one for `window.works` and one for the artist's script.
+        assertEq(_countOf(page, "</script"), 2, "only the page's own closing tags");
     }
 
     function _countOf(bytes memory hay, bytes memory needle) internal pure returns (uint256 n) {
@@ -554,14 +615,22 @@ contract RendererMediaTest is RendererBase {
         assertTrue(
             _contains(
                 _page(),
-                bytes(string.concat('<script>window.works={v:1,tokenId:7,seed:"', seed, '"};go();'))
+                bytes(
+                    string.concat(
+                        '<script>window.works={v:1,tokenId:7,seed:"',
+                        seed,
+                        '"};</script><script>go();'
+                    )
+                )
             )
         );
 
         // No seed at all is null.
         core.seedPolicy = SeedPolicy.NONE;
         stream.setWork(ID, core);
-        assertTrue(_contains(_page(), "window.works={v:1,tokenId:7,seed:null};go();"));
+        assertTrue(
+            _contains(_page(), "window.works={v:1,tokenId:7,seed:null};</script><script>go();")
+        );
     }
 
     function test_Script_NotInlinedUnlessIdentityStoredUtf8AndSmall() public {
@@ -601,5 +670,139 @@ contract RendererMediaTest is RendererBase {
             abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
+    }
+
+    // ---------------------------------------------------------------- Base64 attestation (H1)
+
+    /// @dev Base64 text with a JSON break-out after it. The upload and the SHA-256 of what a lenient
+    ///      decoder reads (it drops the rest) are fine; only a strict reader sees the problem.
+    function _tampered(bytes memory media) internal returns (bytes32) {
+        return
+            _file(
+                bytes.concat(bytes(Base64.encode(media)), '","name":"Forged","xy":"'), BASE64, PNG
+            );
+    }
+
+    function test_Base64_AFileThatIsNotStrictBase64IsNeverCopied() public {
+        bytes32 file = _tampered(_data(100, 52));
+        assertFalse(_attested(file));
+        _install(file);
+        records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".name"), "Title", "no second name");
+        assertEq(_str(j, ".image"), IPFS);
+        assertFalse(_has(j, ".xy"));
+    }
+
+    function test_Base64_AHashOrPercentInTheTextIsNeverCopied() public {
+        string[3] memory tails = ["#AAA", "%41", "\\n"];
+        for (uint256 i; i < tails.length; ++i) {
+            bytes32 file = _file(
+                bytes.concat(bytes(Base64.encode(_data(60, 53))), bytes(tails[i])), BASE64, PNG
+            );
+            assertFalse(_attested(file));
+            _install(file);
+            records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
+            // `_decode` fails on a raw `#` or a stray `%`.
+            assertEq(_str(_out(), ".image"), IPFS);
+        }
+    }
+
+    function test_Base64_AValidFileIsCopiedOnlyOnceAttested() public {
+        bytes memory media = _data(300, 54);
+        bytes32 file = _unattested(bytes(Base64.encode(media)), BASE64, PNG);
+        _install(file);
+        records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
+        assertEq(_str(_out(), ".image"), IPFS, "not attested yet");
+
+        _attest(file); // permissionless, once
+        assertTrue(_attested(file));
+        assertEq(_str(_out(), ".image"), _dataUri(PNG, media));
+    }
+
+    function test_Base64_AnUnattestedPreviewIsNotInlined() public {
+        bytes32 primary = _file(_data(THRESHOLD + 1, 55), IDENTITY, PNG);
+        bytes32 preview = _tampered(_data(100, 56));
+        _workWith(primary, preview);
+        records.addLocator(ID, primary, Locator(LocatorKind.IPFS, IPFS));
+        records.addLocator(ID, preview, Locator(LocatorKind.ARWEAVE, "ar://preview"));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".name"), "Title");
+        assertEq(_str(j, ".image"), "ar://preview");
+        assertEq(_str(j, ".media_url"), IPFS);
+    }
+
+    function test_Base64_FullFormRevertsForAnUnattestedPrimary() public {
+        _install(_tampered(_data(100, 57)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
+    }
+
+    function test_Base64_AnAttestationReadThatFailsFailsClosed() public {
+        // A store that is not the attesting one cannot answer.
+        Renderer noAttest = new Renderer(
+            IContentStore(address(new PlainStore(store))),
+            IStatementLog(address(disputeLog)),
+            THRESHOLD
+        );
+        _install(_file(bytes(Base64.encode(_data(100, 58))), BASE64, PNG));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Renderer.RendererReadFailed.selector,
+                address(noAttest.contentStore()),
+                IBase64Attested.isBase64Attested.selector
+            )
+        );
+        noAttest.tokenURI(address(stream), ID);
+    }
+
+    // ---------------------------------------------------------------- a script with dependencies (L5)
+
+    function test_Script_ADeclaredDependencyIsServedByLocatorNotWrapped() public {
+        bytes32 file = _file("p5.setup();", IDENTITY, "text/javascript");
+        _installRaw(
+            '{"dependencies":[{"name":"p5","version":"1.9.0"}],"name":"N"}', _media(file, 0)
+        );
+        records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
+
+        assertEq(_str(_out(), ".animation_url"), IPFS);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
+    }
+
+    function test_Script_AnEmptyDependencyListIsWrapped() public {
+        bytes32 file = _file("go();", IDENTITY, "text/javascript");
+        _installRaw('{"dependencies":[],"name":"N"}', _media(file, 0));
+        assertTrue(_ends(_page(), TAIL));
+        _installRaw('{"name":"N"}', _media(file, 0));
+        assertTrue(_ends(_page(), TAIL));
+    }
+}
+
+/// @dev A content store that answers everything but the attestation.
+contract PlainStore {
+    IContentStore internal immutable inner;
+
+    constructor(IContentStore inner_) {
+        inner = inner_;
+    }
+
+    fallback(bytes calldata data) external returns (bytes memory) {
+        (bool ok, bytes memory ret) = address(inner).staticcall(data);
+        if (!ok || bytes4(data) == IBase64Attested.isBase64Attested.selector) {
+            assembly {
+                revert(0, 0)
+            }
+        }
+        return ret;
     }
 }

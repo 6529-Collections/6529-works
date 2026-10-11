@@ -5,7 +5,7 @@ import { RendererBase } from "./RendererBase.sol";
 import { HostileStore } from "../../mocks/RendererHostile.sol";
 import { MockStream } from "../../mocks/RendererMocks.sol";
 import { GasBurnerMock, ReturnBombMock, ReturnDataMock } from "../../mocks/AdversarialTargets.sol";
-import { Renderer } from "src/content/Renderer.sol";
+import { IBase64Attested, Renderer } from "src/content/Renderer.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -122,6 +122,22 @@ contract RendererHostileTest is RendererBase {
         _uriOnHostile();
     }
 
+    function test_Store_BadAttestationAnswersFailClosed() public {
+        _withStore(HostileStore.Mode.NonBoolAttest);
+        vm.expectRevert();
+        _uriOnHostile();
+
+        HostileStore hostile = _withStore(HostileStore.Mode.BurnAttest);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Renderer.RendererReadFailed.selector,
+                address(hostile),
+                IBase64Attested.isBase64Attested.selector
+            )
+        );
+        _uriOnHostile();
+    }
+
     function test_Store_AnOversizedFileInfoFailsClosed() public {
         HostileStore hostile = _withStore(HostileStore.Mode.BombInfo);
         vm.expectRevert(
@@ -220,14 +236,21 @@ contract RendererHostileTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
     }
 
-    /// @dev A locator read that fails is "no locator": the satellite reverts when a file has
-    ///      none, so a failure cannot be told from an empty list. Nothing is invented.
-    function test_Token_AnOversizedLocatorIsNotUsed() public {
+    /// @dev Decision M1: a locator read that fails, here by returning more than a URL may have,
+    ///      fails the call. Media silently dropped would be a plausible but wrong token.
+    function test_Token_AnOversizedLocatorFailsClosed() public {
         bytes32 file = _file(_data(THRESHOLD + 1, 1), IDENTITY, "image/png");
         _install(file);
         records.addLocator(ID, file, Locator(LocatorKind.IPFS, _text(2_500)));
 
-        assertFalse(_has(_out(), ".image"));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Renderer.RendererReadFailed.selector,
+                address(records),
+                IWorkRecords.preferredLocator.selector
+            )
+        );
+        renderer.tokenURI(address(stream), ID);
     }
 
     function test_NotEnoughGasRevertsInsteadOfMisreporting() public {

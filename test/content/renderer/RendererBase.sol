@@ -9,7 +9,7 @@ import {
     MockStream,
     MockWorkRecords
 } from "../../mocks/RendererMocks.sol";
-import { ContentStore } from "src/content/ContentStore.sol";
+import { AttestingStore } from "../../mocks/AttestingStore.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
@@ -56,7 +56,7 @@ abstract contract RendererBase is ContentBase {
     Renderer internal renderer;
 
     function setUp() public virtual {
-        store = new ContentStore();
+        store = new AttestingStore();
         stream = new MockStream();
         records = new MockWorkRecords();
         stream.setWorkRecords(address(records));
@@ -72,9 +72,28 @@ abstract contract RendererBase is ContentBase {
         internal
         returns (bytes32 fileId)
     {
+        fileId = _unattested(stored, encoding, mime);
+        if (encoding == BASE64) _attest(fileId);
+    }
+
+    /// @dev Like `_file`, but a `Base64` file is not attested, whatever its text.
+    function _unattested(bytes memory stored, IContentStore.Encoding encoding, string memory mime)
+        internal
+        returns (bytes32 fileId)
+    {
         (bytes[] memory chunks, bytes32[] memory hashes) = _split(stored);
         fileId = store.registerManifest(hashes, stored.length, encoding, mime, sha256(stored));
         _uploadAll(chunks);
+    }
+
+    /// @dev The one-time strict check of a `Base64` file (decision H1). A file that is not strict
+    ///      base64 stays unattested, which is what a renderer must find out.
+    function _attest(bytes32 fileId) internal {
+        try AttestingStore(address(store)).attestBase64(fileId) { } catch { }
+    }
+
+    function _attested(bytes32 fileId) internal view returns (bool) {
+        return AttestingStore(address(store)).isBase64Attested(fileId);
     }
 
     /// @dev Like `_file`, but the last chunk is never uploaded.
@@ -153,17 +172,22 @@ abstract contract RendererBase is ContentBase {
 
     /// @dev Makes work `ID` exist, with record `json` and `media`, on-chain complete, under CC0.
     function _installRaw(bytes memory json, MediaFile[] memory media) internal {
+        _installRawAt(ID, json, media);
+    }
+
+    /// @dev As `_installRaw`, for work `id`.
+    function _installRawAt(uint256 id, bytes memory json, MediaFile[] memory media) internal {
         bytes32 recordFile = _file(json, IDENTITY, "application/json");
         IWorkRecords.RecordInfo memory info;
         info.recordFileId = recordFile;
         info.licenseKey = WorksHashing.CC0_LICENSE_KEY;
         info.version = 1;
         info.onChainComplete = true;
-        stream.setWork(ID, _core());
-        records.setRecord(ID, info);
-        records.setOpen(ID, true);
-        records.setMedia(ID, media);
-        records.setLicense(ID, _license());
+        stream.setWork(id, _core());
+        records.setRecord(id, info);
+        records.setOpen(id, true);
+        records.setMedia(id, media);
+        records.setLicense(id, _license());
     }
 
     function _media(bytes32 primary, bytes32 preview) internal view returns (MediaFile[] memory m) {
@@ -205,6 +229,25 @@ abstract contract RendererBase is ContentBase {
     }
 
     // ---------------------------------------------------------------- reading the output
+
+    /// @dev Asserts that work `ID` renders from Stream alone with `record_status` `status` (no
+    ///      media, no license) and that `fullTokenURI` refuses it. Returns the name.
+    function _assertCoreOnly(string memory status) internal returns (string memory name) {
+        string memory j = _out();
+        assertEq(_str(j, ".record_status"), status);
+        assertEq(_str(j, ".description"), "The work record is not available.");
+        assertFalse(_has(j, ".image"));
+        assertFalse(_has(j, ".animation_url"));
+        assertFalse(_has(j, ".media_url"));
+        assertFalse(_has(j, ".license"));
+        assertFalse(_has(j, ".content_hash"));
+        assertTrue(_hasAttr(j, "Artist ID"));
+        vm.expectRevert(
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
+        return _str(j, ".name");
+    }
 
     function _uri() internal view returns (string memory) {
         return renderer.tokenURI(address(stream), ID);

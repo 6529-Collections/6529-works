@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { Rec, RendererBase, Trait } from "./RendererBase.sol";
 import { MockEditions, MockEntropy } from "../../mocks/RendererMocks.sol";
-import { JsonScan } from "src/content/JsonScan.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
@@ -11,6 +10,8 @@ import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
+import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 
@@ -143,7 +144,8 @@ contract RendererTest is RendererBase {
         string memory j = _out();
 
         assertEq(_str(j, ".name"), "Spring #12");
-        assertEq(_str(j, ".description"), "The work record is not open yet.");
+        assertEq(_str(j, ".description"), "The work record is not available.");
+        assertEq(_str(j, ".record_status"), "not_open");
         assertEq(_attr(j, "Collection"), "Spring");
         assertEq(_attrNum(j, "Serial"), 12);
         assertEq(_attr(j, "Artist ID"), "0x0abc");
@@ -152,8 +154,11 @@ contract RendererTest is RendererBase {
         assertFalse(_has(j, ".image"));
         assertFalse(_has(j, ".license"));
         assertFalse(_has(j, ".content_hash"));
-        // The full form is the same document: there is nothing to inline.
-        assertEq(renderer.fullTokenURI(address(stream), ID), _uri());
+        // The full form has nothing to inline, so it reverts (L6).
+        vm.expectRevert(
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
     }
 
     function test_CoreOnly_WithoutACollectionOrSeed() public {
@@ -189,14 +194,13 @@ contract RendererTest is RendererBase {
         info.recordFileId = _incompleteFile(_data(1_000, 1), IDENTITY, "application/json");
         _setRecordInfo(info);
 
-        assertEq(_str(_out(), ".description"), "The work record is not open yet.");
+        assertEq(_assertCoreOnly("incomplete"), "6529 Works #7");
 
-        // Completing the upload ends it: the bytes are not a record, so the full path now fails
-        // closed instead of inventing a name.
+        // Completing the upload ends it. The bytes are not a record (not even UTF-8), so the work
+        // is core-only for another reason, and never a revert.
         (bytes[] memory chunks,) = _split(_data(1_000, 1));
         store.writeChunk(chunks[0]);
-        vm.expectRevert(Renderer.RendererInvalidUtf8.selector);
-        renderer.tokenURI(address(stream), ID);
+        _assertCoreOnly("invalid");
     }
 
     function test_CoreOnly_AnUnreadableOpenFlagFailsClosed() public {
@@ -272,7 +276,7 @@ contract RendererTest is RendererBase {
         );
     }
 
-    function test_Record_MalformedRecordsFailClosed() public {
+    function test_Record_MalformedRecordsFallBackToCoreOnly() public {
         string[13] memory bad = [
             "{",
             '{"name":"N"',
@@ -281,25 +285,22 @@ contract RendererTest is RendererBase {
             '{"name":"N",}',
             "{\"name\":\"a\nb\"}", // a raw newline inside a string
             '{"name":"\\x"}', // an unknown escape
-            '{"name":"\\u12G4"}', // a bad \\u escape
+            '{"name":"\\u12G4"}', // a bad unicode escape
             '{"name":"N","year":01}',
             '{"name":"N","year":1.}',
             '{"name":"N","extra":tru}',
             '{"name":"unterminated}',
             '["name"]'
         ];
-        bytes32 file = _file(png, IDENTITY, "image/png");
         for (uint256 i; i < bad.length; ++i) {
-            _installRaw(bytes(bad[i]), _media(file, 0));
-            vm.expectRevert(JsonScan.JsonInvalid.selector);
-            renderer.tokenURI(address(stream), ID);
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
         }
     }
 
-    function test_Record_NestingBeyondTheLimitFailsClosed() public {
+    function test_Record_NestingBeyondTheLimitFallsBack() public {
         _raw(_nested(9));
-        vm.expectRevert(JsonScan.JsonInvalid.selector);
-        renderer.tokenURI(address(stream), ID);
+        _assertCoreOnly("invalid");
 
         // Eight levels are fine.
         _raw(_nested(8));
@@ -318,32 +319,73 @@ contract RendererTest is RendererBase {
         json = bytes.concat(json, "}");
     }
 
-    function test_Record_DuplicatedMembersFailClosed() public {
+    function test_Record_DuplicatedMembersFallBack() public {
         string[2] memory bad = ['{"name":"A","name":"B"}', '{"name":"A","year":1,"year":2}'];
         for (uint256 i; i < bad.length; ++i) {
             _raw(bytes(bad[i]));
-            vm.expectRevert(JsonScan.JsonInvalid.selector);
-            renderer.tokenURI(address(stream), ID);
+            _assertCoreOnly("invalid");
         }
     }
 
     function test_Record_WrongTypesAndMissingNameAreRejected() public {
-        string[8] memory bad = [
+        string[11] memory bad = [
             '{"description":"no name"}',
+            '{"name":""}',
             '{"name":5}',
             '{"name":"N","description":5}',
             '{"name":"N","medium":[]}',
             '{"name":"N","year":"2026"}',
             '{"name":"N","year":[1]}',
             '{"name":"N","artists":[1]}',
+            '{"name":"N","artists":[""]}',
+            '{"name":"N","artists":"Ada"}',
             '{"name":"N","attributes":5}'
         ];
-        bytes32 file = _file(png, IDENTITY, "image/png");
         for (uint256 i; i < bad.length; ++i) {
-            _installRaw(bytes(bad[i]), _media(file, 0));
-            _expectInvalidRecord();
-            renderer.tokenURI(address(stream), ID);
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
         }
+        // An attribute is an object with a string name and a string or number value; nothing
+        // else is vouched for.
+        string[8] memory badTraits = [
+            '{"name":"N","attributes":[5]}',
+            '{"name":"N","attributes":[{"value":1}]}',
+            '{"name":"N","attributes":[{"trait_type":"k"}]}',
+            '{"name":"N","attributes":[{"trait_type":5,"value":1}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":true}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":null}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":[1]}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":{}}]}'
+        ];
+        for (uint256 i; i < badTraits.length; ++i) {
+            _raw(bytes(badTraits[i]));
+            _assertCoreOnly("invalid");
+        }
+    }
+
+    /// @dev Decision M2: the renderer never reverts for a record: it says so and shows the core.
+    function test_Record_AnInvalidRecordKeepsTheChainTraits() public {
+        _raw(bytes('{"name":5}'));
+        IStream.WorkCore memory core = _core();
+        core.collectionId = 3;
+        core.serial = 12;
+        core.artistId = 0xabc;
+        stream.setWork(ID, core);
+        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        disputeLog.set(address(stream), ID, bytes32(uint256(9)));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".name"), "Spring #12");
+        assertEq(_str(j, ".record_status"), "invalid");
+        assertEq(_attr(j, "Collection"), "Spring");
+        assertEq(_attr(j, "Artist ID"), "0x0abc");
+        assertEq(_attr(j, "Dispute statement"), vm.toString(bytes32(uint256(9))));
+    }
+
+    function test_Record_ARecordThatIsFineHasNoRecordStatus() public {
+        _raw(bytes('{"name":"N"}'));
+        assertFalse(_has(_out(), ".record_status"));
     }
 
     function test_Record_AttributesAreCopiedAfterTheRenderersOwnTraits() public {
@@ -390,7 +432,7 @@ contract RendererTest is RendererBase {
         assertFalse(_has(_out(), _at(1, "")));
     }
 
-    function test_Record_TooManyArtistsFailClosed() public {
+    function test_Record_TooManyArtistsFallBack() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         Rec memory r = _rec();
         r.artists = new string[](renderer.MAX_ARTISTS());
@@ -398,15 +440,14 @@ contract RendererTest is RendererBase {
             r.artists[i] = "x";
         }
         _install(file, r);
-        renderer.tokenURI(address(stream), ID); // the limit itself is fine
+        assertEq(_str(_out(), ".name"), "Title"); // the limit itself is fine
 
         r.artists = new string[](renderer.MAX_ARTISTS() + 1);
         for (uint256 i; i < r.artists.length; ++i) {
             r.artists[i] = "x";
         }
         _install(file, r);
-        vm.expectRevert(JsonScan.JsonInvalid.selector);
-        renderer.tokenURI(address(stream), ID);
+        _assertCoreOnly("invalid");
     }
 
     function test_Record_MustBeAnIdentityFileWithinTheSizeLimit() public {
@@ -416,19 +457,24 @@ contract RendererTest is RendererBase {
 
         info.recordFileId = _file(bytes('{"name":"N"}'), GZIP, "application/json");
         _setRecordInfo(info);
-        _expectInvalidRecord();
-        renderer.tokenURI(address(stream), ID);
+        _assertCoreOnly("invalid");
 
         info.recordFileId = _file(bytes('{"name":"N"}'), BASE64, "application/json");
         _setRecordInfo(info);
-        _expectInvalidRecord();
-        renderer.tokenURI(address(stream), ID);
+        _assertCoreOnly("invalid");
 
         // One byte over a chunk.
         info.recordFileId = _file(_data(CHUNK + 1, 2), IDENTITY, "application/json");
         _setRecordInfo(info);
-        _expectInvalidRecord();
-        renderer.tokenURI(address(stream), ID);
+        _assertCoreOnly("invalid");
+    }
+
+    /// @dev `Limits.MAX_RECORD_BYTES` is one store chunk, so a record is read with a single
+    ///      `readChunk` and the renderer's limit cannot drift from the store's.
+    function test_Record_TheLimitIsOneStoreChunk() public view {
+        assertEq(Limits.MAX_RECORD_BYTES, SSTORE2.MAX_CHUNK_LENGTH);
+        assertEq(renderer.MAX_RECORD_BYTES(), SSTORE2.MAX_CHUNK_LENGTH);
+        assertEq(renderer.MAX_ARTISTS(), Limits.MAX_ARTISTS);
     }
 
     function test_Record_ARecordOfExactlyOneChunkIsRead() public {
@@ -514,7 +560,8 @@ contract RendererTest is RendererBase {
         assertEq(_str(_out(), ".description"), text);
     }
 
-    function test_InvalidUtf8_RevertsInTheRecord() public {
+    /// @dev A record that is not UTF-8 is an invalid record (core-only), wherever the bad bytes are.
+    function test_InvalidUtf8_InTheRecordMakesItInvalid() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         string memory bad = string(bytes(hex"61c0af62")); // an overlong encoding
         for (uint256 i; i < 4; ++i) {
@@ -527,8 +574,7 @@ contract RendererTest is RendererBase {
                 r.attributes[0] = Trait("k", bad);
             }
             _install(file, r);
-            vm.expectRevert(Renderer.RendererInvalidUtf8.selector);
-            renderer.tokenURI(address(stream), ID);
+            _assertCoreOnly("invalid");
         }
     }
 
