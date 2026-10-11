@@ -14,14 +14,13 @@ import { Payment } from "./types/SaleTypes.sol";
 ///      split wallet. Sale IDs are derived: `saleIdOf(token, tokenId)`. Per sale the adapter
 ///      keeps two or three storage words; the seller and fee terms are read back from the token
 ///      (`IMintTarget.primaryTerms`) at settlement.
-///
-///      Bidding: the first bid must be at least `max(openingBid(currency), 1)`; later bids must
-///      reach the high bid plus `max(incrementShare, the currency's increment floor)`, the floor
-///      read from the economics lane's asset allowlist and locked at start. A bid in the last
+///Bidding: the first bid must be at least `max(openingBid(currency), 1)`; later bids must reach the
+///      high bid plus `max(incrementShare, the currency's increment floor)`, the floor read from
+///      the economics lane's asset allowlist and locked at the first bid. A bid in the last
 ///      `extensionWindow` seconds moves the end to `extensionWindow` seconds after it. Outbid
-///      bidders are credited (pull). Settlement is permissionless after the end and never
-///      depends on the winner accepting the token: a failed delivery leaves a pending claim.
-///      With no bids the token goes to the artist's current authority, resolved at settlement.
+///      bidders are credited (pull). Settlement is permissionless after the end and never depends
+///      on the winner accepting the token: a failed delivery leaves a pending claim. With no bids
+///      the token goes to the artist's current authority, resolved at settlement.
 ///
 ///      Disputes: the guardian may pause a live auction for at most 7 days in total; bidders may
 ///      withdraw while it is paused; an upheld dispute cancels it, refunds the bid and burns the
@@ -49,7 +48,8 @@ interface IEnglishAuction is ISaleAdapter {
         uint32 incrementShare;
     }
 
-    /// @notice One auction, as stored; `currency` and `incrementFloor` are locked at start.
+    /// @notice One auction, as stored; `currency` is locked at start and `incrementFloor` at the
+    ///         first bid (zero before).
     /// @param bidder The high bidder (the payer of the high bid), or zero.
     /// @param recipient Who receives the token if the high bid wins.
     /// @param pausedAt When the current pause began, or zero.

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IArtistPayoutResolver } from "../../src/interfaces/IArtistPayoutResolver.sol";
+import { IArtistPayoutResolver } from "../../src/economics/interfaces/IArtistPayoutResolver.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
 import { IContentStore } from "../../src/interfaces/IContentStore.sol";
@@ -34,10 +34,10 @@ import { Limits } from "../../src/interfaces/types/Limits.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IMintTarget).interfaceId, bytes4(0xc488ca68), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x69e7f9dc), "IStream");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0xe61cb789), "IWorkRecords");
-        assertEq(type(IEditions).interfaceId, bytes4(0x821ab73f), "IEditions");
+        assertEq(type(IMintTarget).interfaceId, bytes4(0xaaf75889), "IMintTarget");
+        assertEq(type(IStream).interfaceId, bytes4(0x75bdcb73), "IStream");
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
+        assertEq(type(IEditions).interfaceId, bytes4(0xa5bd946e), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0xd6a7f839), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x1613e72f), "IEnglishAuction");
         assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x0a6bae4b), "IFixedPriceSale");
@@ -46,28 +46,29 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0xb7ab1d96), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x1a578b7b), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xa5daf688), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0xc45d6fce), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
-        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x70039a3b), "IEconomicsResolver");
+        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x24dcbb21), "IEconomicsResolver");
         assertEq(type(IStatementLog).interfaceId, bytes4(0x276fbc56), "IStatementLog");
         assertEq(type(IArtistRoleResolver).interfaceId, bytes4(0x3074ca00), "IArtistRoleResolver");
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x453fc18a), "IArtistRegistry");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x491f37b7), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0xc99f1cff), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0x2ed47f27), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");
     }
 
-    /// @dev The minimal mint surface stays tiny: three functions.
+    /// @dev The mint surface stays small: three adapter calls plus the admitted-minter mapping.
     function test_mintTargetIsMinimal() public pure {
         assertEq(
             type(IMintTarget).interfaceId,
             IMintTarget.mint.selector ^ IMintTarget.primaryTerms.selector
-                ^ IMintTarget.burn.selector
+                ^ IMintTarget.burn.selector ^ IMintTarget.isAdmittedMinter.selector
+                ^ IMintTarget.setAdmittedMinter.selector
         );
     }
 
@@ -116,5 +117,6 @@ contract InterfacesCompileTest is Test {
         assertEq(Limits.MAX_MEDIA_FILES, 32);
         assertEq(Limits.MAX_LICENSE_ID_BYTES, 64);
         assertEq(Limits.MAX_URI_BYTES, 2_048);
+        assertEq(Limits.MAX_PROOF_LENGTH, 32);
     }
 }

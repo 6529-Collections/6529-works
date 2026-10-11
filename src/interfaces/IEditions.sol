@@ -25,7 +25,10 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param minted Copies minted so far.
     /// @param windowStart When the first copy was minted (the OPEN window starts), or zero.
     /// @param seller The artist-portion split wallet (a predicted address).
+    /// @param feeRecipient The network fee recipient.
+    /// @param feeShare The network share of primary sales and royalties, out of 100,000.
     /// @param royaltyReceiver The royalty split wallet (a predicted address).
+    /// @param royaltyRate The ERC-2981 royalty rate, out of 100,000.
     struct Edition {
         bytes32 contentHash;
         EditionTerms terms;
@@ -49,15 +52,16 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
     /// @notice An OPEN edition's window began with its first mint and ends at `closesAt`.
     event EditionWindowOpened(uint256 indexed editionId, uint64 closesAt);
-    /// @notice The work-records satellite was bound, once.
-    event WorkRecordsBound(address workRecords);
+    /// @notice A contract was bound under `name` (WORK_RECORDS), once.
+    event Bound(bytes32 indexed name, address target);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
     /// @notice The marketplace owner changed.
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    /// @notice The item does not match the master's committed item hash, is not an
-    ///         EDITION_MASTER item, or the master's sale has not settled.
+    /// @notice The item does not match the master's committed item hash or its package, the
+    ///         package is no longer approved, the item is not an EDITION_MASTER item, or the
+    ///         master's sale has not settled.
     error NotEditionMaster(uint256 workId);
     /// @notice The master already has its edition.
     error EditionExists(uint256 editionId);
@@ -66,10 +70,13 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice The mint exceeds the edition size, falls outside the OPEN window, or the master
     ///         was burned.
     error EditionUnavailable(uint256 editionId);
-    /// @notice The caller is not the bound work-records satellite.
-    error NotWorkRecords(address caller);
-    /// @notice The work-records satellite is already bound.
-    error AlreadyBound();
+    /// @notice The caller is not the bound contract this function serves.
+    error UnboundCaller(address caller);
+    /// @notice `name` is already bound.
+    error AlreadyBound(bytes32 name);
+    /// @notice The target lacks code or the expected ERC-165 support, or is an EIP-7702 delegated
+    ///         account.
+    error InvalidBinding(address target);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
 
@@ -79,21 +86,33 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice Creates the edition of master `workId` from its approved package item once the
     ///         master's sale has settled, records `(stream, workId, contentHash)` and calls
     ///         `IStream.linkEdition`. Permissionless: the item is checked against the master's
-    ///         stored item hash. Claims the content hash in the package registry for the
+    ///         stored item hash, and `proof` places it in `packageRoot`, which must still be
+    ///         approved (not revoked) in the package registry. Claims the content hash for the
     ///         Editions product and locks `PRODUCT_EDITIONS` economics from the resolver.
     /// @return editionId The new edition ID (equal to `workId`).
-    function createEdition(uint256 workId, PackageItem calldata item)
-        external
-        returns (uint256 editionId);
+    function createEdition(
+        uint256 workId,
+        PackageItem calldata item,
+        bytes32 packageRoot,
+        bytes32[] calldata proof
+    ) external returns (uint256 editionId);
 
-    /// @notice Binds 6529 Stream's work-records satellite, once, at genesis. ADMIN role.
-    function bindWorkRecords(address workRecords_) external;
+    /// @notice Binds 6529 Stream's work-records satellite, once (ERC-165 for `IWorkRecords`, not
+    ///         an EIP-7702 delegated account). ADMIN role.
+    function bindWorkRecords(address target) external;
     /// @notice The bound work-records satellite.
     function workRecords() external view returns (address);
     /// @notice Re-emits ERC-4906 for master `workId`'s edition after the master's record, license
     ///         or renderer changed; a no-op when the master has no edition. Bound work-records
     ///         satellite only.
     function notifyMasterUpdated(uint256 workId) external;
+    /// @notice Sets an edition's royalty rate after its master's changed by agreement. Bound
+    ///         work-records satellite only.
+    function setRoyaltyRate(uint256 editionId, uint32 rate) external;
+    /// @notice Emits a batch ERC-4906 update for every edition, after a global or collection
+    ///         preferred-location change or a new default renderer. Bound work-records satellite
+    ///         or 6529 Stream only.
+    function notifyAllUpdated() external;
 
     /// @notice An edition's state. Reverts with `UnknownEdition`.
     function edition(uint256 editionId) external view returns (Edition memory);
@@ -107,7 +126,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice An edition's content hash (its master's). Reverts with `UnknownEdition`.
     function contentHashOf(uint256 editionId) external view returns (bytes32);
     /// @notice An edition's license: its master's current license from the work-records
-    ///         satellite. Reverts with `UnknownEdition`.
+    ///         satellite. Reverts with `UnknownEdition`, or `IWorkRecords.RecordNotOpen` until the
+    ///         master's record is open.
     function licenseOf(uint256 editionId) external view returns (License memory);
 
     /// @notice ERC-7572 contract-level metadata URI.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Payee } from "./EconomicsTypes.sol";
+import { ISplitWallet } from "../../economics/interfaces/ISplitWallet.sol";
 
 /// @notice What a package item mints on 6529 Stream (ADR 0001 sections 3 and 6).
 /// @dev ORIGINAL is a 1/1. EDITION_MASTER is a 1/1 that also anchors exactly one 6529 Editions
@@ -49,9 +49,9 @@ struct Party {
 }
 
 /// @notice A work's license (ADR 0001 section 8, owner direction 11 October 2026).
-/// @dev `spdxId` is an SPDX identifier or `LicenseRef-` expression (at most
-///      `Limits.MAX_LICENSE_ID_BYTES`), for example `CC0-1.0`; its canonical key is
-///      `WorksHashing.licenseKey(spdxId)` (keccak256 of the ASCII-lowercased ID), and a license
+/// @dev `spdxId` is an SPDX identifier or `licenseref-` expression, normalised to lowercase
+///      `[a-z0-9.+-]` (at most `Limits.MAX_LICENSE_ID_BYTES`), for example `cc0-1.0`; its
+///      canonical key is `WorksHashing.licenseKey(spdxId)`, and a license
 ///      is identified by that key plus `textFileId`, the `IContentStore` file ID of the full
 ///      license text. CC0 irrevocability is checked on the key. Editions carry their master's
 ///      license.
@@ -110,7 +110,7 @@ struct PackageItem {
     bytes32 mediaHash;
     bytes32 recordFileId;
     Party[] parties;
-    Payee[] payees;
+    ISplitWallet.Payee[] payees;
     License license;
     SeedPolicy seedPolicy;
     bytes32 seed;

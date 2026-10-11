@@ -45,7 +45,8 @@ library Typehashes {
     );
     /// @notice The lead artist agrees to an errata renderer pin (work records domain).
     bytes32 internal constant RENDERER_REPIN = keccak256(
-        "RendererRepin(uint256 tokenId,address renderer,bytes32 stateHash,uint64 deadline)"
+        "RendererRepin(uint256 tokenId,address renderer,bytes32 rendererCodeHash,"
+        "bytes32 stateHash,uint64 deadline)"
     );
     /// @notice An artist identity change, and the new authority's acceptance of it (artist
     ///         registry domain).
@@ -56,7 +57,8 @@ library Typehashes {
     /// @notice The new authority accepts a network override (artist registry domain).
     bytes32 internal constant OVERRIDE_ACCEPTANCE = keccak256(
         "OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,"
-        "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
+        "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint256 nonce,"
+        "uint64 deadline)"
     );
     /// @notice The creator approves a fixed-price phase configuration (fixed-price domain).
     bytes32 internal constant PHASE_CONFIGURATION = keccak256(

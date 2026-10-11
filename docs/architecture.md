@@ -74,8 +74,8 @@ Shared types live in [`src/interfaces/types/`](../src/interfaces/types/):
 - package items, parties, licenses and sale terms (`PackageTypes`);
 - media files and locators (`ContentTypes`);
 - payments, primary terms and locked terms (`SaleTypes`);
-- shares, payees, currencies and product IDs (`EconomicsTypes`; `Payee`
-  mirrors the economics lane's `ISplitWallet.Payee` until PR #11 merges);
+- currencies, product IDs and work terms (`EconomicsTypes`; payees are the
+  economics lane's `ISplitWallet.Payee`, shares out of `Splits.DENOMINATOR`);
 - artist identities (`IdentityTypes`);
 - per-call bounds (`Limits`);
 - the protocol hashes (`WorksHashing`);
@@ -142,25 +142,29 @@ default when the sale starts".
    get stuck.
 5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
    `revokeMove` cancels an unused one.
-6. **Start (permissionless, 300K gas target).** Anyone calls
+6. **Start (permissionless, 350K gas per steady-state start).** Anyone calls
    `IEnglishAuction.start(stream, abi.encode(StreamMintRequest))` or
    `startWithBid`.
-   - The auction calls `IStream.mint`, which calls `IPackageRegistry.consume`.
+   - The auction calls `IStream.mint`, which checks the admitted-minter mapping
+     and calls `IPackageRegistry.consume`.
      Consume checks the proof, `acceptedAs` for each party (no registry calls),
      the payees, the move signature, and single use plus uniqueness in one
      storage word.
    - A VRF item reverts unless its seed is delivered.
-   - Stream assigns the token ID and serial, locks the predicted seller and
-     royalty wallets from `IEconomicsResolver.newWorkTerms`, and stores two or
-     three words.
-   - The auction stores two or three words and starts the 24-hour clock.
+   - Stream assigns the token ID and serial and locks the predicted seller and
+     fee terms from `IEconomicsResolver.newWorkTerms`. It stores the item hash,
+     the seller, the lead artist and one packed word; the royalty receiver is
+     derived from the seller and fee terms, not stored.
+   - The auction stores its sale and starts the 24-hour clock.
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against
    Stream's item hash, and the media against the media hash, the content hash
-   and the content store's declared SHA-256. It then stores the record file ID
-   and the media file IDs.
-8. **Bid.** The first bid is at least `max(openingBid, 1)`; later bids add
-   `max(5%, currency floor)`. Late bids extend the end, outbid bidders are
+   and the content store's declared SHA-256. It then stores the record file ID,
+   the media file IDs and an ARTIST seed. Until then every per-token
+   `IWorkRecords` call reverts with `RecordNotOpen`, and the renderer shows
+   core-only metadata.
+8. **Bid.** The first bid is at least `max(openingBid, 1)` and locks the
+   currency's increment floor; later bids add `max(5%, floor)`. Late bids extend the end, outbid bidders are
    credited and `claim`, and PERMIT2 bids carry the `Bid` witness.
 9. **Settle (permissionless).** `settle` delivers the token or records a pending
    claim (`claimDelivery`).
@@ -168,8 +172,10 @@ default when the sale starts".
      wallet and the fee recipient are paid; failed pushes go to the escrow.
    - With no bids, the token goes to the artist's current authority, resolved
      at settlement.
-   - The first transfer out of custody sets `primarySaleSettled`.
-10. **Royalties.** `royaltyInfo` reads the stored receiver and rate.
+   - Settlement calls `IStream.markPrimarySettled`, even when delivery is still
+     pending, so a winner who never claims cannot block the edition.
+10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and
+    fee terms, and reads the stored rate.
     - Payees `release` from split wallets, or batch through the claim router.
     - Artist-resolved payees are paid at `IArtistRegistry.payoutAddress`.
 
@@ -178,9 +184,10 @@ default when the sale starts".
 1. The item has kind `EDITION_MASTER` and edition terms. The master is auctioned
    as above.
 2. Once `IStream.primarySaleSettled(workId)` is true, anyone calls
-   `IEditions.createEdition(workId, item)`.
-   - Editions checks the item against the master's item hash and claims the
-     content hash under `PRODUCT_EDITIONS`.
+   `IEditions.createEdition(workId, item, packageRoot, proof)`.
+   - Editions checks the item against the master's item hash and the package,
+     which must still be approved, and claims the content hash under
+     `PRODUCT_EDITIONS`.
    - It locks economics, records `(stream, workId, contentHash)` and calls
      `IStream.linkEdition`.
    - A burned or disputed master never gets an edition.
@@ -194,7 +201,9 @@ default when the sale starts".
 4. Each purchase mints through `IEditions.mint`. Dutch purchases charge exactly
    the current price, and `Payment.amount` is the maximum the buyer will pay.
    The edition renders its master's media and record. `WorkRecords` calls
-   `notifyMasterUpdated`, so Editions re-emits ERC-4906 when the master changes.
+   `notifyMasterUpdated` when the master changes, and `notifyAllUpdated` after a
+   global or collection preferred-location change (as does Stream after a new
+   default renderer), so Editions re-emits ERC-4906.
 
 ### Records, finalize, on-chain upgrade
 
@@ -214,7 +223,8 @@ default when the sale starts".
 5. Amendments need agreement plus a governed action:
    - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable.
    - **Royalty-rate change:** every party, FUNDS_SETTER role. Payees never
-     change.
+     change. A master's change also applies to its edition
+     (`IEditions.setRoyaltyRate`).
    - **Errata repin:** the artist, SUCCESSOR_SETTER role and its 30-day delay.
 
 ### Recovery
@@ -235,7 +245,10 @@ default when the sale starts".
    consolidation.
    - `stageOverride` (PARAMETER_SETTER role) needs the new authority's
      `OverrideAcceptance` signature and gives 180 days' public notice.
-   - Estates and lost keys also need a year without signed activity.
+   - Estates and lost keys also need a year without the artist's own activity:
+     registration, a staged change, a heartbeat, a cancellation by the old key
+     or a captured wallet, a nonce revocation, or an executed change. Overrides
+     and guardian vetoes do not count.
    - Only captured wallets, never the old key, can cancel an override.
 
 ### Dispute pause
@@ -281,19 +294,21 @@ interfaces name the role each governed selector is meant to map to:
 
 | Role | Selectors |
 | --- | --- |
-| ADMIN (genesis, once) | `IStream.bind`, `IPackageRegistry.bindCallers`, `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `IEditions.bindWorkRecords` |
+| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `bindSplitFactory`; `IEditions.bindWorkRecords` |
 | GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage`, `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset` |
 | UNPAUSER | `IEnglishAuction.resume` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| MINTER | `IMintTarget.mint` and `burn` on 6529 Stream and 6529 Editions |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.admitAsset`, `setIncrementFloor`, `setDefaultCurrency` |
+| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.admitAsset`, `setIncrementFloor`, `setDefaultCurrency` (each guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setEconomics` |
-| SUCCESSOR_SETTER (30 days) | `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `IEntropyModule.setCoordinator`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `IEntropyModule.setCoordinator`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
-the first row, so they skip the AccessManager hop. Every installed dependency
+the first row, so they skip the AccessManager hop. Sale adapters are admitted
+to mint through each token's admitted-minter mapping (`setAdmittedMinter`), not
+the MINTER role, for the same reason. Each bind checks ERC-165 and rejects
+EIP-7702 delegated accounts. Every installed dependency
 (verifier, renderer, consolidation source, entropy module, economics resolver,
 package registry, sale adapter, federation registry) supports ERC-165. Installs
 check it, pin the code hash and reject EIP-7702 delegated accounts.
@@ -304,15 +319,17 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
 
 ## Budget notes
 
-- **Start gas (decision D5).** An end-to-end test measures `start`.
-  - The target is 300K. 300K–400K needs an ADR amendment, which the integrator
-    decides. Above 400K means a redesign.
-  - Stream stores two or three words per token, plus the lead artist ID; the
-    registry one word per consumed item.
-  - The auction stores two or three words per sale and reads locked terms back
-    from the token.
-  - Record opening, seeds, split-wallet deployment and artist heartbeats all
-    happen off the start path.
+- **Start gas (ADR 0003).** An end-to-end test measures `start`.
+  - The gate is 350K per steady-state start transaction. The first start in an
+    empty collection or custody may cost more; its measured value is recorded.
+  - Stream stores the item hash, the seller, the lead artist and one packed
+    word per token, and derives the royalty receiver. The registry stores one
+    word per consumed item.
+  - Mint checks an admitted-minter mapping, not an AccessManager hop.
+  - The auction locks the increment floor at the first bid, not at start, and
+    reads seller and fee terms back from the token.
+  - Record opening, ARTIST seeds, VRF requests, split-wallet deployment and
+    artist heartbeats all happen off the start path.
 - **`tokenURI` gas (at most 8M).** The renderer inlines media only for on-chain
   complete works under the inline threshold.
 - **Transaction cap.** Every transaction must fit the EIP-7825 cap of

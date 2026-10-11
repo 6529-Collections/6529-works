@@ -10,8 +10,9 @@ pragma solidity ^0.8.24;
 ///      economics lane. Worst cases, at 22,100 gas per new storage word:
 ///      - `consume`: one `acceptedAs` read per party and one check per payee (at most one payee
 ///        per party), with no registry calls, so at most 16 cold reads on the start path;
-///      - `openRecord`: one content-store read and one storage word per media file, under 1.5M
-///        gas at 32 (the descriptive record is a content-store file, so only its ID is stored);
+///      - `openRecord`: per media file, one content-store read and one stored file ID, under
+///        1.5M gas at 32 (the descriptive record is a content-store file, so only its ID is
+///        stored);
 ///      - captured cancellers, sale phases and locators: under 1M gas each at these bounds,
 ///        and `preferredLocator` scans at most 16 locators inside `tokenURI`'s 8M budget.
 library Limits {
@@ -29,4 +30,6 @@ library Limits {
     uint256 internal constant MAX_PHASES = 16;
     /// @notice Consolidated wallets captured as cancellers of one identity change.
     uint256 internal constant MAX_CANCELLERS = 16;
+    /// @notice Nodes in a Merkle proof (package items and allowlists): enough for 2^32 leaves.
+    uint256 internal constant MAX_PROOF_LENGTH = 32;
 }

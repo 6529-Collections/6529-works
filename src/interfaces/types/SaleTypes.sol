@@ -43,14 +43,16 @@ struct Payment {
 }
 
 /// @notice What a token contract tells a sale adapter about a primary sale.
-/// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms`. `currency` is resolved:
-///      `CURRENCY_ETH` or an active allowlisted ERC-20, never `CURRENCY_DEFAULT`. `price` is the
-///      unit price for FIXED_PRICE, the starting price for DUTCH and zero for ENGLISH_AUCTION.
-///      `seller` receives the artist portion (a split wallet's predicted CREATE2 address, which
-///      may not be deployed), `feeRecipient` the network portion, `feeShare` out of
-///      `SHARE_DENOMINATOR`. `creator` is the lead artist's current authority, resolved through
-///      the artist registry when the terms are read: it receives an auction token that drew no
-///      bids, and may open edition sales.
+/// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
+///      Stream token, sets only the sale kind, seller, fee and creator). `currency` is the item's
+///      or edition's currency: `CURRENCY_ETH`, an allowlisted ERC-20, or `CURRENCY_DEFAULT`, which
+///      the adapter resolves (`IEconomicsResolver.resolveCurrency`) and locks when the sale starts.
+///      `price` is the unit price for FIXED_PRICE, the starting price for DUTCH and zero for
+///      ENGLISH_AUCTION. `seller` receives the artist portion (a split wallet's predicted CREATE2
+///      address, which may not be deployed), `feeRecipient` the network portion, `feeShare` out of
+///      `Splits.DENOMINATOR` (100,000). `creator` is the lead artist's current authority, resolved
+///      through the artist registry when the terms are read: it receives an auction token that drew
+///      no bids, and may open edition sales.
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;

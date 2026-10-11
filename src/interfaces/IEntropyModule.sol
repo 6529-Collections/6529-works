@@ -7,15 +7,15 @@ import { PackageItem } from "./types/PackageTypes.sol";
 /// @title IEntropyModule
 /// @notice The optional VRF module for seeded 1/1s, revealed before any sale starts (ADR 0001
 ///         section 9).
-/// @dev Entropy is never in Core's mint path. Seeds are keyed by item hash and requested before
-///      any token exists: the auction's start (through 6529 Stream's `mint`) requires
-///      `isDelivered(itemHash)` for a VRF item, and `IStream.seedOf` reads `seedOf(itemHash)`, so
-///      nothing ever sits in sale custody waiting for randomness. The VRF fulfillment stores the
-///      seed here, with no callback into any token or adapter. Anyone may request, for an item
-///      of an approved package that is not yet consumed and whose seed policy is VRF (checked
-///      against the package registry), which keeps the subscription safe from spam; a request
-///      still undelivered after `retryDelay()` may be repeated by anyone and supersedes the
-///      previous one. Seeds are permanent.
+/// @dev Entropy is never in Core's mint path. Seeds are keyed by item hash and requested before any
+///      token exists: the auction's start (through 6529 Stream's `mint`) requires
+///      `isDelivered(itemHash)` for a VRF item, and `IWorkRecords.seedOf` reads `seedOf(itemHash)`,
+///      so nothing ever sits in sale custody waiting for randomness. The VRF fulfillment stores the
+///      seed here, with no callback into any token or adapter. Anyone may request, for an item of
+///      an approved package that is not yet consumed and whose seed policy is VRF (checked against
+///      the package registry), which keeps the subscription safe from spam; a request still
+///      undelivered after `retryDelay()` may be repeated by anyone and supersedes the previous one.
+///      Seeds are permanent.
 interface IEntropyModule is IERC165 {
     /// @notice A seed was requested for the item.
     event SeedRequested(bytes32 indexed itemHash, uint256 requestId);

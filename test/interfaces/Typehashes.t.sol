@@ -43,7 +43,7 @@ contract TypehashesTest is Test {
         );
         assertEq(
             Typehashes.RENDERER_REPIN,
-            0x7e803277d0b0b79b121e1f0d8d742e5a51ef2baef4b68c7eb897acd5c08c6933
+            0xe02c73b10a1645fcc06fd6d114765861f5bcd1cd03d788c53c6bdf196c748bd4
         );
         assertEq(
             Typehashes.IDENTITY_CHANGE,
@@ -51,7 +51,7 @@ contract TypehashesTest is Test {
         );
         assertEq(
             Typehashes.OVERRIDE_ACCEPTANCE,
-            0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
+            0xcccdd16a86d667337789cb112f688c2a3aabcf081e5b281efc5ea2c4ed5e26f0
         );
         assertEq(
             Typehashes.PHASE_CONFIGURATION,

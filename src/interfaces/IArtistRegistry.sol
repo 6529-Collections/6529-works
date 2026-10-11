@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IArtistPayoutResolver } from "./IArtistPayoutResolver.sol";
+import { IArtistPayoutResolver } from "../economics/interfaces/IArtistPayoutResolver.sol";
 import { IArtistRoleResolver } from "./IArtistRoleResolver.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "./types/IdentityTypes.sol";
 
@@ -42,16 +42,21 @@ interface IConsolidationSource is IERC165 {
 ///        a 180-day public notice; ESTATE and LOST_KEY need a year without signed activity; only
 ///        captured wallets (never the previous authority) may cancel, and the guardian may veto.
 ///      One change may be pending per artist. `executeChange` is permissionless once due.
-///      Signed activity is a first package acceptance, a staged change or a heartbeat.
+///      Dormancy counts the artist's own activity only: registration (the first package
+///      acceptance), a staged change, a heartbeat, a cancellation by the old key or a captured
+///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian
+///      vetoes never count.
 ///
 ///      `isArtist(token, id, account)` is true when `account` is the current authority of the
-///      lead artist of 6529 Stream work `id`, or of the master of 6529 Editions edition `id`. It
+///      lead artist of 6529 Stream work `id`, or of the master of 6529 Editions edition `id`; it
+///      is false for the pre-mint subject `(address(0), uint256(itemHash))`. It
 ///      meets the resolver trust requirement: no governed action changes an answer faster than
 ///      the 30-day class (changes take 7 days, overrides 180 days, and the consolidation source
 ///      swaps on the 30-day class). It also answers the economics lane's payout question
-///      (`IArtistPayoutResolver`). The package registry, 6529 Stream and the federation registry
-///      are each bound once (`Bound`); only the package registry may call `register`, and only
-///      the federation registry `listFederatedContract`.
+///      (`IArtistPayoutResolver`). The package registry, 6529 Stream, the federation registry and
+///      the split factory are each bound once (`Bound`; ERC-165 checked, not EIP-7702 delegated
+///      accounts); only the package registry may call `register`, and only the federation
+///      registry `listFederatedContract`.
 interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice An artist identity was created.
     event ArtistRegistered(uint256 indexed artistId, ArtistIdentity identity);
@@ -66,8 +71,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     event ActivityRecorded(uint256 indexed artistId, uint64 timestamp);
     /// @notice The consolidation source changed.
     event ConsolidationSourceSet(address previous, address next);
-    /// @notice A contract was bound under `name` (PACKAGE_REGISTRY, STREAM or
-    ///         FEDERATION_REGISTRY), once.
+    /// @notice A contract was bound under `name` (PACKAGE_REGISTRY, STREAM, FEDERATION_REGISTRY
+    ///         or SPLIT_FACTORY), once.
     event Bound(bytes32 indexed name, address target);
     /// @notice The authority revoked its unused change nonce `nonce`.
     event NonceRevoked(uint256 indexed artistId, uint256 nonce);
@@ -112,6 +117,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Binds the v1.1 federation registry (the only `listFederatedContract` caller),
     ///         once. ADMIN role.
     function bindFederationRegistry(address target) external;
+    /// @notice Binds the economics split factory, once. ADMIN role.
+    function bindSplitFactory(address target) external;
     /// @notice Creates an identity for `authority` with ID `uint256(uint160(authority))` and
     ///         payout `authority`, and counts as its first activity. Bound package registry only,
     ///         after it verified the signed acceptance. Reverts with `AccountTaken` if mapped.
@@ -131,9 +138,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         bytes calldata authorityAcceptance
     ) external;
     /// @notice Stages a network override (CONTESTED, ESTATE or LOST_KEY) with a 180-day notice.
-    ///         PARAMETER_SETTER role. `evidenceHash` commits to the public record;
-    ///         `authorityAcceptance` is the new authority's `Typehashes.IDENTITY_CHANGE` signature
-    ///         when the authority changes, as `Typehashes.OVERRIDE_ACCEPTANCE`.
+    ///         PARAMETER_SETTER role. `evidenceHash` commits to the public record. When the
+    ///         authority changes, `authorityAcceptance` is the new authority's
+    ///         `Typehashes.OVERRIDE_ACCEPTANCE` signature, which binds the change nonce.
     function stageOverride(
         uint256 artistId,
         ChangeKind kind,
@@ -189,4 +196,6 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function stream() external view returns (address);
     /// @notice The bound federation registry, or zero before v1.1.
     function federationRegistry() external view returns (address);
+    /// @notice The bound split factory.
+    function splitFactory() external view returns (address);
 }

@@ -4,8 +4,8 @@ The contract surfaces every implementation lane builds against, and the shared
 types they exchange. `IMintTarget` is the only thing a shared sale adapter knows
 about a token; `IStream` and `IEditions` extend it. The content store and
 dependency registry interfaces live here too. `types/` holds:
-- the package item, work record, sale, economics and identity structs, with the
-  product IDs and the `Payee` mirror of the economics split wallet;
+- the package item, media, sale, economics and identity structs, and the product
+  IDs (payees are the economics lane's `ISplitWallet.Payee`);
 - the `Limits` that keep every transaction under the EIP-7825 gas cap;
 - `WorksHashing`, the one definition of item hashes, package Merkle leaves and
   work-record hashes (golden vectors in `test/interfaces/`).

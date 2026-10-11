@@ -18,13 +18,18 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      the adapter's are both `SaleKind.ENGLISH_AUCTION`. A VRF item's seed must already be
 ///      delivered (`IEntropyModule.requestSeed` runs before the start).
 ///
-///      Start-gas budget (300K for the whole start, decision D3): a mint stores two or three
-///      words per token (the item hash; seller, serial, collection, kind and flags; royalty
-///      receiver and rate) plus the lead artist ID, and nothing else. Everything else is in
-///      `WorkMinted` and in the published package.
+///      Start-gas budget: 350K per steady-state start transaction (ADR 0003; the first start in
+///      an empty collection or custody may cost more, and its measured value is recorded). A
+///      mint stores per token only the item hash, the seller, the lead artist ID and one packed
+///      word of serial, collection, kind, seed policy, royalty rate, fee share, a small fee
+///      recipient index and flags. The royalty receiver is derived, not stored: the split
+///      factory's `walletFor` over `(seller, feeRecipient, feeShare)`. ARTIST seeds are stored by
+///      `IWorkRecords` when the record opens. Everything else is in `WorkMinted` and in the
+///      published package.
 ///
-///      Satellites are bound once at genesis (`bind`) and never change. Governed functions are
-///      non-payable; each names the `Roles` role its selector maps to.
+///      Satellites are bound once each (`bindWorkRecords`, `bindEditions`): ERC-165 checked, not
+///      EIP-7702 delegated accounts, never changed. Governed functions are non-payable; each
+///      names the `Roles` role its selector maps to.
 interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice A collection: a named grouping of works, possibly by several artists.
     /// @param name The display name.
@@ -38,8 +43,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     /// @notice What 6529 Stream stores for a work.
     /// @dev Nothing changes after mint except `royaltyRate` (by agreement, through
-    ///      `IWorkRecords`). `artistId` is the lead artist. `seller` and `royaltyReceiver` are
-    ///      predicted split-wallet addresses.
+    ///      `IWorkRecords`). `artistId` is the lead artist. `seller` is a predicted split-wallet
+    ///      address; `royaltyReceiver` is derived from it and the stored fee terms.
     struct WorkCore {
         bytes32 itemHash;
         uint256 artistId;
@@ -68,14 +73,16 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     );
     /// @notice A work's royalty rate changed, by agreement of every party plus a governed action.
     event RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next);
-    /// @notice The renderer of works that are not finalized changed.
-    event DefaultRendererSet(address previous, address next);
+    /// @notice The renderer of works that are not finalized changed; `codeHash` is pinned.
+    event DefaultRendererSet(address previous, address next, bytes32 codeHash);
     /// @notice A collection was created.
     event CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash);
     /// @notice An edition master was linked to its 6529 Editions edition.
     event EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId);
-    /// @notice The satellites were bound, once.
-    event Bound(address workRecords, address editions);
+    /// @notice A satellite was bound under `name` (WORK_RECORDS or EDITIONS), once.
+    event Bound(bytes32 indexed name, address target);
+    /// @notice The minting adapter marked a token's primary sale settled.
+    event PrimarySaleSettled(uint256 indexed tokenId);
     /// @notice The marketplace owner changed (the event marketplaces index for `owner()`).
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice ERC-7572: the contract-level metadata changed.
@@ -85,10 +92,13 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error UnknownWork(uint256 tokenId);
     /// @notice No collection has this ID.
     error UnknownCollection(uint256 collectionId);
-    /// @notice The caller is not the bound satellite this function serves.
-    error NotBound(address caller);
-    /// @notice The satellites are already bound.
-    error AlreadyBound();
+    /// @notice The caller is not the bound contract (or minting adapter) this function serves.
+    error UnboundCaller(address caller);
+    /// @notice `name` is already bound.
+    error AlreadyBound(bytes32 name);
+    /// @notice The target lacks code or the expected ERC-165 support, or is an EIP-7702 delegated
+    ///         account.
+    error InvalidBinding(address target);
     /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
     ///         seed policy).
     error InvalidMintRequest();
@@ -101,8 +111,10 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     // ----- wiring -----
 
-    /// @notice Binds the work-records satellite and 6529 Editions, once, at genesis. ADMIN role.
-    function bind(address workRecords_, address editions_) external;
+    /// @notice Binds the work-records satellite, once (ERC-165 for `IWorkRecords`). ADMIN role.
+    function bindWorkRecords(address target) external;
+    /// @notice Binds 6529 Editions, once (ERC-165 for `IEditions`). ADMIN role.
+    function bindEditions(address target) external;
     /// @notice The bound `IWorkRecords` satellite.
     function workRecords() external view returns (address);
     /// @notice The bound 6529 Editions contract.
@@ -136,21 +148,24 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
     ///         Reverts with `UnknownWork`.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
-    /// @notice True after the token's first transfer out of the minting adapter's custody (the
-    ///         auction settled, to a winner or to the artist); false before, and for burned or
-    ///         unminted IDs. A packed flag set in the transfer hook; it gates edition creation.
+    /// @notice True once the minting adapter marked the token's primary sale settled (to a
+    ///         winner, a pending claim, or the artist); false before, and for burned or unminted
+    ///         IDs. A packed flag; it gates edition creation.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
-    /// @notice The work's seed: ARTIST seeds from the item, VRF seeds from the entropy module
-    ///         (keyed by item hash, always delivered before mint), zero for NONE.
-    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed);
+    /// @notice Marks a token's primary sale settled, at settlement, without waiting for delivery,
+    ///         so a winner who never claims cannot block the edition. Only the adapter that
+    ///         minted the token.
+    function markPrimarySettled(uint256 tokenId) external;
 
     // ----- rendering -----
 
     /// @notice The renderer of works that are not finalized.
     function defaultRenderer() external view returns (address);
-    /// @notice Sets the default renderer. SUCCESSOR_SETTER role, compare-and-set. Finalized works
-    ///         keep their pin.
-    function setDefaultRenderer(address expected, address next) external;
+    /// @notice Sets the default renderer: ERC-165 checked for `IRenderer`, code hash
+    ///         `nextCodeHash`, not an EIP-7702 delegated account. SUCCESSOR_SETTER role,
+    ///         compare-and-set. Finalized works keep their pin; 6529 Editions is notified
+    ///         (`IEditions.notifyAllUpdated`).
+    function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash) external;
     /// @notice The renderer serving a work: its pin in `IWorkRecords` once finalized, the default
     ///         before. `tokenURI` forwards to it.
     function rendererOf(uint256 tokenId) external view returns (address);

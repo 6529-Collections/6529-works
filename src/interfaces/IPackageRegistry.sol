@@ -61,8 +61,8 @@ interface IPackageRegistry is IERC165 {
     event MoveRevoked(uint256 indexed artistId, uint256 indexed nonce);
     /// @notice The curation verifier changed; `codeHash` is the pinned code hash of `next`.
     event VerifierSet(address previous, address next, bytes32 codeHash);
-    /// @notice The contract callers were bound, once.
-    event CallersBound(address stream, address editions);
+    /// @notice A contract was bound under `name` (STREAM or EDITIONS), once.
+    event Bound(bytes32 indexed name, address target);
 
     /// @notice The verifier rejected the attestation.
     error NotApproved(bytes32 packageRoot);
@@ -93,15 +93,21 @@ interface IPackageRegistry is IERC165 {
     ///         EIP-7702 delegated account.
     error InvalidDependency(address dependency);
     /// @notice The caller is not the bound contract for this function.
-    error NotBoundCaller(address caller);
-    /// @notice The callers are already bound.
-    error CallersAlreadyBound();
+    error UnboundCaller(address caller);
+    /// @notice `name` is already bound.
+    error AlreadyBound(bytes32 name);
+    /// @notice The target lacks code or the expected ERC-165 support, or is an EIP-7702 delegated
+    ///         account.
+    error InvalidBinding(address target);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
 
-    /// @notice Binds 6529 Stream (the only `consume` caller) and 6529 Editions (the only
-    ///         `claimContent` caller), once, at genesis. ADMIN role.
-    function bindCallers(address stream_, address editions_) external;
+    /// @notice Binds 6529 Stream, the only `consume` caller, once (ERC-165 for `IStream`, not an
+    ///         EIP-7702 delegated account). ADMIN role.
+    function bindStream(address target) external;
+    /// @notice Binds 6529 Editions, the only `claimContent` caller, once (ERC-165 for
+    ///         `IEditions`, not an EIP-7702 delegated account). ADMIN role.
+    function bindEditions(address target) external;
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
     function registerPackage(bytes32 packageRoot, bytes32 evidenceHash, bytes calldata attestation)
         external;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { License, PackageItem } from "./types/PackageTypes.sol";
+import { License, PackageItem, SeedPolicy } from "./types/PackageTypes.sol";
 import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 
 /// @title IWorkRecords
@@ -25,6 +25,11 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      did not see. Every visible change asks 6529 Stream to emit ERC-4906 and, for an edition
 ///      master, calls `IEditions.notifyMasterUpdated` (this satellite is bound in both).
 ///
+///      A record must be opened first: every per-token view and mutator reverts with
+///      `RecordNotOpen` until `openRecord` has run (`isOpen` tells), and the renderer falls back
+///      to core-only metadata from 6529 Stream until then. Changes to the global or a collection
+///      preferred kind call `IEditions.notifyAllUpdated`.
+///
 ///      Governed functions are non-payable; each names the `Roles` role its selector maps to.
 interface IWorkRecords {
     /// @notice A work's record state.
@@ -37,7 +42,6 @@ interface IWorkRecords {
         bytes32 mediaHash;
         bytes32 licenseKey;
         uint32 version;
-        bool opened;
         bool finalized;
         bool onChainComplete;
         address renderer;
@@ -53,8 +57,11 @@ interface IWorkRecords {
     event WorkOnChainComplete(uint256 indexed tokenId);
     /// @notice A work's license changed, by every party's agreement plus a governed action.
     event LicenseChanged(uint256 indexed tokenId, License previous, License next);
-    /// @notice The errata path replaced a finalized work's renderer pin (ADR 0001 section 10).
-    event RendererRepinned(uint256 indexed tokenId, address previous, address next);
+    /// @notice The errata path replaced a finalized work's renderer pin (ADR 0001 section 10);
+    ///         `codeHash` is the pinned code hash of `next`.
+    event RendererRepinned(
+        uint256 indexed tokenId, address previous, address next, bytes32 codeHash
+    );
     /// @notice A locator was appended for one media file of a work.
     event LocatorAdded(
         uint256 indexed tokenId, bytes32 indexed fileId, uint256 index, Locator locator
@@ -96,6 +103,9 @@ interface IWorkRecords {
     error InvalidLocator();
     /// @notice A media file still lacks chunks in the content store.
     error NotOnChainComplete(uint256 tokenId);
+    /// @notice The renderer lacks ERC-165 support for `IRenderer` or the code hash, or is an
+    ///         EIP-7702 delegated account.
+    error InvalidRenderer(address renderer);
 
     /// @notice The 6529 Stream core this satellite serves (immutable).
     function stream() external view returns (address);
@@ -106,7 +116,7 @@ interface IWorkRecords {
     ///         auction-start path). Checks the item against Stream's stored item hash, `media`
     ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`, and
     ///         each file's declared SHA-256 against `IContentStore.sha256Of`; stores the record
-    ///         file ID, the media file IDs and a non-CC0 license.
+    ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external;
     /// @notice The artist points the work at a new record file, registered in the content store,
@@ -119,6 +129,8 @@ interface IWorkRecords {
     ///         content store. Permissionless and one-way; does not change the state hash.
     function syncOnChain(uint256 tokenId) external;
 
+    /// @notice Whether a work's record is open. Never reverts.
+    function isOpen(uint256 tokenId) external view returns (bool);
     /// @notice A work's record state.
     function record(uint256 tokenId) external view returns (RecordInfo memory);
     /// @notice A work's media, in approved order (primary first).
@@ -129,6 +141,9 @@ interface IWorkRecords {
     function workStateHash(uint256 tokenId) external view returns (bytes32);
     /// @notice The pinned renderer of a finalized work, or zero.
     function pinnedRenderer(uint256 tokenId) external view returns (address);
+    /// @notice The work's seed: ARTIST seeds stored at `openRecord`, VRF seeds from the entropy
+    ///         module by item hash, zero for NONE.
+    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed);
 
     // ----- amendments: agreement plus a governed action (ADR 0001 sections 7, 8 and 10) -----
 
@@ -146,7 +161,8 @@ interface IWorkRecords {
     ) external;
     /// @notice Changes a work's royalty rate (payees never change). FUNDS_SETTER role plus a
     ///         `Typehashes.ROYALTY_RATE_CHANGE` signature from every party of `item`; calls
-    ///         `IStream.setRoyaltyRate`.
+    ///         `IStream.setRoyaltyRate` and, for an edition master, `IEditions.setRoyaltyRate` on
+    ///         the linked edition.
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -155,11 +171,14 @@ interface IWorkRecords {
         uint64 deadline,
         bytes[] calldata partySignatures
     ) external;
-    /// @notice The errata path: pins a new renderer on a finalized work. SUCCESSOR_SETTER role
-    ///         (30-day delay) plus the artist's `Typehashes.RENDERER_REPIN` signature.
+    /// @notice The errata path: pins a new renderer (ERC-165 checked for `IRenderer`, code hash
+    ///         `rendererCodeHash`, not an EIP-7702 delegated account) on a finalized work.
+    ///         SUCCESSOR_SETTER role (30-day delay) plus the artist's `Typehashes.RENDERER_REPIN`
+    ///         signature, which binds the code hash.
     function repinRenderer(
         uint256 tokenId,
         address renderer,
+        bytes32 rendererCodeHash,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes calldata artistSignature

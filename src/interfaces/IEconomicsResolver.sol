@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { License } from "./types/PackageTypes.sol";
-import { Payee, ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
+import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
+import { ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
 
 /// @title IEconomicsResolver
 /// @notice The governed economics every product reads (ADR 0001 sections 5, 7 and 8): the
@@ -32,7 +33,7 @@ interface IEconomicsResolver is IERC165 {
     ///         its package item. Both wallets are predicted CREATE2 addresses; nothing is
     ///         deployed, so the auction start stays within its gas budget; a zero fee share omits
     ///         the fee payee. Reverts for a payee list the split factory would not accept.
-    function newWorkTerms(bytes32 product, Payee[] calldata payees)
+    function newWorkTerms(bytes32 product, ISplitWallet.Payee[] calldata payees)
         external
         view
         returns (WorkTerms memory);
@@ -44,6 +45,8 @@ interface IEconomicsResolver is IERC165 {
 
     /// @notice A product's economics.
     function economics(bytes32 product) external view returns (ProductEconomics memory);
+    /// @notice A product's network fee recipient (`economics(product).feeRecipient`).
+    function networkFeeRecipient(bytes32 product) external view returns (address);
     /// @notice A product's default license for new packages (CC0 at launch).
     function defaultLicense(bytes32 product) external view returns (License memory);
     /// @notice The economics lane's asset allowlist (immutable).
