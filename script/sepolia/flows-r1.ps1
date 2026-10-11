@@ -175,6 +175,11 @@ function Add-Receipt([string]$Label, [string]$Role, $Receipt) {
         status  = $Receipt.status
         prague  = $null
     }
+    # One row per transaction: recording a hash twice (a re-run `record`, or a stale forge
+    # broadcast file) is an error, not a second measurement.
+    if (@($s.txs | Where-Object { $_.hash -eq $row.hash }).Count -ne 0) {
+        throw "$Label`: $($row.hash) is already recorded"
+    }
     $s.txs = @($s.txs) + $row
     Write-State $s
     Write-Host ("{0,-34} {1,12:N0} gas  {2}" -f $Label, $row.gasUsed, $row.hash)
@@ -223,7 +228,12 @@ function Send-Broadcast([string]$Label, [string]$Sig, [string[]]$Arguments) {
 function Send-Items($Items) {
     foreach ($i in $Items) {
         if ($i[0] -ne 'TX') { continue }
-        if ($Label -and @($Items | Where-Object { $_[0] -eq 'TX' }).Count -eq 1) { $i[1] = $Label }
+        if ($Label) {
+            if (@($Items | Where-Object { $_[0] -eq 'TX' }).Count -ne 1) { throw "-Label needs a one-transaction plan" }
+            $i[1] = $Label
+        }
+        # Windows limits a command line to 32,767 characters; 30,000 leaves room for the
+        # rest of the `cast send` arguments.
         if ($i[5].Length -gt 30000) {
             if ($i[1] -notmatch '^writeChunk-b64-(\d+)$') { throw "$($i[1]): calldata too long for cast" }
             Send-Broadcast $i[1] 'broadcastB64Chunk(uint256)' @("$(Get-Info $Items "b64-$($Matches[1])-k")") | Out-Null
@@ -327,7 +337,8 @@ switch ($Step) {
         foreach ($row in $s.txs) {
             if ($null -ne $row.prague) { continue }
             $out = Invoke-Cli 'cast' @('run', $row.hash, '--quick', '--evm-version', 'prague', '--rpc-url', $Rpc)
-            if ($out -match 'Gas used: (\d+)') { $row.prague = [int64]$Matches[1] }
+            if ($out -notmatch 'Gas used: (\d+)') { throw "$($row.label): no gas in the cast run output" }
+            $row.prague = [int64]$Matches[1]
             Write-State $s
             Write-Host ("{0,-34} {1,12:N0} {2,12:N0}" -f $row.label, $row.gasUsed, $row.prague)
         }

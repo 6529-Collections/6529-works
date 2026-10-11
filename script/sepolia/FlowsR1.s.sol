@@ -59,8 +59,9 @@ interface IDigests {
 ///         (`deployments/11155111/1791746472.json`): the content uploads, one curated package of
 ///         eight works, its approval and acceptance, the auction starts, bids, record opening, the
 ///         VRF request and, after the 24-hour auction, settlement and the linked edition.
-/// @dev It never broadcasts and holds no key. Each entry point reads the live chain (run it with
-///      `--rpc-url`) and prints lines for a driver to act on:
+/// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
+///      other entry point reads the live chain (run it with `--rpc-url`) and prints lines for a
+///      driver to act on:
 ///      - `TX <label> <from> <to> <value> <calldata>`: a transaction to send, where `<from>` names
 ///        the account that must send it (`any`, `platform`, `curator`, `artist`, or an address);
 ///      - `SIGN <label> <signer> <digest>`: an EIP-712 digest, read from the contract that checks
@@ -241,8 +242,13 @@ contract FlowsR1 is Script {
     function _registered(Addrs memory a, bytes32 fileId) internal view returns (bool) {
         try IContentStore(a.store).fileInfo(fileId) returns (IContentStore.FileInfo memory) {
             return true;
-        } catch {
-            return false;
+        } catch (bytes memory reason) {
+            // Only the store's unknown-file error means "not registered"; anything else (a
+            // wrong address, an RPC failure) fails the run instead of planning bad uploads.
+            if (reason.length == 36 && bytes4(reason) == IContentStore.ContentFileUnknown.selector) return false;
+            assembly ("memory-safe") {
+                revert(add(reason, 0x20), mload(reason))
+            }
         }
     }
 
@@ -586,6 +592,7 @@ contract FlowsR1 is Script {
         Work[] memory works = _works(a);
         bytes32 root = _root(_leaves(works));
         uint256 artistId = IArtistRegistry(a.artists).artistIdOf(_artist());
+        require(artistId != 0, "artist not registered: accept the package first");
         _sign(
             string.concat("move-", index.toString()),
             IArtistRegistry(a.artists).authorityOf(artistId),
