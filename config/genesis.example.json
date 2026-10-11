@@ -451,6 +451,13 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "resolveContested(uint256,bool,bytes32)",
+          "selector": "0xd16d1602",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [
@@ -465,6 +472,10 @@
         {
           "signature": "bindSplitFactory(address)",
           "selector": "0x5b004c86"
+        },
+        {
+          "signature": "bindStatementLog(address)",
+          "selector": "0xa46c8086"
         }
       ],
       "deferred": [
@@ -898,6 +909,14 @@
         "SplitFactory"
       ],
       "calldata": "0x5b004c86000000000000000000000000000000000000000000000000000000000000a010"
+    },
+    {
+      "contract": "ArtistRegistry",
+      "signature": "bindStatementLog(address)",
+      "args": [
+        "StatementLog"
+      ],
+      "calldata": "0xa46c8086000000000000000000000000000000000000000000000000000000000000a007"
     },
     {
       "contract": "Stream",

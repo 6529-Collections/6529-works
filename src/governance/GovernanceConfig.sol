@@ -141,6 +141,7 @@ library GovernanceConfig {
             || selector == IArtistRegistry.bindPackageRegistry.selector
             || selector == IArtistRegistry.bindSplitFactory.selector
             || selector == IArtistRegistry.bindFederationRegistry.selector
+            || selector == IArtistRegistry.bindStatementLog.selector
             || selector == IMintTarget.setAdmittedMinter.selector
             || selector == ISaleAdapter.setTarget.selector
             || selector == IAssetAllowlist.setDefaultCurrency.selector

@@ -159,7 +159,7 @@ contract DeployScriptTest is Test {
         assertEq(vm.parseJsonBytes32(record, ".cc0TextFileId"), d.cc0TextFileId);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 14);
-        assertEq(calls, 18);
+        assertEq(calls, 19);
         assertEq(holders, 17);
     }
 
@@ -238,7 +238,7 @@ contract DeployScriptTest is Test {
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 14);
-        assertEq(calls, 18);
+        assertEq(calls, 19);
         assertEq(holders, 17);
         // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));

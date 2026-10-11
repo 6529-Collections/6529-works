@@ -143,6 +143,8 @@ library VerifyV1 {
                 ok = _getter(target, "splitFactory()") == arg;
             } else if (selector == IArtistRegistry.bindFederationRegistry.selector) {
                 ok = _getter(target, "federationRegistry()") == arg;
+            } else if (selector == IArtistRegistry.bindStatementLog.selector) {
+                ok = _getter(target, "statementLog()") == arg;
             } else if (selector == IMintTarget.setAdmittedMinter.selector) {
                 ok = IMintTarget(target).isAdmittedMinter(arg) == (_word(data, 1) != 0);
             } else if (selector == ISaleAdapter.setTarget.selector) {

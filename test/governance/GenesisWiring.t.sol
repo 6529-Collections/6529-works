@@ -116,13 +116,14 @@ contract GenesisWiringTest is GovernanceFixture {
     }
 
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[10] memory allowed = [
+        bytes4[11] memory allowed = [
             IStream.bindWorkRecords.selector,
             IStream.bindEditions.selector,
             IPackageRegistry.bindStream.selector,
             IArtistRegistry.bindPackageRegistry.selector,
             IArtistRegistry.bindSplitFactory.selector,
             IArtistRegistry.bindFederationRegistry.selector,
+            IArtistRegistry.bindStatementLog.selector,
             IMintTarget.setAdmittedMinter.selector,
             ISaleAdapter.setTarget.selector,
             IAssetAllowlist.setDefaultCurrency.selector,

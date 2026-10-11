@@ -157,7 +157,7 @@ contract DeployV1Test is Test {
         assertEq(cfg.grants.length, 17, "holders");
         // Every wiring call in the genesis JSON: the binds, the admitted minters, the sale
         // targets, three default currencies and the manifest.
-        assertEq(calls.length, 18, "wiring calls");
+        assertEq(calls.length, 19, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 

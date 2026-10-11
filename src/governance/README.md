@@ -138,8 +138,8 @@ therefore executes them itself:
 - **Allowed calls:** an allow-list, `GovernanceConfig.isGenesisSelector`, built from
   the compiled interface selectors:
   - `bindWorkRecords`, `bindEditions`, `bindStream`, `bindPackageRegistry`,
-    `bindSplitFactory`, and `bindFederationRegistry` (listed for completeness, though
-    v1 defers it);
+    `bindSplitFactory`, `bindStatementLog`, and `bindFederationRegistry` (listed for
+    completeness, though v1 defers it);
   - `setAdmittedMinter(address,bool)`;
   - `setTarget(address,bool)`;
   - `setDefaultCurrency(bytes32,uint64,address)`, each product's first default
