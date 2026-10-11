@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -55,8 +54,9 @@ import { EditionRules } from "./EditionRules.sol";
 ///
 ///      Copies are minted only by admitted adapters (`isAdmittedMinter`, written by a governed
 ///      setter in the 30-day class) whose sale kind matches the package's: at most `size` copies
-///      ever (burns do not free supply), for OPEN editions only during `window` seconds from the
-///      first mint, and never once the master is burned. The sale adapter owns the currency:
+///      ever (burns do not free supply), and for OPEN editions only during `window` seconds from
+///      the first mint. A master with an edition is never burned (Stream refuses to burn a
+///      settled token), so minting reads nothing from Stream. The sale adapter owns the currency:
 ///      `primaryTerms` and `mint` return the package's stored currency, possibly
 ///      `CURRENCY_DEFAULT` (allowed only with a zero price), and the adapter resolves and locks
 ///      it when it opens a sale (ADR 0001 section 5). Royalties are read from this contract's
@@ -64,14 +64,16 @@ import { EditionRules } from "./EditionRules.sol";
 ///      `PRODUCT_EDITIONS` economics) and never changes; the rate starts at the master's current
 ///      rate, so a consented re-rate of the master before the edition exists carries over, and
 ///      the bound work-records satellite re-rates the edition with its master afterwards (every
-///      party's consent plus a governed action). The license and `uri` come from the master. ERC-4906 events follow the
-///      master: one per edition from the work-records satellite, and a batch over every ID when
-///      Stream's default renderer or a global or collection preferred location changes.
+///      party's consent plus a governed action). The license and `uri` come from the master.
+///      ERC-4906 events follow the master: one per edition from the work-records satellite, and a
+///      batch over every ID when Stream's default renderer or a global or collection preferred
+///      location changes.
 ///
 ///      Wiring is immutable. Stream is checked at deployment (code, no EIP-7702 delegation,
-///      ERC-165 for ERC-721, pinned code hash), and the package registry, economics resolver and
+///      ERC-165 for `IStream`, pinned code hash), and the package registry, economics resolver and
 ///      artist registry are taken from it. Stream and the package registry bind Editions, and
-///      genesis binds Stream's work-records satellite here once.
+///      genesis binds Stream's work-records satellite here once, before any edition can be
+///      created (an edition's license and record updates go through it).
 contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev The binding name of the work-records satellite, as 6529 Stream names it.
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
@@ -79,6 +81,13 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     uint8 private constant MINTER_NONE = 0;
     uint8 private constant MINTER_ADMITTED = 1;
     uint8 private constant MINTER_REMOVED = 2;
+
+    /// @dev What `createEdition` reads of its master from `IStream.coreOf`.
+    struct Master {
+        bytes32 itemHash;
+        uint256 artistId;
+        uint32 royaltyRate;
+    }
 
     /// @dev An edition plus what it keeps beside the interface's `Edition` view.
     struct Record {
@@ -125,6 +134,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     error InvalidMintRequest();
     /// @notice A royalty rate above 100,000.
     error InvalidRoyaltyRate(uint32 rate);
+    /// @notice The work-records satellite is not bound yet, so no edition can be created.
+    error WorkRecordsUnbound();
 
     /// @param authority_ The AccessManager that governs this contract.
     /// @param stream_ The 6529 Stream contract; the other wiring is read from it.
@@ -134,7 +145,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ERC1155("")
         AccessManaged(authority_)
     {
-        if (!_installable(stream_, type(IERC721).interfaceId)) revert InvalidBinding(stream_);
+        if (!_installable(stream_, type(IStream).interfaceId)) revert InvalidBinding(stream_);
         if (stream_.codehash != streamCodeHash) {
             revert CodeHashMismatch(streamCodeHash, stream_.codehash);
         }
@@ -161,8 +172,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         bytes32 packageRoot,
         bytes32[] calldata proof
     ) external returns (uint256 editionId) {
-        (bytes32 itemHash, IStream.WorkCore memory master) =
-            _admit(workId, item, packageRoot, proof);
+        (bytes32 itemHash, Master memory master) = _admit(workId, item, packageRoot, proof);
         _checkTerms(workId, item.edition);
         EditionTerms memory terms = item.edition;
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
@@ -236,13 +246,14 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IEditions
-    /// @dev The receiver never changes. A master without an edition is a no-op, so the satellite
-    ///      can call this for every re-rated master.
+    /// @dev The receiver never changes. A master without an edition, or an unchanged rate, is a
+    ///      no-op without events, so the satellite can call this for every re-rated master.
     function setRoyaltyRate(uint256 editionId, uint32 rate) external {
         if (msg.sender != workRecords) revert UnboundCaller(msg.sender);
         if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
         if (!exists(editionId)) return;
         Edition storage e = _records[editionId].edition;
+        if (e.royaltyRate == rate) return;
         emit RoyaltyRateChanged(editionId, e.royaltyRate, rate);
         emit MetadataUpdate(editionId);
         e.royaltyRate = rate;
@@ -289,10 +300,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         bytes32 kind = ISaleAdapter(msg.sender).saleKind();
         if (kind != e.terms.saleKind) revert SaleKindMismatch(e.terms.saleKind, kind);
         uint256 cap = e.terms.size == 0 ? type(uint64).max : e.terms.size;
-        // `primarySaleSettled` is false for a burned master.
-        if (amount > cap - e.minted || !IStream(stream).primarySaleSettled(id)) {
-            revert EditionUnavailable(id);
-        }
+        if (amount > cap - e.minted) revert EditionUnavailable(id);
         if (e.terms.format == EditionFormat.OPEN) {
             uint64 start = e.windowStart;
             if (start == 0) {
@@ -412,17 +420,20 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     // ----------------------------------------------------------------------- internals
 
-    /// @dev The checks of `createEdition`: no edition yet; the master settled and of kind
-    ///      EDITION_MASTER; the item its stored one; and the item proven (at most
-    ///      `Limits.MAX_PROOF_DEPTH` nodes) in a package root still approved.
+    /// @dev The checks of `createEdition`: the work-records satellite bound; no edition yet;
+    ///      the master settled; an EDITION_MASTER item that is the master's stored one (its kind is
+    ///      bound by the item hash); and the item proven (at most `Limits.MAX_PROOF_DEPTH` nodes)
+    ///      in a package root still approved. The master is read through `IStream.coreOf`, which
+    ///      skips the royalty-receiver derivation `work` performs.
     function _admit(
         uint256 workId,
         PackageItem calldata item,
         bytes32 packageRoot,
         bytes32[] calldata proof
-    ) private view returns (bytes32 itemHash, IStream.WorkCore memory master) {
+    ) private view returns (bytes32 itemHash, Master memory master) {
+        if (workRecords == address(0)) revert WorkRecordsUnbound();
         if (exists(workId)) revert EditionExists(workId);
-        master = IStream(stream).work(workId);
+        (master.itemHash, master.artistId,,,, master.royaltyRate) = IStream(stream).coreOf(workId);
         itemHash = WorksHashing.itemHashCalldata(item);
         if (
             !IStream(stream).primarySaleSettled(workId) || item.kind != ItemKind.EDITION_MASTER

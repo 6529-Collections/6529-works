@@ -11,6 +11,7 @@ import {
 } from "@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
@@ -51,6 +52,13 @@ import {
     RevertingReceiver1155,
     WrongSelectorReceiver1155
 } from "../mocks/editions/EditionsMocks.sol";
+
+/// @dev An ERC-721 by ERC-165 that is not `IStream`.
+contract ERC721OnlyStream {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId;
+    }
+}
 
 /// @dev An ERC-721 by ERC-165 that reports no economics resolver.
 contract UnwiredStream {
@@ -112,6 +120,7 @@ contract EditionsTest is EditionsBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(stream)));
         _expectInvalidStream(delegated);
         _expectInvalidStream(address(renderer)); // code, but no ERC-165
+        _expectInvalidStream(address(new ERC721OnlyStream())); // an ERC-721, but not IStream
         bytes32 wrong = keccak256("not the reviewed stream");
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -224,6 +233,35 @@ contract EditionsTest is EditionsBase {
                 IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, item.contentHash
             )
         );
+        _createEdition(id, item);
+    }
+
+    /// @dev L-1: no edition before the work-records satellite is bound, since an edition's
+    ///      license and record updates go through it.
+    function test_CreateEdition_RequiresBoundWorkRecords() public {
+        // Stream and the registry already bind this Editions; only its own bind is missing.
+        Editions fresh = _freshEditions();
+        stream.bind(address(workRecordsMock), address(fresh));
+        registry.bindCallers(address(stream), address(fresh));
+        PackageItem memory item = _fixedItem(10);
+        uint256 id = _master(item);
+        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+        vm.expectRevert(Editions.WorkRecordsUnbound.selector);
+        fresh.createEdition(id, item, root, proof);
+        assertEq(fresh.workRecords(), address(0));
+        vm.prank(admin);
+        fresh.bindWorkRecords(address(workRecordsMock));
+        fresh.createEdition(id, item, root, proof);
+        assertTrue(fresh.exists(id));
+    }
+
+    /// @dev A zero content hash is refused even where the registry would let it through (the
+    ///      mock does; the real one refuses it at `consume`): `exists` keys on the hash.
+    function test_CreateEdition_RefusesZeroContentHash() public {
+        PackageItem memory item = _fixedItem(10);
+        item.contentHash = bytes32(0);
+        uint256 id = _master(item);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
         _createEdition(id, item);
     }
 
@@ -743,14 +781,15 @@ contract EditionsTest is EditionsBase {
         assertEq(editions.edition(id).minted, type(uint64).max);
     }
 
-    /// @dev `IStream.primarySaleSettled` is false for a burned token, so minting stops if the
-    ///      master is ever burned (IEditions), at the cost of one packed-flag read per mint.
-    function test_Mint_StopsIfMasterBurned() public {
+    /// @dev A master with an edition has settled, and Stream never burns a settled token
+    ///      (`SaleAlreadySettled`, mirrored by the mock), so minting needs no read from Stream.
+    function test_Mint_MasterWithEditionIsNeverBurned() public {
         uint256 id = _create(_fixedItem(10));
         fixedAdapter.buy(editions, id, buyer, 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, id));
         stream.burnMaster(id);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.EditionUnavailable.selector, id));
         fixedAdapter.buy(editions, id, buyer, 1);
+        assertEq(editions.edition(id).minted, 2);
     }
 
     function test_Mint_CreatorFollowsArtistRecovery() public {
@@ -941,6 +980,11 @@ contract EditionsTest is EditionsBase {
         vm.prank(address(stream));
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, address(stream)));
         editions.setRoyaltyRate(id, 0);
+
+        // An unchanged rate is a silent no-op.
+        vm.recordLogs();
+        workRecordsMock.setRate(editions, id, 10_000);
+        assertEq(vm.getRecordedLogs().length, 0, "unchanged rate");
 
         // A master without an edition is a silent no-op.
         uint256 bare = _master(_fixedItem(5));
