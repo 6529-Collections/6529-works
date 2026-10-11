@@ -27,13 +27,36 @@ Other contracts should depend on the interfaces. Tests are in
   is `keccak256(bytes)`. Writing bytes that are already stored is a no-op that
   returns the same pointer and emits nothing.
 - **Manifest.** An ordered list of chunk hashes, the total stored `length`, a
-  MIME type, an `encoding` (`Identity` or `Gzip`) and a declared SHA-256. It can
-  be registered before, during or after the upload of its chunks.
+  MIME type, an `encoding` and a declared SHA-256. It can be registered before,
+  during or after the upload of its chunks.
 - **Layout rule.** Every chunk except the last is exactly 24,575 bytes. An
   offset maps to a chunk by division, one canonical chunking exists for any
   bytes, and a manifest that breaks the rule never completes and never reads.
-- **Limits.** 1 to 1,024 chunks (about 25 MB) per file; MIME type 3 to 64 bytes,
-  lowercase `type/subtype` from `[a-z0-9+._-]`, no parameters.
+- **Limits** (`CHUNK_SIZE` and `MAX_CHUNKS` are on `IContentStore`). 1 to 512
+  chunks per file, which is 12,582,400 bytes (about 12.58 MB). The cap exists
+  because Fusaka's EIP-7825 limits every transaction to 16,777,216 gas:
+  registering a manifest at 512 chunks costs 11.8M gas including calldata and the
+  21,000 base, so it fits with room for repricing (1,024 chunks would not). MIME
+  type up to 64 bytes, lowercase `type/subtype` from `[a-z0-9+._-]`, no
+  parameters.
+
+**Encodings.** The value is part of the file ID, so it is permanent.
+
+| Encoding | The stored bytes are |
+| --- | --- |
+| `Identity` | the media |
+| `Gzip` | an RFC 1952 gzip stream of the media |
+| `Base64` | RFC 4648 section 4 base64 text of the media (standard alphabet, `=` padding, no line breaks) |
+| `GzipBase64` | that base64 text of a gzip stream |
+
+The base64 encodings exist for inline rendering. Base64 encoding on-chain is what
+dominates `tokenURI` gas, so a file stored as base64 lets the renderer
+concatenate the stored bytes into a `data:<mime>;base64,` URI without encoding
+anything. The price is that base64 text is a third larger (about 33% more to
+upload). A media file that will be inlined should be stored as `Base64`; one that
+is served by range reads can stay `Identity`. The declared SHA-256 is always the
+hash of the **fully decoded** media (base64-decoded, then gunzipped, as the
+encoding requires), whichever encoding is stored.
 
 **File ID.** It is chain- and deployment-independent, so a package can commit to
 it before anything is deployed or uploaded:
@@ -50,14 +73,34 @@ different claim about the same chunks is a different file, and nobody can
 overwrite or block another registration. Chunks are shared by hash across files,
 so one upload serves every manifest that lists them.
 
+Two consequences follow, and the rest of the system must respect both.
+
+- **The file ID names one exact encoded stream, forever.** It commits to the
+  stored bytes (through the chunk hashes), not just to the media. A gzip or base64
+  file can be rebuilt from the original media only if the encoder is
+  deterministic, and gzip output depends on the compressor, its version and its
+  settings. If nobody keeps the encoded bytes, nobody can reproduce the chunks
+  later. So a work stored as `Gzip`, `Base64` or `GzipBase64` needs a locator
+  (Arweave or IPFS) for the **encoded stream itself**, next to the locator for the
+  decoded media. Uploader tooling must prove that the encoded bytes it publishes
+  reproduce the chunk hashes, and that decoding them gives the declared SHA-256,
+  before the artist signs the package.
+- **The file ID is not a content-uniqueness key.** It binds the MIME type and the
+  encoding, so the same media stored as `Identity` and as `Gzip` has two file IDs.
+  Product uniqueness (ADR 0001 §3: one content hash per product) must key on the
+  SHA-256 of the **decoded** media, not on the file ID. The curation lane owns
+  that check.
+
 ### Upload flow
 
 Uploads can happen at any time, in any order, by anyone. The mint does not wait
 for them, and nobody needs permission to complete a work's on-chain copy.
 
-1. **Chunk the file** off-chain into 24,575-byte pieces (the last one shorter),
-   gzipping text first if it should be stored compressed. Compute each chunk's
-   `keccak256`, the stored `length`, and the SHA-256 of the decoded file.
+1. **Encode and chunk the file** off-chain: apply the encoding (gzip, base64 or
+   both), then cut the stored bytes into 24,575-byte pieces, the last one
+   shorter. Compute each chunk's `keccak256`, the stored `length`, and the
+   SHA-256 of the decoded media. Publish the encoded stream to Arweave or IPFS
+   too (see the file ID notes above).
 2. **Compute the file ID** with the formula above. The artist's package commits
    to it (the store itself needs nothing at this point).
 3. **Register the manifest** with `registerManifest`. It is cheap (about 1.05M
@@ -102,30 +145,41 @@ chunk touched.
 - **The declared SHA-256 is never recomputed on-chain.** Hashing a large file in
   memory costs quadratic gas, and chunk integrity already pins every byte. The
   SHA-256 is for off-chain verification and for records to bind a file to the
-  media hash they committed to. It is the hash of the **decoded** file (after
-  gunzip for `Gzip`), the same value a work record lists as the media hash.
-  `length` is the **stored** length that `read` returns.
-- **Verify a file off-chain:** read all chunks, concatenate, gunzip if
-  `encoding` is `Gzip`, SHA-256, compare with `fileInfo(fileId).sha256Hash`. A
-  manifest whose declared digest is wrong yields a different file ID from the
-  honest one, so it cannot displace it.
+  media hash they committed to. It is the hash of the **fully decoded** media,
+  the same value a work record lists as the media hash. `length` is the
+  **stored** length that `read` returns.
+- **Verify a file off-chain:** read all chunks, concatenate, base64-decode and
+  gunzip as `encoding` requires, SHA-256, compare with
+  `fileInfo(fileId).sha256Hash`. A manifest whose declared digest is wrong yields
+  a different file ID from the honest one, so it cannot displace it.
 
 ### Gas
 
 Measured by `forge test --match-contract Gas -vv` (Foundry 1.7.1, Solidity
-0.8.37, optimizer 200 runs), gas used by the call:
+0.8.37, optimizer 200 runs). Each figure is the gas the call itself uses, from a
+**cold** start: the fixtures are built in a separate transaction, so the store,
+its storage and the chunk contracts are all first touches, as in a fresh
+`eth_call`. The 21,000 base and calldata are added only where a row says so.
 
 | Operation | Gas |
 | --- | --- |
-| `writeChunk`, 24,575 bytes (new) | 5,020,000 (about 204 gas per byte, 0.21 ETH per MB at 1 gwei) |
-| `writeChunk`, bytes already stored | under 20,000 |
-| `registerManifest`, 100 KB / 1 MB / 1,024 chunks | 212,000 / 1,055,000 / 22.8M |
-| `isComplete`, 1 MB (43 chunks) | 67,000 |
-| `readChunk`, one full chunk | 24,000 |
-| `read`, 100 bytes inside one chunk | 17,000 |
-| `read`, 100 KB (5 chunks) | 182,000 |
-| `read`, 256 KB (11 chunks, the inline threshold) | 777,000 |
-| `read`, 1 MB (43 chunks) | 9,392,000 |
+| `writeChunk`, 24,575 bytes (new): execution | 5,020,000 |
+| `writeChunk`, same, as a transaction (execution + 21,000 + 392,000 calldata at 16 gas per byte) | 5,434,000 |
+| Upload per MB, as transactions | 231.8M, which is **about 0.23 ETH per MB per gwei** |
+| `writeChunk`, bytes already stored | 16,000 |
+| `registerManifest`, 100 KB / 1 MB (execution) | 212,000 / 1,055,000 |
+| `registerManifest`, 512 chunks (the cap): execution / transaction | 11,521,000 / 11,806,000 (limit 16,777,216) |
+| `isComplete`, 1 MB (43 chunks) | 353,000 |
+| `readChunk`, one full chunk | 37,000 |
+| `read`, 100 bytes inside one chunk | 30,000 |
+| `read`, 100 KB (5 chunks) | 221,000 |
+| `read`, 256 KB (11 chunks, the inline threshold) | 855,000 |
+| `read`, 1 MB (43 chunks) | 9,678,000 |
+
+Cold access costs dominate small operations: each chunk touched adds a cold
+`SLOAD` for its hash, one for its pointer, and a cold code access (about 6,800
+gas); the same calls run warm cost much less (for example `isComplete` on 1 MB
+is 67,000 warm).
 
 `read` costs grow faster than linearly because Solidity memory does, and the
 returned `bytes` is ABI-encoded into a second buffer, so the callee holds twice
@@ -138,8 +192,9 @@ buffer after copying, so memory is the output size plus one chunk.
 Generative works load pinned libraries by name and version. The registry maps
 `(bytes32 name, bytes32 version)` to a store file:
 
-- **Labels** are 1 to 32 ASCII bytes from `[A-Za-z0-9._+-]`, for example
-  `three` and `r170`, or `p5` and `1.9.0`.
+- **Labels** are 1 to 32 bytes of lowercase ASCII from `[a-z0-9._-]`, left-aligned
+  and zero-padded, so each name and version has one canonical spelling: `three`
+  and `r170`, or `p5` and `1.9.0`.
 - **`register(name, version, fileId)`** is restricted (AccessManager). The file
   must be registered and on-chain complete, so every registered version is
   readable for as long as the chain exists. A registered version can never be
@@ -148,7 +203,7 @@ Generative works load pinned libraries by name and version. The registry maps
   deletes nothing, and the version stays resolvable and readable, so works that
   pin it keep rendering.
 - **`resolve(name, version)`** returns the file ID, the deprecated flag and the
-  manifest data. The gzip flag and MIME type come from the file's manifest.
+  manifest data. The encoding and MIME type come from the file's manifest.
 
 **Governance TODO.** The registry only calls `restricted`. Granting `register`
 and `deprecate` to a registrar role (from `src/governance/Roles.sol`, owned by
