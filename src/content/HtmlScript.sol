@@ -11,6 +11,14 @@ pragma solidity ^0.8.24;
 ///      script text needs this: a document inlined as a base64 `data:` URI is never parsed
 ///      together with the renderer's own markup, and rewriting it would break it.
 ///
+///      Limits, which artists need to know. The rewrite is exact where the sequences can occur in
+///      well-formed JavaScript: inside strings, template literals and comments. Elsewhere it
+///      changes the program: in a classic script (the page uses one, not a module) `<!--` starts a
+///      single-line comment, so `a<!--b` is a comment to the browser and a syntax error here; and
+///      a regular expression that contains `</script` (`x</script/i.test(s)`, a comparison with a
+///      regular expression, for one) becomes a different expression. Write such code with the
+///      sequence split (`"<" + "/script"`) and it passes through unchanged.
+///
 ///      One pass, linear in every case. `JsonEscape.scriptText` handles `</script` alone, in two
 ///      passes that cost about 300 gas per byte on text made of `<` (this one costs about 40),
 ///      and the renderer's gas budget has to hold for any script.

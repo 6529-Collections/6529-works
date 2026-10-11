@@ -23,6 +23,13 @@ import { DataUri } from "./DataUri.sol";
 import { HtmlScript } from "./HtmlScript.sol";
 import { JsonScan } from "./JsonScan.sol";
 
+/// @dev `IContentStore.isBase64Attested` (decision H1): a stored `Base64` file is concatenated
+///      into a data URI as it is, so it must have passed the store's one-time strict alphabet
+///      check first. Until the content store carries the function, the renderer declares it.
+interface IBase64Attested {
+    function isBase64Attested(bytes32 fileId) external view returns (bool);
+}
+
 /// @title Renderer
 /// @notice Builds the metadata of 6529 Stream works and 6529 Editions editions (ADR 0001
 ///         section 8 "`tokenURI` size"). Immutable and stateless: it only reads.
@@ -39,7 +46,16 @@ import { JsonScan } from "./JsonScan.sol";
 ///      `medium`, `dimensions` and each of `artists` into the metadata (the `attributes` array
 ///      goes in as it is, after the renderer's own traits; other members are validated and
 ///      ignored). Until the work's record is open (`IWorkRecords.isOpen`) and its file is
-///      complete, the work gets core-only metadata from Stream instead, and never a revert.
+///      complete, or when it is not acceptable, the work gets core-only metadata from Stream with
+///      a `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a
+///      revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
+///      `Identity`, is over one chunk, is not UTF-8 or JSON (no key with a backslash, no `\u0000`
+///      or lone surrogate escape, at most `JsonScan.MAX_VALUES` values and eight levels), has no
+///      name or a wrong type, lists more than `MAX_ARTISTS` artists or `MAX_ATTRIBUTES`
+///      attributes, holds more than `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an
+///      integer of at most six digits, or has an attribute that is not a string name and a string
+///      or number value, or whose name is one the renderer writes itself. These bounds are what
+///      keep the cost of any record within 8M gas (see `RendererGas.t.sol`).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is
@@ -50,13 +66,19 @@ import { JsonScan } from "./JsonScan.sol";
 ///      Media. The primary file is inlined when the work is on-chain complete, the file is
 ///      complete in the store, its cost-weighted size is at most the threshold, and its stored
 ///      encoding can be served as the media itself: `Base64` (the stored text is concatenated
-///      as it is) and `Identity` (encoded here, and counted eight times). `Gzip`
-///      and `GzipBase64` hold a compressed stream, not the media, so they are served by locator
-///      only. A JavaScript primary (stored as `Identity`) is wrapped in a small HTML page that
-///      sets `window.works` (see `SHELL_HEAD`), with `</script` and `<!--` neutralized.
-///      Otherwise the preferred locator is given, plus a small on-chain preview if the work
-///      lists a complete PREVIEW image. `fullTokenURI` raises the limit to 1 MiB and reverts
-///      instead of falling back.
+///      as it is, once the store has attested it as strict base64 with `isBase64Attested`, so
+///      it cannot break out of the JSON string) and `Identity` (encoded here, and counted eight
+///      times). `Gzip` and `GzipBase64` hold a compressed stream, not the media, so they are
+///      served by locator only. A JavaScript primary (stored as `Identity`, and whose record
+///      declares no `dependencies`) is wrapped in a small HTML page that sets `window.works` in a
+///      script of its own (see `SHELL_HEAD`), with `</script` and `<!--` neutralized in the
+///      artist's (see `HtmlScript` for what that changes). Otherwise the preferred locator is
+///      given, plus a small on-chain preview if the work lists a complete PREVIEW image: a
+///      preview is inlined by the same rules as a primary, so an unattested `Base64` preview is
+///      given by locator. A satellite that cannot answer for a locator fails the call.
+///      `fullTokenURI` raises the limit to 1 MiB of cost-weighted size and reverts instead of
+///      falling back: a `Base64` file is inlined up to 1 MiB, an `Identity` file up to 128 KiB.
+///      It costs about 30M gas at 1 MiB, an `eth_call`, not a transaction.
 ///
 ///      Memory. Media is read one store chunk at a time straight into the single output buffer
 ///      (a `readChunk` result is released as soon as it is copied), so there is no second copy
@@ -76,6 +98,10 @@ contract Renderer is IRenderer {
     uint256 public constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
     uint256 public constant MAX_ARTISTS = Limits.MAX_ARTISTS;
+    /// @notice The most attributes a record may list (each costs about 15,000 gas to check).
+    uint256 public constant MAX_ATTRIBUTES = 128;
+    /// @notice The most `%` and `#` a record may hold (each costs about 200 gas to escape).
+    uint256 public constant MAX_ESCAPES = 2_048;
 
     /// @notice The content store the media and records are read from (immutable).
     IContentStore public immutable contentStore;
@@ -94,17 +120,18 @@ contract Renderer is IRenderer {
     /// @dev Return-size caps in bytes.
     uint256 private constant TEXT_RETURN = 4_096;
     uint256 private constant LOCATOR_RETURN = Limits.MAX_URI_BYTES + 256;
-    uint256 private constant LOCATORS_RETURN =
-        Limits.MAX_LOCATORS_PER_FILE * (Limits.MAX_URI_BYTES + 192) + 64;
 
     string private constant PREFIX = "data:application/json;utf8,";
+    /// @dev The bytes an SPDX identifier is made of, as a bit set over ASCII: `A-Z a-z 0-9 . + -`.
+    uint256 private constant SPDX_CHARS = 0x07fffffe07fffffe03ff680000000000;
     /// @dev The page around a JavaScript primary. `window.works` is the script's interface, public
     ///      and stable: `v` (the version of this interface, 1), `tokenId` and `seed` (`"0x"` hex,
-    ///      or null when the work has no seed). A change to it needs a new `v`. The script text
-    ///      follows `window.works={...};`.
-    string private constant SHELL_HEAD = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" '
-        'content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;'
-        "overflow:hidden}</style></head><body><script>window.works=";
+    ///      or null when the work has no seed). A change to it needs a new `v`. It is set in a
+    ///      script of its own, ahead of the artist's, which follows.
+    string private constant SHELL_HEAD = '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1"><style>'
+        "html,body{margin:0;height:100%;overflow:hidden}</style></head><body><script>"
+        "window.works=";
     string private constant SHELL_TAIL = "</script></body></html>";
 
     /// @notice The threshold is zero or above `MAX_INLINE_BYTES`.
@@ -112,16 +139,24 @@ contract Renderer is IRenderer {
     /// @notice A read of `target` failed: no code, a revert, out of its gas cap, or too much
     ///         return data. `selector` names the call.
     error RendererReadFailed(address target, bytes4 selector);
-    /// @notice A string from the record, the Stream, a locator or the store is not well-formed
-    ///         UTF-8.
+    /// @notice A string from the Stream, a locator or the store is not well-formed UTF-8.
     error RendererInvalidUtf8();
-    /// @notice The work's data breaks a rule: no primary file first, a record that is too large
-    ///         or not `Identity`, a missing or mistyped `name`, `year` or string, or an edition
-    ///         whose content hash is not its master's.
+    /// @notice The work's data breaks a rule: no primary file first, or an edition whose content
+    ///         hash is not its master's. (A bad record is not an error: it renders core-only.)
     error RendererRecordInvalid(address token, uint256 tokenId);
-    /// @notice `fullTokenURI` cannot inline the primary file: the work is not on-chain complete,
-    ///         the file is incomplete, too large or not stored as `Identity` or `Base64`.
+    /// @notice `fullTokenURI` cannot serve the work in full: its record is not open, incomplete or
+    ///         invalid, or the primary file is not on-chain complete, is incomplete, too large,
+    ///         not attested `Base64`, or not stored as `Identity` or `Base64`.
     error RendererNotInlineable(address token, uint256 tokenId);
+
+    /// @dev What a work's record file is good for: not open yet, not completely uploaded,
+    ///      unacceptable, or ready.
+    enum RecordState {
+        NotOpen,
+        Incomplete,
+        Invalid,
+        Ready
+    }
 
     enum Mode {
         None,
@@ -147,6 +182,7 @@ contract Renderer is IRenderer {
         uint256 id;
         bool edition;
         bool open;
+        bool deps;
         bytes32 hash;
         address stream;
         uint256 workId;
@@ -200,17 +236,27 @@ contract Renderer is IRenderer {
         (c.token, c.id, c.limit, c.strict) = (token, id, limit, strict);
         _load(c);
         c.open = abi.decode(
-            _read(c.records, abi.encodeCall(IWorkRecords.isOpen, (c.workId)), SMALL_GAS, 32), (bool)
+            _word(c.records, IWorkRecords.isOpen.selector, c.workId, SMALL_GAS, 32), (bool)
         );
-        bool ready = c.open;
+        RecordState state = RecordState.NotOpen;
         bytes memory record = "";
-        if (ready) {
+        if (c.open) {
             _loadRecord(c);
-            (ready, record) = _record(c);
+            (state, record) = _record(c);
         }
         bytes[] memory t = new bytes[](MAX_ARTISTS + 8);
-        if (!ready) return _coreOnly(c, t);
-        (bytes memory head, uint256 n, bytes memory attributes) = _describe(c, record, t);
+        bytes memory head = "";
+        bytes memory attributes = "";
+        uint256 n = 0;
+        if (state == RecordState.Ready) {
+            bool ok = false;
+            (ok, head, n, attributes) = _describe(c, record, t);
+            if (!ok) state = RecordState.Invalid;
+        }
+        if (state != RecordState.Ready) {
+            if (strict) revert RendererNotInlineable(token, id);
+            return _coreOnly(c, t, state);
+        }
         n = _chainTraits(c, t, n);
         return _assemble(head, _media(c), _tail(c, t, n, attributes));
     }
@@ -229,7 +275,7 @@ contract Renderer is IRenderer {
         if (ok && ret.length == 32 && abi.decode(ret, (uint256)) == 1) {
             c.edition = true;
             (c.stream, c.workId, c.hash) = abi.decode(
-                _read(c.token, abi.encodeCall(IEditions.masterOf, (c.id)), SMALL_GAS, 96),
+                _word(c.token, IEditions.masterOf.selector, c.id, SMALL_GAS, 96),
                 (address, uint256, bytes32)
             );
         } else {
@@ -237,8 +283,7 @@ contract Renderer is IRenderer {
             c.workId = c.id;
         }
         c.core = abi.decode(
-            _read(c.stream, abi.encodeCall(IStream.work, (c.workId)), SMALL_GAS, 288),
-            (IStream.WorkCore)
+            _word(c.stream, IStream.work.selector, c.workId, SMALL_GAS, 288), (IStream.WorkCore)
         );
         c.records = abi.decode(
             _read(c.stream, abi.encodeCall(IStream.workRecords, ()), SMALL_GAS, 32), (address)
@@ -246,9 +291,10 @@ contract Renderer is IRenderer {
         if (c.core.collectionId != 0) {
             c.collection =
             abi.decode(
-                _read(
+                _word(
                     c.stream,
-                    abi.encodeCall(IStream.collection, (c.core.collectionId)),
+                    IStream.collection.selector,
+                    c.core.collectionId,
                     SMALL_GAS,
                     TEXT_RETURN
                 ),
@@ -261,13 +307,14 @@ contract Renderer is IRenderer {
     /// @dev Loads the record state and media of a work whose record is open.
     function _loadRecord(Ctx memory c) private view {
         c.rec = abi.decode(
-            _read(c.records, abi.encodeCall(IWorkRecords.record, (c.workId)), SMALL_GAS, 256),
+            _word(c.records, IWorkRecords.record.selector, c.workId, SMALL_GAS, 256),
             (IWorkRecords.RecordInfo)
         );
         c.media = abi.decode(
-            _read(
+            _word(
                 c.records,
-                abi.encodeCall(IWorkRecords.mediaOf, (c.workId)),
+                IWorkRecords.mediaOf.selector,
+                c.workId,
                 SMALL_GAS,
                 64 + 96 * Limits.MAX_MEDIA_FILES
             ),
@@ -280,30 +327,34 @@ contract Renderer is IRenderer {
         c.primary = _fileInfo(c.media[0].fileId);
     }
 
-    /// @dev The record JSON, percent-escaped, or not ready if its file is not complete yet.
-    function _record(Ctx memory c) private view returns (bool, bytes memory j) {
+    /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
+    ///      complete yet, and never if it is not `Identity`, is over one chunk, is not UTF-8, or
+    ///      holds too many `%` and `#` to escape within the gas budget.
+    function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
         bytes32 id = c.rec.recordFileId;
         IContentStore.FileInfo memory fi = _fileInfo(id);
         if (fi.encoding != IContentStore.Encoding.Identity || fi.length > MAX_RECORD_BYTES) {
-            revert RendererRecordInvalid(c.token, c.id);
+            return (RecordState.Invalid, j);
         }
-        if (!_complete(id)) return (false, j);
+        if (!_complete(id)) return (RecordState.Incomplete, j);
         j = new bytes(fi.length);
         _copyFile(id, fi.length, _ptr(j));
-        if (!Utf8.isValid(j)) revert RendererInvalidUtf8();
+        if (!Utf8.isValid(j)) return (RecordState.Invalid, j);
         // `%` and `#` occur only inside JSON strings, so escaping the whole file keeps it valid.
-        return (true, bytes(DataUri.escape(string(j))));
+        (bool ok, string memory escaped) = DataUri.escape(string(j), MAX_ESCAPES);
+        return ok ? (RecordState.Ready, bytes(escaped)) : (RecordState.Invalid, j);
     }
 
-    /// @dev The head of the JSON (`{"name":...,"description":...`), the record's traits in `t`
-    ///      (each artist, the year, the medium, the dimensions) and the inside of its
-    ///      `attributes` array, if any.
+    /// @dev Reads the record: whether it is acceptable, the head of the JSON
+    ///      (`{"name":...,"description":...`), the record's traits in `t` (each artist, the year,
+    ///      the medium, the dimensions) and the inside of its `attributes` array. It also notes
+    ///      in `c.deps` whether the record declares `dependencies`.
     function _describe(Ctx memory c, bytes memory j, bytes[] memory t)
         private
         pure
-        returns (bytes memory head, uint256 n, bytes memory attributes)
+        returns (bool ok, bytes memory head, uint256 n, bytes memory attributes)
     {
-        bytes32[] memory keys = new bytes32[](7);
+        bytes32[] memory keys = new bytes32[](8);
         keys[0] = keccak256("name");
         keys[1] = keccak256("description");
         keys[2] = keccak256("artists");
@@ -311,60 +362,112 @@ contract Renderer is IRenderer {
         keys[4] = keccak256("medium");
         keys[5] = keccak256("dimensions");
         keys[6] = keccak256("attributes");
-        uint256[] memory s = JsonScan.object(j, keys);
-        if (s[0] == 0) revert RendererRecordInvalid(c.token, c.id);
-        head = abi.encodePacked(
-            PREFIX, '{"name":', _text(c, j, s[0]), ',"description":', _text(c, j, s[1])
-        );
+        keys[7] = keccak256("dependencies");
+        uint256[] memory s;
+        (ok, s) = JsonScan.object(j, keys);
+        bytes memory name = _text(j, s[0], true);
+        bytes memory description = _text(j, s[1], false);
+        bytes memory medium = _text(j, s[4], false);
+        bytes memory dimensions = _text(j, s[5], false);
+        // A name is required and not empty (`""` is two bytes); a wrong type is empty text.
+        if (!ok || name.length < 3 || description.length == 0) return _bad();
+        if (medium.length == 0 || dimensions.length == 0) return _bad();
+        head = abi.encodePacked(PREFIX, '{"name":', name, ',"description":', description);
         if (s[2] != 0) {
-            uint256[] memory a = JsonScan.elements(j, s[2] >> 128, MAX_ARTISTS);
-            for (uint256 i; i < a.length; ++i) {
-                t[n++] = _trait("Artist", _text(c, j, a[i]));
+            uint256[] memory a;
+            (ok, a) = JsonScan.elements(j, s[2] >> 128, MAX_ARTISTS);
+            for (uint256 i; ok && i < a.length; ++i) {
+                bytes memory artist = _text(j, a[i], true);
+                ok = artist.length > 2;
+                t[n++] = _trait("Artist", artist);
             }
+            if (!ok) return _bad();
         }
         if (s[3] != 0) {
             bytes memory year = JsonScan.slice(j, s[3]);
-            if (year[0] == '"' || year[0] > "9" || (year[0] < "0" && year[0] != "-")) {
-                revert RendererRecordInvalid(c.token, c.id);
-            }
+            if (!_year(year)) return _bad();
             t[n++] = _trait("Year", year);
         }
-        bytes memory medium = _text(c, j, s[4]);
         if (medium.length > 2) t[n++] = _trait("Medium", medium);
-        bytes memory dimensions = _text(c, j, s[5]);
         if (dimensions.length > 2) t[n++] = _trait("Dimensions", dimensions);
         if (s[6] != 0) {
-            attributes = JsonScan.slice(j, s[6]);
-            if (attributes[0] != "[") revert RendererRecordInvalid(c.token, c.id);
-            attributes = _inside(attributes);
+            (ok, attributes) = _attributes(j, s[6]);
+            if (!ok) return _bad();
+        }
+        // A script that needs libraries cannot be wrapped: v1 bundles nothing.
+        c.deps = s[7] != 0 && JsonScan.slice(j, s[7]).length > 2;
+        ok = true;
+    }
+
+    function _bad() private pure returns (bool, bytes memory, uint256, bytes memory) {
+        return (false, "", 0, "");
+    }
+
+    /// @dev The inside of the record's `attributes` array, if every element is an object with a
+    ///      string `trait_type` that is not one of the renderer's own and a string or number
+    ///      `value`. The renderer's traits are the only ones it vouches for.
+    function _attributes(bytes memory j, uint256 span) private pure returns (bool, bytes memory) {
+        bytes32[] memory keys = new bytes32[](2);
+        keys[0] = keccak256("trait_type");
+        keys[1] = keccak256("value");
+        (bool ok, uint256[] memory a) = JsonScan.records(j, span >> 128, keys, MAX_ATTRIBUTES);
+        // Each element: its span, then those of `trait_type` and `value` (zero if absent).
+        for (uint256 i; ok && i < a.length; i += 3) {
+            if (
+                a[i + 1] == 0 || a[i + 2] == 0 || _reserved(JsonScan.slice(j, a[i + 1]))
+                    || !_scalar(j[a[i + 2] >> 128])
+            ) return (false, "");
+        }
+        // The text between the brackets (an array has at least the two).
+        uint256 start = (span >> 128) + 1;
+        uint256 end = (span & type(uint128).max) - 1;
+        return (ok, a.length == 0 ? bytes("") : JsonScan.slice(j, (start << 128) | end));
+    }
+
+    /// @dev Whether the quoted trait name `t` (a span, so never empty) is not a string, holds an
+    ///      escape for an ASCII character (`\u00` and a digit below 8: it could spell a reserved
+    ///      name), or is one of the names the renderer uses itself, by the first four bytes of its
+    ///      hash. A clash with another name only makes that record render core-only, so four
+    ///      bytes are enough. The text is valid JSON, so a backslash is followed by its escape,
+    ///      and a `\u` by four hex digits.
+    function _reserved(bytes memory t) private pure returns (bool) {
+        for (uint256 i; i < t.length; ++i) {
+            if (t[i] != "\\") continue;
+            if (t[++i] == "u" && t[i + 1] == "0" && t[i + 2] == "0" && t[i + 3] < "8") return true;
+        }
+        // `bytes4(keccak256(name))` of each quoted trait name the renderer writes itself: "Artist",
+        // "Artist ID", "Year", "Medium", "Dimensions", "Collection", "Serial", "Edition of",
+        // "Seed", "Dispute statement". (A test checks every one.)
+        bytes4 h = bytes4(keccak256(t));
+        return t[0] != '"' || h == 0xa685b276 || h == 0x4efd9a81 || h == 0x2b90e9a0
+            || h == 0x48d25b09 || h == 0xc1703126 || h == 0x3b9b07f9 || h == 0xe7eb4234
+            || h == 0xfc75eca5 || h == 0x8781d344 || h == 0x46a5ab8c;
+    }
+
+    /// @dev A string or number (what a trait value can be).
+    function _scalar(bytes1 first) private pure returns (bool) {
+        return first == '"' || first == "-" || (first >= "0" && first <= "9");
+    }
+
+    /// @dev A whole number of at most six digits, with an optional minus sign.
+    function _year(bytes memory y) private pure returns (bool ok) {
+        uint256 i = y[0] == "-" ? 1 : 0; // a span is never empty
+        ok = y.length > i && y.length - i <= 6;
+        for (; ok && i < y.length; ++i) {
+            ok = y[i] >= "0" && y[i] <= "9";
         }
     }
 
-    /// @dev The JSON string at `span` (quotes included), `""` if absent. Anything else reverts.
-    function _text(Ctx memory c, bytes memory j, uint256 span)
+    /// @dev The JSON string at `span` (quotes included); `""` if absent and not `required`. Empty
+    ///      (which is no valid text) if it is anything else. A span is never empty.
+    function _text(bytes memory j, uint256 span, bool required)
         private
         pure
         returns (bytes memory text)
     {
-        if (span == 0) return '""';
+        if (span == 0) return required ? bytes("") : bytes('""');
         text = JsonScan.slice(j, span);
-        if (text[0] != '"') revert RendererRecordInvalid(c.token, c.id);
-    }
-
-    /// @dev What is between the brackets of the array text `a`, empty when only space is.
-    function _inside(bytes memory a) private pure returns (bytes memory out) {
-        uint256 first;
-        uint256 last = a.length - 1; // the closing bracket
-        while (first + 1 < last && _isSpace(a[first + 1])) ++first;
-        if (first + 1 >= last) return "";
-        out = new bytes(last - first - 1);
-        assembly ("memory-safe") {
-            mcopy(add(out, 0x20), add(add(a, 0x21), first), mload(out))
-        }
-    }
-
-    function _isSpace(bytes1 b) private pure returns (bool) {
-        return b == 0x20 || b == 0x09 || b == 0x0a || b == 0x0d;
+        if (text[0] != '"') return "";
     }
 
     // ------------------------------------------------------------------ media
@@ -419,13 +522,19 @@ contract Renderer is IRenderer {
     {
         IContentStore.Encoding enc = fi.encoding;
         if (primary && _isScript(fi.mimeType)) {
-            return enc == IContentStore.Encoding.Identity && fi.length <= SCRIPT_LIMIT
+            return enc == IContentStore.Encoding.Identity && fi.length <= SCRIPT_LIMIT && !c.deps
                 ? _shell(c, id, fi.length)
                 : m;
         }
-        if (enc == IContentStore.Encoding.Base64) m.mode = Mode.Copy;
-        else if (enc == IContentStore.Encoding.Identity) m.mode = Mode.Encode;
-        else return m;
+        if (enc == IContentStore.Encoding.Base64) {
+            // Concatenated as stored, so only text the store has checked as strict base64.
+            if (!_attested(id)) return m;
+            m.mode = Mode.Copy;
+        } else if (enc == IContentStore.Encoding.Identity) {
+            m.mode = Mode.Encode;
+        } else {
+            return m;
+        }
         m.fileId = id;
         m.length = fi.length;
         m.text = _str(string.concat("data:", fi.mimeType, ";base64,"));
@@ -449,7 +558,7 @@ contract Renderer is IRenderer {
                 Strings.toString(c.id),
                 ",seed:",
                 seed == 0 ? bytes("null") : _quote(Strings.toHexString(uint256(seed), 32)),
-                "};"
+                "};</script><script>"
             ),
             bytes(HtmlScript.neutralize(string(raw))),
             bytes(SHELL_TAIL)
@@ -458,38 +567,22 @@ contract Renderer is IRenderer {
         m.mode = Mode.Data;
     }
 
-    /// @dev The preferred locator of a file, else its first registered one (the preferred
-    ///      locator is the implicit on-chain one when that kind is preferred and the file is
-    ///      complete, and that has no URL).
+    /// @dev The preferred locator of a file: its URL, or none for a file without one (the
+    ///      satellite answers kind NONE) and for the implicit on-chain locator, which has no URL.
+    ///      A failed read reverts: no media is better than media that depends on a gas cap.
     function _locator(Ctx memory c, bytes32 id) private view returns (Media memory m) {
-        (bool ok, bytes memory ret) = BoundedCall.tryRead(
-            c.records,
-            abi.encodeCall(IWorkRecords.preferredLocator, (c.workId, id)),
-            SMALL_GAS,
-            LOCATOR_RETURN,
-            AFTER_GAS
-        );
-        if (!ok) return m;
-        // A file with no locator gives an empty one (kind NONE). The implicit on-chain locator
-        // has no URL either, but copies may be registered, so only that case looks further.
-        (Locator memory l,) = abi.decode(ret, (Locator, uint256));
-        if (l.kind == LocatorKind.NONE) return m;
-        if (l.kind != LocatorKind.ONCHAIN && bytes(l.uri).length != 0) {
-            return Media(Mode.Locator, 0, 0, _str(l.uri));
-        }
-        Locator[] memory all = abi.decode(
+        (Locator memory l,) = abi.decode(
             _read(
                 c.records,
-                abi.encodeCall(IWorkRecords.locators, (c.workId, id)),
+                abi.encodeCall(IWorkRecords.preferredLocator, (c.workId, id)),
                 SMALL_GAS,
-                LOCATORS_RETURN
+                LOCATOR_RETURN
             ),
-            (Locator[])
+            (Locator, uint256)
         );
-        for (uint256 i; i < all.length; ++i) {
-            if (bytes(all[i].uri).length != 0) {
-                return Media(Mode.Locator, 0, 0, _str(all[i].uri));
-            }
+        if (l.kind != LocatorKind.NONE && l.kind != LocatorKind.ONCHAIN && bytes(l.uri).length != 0)
+        {
+            return Media(Mode.Locator, 0, 0, _str(l.uri));
         }
     }
 
@@ -581,10 +674,15 @@ contract Renderer is IRenderer {
 
     // ------------------------------------------------------------------ the rest of the JSON
 
-    /// @dev What a work without an open record gets: its name from the collection and serial,
-    ///      and the traits Stream itself knows. The artist is the lead artist's ID, since the
-    ///      names are in the record.
-    function _coreOnly(Ctx memory c, bytes[] memory t) private view returns (string memory) {
+    /// @dev What a work whose record cannot be shown gets: its name from the collection and
+    ///      serial, and the traits Stream itself knows. The artist is the lead artist's ID, since
+    ///      the names are in the record. `record_status` says why: `not_open`, `incomplete` or
+    ///      `invalid`.
+    function _coreOnly(Ctx memory c, bytes[] memory t, RecordState state)
+        private
+        view
+        returns (string memory)
+    {
         bytes memory name = abi.encodePacked("6529 Works %23", Strings.toString(c.id));
         if (c.core.collectionId != 0) {
             name = abi.encodePacked(_str(c.collection), " %23", Strings.toString(c.core.serial));
@@ -595,7 +693,11 @@ contract Renderer is IRenderer {
                 PREFIX,
                 '{"name":"',
                 name,
-                '","description":"The work record is not open yet.","attributes":[',
+                '","description":"The work record is not available.","record_status":"',
+                state == RecordState.NotOpen
+                    ? bytes("not_open")
+                    : state == RecordState.Incomplete ? bytes("incomplete") : bytes("invalid"),
+                '","attributes":[',
                 _join(t, _chainTraits(c, t, 1)),
                 "]}"
             )
@@ -642,9 +744,10 @@ contract Renderer is IRenderer {
         returns (bytes memory)
     {
         License memory lic = abi.decode(
-            _read(
+            _word(
                 c.records,
-                abi.encodeCall(IWorkRecords.licenseOf, (c.workId)),
+                IWorkRecords.licenseOf.selector,
+                c.workId,
                 SMALL_GAS,
                 Limits.MAX_LICENSE_ID_BYTES + 192
             ),
@@ -658,8 +761,16 @@ contract Renderer is IRenderer {
             '","license":',
             _quote(lic.spdxId)
         );
-        bytes memory url = _licenseUrl(lic.spdxId);
+        bytes memory url = _licenseUrl(c, lic);
         if (url.length != 0) out = bytes.concat(out, ',"license_url":"', url, '"');
+        if (lic.textFileId != 0) {
+            out = bytes.concat(
+                out,
+                ',"license_text_file":"',
+                bytes(Strings.toHexString(uint256(lic.textFileId), 32)),
+                '"'
+            );
+        }
         bytes memory ours = _join(t, n);
         return bytes.concat(
             out,
@@ -671,19 +782,35 @@ contract Renderer is IRenderer {
         );
     }
 
-    /// @dev The SPDX page of a license identifier, with its original case (spdx.org URLs are case
-    ///      sensitive), none for a `LicenseRef-` expression in any case. Text files have no
-    ///      locators of their own (locators are for media files), so this is the license's URL.
-    function _licenseUrl(string memory spdxId) private pure returns (bytes memory) {
-        bytes memory id = bytes(spdxId);
-        bytes memory prefix = "licenseref-";
-        bool ref = id.length >= prefix.length;
-        for (uint256 i; ref && i < prefix.length; ++i) {
-            bytes1 b = id[i];
-            ref = (b >= "A" && b <= "Z" ? bytes1(uint8(b) + 32) : b) == prefix[i];
+    /// @dev The license's URL. For an SPDX identifier (only `[A-Za-z0-9.+-]`, not a `LicenseRef-`
+    ///      expression in any case) it is the SPDX page, in the identifier's own case (spdx.org
+    ///      URLs are case sensitive). For any other license it is a locator of the license text
+    ///      file, if the work lists that file among its media (locators exist only for media
+    ///      files); `license_text_file` always names the file.
+    function _licenseUrl(Ctx memory c, License memory lic) private view returns (bytes memory) {
+        bytes memory id = bytes(lic.spdxId);
+        bool spdx = id.length != 0;
+        for (uint256 i; spdx && i < id.length; ++i) {
+            uint8 b = uint8(id[i]);
+            spdx = b < 128 && (SPDX_CHARS >> b) & 1 == 1;
         }
-        if (id.length == 0 || ref) return "";
-        return abi.encodePacked("https://spdx.org/licenses/", id, ".html");
+        // `LicenseRef-` in any case: within the charset above, OR-ing 0x20 into a byte lowers a
+        // letter and leaves digits, `.`, `+` and `-` as they are.
+        bool ref;
+        assembly ("memory-safe") {
+            ref := and(
+                iszero(lt(mload(id), 11)),
+                eq(
+                    shr(168, or(mload(add(id, 0x20)), shl(168, 0x2020202020202020202020))),
+                    0x6c6963656e73657265662d
+                )
+            )
+        }
+        if (spdx && !ref) return abi.encodePacked("https://spdx.org/licenses/", id, ".html");
+        for (uint256 i; lic.textFileId != 0 && i < c.media.length; ++i) {
+            if (c.media[i].fileId == lic.textFileId) return _locator(c, lic.textFileId).text;
+        }
+        return "";
     }
 
     /// @dev The seed of a seeded work, zero for none. Once the record is open the satellite has
@@ -693,7 +820,7 @@ contract Renderer is IRenderer {
         if (c.core.seedPolicy == SeedPolicy.NONE) return 0;
         if (c.open) {
             (, seed) = abi.decode(
-                _read(c.records, abi.encodeCall(IWorkRecords.seedOf, (c.workId)), SMALL_GAS, 64),
+                _word(c.records, IWorkRecords.seedOf.selector, c.workId, SMALL_GAS, 64),
                 (SeedPolicy, bytes32)
             );
         } else if (c.core.seedPolicy == SeedPolicy.VRF) {
@@ -701,8 +828,8 @@ contract Renderer is IRenderer {
                 _read(c.stream, abi.encodeCall(IStream.entropyModule, ()), SMALL_GAS, 32), (address)
             );
             seed = abi.decode(
-                _read(
-                    entropy, abi.encodeCall(IEntropyModule.seedOf, (c.core.itemHash)), SMALL_GAS, 32
+                _word(
+                    entropy, IEntropyModule.seedOf.selector, uint256(c.core.itemHash), SMALL_GAS, 32
                 ),
                 (bytes32)
             );
@@ -742,10 +869,21 @@ contract Renderer is IRenderer {
         if (!ok) revert RendererReadFailed(target, bytes4(input));
     }
 
+    /// @dev A read whose only argument is one word: `selector(arg)`.
+    function _word(
+        address target,
+        bytes4 selector,
+        uint256 arg,
+        uint256 gasLimit,
+        uint256 maxReturn
+    ) private view returns (bytes memory) {
+        return _read(target, abi.encodeWithSelector(selector, arg), gasLimit, maxReturn);
+    }
+
     function _fileInfo(bytes32 id) private view returns (IContentStore.FileInfo memory) {
         return abi.decode(
-            _read(
-                address(contentStore), abi.encodeCall(IContentStore.fileInfo, (id)), SMALL_GAS, 512
+            _word(
+                address(contentStore), IContentStore.fileInfo.selector, uint256(id), SMALL_GAS, 512
             ),
             (IContentStore.FileInfo)
         );
@@ -753,9 +891,10 @@ contract Renderer is IRenderer {
 
     function _complete(bytes32 id) private view returns (bool) {
         return abi.decode(
-            _read(
+            _word(
                 address(contentStore),
-                abi.encodeCall(IContentStore.isComplete, (id)),
+                IContentStore.isComplete.selector,
+                uint256(id),
                 COMPLETE_GAS,
                 32
             ),
@@ -763,10 +902,25 @@ contract Renderer is IRenderer {
         );
     }
 
-    /// @dev A string made safe for a JSON string inside a non-base64 data URI.
+    /// @dev A string made safe for a JSON string inside a non-base64 data URI. The strings here
+    ///      come from reads capped at a few KiB, so their `%` and `#` need no further cap.
     function _str(string memory s) private pure returns (bytes memory) {
         if (!Utf8.isValid(bytes(s))) revert RendererInvalidUtf8();
-        return bytes(DataUri.escape(JsonEscape.escape(s)));
+        (, string memory out) = DataUri.escape(JsonEscape.escape(s), type(uint256).max);
+        return bytes(out);
+    }
+
+    function _attested(bytes32 id) private view returns (bool) {
+        return abi.decode(
+            _word(
+                address(contentStore),
+                IBase64Attested.isBase64Attested.selector,
+                uint256(id),
+                SMALL_GAS,
+                32
+            ),
+            (bool)
+        );
     }
 
     function _quote(string memory s) private pure returns (bytes memory) {

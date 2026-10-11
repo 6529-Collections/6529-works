@@ -18,12 +18,18 @@ library DataUri {
         0x8080808080808080808080808080808080808080808080808080808080808080;
 
     /// @notice Replaces every `%` with `%25` and every `#` with `%23`. An input with neither is
-    ///         returned as the same memory reference.
-    function escape(string memory value) internal pure returns (string memory out) {
+    ///         returned as the same memory reference. An input with more than `maxHits` of them
+    ///         gives `ok` false (and the input itself): each hit costs about 200 gas, so a caller
+    ///         that takes untrusted text bounds its cost here.
+    function escape(string memory value, uint256 maxHits)
+        internal
+        pure
+        returns (bool ok, string memory out)
+    {
         assembly ("memory-safe") {
             // Walks [start, end) and returns the number of `%` and `#`; when dst is non-zero it
             // also writes the escaped text there.
-            function walk(start, end, dst) -> hits {
+            function walk(start, end, dst, max) -> hits {
                 let run := start
                 for { let p := start } lt(p, end) { } {
                     let wordEnd := add(p, 32)
@@ -53,6 +59,11 @@ library DataUri {
                         let c := byte(0, mload(p))
                         if or(eq(c, 0x25), eq(c, 0x23)) {
                             hits := add(hits, 1)
+                            // Too many: stop counting, the caller refuses the text.
+                            if gt(hits, max) {
+                                p := end
+                                wordEnd := end
+                            }
                             if dst {
                                 mcopy(dst, run, sub(p, run))
                                 dst := add(dst, sub(p, run))
@@ -73,15 +84,16 @@ library DataUri {
             let start := add(value, 0x20)
             let end := add(start, mload(value))
             out := value
-            let hits := walk(start, end, 0)
-            if hits {
+            let hits := walk(start, end, 0, maxHits)
+            ok := iszero(gt(hits, maxHits))
+            if and(ok, gt(hits, 0)) {
                 let length := add(mload(value), mul(hits, 2))
                 out := mload(0x40)
                 mstore(out, length)
                 let words := and(add(length, 31), not(31))
                 mstore(add(out, words), 0) // zero the final word's padding
                 mstore(0x40, add(add(out, 0x20), words))
-                pop(walk(start, end, add(out, 0x20)))
+                pop(walk(start, end, add(out, 0x20), maxHits))
             }
         }
     }
