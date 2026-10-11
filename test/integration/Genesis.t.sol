@@ -5,11 +5,11 @@ import { console2 } from "forge-std/console2.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import {
     CURRENCY_DEFAULT,
+    CURRENCY_ETH,
     PRODUCT_EDITIONS,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
@@ -149,33 +149,19 @@ contract GenesisFlowTest is IntegrationBase {
         assertFalse(isAdmin);
     }
 
-    /// @dev FINDING G-1: genesis configures no default currency. ADR 0001 §5 says Stream launches
-    ///      with ETH, and every package sale term may say `CURRENCY_DEFAULT`, but
-    ///      `AssetAllowlist.setDefaultCurrency` is neither a constructor argument nor a genesis
-    ///      selector, so an item naming the default cannot start for the first 14 days.
-    function test_Finding_G1_NoDefaultCurrencyAtGenesis() public {
-        _expectFailure(
-            abi.encodeCall(this.check_DefaultCurrencyWorksAtGenesis, ()),
-            IAssetAllowlist.CurrencyNotConfigured.selector,
-            "G-1"
-        );
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, PRODUCT_STREAM)
-        );
-        allowlist.defaultCurrency(PRODUCT_STREAM);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, PRODUCT_EDITIONS)
-        );
-        allowlist.defaultCurrency(PRODUCT_EDITIONS);
-    }
-
-    function check_DefaultCurrencyWorksAtGenesis() external {
+    /// @dev Genesis wires each product's first default currency, ETH (formerly finding G-1,
+    ///      fixed by #31): an item naming `CURRENCY_DEFAULT` starts in the genesis block and its
+    ///      auction locks ETH.
+    function test_DefaultCurrencyIsEthFromGenesis() public {
+        assertEq(allowlist.defaultCurrency(PRODUCT_STREAM), CURRENCY_ETH);
+        assertEq(allowlist.defaultCurrency(PRODUCT_EDITIONS), CURRENCY_ETH);
         address artist = _actor("defaultCurrencyArtist");
         Work memory w = _work(artist, collectionId);
         w.item.sale.currency = CURRENCY_DEFAULT;
         Work[] memory works = _one(w);
         bytes32 root = _publish(works);
-        _start(root, works, 0);
+        (uint256 saleId,) = _start(root, works, 0);
+        assertEq(auction.auction(saleId).currency, CURRENCY_ETH, "locked at start");
     }
 
     function _one(bytes4 selector) internal pure returns (bytes4[] memory selectors) {
