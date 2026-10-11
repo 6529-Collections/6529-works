@@ -4,22 +4,30 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import {
+    CURRENCY_DEFAULT,
+    CURRENCY_ETH,
     PRODUCT_EDITIONS,
     PRODUCT_FEDERATED,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
+import { LockedTerms, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
+import { MockMintTarget } from "../mocks/auction/AuctionMocks.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockEditionTarget } from "../mocks/sales/SaleMocks.sol";
 
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
@@ -107,6 +115,120 @@ contract DeployV1Test is Test {
         for (uint256 i; i < products.length; ++i) {
             assertEq(d.assetAllowlist.defaultCurrency(products[i]), address(0), "ETH");
         }
+    }
+
+    // ------------------------------------------------- default currency (finding G-1)
+
+    /// @dev Genesis with a mock Stream on the auction and a mock Editions on the fixed-price
+    ///      sale, both listed by genesis wiring (`setTarget`, as the JSON does for the real
+    ///      tokens once they land). Both mocks price in `CURRENCY_DEFAULT`. Without
+    ///      `withDefaults`, the JSON's `setDefaultCurrency` calls are dropped.
+    function _genesisWithDefaultCurrencyItems(bool withDefaults)
+        internal
+        returns (DeployV1.Deployment memory d, MockMintTarget stream, MockEditionTarget editions)
+    {
+        DeployV1.Params memory p = _params();
+        d = DeployV1.deploy(p);
+        stream = new MockMintTarget();
+        editions = new MockEditionTarget();
+        stream.setAdmittedMinter(address(d.englishAuction), true);
+        stream.setTerms(
+            PrimaryTerms(
+                SaleKind.ENGLISH_AUCTION,
+                CURRENCY_DEFAULT,
+                0,
+                "",
+                makeAddr("seller"),
+                p.feeRecipient,
+                5_000,
+                makeAddr("artist")
+            )
+        );
+        editions.setTerms(
+            1,
+            PrimaryTerms(
+                SaleKind.FIXED_PRICE,
+                CURRENCY_DEFAULT,
+                0, // a gift: CURRENCY_DEFAULT is for zero-price sales only
+                "",
+                makeAddr("seller"),
+                p.feeRecipient,
+                5_000,
+                makeAddr("artist")
+            ),
+            100
+        );
+
+        GovernanceConfig.Call[] memory json_ = DeployV1.wiring(d, json, manifest);
+        GovernanceConfig.Call[] memory calls = new GovernanceConfig.Call[](json_.length + 2);
+        uint256 n;
+        for (uint256 i; i < json_.length; ++i) {
+            if (
+                !withDefaults
+                    && bytes4(json_[i].data) == IAssetAllowlist.setDefaultCurrency.selector
+            ) {
+                continue;
+            }
+            calls[n++] = json_[i];
+        }
+        calls[n++] = GovernanceConfig.Call(
+            address(d.englishAuction),
+            abi.encodeCall(ISaleAdapter.setTarget, (address(stream), true))
+        );
+        calls[n++] = GovernanceConfig.Call(
+            address(d.fixedPriceSale),
+            abi.encodeCall(ISaleAdapter.setTarget, (address(editions), true))
+        );
+        assembly ("memory-safe") {
+            mstore(calls, n)
+        }
+        DeployV1.install(d, DeployV1.config(d, json), manifest, calls);
+    }
+
+    function _giftPhase() internal view returns (IFixedPriceSale.Phase[] memory phases) {
+        phases = new IFixedPriceSale.Phase[](1);
+        phases[0] = IFixedPriceSale.Phase(
+            uint64(block.timestamp), uint64(block.timestamp + 1 days), bytes32(0), 0, false, false
+        );
+    }
+
+    /// G-1: a `CURRENCY_DEFAULT` item starts in the genesis block, with no governance delay.
+    function test_CurrencyDefaultItemsStartRightAfterGenesis() public {
+        (DeployV1.Deployment memory d, MockMintTarget stream, MockEditionTarget editions) =
+            _genesisWithDefaultCurrencyItems(true);
+        uint256 genesisTime = block.timestamp;
+
+        // A 6529 Stream auction: EnglishAuction reads AssetAllowlist.defaultCurrency directly.
+        uint256 saleId = d.englishAuction.start(address(stream), "");
+        assertEq(d.englishAuction.lockedTerms(saleId).currency, CURRENCY_ETH, "auction in ETH");
+
+        // A 6529 Editions gift: MintSaleBase resolves through EconomicsResolver.resolveCurrency.
+        vm.prank(makeAddr("artist"));
+        uint256 giftId = d.fixedPriceSale
+            .openSale(address(editions), 1, _giftPhase(), IFixedPriceSale.ArtistConsent(0, 0, ""));
+        (LockedTerms memory terms,,) = d.fixedPriceSale.sale(giftId);
+        assertEq(terms.currency, CURRENCY_ETH, "gift in ETH");
+
+        assertEq(block.timestamp, genesisTime, "no time passed");
+    }
+
+    /// The control: without the genesis defaults, both items wait out FUNDS_SETTER's delay.
+    function test_WithoutGenesisDefaultsCurrencyDefaultItemsCannotStart() public {
+        (DeployV1.Deployment memory d, MockMintTarget stream, MockEditionTarget editions) =
+            _genesisWithDefaultCurrencyItems(false);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.CurrencyNotConfigured.selector, PRODUCT_STREAM)
+        );
+        d.englishAuction.start(address(stream), "");
+
+        IFixedPriceSale.Phase[] memory phases = _giftPhase();
+        vm.prank(makeAddr("artist"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, CURRENCY_DEFAULT)
+        );
+        d.fixedPriceSale
+            .openSale(address(editions), 1, phases, IFixedPriceSale.ArtistConsent(0, 0, ""));
     }
 
     function test_GenesisStoresTheCc0TextCompleteOnChain() public {
