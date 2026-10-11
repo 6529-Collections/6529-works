@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
+import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { Payee, SHARE_DENOMINATOR, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
@@ -28,7 +33,6 @@ import {
     MockPackageRegistry,
     MockRenderer,
     MockSaleAdapter,
-    MockSplitFactory,
     MockWorkRecords
 } from "../mocks/stream/StreamMocks.sol";
 
@@ -49,7 +53,7 @@ abstract contract StreamFixture is Test {
     AccessManager internal manager;
     MockPackageRegistry internal registry;
     MockArtistRegistry internal artists;
-    MockSplitFactory internal splitFactory;
+    SplitFactory internal splitFactory;
     MockEconomics internal econ;
     MockEntropy internal entropy;
     MockRenderer internal renderer;
@@ -65,10 +69,12 @@ abstract contract StreamFixture is Test {
         manager = new AccessManager(address(this));
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
-        splitFactory = new MockSplitFactory();
+        renderer = new MockRenderer("default");
+        splitFactory = new SplitFactory(
+            IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(renderer))
+        );
         econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();
-        renderer = new MockRenderer("default");
         auction = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         stream = new Stream(
             address(manager),
@@ -81,6 +87,7 @@ abstract contract StreamFixture is Test {
             marketOwner
         );
         editionsMock = new MockEditions();
+        registry.bindStream(address(stream));
         _configureRoles();
         artists.register(artist);
         vm.prank(platform);
@@ -126,9 +133,10 @@ abstract contract StreamFixture is Test {
         returns (address)
     {
         if (feeShare == 0) return sellerWallet;
-        Payee[] memory payees = new Payee[](2);
-        Payee memory a = Payee(0, fee, feeShare);
-        Payee memory b = Payee(0, sellerWallet, SHARE_DENOMINATOR - feeShare);
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
+        ISplitWallet.Payee memory a = ISplitWallet.Payee(0, fee, feeShare);
+        ISplitWallet.Payee memory b =
+            ISplitWallet.Payee(0, sellerWallet, Splits.DENOMINATOR - feeShare);
         (payees[0], payees[1]) = fee < sellerWallet ? (a, b) : (b, a);
         return splitFactory.walletFor(payees, bytes32(0));
     }
@@ -150,8 +158,8 @@ abstract contract StreamFixture is Test {
         item.recordFileId = keccak256(abi.encode("record", salt));
         item.parties = new Party[](1);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
-        item.payees = new Payee[](1);
-        item.payees[0] = Payee(uint256(uint160(artist)), address(0), 100_000);
+        item.payees = new ISplitWallet.Payee[](1);
+        item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 100_000);
         item.license = _license("cc0-1.0");
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, address(0), "");

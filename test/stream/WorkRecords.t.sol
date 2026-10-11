@@ -143,7 +143,7 @@ contract WorkRecordsTest is RecordsFixture {
         media[1] = _mediaFile(5, FileRole.PRIMARY, false);
         item = _recordsItem(4, media);
         _expectBadOpen(_mint(item), item, media);
-        media[0] = _mediaFile(4, FileRole.PRIMARY, false);
+        media[0] = _mediaFile(14, FileRole.PRIMARY, false);
         item = _recordsItem(5, media);
         _expectBadOpen(_mint(item), item, media);
 

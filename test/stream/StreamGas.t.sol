@@ -74,6 +74,25 @@ contract StreamGasTest is StreamFixture {
         console2.log("Stream.mint share, idle adapter (balance from zero):", used);
     }
 
+    /// @dev The derived receiver costs one `SplitFactory.walletFor` (a creation-code hash);
+    ///      measured cold, as a marketplace's call would be.
+    function test_gas_royaltyInfoAndWorkReads() public {
+        _mint(_item(1));
+        vm.cool(address(stream));
+        vm.cool(address(splitFactory));
+        uint256 before = gasleft();
+        stream.royaltyInfo(1, 1 ether);
+        uint256 royalty = before - gasleft();
+        vm.cool(address(stream));
+        vm.cool(address(splitFactory));
+        before = gasleft();
+        stream.work(1);
+        uint256 core = before - gasleft();
+        console2.log("royaltyInfo, cold, real SplitFactory:", royalty);
+        console2.log("work(), cold, real SplitFactory:", core);
+        assertLt(royalty, 60_000);
+    }
+
     function test_gas_mintShare_first() public {
         uint256 used = _measure(_item(1));
         console2.log("Stream.mint share, first mint ever:", used);

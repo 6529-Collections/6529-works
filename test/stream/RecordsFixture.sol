@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
-import { Payee } from "src/interfaces/types/EconomicsTypes.sol";
+
 import { PackageItem, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -97,9 +98,9 @@ abstract contract RecordsFixture is StreamFixture {
         item.parties = new Party[](2);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
         item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
-        item.payees = new Payee[](2);
-        item.payees[0] = Payee(0, collaborator, 20_000);
-        item.payees[1] = Payee(uint256(uint160(artist)), address(0), 80_000);
+        item.payees = new ISplitWallet.Payee[](2);
+        item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
+        item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);
     }
 
     function _single(uint256 salt, bool upload) internal returns (MediaFile[] memory media) {

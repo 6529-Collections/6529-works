@@ -16,12 +16,10 @@ import { IRenderer } from "../interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
-import {
-    PRODUCT_STREAM,
-    Payee,
-    SHARE_DENOMINATOR,
-    WorkTerms
-} from "../interfaces/types/EconomicsTypes.sol";
+import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
+import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
+import { Splits } from "../economics/Splits.sol";
+import { PRODUCT_STREAM, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
     PackageItem,
@@ -32,13 +30,13 @@ import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 
-/// @notice The one function 6529 Stream uses on the economics lane's split factory.
-/// @dev An exact subset of `ISplitFactory` (PR #11): `Payee` mirrors `ISplitWallet.Payee`, so
-///      the selector and encoding match. TODO(integration): import `ISplitFactory` once merged.
-interface ISplitWalletPredictor {
-    /// @notice The wallet address for canonical `payees` and `salt`, deployed or not; reverts
-    ///         for a payee list no wallet would accept.
-    function walletFor(Payee[] calldata payees, bytes32 salt) external view returns (address);
+/// @notice The package-registry function that frees a burned work's content hash.
+/// @dev Requested for `IPackageRegistry` (curation review); bound 6529 Stream only. The registry
+///      checks that `itemHash` consumed `contentHash`, clears the claim so the real artist can
+///      mint, and tombstones the item. TODO(integration): use `IPackageRegistry` once it has it.
+interface IContentRelease {
+    /// @notice Frees `contentHash`, which `itemHash` consumed, and tombstones `itemHash`.
+    function releaseContent(bytes32 contentHash, bytes32 itemHash) external;
 }
 
 /// @title Stream
@@ -74,6 +72,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     error InvalidCollectionName();
     /// @notice The royalty rate exceeds 100,000.
     error InvalidRoyaltyRate(uint32 rate);
+    /// @notice The token was never minted, or is still live.
+    error NotBurned(uint256 tokenId);
 
     /// @dev A token's three words. `feeRecipientId` and `minterId` index `_feeRecipients` and
     ///      the admitted minters, both from 1.
@@ -253,6 +253,19 @@ contract Stream is ERC721, AccessManaged, IStream {
         _burn(id);
     }
 
+    /// @notice Frees the content hash of a work burned after an upheld dispute, so the real
+    ///         artist can mint that media, and tombstones the burned work's item (curation
+    ///         review). Permissionless: the registry releases only the content hash the burned
+    ///         work's item consumed, which `WorkMinted` and the published package give.
+    /// @dev Not part of `burn`: Stream stores the item hash, not the content hash (D3), and
+    ///      storing it would cost every start a word for a rare dispute path.
+    function releaseContent(uint256 tokenId, bytes32 contentHash) external {
+        if (tokenId == 0 || tokenId > _counts.minted || _ownerOf(tokenId) != address(0)) {
+            revert NotBurned(tokenId);
+        }
+        IContentRelease(packageRegistry).releaseContent(contentHash, _tokens[tokenId].itemHash);
+    }
+
     /// @inheritdoc IMintTarget
     function isAdmittedMinter(address adapter) external view returns (bool) {
         return _minters[adapter].admitted;
@@ -364,8 +377,8 @@ contract Stream is ERC721, AccessManaged, IStream {
         unchecked {
             // Exact: the remainder term restores what the first division drops.
             // forge-lint: disable-next-line(divide-before-multiply)
-            royaltyAmount = (salePrice / SHARE_DENOMINATOR) * rate
-                + ((salePrice % SHARE_DENOMINATOR) * rate) / SHARE_DENOMINATOR;
+            royaltyAmount = (salePrice / Splits.DENOMINATOR) * rate
+                + ((salePrice % Splits.DENOMINATOR) * rate) / Splits.DENOMINATOR;
         }
     }
 
@@ -425,7 +438,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
         _onlyBound(workRecords);
         TokenData storage t = _live(tokenId);
-        if (rate > SHARE_DENOMINATOR) revert InvalidRoyaltyRate(rate);
+        if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
         emit RoyaltyRateChanged(tokenId, t.royaltyRate, rate);
         t.royaltyRate = rate;
     }
@@ -545,8 +558,8 @@ contract Stream is ERC721, AccessManaged, IStream {
         IEconomicsResolver resolver = IEconomicsResolver(economics);
         w = resolver.newWorkTerms(PRODUCT_STREAM, item.payees);
         if (
-            w.seller == address(0) || w.royaltyRate > SHARE_DENOMINATOR
-                || w.feeShare >= SHARE_DENOMINATOR
+            w.seller == address(0) || w.royaltyRate > Splits.DENOMINATOR
+                || w.feeShare >= Splits.DENOMINATOR
                 || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == w.seller))
         ) revert InvalidMintRequest();
         terms.saleKind = SaleKind.ENGLISH_AUCTION;
@@ -618,11 +631,12 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint32 feeShare = t.feeShare;
         if (feeShare == 0) return seller;
         address recipient = _feeRecipients[t.feeRecipientId - 1];
-        Payee[] memory payees = new Payee[](2);
-        Payee memory fee = Payee(0, recipient, feeShare);
-        Payee memory rest = Payee(0, seller, SHARE_DENOMINATOR - feeShare);
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
+        ISplitWallet.Payee memory fee = ISplitWallet.Payee(0, recipient, feeShare);
+        ISplitWallet.Payee memory rest =
+            ISplitWallet.Payee(0, seller, Splits.DENOMINATOR - feeShare);
         (payees[0], payees[1]) = recipient < seller ? (fee, rest) : (rest, fee);
-        return ISplitWalletPredictor(splitFactory).walletFor(payees, bytes32(0));
+        return ISplitFactory(splitFactory).walletFor(payees, bytes32(0));
     }
 
     function _onlyBound(address bound) private view {

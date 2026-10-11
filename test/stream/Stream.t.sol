@@ -515,6 +515,65 @@ contract StreamTest is StreamFixture {
         assertEq(_mint(3), 3);
     }
 
+    /// @dev Curation review: an upheld dispute burns the copier's work; releasing its content
+    ///      hash lets the real artist mint the same media, and tombstones the copier's item.
+    function test_releaseContent_afterBurnLetsTheRealArtistMint() public {
+        PackageItem memory copy = _item(1);
+        bytes32 copyHash = WorksHashing.itemHash(copy);
+        uint256 tokenId = _mint(copy);
+
+        PackageItem memory original = _item(1);
+        original.recordFileId = keccak256("the original record");
+        bytes memory data = _request(original);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MockPackageRegistry.ContentUsed.selector, copy.contentHash, copyHash
+            )
+        );
+        auction.start(stream, data);
+
+        vm.expectRevert(abi.encodeWithSelector(Stream.NotBurned.selector, tokenId));
+        stream.releaseContent(tokenId, copy.contentHash);
+        auction.burn(stream, tokenId, 1);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MockPackageRegistry.NotConsumedBy.selector, keccak256("other"), copyHash
+            )
+        );
+        stream.releaseContent(tokenId, keccak256("other"));
+
+        vm.expectEmit(address(registry));
+        emit MockPackageRegistry.ContentReleased(copy.contentHash, copyHash);
+        vm.prank(outsider);
+        stream.releaseContent(tokenId, copy.contentHash);
+        assertTrue(registry.isTombstoned(copyHash));
+        assertEq(registry.consumedItemOf(copy.contentHash), bytes32(0));
+
+        (uint256 realId,) = auction.start(stream, data);
+        assertEq(realId, tokenId + 1);
+        assertEq(registry.consumedItemOf(copy.contentHash), WorksHashing.itemHash(original));
+    }
+
+    function test_releaseContent_reverts() public {
+        vm.expectRevert(abi.encodeWithSelector(Stream.NotBurned.selector, 0));
+        stream.releaseContent(0, bytes32(0));
+        vm.expectRevert(abi.encodeWithSelector(Stream.NotBurned.selector, 1));
+        stream.releaseContent(1, bytes32(0));
+        uint256 tokenId = _mint(1);
+        auction.burn(stream, tokenId, 1);
+        bytes32 contentHash = _item(1).contentHash;
+        stream.releaseContent(tokenId, contentHash);
+        // A second release finds nothing to free.
+        bytes32 itemHash = WorksHashing.itemHash(_item(1));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MockPackageRegistry.NotConsumedBy.selector, contentHash, itemHash
+            )
+        );
+        stream.releaseContent(tokenId, contentHash);
+    }
+
     function test_burn_reverts() public {
         _mint(1);
         vm.expectRevert(IStream.InvalidMintRequest.selector);

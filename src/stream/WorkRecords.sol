@@ -20,13 +20,6 @@ import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
-/// @notice The 6529 Editions hook a master's royalty-rate change calls (integrator decision).
-/// @dev TODO(integration): requested for `IEditions`; the editions lane implements it.
-interface IEditionRoyalty {
-    /// @notice Sets the edition of master `editionId`'s royalty rate. Bound work records only.
-    function setRoyaltyRate(uint256 editionId, uint32 rate) external;
-}
-
 /// @title WorkRecords
 /// @notice The records satellite of 6529 Stream: descriptive records, media, licenses, seeds,
 ///         the state hash, finalize, on-chain completeness, amendments, renderer repins,
@@ -347,7 +340,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         _checkConsents(tokenId, item, structHash, deadline, partySignatures);
         core.setRoyaltyRate(tokenId, rate);
         (address editions,) = core.editionOf(tokenId);
-        if (editions != address(0)) IEditionRoyalty(editions).setRoyaltyRate(tokenId, rate);
+        if (editions != address(0)) IEditions(editions).setRoyaltyRate(tokenId, rate);
         ++r.version;
     }
 

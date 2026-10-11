@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
@@ -13,12 +15,7 @@ import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import {
-    CURRENCY_DEFAULT,
-    Payee,
-    SHARE_DENOMINATOR,
-    WorkTerms
-} from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_DEFAULT, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -36,8 +33,16 @@ abstract contract Supports165 is IERC165 {
 ///         as the artist ID, unless an override is set.
 contract MockPackageRegistry is Supports165 {
     error ItemConsumedAlready(bytes32 itemHash);
+    error ContentUsed(bytes32 contentHash, bytes32 claimedBy);
+    error NotBoundCaller(address caller);
+    error NotConsumedBy(bytes32 contentHash, bytes32 itemHash);
+
+    event ContentReleased(bytes32 indexed contentHash, bytes32 indexed itemHash);
 
     mapping(bytes32 => bool) public isConsumed;
+    mapping(bytes32 => bool) public isTombstoned;
+    mapping(bytes32 => bytes32) public consumedItemOf;
+    address public stream;
     uint256 public artistOverride;
     bool public overrideArtist;
     bytes32 public lastRoot;
@@ -46,6 +51,21 @@ contract MockPackageRegistry is Supports165 {
 
     function _interface() internal pure override returns (bytes4) {
         return type(IPackageRegistry).interfaceId;
+    }
+
+    function bindStream(address stream_) external {
+        stream = stream_;
+    }
+
+    /// @dev Mirrors the requested registry semantics: bound Stream only, for the exact pair.
+    function releaseContent(bytes32 contentHash, bytes32 itemHash) external {
+        if (msg.sender != stream) revert NotBoundCaller(msg.sender);
+        if (consumedItemOf[contentHash] != itemHash || itemHash == 0) {
+            revert NotConsumedBy(contentHash, itemHash);
+        }
+        delete consumedItemOf[contentHash];
+        isTombstoned[itemHash] = true;
+        emit ContentReleased(contentHash, itemHash);
     }
 
     function setArtistOverride(uint256 artistId) external {
@@ -61,7 +81,10 @@ contract MockPackageRegistry is Supports165 {
     ) external returns (bytes32 itemHash, uint256 artistId) {
         itemHash = WorksHashing.itemHashCalldata(item);
         if (isConsumed[itemHash]) revert ItemConsumedAlready(itemHash);
+        bytes32 claimedBy = consumedItemOf[item.contentHash];
+        if (claimedBy != 0) revert ContentUsed(item.contentHash, claimedBy);
         isConsumed[itemHash] = true;
+        consumedItemOf[item.contentHash] = itemHash;
         lastRoot = packageRoot;
         lastProofLength = proof.length;
         lastMoveNonce = move.nonce;
@@ -158,7 +181,11 @@ contract MockEconomics is Supports165 {
         blocked[currency] = value;
     }
 
-    function newWorkTerms(bytes32, Payee[] calldata) external view returns (WorkTerms memory) {
+    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
+        external
+        view
+        returns (WorkTerms memory)
+    {
         return _terms;
     }
 
@@ -181,38 +208,16 @@ contract ConstantEconomics is Supports165 {
         return type(IEconomicsResolver).interfaceId;
     }
 
-    function newWorkTerms(bytes32, Payee[] calldata) external pure returns (WorkTerms memory) {
+    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
+        external
+        pure
+        returns (WorkTerms memory)
+    {
         return WorkTerms(address(0x5e11e7), address(0xfee), 25_000, address(0x7071), 6_529);
     }
 
     function resolveCurrency(bytes32, address) external pure returns (address) {
         return address(0);
-    }
-}
-
-/// @notice Split factory mock: `walletFor` accepts only canonical lists (sorted strictly by
-///         `(artistId, account)`, nonzero shares summing to 100,000) and derives an address.
-contract MockSplitFactory {
-    error InvalidPayees();
-
-    function walletFor(Payee[] calldata payees, bytes32 salt) external pure returns (address) {
-        uint256 sum;
-        for (uint256 i; i < payees.length; ++i) {
-            Payee calldata p = payees[i];
-            if (p.share == 0 || (p.artistId == 0) == (p.account == address(0))) {
-                revert InvalidPayees();
-            }
-            if (i != 0) {
-                Payee calldata q = payees[i - 1];
-                if (q.artistId > p.artistId || (q.artistId == p.artistId && q.account >= p.account))
-                {
-                    revert InvalidPayees();
-                }
-            }
-            sum += p.share;
-        }
-        if (sum != SHARE_DENOMINATOR) revert InvalidPayees();
-        return address(uint160(uint256(keccak256(abi.encode("wallet", payees, salt)))));
     }
 }
 

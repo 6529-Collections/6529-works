@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { console2 } from "forge-std/Test.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
-import { Payee } from "src/interfaces/types/EconomicsTypes.sol";
+
 import { License, PackageItem, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -56,9 +57,9 @@ contract StreamTxCapTest is RecordsFixture {
     {
         item = _recordsItem(salt, media);
         item.parties = new Party[](16);
-        item.payees = new Payee[](16);
+        item.payees = new ISplitWallet.Payee[](16);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
-        item.payees[0] = Payee(uint256(uint160(artist)), address(0), 6_250);
+        item.payees[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 6_250);
         delete partyKeys;
         partyKeys.push(artistKey);
         for (uint256 i = 1; i < 16; ++i) {
@@ -67,7 +68,7 @@ contract StreamTxCapTest is RecordsFixture {
             artists.register(account);
             partyKeys.push(key);
             item.parties[i] = Party(account, PartyRole.COLLABORATOR);
-            item.payees[i] = Payee(uint256(uint160(account)), address(0), 6_250);
+            item.payees[i] = ISplitWallet.Payee(uint256(uint160(account)), address(0), 6_250);
         }
         item.license = License(string(_repeat("l", 64)), keccak256("long license"));
     }
