@@ -6,6 +6,8 @@ import {
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { console2 } from "forge-std/console2.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import {
@@ -59,7 +61,11 @@ contract EnglishAuctionHostileTest is AuctionBase {
         _actorBid(actor, saleId, 1 ether);
         _bidEth(saleId, alice, 2 ether);
         assertEq(auction.claimable(address(actor), ETH), 1 ether);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.ETHTransferFailed.selector, address(actor), 1 ether
+            )
+        );
         actor.execute(address(auction), 0, abi.encodeCall(auction.claim, (ETH, address(actor))));
         actor.execute(address(auction), 0, abi.encodeCall(auction.claim, (ETH, carol)));
         assertEq(carol.balance, 1 ether);
@@ -214,7 +220,11 @@ contract EnglishAuctionHostileTest is AuctionBase {
         assertEq(escrow.owed(seller, address(token)), 150);
         assertEq(token.balanceOf(network), 50);
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TokenTransfer.TokenCallFailed.selector, address(token), token.transfer.selector
+            )
+        );
         auction.claim(address(token), alice);
         vm.prank(alice);
         auction.claim(address(token), carol);
@@ -299,7 +309,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
         _bidEth(saleId, alice, 1 ether);
         _bidEth(saleId, bob, 2 ether);
         vm.prank(carol);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, carol, ETH));
         auction.claim(ETH, carol);
         assertEq(auction.claimable(alice, ETH), 1 ether);
     }

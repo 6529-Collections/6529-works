@@ -349,6 +349,11 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
+    /// @dev The statement log does not record on-chain whether an outcome upheld or rejected
+    ///      the dispute. The decision to cancel is the governed 48-hour action itself
+    ///      (PARAMETER_SETTER, cancellable by the guardian during its delay); the recorded
+    ///      DISPUTE_OUTCOME entry is the public record it must cite, so no auction is cancelled
+    ///      without one. Accepted through `pausedAt + MAX_PAUSE` inclusive.
     function cancel(uint256 saleId, bytes32 outcomeRef) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
         (address token, uint256 tokenId) = (s.token, s.tokenId);
@@ -535,6 +540,8 @@ contract EnglishAuction is
 
     /// @notice Accepts only a token minted into this adapter's custody during a start, so no
     ///         other transfer can strand a token here.
+    /// @dev Relies on `start` and `startWithBid` holding the reentrancy guard while they mint;
+    ///      any future intake path must hold it too.
     function onERC721Received(address operator, address from, uint256, bytes calldata)
         external
         view

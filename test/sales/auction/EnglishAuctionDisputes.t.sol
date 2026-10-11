@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -202,7 +203,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.cancel(saleId, outcome);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
         assertEq(stream.burned(), 1);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         stream.ownerOf(1);
         assertEq(auction.claimable(alice, ETH), 1 ether);
         assertEq(auction.claimable(bob, ETH), 2 ether);

@@ -90,9 +90,12 @@ contract MockMintTarget is ERC721, IMintTarget {
         else _mint(dest, tokenId);
     }
 
-    /// @dev E11: only the adapter that minted the token may mark its primary sale settled.
+    /// @dev E11: only the adapter that minted the token, while the token is still in its
+    ///      custody, may mark its primary sale settled. Enforcing custody here pins the
+    ///      adapter's settle order (mark before delivery) in every settlement test.
     function markPrimarySettled(uint256 tokenId) external {
         require(mintedBy[tokenId] == msg.sender, "not the minting adapter");
+        require(_ownerOf(tokenId) == msg.sender, "not in custody");
         require(!primarySettled[tokenId], "already settled");
         primarySettled[tokenId] = true;
     }
