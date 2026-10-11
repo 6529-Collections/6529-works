@@ -19,6 +19,7 @@ import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import {
+    CURRENCY_DEFAULT,
     PRODUCT_EDITIONS,
     SHARE_DENOMINATOR,
     WorkTerms
@@ -123,6 +124,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     error NotAdmittedMinter(address caller);
     /// @notice A royalty rate above 100,000.
     error InvalidRoyaltyRate(uint32 rate);
+    /// @notice The edition terms price copies in `CURRENCY_DEFAULT`: a price is meaningless
+    ///         without its currency, since a governed change of the default would reprice the
+    ///         edition. `CURRENCY_DEFAULT` is allowed only with a zero price.
+    error PricedDefaultCurrency(uint256 workId);
     /// @notice Creating an edition needs the package root and proof (the four-argument form).
     error PackageProofRequired(uint256 workId);
 
@@ -453,8 +458,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @dev FIXED: a nonzero size and no window. OPEN: a nonzero window, size optional. Fixed
-    ///      price carries no params; Dutch carries `DutchParams` resting at or below the price.
+    ///      price carries no params; Dutch carries `DutchParams` resting at or below the price. A
+    ///      nonzero price needs an explicit currency.
     function _checkTerms(uint256 workId, EditionTerms memory t) private pure {
+        if (t.currency == CURRENCY_DEFAULT && t.price != 0) revert PricedDefaultCurrency(workId);
         bool shape = t.format == EditionFormat.FIXED ? t.size != 0 && t.window == 0 : t.window != 0;
         if (t.saleKind == SaleKind.FIXED_PRICE) {
             shape = shape && t.params.length == 0;

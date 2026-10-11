@@ -343,6 +343,40 @@ contract EditionsTest is EditionsBase {
         _expectBadTerms(item);
     }
 
+    /// @dev A nonzero price with `CURRENCY_DEFAULT` is refused for fixed price and Dutch alike:
+    ///      a governed change of the default would otherwise reprice the edition. A zero price
+    ///      with `CURRENCY_DEFAULT` is allowed (a free edition).
+    function test_CreateEdition_RefusesPricedDefaultCurrency() public {
+        PackageItem memory fixedItem = _fixedItem(10);
+        fixedItem.edition.currency = CURRENCY_DEFAULT;
+        uint256 id = _master(fixedItem);
+        vm.expectRevert(abi.encodeWithSelector(Editions.PricedDefaultCurrency.selector, id));
+        _createEdition(id, fixedItem);
+
+        PackageItem memory dutch = _openItem(1 days, 0);
+        dutch.edition.currency = CURRENCY_DEFAULT;
+        uint256 dutchId = _master(dutch);
+        vm.expectRevert(abi.encodeWithSelector(Editions.PricedDefaultCurrency.selector, dutchId));
+        _createEdition(dutchId, dutch);
+
+        PackageItem memory free = _fixedItem(10);
+        free.edition.currency = CURRENCY_DEFAULT;
+        free.edition.price = 0;
+        assertTrue(editions.exists(_create(free)));
+    }
+
+    function testFuzz_CreateEdition_DefaultCurrencyOnlyWhenFree(uint256 price) public {
+        PackageItem memory item = _fixedItem(10);
+        item.edition.currency = CURRENCY_DEFAULT;
+        item.edition.price = price;
+        uint256 id = _master(item);
+        if (price != 0) {
+            vm.expectRevert(abi.encodeWithSelector(Editions.PricedDefaultCurrency.selector, id));
+        }
+        _createEdition(id, item);
+        assertEq(editions.exists(id), price == 0);
+    }
+
     function _expectBadTerms(PackageItem memory item) internal {
         uint256 id = _master(item);
         vm.expectRevert(abi.encodeWithSelector(Editions.InvalidEditionTerms.selector, id));
@@ -355,6 +389,7 @@ contract EditionsTest is EditionsBase {
     function test_PrimaryTerms_ReturnStoredCurrency() public {
         PackageItem memory item = _fixedItem(10);
         item.edition.currency = CURRENCY_DEFAULT;
+        item.edition.price = 0; // a free edition: the only use of CURRENCY_DEFAULT
         uint256 id = _create(item);
         assertEq(editions.edition(id).terms.currency, CURRENCY_DEFAULT, "stored as approved");
         assertEq(editions.primaryTerms(id, "").currency, CURRENCY_DEFAULT);
