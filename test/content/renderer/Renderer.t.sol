@@ -26,7 +26,6 @@ contract RendererTest is RendererBase {
         assertEq(renderer.inlineThreshold(), THRESHOLD);
         assertEq(address(renderer.statementLog()), address(disputeLog));
         assertEq(address(renderer.contentStore()), address(store));
-        assertEq(renderer.MAX_INLINE_BYTES(), 1_048_576);
         assertEq(renderer.DEFAULT_INLINE_THRESHOLD(), 262_144);
     }
 

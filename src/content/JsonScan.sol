@@ -14,10 +14,11 @@ pragma solidity ^0.8.24;
 ///      - a number of more than 24 bytes or with an exponent of more than two digits, so every
 ///        number is a finite binary64 (`1e400` is one parsers read differently) and the digits
 ///        are bounded;
-///      - more than `MAX_VALUES` values and escapes together (every string, number, literal,
-///        array and object below the top-level object is one, and so is every backslash escape,
-///        a surrogate pair being two; keys are not), and nesting deeper than `MAX_DEPTH`: this
-///        is what bounds the cost of a document, whatever its bytes;
+///      - more than `MAX_VALUES` units: every string, number, literal, array and object below
+///        the top-level object is one, every key one more (two at the top level, where it is
+///        also hashed and matched), every backslash escape one (a surrogate pair is two); and
+///        nesting deeper than `MAX_DEPTH`. A unit costs 1,000 to 1,500 gas whatever it is, so
+///        this bounds the cost of a document, whatever its bytes;
 ///      - a duplicate key of a requested top-level member, and more elements than a caller's `max`;
 ///      - in {records}, an element that has more than eight members or two with the same key.
 ///      The caller checks UTF-8 separately (`Utf8`), and bounds the size of the text.
@@ -28,8 +29,8 @@ pragma solidity ^0.8.24;
 ///      meaningful, on any other text: they never read outside the bytes and give `ok` false
 ///      when the text is not what they look for. Strings are scanned a word at a time where
 ///      they hold no quote, backslash or control byte, so a long plain string costs about 5 gas
-///      a byte; a value or an escape costs 1,000 to 2,000 gas, which `MAX_VALUES` bounds. White
-///      space costs about 40 gas a byte, which the caller's bound on the size of the text bounds.
+///      a byte; a unit costs 1,000 to 1,500 gas, which `MAX_VALUES` bounds. White space costs
+///      about 40 gas a byte, which the caller's bound on the size of the text bounds.
 library JsonScan {
     uint256 internal constant MAX_DEPTH = 8;
     uint256 internal constant MAX_VALUES = 1_024;
@@ -390,6 +391,10 @@ library JsonScan {
                     let at := p
                     p := str(p, e, 1, ctx)
                     if iszero(p) { leave }
+                    // A key counts as a value, and two at the top level, where it is also hashed
+                    // and matched.
+                    mstore(ctx, add(mload(ctx), add(1, eq(depth, 8))))
+                    if gt(mload(ctx), 1024) { leave }
                     let h := 0
                     if eq(depth, 8) { h := keccak256(add(at, 1), sub(sub(p, at), 2)) }
                     p := ws(p, e)

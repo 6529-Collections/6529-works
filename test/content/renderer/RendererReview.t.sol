@@ -206,12 +206,18 @@ contract RendererReviewTest is RendererBase {
     }
 
     function test_H2_AtMostTheCapOfJsonValues() public {
-        // The values below the top-level object: `name`, the array, and the zeros.
+        // `name` and its value, `a` and the array are six units (a top-level key is two), and
+        // each zero is one: 1,018 are the most.
         uint256 cap = 1_024;
         bytes memory open = '{"name":"N","a":[0';
-        _raw(bytes.concat(open, _fill(",0", 2 * (cap - 3)), "]}"));
+        _raw(bytes.concat(open, _fill(",0", 2 * (cap - 7)), "]}"));
         assertEq(_str(_out(), ".name"), "N");
-        _raw(bytes.concat(open, _fill(",0", 2 * (cap - 2)), "]}"));
+        _raw(bytes.concat(open, _fill(",0", 2 * (cap - 6)), "]}"));
+        _assertCoreOnly("invalid");
+        // Top-level members are three units each: 340 of them and `name` are the most.
+        _raw(bytes.concat('{"name":"N"', _fill(',"a":0', 6 * 340), "}"));
+        assertEq(_str(_out(), ".name"), "N");
+        _raw(bytes.concat('{"name":"N"', _fill(',"a":0', 6 * 341), "}"));
         _assertCoreOnly("invalid");
     }
 
@@ -299,14 +305,16 @@ contract RendererReviewTest is RendererBase {
     ///      escapes is accepted up to the budget, and refused beyond it.
     function test_H2_EscapesCountAgainstTheValueBudget() public {
         bytes memory open = '{"name":"N","description":"';
-        // `name`, `description` and 1,022 escapes make 1,024.
-        _raw(bytes.concat(open, _fill("\\n", 2 * 1_022), '"}'));
-        assertEq(bytes(_str(_out(), ".description")).length, 1_022);
-        _raw(bytes.concat(open, _fill("\\n", 2 * 1_023), '"}'));
+        // `name` and `description` with their keys are six units, so 1,018 escapes make 1,024.
+        _raw(bytes.concat(open, _fill("\\n", 2 * 1_018), '"}'));
+        assertEq(bytes(_str(_out(), ".description")).length, 1_018);
+        _raw(bytes.concat(open, _fill("\\n", 2 * 1_019), '"}'));
         _assertCoreOnly("invalid");
-        _raw(bytes.concat(open, _fill("\\u00e9", 6 * 1_022), '"}'));
-        assertEq(bytes(_str(_out(), ".description")).length, 2 * 1_022);
-        _raw(bytes.concat(open, _fill("\\ud83d\\ude00", 12 * 512), '"}'));
+        _raw(bytes.concat(open, _fill("\\u00e9", 6 * 1_018), '"}'));
+        assertEq(bytes(_str(_out(), ".description")).length, 2 * 1_018);
+        _raw(bytes.concat(open, _fill("\\ud83d\\ude00", 12 * 509), '"}'));
+        assertEq(bytes(_str(_out(), ".description")).length, 4 * 509);
+        _raw(bytes.concat(open, _fill("\\ud83d\\ude00", 12 * 510), '"}'));
         _assertCoreOnly("invalid");
         // The record that is all escapes, as long as one can be.
         _raw(bytes.concat(open, _fill("\\\\", 12_288 - open.length - 2), '"}'));

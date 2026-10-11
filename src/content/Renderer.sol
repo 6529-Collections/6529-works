@@ -44,14 +44,15 @@ import { JsonScan } from "./JsonScan.sol";
 ///      revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
 ///      `Identity`, is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a
 ///      backslash, no `\u0000`, lone surrogate or bad hex digit in an escape, no number of more
-///      than 24 bytes or with more than two exponent digits, at most `JsonScan.MAX_VALUES` values
-///      and escapes together, eight levels), has no name or a wrong type, lists more than
-///      `MAX_ARTISTS` artists or `MAX_ATTRIBUTES` attributes, holds more than `MAX_ESCAPES` `%`
-///      and `#`, gives a `year` that is not an integer of at most six digits, or has an attribute
-///      that is not an object of at most eight different members with a string `trait_type` and
+///      than 24 bytes or with more than two exponent digits, at most `JsonScan.MAX_VALUES`
+///      units (values, keys and escapes), eight levels), has no name or a wrong type, lists
+///      more than `MAX_ARTISTS` artists or `MAX_ATTRIBUTES` attributes, holds more than
+///      `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an integer of at most six digits,
+///      or has an attribute that is not an object of at most eight different members with a string `trait_type` and
 ///      a string or number `value`, or whose name has a backslash or is one the renderer writes
-///      itself. These bounds are what keep the cost of any record within 8M gas, whatever its
-///      bytes (see `RendererGas.t.sol`, a row for every class of byte).
+///      itself. These bounds are chosen together, so that a record at every one of them at once
+///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class
+///      of byte, and the budget proof, every cap at once).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is
@@ -82,26 +83,28 @@ import { JsonScan } from "./JsonScan.sol";
 ///      of the file; an `Identity` file adds one transient buffer for its raw bytes.
 contract Renderer is IRenderer {
     /// @notice The largest threshold, and the largest primary file `fullTokenURI` inlines.
-    uint256 public constant MAX_INLINE_BYTES = 1_048_576;
+    uint256 internal constant MAX_INLINE_BYTES = 1_048_576;
     /// @notice The threshold the deployment uses (ADR 0001: 256 KiB; the gas matrix in
     ///         `test/content/renderer/RendererGas.t.sol` shows it fits 8M gas).
     uint256 public constant DEFAULT_INLINE_THRESHOLD = 262_144;
     /// @notice The largest PREVIEW image, cost-weighted stored bytes, inlined next to a primary
     ///         file that is not.
-    uint256 public constant PREVIEW_LIMIT = 65_536;
-    /// @notice The largest JavaScript primary, in stored bytes, wrapped in the HTML page.
-    uint256 public constant SCRIPT_LIMIT = 16_384;
+    uint256 internal constant PREVIEW_LIMIT = 65_536;
+    /// @notice The largest JavaScript primary, in stored bytes, that `tokenURI` wraps in the HTML
+    ///         page (it has the 8M promise); `fullTokenURI` wraps a larger one, up to its size
+    ///         limit.
+    uint256 internal constant SCRIPT_LIMIT = 8_192;
     /// @notice The largest record file, in bytes: one store chunk.
     uint256 internal constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
     uint256 internal constant MAX_ARTISTS = Limits.MAX_ARTISTS;
-    /// @notice The most attributes a record may list (each costs about 15,000 gas to check).
-    uint256 internal constant MAX_ATTRIBUTES = 128;
+    /// @notice The most attributes a record may list (each costs about 15,000 to 19,000 gas).
+    uint256 internal constant MAX_ATTRIBUTES = 64;
     /// @notice The most `<` a script may hold and still be wrapped in the HTML page (each costs up
     ///         to about 2,800 gas to neutralize).
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
     /// @notice The most `%` and `#` a record may hold (each costs about 200 gas to escape).
-    uint256 internal constant MAX_ESCAPES = 2_048;
+    uint256 internal constant MAX_ESCAPES = 512;
 
     /// @notice The content store the media and records are read from (immutable).
     IContentStore public immutable contentStore;
@@ -540,7 +543,9 @@ contract Renderer is IRenderer {
     {
         IContentStore.Encoding enc = fi.encoding;
         if (primary && _isScript(fi.mimeType)) {
-            return enc == IContentStore.Encoding.Identity && fi.length <= SCRIPT_LIMIT && !c.deps
+            // `fullTokenURI` (strict) has no 8M promise: its limit is the size check before.
+            return enc == IContentStore.Encoding.Identity && (fi.length <= SCRIPT_LIMIT || c.strict)
+                && !c.deps
                 ? _shell(c, id, fi.length)
                 : m;
         }

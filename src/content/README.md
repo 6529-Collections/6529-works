@@ -337,8 +337,8 @@ and copies validated JSON text, never decoded text:
 | `artists` (non-empty strings, at most 16) | one `Artist` trait each |
 | `year` (an integer, at most six digits) | the `Year` trait |
 | `medium`, `dimensions` (strings) | the `Medium` and `Dimensions` traits |
-| `attributes` (at most 128 objects, each of at most eight different members, with a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
-| `dependencies` | validated; a script whose record declares any (anything but exactly `[]`) is not wrapped in the page |
+| `attributes` (at most 64 objects, each of at most eight different members, with a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
+| `dependencies` | validated; a script whose record declares any is not wrapped in the page. Anything but exactly `[]` counts as declaring one (so `[ ]` with a space is read as having dependencies): that fails safe, the script is served by locator |
 | any other member (`files`, ...) | validated and ignored |
 
 Write the record as RFC 8785 canonical JSON, as the tooling does: non-ASCII text
@@ -357,14 +357,16 @@ nothing is guessed):
     high-low pair) or has a character that is not a hex digit;
   - a number of more than 24 bytes or with an exponent of more than two digits
     (every number is a finite binary64; parsers read `1e400` differently);
-  - more than 1,024 values and escapes together (`JsonScan.MAX_VALUES`: every
-    string, number, literal, array and object below the top-level one counts one,
-    and so does every backslash escape, a surrogate pair counting two);
+  - more than 1,024 units (`JsonScan.MAX_VALUES`). A unit is a value (a string,
+    number, literal, array or object below the top level), a key (two at the top
+    level, where it is also hashed and matched) or a backslash escape (a surrogate
+    pair is two). A top-level member is three units, a member of a nested object
+    two, an element of an array one, an attribute five;
   - nesting deeper than 8 levels, or a duplicate of a member the renderer reads;
 - a missing or empty `name`, a member of the wrong type, an empty artist, more than
   16 artists, a `year` that is not an integer of at most six digits (so no `1e400`
   and no `2026.5`);
-- more than 128 attributes, an attribute that is not an object with a string
+- more than 64 attributes, an attribute that is not an object with a string
   `trait_type` and a string or number `value`, an attribute with more than eight
   members or two with the same key (so `display_type` cannot be said twice and
   read two ways), or a `trait_type` with a backslash or that is one of the names the
@@ -372,32 +374,35 @@ nothing is guessed):
   `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`): those traits
   are the only ones the renderer vouches for, and a name with a backslash could be
   one of them spelled with an escape;
-- more than 2,048 `%` and `#` characters (`MAX_ESCAPES`).
+- more than 512 `%` and `#` characters (`MAX_ESCAPES`).
 
 **Why these bounds.** The cost of a record has to be bounded whatever its bytes,
-with the costliest media next to it, under 8M gas, and each kind of byte costs
-differently. Measured on a record of 12 KiB of one kind of byte (the bytes, not
-the media):
+with the costliest media next to it, under 8M gas. Each kind of byte and each kind
+of unit costs differently, and the cost of a record is the sum of what it holds, so
+every cap has to be low enough that all of them together stay under the budget.
+Measured on a record of 12 KiB of one kind of byte (the bytes, not the media):
 
 | What the record is full of | Gas (about) | Bounded by |
 | --- | --- | --- |
-| plain ASCII inside strings | 5 a byte | the size |
+| plain ASCII inside strings | 3 a byte | the size |
 | white space | 40 a byte | the size |
-| 2-byte UTF-8 (Cyrillic, accents) | 190 per character, 1.2M | the size |
-| 3-byte UTF-8 (CJK) | 280 per character, 1.1M | the size |
-| 4-byte UTF-8 (emoji) | 630 per character, 1.9M | the size |
-| a value (number, string, array, object), a backslash escape | 1,000 to 2,000 | 1,024 together |
-| a `%` or `#` | 470 | 2,048 |
-| an attribute | 9,000 to 18,000 | 128 |
+| 2-byte UTF-8 (Cyrillic, accents) | 190 per character, 1.1M | the size |
+| 3-byte UTF-8 (CJK) | 330 per character, 1.4M | the size |
+| 4-byte UTF-8 (emoji) | 410 per character, 1.3M | the size |
+| ASCII and multi-byte text alternating (the validator changes path at each step) | at most 140 a byte, 1.7M | the size |
+| a unit (value, key or escape), top-level members dearest | 1,000 to 1,500 | 1,024 together |
+| a `%` or `#` | 470 | 512 |
+| an attribute (also five units) | 15,000 to 19,000 | 64 |
 | a byte of an attribute name (read once, for a backslash) | 3 | the size |
 
 A record is validated once, and the pieces the renderer needs are found by walking
-it again without checking. The numbers are the reason for the size, not the other
-way round: halving it (from 24 KiB) halved every row of the table's per-byte
-classes, and the rows of `RendererGas.t.sol` hold every class at the full size
-next to the two costliest primaries (256 KiB of attested `Base64`, and a wrapped
-script). Because the whole file is percent-escaped first, `%` and `#` inside it
-survive the URI.
+it again without checking. The caps are chosen together, not one at a time: a
+record at every cap at once (64 attributes, 512 `%`, the rest of the units as
+top-level members, an array or a nested object, and the rest of its 12 KiB the
+costliest mix of UTF-8) costs at most 7.5M gas with 256 KiB of attested `Base64`
+next to it and 6.3M with the dearest script; those are the rows of
+`RendererGasBudgetTest`, the budget proof (see Gas). Because the whole file is
+percent-escaped first, `%` and `#` inside it survive the URI.
 
 ### Output
 
@@ -425,7 +430,7 @@ name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
 | --- | --- |
 | complete, work on-chain complete, stored as `Base64` and attested, at most the threshold | `data:<mime>;base64,` plus the stored text, concatenated as it is |
 | the same, stored as `Identity`, at most an eighth of the threshold | base64-encoded on-chain |
-| `text/javascript` or `application/javascript`, `Identity`, at most 16 KiB, UTF-8, at most 1,024 `<`, no declared `dependencies` | an HTML page that sets `window.works` (version 1) and runs the script (below) |
+| `text/javascript` or `application/javascript`, `Identity`, at most 8 KiB (`fullTokenURI`: 128 KiB), UTF-8, at most 1,024 `<`, no declared `dependencies` | an HTML page that sets `window.works` (version 1) and runs the script (below) |
 | anything else: larger, incomplete, unattested `Base64`, `Gzip` or `GzipBase64`, a script with dependencies | the preferred locator (and `media_url`) |
 
 - **The threshold** is `inlineThreshold()`, in stored bytes, set at deployment
@@ -504,9 +509,12 @@ no longer closes the element. `JsonEscape.scriptText` handles only the first
 sequence, and costs about 300 gas a byte on text made of `<`, so this library does
 both in one pass, a word at a time, jumping from `<` to `<`: a script costs about 5
 gas a byte plus about 450 gas for each `<`. A script of nothing but `<` would cost
-7M gas, so a script with more than 1,024 `<` (`MAX_SCRIPT_LT`; real scripts have
-tens or hundreds) is not wrapped but served by locator, and the dearest page that
-is wrapped costs 2.2M gas. A document (`text/html`) is inlined
+3.7M gas at 8 KiB, so a script with more than 1,024 `<` (`MAX_SCRIPT_LT`; real
+scripts have tens or hundreds) is not wrapped but served by locator, and the
+dearest page that is wrapped costs 1.5M gas (2.7M for the script that costs most to
+validate as UTF-8). A script is wrapped up to 8 KiB (`SCRIPT_LIMIT`) by `tokenURI`,
+which has the 8M promise; larger scripts are served by locator there, and
+`fullTokenURI`, which has no such promise, wraps them whole. A document (`text/html`) is inlined
 as base64 and left as it is: it is never parsed together with the renderer's
 markup, and rewriting it would break it.
 
@@ -529,47 +537,66 @@ the satellite and the log are mocks that answer from storage.
 
 | Stored bytes of the primary file | `Base64` file | `Identity` file |
 | --- | --- | --- |
-| 32 KiB | 0.32M | 2.60M |
-| 64 KiB | 0.47M | 5.13M |
-| 128 KiB | 0.98M | 10.58M |
-| 256 KiB (the default threshold) | 2.64M | not inlined (it would cost 22M) |
+| 32 KiB | 0.32M | 2.59M |
+| 64 KiB | 0.46M | 5.12M |
+| 128 KiB | 0.97M | 10.57M |
+| 256 KiB (the default threshold) | 2.63M | not inlined (it would cost 22M) |
 
-A file over the threshold with a locator costs 0.18M; a 16 KiB script page 1.6M,
-and at most 2.2M for the scripts that are dearest to neutralize (1,024 `<` of any
-shape, `</script` the dearest). A script with more `<` than that is served by
-locator, for 0.7M.
+A file over the threshold with a locator costs 0.18M. A script page (at most 8 KiB
+of `Identity`, UTF-8, at most 1,024 `<`) costs 0.9M for plain code, at most 1.5M for
+the dearest to neutralize (1,024 `</script`), and 2.7M, with its record and every
+read, for the dearest to validate (8 KiB of ASCII and U+0800 alternating). A script
+over the size or the `<` cap is served by locator by `tokenURI` (0.6M); `fullTokenURI`
+wraps a script up to 128 KiB (its limit is the size check of the full form).
 
-**The worst cases.** Every class of byte at the full 12 KiB record, and every limit,
-each with the costliest media next to it: a non-image primary of 256 KiB attested
-`Base64` or the dearest wrapped script, an 8 KiB `Identity` preview, a collection
-whose name is all `%`, a seed, a dispute and a `LicenseRef` license with a text file
-and a locator. All are accepted (but the rows that say refused), and under the 8M
-limit:
+**The budget proof.** A record at every cap at once, with the dearest media: a
+non-image primary of 256 KiB attested `Base64`, the script of `</script` with the most
+`<`, or a script of ASCII and U+0800, an 8 KiB `Identity` preview, a collection whose
+name is all `%`, a seed, a dispute and a `LicenseRef` license with a text file and a
+locator. The record is 12 KiB with 64 attributes, 512 `%` and the rest of the 1,024
+units as top-level members, an array of zeros or members of a nested object, and the
+rest of its bytes one fill. All are accepted, cold, and asserted under 8M by
+`RendererGasBudgetTest`:
 
-| Record | with 256 KiB `Base64` | with the script |
+| The fill of the rest of the record (top-level members) | 256 KiB `Base64` | script of `a` and U+0800 |
 | --- | --- | --- |
-| 1,024 values, in an ignored array of zeros | 4.8M | 4.2M |
-| 1,024 values, as members of the top-level object | 6.7M | 6.1M |
-| 128 attributes and 637 more values | 6.6M | 6.0M |
-| 77 attributes with 132-byte names | 5.8M | 5.1M |
-| the same, 16 `%` in each name | 6.6M | 5.8M |
-| the same, names of 2-byte UTF-8 | 6.5M | 5.7M |
-| the same, names of 2-byte UTF-8 with 26 `%` each (the dearest) | 7.5M | 6.7M |
-| a `%` every sixth byte of 12 KiB (2,048) | 5.4M | 4.6M |
-| 1,022 `\\` escapes in 12 KiB of text | 4.8M | 4.1M |
-| 1,022 `\u00e9` escapes in 12 KiB of text | 5.6M | 4.9M |
-| 511 surrogate pairs in 12 KiB of text | 5.4M | 4.7M |
-| 12 KiB of 2-byte UTF-8 | 5.6M | 4.9M |
-| 12 KiB of 3-byte UTF-8 | 5.4M | 4.6M |
-| 12 KiB of 4-byte UTF-8 | 6.2M | 5.4M |
-| 12 KiB of white space | 5.1M | 4.5M |
-| 12 KiB pretty-printed, one indented value a line | 5.5M | 5.0M |
+| ASCII | 6.4M | - |
+| 2-byte UTF-8 | 7.1M | - |
+| 4-byte UTF-8 | 7.2M | - |
+| U+0800 (E0) | 7.3M | - |
+| `a` and U+0800 alternating | 7.3M | 6.1M |
+| `a` and a 4-byte sequence alternating | 7.3M | 6.1M |
+| `aa` and a 2-byte sequence alternating (the dearest) | 7.4M | 6.3M |
+
+With an array of zeros or nested members instead of top-level members the numbers
+are the same within 0.1M (7.5M the dearest, with `aa` and a 2-byte sequence), and
+with the script of `</script` 5.7M to 5.8M.
+
+**Each class of byte and each limit on its own**, at the full 12 KiB, each with 256
+KiB of `Base64` or the script of `</script` (asserted at most 8M by
+`RendererGasAdversarialTest`):
+
+| Record | with `Base64` | with the script |
+| --- | --- | --- |
+| 1,024 units, in an array of zeros | 4.8M | 3.5M |
+| 340 top-level members | 4.7M | 3.5M |
+| 64 attributes and 695 more units | 5.6M | 4.3M |
+| 64 attributes with 132-byte names | 5.5M | 4.0M |
+| the same, 8 `%` in each name | 5.9M | 4.4M |
+| the same, names of 2-byte UTF-8 | 6.3M | 4.8M |
+| the same, 2-byte UTF-8 and 8 `%` in each name | 6.7M | 5.2M |
+| 512 `%`, one every sixth byte | 4.7M | 3.2M |
+| 1,018 `\\` escapes in 12 KiB of text | 4.8M | 3.3M |
+| 1,018 `\u00e9` escapes in 12 KiB of text | 5.6M | 4.1M |
+| 509 surrogate pairs in 12 KiB of text | 5.4M | 4.0M |
+| 12 KiB of 2-byte, 3-byte, 4-byte UTF-8 | 5.5M, 5.6M, 5.5M | 4.0M, 4.1M, 4.1M |
+| 12 KiB of white space / pretty-printed values | 5.1M / 5.5M | 3.8M / 4.2M |
 
 and refused records stay cheap, since the scan stops at the first fault: 12 KiB of
-escapes (over the budget) 1.2M to 2.0M, of `\u0000` 0.6M, of `%` past the cap 0.5M,
-arrays of zeros or `[]` 1.5M to 1.7M, empty members 3.4M and the value cap reached
-with members 3.5M (the dearest), 129 attributes 2.2M, and attribute names with a
-backslash 1.3M. Every figure includes the mocks' own reads.
+escapes (over the budget) 1.2M to 2.0M, of `\u0000` 0.6M, of `%` past the cap 0.6M,
+arrays of zeros or `[]` 1.5M to 1.7M, empty or tiny members 1.5M to 1.6M, 65
+attributes 1.4M, and attribute names with a backslash 1.2M. Every figure includes
+the mocks' own reads.
 
 ### Known gaps in v1
 
@@ -578,13 +605,13 @@ backslash 1.3M. Every figure includes the mocks' own reads.
 - **No dependency bundling.** Libraries from the dependency registry are not
   inlined into the script page; a script page is one self-contained file, and a
   script whose record declares `dependencies` is served by locator.
-- **Scripts only up to 16 KiB** and with at most 1,024 `<` go through the page, and
-  `Identity` media only up to an eighth of the threshold (32 KiB at the default);
-  bigger files go by locator, or should be stored as `Base64` (or, for an HTML
-  artwork, as `text/html`).
+- **Scripts only up to 8 KiB** and with at most 1,024 `<` go through the page in
+  `tokenURI` (up to 128 KiB in `fullTokenURI`), and `Identity` media only up to an
+  eighth of the threshold (32 KiB at the default); bigger files go by locator, or
+  should be stored as `Base64` (or, for an HTML artwork, as `text/html`).
 - **Core-only metadata** (a record that is not usable) has no ARTIST seed, because
   that seed is stored when the record opens.
-- **Records are bounded**: 12 KiB, 1,024 values and escapes together, 128
-  attributes of at most eight members, 2,048 `%` or `#`, numbers of 24 bytes. A work
+- **Records are bounded**: 12 KiB, 1,024 units (values, keys and escapes), 64
+  attributes of at most eight members, 512 `%` or `#`, numbers of 24 bytes. A work
   whose record needs more should keep the rest in the files the record points to,
   and write non-ASCII text as UTF-8 rather than `\uXXXX` escapes.

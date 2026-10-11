@@ -50,9 +50,12 @@ abstract contract RendererBase is ContentBase {
     uint256 internal constant THRESHOLD = 262_144;
     /// @dev The renderer's bounds on a record and a script (not getters of the renderer, to save
     ///      bytecode): the boundary tests fail if the renderer's own differ.
-    uint256 internal constant MAX_ESCAPES = 2_048;
-    uint256 internal constant MAX_ATTRIBUTES = 128;
+    uint256 internal constant MAX_ESCAPES = 512;
+    uint256 internal constant MAX_ATTRIBUTES = 64;
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
+    uint256 internal constant SCRIPT_LIMIT = 8_192;
+    uint256 internal constant PREVIEW_LIMIT = 65_536;
+    uint256 internal constant MAX_INLINE_BYTES = 1_048_576;
     string internal constant PREFIX = "data:application/json;utf8,";
 
     MockStream internal stream;

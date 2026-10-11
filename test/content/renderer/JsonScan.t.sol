@@ -400,14 +400,19 @@ contract JsonScanTest is Test {
         json = bytes.concat(json, "}");
     }
 
-    /// @dev H2: at most `MAX_VALUES` values: every string, number, literal, array and object.
+    /// @dev H2: at most `MAX_VALUES` units: every string, number, literal, array and object is one,
+    ///      every key one more (two at the top level, where it is also matched), every escape one.
     function test_Accepts_ValueCap() public view {
-        // `{"a":[0,0,...]}`: the array is one value and each 0 another.
-        assertTrue(h.accepts(_zeros(JsonScan.MAX_VALUES - 1)));
-        assertFalse(h.accepts(_zeros(JsonScan.MAX_VALUES)));
-        // Members: `{"a":0,"a":0,...}` is one value per member.
-        assertTrue(h.accepts(_members(JsonScan.MAX_VALUES)));
-        assertFalse(h.accepts(_members(JsonScan.MAX_VALUES + 1)));
+        // `{"a":[0,0,...]}`: the key is two units, the array one and each 0 one.
+        assertTrue(h.accepts(_zeros(JsonScan.MAX_VALUES - 3)));
+        assertFalse(h.accepts(_zeros(JsonScan.MAX_VALUES - 2)));
+        // Top-level members, `{"a":0,"a":0,...}`: a key (two) and a value (one) each.
+        assertTrue(h.accepts(_members((JsonScan.MAX_VALUES - 1) / 3)));
+        assertFalse(h.accepts(_members((JsonScan.MAX_VALUES - 1) / 3 + 1)));
+        // Members of a nested object: a key and a value, two units each, after the root key (two)
+        // and the object itself (one).
+        assertTrue(h.accepts(_nestedMembers((JsonScan.MAX_VALUES - 3) / 2)));
+        assertFalse(h.accepts(_nestedMembers((JsonScan.MAX_VALUES - 3) / 2 + 1)));
         // Empty arrays and strings count too.
         bytes memory many = "[";
         for (uint256 i; i < 600; ++i) {
@@ -423,6 +428,14 @@ contract JsonScanTest is Test {
             json = bytes.concat(json, i == 0 ? bytes("0") : bytes(",0"));
         }
         json = bytes.concat(json, "]}");
+    }
+
+    function _nestedMembers(uint256 n) internal pure returns (bytes memory json) {
+        json = '{"a":{';
+        for (uint256 i; i < n; ++i) {
+            json = bytes.concat(json, i == 0 ? bytes('"b":0') : bytes(',"b":0'));
+        }
+        json = bytes.concat(json, "}}");
     }
 
     function _members(uint256 n) internal pure returns (bytes memory json) {
@@ -537,24 +550,25 @@ contract JsonScanTest is Test {
     /// @dev Decision H2: every escape counts against the 1,024 of values, so a string of escapes
     ///      cannot cost more than a document of values (a surrogate pair is two escapes).
     function test_Escapes_CountAgainstTheValueBudget() public view {
-        // The string is one value, each escape one more.
-        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("\\n", 2 * 1_023), '"}')));
-        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\n", 2 * 1_024), '"}')));
-        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("\\u00e9", 6 * 1_023), '"}')));
-        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\u00e9", 6 * 1_024), '"}')));
-        // 511 pairs are 1,022 escapes, and a string and one more escape make 1,024.
-        bytes memory pairs = _fill("\\ud83d\\ude00", 12 * 511);
+        // The key is two units and the string one, each escape one more: 1,021 are the most.
+        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("\\n", 2 * 1_021), '"}')));
+        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\n", 2 * 1_022), '"}')));
+        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("\\u00e9", 6 * 1_021), '"}')));
+        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\u00e9", 6 * 1_022), '"}')));
+        // 510 pairs are 1,020 escapes, and with the three units of the member and one more
+        // escape they make 1,024.
+        bytes memory pairs = _fill("\\ud83d\\ude00", 12 * 510);
         assertTrue(h.accepts(bytes.concat('{"a":"', pairs, '"}')));
         assertTrue(h.accepts(bytes.concat('{"a":"', pairs, '\\n"}')));
         assertFalse(h.accepts(bytes.concat('{"a":"', pairs, '\\n\\n"}')));
-        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\ud83d\\ude00", 12 * 512), '"}')));
-        // Escapes and values share the budget: 600 of each.
+        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\ud83d\\ude00", 12 * 511), '"}')));
+        // Escapes and values share the budget: 600 zeros, and `"a":[` and `"b":"` are six units.
         bytes memory zeros = _fill("0,", 2 * 599);
         assertTrue(
-            h.accepts(bytes.concat('{"a":[', zeros, '0],"b":"', _fill("\\n", 2 * 422), '"}'))
+            h.accepts(bytes.concat('{"a":[', zeros, '0],"b":"', _fill("\\n", 2 * 418), '"}'))
         );
         assertFalse(
-            h.accepts(bytes.concat('{"a":[', zeros, '0],"b":"', _fill("\\n", 2 * 424), '"}'))
+            h.accepts(bytes.concat('{"a":[', zeros, '0],"b":"', _fill("\\n", 2 * 419), '"}'))
         );
         // Keys cannot have them at all, and text without escapes costs nothing of the budget.
         assertTrue(h.accepts(bytes.concat('{"a":"', _fill("x", 20_000), '"}')));

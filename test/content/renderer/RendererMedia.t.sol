@@ -311,7 +311,7 @@ contract RendererMediaTest is RendererBase {
         bytes32 primary = _file(_data(THRESHOLD + 1, 22), IDENTITY, PNG);
         bytes32 incomplete = _incompleteFile(_data(2 * CHUNK, 23), IDENTITY, PNG);
         bytes32 gzipped = _file(_data(300, 24), GZIP, PNG);
-        bytes32 tooBig = _file(_data(renderer.PREVIEW_LIMIT() + 1, 25), IDENTITY, PNG);
+        bytes32 tooBig = _file(_data(PREVIEW_LIMIT + 1, 25), IDENTITY, PNG);
         bytes32[3] memory previews = [incomplete, gzipped, tooBig];
         for (uint256 i; i < previews.length; ++i) {
             _workWith(primary, previews[i]);
@@ -345,7 +345,7 @@ contract RendererMediaTest is RendererBase {
 
     function test_Preview_ThePreviewLimitIsInclusiveAndCountsIdentityEightTimes() public {
         bytes32 primary = _file(_data(THRESHOLD + 1, 26), IDENTITY, PNG);
-        uint256 limit = renderer.PREVIEW_LIMIT();
+        uint256 limit = PREVIEW_LIMIT;
         bytes memory text = _data(limit / 8 * 3, 27); // exactly `limit` base64 characters
         _workWith(primary, _file(bytes(Base64.encode(text)), BASE64, PNG));
         assertEq(_str(_out(), ".image"), _dataUri(PNG, text));
@@ -468,7 +468,7 @@ contract RendererMediaTest is RendererBase {
             abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID);
 
         // Over 1 MiB (a manifest alone is enough: the size is checked first).
-        bytes32 huge = _declareOnly(renderer.MAX_INLINE_BYTES() + 1, PNG);
+        bytes32 huge = _declareOnly(MAX_INLINE_BYTES + 1, PNG);
         _install(huge);
         vm.expectRevert(expected);
         renderer.fullTokenURI(address(stream), ID);
@@ -520,7 +520,10 @@ contract RendererMediaTest is RendererBase {
     bytes internal constant TAIL = "</script></body></html>";
 
     function _page() internal view returns (bytes memory) {
-        string memory uri = _str(_out(), ".animation_url");
+        return _pageOf(_str(_out(), ".animation_url"));
+    }
+
+    function _pageOf(string memory uri) internal pure returns (bytes memory) {
         bytes memory prefix = "data:text/html;base64,";
         bytes memory b = bytes(uri);
         for (uint256 i; i < prefix.length; ++i) {
@@ -647,7 +650,7 @@ contract RendererMediaTest is RendererBase {
         ];
         // Not UTF-8, and over the script limit.
         bytes32 notUtf8 = _file(hex"7661722061203d202722c0af27", IDENTITY, "text/javascript");
-        bytes32 big = _file(_scriptOf(renderer.SCRIPT_LIMIT() + 1), IDENTITY, "text/javascript");
+        bytes32 big = _file(_scriptOf(SCRIPT_LIMIT + 1), IDENTITY, "text/javascript");
         for (uint256 i; i < 5; ++i) {
             bytes32 f = i < 3 ? files[i] : (i == 3 ? notUtf8 : big);
             _install(f);
@@ -657,7 +660,7 @@ contract RendererMediaTest is RendererBase {
         }
 
         // The limit itself is inlined.
-        _install(_file(_scriptOf(renderer.SCRIPT_LIMIT()), IDENTITY, "text/javascript"));
+        _install(_file(_scriptOf(SCRIPT_LIMIT), IDENTITY, "text/javascript"));
         assertTrue(_ends(_page(), TAIL));
     }
 
@@ -679,6 +682,31 @@ contract RendererMediaTest is RendererBase {
         _install(over);
         records.addLocator(ID, over, Locator(LocatorKind.IPFS, IPFS));
         assertEq(_str(_out(), ".animation_url"), IPFS);
+        vm.expectRevert(
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
+    }
+
+    /// @dev Decision H2 (round 3): `tokenURI` wraps a script of at most `SCRIPT_LIMIT` (8 KiB) and
+    ///      serves a larger one by locator; `fullTokenURI`, which has no 8M promise, wraps it
+    ///      whole, up to the size limit of the full form (128 KiB of `Identity`).
+    function test_Script_OverTheCompactLimitIsWrappedByTheFullForm() public {
+        bytes memory js = _scriptOf(SCRIPT_LIMIT * 2);
+        bytes32 file = _file(js, IDENTITY, "text/javascript");
+        _install(file);
+        records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
+
+        assertEq(_str(_out(), ".animation_url"), IPFS, "compact: by locator");
+
+        string memory full = _decode(renderer.fullTokenURI(address(stream), ID));
+        bytes memory page = _pageOf(_str(full, ".animation_url"));
+        assertTrue(_contains(page, bytes.concat(HEAD_MARK, js, TAIL)));
+        assertFalse(_has(full, ".media_url"));
+
+        // The most the full form takes is 128 KiB of `Identity` (weight eight against 1 MiB).
+        bytes32 huge = _file(_scriptOf(MAX_INLINE_BYTES / 8 + 1), IDENTITY, "text/javascript");
+        _install(huge);
         vm.expectRevert(
             abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
         );

@@ -123,7 +123,7 @@ contract RendererGasTest is RendererBase {
     }
 
     function test_ScriptPage() public {
-        bytes memory js = new bytes(renderer.SCRIPT_LIMIT());
+        bytes memory js = new bytes(SCRIPT_LIMIT);
         for (uint256 i; i < js.length; ++i) {
             js[i] = i % 64 == 63 ? bytes1("\n") : bytes1("a");
         }
@@ -140,7 +140,7 @@ contract RendererGasTest is RendererBase {
             [bytes("<"), "</", "<!-", "</script", "<aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"];
         uint256 lt = MAX_SCRIPT_LT;
         for (uint256 u; u < unit.length; ++u) {
-            bytes memory js = new bytes(renderer.SCRIPT_LIMIT());
+            bytes memory js = new bytes(SCRIPT_LIMIT);
             for (uint256 i; i < js.length; ++i) {
                 js[i] = "a";
             }
@@ -158,7 +158,7 @@ contract RendererGasTest is RendererBase {
             assertEq(_startsWith(_str(_out(), ".animation_url"), "data:text/html;base64,"), true);
         }
         // One more `<` and the page is not built.
-        bytes memory dense = new bytes(renderer.SCRIPT_LIMIT());
+        bytes memory dense = new bytes(SCRIPT_LIMIT);
         for (uint256 i; i < dense.length; ++i) {
             dense[i] = "<";
         }
@@ -366,6 +366,7 @@ contract RendererGasAdversarialTest is RendererBase {
         bytes memory attr = bytes.concat('{"trait_type":"', name, '","value":1}');
         bytes memory open = '{"name":"N","attributes":[';
         uint256 n = (limit - open.length - 2) / (attr.length + 1);
+        if (n > MAX_ATTRIBUTES) n = MAX_ATTRIBUTES;
         return bytes.concat(open, _attrList(attr, n), "]}");
     }
 
@@ -373,7 +374,7 @@ contract RendererGasAdversarialTest is RendererBase {
         super.setUp();
         relay = new TokenURIRelay(renderer, address(stream));
         limit = Limits.MAX_RECORD_BYTES;
-        preview = _file(_data(renderer.PREVIEW_LIMIT() / 8, 70), IDENTITY, "image/png");
+        preview = _file(_data(PREVIEW_LIMIT / 8, 70), IDENTITY, "image/png");
         html = _file(
             bytes(Base64.encode(_data(renderer.inlineThreshold() / 4 * 3, 71))), BASE64, "text/html"
         );
@@ -382,7 +383,7 @@ contract RendererGasAdversarialTest is RendererBase {
         // text to the script limit.
         uint256 lt = MAX_SCRIPT_LT;
         script = _file(
-            bytes.concat(_fill("</script", 8 * lt), _fill("a", renderer.SCRIPT_LIMIT() - 8 * lt)),
+            bytes.concat(_fill("</script", 8 * lt), _fill("a", SCRIPT_LIMIT - 8 * lt)),
             IDENTITY,
             "text/javascript"
         );
@@ -393,39 +394,48 @@ contract RendererGasAdversarialTest is RendererBase {
         bytes memory open = '{"name":"N","description":"';
         bytes memory close = '"}';
 
-        // The most values: the top-level object holds `name`, the array and 1,022 zeros, or 1,023
-        // members.
+        // The most units (a value, a key, an escape: 1,024, a top-level key counting two): the
+        // top-level object holds `name` (3 units), the array (`a`, 3 units) and 1,018 zeros, or
+        // 340 members of 3 units each.
         _both(
             K_VALUES,
-            bytes.concat('{"name":"N","a":[0', _fill(",0", 2 * (JsonScan.MAX_VALUES - 3)), "]}")
+            bytes.concat(
+                '{"name":"N","a":[0', _fill(",0", 2 * (JsonScan.MAX_VALUES - 3 - 3 - 1)), "]}"
+            )
         );
         _both(
             K_MEMBERS,
-            bytes.concat('{"name":"N"', _fill(',"a":0', 6 * (JsonScan.MAX_VALUES - 1)), "}")
+            bytes.concat('{"name":"N"', _fill(',"a":0', 6 * ((JsonScan.MAX_VALUES - 3) / 3)), "}")
         );
-        // The most attributes (each is an object and two values), and the rest of the values in an
-        // ignored array: 1 + 1 + 3 * 128 + 1 + 637 = 1,024.
+        // The most attributes (each is an object, two keys and two values: 5 units), and the rest
+        // of the units in an ignored array.
         uint256 attrs = MAX_ATTRIBUTES;
         _both(
             K_ATTRS,
             bytes.concat(
                 '{"name":"N","a":[0',
-                _fill(",0", 2 * (JsonScan.MAX_VALUES - 2 - 3 * attrs - 2)),
+                _fill(",0", 2 * (JsonScan.MAX_VALUES - 3 - 3 - (3 + 5 * attrs) - 1)),
                 '],"attributes":[',
                 _attrList('{"trait_type":"k","value":1}', attrs),
                 "]}"
             )
         );
-        // Text filling the record: the most `%` and `#` it may hold, then every other class of byte.
+        // Text filling the record: the most `%` and `#` it may hold (a `%` every sixth byte), then
+        // every other class of byte.
         _both(
             K_PERCENT,
-            bytes.concat(open, _fill("aaaaa%", (limit - open.length - close.length) / 6 * 6), close)
+            bytes.concat(
+                open,
+                _fill("aaaaa%", 6 * MAX_ESCAPES),
+                _fill("a", limit - open.length - close.length - 6 * MAX_ESCAPES),
+                close
+            )
         );
         _both(K_BACKSLASH, _padded(open, hex"5c5c", close));
-        // With the escapes the budget takes: the `name`, the `description` and 1,022 more.
-        _both(K_BACKSLASH_CAP, _capped(open, hex"5c5c", 1_022, close));
-        _both(K_UNICODE_CAP, _capped(open, hex"5c7530306539", 1_022, close));
-        _both(K_PAIRS_CAP, _capped(open, bytes("\\ud83d\\ude00"), 511, close));
+        // With the escapes the budget takes: `name` and `description` are 6 units, 1,018 more.
+        _both(K_BACKSLASH_CAP, _capped(open, hex"5c5c", 1_018, close));
+        _both(K_UNICODE_CAP, _capped(open, hex"5c7530306539", 1_018, close));
+        _both(K_PAIRS_CAP, _capped(open, bytes("\\ud83d\\ude00"), 509, close));
         _both(K_UNICODE, _padded(open, hex"5c7530306539", close));
         _both(K_PAIRS, _padded(open, bytes("\\ud83d\\ude00"), close));
         _both(K_UTF8_2, _padded(open, hex"d09fd180d0b8d0b2d0b5d18220d0bcd0b8d18020", close));
@@ -442,10 +452,10 @@ contract RendererGasAdversarialTest is RendererBase {
         );
         // Attributes with long names: plain, with `%`, of escapes, of 2-byte UTF-8.
         _both(K_NAMES, _names("a", 0, 132));
-        _both(K_NAMES_PCT, _names("a", 16, 132));
+        _both(K_NAMES_PCT, _names("a", MAX_ESCAPES / MAX_ATTRIBUTES, 132));
         _both(K_NAMES_BS, _names(hex"5c5c", 0, 132));
         _both(K_NAMES_UTF8, _names(hex"c3a9", 0, 130));
-        _both(K_NAMES_MIX, _names(hex"c3a9", 26, 130));
+        _both(K_NAMES_MIX, _names(hex"c3a9", MAX_ESCAPES / MAX_ATTRIBUTES, 130));
 
         // Records the renderer refuses: each must cost little.
         _members(W_BOMB_ARRAY, _bomb('{"name":"N","a":[', "0,", "]}"), tiny, 0);
@@ -498,38 +508,39 @@ contract RendererGasAdversarialTest is RendererBase {
     // ---------------------------------------------------------------- one test per row and primary
 
     function test_Gas_Values_Html() public {
-        _row("1,024 values, array of zeros + 256 KiB b64 + preview", 10 * K_VALUES + 1);
+        _row("1,024 units, array of zeros + 256 KiB b64 + preview", 10 * K_VALUES + 1);
     }
 
     function test_Gas_Values_Script() public {
-        _row("1,024 values, array of zeros + script + preview", 10 * K_VALUES + 2);
+        _row("1,024 units, array of zeros + script + preview", 10 * K_VALUES + 2);
     }
 
     function test_Gas_Members_Html() public {
-        _row("1,024 members + 256 KiB b64 + preview", 10 * K_MEMBERS + 1);
+        _row("340 top-level members + 256 KiB b64 + preview", 10 * K_MEMBERS + 1);
     }
 
     function test_Gas_Members_Script() public {
-        _row("1,024 members + script + preview", 10 * K_MEMBERS + 2);
+        _row("340 top-level members + script + preview", 10 * K_MEMBERS + 2);
     }
 
     function test_Gas_Attributes_Html() public {
-        string memory j = _row("128 attributes + zeros + 256 KiB b64 + preview", 10 * K_ATTRS + 1);
+        string memory j =
+            _row("64 attributes + 695 zeros + 256 KiB b64 + preview", 10 * K_ATTRS + 1);
         uint256 first = _attrIndex(j, "k");
-        assertEq(_str(j, _at(first + 127, ".trait_type")), "k");
-        assertFalse(_has(j, _at(first + 128, "")));
+        assertEq(_str(j, _at(first + MAX_ATTRIBUTES - 1, ".trait_type")), "k");
+        assertFalse(_has(j, _at(first + MAX_ATTRIBUTES, "")));
     }
 
     function test_Gas_Attributes_Script() public {
-        _row("128 attributes + zeros + script + preview", 10 * K_ATTRS + 2);
+        _row("64 attributes + 695 zeros + script + preview", 10 * K_ATTRS + 2);
     }
 
     function test_Gas_Percent_Html() public {
-        _row("2,048 % in 12 KiB text + 256 KiB b64 + preview", 10 * K_PERCENT + 1);
+        _row("512 % in 12 KiB text + 256 KiB b64 + preview", 10 * K_PERCENT + 1);
     }
 
     function test_Gas_Percent_Script() public {
-        _row("2,048 % in 12 KiB text + script + preview", 10 * K_PERCENT + 2);
+        _row("512 % in 12 KiB text + script + preview", 10 * K_PERCENT + 2);
     }
 
     /// @dev A row of a record the renderer refuses: it costs the scan up to the budget, no more.
@@ -553,11 +564,11 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_BackslashesAtTheBudget_Html() public {
-        _row("1,022 \\\\ escapes + 12 KiB text + 256 KiB b64 + preview", 10 * K_BACKSLASH_CAP + 1);
+        _row("1,018 \\\\ escapes + 12 KiB text + 256 KiB b64 + preview", 10 * K_BACKSLASH_CAP + 1);
     }
 
     function test_Gas_BackslashesAtTheBudget_Script() public {
-        _row("1,022 \\\\ escapes + 12 KiB text + script + preview", 10 * K_BACKSLASH_CAP + 2);
+        _row("1,018 \\\\ escapes + 12 KiB text + script + preview", 10 * K_BACKSLASH_CAP + 2);
     }
 
     function test_Gas_UnicodeEscapes_Html() public {
@@ -571,11 +582,11 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_UnicodeEscapesAtTheBudget_Html() public {
-        _row("1,022 \\u00e9 escapes + 12 KiB text + 256 KiB b64 + preview", 10 * K_UNICODE_CAP + 1);
+        _row("1,018 \\u00e9 escapes + 12 KiB text + 256 KiB b64 + preview", 10 * K_UNICODE_CAP + 1);
     }
 
     function test_Gas_UnicodeEscapesAtTheBudget_Script() public {
-        _row("1,022 \\u00e9 escapes + 12 KiB text + script + preview", 10 * K_UNICODE_CAP + 2);
+        _row("1,018 \\u00e9 escapes + 12 KiB text + script + preview", 10 * K_UNICODE_CAP + 2);
     }
 
     function test_Gas_EscapePairs_Html() public {
@@ -589,11 +600,11 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_EscapePairsAtTheBudget_Html() public {
-        _row("511 \\ud83d\\ude00 pairs + 12 KiB text + 256 KiB b64 + preview", 10 * K_PAIRS_CAP + 1);
+        _row("509 \\ud83d\\ude00 pairs + 12 KiB text + 256 KiB b64 + preview", 10 * K_PAIRS_CAP + 1);
     }
 
     function test_Gas_EscapePairsAtTheBudget_Script() public {
-        _row("511 \\ud83d\\ude00 pairs + 12 KiB text + script + preview", 10 * K_PAIRS_CAP + 2);
+        _row("509 \\ud83d\\ude00 pairs + 12 KiB text + script + preview", 10 * K_PAIRS_CAP + 2);
     }
 
     function test_Gas_Utf8Two_Html() public {
@@ -645,11 +656,11 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_LongNamesWithPercent_Html() public {
-        _row("132-byte attribute names, 16 % each + 256 KiB b64 + preview", 10 * K_NAMES_PCT + 1);
+        _row("132-byte attribute names, 8 % each + 256 KiB b64 + preview", 10 * K_NAMES_PCT + 1);
     }
 
     function test_Gas_LongNamesWithPercent_Script() public {
-        _row("132-byte attribute names, 16 % each + script + preview", 10 * K_NAMES_PCT + 2);
+        _row("132-byte attribute names, 8 % each + script + preview", 10 * K_NAMES_PCT + 2);
     }
 
     function test_Gas_LongNamesOfUtf8_Html() public {
@@ -665,13 +676,12 @@ contract RendererGasAdversarialTest is RendererBase {
 
     function test_Gas_LongNamesOfUtf8WithPercent_Html() public {
         _row(
-            "130-byte names of 2-byte UTF-8, 26 % each + 256 KiB b64 + preview",
-            10 * K_NAMES_MIX + 1
+            "130-byte names of 2-byte UTF-8, 8 % each + 256 KiB b64 + preview", 10 * K_NAMES_MIX + 1
         );
     }
 
     function test_Gas_LongNamesOfUtf8WithPercent_Script() public {
-        _row("130-byte names of 2-byte UTF-8, 26 % each + script + preview", 10 * K_NAMES_MIX + 2);
+        _row("130-byte names of 2-byte UTF-8, 8 % each + script + preview", 10 * K_NAMES_MIX + 2);
     }
 
     // ---------------------------------------------------------------- refused records
@@ -706,7 +716,7 @@ contract RendererGasAdversarialTest is RendererBase {
             "refused: members \"\":0",
             "refused: \\u0000 escapes",
             "refused: 12 KiB of %",
-            "refused: 129 attributes",
+            "refused: 65 attributes",
             "refused: 6,000 \\n escapes"
         ];
         for (uint256 i; i < labels.length; ++i) {
@@ -718,5 +728,291 @@ contract RendererGasAdversarialTest is RendererBase {
             string memory j = _decode(renderer.tokenURI(address(stream), ids[i]));
             assertEq(_str(j, ".record_status"), "invalid", labels[i]);
         }
+    }
+}
+
+/// @dev The budget proof (decision H2, round 3): every cap at once. Each class of byte and each
+///      limit is bounded on its own, but a record can sit at all of them, and its cost is their
+///      sum. The record here has the most attributes, the most `%`, the most units in members,
+///      an array or a nested object, and its remaining bytes (up to 12 KiB) filled with the
+///      costliest mix of UTF-8 (a short run of ASCII and a multi-byte sequence, alternating, so
+///      the validator changes path at every step), against the primaries that cost the most: 256
+///      KiB of attested `Base64`, the script of `</script` with the most `<`, and a script of
+///      `a` and U+0800 (the costliest to validate). Each is cold, one work per test, and at most
+///      8M. The media are the same as in `RendererGasAdversarialTest`.
+contract RendererGasBudgetTest is RendererBase {
+    uint256 internal constant GAS_BUDGET = 8_000_000;
+    bytes internal constant ATTR = '{"trait_type":"k","value":1}';
+
+    // Primaries.
+    uint256 internal constant P_HTML = 1;
+    uint256 internal constant P_SCRIPT_LT = 2;
+    uint256 internal constant P_SCRIPT_U8 = 3;
+    // Shapes of the units left over after the attributes.
+    uint256 internal constant MEMBERS = 0; // top-level members, 3 units each
+    uint256 internal constant ZEROS = 1; // an array of zeros, 1 unit each
+    uint256 internal constant NESTED = 2; // members of a nested object, 2 units each
+
+    TokenURIRelay internal relay;
+    bytes32 internal html;
+    bytes32 internal scriptLt;
+    bytes32 internal scriptU8;
+    bytes32 internal preview;
+    bytes32 internal licenseText;
+    uint256 internal limit;
+
+    function _fill(bytes memory unit, uint256 n) internal pure returns (bytes memory j) {
+        j = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            j[i] = unit[i % unit.length];
+        }
+    }
+
+    function _rep(bytes memory unit, uint256 n) internal pure returns (bytes memory) {
+        return _fill(unit, unit.length * n);
+    }
+
+    function _list(bytes memory item, uint256 n) internal pure returns (bytes memory all) {
+        all = new bytes(n * (item.length + 1) - 1);
+        uint256 p;
+        for (uint256 k; k < n; ++k) {
+            if (k != 0) all[p++] = ",";
+            for (uint256 i; i < item.length; ++i) {
+                all[p++] = item[i];
+            }
+        }
+    }
+
+    /// @dev Work `id` with `json` and `primary`, an identity preview, and the license text, a
+    ///      collection of `%`, a seed, a dispute and a `LicenseRef` license with a locator.
+    function _work(uint256 id, bytes memory json, bytes32 primary) internal {
+        require(json.length <= limit, "record over the limit");
+        MediaFile[] memory m = new MediaFile[](3);
+        m[0] = MediaFile(primary, _sha(primary), FileRole.PRIMARY);
+        m[1] = MediaFile(licenseText, _sha(licenseText), FileRole.AUXILIARY);
+        m[2] = MediaFile(preview, _sha(preview), FileRole.PREVIEW);
+        _installRawAt(id, json, m);
+        IStream.WorkCore memory core = _core();
+        core.collectionId = 1;
+        core.serial = 9;
+        core.seedPolicy = SeedPolicy.ARTIST;
+        stream.setWork(id, core);
+        records.setSeed(id, SeedPolicy.ARTIST, bytes32(uint256(1)));
+        disputeLog.set(address(stream), id, bytes32(uint256(1)));
+        records.setLicense(id, License("LicenseRef-Studio-1", licenseText));
+        records.addLocator(id, licenseText, Locator(LocatorKind.ARWEAVE, "ar://licence"));
+    }
+
+    /// @dev A record at every cap: `name` (3 units), a description of `MAX_ESCAPES` `%` and then
+    ///      `fill` up to the size limit (3 units), `MAX_ATTRIBUTES` attributes (2 + 1 + 5 each),
+    ///      and the rest of the 1,024 units as `shape`.
+    function _everyCap(bytes memory fill, uint256 shape) internal view returns (bytes memory) {
+        uint256 rest = JsonScan.MAX_VALUES - 3 - 3 - 3 - 5 * MAX_ATTRIBUTES;
+        bytes memory tail;
+        if (shape == MEMBERS) {
+            tail = _rep(',"a":0', rest / 3);
+        } else if (shape == ZEROS) {
+            tail = bytes.concat(',"a":[0', _rep(",0", rest - 3 - 1), "]");
+        } else {
+            tail = bytes.concat(',"a":{"b":0', _rep(',"b":0', (rest - 3) / 2 - 1), "}");
+        }
+        tail = bytes.concat('","attributes":[', _list(ATTR, MAX_ATTRIBUTES), "]", tail, "}");
+        bytes memory open = bytes.concat('{"name":"N","description":"', _fill("%", MAX_ESCAPES));
+        uint256 room = limit - open.length - tail.length;
+        return bytes.concat(open, _fill(fill, room / fill.length * fill.length), tail);
+    }
+
+    function _primary(uint256 which) internal view returns (bytes32) {
+        return which == P_HTML ? html : (which == P_SCRIPT_LT ? scriptLt : scriptU8);
+    }
+
+    /// @dev Work `100 * k + 10 * shape + primary`, k naming the fill.
+    function _id(uint256 k, uint256 shape, uint256 primary) internal pure returns (uint256) {
+        return 100 * k + 10 * shape + primary;
+    }
+
+    function _add(uint256 k, bytes memory fill, uint256 shape, uint256 primary) internal {
+        _work(_id(k, shape, primary), _everyCap(fill, shape), _primary(primary));
+    }
+
+    // The fills: ASCII only; ASCII and a 3-byte sequence from E0 (the general path of the
+    // validator before it was shortened); ASCII twice and a 2-byte one; ASCII and 4 bytes;
+    // E0 alone; the 4-byte sequence alone; 2-byte alone.
+    uint256 internal constant F_ASCII = 1;
+    uint256 internal constant F_A_E0 = 2;
+    uint256 internal constant F_AA_2B = 3;
+    uint256 internal constant F_A_4B = 4;
+    uint256 internal constant F_E0 = 5;
+    uint256 internal constant F_4B = 6;
+    uint256 internal constant F_2B = 7;
+
+    function setUp() public override {
+        super.setUp();
+        relay = new TokenURIRelay(renderer, address(stream));
+        limit = Limits.MAX_RECORD_BYTES;
+        preview = _file(_data(PREVIEW_LIMIT / 8, 70), IDENTITY, "image/png");
+        html = _file(
+            bytes(Base64.encode(_data(renderer.inlineThreshold() / 4 * 3, 71))), BASE64, "text/html"
+        );
+        assertTrue(_attested(html));
+        scriptLt = _file(
+            bytes.concat(
+                _fill("</script", 8 * MAX_SCRIPT_LT), _fill("a", SCRIPT_LIMIT - 8 * MAX_SCRIPT_LT)
+            ),
+            IDENTITY,
+            "text/javascript"
+        );
+        scriptU8 = _file(_fill(hex"61e0a080", SCRIPT_LIMIT), IDENTITY, "text/javascript");
+        licenseText = _file("The terms of the license.", IDENTITY, "text/plain");
+        stream.setCollection(1, IStream.Collection(string(_fill("%", 256)), bytes32(0), 9));
+
+        // Against 256 KiB of `Base64`: every fill, every shape.
+        bytes[7] memory fills = [
+            bytes("a"),
+            hex"61e0a080",
+            hex"6161c3a9",
+            hex"61f09f9880",
+            hex"e0a080",
+            hex"f09f9880",
+            hex"c3a9"
+        ];
+        for (uint256 f; f < fills.length; ++f) {
+            _add(f + 1, fills[f], MEMBERS, P_HTML);
+        }
+        for (uint256 s = 1; s < 3; ++s) {
+            _add(F_ASCII, "a", s, P_HTML);
+            _add(F_A_E0, fills[1], s, P_HTML);
+            _add(F_AA_2B, fills[2], s, P_HTML);
+        }
+        // Against the two scripts: the costliest fills in every shape.
+        for (uint256 s; s < 3; ++s) {
+            _add(F_A_E0, fills[1], s, P_SCRIPT_LT);
+            _add(F_A_E0, fills[1], s, P_SCRIPT_U8);
+            _add(F_AA_2B, fills[2], s, P_SCRIPT_U8);
+            _add(F_A_4B, fills[3], s, P_SCRIPT_U8);
+        }
+    }
+
+    function _cold(uint256 id) internal view returns (uint256 used, bool ok) {
+        bytes memory callData = abi.encodeCall(TokenURIRelay.tokenURI, (id));
+        address to = address(relay);
+        assembly ("memory-safe") {
+            let before := gas()
+            ok := staticcall(gas(), to, add(callData, 0x20), mload(callData), 0, 0)
+            used := sub(before, gas())
+        }
+    }
+
+    /// @dev The cold gas of work `id`, which must be an accepted record, at most the budget.
+    function _row(string memory label, uint256 id) internal {
+        (uint256 used, bool ok) = _cold(id);
+        emit log_named_uint(label, used);
+        assertTrue(ok, label);
+        assertLt(used, GAS_BUDGET, label);
+        string memory j = _decode(renderer.tokenURI(address(stream), id));
+        assertFalse(_has(j, ".record_status"), "an accepted record");
+        assertEq(_str(j, ".name"), "N");
+    }
+
+    // ---------------------------------------------------------------- 256 KiB of `Base64`
+
+    function test_Budget_Html_Members_Ascii() public {
+        _row("every cap, members, ASCII, 256 KiB b64", _id(F_ASCII, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_AsciiAndE0() public {
+        _row("every cap, members, a+U+0800, 256 KiB b64", _id(F_A_E0, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_TwoAsciiAndTwoByte() public {
+        _row("every cap, members, aa+e, 256 KiB b64", _id(F_AA_2B, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_AsciiAndFourByte() public {
+        _row("every cap, members, a+4-byte, 256 KiB b64", _id(F_A_4B, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_E0() public {
+        _row("every cap, members, U+0800, 256 KiB b64", _id(F_E0, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_FourByte() public {
+        _row("every cap, members, 4-byte, 256 KiB b64", _id(F_4B, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_TwoByte() public {
+        _row("every cap, members, 2-byte, 256 KiB b64", _id(F_2B, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Zeros_Ascii() public {
+        _row("every cap, zeros, ASCII, 256 KiB b64", _id(F_ASCII, ZEROS, P_HTML));
+    }
+
+    function test_Budget_Html_Zeros_AsciiAndE0() public {
+        _row("every cap, zeros, a+U+0800, 256 KiB b64", _id(F_A_E0, ZEROS, P_HTML));
+    }
+
+    function test_Budget_Html_Zeros_TwoAsciiAndTwoByte() public {
+        _row("every cap, zeros, aa+e, 256 KiB b64", _id(F_AA_2B, ZEROS, P_HTML));
+    }
+
+    function test_Budget_Html_Nested_Ascii() public {
+        _row("every cap, nested members, ASCII, 256 KiB b64", _id(F_ASCII, NESTED, P_HTML));
+    }
+
+    function test_Budget_Html_Nested_AsciiAndE0() public {
+        _row("every cap, nested members, a+U+0800, 256 KiB b64", _id(F_A_E0, NESTED, P_HTML));
+    }
+
+    function test_Budget_Html_Nested_TwoAsciiAndTwoByte() public {
+        _row("every cap, nested members, aa+e, 256 KiB b64", _id(F_AA_2B, NESTED, P_HTML));
+    }
+
+    // ---------------------------------------------------------------- the script of `</script`
+
+    function test_Budget_ScriptLt_Members_AsciiAndE0() public {
+        _row("every cap, members, a+U+0800, script of </script", _id(F_A_E0, MEMBERS, P_SCRIPT_LT));
+    }
+
+    function test_Budget_ScriptLt_Zeros_AsciiAndE0() public {
+        _row("every cap, zeros, a+U+0800, script of </script", _id(F_A_E0, ZEROS, P_SCRIPT_LT));
+    }
+
+    function test_Budget_ScriptLt_Nested_AsciiAndE0() public {
+        _row("every cap, nested, a+U+0800, script of </script", _id(F_A_E0, NESTED, P_SCRIPT_LT));
+    }
+
+    // ---------------------------------------------------------------- the script of a and U+0800
+
+    function test_Budget_ScriptU8_Members_AsciiAndE0() public {
+        _row("every cap, members, a+U+0800, script a+U+0800", _id(F_A_E0, MEMBERS, P_SCRIPT_U8));
+    }
+
+    function test_Budget_ScriptU8_Members_TwoAsciiAndTwoByte() public {
+        _row("every cap, members, aa+e, script a+U+0800", _id(F_AA_2B, MEMBERS, P_SCRIPT_U8));
+    }
+
+    function test_Budget_ScriptU8_Members_AsciiAndFourByte() public {
+        _row("every cap, members, a+4-byte, script a+U+0800", _id(F_A_4B, MEMBERS, P_SCRIPT_U8));
+    }
+
+    function test_Budget_ScriptU8_Zeros_AsciiAndE0() public {
+        _row("every cap, zeros, a+U+0800, script a+U+0800", _id(F_A_E0, ZEROS, P_SCRIPT_U8));
+    }
+
+    function test_Budget_ScriptU8_Nested_AsciiAndE0() public {
+        _row("every cap, nested, a+U+0800, script a+U+0800", _id(F_A_E0, NESTED, P_SCRIPT_U8));
+    }
+
+    // ---------------------------------------------------------------- the media alone
+
+    /// @dev The script page alone, with the costliest script to validate: what the README says
+    ///      the script costs.
+    function test_Budget_TheScriptPageAlone() public {
+        _work(999, '{"name":"N"}', scriptU8);
+        (uint256 used, bool ok) = _cold(999);
+        emit log_named_uint("minimal record, script a+U+0800", used);
+        assertTrue(ok);
+        assertLt(used, 3_500_000);
     }
 }
