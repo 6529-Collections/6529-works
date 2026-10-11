@@ -46,10 +46,7 @@ contract StreamInvariantTest is RecordsFixture {
         handler.addCollection(stream.createCollection("Second", keccak256("second")));
         handler.addCollection(stream.createCollection("Third", keccak256("third")));
         vm.stopPrank();
-        address[] memory sellers = new address[](2);
-        sellers[0] = seller;
-        sellers[1] = makeAddr("secondSeller");
-        handler.setEconomics(econ, ISplitFactory(address(splitFactory)), feeRecipient, sellers);
+        handler.setEconomics(econ, ISplitFactory(address(splitFactory)), feeRecipient);
         bytes4[] memory selectors = new bytes4[](16);
         selectors[0] = handler.mint.selector;
         selectors[1] = handler.burn.selector;
@@ -110,6 +107,7 @@ contract StreamInvariantTest is RecordsFixture {
             (address receiver, uint256 amount) = stream.royaltyInfo(id, 1 ether);
             assertEq(receiver, handler.ghostReceiver(id));
             assertEq(stream.work(id).royaltyReceiver, handler.ghostReceiver(id));
+            assertEq(stream.work(id).seller, handler.ghostSeller(id));
             assertEq(stream.work(id).royaltyRate, handler.ghostRate(id));
             assertEq(amount, uint256(handler.ghostRate(id)) * 1 ether / 100_000);
         }

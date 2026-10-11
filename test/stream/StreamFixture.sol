@@ -44,7 +44,9 @@ abstract contract StreamFixture is Test {
     address internal platform = makeAddr("platform");
     address internal outsider = makeAddr("outsider");
     address internal marketOwner = makeAddr("marketOwner");
-    address internal seller = makeAddr("sellerWallet");
+    /// @dev The seller wallet of `_item`'s payees (the artist alone), set in `setUp`: Stream
+    ///      derives it with the split factory.
+    address internal seller;
     address internal feeRecipient = makeAddr("feeRecipient");
     address internal royaltyWallet = makeAddr("royaltyWallet");
 
@@ -74,6 +76,7 @@ abstract contract StreamFixture is Test {
         splitFactory = new SplitFactory(
             IArtistPayoutResolver(address(artists)), IReleaseVerifier(address(renderer))
         );
+        seller = _sellerOf(_item(0).payees);
         econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();
         auction = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
@@ -139,6 +142,11 @@ abstract contract StreamFixture is Test {
         ISplitWallet.Payee memory b =
             ISplitWallet.Payee(0, sellerWallet, Splits.DENOMINATOR - feeShare);
         (payees[0], payees[1]) = fee < sellerWallet ? (a, b) : (b, a);
+        return splitFactory.walletFor(payees, bytes32(0));
+    }
+
+    /// @dev The seller wallet Stream derives for `payees`: the salt-zero split wallet.
+    function _sellerOf(ISplitWallet.Payee[] memory payees) internal view returns (address) {
         return splitFactory.walletFor(payees, bytes32(0));
     }
 

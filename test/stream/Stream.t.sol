@@ -487,9 +487,6 @@ contract StreamTest is StreamFixture {
     function test_mint_revertsForUnusableEconomics() public {
         bytes memory data = _request(_item(1));
         WorkTerms memory bad = _defaultTerms();
-        bad.seller = address(0);
-        _expectBadTerms(bad, data);
-        bad = _defaultTerms();
         bad.royaltyRate = 100_001;
         _expectBadTerms(bad, data);
         bad = _defaultTerms();
@@ -501,6 +498,25 @@ contract StreamTest is StreamFixture {
         bad = _defaultTerms();
         bad.feeRecipient = seller;
         _expectBadTerms(bad, data);
+    }
+
+    /// @dev The seller wallet is derived from the item's payees by the split factory, which
+    ///      validates the list: a malformed one fails the start with the factory's error.
+    function test_mint_sellerIsThePayeesWallet() public {
+        PackageItem memory item = _item(1);
+        item.payees = new ISplitWallet.Payee[](2);
+        item.payees[0] = ISplitWallet.Payee(0, address(0x1000), 40_000);
+        item.payees[1] = ISplitWallet.Payee(0, address(0x2000), 60_000);
+        (, PrimaryTerms memory terms) = auction.start(stream, _request(item));
+        assertEq(terms.seller, _sellerOf(item.payees));
+        assertEq(stream.work(1).seller, _sellerOf(item.payees));
+        assertTrue(terms.seller != seller);
+
+        item = _item(2);
+        item.payees[0].share = 99_999;
+        bytes memory data = _request(item);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.SharesDoNotSum.selector, 99_999));
+        auction.start(stream, data);
     }
 
     function test_mint_noFeeMeansSellerReceivesRoyalties() public {
@@ -803,31 +819,35 @@ contract StreamTest is StreamFixture {
     }
 
     function test_royaltyInfo_receiverIsCanonicalForEitherAddressOrder() public {
-        address low = address(0x1000);
-        address high = address(0xFFFF0000);
-        econ.setTerms(WorkTerms(high, low, 25_000, address(0), 6_529));
+        address low = address(1);
+        address high = address(type(uint160).max);
+        assertTrue(low < seller && seller < high);
+        econ.setTerms(WorkTerms(seller, low, 25_000, address(0), 6_529));
         uint256 a = _mint(1);
-        econ.setTerms(WorkTerms(low, high, 25_000, address(0), 6_529));
+        econ.setTerms(WorkTerms(seller, high, 25_000, address(0), 6_529));
         uint256 b = _mint(2);
         (address ra,) = stream.royaltyInfo(a, 1);
         (address rb,) = stream.royaltyInfo(b, 1);
-        assertEq(ra, _royaltyWallet(high, low, 25_000));
-        assertEq(rb, _royaltyWallet(low, high, 25_000));
+        assertEq(ra, _royaltyWallet(seller, low, 25_000));
+        assertEq(rb, _royaltyWallet(seller, high, 25_000));
         assertTrue(ra != rb);
     }
 
     /// @dev The receiver is exactly the royalty wallet the sale side pays: the real
     ///      `SplitFactory` deploys it at that address, salt zero, for the canonical list of the
     ///      fee recipient's share and the seller's rest; with no fee it is the seller itself.
-    function testFuzz_royaltyInfo_isTheFactoryWallet(
-        address sellerWallet,
-        address fee,
-        uint32 feeShare
-    ) public {
-        vm.assume(sellerWallet != address(0) && fee != address(0) && sellerWallet != fee);
+    function testFuzz_royaltyInfo_isTheFactoryWallet(address payee, address fee, uint32 feeShare)
+        public
+    {
+        vm.assume(payee != address(0) && fee != address(0));
+        PackageItem memory item = _item(1);
+        item.payees[0] = ISplitWallet.Payee(0, payee, 100_000);
+        address sellerWallet = _sellerOf(item.payees);
+        vm.assume(fee != sellerWallet);
         feeShare = uint32(bound(feeShare, 1, 99_999));
         econ.setTerms(WorkTerms(sellerWallet, fee, feeShare, address(0), 6_529));
-        uint256 tokenId = _mint(1);
+        uint256 tokenId = _mint(item);
+        assertEq(stream.work(tokenId).seller, sellerWallet);
         (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
 
         ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);

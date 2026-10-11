@@ -18,7 +18,11 @@ import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
 import { Splits } from "../economics/Splits.sol";
-import { PRODUCT_STREAM, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
+import {
+    PRODUCT_STREAM,
+    ProductEconomics,
+    WorkTerms
+} from "../interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
     PackageItem,
@@ -569,20 +573,25 @@ contract Stream is ERC721, AccessManaged, IStream {
         ) revert InvalidMintRequest();
     }
 
-    /// @dev The terms a work of `item` locks now, and the primary terms the adapter applies.
-    ///      The fee terms must yield a valid royalty payee list: a fee share below 100,000 with
-    ///      a fee recipient other than the seller, or no fee at all.
+    /// @dev The terms a work of `item` locks now, and the primary terms the adapter applies:
+    ///      the product's economics (one view read) and the seller wallet, the split factory's
+    ///      salt-zero wallet for the item's payees (the factory validates the list). This is
+    ///      `IEconomicsResolver.newWorkTerms` without its royalty-receiver derivation, which
+    ///      Stream does lazily in `royaltyInfo` (`_royaltyReceiver`, the same address). The fee
+    ///      terms must yield a valid royalty payee list: a fee share below 100,000 with a fee
+    ///      recipient other than the seller, or no fee at all. `w.royaltyReceiver` is unset.
     function _quote(PackageItem calldata item, uint256 artistId)
         private
         view
         returns (PrimaryTerms memory terms, WorkTerms memory w)
     {
-        w = IEconomicsResolver(economics).newWorkTerms(PRODUCT_STREAM, item.payees);
+        ProductEconomics memory e = IEconomicsResolver(economics).economics(PRODUCT_STREAM);
+        address seller = ISplitFactory(splitFactory).walletFor(item.payees, bytes32(0));
         if (
-            w.seller == address(0) || w.royaltyRate > Splits.DENOMINATOR
-                || w.feeShare >= Splits.DENOMINATOR
-                || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == w.seller))
+            e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
+                || (e.feeShare != 0 && (e.feeRecipient == address(0) || e.feeRecipient == seller))
         ) revert InvalidMintRequest();
+        w = WorkTerms(seller, e.feeRecipient, e.feeShare, address(0), e.royaltyRate);
         terms.saleKind = SaleKind.ENGLISH_AUCTION;
         // The adapter resolves `CURRENCY_DEFAULT` and checks the allowlist when it locks the
         // currency (`PrimaryTerms`); an auction's price is zero, so the default is allowed.

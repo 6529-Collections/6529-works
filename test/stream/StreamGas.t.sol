@@ -2,6 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/Test.sol";
+import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
+import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
@@ -14,17 +17,25 @@ import {
 } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 
-/// @notice 6529 Stream's own share of the auction start (ADR 0001 budget: 300K for the whole
-///         start). The registry, economics and artist registry are constant mocks and every
-///         account is cold, so only Stream's storage, events, AccessManager check and call
-///         overhead are measured; the real registry and auction costs come on top.
+/// @notice 6529 Stream's own share of the auction start (ADR 0003 budget: 350K for the whole
+///         steady-state start). The registry, economics and artist registry are constant mocks
+///         and every account is cold, so Stream's storage, events, AccessManager check, call
+///         overhead and its seller-wallet derivation on the real split factory are measured;
+///         the real registry and auction costs come on top. `test_gas_mintShare_realEconomics`
+///         also puts the real `EconomicsResolver` in the path (review G-2).
 contract StreamGasTest is StreamFixture {
-    /// @dev Regression guards for Stream's share of the start, per case.
-    uint256 internal constant MINT_SHARE_BUDGET = 145_000;
-    uint256 internal constant IDLE_ADAPTER_BUDGET = 160_000;
-    uint256 internal constant FIRST_MINT_BUDGET = 235_000;
+    /// @dev Regression guards for Stream's share of the start, per case. Since G-2 the share
+    ///      includes the seller-wallet `walletFor` that the resolver's `newWorkTerms` used to do.
+    uint256 internal constant MINT_SHARE_BUDGET = 150_000;
+    uint256 internal constant IDLE_ADAPTER_BUDGET = 165_000;
+    uint256 internal constant FIRST_MINT_BUDGET = 240_000;
+    /// @dev The two-payee start share with the real resolver and factory: 156,827 before G-2.
+    uint256 internal constant REAL_ECONOMICS_BUDGET = 150_000;
 
     Stream internal lean;
+    /// @dev The lean stack with the real `EconomicsResolver` and `SplitFactory` (review G-2).
+    Stream internal leanReal;
+    EconomicsResolver internal resolver;
     ConstantAuction internal adapter;
 
     function setUp() public override {
@@ -46,6 +57,57 @@ contract StreamGasTest is StreamFixture {
         lean.setAdmittedMinter(address(adapter), true);
         vm.prank(platform);
         lean.createCollection("Genesis", bytes32(0));
+
+        resolver = new EconomicsResolver(
+            address(manager),
+            new AssetAllowlist(address(manager), 1),
+            ISplitFactory(address(splitFactory)),
+            feeRecipient,
+            keccak256("cc0 text")
+        );
+        leanReal = new Stream(
+            address(manager),
+            lean.packageRegistry(),
+            lean.artistRegistry(),
+            address(resolver),
+            address(entropy),
+            address(renderer),
+            address(renderer).codehash,
+            marketOwner
+        );
+        _map(address(leanReal), leanReal.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(leanReal), leanReal.createCollection.selector, Roles.PLATFORM);
+        vm.prank(governor);
+        leanReal.setAdmittedMinter(address(adapter), true);
+        vm.prank(platform);
+        leanReal.createCollection("Genesis", bytes32(0));
+    }
+
+    /// @dev Stream's share with the real economics resolver and split factory in the path, so
+    ///      it includes the per-work economics read and the seller-wallet derivation (G-2).
+    function _measureReal(PackageItem memory item) internal returns (uint256 used) {
+        bytes memory data = _request(item);
+        vm.cool(address(leanReal));
+        vm.cool(address(manager));
+        vm.cool(leanReal.packageRegistry());
+        vm.cool(address(resolver));
+        vm.cool(address(splitFactory));
+        vm.cool(leanReal.artistRegistry());
+        vm.cool(address(adapter));
+        used = adapter.startMeasured(leanReal, data);
+    }
+
+    function test_gas_mintShare_realEconomics() public {
+        _measureReal(_item(1));
+        PackageItem memory item = _item(2);
+        // Two parties, as in the e2e lane's two-party start.
+        item.payees = new ISplitWallet.Payee[](2);
+        (address lo, address hi) = artist < seller ? (artist, seller) : (seller, artist);
+        item.payees[0] = ISplitWallet.Payee(0, lo, 50_000);
+        item.payees[1] = ISplitWallet.Payee(0, hi, 50_000);
+        uint256 used = _measureReal(item);
+        console2.log("Stream.mint share, real resolver and factory, two payees:", used);
+        assertLe(used, REAL_ECONOMICS_BUDGET);
     }
 
     function _measure(PackageItem memory item) internal returns (uint256 used) {
