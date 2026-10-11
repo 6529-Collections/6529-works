@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { ReturnDataMock } from "../mocks/AdversarialTargets.sol";
@@ -13,8 +14,6 @@ import { EconomicsBase } from "./EconomicsBase.sol";
 contract AssetAllowlistTest is EconomicsBase {
     bytes32 internal constant STREAM = keccak256("6529.stream.auction");
     bytes32 internal constant EDITIONS = keccak256("6529.editions.sale");
-    uint64 internal constant STANDARD_ROLE = 2;
-    uint32 internal constant STANDARD_DELAY = 48 hours;
 
     MockERC20 internal usdc;
     address internal stranger = makeAddr("stranger");
@@ -276,8 +275,8 @@ contract AssetAllowlistTest is EconomicsBase {
         bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = IAssetAllowlist.admitAsset.selector;
         selectors[1] = IAssetAllowlist.setDefaultCurrency.selector;
-        manager.setTargetFunctionRole(address(allowlist), selectors, STANDARD_ROLE);
-        manager.grantRole(STANDARD_ROLE, alice, STANDARD_DELAY);
+        manager.setTargetFunctionRole(address(allowlist), selectors, Roles.FUNDS_SETTER);
+        manager.grantRole(Roles.FUNDS_SETTER, alice, Roles.FUNDS);
 
         bytes memory admit = abi.encodeCall(
             IAssetAllowlist.admitAsset, (address(usdc), IAssetAllowlist.Status.None, 0, 1e6)
@@ -290,7 +289,7 @@ contract AssetAllowlistTest is EconomicsBase {
         );
         allowlist.admitAsset(address(usdc), IAssetAllowlist.Status.None, 0, 1e6);
         manager.schedule(address(allowlist), admit, 0);
-        vm.warp(block.timestamp + STANDARD_DELAY - 1);
+        vm.warp(block.timestamp + Roles.FUNDS - 1);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, operation)
         );
@@ -305,7 +304,9 @@ contract AssetAllowlistTest is EconomicsBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, address(this))
         );
         allowlist.setDefaultCurrency(STREAM, false, address(0), address(usdc));
-        assertEq(manager.getTargetFunctionRole(address(allowlist), selectors[1]), STANDARD_ROLE);
+        assertEq(
+            manager.getTargetFunctionRole(address(allowlist), selectors[1]), Roles.FUNDS_SETTER
+        );
     }
 
     function testFuzz_FloorRoundTrips(uint256 floor) public {

@@ -12,11 +12,13 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         currency. Switching a product to USDC, or adding a 6529 token, is "admit the asset, then
 ///         change the default", with no contract change. Sales lock their currency and floor when
 ///         they start, so later changes only affect later sales.
-/// @dev Governed through AccessManager, with the delay classes of ADR 0002: {admitAsset} and
-///      {setDefaultCurrency} are funds-and-recipients actions (14 days), {setIncrementFloor} is
-///      standard (48 hours), and {deprecateAsset} only tightens and is immediate. Direction rules
-///      and compare-and-set live here because AccessManager only sees selectors. Nothing in the
-///      withdrawal paths reads this contract, so admission can never block a withdrawal.
+/// @dev Governed through AccessManager, with the delay classes of ADR 0002 and the role IDs of
+///      `Roles` (src/governance/Roles.sol): {admitAsset} and {setDefaultCurrency} map to
+///      `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), {setIncrementFloor} to
+///      `Roles.PARAMETER_SETTER` (`Roles.STANDARD`, 48 hours), and {deprecateAsset}, which only
+///      tightens, to `Roles.GUARDIAN` (`Roles.IMMEDIATE`). Direction rules and compare-and-set
+///      live here because AccessManager only sees selectors. Nothing in the withdrawal paths reads
+///      this contract, so admission can never block a withdrawal.
 contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);

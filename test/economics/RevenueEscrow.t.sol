@@ -7,6 +7,7 @@ import {
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
@@ -312,8 +313,8 @@ contract RevenueEscrowTest is EconomicsBase {
         vm.prank(keeper);
         escrow.recover(address(wallet), replacement, ETH);
 
-        uint64 funds = 3;
-        uint32 delay = 14 days;
+        uint64 funds = Roles.FUNDS_SETTER;
+        uint32 delay = Roles.FUNDS;
         bytes4[] memory selectors = new bytes4[](1);
         selectors[0] = IRevenueEscrow.recover.selector;
         manager.setTargetFunctionRole(address(escrow), selectors, funds);

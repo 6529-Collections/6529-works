@@ -84,13 +84,13 @@ Delay classes follow
 [ADR 0002](../../docs/adr/0002-access-manager-hardening.md); the `recover` row is
 the integrator's decision for this PR, still to be added there:
 
-| Selector | Class |
-| --- | --- |
-| `AssetAllowlist.admitAsset` | Funds and recipients (14 days) |
-| `AssetAllowlist.setDefaultCurrency` | Funds and recipients (14 days) |
-| `AssetAllowlist.setIncrementFloor` | Standard (48 hours) |
-| `AssetAllowlist.deprecateAsset` | Immediate (tightening) |
-| `RevenueEscrow.recover` | Funds and recipients (14 days) |
+| Selector | Role (`src/governance/Roles.sol`) | Class |
+| --- | --- | --- |
+| `AssetAllowlist.admitAsset` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
+| `AssetAllowlist.setDefaultCurrency` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
+| `AssetAllowlist.setIncrementFloor` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
+| `AssetAllowlist.deprecateAsset` | `Roles.GUARDIAN` | Immediate (tightening) |
+| `RevenueEscrow.recover` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
 
 Withdrawals never read the allowlist: a deprecated or never-admitted asset
 stays withdrawable from wallets and the escrow (fixes RC1 Medium M-3).
