@@ -326,16 +326,9 @@ contract MasterEditionFlowTest is IntegrationBase {
         assertEq(after_, receiver, "payees never change");
     }
 
-    /// @dev FINDING E-1: ADR 0003 says an edition "takes the master's current royalty rate", but
-    ///      `Editions.createEdition` locks the product default from `newWorkTerms` instead. A
-    ///      master re-rated before its edition is created leaves the edition on the old default.
-    function test_Finding_E1_EditionTakesTheProductDefaultNotTheMastersRate() public {
-        _expectFailure(
-            abi.encodeCall(this.check_EditionTakesTheMastersCurrentRate, ()), ERROR_STRING, "E-1"
-        );
-    }
-
-    function check_EditionTakesTheMastersCurrentRate() external {
+    /// @dev ADR 0003: an edition takes its master's current royalty rate, so a master re-rated
+    ///      before its edition is created passes the new rate on (formerly finding E-1).
+    function test_EditionTakesTheMastersCurrentRate() public {
         Work[] memory works = _package(root);
         (uint256 saleId, uint256 workId) = _start(root, works, 2);
         _ethBid(saleId, collector, 1 ether);
@@ -343,7 +336,8 @@ contract MasterEditionFlowTest is IntegrationBase {
         _rerate(workId, works[2], 10_000);
         editions.createEdition(workId, works[2].item, root, _proofOf(works, 2));
         (, uint256 amount) = editions.royaltyInfo(workId, 1 ether);
-        require(amount == 0.1 ether, "E-1: the edition did not take the master's current rate");
+        assertEq(amount, 0.1 ether, "the master's current rate");
+        assertEq(editions.edition(workId).royaltyRate, stream.work(workId).royaltyRate);
     }
 
     /// @dev FINDING L-1 (low): fee terms of zero share and no recipient pass
