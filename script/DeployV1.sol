@@ -457,8 +457,9 @@ library DeployV1 {
         return (ok, c);
     }
 
-    /// @dev Encodes a wiring call's address (by contract name) and bool arguments; false if a
-    ///      named contract is not deployed.
+    /// @dev Encodes a wiring call's arguments: an address by contract name or as a 0x literal,
+    ///      a bool, a bytes32 literal or an unsigned integer. False if a named contract is not
+    ///      deployed.
     function _encodeArgs(
         Deployment memory d,
         string memory json,
@@ -470,9 +471,16 @@ library DeployV1 {
             string memory arg = _at(string.concat(w, ".args"), j);
             bytes32 t = keccak256(bytes(types[j]));
             if (t == keccak256("address")) {
-                address a = addressOf(d, vm.parseJsonString(json, arg));
-                if (a == address(0)) return (false, out);
+                string memory value = vm.parseJsonString(json, arg);
+                bytes memory b = bytes(value);
+                bool literal = b.length == 42 && b[0] == "0" && b[1] == "x";
+                address a = literal ? vm.parseAddress(value) : addressOf(d, value);
+                if (!literal && a == address(0)) return (false, out);
                 out = bytes.concat(out, abi.encode(a));
+            } else if (t == keccak256("bytes32")) {
+                out = bytes.concat(out, vm.parseJsonBytes32(json, arg));
+            } else if (_isUint(types[j])) {
+                out = bytes.concat(out, abi.encode(vm.parseJsonUint(json, arg)));
             } else if (t == keccak256("bool")) {
                 out = bytes.concat(out, abi.encode(vm.parseJsonBool(json, arg)));
             } else {
@@ -483,6 +491,11 @@ library DeployV1 {
     }
 
     // ------------------------------------------------------------------ helpers
+
+    function _isUint(string memory t) private pure returns (bool) {
+        bytes memory b = bytes(t);
+        return b.length >= 4 && b[0] == "u" && b[1] == "i" && b[2] == "n" && b[3] == "t";
+    }
 
     function _deployedAt(Deployment memory d, string memory json, uint256 i)
         private

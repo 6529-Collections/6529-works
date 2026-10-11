@@ -8,6 +8,7 @@ import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -115,7 +116,7 @@ contract GenesisWiringTest is GovernanceFixture {
     }
 
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[9] memory allowed = [
+        bytes4[10] memory allowed = [
             IStream.bindWorkRecords.selector,
             IStream.bindEditions.selector,
             IPackageRegistry.bindStream.selector,
@@ -124,6 +125,7 @@ contract GenesisWiringTest is GovernanceFixture {
             IArtistRegistry.bindFederationRegistry.selector,
             IMintTarget.setAdmittedMinter.selector,
             ISaleAdapter.setTarget.selector,
+            IAssetAllowlist.setDefaultCurrency.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
         for (uint256 i; i < allowed.length; ++i) {

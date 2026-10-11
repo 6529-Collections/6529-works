@@ -12,6 +12,11 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import {
+    PRODUCT_EDITIONS,
+    PRODUCT_FEDERATED,
+    PRODUCT_STREAM
+} from "src/interfaces/types/EconomicsTypes.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
@@ -88,15 +93,20 @@ contract DeployV1Test is Test {
         // optional entropy module are not deployed here.
         assertEq(cfg.targets.length, 11, "governed targets");
         assertEq(cfg.grants.length, 17, "holders");
-        // The artist registry's package-registry and split-factory binds, and the manifest;
-        // the rest name pending contracts.
-        assertEq(calls.length, 3, "wiring calls");
+        // The artist registry's package-registry and split-factory binds, three default
+        // currencies and the manifest; the rest name pending contracts.
+        assertEq(calls.length, 6, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
         assertEq(IPackageRegistry(address(d.packageRegistry)).stream(), address(0), "pending");
         (uint64 count,) = IStatementLog(address(d.statementLog)).chainOf(address(d.manager), 0);
         assertEq(count, 1, "epoch-0 manifest recorded at genesis");
+        // Auctions can start at once: every product has its default currency from genesis.
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
+        for (uint256 i; i < products.length; ++i) {
+            assertEq(d.assetAllowlist.defaultCurrency(products[i]), address(0), "ETH");
+        }
     }
 
     function test_EntropyModuleJoinsWhenACoordinatorIsGiven() public {

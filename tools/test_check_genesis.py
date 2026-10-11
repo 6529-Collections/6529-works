@@ -332,6 +332,10 @@ class CheckGenesisTest(unittest.TestCase):
         self.repo.config["wiring"][0]["calldata"] = "0x33333333" + "00" * 32
         self.assertProblem("calldata selector 0x33333333 != 0x22222222")
 
+    def test_wiring_literal_arguments_are_not_names(self) -> None:
+        self.repo.config["wiring"][0]["args"] = ["0x" + "00" * 19 + "01"]
+        self.assertEqual(self.repo.problems(), [])
+
     def test_wiring_unknown_contract_and_argument_fail(self) -> None:
         self.repo.config["wiring"][0]["args"] = ["Nobody"]
         self.assertProblem("argument Nobody names no contract or peer")

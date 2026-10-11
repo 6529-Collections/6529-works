@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AuthorityUtils } from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
@@ -71,6 +72,16 @@ library VerifyV1 {
         if (selector == IStatementLog.appendGovernanceManifest.selector) {
             (uint64 count,) = IStatementLog(target).chainOf(address(d.manager), 0);
             ok = count != 0;
+        } else if (selector == IAssetAllowlist.setDefaultCurrency.selector) {
+            bytes32 product;
+            address asset;
+            assembly ("memory-safe") {
+                product := mload(add(data, 36))
+                asset := mload(add(data, 100))
+            }
+            (bool configured, address current,) =
+                IAssetAllowlist(target).defaultCurrencyConfig(product);
+            ok = configured && current == asset;
         } else {
             address arg;
             bool flag;

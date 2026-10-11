@@ -36,10 +36,12 @@ from typing import Callable
 CONFIG = "config/genesis.example.json"
 CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
 # Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, the epoch-0 manifest). The Solidity tests pin the selectors themselves.
+# sale targets, first default currencies, the epoch-0 manifest). The Solidity tests pin the
+# selectors themselves.
 GENESIS_FUNCTIONS = frozenset({
     "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
-    "bindFederationRegistry", "setAdmittedMinter", "setTarget", "appendGovernanceManifest",
+    "bindFederationRegistry", "setAdmittedMinter", "setTarget", "setDefaultCurrency",
+    "appendGovernanceManifest",
 })
 
 DECLARATION = re.compile(
@@ -375,7 +377,8 @@ def check(
             where, sig, w.get("calldata"), w.get("args", []), addresses
         )
         for arg in w.get("args", []):
-            if isinstance(arg, str) and arg not in by_name and arg not in peers:
+            if isinstance(arg, str) and not arg.startswith("0x") and arg not in by_name \
+                    and arg not in peers:
                 problems.append(f"{where}: argument {arg} names no contract or peer")
         wired.add((name, sig))
     for name, c in by_name.items():

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
@@ -130,7 +131,8 @@ library GovernanceConfig {
     }
 
     /// @notice Whether `selector` may be wired at genesis: a one-shot bind (including the
-    ///         v1.1 federation bind), an admitted-minter grant, a sale target, or the epoch-0
+    ///         v1.1 federation bind), an admitted-minter grant, a sale target, a product's
+    ///         first default currency (an auction cannot start without one), or the epoch-0
     ///         governance manifest. Everything else waits its delay class after genesis.
     function isGenesisSelector(bytes4 selector) internal pure returns (bool) {
         return selector == IStream.bindWorkRecords.selector
@@ -141,6 +143,7 @@ library GovernanceConfig {
             || selector == IArtistRegistry.bindFederationRegistry.selector
             || selector == IMintTarget.setAdmittedMinter.selector
             || selector == ISaleAdapter.setTarget.selector
+            || selector == IAssetAllowlist.setDefaultCurrency.selector
             || selector == IStatementLog.appendGovernanceManifest.selector;
     }
 

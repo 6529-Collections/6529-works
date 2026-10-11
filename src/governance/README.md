@@ -142,6 +142,9 @@ therefore executes them itself:
     v1 defers it);
   - `setAdmittedMinter(address,bool)`;
   - `setTarget(address,bool)`;
+  - `setDefaultCurrency(bytes32,uint64,address)`, each product's first default
+    currency: `EnglishAuction.start` reads `PRODUCT_STREAM`'s, so without it no auction
+    could start for 14 days;
   - `appendGovernanceManifest`, so the epoch-0 manifest is written at genesis and the
     manifest history starts there.
 
