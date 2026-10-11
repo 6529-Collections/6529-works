@@ -340,31 +340,32 @@ contract MasterEditionFlowTest is IntegrationBase {
         assertEq(editions.edition(workId).royaltyRate, stream.work(workId).royaltyRate);
     }
 
-    /// @dev FINDING L-1 (low): fee terms of zero share and no recipient pass
-    ///      `EconomicsResolver` validation, and Stream and the auction treat them as "no fee",
-    ///      but the fixed-price and Dutch adapters refuse to open any edition sale under them
-    ///      (`MintSaleBase._terms` requires a fee recipient even at zero share).
-    function test_Finding_L1_ZeroFeeTermsBlockEditionSales() public {
-        _expectFailure(
-            abi.encodeCall(this.check_ZeroFeeEditionsCanBeSold, ()),
-            MintSaleBaseErrors.InvalidSaleTerms.selector,
-            "L-1"
-        );
-    }
-
-    function check_ZeroFeeEditionsCanBeSold() external {
+    /// @dev Zero-fee terms with no fee recipient (formerly finding L-1, fixed by #35): an
+    ///      edition sale opens and settles, the artist side takes the whole price, and the
+    ///      edition's royalty receiver is the seller wallet itself.
+    function test_ZeroFeeEditionSaleOpensAndSettles() public {
         _govern(
             hotAdmin,
             address(economics),
             abi.encodeCall(economics.setFeeTerms, (PRODUCT_EDITIONS, 1, address(0), 0))
         );
         uint256 workId = _masterAndEdition(1);
+        address seller = editions.edition(workId).seller;
+        assertEq(editions.edition(workId).feeShare, 0);
+        assertEq(editions.edition(workId).royaltyReceiver, seller, "no fee payee");
         vm.prank(artist);
-        dutchSale.openSale(address(editions), workId, uint64(block.timestamp));
+        uint256 saleId = dutchSale.openSale(address(editions), workId, uint64(block.timestamp));
+        uint256 price = dutchSale.currentPrice(saleId);
+        uint256 feeBefore = networkFee.balance;
+        // The master's own sale already paid this wallet: an edition shares its master's payees.
+        uint256 sellerBefore = seller.balance;
+        vm.deal(buyer2, price);
+        vm.prank(buyer2);
+        dutchSale.purchase{ value: price }(
+            saleId, address(0), 1, price, Payment(PaymentMethod.DIRECT, buyer2, price, 0, 0, "")
+        );
+        assertEq(editions.balanceOf(buyer2, workId), 1);
+        assertEq(seller.balance - sellerBefore, price, "the whole price to the seller wallet");
+        assertEq(networkFee.balance, feeBefore, "no fee");
     }
-}
-
-/// @dev The adapters' own errors, declared where tests can name their selectors.
-interface MintSaleBaseErrors {
-    error InvalidSaleTerms(address token, uint256 id);
 }

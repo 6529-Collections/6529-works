@@ -56,4 +56,3 @@ then promoted to a regular test.
 | ID | Where | Finding |
 | --- | --- | --- |
 | G-1 | Genesis configuration, `AssetAllowlist` | No default currency is configured at genesis. An item naming `CURRENCY_DEFAULT` cannot start for 14 days, and a free edition in the default currency cannot open. |
-| L-1 | `MintSaleBase._terms` | Fee terms of zero share with no recipient pass `EconomicsResolver` validation, and Stream accepts them, but every edition sale refuses to open. |
