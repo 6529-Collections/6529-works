@@ -4,9 +4,19 @@ Deployment configuration for the 6529 Works `WorksAccessManager`
 ([src/governance](../src/governance/README.md)).
 
 `genesis.example.json` is the committed genesis configuration. **Every address in it is a
-placeholder**: `0x…a0xx` stands for a contract and `0x…b0xx` for a holder. A real deployment
-copies it, substitutes the deployed and Safe addresses, and passes the result to
-`GovernanceConfigurator.configure(cfg, manifestHash, wiring)`.
+placeholder**: `0x…a0xx` stands for a contract and `0x…b0xx` for a holder.
+
+A real deployment copies it and replaces the holders with its Safes and keys.
+[`script/Deploy.s.sol`](../script/README.md) substitutes the deployed contracts by name and
+passes the result to `GovernanceConfigurator.configure(cfg, manifestHash, wiring)`.
+
+**This file is the policy.** A deployment's copy may differ only in its holders, its
+description and its address fields:
+- `python tools/check_genesis.py --config <copy>` compares the copy with this file;
+- off anvil, the deploy script refuses a copy whose governed targets or wiring differ from
+  what this file produces (`DeployGuards.checkPolicy`).
+
+A change to a role, a delay class or a wiring call is a change to this file, made by PR.
 
 | Key | Contents |
 | --- | --- |
@@ -49,6 +59,9 @@ The deploy script follows one rule:
   - the one-shot `bind*` calls;
   - the admitted-minter grants (`setAdmittedMinter`);
   - the sale adapters' targets (`setTarget`);
+  - each product's first default currency (`setDefaultCurrency`, ETH for `PRODUCT_STREAM`,
+    `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`): `EnglishAuction.start` reads it, and the
+    setter is otherwise a 14-day FUNDS_SETTER action;
   - the epoch-0 governance manifest (`appendGovernanceManifest` on the statement log).
 
   Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list.
@@ -81,7 +94,8 @@ only; unit tests in `tools/test_check_genesis.py`). It compares every entry with
 `forge inspect <path:Contract> methodIdentifiers`, including overloads such as the
 auction's two `pause` functions. It also requires every `restricted` function of every
 concrete contract under `src/` to be mapped, genesis-only or deferred, so nothing silently
-falls back to `ADMIN`.
+falls back to `ADMIN`. With `--config`, it also checks that copy against this committed file
+(the policy above).
 - **Inherited functions:** a `restricted` function declared in an abstract base, such as
   `MintSaleBase`, counts for each concrete contract that inherits it. The abstract base is
   never required in the configuration itself.

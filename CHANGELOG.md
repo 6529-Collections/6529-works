@@ -30,6 +30,16 @@
   surface, `FederatedListFull` and `AcceptanceUsed`; `IConsolidationSource`
   gains `consolidations` and `effectiveAt`; `OVERRIDE_ACCEPTANCE` is nonce-free
   and consumed once by digest.
+- Deployment: `script/` deploys the merged v1 contracts with CREATE2 (`DeployV1`),
+  installs the genesis configuration, records the deployment, and confirms it against the
+  chain (`Verify.s.sol`), which recomputes every address from the recorded constructor
+  parameters. Off anvil, the deploy script refuses the following: placeholder or unreachable
+  holders (ADMIN and GUARDIAN must be Safes), a genesis that departs from the committed
+  policy, a CC0 text other than the pinned canonical one, a missing entropy-module choice,
+  non-canonical dependencies on mainnet, and anything the genesis names but the deployment
+  lacks. Each product's first default currency is genesis wiring. `script/README.md` is the
+  Sepolia runbook. The canonical CC0 legal code is pinned by digest. The deploy covers every
+  v1 contract, the renderer and 6529 Editions included, with no stand-in.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on

@@ -12,8 +12,13 @@ import { WorksAccessManager } from "./WorksAccessManager.sol";
 ///         `authority = worksManager()`, then call {configure}. The whole configuration,
 ///         including the genesis wiring calls (one-shot binds, admitted minters), lands in one
 ///         transaction and this contract renounces the admin role at the end.
-/// @dev Only the deployer may call {configure}, so a front-runner cannot install its own
-///      holders. No other manager can be configured or verified through this contract.
+/// @dev Only `deployer`, a constructor argument, may call {configure}, so a front-runner
+///      cannot install its own holders. Taking it as an argument rather than `msg.sender`
+///      lets the configurator be deployed through a CREATE2 factory, so its address, and its
+///      manager's (`CREATE` nonce 1 of the configurator), can be predicted. Anyone can deploy
+///      a configurator naming any deployer, but it only ever governs the new manager it
+///      creates itself: it can never touch another manager, the real one included. No other
+///      manager can be configured or verified through this contract.
 contract GovernanceConfigurator {
     /// @notice The account allowed to call {configure}.
     address public immutable deployer;
@@ -34,11 +39,16 @@ contract GovernanceConfigurator {
 
     /// @notice The caller is not the deployer.
     error NotDeployer(address caller);
+    /// @notice The deployer argument is the zero address.
+    error InvalidDeployer();
     /// @notice The configurator still holds the admin role on its manager.
     error ConfiguratorStillAdmin();
 
-    constructor() {
-        deployer = msg.sender;
+    /// @param deployer_ The only account that may call {configure}, normally the operator
+    ///        broadcasting the genesis deployment.
+    constructor(address deployer_) {
+        if (deployer_ == address(0)) revert InvalidDeployer();
+        deployer = deployer_;
         worksManager = new WorksAccessManager(address(this));
     }
 

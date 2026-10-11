@@ -10,6 +10,7 @@ Where to find things in 6529 Works. The project is pre-audit and not deployed; t
 | Understand what v1 is and is not | [ADR 0001: v1 scope](adr/0001-v1-scope.md) |
 | See how the contracts fit together | [Architecture](architecture.md): modules, identifiers, call flows, trust boundaries, governance map, budget notes |
 | Know what is built and what is next | [Delivery plan](../ops/DELIVERY_PLAN.md), and the [launch checklist](https://github.com/6529-Collections/6529-works/issues/1) |
+| Deploy, or verify a deployment | [script/README.md](../script/README.md): the anvil dry run and the Sepolia runbook |
 | Contribute a change | [CONTRIBUTING.md](../CONTRIBUTING.md); automated agents also read [AGENTS.md](../AGENTS.md) |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |
 

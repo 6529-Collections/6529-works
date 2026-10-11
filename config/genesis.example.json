@@ -954,6 +954,39 @@
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
     },
     {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0x8d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de2",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_STREAM: ETH, revision 0",
+      "calldata": "0xbc27c0e98d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0xdda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_EDITIONS: ETH, revision 0",
+      "calldata": "0xbc27c0e9dda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "contract": "AssetAllowlist",
+      "signature": "setDefaultCurrency(bytes32,uint64,address)",
+      "args": [
+        "0x12f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff",
+        0,
+        "0x0000000000000000000000000000000000000000"
+      ],
+      "note": "PRODUCT_FEDERATED: ETH, revision 0",
+      "calldata": "0xbc27c0e912f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
       "contract": "StatementLog",
       "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
       "args": [],
@@ -972,7 +1005,7 @@
   ],
   "initialInstalls": {
     "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics and default license in the EconomicsResolver.",
-    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget) and the epoch-0 governance manifest (appendGovernanceManifest).",
+    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget), each product's first default currency (setDefaultCurrency: EnglishAuction.start reads PRODUCT_STREAM's) and the epoch-0 governance manifest (appendGovernanceManifest).",
     "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
   },
   "pendingLanes": [

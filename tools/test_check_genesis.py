@@ -102,7 +102,14 @@ class TempRepo:
             self.config, cg.artifact_ids(self.root / "out"), cg.scan_sources(self.root / "src")
         )
 
-    def run(self) -> tuple[int, str]:
+    def run(self, policy: dict | None = None) -> tuple[int, str]:
+        """`main` on this repository's configuration, against `policy` as the committed
+        config/genesis.example.json (by default the configuration itself)."""
+        committed = self.root / "config" / "genesis.example.json"
+        committed.parent.mkdir(parents=True, exist_ok=True)
+        committed.write_text(
+            json.dumps(self.config if policy is None else policy), encoding="utf-8"
+        )
         path = self.root / "config.json"
         path.write_text(json.dumps(self.config), encoding="utf-8")
         out = io.StringIO()
@@ -332,6 +339,10 @@ class CheckGenesisTest(unittest.TestCase):
         self.repo.config["wiring"][0]["calldata"] = "0x33333333" + "00" * 32
         self.assertProblem("calldata selector 0x33333333 != 0x22222222")
 
+    def test_wiring_literal_arguments_are_not_names(self) -> None:
+        self.repo.config["wiring"][0]["args"] = ["0x" + "00" * 19 + "01"]
+        self.assertEqual(self.repo.problems(), [])
+
     def test_wiring_unknown_contract_and_argument_fail(self) -> None:
         self.repo.config["wiring"][0]["args"] = ["Nobody"]
         self.assertProblem("argument Nobody names no contract or peer")
@@ -387,7 +398,9 @@ class CheckGenesisTest(unittest.TestCase):
         del self.foo["artifact"]
         path = self.repo.root / "config.json"
         path.write_text(json.dumps(self.repo.config), encoding="utf-8")
-        error = self._main_error("--config", str(path), "--artifacts", str(self.repo.root / "out"))
+        error = self._main_error(
+            "--config", str(path), "--policy", str(path), "--artifacts", str(self.repo.root / "out")
+        )
         self.assertIn("malformed configuration (KeyError", error)
 
     def test_malformed_artifact_reference_and_artifact_fail_with_a_message(self) -> None:
@@ -409,6 +422,66 @@ class CheckGenesisTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL Foo: functions setFee(uint256) selector", out)
         self.assertIn("genesis configuration: 1 problem(s)", out)
+
+    # -- the committed policy ------------------------------------------------------------------
+
+    def test_policy_allows_holders_description_and_addresses_to_differ(self) -> None:
+        deployed = copy.deepcopy(CONFIG)
+        deployed["holders"] = [{"role": "ADMIN", "account": "0x" + "ab" * 20}]
+        deployed["description"] = "Sepolia genesis"
+        deployed["contracts"][0]["address"] = "0x" + "cd" * 20
+        deployed["peers"][0]["address"] = "0x" + "ef" * 20
+        deployed["wiring"][0]["calldata"] = "0x22222222" + "ef" * 32
+        self.assertEqual(cg.policy_differences(deployed, CONFIG), [])
+
+    def test_policy_rejects_a_remapped_selector(self) -> None:
+        # The review PoC: a 30-day selector moved to a faster role.
+        deployed = copy.deepcopy(CONFIG)
+        fn = deployed["contracts"][0]["functions"][1]
+        fn.update({"role": "PARAMETER_SETTER", "class": "standard", "delay": 172800})
+        problems = cg.policy_differences(deployed, CONFIG)
+        self.assertTrue(any(".contracts[0].functions[1].role" in p for p in problems), problems)
+
+    def test_policy_rejects_changed_wiring_roles_and_targets(self) -> None:
+        cases = (
+            (lambda c: c["wiring"][0]["args"].__setitem__(0, "Other"), ".wiring[0].args[0]"),
+            (lambda c: c["wiring"].append(dict(c["wiring"][0])),
+             ".wiring (length 2, committed 1)"),
+            (lambda c: c["roles"][0].__setitem__("executionDelay", 0), ".roles[0].executionDelay"),
+            (lambda c: c["contracts"][0]["deferred"].append({"signature": "x()"}),
+             ".contracts[0].deferred (length 1, committed 0)"),
+            (lambda c: c.__setitem__("unusedRoles", ["MINTER"]), ".unusedRoles"),
+        )
+        for mutate, where in cases:
+            deployed = copy.deepcopy(CONFIG)
+            mutate(deployed)
+            problems = cg.policy_differences(deployed, CONFIG)
+            self.assertTrue(any(where in p for p in problems), (where, problems))
+
+    def test_main_checks_a_given_config_against_the_committed_policy(self) -> None:
+        policy = copy.deepcopy(self.repo.config)
+        self.foo["functions"][0].update(
+            {"role": "SUCCESSOR_SETTER", "class": "successor", "delay": 2592000}
+        )
+        code, out = self.repo.run(policy=policy)
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "FAIL policy: .contracts[0].functions[0].role differs from the committed", out
+        )
+
+    def test_main_passes_a_copy_that_changes_only_holders(self) -> None:
+        policy = copy.deepcopy(self.repo.config)
+        self.repo.config["holders"] = [{"role": "ADMIN", "account": "0x" + "ab" * 20}]
+        code, out = self.repo.run(policy=policy)
+        self.assertEqual(code, 0, out)
+
+    def test_missing_policy_stops_with_a_message(self) -> None:
+        path = self.repo.root / "config.json"
+        path.write_text(json.dumps(self.repo.config), encoding="utf-8")
+        with self.assertRaises(SystemExit) as raised:
+            cg.main(["--root", str(self.repo.root), "--config", str(path), "--artifacts",
+                     str(self.repo.root / "out")])
+        self.assertIn("cannot read the committed policy", str(raised.exception))
 
     def test_missing_artifact_stops_with_a_message(self) -> None:
         self.foo["artifact"] = "src/x/Missing.sol:Missing"

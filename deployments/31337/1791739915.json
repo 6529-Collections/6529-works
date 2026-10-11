@@ -1,0 +1,132 @@
+{
+  "cc0TextFileId": "0x9f46e20456eeea030a50165bd0e75d2b4cd08673c4768dcc49d095bbf4169bff",
+  "cc0TextSha256": "0xc75b05bbbb0742d2cdc0c93e99ff3505259da8f821ead802fec41f28ede8c6b6",
+  "chainId": 31337,
+  "configHash": "0xcce83e597c4ec4b80d763fde727a30041d6747326ad4c00f9b1e220ef5a166bf",
+  "confirmed": false,
+  "contracts": {
+    "ArtistRegistry": {
+      "address": "0x15f586f20028ef8Fe9576BD7630Cc17Fa598D475",
+      "codehash": "0x8e80e26ed529ee8e6e3d7d9e4b2d9cc53462294d7f0b0bedb5dc70ed473142ee"
+    },
+    "AssetAllowlist": {
+      "address": "0xe2BEfed747199a2fF939890A262a0509cD1881ef",
+      "codehash": "0x54d75443d560b206836eafe946e23bfd54c09415e3cb7a8c0ca67fe4203aa1ff"
+    },
+    "ClaimRouter": {
+      "address": "0x12B1CE0F955B9FA24B6Fb8f28Da89bAA130a102A",
+      "codehash": "0x23e41b2773f3cb18a74aa5c45114ef10ae66874fea7eb7d87cd0b1fa4b5d8898"
+    },
+    "ConsolidationAdapter": {
+      "address": "0x7270AB31F519C57c122D9E171DaA70112eb169BE",
+      "codehash": "0xd49134b755f6001b9292801995562b9facda5dfc927582abca29f5e8a5f58ae2"
+    },
+    "ContentStore": {
+      "address": "0x90dab9862487FAaeDBeF52542148E5983CC155c5",
+      "codehash": "0x8fb0a2c67e7a7096fb8fa1e87be9fdc54cc7e7fba486d094999f2bd25df7cc50"
+    },
+    "CurationVerifier": {
+      "address": "0x45AD0bE1CE37143989558AdEE4Cb763c6D70454f",
+      "codehash": "0xfbb34319653b906de4eb3b91aaee28dc0c3af38bb9c48d281aa1489d6eb7f08c"
+    },
+    "DependencyRegistry": {
+      "address": "0x50916b0b4B50d9c400BD761cCFDFddcf707c4542",
+      "codehash": "0x6ccb25a2c362e0e55bcbe3946467e7390bc1aec97a15774d10051db7e4228e48"
+    },
+    "DutchSale": {
+      "address": "0x7e432C960DB1f7C8f42429eDEfBf67189112AE6b",
+      "codehash": "0x6233e10245939360840a11956ad8321e50e174498b523692905db385648e52b8"
+    },
+    "EconomicsResolver": {
+      "address": "0x3Dd00dC4a019d224707F8fee9f9548B8D98A031c",
+      "codehash": "0x0b8245e8992700c011a6e9075d06d2eaada95babf740fa7aa5668960f6d3b830"
+    },
+    "Editions": {
+      "address": "0x4b23aD2DdACE6E370F3d91518295DEFF17beB932",
+      "codehash": "0xd1bc21dcff29d19c15faee1e20ffa47476794759264d5e4053d0c5d487314ab5"
+    },
+    "EnglishAuction": {
+      "address": "0x81cA3a0C73f2C577D39f6EbADF5d1Eb9Eb62e13e",
+      "codehash": "0x3bc6de88250b794bf2d1bc29f3a52f19a0daacf874ea4324d6b37ed45a2c05c4"
+    },
+    "FixedPriceSale": {
+      "address": "0xDC0CDC3BECd1B129f242726013bFBeD51b071c6b",
+      "codehash": "0xf9dd84058e3d77e99dd0e62becfb3743efc857d803dbe7287adaa92dd7a62649"
+    },
+    "GovernanceConfigurator": {
+      "address": "0xC8Cd434F1Cef60f0C24da0376820D9ace2817Ee0",
+      "codehash": "0x75c9711a9e5751cd262b117844197245c01c4d5a8196af940a27664c35bfd7df"
+    },
+    "PackageRegistry": {
+      "address": "0x536E1bC0DFfD82dde8601212C0F90BE0Ab91973b",
+      "codehash": "0x1235839f7ff5eb99c60d73dc6607d7090fdd6c2125256d465f9ec36fb68322d5"
+    },
+    "ReleaseVerifier": {
+      "address": "0xD3761cb127F84Ce20C2223B9eC610f963Bf105ce",
+      "codehash": "0x967b26c538650997e7047581cef20d4496122d0986c8bbc34550cc29160e26c0"
+    },
+    "Renderer": {
+      "address": "0x7Eb78b9CF27c6f38B1AA79AaF7C7E1f5BA445d37",
+      "codehash": "0x209d30d870725f1256271ad3f28a5e758e20662739f56308f338ac71547e0e5a"
+    },
+    "RevenueEscrow": {
+      "address": "0x1fD03B740C4a99aAD69fc330ED39fB5935C566d5",
+      "codehash": "0xc2cf74c54f58fb881ec1ec717d30dc052de42a63955349adb8e5c0f054079d37"
+    },
+    "SplitFactory": {
+      "address": "0xd0636a32d7eeb40e8c8C495A5CB01dEB9f7484a3",
+      "codehash": "0x0b405f24713adaf7bf5f585d1c17afbd637de8b8bd0509e4496ec0b1024989b6"
+    },
+    "StatementLog": {
+      "address": "0xaD1467a4f67b16700209e2a8Fec600B06Fee060d",
+      "codehash": "0xd955998e511d04d09c72b811c8567183b4e4a44ebcda440d0050a6f6f2669872"
+    },
+    "Stream": {
+      "address": "0x14eA6B1eC092ac4CE6e23dd4082a6028F3889492",
+      "codehash": "0xbc7c183b4c0f4e3845b76841c6ceb3775a4785115487809fe1537ee2df1cb11d"
+    },
+    "WorkRecords": {
+      "address": "0xB99d9821064b407B2De6B5CF715f92b2f7F0f911",
+      "codehash": "0x661cecfcb433953019c36bc9939fb3aa87b797f97cc3e80073526fcf2848941b"
+    },
+    "WorksAccessManager": {
+      "address": "0x94C6ab32855774E07f953b5404B3AEaFEBC7a6C4",
+      "codehash": "0x323db4674fa36f5b5ca30e0cd77fc228bba5a500a6d50a2316922d89a95139b1"
+    }
+  },
+  "delegationMock": true,
+  "entropy": "none",
+  "genesisConfig": "config/genesis.example.json",
+  "manifestDigest": "0xc7e5cbf5b233d69b1adbed84d434f21684538fcba57d202999091865e9c4fc1c",
+  "manifestPath": "",
+  "manifestUri": "ar://placeholder-epoch-0",
+  "note": "Written from the simulation before the broadcast; Verify.s.sol confirms it on chain.",
+  "params": {
+    "auctionDuration": 86400,
+    "auctionExtensionWindow": 900,
+    "auctionIncrementShare": 5000,
+    "delegation": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "ethIncrementFloor": "1000000000000000",
+    "factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "marketOwner": "0x000000000000000000000000000000000000c002",
+    "namespace": "0xe352ca778143318533cb3dc8cdd9bca6c035af4646ea7d778ecab44a7da9c005",
+    "networkFeeRecipient": "0x000000000000000000000000000000000000C001",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "vrfCallbackGasLimit": 0,
+    "vrfConfirmations": 0,
+    "vrfCoordinator": "0x0000000000000000000000000000000000000000",
+    "vrfCoordinatorCodeHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "vrfKeyHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "vrfNativePayment": false,
+    "vrfRetryDelay": 0,
+    "vrfSubscriptionId": "0"
+  },
+  "pendingLanes": [],
+  "placeholders": true,
+  "standIns": [],
+  "startBlock": 0,
+  "timestamp": 1791739915,
+  "wiringCalls": 18,
+  "wiringHash": "0x603c13e4464a8645c4b7f594b4b0fd20620eece641fc11ee1db7a401baeeccfe"
+}

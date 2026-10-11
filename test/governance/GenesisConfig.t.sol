@@ -49,7 +49,7 @@ contract GenesisConfigTest is Test {
 
     function setUp() public {
         json = vm.readFile(PATH);
-        configurator = new GovernanceConfigurator();
+        configurator = new GovernanceConfigurator(address(this));
         manager = configurator.worksManager();
     }
 
@@ -474,12 +474,14 @@ contract GenesisConfigTest is Test {
             assertTrue(GovernanceConfig.isGenesisSelector(sel), sig);
             // When the call names its peer, the first argument is that placeholder address.
             if (_count(string.concat(w, ".args")) != 0) {
+                bytes memory first = bytes(_str(string.concat(w, ".args[0]")));
+                if (first.length >= 2 && first[0] == "0" && first[1] == "x") continue; // literal
                 bytes memory data = wiring[i].data;
                 address encoded;
                 assembly ("memory-safe") {
                     encoded := mload(add(data, 36))
                 }
-                assertEq(encoded, _addressOf(_str(string.concat(w, ".args[0]"))), sig);
+                assertEq(encoded, _addressOf(string(first)), sig);
             }
         }
         // Every genesis-only bind is wired; nothing deferred is.

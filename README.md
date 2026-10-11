@@ -213,7 +213,7 @@ bugs, and never include keys or secrets.
 ```
 src/         contracts, one folder per module (see Modules), plus interfaces/ for shared surfaces
 test/        unit, fuzz, invariant and integration tests, with shared mocks and helpers
-script/      deployment and verification scripts (still to come)
+script/      the deploy library, deploy and verify scripts, and the Sepolia runbook
 tools/       standard-library Python: the CI gates, and uploader tooling in tools/content
 docs/        index, ADRs, architecture and the Slither triage record
 ops/         the delivery plan

@@ -13,7 +13,11 @@ Checks `config/genesis.example.json`:
      starts with that function's selector; every genesis-only entry is wired, and no deferred
      entry is;
   5. every mapped function's role exists and its delay matches the role's execution delay and
-     its class.
+     its class;
+  6. a configuration given with `--config` (a deployment's copy) keeps the committed policy: it
+     may differ from `config/genesis.example.json` only in its holders, its description, and the
+     `address` and `calldata` fields that encode addresses (`policy_differences`). The deploy
+     script enforces the same rule on chain (`DeployGuards.checkPolicy`).
 
 A configured contract whose artifact source is not in the repository yet (a lane that has
 not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
@@ -36,11 +40,17 @@ from typing import Callable
 CONFIG = "config/genesis.example.json"
 CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
 # Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, the epoch-0 manifest). The Solidity tests pin the selectors themselves.
+# sale targets, first default currencies, the epoch-0 manifest). The Solidity tests pin the
+# selectors themselves.
 GENESIS_FUNCTIONS = frozenset({
     "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
-    "bindFederationRegistry", "setAdmittedMinter", "setTarget", "appendGovernanceManifest",
+    "bindFederationRegistry", "setAdmittedMinter", "setTarget", "setDefaultCurrency",
+    "appendGovernanceManifest",
 })
+
+# What a deployment's copy of the configuration may change (check 6).
+DEPLOYMENT_KEYS = frozenset({"holders", "description"})
+ADDRESS_KEYS = frozenset({"address", "calldata"})
 
 DECLARATION = re.compile(
     r"\b(abstract\s+)?(contract|interface|library)\s+([A-Za-z_$][\w$]*)"
@@ -375,7 +385,8 @@ def check(
             where, sig, w.get("calldata"), w.get("args", []), addresses
         )
         for arg in w.get("args", []):
-            if isinstance(arg, str) and arg not in by_name and arg not in peers:
+            if isinstance(arg, str) and not arg.startswith("0x") and arg not in by_name \
+                    and arg not in peers:
                 problems.append(f"{where}: argument {arg} names no contract or peer")
         wired.add((name, sig))
     for name, c in by_name.items():
@@ -386,6 +397,49 @@ def check(
             if (name, e["signature"]) in wired:
                 problems.append(f"{name}: deferred {e['signature']} is wired")
     return problems
+
+
+def policy_view(config: dict) -> dict:
+    """`config` without what a deployment may change: its holders and description, and every
+    `address` (contracts, peers) and `calldata` (which encodes them)."""
+
+    def strip(node: object) -> object:
+        if isinstance(node, dict):
+            return {k: strip(v) for k, v in node.items() if k not in ADDRESS_KEYS}
+        if isinstance(node, list):
+            return [strip(v) for v in node]
+        return node
+
+    return strip({k: v for k, v in config.items() if k not in DEPLOYMENT_KEYS})
+
+
+def _diff(a: object, b: object, path: str, out: list[str]) -> None:
+    if type(a) is not type(b):
+        out.append(path)
+    elif isinstance(a, dict):
+        for key in sorted(set(a) | set(b)):
+            if key not in a or key not in b:
+                out.append(f"{path}.{key}")
+            else:
+                _diff(a[key], b[key], f"{path}.{key}", out)
+    elif isinstance(a, list):
+        if len(a) != len(b):
+            out.append(f"{path} (length {len(a)}, committed {len(b)})")
+        for i, (x, y) in enumerate(zip(a, b)):
+            _diff(x, y, f"{path}[{i}]", out)
+    elif a != b:
+        out.append(path)
+
+
+def policy_differences(config: dict, policy: dict) -> list[str]:
+    """Where `config` departs from the committed `policy` beyond holders and addresses."""
+    diffs: list[str] = []
+    _diff(policy_view(config), policy_view(policy), "", diffs)
+    return [
+        f"policy: {d or '(root)'} differs from the committed {CONFIG} (a deployment may change "
+        f"only holders, the description and addresses)"
+        for d in diffs
+    ]
 
 
 def find_root(start: Path) -> Path:
@@ -400,20 +454,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, help="repository root (default: auto-detected)")
     parser.add_argument("--config", type=Path, help=f"configuration (default: {CONFIG})")
     parser.add_argument("--artifacts", type=Path, help="read method IDs from this out/ directory")
+    parser.add_argument(
+        "--policy", type=Path, help=f"the committed policy a --config must keep (default: {CONFIG})"
+    )
     args = parser.parse_args(argv)
 
     root = args.root or find_root(Path(__file__).resolve().parent)
     path = args.config or root / CONFIG
-    try:
-        config = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise SystemExit(f"cannot read the genesis configuration {path}: {error}") from None
-    if not isinstance(config, dict):
-        raise SystemExit(f"{path}: the configuration must be a JSON object")
+    config = _load(path, "genesis configuration")
+    policy_path = args.policy or root / CONFIG
+    policy = None
+    if path.resolve() != policy_path.resolve():
+        policy = _load(policy_path, "committed policy")
     ids = artifact_ids(args.artifacts) if args.artifacts else forge_inspect(root)
     present = source_present(root)
     try:
         problems = check(config, ids, scan_sources(root / "src"), present)
+        if policy is not None:
+            problems += policy_differences(config, policy)
         waiting = pending(config, present)
     except (KeyError, TypeError, AttributeError, ValueError) as error:
         raise SystemExit(f"{path}: malformed configuration ({type(error).__name__}: {error})") from None
@@ -430,6 +488,16 @@ def main(argv: list[str] | None = None) -> int:
         f"{note}"
     )
     return 0
+
+
+def _load(path: Path, what: str) -> dict:
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read the {what} {path}: {error}") from None
+    if not isinstance(config, dict):
+        raise SystemExit(f"{path}: the configuration must be a JSON object")
+    return config
 
 
 if __name__ == "__main__":
