@@ -509,64 +509,228 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(total, 5_000_000);
     }
 
-    /// @dev N3: staging with a full snapshot that all goes missing (each checked directly) plus a
-    ///      32-entry scan of distinct cold wallets, signed by an established wallet; all cold.
-    function test_N3_StageWorstCaseFitsTheCap() public {
+    // ----------------------------------------------------------------- worst-case gas (round 3)
+
+    uint256 internal constant SCAN_KEY = 0xF100; // 32 scanned wallets
+    uint256 internal constant RECORDED_KEY = 0xF200; // recorded wallets moved beyond the scan
+
+    /// @dev The adversarial worst case: 32 scanned wallets and 16 directly checked recorded
+    ///      wallets each cost 8 cold registration reads (3 expired and 1 live forward, 3 expired
+    ///      and 1 live, or 4 expired, reverse), because the forward padding sits beyond the
+    ///      32-entry scan window. At the measured call the 16 recorded wallets age out and 16
+    ///      scanned wallets are recorded (and, for a staging, captured).
+    function _setupWorstCase() private {
+        for (uint256 i; i < 15; ++i) {
+            _consolidate(artist, vm.addr(RECORDED_KEY + i));
+        }
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 16);
+        _revoke(artist, wallet);
+        _revoke(wallet, artist);
+        for (uint256 i; i < 15; ++i) {
+            _revoke(artist, vm.addr(RECORDED_KEY + i));
+            _revoke(vm.addr(RECORDED_KEY + i), artist);
+        }
+        uint256 soon = block.timestamp + 1;
+        for (uint256 i; i < 32; ++i) {
+            _delegate(artist, vm.addr(SCAN_KEY + i), soon);
+        }
+        for (uint256 i; i < 32; ++i) {
+            address x = vm.addr(SCAN_KEY + i);
+            _delegate(artist, x, soon);
+            _delegate(artist, x, soon);
+            _delegate(artist, x, FAR);
+            _delegate(x, artist, soon);
+            _delegate(x, artist, soon);
+            _delegate(x, artist, soon);
+            _delegate(x, artist, FAR);
+        }
+        for (uint256 i; i < 16; ++i) {
+            address r = i == 15 ? wallet : vm.addr(RECORDED_KEY + i);
+            _delegate(artist, r, soon);
+            _delegate(artist, r, soon);
+            _delegate(artist, r, soon);
+            _delegate(artist, r, FAR);
+            for (uint256 k; k < 4; ++k) {
+                _delegate(r, artist, soon);
+            }
+        }
+        vm.warp(block.timestamp + 2);
+        registry.refreshStanding(artistId);
+        vm.warp(block.timestamp + 30 days);
+    }
+
+    /// @dev About 7.44M gas: under half of the 16,777,216 EIP-7825 cap with calldata included.
+    function test_WorstCase_StageChangeGas() public {
         _setupWorstCase();
         ArtistIdentity memory next = _identity(newAuthority, payout);
         uint64 deadline = uint64(block.timestamp + 1);
         bytes32 digest = _digest(next, deadline);
-        bytes memory sig = _sign(0x7100, digest);
+        bytes memory sig = _sign(SCAN_KEY, digest);
         bytes memory acceptance = _sign(newKey, digest);
         _coolAll();
         uint256 before = gasleft();
-        registry.stageChange(artistId, next, vm.addr(0x7100), deadline, sig, acceptance);
+        registry.stageChange(artistId, next, vm.addr(SCAN_KEY), deadline, sig, acceptance);
         uint256 used = before - gasleft();
-        emit log_named_uint("stageChange N3 worst case (execution)", used);
+        emit log_named_uint("stageChange worst case (execution)", used);
         assertEq(_cancellers().length, 16);
-        assertLt(used + 21_000 + 16 * 900, 8_000_000);
+        assertFalse(_hasStanding(wallet), "the recorded wallets aged out");
+        assertLt(used + 21_000 + 16 * 900, 16_777_216 / 2);
     }
 
-    /// @dev N3: a refresh that removes 16 aged-out entries and records 16 new ones, all cold.
-    function test_N3_RefreshWorstCaseFitsTheCap() public {
+    /// @dev About 7.46M gas.
+    function test_WorstCase_StageOverrideGas() public {
         _setupWorstCase();
-        registry.refreshStanding(artistId);
-        vm.warp(block.timestamp + 30 days);
+        bytes32 evidence = keccak256("evidence");
+        ArtistIdentity memory next = _identity(newAuthority, newAuthority);
+        uint64 deadline = uint64(block.timestamp + 1);
+        bytes memory acceptance = _sign(
+            newKey,
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
+        _coolAll();
+        vm.prank(governor);
+        uint256 before = gasleft();
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
+        uint256 used = before - gasleft();
+        emit log_named_uint("stageOverride worst case (execution)", used);
+        assertEq(_cancellers().length, 16);
+        assertLt(used + 21_000 + 16 * 900, 16_777_216 / 2);
+    }
+
+    /// @dev About 6.82M gas.
+    function test_WorstCase_RefreshStandingGas() public {
+        _setupWorstCase();
         _coolAll();
         uint256 before = gasleft();
         registry.refreshStanding(artistId);
         uint256 used = before - gasleft();
-        emit log_named_uint("refreshStanding N3 worst case (execution)", used);
+        emit log_named_uint("refreshStanding worst case (execution)", used);
         assertEq(registry.standingOf(artistId).length, 16);
-        assertLt(used + 21_000, 8_000_000);
+        assertLt(used + 21_000, 16_777_216 / 2);
     }
 
-    function _setupWorstCase() private {
-        for (uint256 i; i < 15; ++i) {
-            _consolidate(artist, address(uint160(0x6000 + i)));
-        }
-        vm.warp(block.timestamp + 30 days);
+    /// @dev One direct check is bounded at 8 reads (4 per direction) of 50K gas each.
+    function test_WorstCase_DirectCheckBoundedAtEightReads() public {
+        _setupWorstCase();
+        vm.cool(address(delegation));
+        vm.cool(address(adapter));
+        uint256 before = gasleft();
+        adapter.effectiveAt(artist, wallet);
+        uint256 used = before - gasleft();
+        emit log_named_uint("one direct check (8 cold reads)", used);
+        assertLt(used, 8 * 50_000);
+    }
+
+    // ----------------------------------------------------------------- effectiveAt (round 3)
+
+    /// @dev T1: after a rotation, a recorded wallet whose pair with the new authority is older
+    ///      has its effectiveAt lowered to that pair's, so it is captured at once.
+    function test_Standing_RotationLowersEffectiveAtToTheOlderPair() public {
+        uint256 old = block.timestamp;
+        _consolidate(newAuthority, wallet2);
+        vm.warp(old + 25 days);
+        _consolidate(artist, wallet2);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(wallet2).effectiveAt, old + 55 days, "young pair with the artist");
+        vm.warp(old + 31 days);
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        assertEq(_entry(wallet2).effectiveAt, old + 30 days, "lowered to the older pair");
+        _stageOverride(ChangeKind.CONTESTED, _identity(thief, thief), thiefKey);
+        assertTrue(_inCancellers(wallet2), "captured before the young pair's 30 days");
+    }
+
+    /// @dev A recorded wallet's clock only moves earlier: a key holder's revoke and re-add cannot
+    ///      push it later.
+    function test_Standing_ReConsolidationCannotResetTheClock() public {
+        uint256 first = block.timestamp;
+        _consolidate(artist, wallet2);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(wallet2).effectiveAt, first + 30 days);
+        vm.warp(first + 10 days);
+        _revoke(artist, wallet2);
+        registry.refreshStanding(artistId);
+        vm.warp(first + 20 days);
+        _delegate(artist, wallet2, FAR);
+        assertEq(adapter.effectiveAt(artist, wallet2), first + 50 days);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(wallet2).effectiveAt, first + 30 days, "pinned");
+        assertEq(_entry(wallet2).missingSince, 0);
+    }
+
+    /// @dev Expired back-dated and duplicate registrations do not make a wallet effective sooner
+    ///      than its live registration plus 30 days.
+    function test_Standing_NoFasterThanThirtyDaysFromTheLiveRegistration() public {
+        address t = address(uint160(0xD100));
+        _delegate(artist, t, block.timestamp + 1);
+        _delegate(t, artist, block.timestamp + 1);
+        vm.warp(block.timestamp + 20 days);
+        uint256 live = block.timestamp;
+        _consolidate(artist, t);
+        _consolidate(artist, t);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(t).effectiveAt, live + 30 days);
+        vm.warp(live + 29 days);
+        _stage(artistKey, _identity(thief, thief), thiefKey);
+        assertFalse(_inCancellers(t), "pending: not captured at 29 days");
+    }
+
+    /// @dev A recorded wallet cannot be stripped in under 30 days by revoke and re-add cycles,
+    ///      list stuffing or repeated refreshes.
+    function test_Standing_CannotBeStrippedInUnderThirtyDays() public {
+        uint256 t0 = block.timestamp;
+        _revoke(artist, wallet);
+        registry.refreshStanding(artistId);
+        _delegate(artist, wallet, FAR);
         registry.refreshStanding(artistId);
         _revoke(artist, wallet);
+        registry.refreshStanding(artistId);
+        for (uint256 i; i < 40; ++i) {
+            _delegate(artist, address(uint160(0xE000 + i)), FAR);
+        }
+        for (uint256 d = 1; d < 30; ++d) {
+            vm.warp(t0 + d * 1 days);
+            registry.refreshStanding(artistId);
+        }
+        vm.warp(t0 + 30 days - 1);
+        _stage(artistKey, _identity(thief, thief), thiefKey);
+        assertEq(_cancellers().length, 1);
+        assertEq(_cancellers()[0], wallet, "still captured at 30 days minus one second");
+    }
+
+    /// @dev Residual risk (README): a key holder can fill the free slots with pending entries of
+    ///      their own; a genuine wallet consolidated afterwards is not recorded while those slots
+    ///      are held, and the key holder's entries become cancellers 30 days later.
+    function test_ResidualRisk_KeyHolderFillsFreeSlots() public {
         for (uint256 i; i < 15; ++i) {
-            _revoke(artist, address(uint160(0x6000 + i)));
+            _consolidate(artist, address(uint160(0xD000 + i)));
         }
-        for (uint256 i; i < 16; ++i) {
-            address w = address(uint160(0x7800 + i));
-            _delegate(artist, w, FAR);
-            for (uint256 k; k < 4; ++k) {
-                _delegate(w, artist, block.timestamp + 1);
-            }
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 16);
+        _consolidate(artist, wallet2);
+        vm.warp(block.timestamp + 31 days);
+        registry.refreshStanding(artistId);
+        assertFalse(_hasStanding(wallet2), "not recorded while the slots are held");
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertEq(_cancellers().length, 16);
+    }
+
+    function _entry(address w) private view returns (Standing memory) {
+        Standing[] memory s = registry.standingOf(artistId);
+        for (uint256 i; i < s.length; ++i) {
+            if (s[i].wallet == w) return s[i];
         }
-        for (uint256 i; i < 16; ++i) {
-            address e = vm.addr(0x7100 + i);
-            _delegate(artist, e, FAR);
-            for (uint256 k; k < 3; ++k) {
-                _delegate(e, artist, block.timestamp + 1);
-            }
-            _delegate(e, artist, FAR);
+        revert("not recorded");
+    }
+
+    function _inCancellers(address w) private view returns (bool) {
+        address[] memory c = _cancellers();
+        for (uint256 i; i < c.length; ++i) {
+            if (c[i] == w) return true;
         }
-        vm.warp(block.timestamp + 30 days);
+        return false;
     }
 
     function _coolAll() private {

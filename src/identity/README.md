@@ -267,6 +267,10 @@ them, those wallets gain standing.
   gains wallets that are captured with the artist's genuine wallets. When the
   network stages the 180-day CONTESTED override, the thief's wallet cancels it,
   and every re-staged override the same way.
+- **Filling free slots.** A key holder can fill the snapshot's free slots with
+  pending entries of their own. A genuine wallet consolidated afterwards is
+  then not recorded while those slots are held
+  (`test_ResidualRisk_KeyHolderFillsFreeSlots`).
 - **After a hijack executes.** The thief's own prepared wallets, consolidated
   with the thief's new authority, are recorded at the execution. The artist's
   genuine wallets keep standing for 30 days after the hijack's refresh records
@@ -288,12 +292,20 @@ the post-hijack case. The guardian can veto changes but cannot undo a cancel.
 ## Gas
 
 These figures are measured all-cold in `test/identity/ArtistRegistryReview.t.sol`
-and `test/identity/ConsolidationAdapter.t.sol`. All are far inside the
-16,777,216-gas transaction cap.
-- `establishedWallets`, worst case (32 distinct cold entries, six cold reads
-  each): about 2.8M gas.
-- `stageChange` at the worst case: 16 recorded wallets all gone missing, each
-  checked directly, plus a 32-entry scan, signed by an established wallet. It
-  costs about 3.7M gas to execute.
-- `refreshStanding` removing 16 aged-out entries and recording 16 new ones:
-  about 3.2M gas.
+(`test_WorstCase_*`) and `test/identity/ConsolidationAdapter.t.sol`.
+
+**The adversarial worst case.** Every one of the 32 scanned wallets, and every
+one of the 16 directly checked recorded wallets, needs 8 cold registration
+reads, because the forward padding sits beyond the 32-entry scan window. At the
+measured call, the 16 recorded wallets age out and 16 scanned wallets are
+recorded (and, for a staging, captured):
+- `stageOverride`: about 7.46M gas to execute;
+- `stageChange`: about 7.44M gas;
+- `refreshStanding`: about 6.82M gas.
+
+That is about 45% of the 16,777,216-gas EIP-7825 transaction cap. The tests
+assert each stays under half of the cap, including intrinsic and calldata gas.
+
+One direct check (`effectiveAt`, 8 cold reads) costs about 130K gas.
+`establishedWallets` alone, over 32 distinct cold entries, costs about 2.8M
+gas.
