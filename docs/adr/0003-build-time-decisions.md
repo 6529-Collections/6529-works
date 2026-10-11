@@ -263,6 +263,15 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   12,288 bytes. At 24 KiB, ordinary multi-byte or escape-heavy text cost the
   renderer more than the 8M `tokenURI` budget, because validating UTF-8 and
   escapes costs per byte. Every escape also counts against the scanner's budget.
+- **Record content limits.**
+  - A record may carry at most 32 attributes.
+  - Each attribute may use only the standard keys `trait_type`, `value`,
+    `display_type` and `max_value`.
+  - Keys, values and escapes share one 1,024-unit budget, with at most 512
+    escapes.
+  - Inline scripts are capped at 8 KiB. Larger scripts are served by locator in
+    `tokenURI` and in full by `fullTokenURI`.
+  - With every cap filled at once, `tokenURI` measures at most about 7.8M gas.
 - **Opening a record never fails.** `openRecord` stores the approved record and
   licence as committed. The structural checks (complete, one `Identity` chunk,
   within the bound, licence text registered) run at `setRecord`, `finalize` and
