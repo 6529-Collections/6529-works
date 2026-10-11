@@ -271,3 +271,154 @@ and `deprecate` to a registrar role (from `src/governance/Roles.sol`, owned by
 the governance lane, with a delay because a version is forever) is a
 deployment-time `setTargetFunctionRole` call. The tests use a local role until
 that file lands.
+
+## Renderer
+
+`Renderer.sol` implements [`IRenderer`](../interfaces/IRenderer.sol): `tokenURI`
+and `fullTokenURI` for 6529 Stream works and 6529 Editions editions. It is
+immutable and stateless, and supports ERC-165 for `IRenderer`. The tests are in
+[`test/content/renderer/`](../../test/content/renderer).
+
+| File | Role |
+| --- | --- |
+| `Renderer.sol` | The renderer. |
+| `JsonScan.sol` | A strict RFC 8259 scanner that validates the record JSON and reports where values sit. |
+| `DataUri.sol` | Percent-escapes `%` and `#` for a non-base64 `data:` URI. |
+| `HtmlScript.sol` | Neutralizes `</script` and `<!--` in script text placed in an HTML page. |
+
+### What it reads, and how it fails
+
+`tokenURI(token, id)` reads the token it is asked about (6529 Stream, or 6529
+Editions, which it recognises by ERC-165 and follows to the master through
+`masterOf`), that Stream's `IWorkRecords` satellite, the content store it was
+deployed with, and optionally the statement log's `latestDisputeOutcome`. Every
+read is a `BoundedCall` with its own gas cap and return-size cap, and a read that
+fails reverts with `RendererReadFailed(target, selector)`: a renderer never
+returns plausible metadata for a token it cannot read. A hostile `token` can only
+change what its own call returns, so there is no list of tokens.
+
+**Records that are not open.** `openRecord` is permissionless and runs after the
+auction starts, and every satellite view reverts until it has. So the renderer
+asks `isOpen` first, and a work whose record is not open, or whose record file is
+not completely uploaded yet, gets core-only metadata and never a revert: its name
+from the collection and serial (`Spring #12`), and the traits Stream knows
+(`Artist ID`, `Collection`, `Serial`, `Edition of`, the VRF seed, a dispute
+statement). The `description` says the record is not open yet. The ARTIST seed is
+stored when the record opens, so it appears only after.
+
+### The record
+
+A work's descriptive record is a JSON file in the content store, stored as
+`Identity`, at most one chunk (24,575 bytes: `MAX_RECORD_BYTES`). The renderer
+reads it, checks it as UTF-8 and with `JsonScan` (strings, escapes, numbers,
+nesting up to 8 levels, no duplicate requested keys), and copies validated JSON
+text, never decoded text:
+
+| Record member | Metadata |
+| --- | --- |
+| `name` (required, a string) | `name` |
+| `description` (a string) | `description` |
+| `artists` (strings, at most 16) | one `Artist` trait each |
+| `year` (a number) | the `Year` trait |
+| `medium`, `dimensions` (strings) | the `Medium` and `Dimensions` traits |
+| `attributes` (an array) | its elements, as they are, after the renderer's own traits |
+| any other member (`dependencies`, `files`, ...) | validated and ignored |
+
+The `attributes` array is copied without checking its elements, so a record keeps
+the shape the tooling gives it. A wrong type, a missing `name`, a malformed
+record, an invalid UTF-8 byte or too many artists reverts (`RendererRecordInvalid`,
+`JsonScan.JsonInvalid`, `RendererInvalidUtf8`): the artist can fix the record
+until finalize, and nothing is guessed. Because the whole file is percent-escaped
+first, `%` and `#` inside it survive the URI.
+
+### Output
+
+`data:application/json;utf8,` followed by compact JSON. It is not base64: the
+media is already base64 text, and encoding it twice would cost gas and a third
+more size. Every string from the Stream, a locator or the store (a collection
+name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
+`JsonEscape` and percent-escaped by `DataUri`. The JSON carries `name`,
+`description`, `image`, `animation_url`, `media_url`, `content_type`,
+`content_hash` (the primary's decoded SHA-256), `license`, `license_url` (the SPDX
+page; none for a `licenseref-` expression) and `attributes`.
+
+### Media
+
+| Primary file | `tokenURI` |
+| --- | --- |
+| complete, work on-chain complete, stored as `Base64`, at most the threshold | `data:<mime>;base64,` plus the stored text, concatenated as it is |
+| the same, stored as `Identity`, at most an eighth of the threshold | base64-encoded on-chain |
+| `text/javascript` or `application/javascript`, `Identity`, at most 16 KiB, UTF-8 | an HTML page that sets `window.works` and runs the script (below) |
+| anything else: larger, incomplete, `Gzip` or `GzipBase64` | the preferred locator (and `media_url`) |
+
+- **The threshold** is `inlineThreshold()`, in stored bytes, set at deployment
+  (`DEFAULT_INLINE_THRESHOLD`, 262,144, which is 256 KiB, as the ADR targets). An
+  `Identity` file counts eight times against it, because the renderer encodes it
+  with OpenZeppelin's `Base64`, which costs about 80 gas a byte against 10 for
+  copying text that is already base64. A 256 KiB `Base64` file fits 8M gas with
+  room to spare; an `Identity` file fits only up to 32 KiB. **Store media that will
+  be inlined as `Base64`.**
+- **`Gzip` and `GzipBase64` are never inlined.** Their stored bytes are a
+  compressed stream, not the media, so a `data:` URI of them would carry the wrong
+  bytes under the media's MIME type. They are served by locator.
+- **Complete** means the work is on-chain complete (`RecordInfo.onChainComplete`)
+  and `isComplete` is true for the file in the store. A missing chunk falls back to
+  the locator, and the same token switches to inline once the last chunk is
+  uploaded.
+- **Fields.** `image` is the primary when it is an image and inlined; otherwise the
+  on-chain preview if the work lists a `PREVIEW` image that is complete and within
+  `PREVIEW_LIMIT` (65,536, cost-weighted like the threshold), else the primary's
+  locator for an image, else the preview's locator. `animation_url` is the primary
+  when it is not an image (inline, or its locator). `media_url` is the primary's
+  preferred locator whenever the primary is not inlined.
+- **The preferred locator** is `IWorkRecords.preferredLocator`. When that is the
+  implicit on-chain one (no URL), the first registered copy is used. Inline wins
+  over the preference: a complete file under the threshold is inlined whatever the
+  preferred kind.
+- **`fullTokenURI`** raises the limit to 1 MiB (`MAX_INLINE_BYTES`) and reverts
+  with `RendererNotInlineable` instead of falling back. It is an off-chain view with
+  no 8M promise: 256 KiB of `Base64` costs 2.6M, 1 MiB costs 30M.
+- **Memory.** Media is read one store chunk at a time, straight into the single
+  output buffer, and each chunk buffer is released after it is copied, so there is
+  no second copy of the file. An `Identity` file also needs its raw bytes and the
+  encoded text as transient buffers.
+
+### The page around a script
+
+A JavaScript primary cannot be shown as a `data:` URI, so the renderer wraps it: a
+fixed HTML page whose first script sets
+`window.works={tokenId:<id>,seed:<"0x…" or null>};` and then runs the work's
+script. `window.works` is the script's whole interface, so it is part of what a
+finalized work pins. The script text is the only artist-controlled text placed
+inside the renderer's own markup, so it goes through `HtmlScript.neutralize`:
+`</script` (any case) and `<!--` each gain a backslash after the `<`, which keeps
+their meaning inside JavaScript strings, template literals and comments. `<!--`
+matters because it can start the HTML parser's "double escaped" state, after which
+the next `</script>` no longer closes the element. `JsonEscape.scriptText` handles
+only the first sequence, and costs about 300 gas a byte on text made of `<`, so
+this library does both in one linear pass (about 170 gas a byte at worst, which
+with the 16 KiB limit keeps the page under 4.4M gas for any script). A document
+(`text/html`) is inlined as base64 and left as it is: it is never parsed together
+with the renderer's markup, and rewriting it would break it.
+
+### Gas
+
+Measured by `forge test --match-contract RendererGas -vv` (Foundry 1.7.1, Solc
+0.8.37, optimizer 200 runs): one call through a relay that behaves like Stream's
+`tokenURI` (call, copy the string out, return it), cold, with pseudo-random file
+bytes. The content store is the real one; the Stream, the satellite and the log are
+mocks that answer from storage.
+
+| Stored bytes of the primary file | `Base64` file | `Identity` file |
+| --- | --- | --- |
+| 32 KiB | 0.32M | 2.59M |
+| 64 KiB | 0.46M | 5.12M |
+| 128 KiB | 0.97M | 10.56M |
+| 256 KiB (the default threshold) | 2.61M | not inlined (it would cost 22M) |
+
+Other measurements: a file over the threshold with a locator, 0.18M; a maximal
+record (24,575 bytes with 16 artists and 64 attributes), 1.5M; a 16 KiB script page,
+1.6M, and 3.3M to 4.4M for scripts made only of `<`, `</`, `<!-` or `</scrip`; the
+worst case (a non-image primary of 256 KiB `Base64`, an 8 KiB `Identity` preview, a
+maximal record, a collection, a seed, a dispute and a license), 5.2M. The limit is
+8M.
