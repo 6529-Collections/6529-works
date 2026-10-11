@@ -9,6 +9,7 @@ import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
@@ -27,6 +28,7 @@ import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockMintTarget } from "../mocks/auction/AuctionMocks.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { MockEditionTarget } from "../mocks/sales/SaleMocks.sol";
 
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
@@ -40,16 +42,21 @@ contract DeployV1Test is Test {
 
     string internal json;
     DeployV1.Manifest internal manifest;
+    /// The 6529 delegation contract's faithful reduction (the identity lane's).
+    DelegationManagementMock internal delegation;
 
     function setUp() public {
         json = vm.readFile(GENESIS);
         manifest = DeployV1.Manifest(keccak256("epoch-0 manifest"), "ar://epoch-0");
+        delegation = new DelegationManagementMock();
     }
 
     function _params() internal returns (DeployV1.Params memory p) {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/test");
         p.feeRecipient = makeAddr("feeRecipient");
+        p.marketOwner = makeAddr("marketOwner");
+        p.delegation = address(delegation);
         p.cc0Text = bytes("CC0 1.0 Universal (test copy)");
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
@@ -97,17 +104,31 @@ contract DeployV1Test is Test {
             GovernanceConfig.Config memory cfg,
             GovernanceConfig.Call[] memory calls
         ) = _genesis(_params());
-        // The merged contracts with a governance map; Stream, WorkRecords and Editions and the
-        // optional entropy module are not deployed here.
-        assertEq(cfg.targets.length, 11, "governed targets");
+        // Every merged contract with a governance map; Editions (pending) and the optional
+        // entropy module are not deployed here.
+        assertEq(cfg.targets.length, 13, "governed targets");
         assertEq(cfg.grants.length, 17, "holders");
-        // The artist registry's package-registry and split-factory binds, three default
-        // currencies and the manifest; the rest name pending contracts.
-        assertEq(calls.length, 6, "wiring calls");
+        // Stream's WorkRecords bind, the package registry's Stream bind, the artist registry's
+        // three binds, the auction's minter grant and target, three default currencies and the
+        // manifest; the rest name Editions.
+        assertEq(calls.length, 11, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
-        assertEq(IPackageRegistry(address(d.packageRegistry)).stream(), address(0), "pending");
+        // The real identity contracts, reading the delegation contract given.
+        assertEq(address(d.consolidationAdapter.delegation()), address(delegation));
+        assertEq(address(d.artistRegistry.consolidationSource()), address(d.consolidationAdapter));
+        // 6529 Stream and its records satellite, wired both ways.
+        assertEq(d.stream.workRecords(), address(d.workRecords));
+        assertEq(d.workRecords.stream(), address(d.stream));
+        assertEq(d.workRecords.cc0TextFileId(), d.cc0TextFileId, "CC0 default license text");
+        assertEq(IPackageRegistry(address(d.packageRegistry)).stream(), address(d.stream));
+        assertEq(d.artistRegistry.stream(), address(d.stream));
+        assertTrue(d.stream.isAdmittedMinter(address(d.englishAuction)));
+        assertTrue(d.englishAuction.isTarget(address(d.stream)));
+        assertEq(d.stream.defaultRenderer(), d.renderer);
+        assertEq(d.stream.owner(), makeAddr("marketOwner"));
+        assertEq(d.editions, address(0), "Editions pending");
         (uint64 count,) = IStatementLog(address(d.statementLog)).chainOf(address(d.manager), 0);
         assertEq(count, 1, "epoch-0 manifest recorded at genesis");
         // Auctions can start at once: every product has its default currency from genesis.
@@ -263,7 +284,8 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 12);
+        assertEq(cfg.targets.length, 14);
+        assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);
     }
@@ -318,7 +340,7 @@ contract DeployV1Test is Test {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
         DeployV1.Deployment memory reloaded;
         reloaded.cc0TextFileId = d.cc0TextFileId;
-        string[22] memory names = DeployV1.names();
+        string[] memory names = DeployV1.names();
         for (uint256 i; i < names.length; ++i) {
             DeployV1.assign(reloaded, names[i], DeployV1.addressOf(d, names[i]));
         }
@@ -327,10 +349,19 @@ contract DeployV1Test is Test {
 
     // ------------------------------------------------------------------ fail closed
 
-    function test_TheStandInIsRefusedOffAnvil() public {
+    function test_TheRendererStandInIsRefusedOffAnvil() public {
         DeployV1.Params memory p = _params();
         vm.chainId(11_155_111); // Sepolia
-        vm.expectRevert(DeployV1.ArtistRegistryPending.selector);
+        vm.expectRevert(DeployV1.RendererPending.selector);
+        this.deployExternal(p);
+    }
+
+    function test_ADelegationAddressWithoutCodeIsRefused() public {
+        DeployV1.Params memory p = _params();
+        p.delegation = 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d; // no code here, as on Sepolia
+        vm.expectRevert(
+            abi.encodeWithSelector(ConsolidationAdapter.NoDelegationCode.selector, p.delegation)
+        );
         this.deployExternal(p);
     }
 

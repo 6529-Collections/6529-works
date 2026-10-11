@@ -129,7 +129,7 @@ library VerifyV1 {
         _platformCan(d, platform, address(d.fixedPriceSale), IFixedPriceSale.closeSale.selector);
         _platformCan(d, platform, address(d.dutchSale), IDutchSale.openSale.selector);
         _platformCan(d, platform, address(d.dutchSale), IDutchSale.closeSale.selector);
-        _platformCan(d, platform, d.workRecords, IWorkRecords.addLocator.selector);
+        _platformCan(d, platform, address(d.workRecords), IWorkRecords.addLocator.selector);
     }
 
     function _platformCan(

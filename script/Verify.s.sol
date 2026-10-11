@@ -67,7 +67,7 @@ contract Verify is Script {
         if (vm.keyExistsJson(record, ".cc0TextFileId")) {
             d.cc0TextFileId = vm.parseJsonBytes32(record, ".cc0TextFileId");
         }
-        string[22] memory names = DeployV1.names();
+        string[] memory names = DeployV1.names();
         for (uint256 i; i < names.length; ++i) {
             string memory key = string.concat(".contracts.", names[i], ".address");
             if (vm.keyExistsJson(record, key)) {
@@ -150,7 +150,7 @@ contract Verify is Script {
     }
 
     function _checkCodeHashes(string memory record) internal view {
-        string[22] memory names = DeployV1.names();
+        string[] memory names = DeployV1.names();
         for (uint256 i; i < names.length; ++i) {
             string memory base = string.concat(".contracts.", names[i]);
             if (!vm.keyExistsJson(record, string.concat(base, ".address"))) continue;

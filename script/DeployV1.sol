@@ -19,16 +19,22 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
+import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
+import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
+import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
-import { ArtistRegistryStandIn } from "./standins/ArtistRegistryStandIn.sol";
+import { Stream } from "src/stream/Stream.sol";
+import { WorkRecords } from "src/stream/WorkRecords.sol";
+import { RendererStandIn } from "./standins/RendererStandIn.sol";
 
 /// @title DeployV1
 /// @notice Deploys every v1 contract in dependency order and installs the genesis
@@ -58,6 +64,12 @@ library DeployV1 {
         bytes32 namespace;
         /// Network share recipient of every product (EconomicsResolver defaults).
         address feeRecipient;
+        /// The marketplace `owner()` of 6529 Stream (and 6529 Editions): collection admin on
+        /// marketplaces, no protocol power. FUNDS_SETTER can change it.
+        address marketOwner;
+        /// The 6529 delegation contract the consolidation adapter reads (a faithful mock where
+        /// the canonical contract is absent, as on Sepolia). It must have code.
+        address delegation;
         /// The CC0 1.0 Universal legal code, plain text. Genesis stores it in the content store
         /// (the default license text: WorkRecords requires it, and finalize needs it complete).
         bytes cc0Text;
@@ -80,7 +92,8 @@ library DeployV1 {
         WorksAccessManager manager;
         ContentStore contentStore;
         DependencyRegistry dependencyRegistry;
-        address artistRegistry;
+        ConsolidationAdapter consolidationAdapter;
+        ArtistRegistry artistRegistry;
         ReleaseVerifier releaseVerifier;
         SplitFactory splitFactory;
         ClaimRouter claimRouter;
@@ -94,11 +107,11 @@ library DeployV1 {
         EnglishAuction englishAuction;
         FixedPriceSale fixedPriceSale;
         DutchSale dutchSale;
-        // Pending lanes, zero until they merge: renderer, stream (Stream and WorkRecords) and
-        // editions. Their slots in `deploy` are marked below.
+        /// The `RendererStandIn` on anvil until the renderer (#20) merges.
         address renderer;
-        address stream;
-        address workRecords;
+        Stream stream;
+        WorkRecords workRecords;
+        /// Zero until Editions (#14) merges; its slot in `deploy` is marked.
         address editions;
     }
 
@@ -112,9 +125,9 @@ library DeployV1 {
     error UnknownContract(string name);
     error UnknownRoleName(string name);
     error UnsupportedWiringSignature(string signature);
-    /// @notice The identity lane has not merged: only a local dry run may deploy, with the
-    ///         `ArtistRegistryStandIn`.
-    error ArtistRegistryPending();
+    /// @notice The renderer (#20) has not merged: only a local dry run may deploy, with the
+    ///         `RendererStandIn`.
+    error RendererPending();
     error EmptyText();
 
     // ------------------------------------------------------------------ deploy
@@ -129,15 +142,11 @@ library DeployV1 {
         _economics(p, d);
         _curationAndRecords(p, d);
         _entropy(p, d);
+        _renderer(p, d);
+        _stream(p, d);
         _sales(p, d);
-        // Pending lanes slot in here, in this order, as they merge (constructors from their
-        // branches; see script/README.md):
-        //   d.renderer   = Renderer(contentStore, statementLog, inlineThreshold)
-        //   d.stream     = Stream(manager, packageRegistry, artistRegistry, economicsResolver,
-        //                         entropyModule, renderer, renderer.codehash, marketplaceOwner)
-        //   d.workRecords = WorkRecords(manager, stream, contentStore,
-        //                               License("CC0-1.0", d.cc0TextFileId))
-        //   d.editions   = Editions(manager, stream, stream.codehash, marketplaceOwner)
+        // Editions (#14) slots in here as it merges:
+        //   d.editions = Editions(manager, stream, stream.codehash, p.marketOwner)
     }
 
     /// @notice The CREATE2 salt of contract `name` under `p.namespace`.
@@ -176,13 +185,16 @@ library DeployV1 {
         );
     }
 
+    /// @dev The adapter reads `p.delegation` (its constructor requires code there); the
+    ///      registry pins the adapter's code hash.
     function _identity(Params memory p, Deployment memory d) private {
-        // The identity lane's ConsolidationAdapter and ArtistRegistry replace this as it merges:
-        //   adapter        = ConsolidationAdapter(delegation)
-        //   artistRegistry = ArtistRegistry(manager, adapter, adapter.codehash)
-        if (block.chainid != LOCAL_CHAIN_ID) revert ArtistRegistryPending();
-        d.artistRegistry = address(
-            new ArtistRegistryStandIn{ salt: salt(p, "ArtistRegistry") }(address(d.manager))
+        d.consolidationAdapter = new ConsolidationAdapter{ salt: salt(p, "ConsolidationAdapter") }(
+            IDelegationManagement(p.delegation)
+        );
+        d.artistRegistry = new ArtistRegistry{ salt: salt(p, "ArtistRegistry") }(
+            address(d.manager),
+            IConsolidationSource(address(d.consolidationAdapter)),
+            address(d.consolidationAdapter).codehash
         );
     }
 
@@ -190,7 +202,7 @@ library DeployV1 {
         address m = address(d.manager);
         d.releaseVerifier = new ReleaseVerifier{ salt: salt(p, "ReleaseVerifier") }();
         d.splitFactory = new SplitFactory{ salt: salt(p, "SplitFactory") }(
-            IArtistPayoutResolver(d.artistRegistry), d.releaseVerifier
+            IArtistPayoutResolver(address(d.artistRegistry)), d.releaseVerifier
         );
         d.claimRouter = new ClaimRouter{ salt: salt(p, "ClaimRouter") }();
         d.assetAllowlist =
@@ -208,11 +220,11 @@ library DeployV1 {
             m,
             d.curationVerifier,
             address(d.curationVerifier).codehash,
-            d.artistRegistry,
-            d.artistRegistry.codehash
+            address(d.artistRegistry),
+            address(d.artistRegistry).codehash
         );
         d.statementLog = new StatementLog{ salt: salt(p, "StatementLog") }(
-            m, d.artistRegistry, d.artistRegistry.codehash
+            m, address(d.artistRegistry), address(d.artistRegistry).codehash
         );
     }
 
@@ -226,6 +238,34 @@ library DeployV1 {
             p.vrfRetryDelay,
             d.packageRegistry,
             address(d.packageRegistry).codehash
+        );
+    }
+
+    function _renderer(Params memory p, Deployment memory d) private {
+        // The renderer (#20) replaces the stand-in as it merges:
+        //   d.renderer = Renderer(contentStore, statementLog, inlineThreshold)
+        if (block.chainid != LOCAL_CHAIN_ID) revert RendererPending();
+        d.renderer = address(new RendererStandIn{ salt: salt(p, "Renderer") }());
+    }
+
+    /// @dev 6529 Stream pins the default renderer's code hash; WorkRecords takes the CC0 text
+    ///      uploaded by `_content` as the default license.
+    function _stream(Params memory p, Deployment memory d) private {
+        d.stream = new Stream{ salt: salt(p, "Stream") }(
+            address(d.manager),
+            address(d.packageRegistry),
+            address(d.artistRegistry),
+            address(d.economicsResolver),
+            address(d.entropyModule),
+            d.renderer,
+            d.renderer.codehash,
+            p.marketOwner
+        );
+        d.workRecords = new WorkRecords{ salt: salt(p, "WorkRecords") }(
+            address(d.manager),
+            address(d.stream),
+            address(d.contentStore),
+            License("CC0-1.0", d.cc0TextFileId)
         );
     }
 
@@ -259,7 +299,8 @@ library DeployV1 {
         if (n == keccak256("GovernanceConfigurator")) return address(d.configurator);
         if (n == keccak256("ContentStore")) return address(d.contentStore);
         if (n == keccak256("DependencyRegistry")) return address(d.dependencyRegistry);
-        if (n == keccak256("ArtistRegistry")) return d.artistRegistry;
+        if (n == keccak256("ConsolidationAdapter")) return address(d.consolidationAdapter);
+        if (n == keccak256("ArtistRegistry")) return address(d.artistRegistry);
         if (n == keccak256("ReleaseVerifier")) return address(d.releaseVerifier);
         if (n == keccak256("SplitFactory")) return address(d.splitFactory);
         if (n == keccak256("ClaimRouter")) return address(d.claimRouter);
@@ -274,8 +315,8 @@ library DeployV1 {
         if (n == keccak256("FixedPriceSale")) return address(d.fixedPriceSale);
         if (n == keccak256("DutchSale")) return address(d.dutchSale);
         if (n == keccak256("Renderer")) return d.renderer;
-        if (n == keccak256("Stream")) return d.stream;
-        if (n == keccak256("WorkRecords")) return d.workRecords;
+        if (n == keccak256("Stream")) return address(d.stream);
+        if (n == keccak256("WorkRecords")) return address(d.workRecords);
         if (n == keccak256("Editions")) return d.editions;
         revert UnknownContract(name);
     }
@@ -291,8 +332,10 @@ library DeployV1 {
             d.contentStore = ContentStore(a);
         } else if (n == keccak256("DependencyRegistry")) {
             d.dependencyRegistry = DependencyRegistry(a);
+        } else if (n == keccak256("ConsolidationAdapter")) {
+            d.consolidationAdapter = ConsolidationAdapter(a);
         } else if (n == keccak256("ArtistRegistry")) {
-            d.artistRegistry = a;
+            d.artistRegistry = ArtistRegistry(a);
         } else if (n == keccak256("ReleaseVerifier")) {
             d.releaseVerifier = ReleaseVerifier(a);
         } else if (n == keccak256("SplitFactory")) {
@@ -322,9 +365,9 @@ library DeployV1 {
         } else if (n == keccak256("Renderer")) {
             d.renderer = a;
         } else if (n == keccak256("Stream")) {
-            d.stream = a;
+            d.stream = Stream(a);
         } else if (n == keccak256("WorkRecords")) {
-            d.workRecords = a;
+            d.workRecords = WorkRecords(a);
         } else if (n == keccak256("Editions")) {
             d.editions = a;
         } else {
@@ -333,12 +376,13 @@ library DeployV1 {
     }
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
-    function names() internal pure returns (string[22] memory) {
-        return [
+    function names() internal pure returns (string[] memory list) {
+        string[23] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
             "DependencyRegistry",
+            "ConsolidationAdapter",
             "ArtistRegistry",
             "ReleaseVerifier",
             "SplitFactory",
@@ -350,14 +394,18 @@ library DeployV1 {
             "PackageRegistry",
             "StatementLog",
             "EntropyModule",
-            "EnglishAuction",
-            "FixedPriceSale",
-            "DutchSale",
             "Renderer",
             "Stream",
             "WorkRecords",
+            "EnglishAuction",
+            "FixedPriceSale",
+            "DutchSale",
             "Editions"
         ];
+        list = new string[](all.length);
+        for (uint256 i; i < all.length; ++i) {
+            list[i] = all[i];
+        }
     }
 
     // ------------------------------------------------------------------ genesis configuration

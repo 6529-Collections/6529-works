@@ -7,6 +7,7 @@ import { VmSafe } from "forge-std/Vm.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
 /// @title Deploy
@@ -16,14 +17,19 @@ import { DeployV1 } from "./DeployV1.sol";
 /// @dev Never reads or prints a key: the operator signs with Foundry's own flags (`--account`,
 ///      `--ledger`, or `--unlocked` on anvil) and is the configurator's `deployer`. Parameters
 ///      come from environment variables (script/README.md). Off anvil, every placeholder is
-///      refused. When broadcasting, the deployment is recorded under
-///      `deployments/<chainId>/<timestamp>.json`.
+///      refused. On anvil, when the delegation contract has no code, a
+///      `DelegationManagementMock` is deployed first. When broadcasting, the deployment is
+///      recorded under `deployments/<chainId>/<timestamp>.json`.
 contract Deploy is Script {
     /// @notice Placeholders used only on anvil (chain 31337), each recorded in the deployment.
     string internal constant PLACEHOLDER_CC0 =
         "6529 Works local dry run: placeholder for the CC0 1.0 Universal legal code.";
     bytes32 internal constant PLACEHOLDER_MANIFEST = keccak256("placeholder: epoch-0 manifest");
     address internal constant PLACEHOLDER_FEE_RECIPIENT = address(0xC001);
+    address internal constant PLACEHOLDER_MARKET_OWNER = address(0xC002);
+    /// @notice The 6529 delegation contract on Ethereum mainnet.
+    address internal constant CANONICAL_DELEGATION = 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d;
+    uint256 internal constant MAINNET_CHAIN_ID = 1;
     /// @notice The committed example genesis; every holder in it is a placeholder.
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
     /// @notice Holder addresses at or below this are placeholders (the example's `0x…b0xx`) or
@@ -33,6 +39,7 @@ contract Deploy is Script {
     error MissingParameter(string name);
     error ExampleGenesisOffAnvil();
     error PlaceholderHolder(string role, address account);
+    error NonCanonicalDelegationOnMainnet(address delegation);
 
     function run() external returns (DeployV1.Deployment memory d) {
         bool local = block.chainid == DeployV1.LOCAL_CHAIN_ID;
@@ -50,6 +57,9 @@ contract Deploy is Script {
         uint256 startBlock = block.number;
 
         vm.startBroadcast();
+        if (local && p.delegation.code.length == 0) {
+            p.delegation = address(new DelegationManagementMock());
+        }
         d = DeployV1.deploy(p);
         GovernanceConfig.Config memory cfg = DeployV1.config(d, json);
         GovernanceConfig.Call[] memory calls = DeployV1.wiring(d, json, manifest);
@@ -91,6 +101,15 @@ contract Deploy is Script {
         p.feeRecipient =
             vm.envOr("NETWORK_FEE_RECIPIENT", local ? PLACEHOLDER_FEE_RECIPIENT : address(0));
         if (p.feeRecipient == address(0)) revert MissingParameter("NETWORK_FEE_RECIPIENT");
+        p.marketOwner = vm.envOr("MARKETPLACE_OWNER", local ? PLACEHOLDER_MARKET_OWNER : address(0));
+        if (p.marketOwner == address(0)) revert MissingParameter("MARKETPLACE_OWNER");
+        p.delegation = vm.envOr("DELEGATION_CONTRACT", CANONICAL_DELEGATION);
+        if (block.chainid == MAINNET_CHAIN_ID && p.delegation != CANONICAL_DELEGATION) {
+            revert NonCanonicalDelegationOnMainnet(p.delegation);
+        }
+        if (!local && p.delegation.code.length == 0) {
+            revert MissingParameter("DELEGATION_CONTRACT (no code at the address)");
+        }
         p.cc0Text = _cc0Text(local);
         p.ethIncrementFloor = vm.envOr("ETH_INCREMENT_FLOOR", uint256(0.001 ether));
         p.permit2 = vm.envOr("PERMIT2", DeployV1.CANONICAL_PERMIT2);
@@ -128,6 +147,19 @@ contract Deploy is Script {
         }
     }
 
+    /// @dev The renderer stand-in on anvil, and the delegation mock wherever the canonical
+    ///      delegation contract is not used (anvil, Sepolia).
+    function _standIns(DeployV1.Params memory p, bool local)
+        internal
+        pure
+        returns (string[] memory list)
+    {
+        bool mock = p.delegation != CANONICAL_DELEGATION;
+        list = new string[]((local ? 1 : 0) + (mock ? 1 : 0));
+        if (local) list[0] = "Renderer";
+        if (mock) list[list.length - 1] = "DelegationManagement";
+    }
+
     function _bytes32(string memory name, bytes32 placeholder, bool local)
         internal
         view
@@ -148,7 +180,7 @@ contract Deploy is Script {
         bool local
     ) internal {
         string memory contracts = "contracts";
-        string[22] memory names = DeployV1.names();
+        string[] memory names = DeployV1.names();
         string memory out;
         for (uint256 i; i < names.length; ++i) {
             address a = DeployV1.addressOf(d, names[i]);
@@ -163,6 +195,9 @@ contract Deploy is Script {
         vm.serializeUint(root, "startBlock", startBlock);
         vm.serializeUint(root, "timestamp", block.timestamp);
         vm.serializeAddress(root, "deployer", p.deployer);
+        vm.serializeAddress(root, "delegation", p.delegation);
+        vm.serializeAddress(root, "marketOwner", p.marketOwner);
+        vm.serializeAddress(root, "networkFeeRecipient", p.feeRecipient);
         vm.serializeBytes32(root, "namespace", p.namespace);
         vm.serializeString(root, "genesisConfig", genesis);
         vm.serializeBytes32(root, "manifestDigest", manifest.digest);
@@ -171,13 +206,10 @@ contract Deploy is Script {
         vm.serializeBytes32(root, "configHash", configHash);
         vm.serializeBytes32(root, "wiringHash", keccak256(abi.encode(calls)));
         vm.serializeUint(root, "wiringCalls", calls.length);
-        string[] memory pending = new string[](4);
-        (pending[0], pending[1], pending[2], pending[3]) =
-        ("Renderer", "Stream", "WorkRecords", "Editions");
+        string[] memory pending = new string[](2);
+        (pending[0], pending[1]) = ("Renderer", "Editions");
         vm.serializeString(root, "pendingLanes", pending);
-        string[] memory standIns = new string[](local ? 1 : 0);
-        if (local) standIns[0] = "ArtistRegistry";
-        vm.serializeString(root, "standIns", standIns);
+        vm.serializeString(root, "standIns", _standIns(p, local));
         vm.serializeBool(root, "placeholders", local);
         string memory json = vm.serializeString(root, "contracts", out);
 
