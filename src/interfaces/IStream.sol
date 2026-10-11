@@ -177,14 +177,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
     ///         Reverts with `UnknownWork`.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
-    /// @notice True once the minting adapter marked the token's primary sale settled (to a
+    /// @notice True once the minting adapter marked the token's primary sale settled
+    ///         (`IMintTarget.markPrimarySettled`: to a
     ///         winner, a pending claim, or the artist); false before, and for burned or unminted
     ///         IDs. A packed flag; it gates edition creation.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
-    /// @notice Marks a token's primary sale settled, at settlement, while the token is still in
-    ///         the adapter's custody and without waiting for delivery, so a winner who never
-    ///         claims cannot block the edition. Only the adapter that minted the token.
-    function markPrimarySettled(uint256 tokenId) external;
 
     // ----- rendering -----
 
