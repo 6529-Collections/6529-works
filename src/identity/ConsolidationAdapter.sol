@@ -60,8 +60,8 @@ contract ConsolidationAdapter is IConsolidationSource {
     uint256 public constant USE_CASE_CONSOLIDATION = 999;
     /// @notice How long a consolidation must have been registered to count.
     uint256 public constant MIN_AGE = 30 days;
-    /// @notice Entries of an account's delegate list examined by {establishedWallets}.
-    uint256 public constant MAX_DELEGATES_SCANNED = 32;
+    /// @notice Entries of an account's delegate list examined per scan.
+    uint256 public constant MAX_DELEGATES_SCANNED = 2 * Limits.MAX_CANCELLERS;
     /// @notice Registrations read per direction of a pair.
     uint256 public constant MAX_REGISTRATIONS_READ = 4;
     /// @notice Gas forwarded to each getter call.
@@ -82,21 +82,18 @@ contract ConsolidationAdapter is IConsolidationSource {
     /// @inheritdoc IConsolidationSource
     /// @dev At most `Limits.MAX_CANCELLERS` distinct wallets, in delegate-list order.
     function establishedWallets(address account) external view returns (address[] memory wallets) {
-        wallets = new address[](Limits.MAX_CANCELLERS);
-        uint256 found;
-        bytes32 key = keccak256(abi.encodePacked(account, ALL_COLLECTIONS, USE_CASE_CONSOLIDATION));
-        for (uint256 i; i < MAX_DELEGATES_SCANNED && found < Limits.MAX_CANCELLERS; ++i) {
-            (bool ok, bytes memory data) =
-                _read(abi.encodeCall(IDelegationManagement.delegatorHashes, (key, i)), 32);
-            if (!ok) break;
-            address wallet = abi.decode(data, (address));
-            if (!_contains(wallets, found, wallet) && isEstablished(account, wallet)) {
-                wallets[found++] = wallet;
-            }
-        }
-        assembly ("memory-safe") {
-            mstore(wallets, found)
-        }
+        (wallets,) = _scan(account, true);
+    }
+
+    /// @inheritdoc IConsolidationSource
+    /// @dev Every distinct consolidated wallet among the {MAX_DELEGATES_SCANNED} entries scanned,
+    ///      in delegate-list order.
+    function consolidations(address account)
+        external
+        view
+        returns (address[] memory wallets, uint64[] memory effective)
+    {
+        return _scan(account, false);
     }
 
     /// @inheritdoc IERC165
@@ -107,25 +104,72 @@ contract ConsolidationAdapter is IConsolidationSource {
 
     /// @inheritdoc IConsolidationSource
     function isEstablished(address account, address wallet) public view returns (bool) {
-        return account != wallet && _registered(account, wallet) && _registered(wallet, account);
+        uint64 due = effectiveAt(account, wallet);
+        // forge-lint: disable-next-line(block-timestamp)
+        return due != 0 && due <= block.timestamp;
     }
 
-    /// @dev Whether `from` holds a live registration of `to` that is at least {MIN_AGE} old.
-    function _registered(address from, address to) private view returns (bool) {
+    /// @inheritdoc IConsolidationSource
+    /// @dev A pair is consolidated while each side holds a live registration of the other; it has
+    ///      been continuously since the later side's earliest live registration (a revocation
+    ///      deletes every registration of a pair), and is established {MIN_AGE} after that.
+    function effectiveAt(address account, address wallet) public view returns (uint64) {
+        if (account == wallet) return 0;
+        uint256 forward = _liveSince(account, wallet);
+        if (forward == 0) return 0;
+        uint256 reverse = _liveSince(wallet, account);
+        if (reverse == 0) return 0;
+        // A registration date is a block timestamp, far below 2**64.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint64((forward > reverse ? forward : reverse) + MIN_AGE);
+    }
+
+    /// @dev Walks `account`'s delegate list for live two-way consolidations (only established
+    ///      ones when `establishedOnly`).
+    function _scan(address account, bool establishedOnly)
+        private
+        view
+        returns (address[] memory wallets, uint64[] memory effective)
+    {
+        uint256 limit = establishedOnly ? Limits.MAX_CANCELLERS : MAX_DELEGATES_SCANNED;
+        wallets = new address[](limit);
+        effective = new uint64[](limit);
+        uint256 found;
+        bytes32 key = keccak256(abi.encodePacked(account, ALL_COLLECTIONS, USE_CASE_CONSOLIDATION));
+        for (uint256 i; i < MAX_DELEGATES_SCANNED && found < limit; ++i) {
+            (bool ok, bytes memory data) =
+                _read(abi.encodeCall(IDelegationManagement.delegatorHashes, (key, i)), 32);
+            if (!ok) break;
+            address wallet = abi.decode(data, (address));
+            if (_contains(wallets, found, wallet)) continue;
+            uint64 due = effectiveAt(account, wallet);
+            // forge-lint: disable-next-line(block-timestamp)
+            if (due == 0 || (establishedOnly && due > block.timestamp)) continue;
+            wallets[found] = wallet;
+            effective[found++] = due;
+        }
+        assembly ("memory-safe") {
+            mstore(wallets, found)
+            mstore(effective, found)
+        }
+    }
+
+    /// @dev The registration date of `from`'s earliest live registration of `to`, or zero.
+    function _liveSince(address from, address to) private view returns (uint256) {
         bytes32 key = keccak256(abi.encodePacked(from, ALL_COLLECTIONS, to, USE_CASE_CONSOLIDATION));
         for (uint256 i; i < MAX_REGISTRATIONS_READ; ++i) {
             (bool ok, bytes memory data) =
                 _read(abi.encodeCall(IDelegationManagement.globalDelegationHashes, (key, i)), 192);
-            if (!ok) return false;
+            if (!ok) return 0;
             (,, uint256 registered, uint256 expiry,,) =
                 abi.decode(data, (address, address, uint256, uint256, bool, uint256));
-            // Ages of days and expiry dates are wall-clock bounds; validator drift is immaterial.
+            // Expiry dates are wall-clock bounds; validator drift is immaterial.
             // forge-lint: disable-next-line(block-timestamp)
-            bool aged = registered <= block.timestamp && block.timestamp - registered >= MIN_AGE;
-            // forge-lint: disable-next-line(block-timestamp)
-            if (aged && expiry > block.timestamp) return true;
+            if (expiry > block.timestamp && registered != 0 && registered <= block.timestamp) {
+                return registered;
+            }
         }
-        return false;
+        return 0;
     }
 
     function _read(bytes memory input, uint256 maxReturn)

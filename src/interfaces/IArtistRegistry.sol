@@ -19,6 +19,15 @@ interface IConsolidationSource is IERC165 {
     function establishedWallets(address account) external view returns (address[] memory);
     /// @notice Whether `wallet` is an established consolidated wallet of `account` now.
     function isEstablished(address account, address wallet) external view returns (bool);
+    /// @notice `account`'s live two-way consolidations, established or still young, at most
+    ///         `2 * Limits.MAX_CANCELLERS`, each with the time it becomes (or became) established.
+    function consolidations(address account)
+        external
+        view
+        returns (address[] memory wallets, uint64[] memory effectiveAt);
+    /// @notice When `wallet`'s live consolidation with `account` becomes (or became)
+    ///         established, or zero if they are not consolidated both ways.
+    function effectiveAt(address account, address wallet) external view returns (uint64);
 }
 
 /// @title IArtistRegistry
@@ -43,13 +52,18 @@ interface IConsolidationSource is IERC165 {
 ///        captured wallets (never the previous authority) may cancel, and the guardian may veto.
 ///      One change may be pending per artist. `executeChange` is permissionless once due.
 ///
-///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS` wallets
-///      with recovery standing, refreshed on registration, staging, heartbeats, executions and by
-///      anyone (`refreshStanding`). A refresh adds the authority's established wallets; a wallet
-///      no longer established is marked missing but keeps standing, and only a refresh at least
-///      `STANDING_GRACE` later removes it. The cancellers captured at staging are the snapshot's
-///      wallets with standing plus the currently established ones, so revoking or reordering the
-///      artist's consolidations cannot strip their standing before staging.
+///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
+///      consolidated wallets, refreshed on registration, staging, heartbeats, executions and by
+///      anyone (`refreshStanding`; a keeper or the 6529.io UI calls it after consolidation
+///      events). A refresh records every live two-way consolidation, a young one as pending
+///      until its `effectiveAt` (registration plus 30 days). A recorded wallet that is no longer
+///      consolidated (checked directly, not only against the bounded scan) is marked missing but
+///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. When the
+///      snapshot is full nothing is evicted early: established wallets take free slots before
+///      pending ones, and slots free up only as missing entries age out. The cancellers
+///      captured at staging are the snapshot's entries whose `effectiveAt` has passed, so a key
+///      holder who revokes or reorders the artist's consolidations cannot strip their standing:
+///      one refresh any time after consolidating suffices.
 ///      Dormancy counts the artist's own activity only: registration (the first package
 ///      acceptance), a staged change, a heartbeat, a cancellation by the old key or a captured
 ///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian
@@ -86,8 +100,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     event NonceRevoked(uint256 indexed artistId, uint256 nonce);
     /// @notice A federated contract was listed under an artist (ADR 0001 section 16).
     event FederatedContractListed(uint256 indexed artistId, address indexed token);
-    /// @notice A wallet gained (or regained) recovery standing for an artist.
-    event StandingAdded(uint256 indexed artistId, address indexed wallet);
+    /// @notice A consolidated wallet was recorded (or found consolidated again); it has standing
+    ///         from `effectiveAt`.
+    event StandingAdded(uint256 indexed artistId, address indexed wallet, uint64 effectiveAt);
     /// @notice A wallet is no longer established; it keeps standing for `STANDING_GRACE`.
     event StandingMissing(uint256 indexed artistId, address indexed wallet);
     /// @notice A wallet lost recovery standing after its grace period.
@@ -112,6 +127,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error InvalidIdentity();
     /// @notice A signature is expired or does not verify.
     error InvalidSignature();
+    /// @notice An override acceptance with this digest was already consumed.
+    error AcceptanceUsed(bytes32 digest);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
     /// @notice The binding target lacks code or the expected ERC-165 support, or is an EIP-7702
@@ -157,7 +174,7 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         PARAMETER_SETTER role. `evidenceHash` commits to the public record. When the
     ///         authority changes, `authorityAcceptance` is the new authority's
     ///         `Typehashes.OVERRIDE_ACCEPTANCE` signature with `deadline`; it binds no change
-    ///         nonce and is consumed once by digest, so a replay reverts with `InvalidSignature`.
+    ///         nonce and is consumed once by digest, so a replay reverts with `AcceptanceUsed`.
     function stageOverride(
         uint256 artistId,
         ChangeKind kind,
@@ -185,8 +202,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Lists `token` as one of the artist's federated contracts. Bound federation
     ///         registry only; reverts with `FederatedListFull` past the bound.
     function listFederatedContract(uint256 artistId, address token) external;
-    /// @notice Folds the authority's established wallets into the artist's standing snapshot and
-    ///         ages out missing ones. Permissionless; not signed activity.
+    /// @notice Records the authority's live consolidations in the artist's standing snapshot
+    ///         and ages out missing ones. Permissionless and not signed activity; a keeper or the
+    ///         6529.io UI calls it after consolidation events.
     function refreshStanding(uint256 artistId) external;
     /// @notice Swaps the consolidation source: ERC-165 checked, code hash `nextCodeHash`, not an
     ///         EIP-7702 delegated account. SUCCESSOR_SETTER role, compare-and-set.

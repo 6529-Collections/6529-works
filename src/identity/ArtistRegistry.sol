@@ -46,14 +46,20 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      bytes); {revokeNonce} burns it to retract an unused signature. The guardian can only
 ///      veto: no guardian path writes an identity.
 ///
-///      Standing. Each artist has a sticky snapshot of up to `Limits.MAX_CANCELLERS` wallets with
-///      recovery standing, refreshed on registration, staging, heartbeats, executions and by
-///      anyone through {refreshStanding}. A refresh adds the authority's established wallets; a
-///      wallet no longer established is marked missing but keeps standing, and is removed only
-///      by a refresh at least {STANDING_GRACE} after it went missing, each step with an event.
-///      The cancellers captured at staging are the snapshot's wallets with standing plus the
-///      currently established ones. A thief who revokes the artist's consolidations therefore
-///      cannot strip their standing before staging, and must wait out a public 30-day grace.
+///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
+///      consolidated wallets, refreshed on registration, staging, heartbeats, executions and by
+///      anyone (`refreshStanding`; a keeper or the 6529.io UI calls it after consolidation
+///      events). A refresh records every live two-way consolidation, a young one as pending
+///      until its `effectiveAt` (registration plus 30 days). A recorded wallet that is no longer
+///      consolidated (checked directly, not only against the bounded scan) is marked missing but
+///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. When the
+///      snapshot is full nothing is evicted early: established wallets take free slots before
+///      pending ones, and slots free up only as missing entries age out. The cancellers
+///      captured at staging are the snapshot's entries whose `effectiveAt` has passed, so a key
+///      holder who revokes or reorders the artist's consolidations cannot strip their standing:
+///      one refresh any time after consolidating suffices.
+///      After a rotation the previous authority's wallets stay in the snapshot as missing for the
+///      grace, so a full snapshot admits the new authority's wallets only as they age out.
 ///
 ///      Payout freeze. While a pending change would move the payout, {payoutAddress} returns
 ///      zero, so split wallets hold accrued balances until the outcome; the artist's own pulls
@@ -224,10 +230,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, deadline);
             // forge-lint: disable-next-line(block-timestamp)
             bool expired = block.timestamp > deadline;
-            if (
-                expired || _acceptanceUsed[digest]
-                    || !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance)
-            ) revert InvalidSignature();
+            if (_acceptanceUsed[digest]) revert AcceptanceUsed(digest);
+            if (expired || !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance))
+            {
+                revert InvalidSignature();
+            }
             _acceptanceUsed[digest] = true;
         }
         ChangeKind pending = _pending[artistId].kind;
@@ -502,8 +509,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return target;
     }
 
-    /// @dev Refreshes standing, then captures the snapshot's wallets with standing plus the
-    ///      currently established ones (snapshot first), and consumes the nonce.
+    /// @dev Refreshes standing, captures the snapshot's effective entries (missing ones within
+    ///      their grace included; the refresh has removed the rest) and consumes the nonce.
     function _stage(
         uint256 artistId,
         Artist storage a,
@@ -513,19 +520,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         uint64 delay
     ) private {
         address current = a.identity.authority;
-        address[] memory live = _refresh(artistId, current);
+        _refresh(artistId, current);
         Standing[] storage snapshot = _standing[artistId];
-        address[] memory cancellers = new address[](Limits.MAX_CANCELLERS);
+        address[] memory cancellers = new address[](snapshot.length);
         uint256 n;
-        for (uint256 i; i < snapshot.length && n < Limits.MAX_CANCELLERS; ++i) {
-            uint64 missing = snapshot[i].missingSince;
+        for (uint256 i; i < snapshot.length; ++i) {
             // forge-lint: disable-next-line(block-timestamp)
-            if (missing == 0 || block.timestamp < missing + STANDING_GRACE) {
-                cancellers[n++] = snapshot[i].wallet;
-            }
-        }
-        for (uint256 i; i < live.length && n < Limits.MAX_CANCELLERS; ++i) {
-            if (!_contains(cancellers, n, live[i])) cancellers[n++] = live[i];
+            if (snapshot[i].effectiveAt <= block.timestamp) cancellers[n++] = snapshot[i].wallet;
         }
         assembly ("memory-safe") {
             mstore(cancellers, n)
@@ -542,52 +543,67 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         emit ChangeStaged(artistId, p);
     }
 
-    /// @dev Adds `authority`'s established wallets to the snapshot (while it has room), marks
-    ///      absent ones missing, and removes those missing for {STANDING_GRACE}. Returns the
-    ///      established wallets it read.
-    function _refresh(uint256 artistId, address authority) private returns (address[] memory live) {
-        live = consolidationSource.establishedWallets(authority);
-        if (live.length > Limits.MAX_CANCELLERS) {
-            revert InvalidSource(address(consolidationSource));
+    /// @dev Updates recorded entries (a wallet absent from the bounded scan is checked directly
+    ///      before it is marked missing), removes those missing for {STANDING_GRACE}, then records
+    ///      new consolidations in free slots, established before pending. Nothing is evicted.
+    function _refresh(uint256 artistId, address authority) private {
+        IConsolidationSource source = consolidationSource;
+        (address[] memory live, uint64[] memory times) = source.consolidations(authority);
+        if (live.length > 2 * Limits.MAX_CANCELLERS || times.length != live.length) {
+            revert InvalidSource(address(source));
         }
         Standing[] storage s = _standing[artistId];
         for (uint256 i = s.length; i > 0; --i) {
             Standing storage e = s[i - 1];
             address wallet = e.wallet;
-            if (_contains(live, live.length, wallet)) {
+            uint64 since = _effectiveIn(live, times, wallet);
+            if (since == 0) since = source.effectiveAt(authority, wallet);
+            if (since != 0) {
+                // forge-lint: disable-next-line(unsafe-typecast)
+                if (since < e.effectiveAt) e.effectiveAt = uint48(since);
                 if (e.missingSince != 0) {
                     e.missingSince = 0;
-                    emit StandingAdded(artistId, wallet);
+                    emit StandingAdded(artistId, wallet, e.effectiveAt);
                 }
             } else if (e.missingSince == 0) {
-                e.missingSince = uint64(block.timestamp);
+                // forge-lint: disable-next-line(unsafe-typecast)
+                e.missingSince = uint48(block.timestamp);
                 emit StandingMissing(artistId, wallet);
                 // forge-lint: disable-next-line(block-timestamp)
-            } else if (block.timestamp >= e.missingSince + STANDING_GRACE) {
+            } else if (block.timestamp >= uint256(e.missingSince) + STANDING_GRACE) {
                 s[i - 1] = s[s.length - 1];
                 s.pop();
                 emit StandingRemoved(artistId, wallet);
             }
         }
-        for (uint256 i; i < live.length && s.length < Limits.MAX_CANCELLERS; ++i) {
-            bool known = false;
-            for (uint256 j; !known && j < s.length; ++j) {
-                known = s[j].wallet == live[i];
-            }
-            if (!known) {
-                _standing[artistId].push(Standing(live[i], 0));
-                emit StandingAdded(artistId, live[i]);
+        for (uint256 pass; pass < 2; ++pass) {
+            for (uint256 i; i < live.length && s.length < Limits.MAX_CANCELLERS; ++i) {
+                // Pass 0 records established wallets, pass 1 pending ones.
+                // forge-lint: disable-next-line(block-timestamp)
+                if ((times[i] <= block.timestamp) != (pass == 0) || _recorded(s, live[i])) {
+                    continue;
+                }
+                // forge-lint: disable-next-line(unsafe-typecast)
+                _standing[artistId].push(Standing(live[i], uint48(times[i]), 0));
+                emit StandingAdded(artistId, live[i], times[i]);
             }
         }
     }
 
-    function _contains(address[] memory list, uint256 length, address value)
+    function _effectiveIn(address[] memory list, uint64[] memory times, address wallet)
         private
         pure
-        returns (bool)
+        returns (uint64)
     {
-        for (uint256 i; i < length; ++i) {
-            if (list[i] == value) return true;
+        for (uint256 i; i < list.length; ++i) {
+            if (list[i] == wallet) return times[i];
+        }
+        return 0;
+    }
+
+    function _recorded(Standing[] storage s, address wallet) private view returns (bool) {
+        for (uint256 i; i < s.length; ++i) {
+            if (s[i].wallet == wallet) return true;
         }
         return false;
     }

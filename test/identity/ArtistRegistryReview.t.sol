@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind, Standing } from "src/interfaces/types/IdentityTypes.sol";
@@ -21,6 +22,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         Standing[] memory s = registry.standingOf(artistId);
         assertEq(s.length, 1);
         assertEq(s[0].wallet, wallet);
+        assertEq(s[0].effectiveAt, START + 30 days);
         assertEq(s[0].missingSince, 0);
     }
 
@@ -105,7 +107,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         _delegate(artist, wallet, FAR);
         vm.warp(block.timestamp + 30 days);
         vm.expectEmit(address(registry));
-        emit IArtistRegistry.StandingAdded(artistId, wallet);
+        emit IArtistRegistry.StandingAdded(artistId, wallet, uint64(START + 30 days));
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId)[0].missingSince, 0);
     }
@@ -199,6 +201,186 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         _expectNotAuthorized(artist);
         vm.prank(artist);
         registry.cancelChange(artistId);
+    }
+
+    // ----------------------------------------------------------------- N1, N2: pending, direct
+
+    /// @dev N1 inverted: a wallet consolidated after registration is recorded as pending by one
+    ///      refresh (a keeper or the UI), has no standing before its 30 days, and once effective a
+    ///      key holder who revokes it and stages still finds it captured.
+    function test_N1_YoungWalletRecordedPendingIsCapturedAfterRevocation() public {
+        address wallet3 = vm.addr(0xB4);
+        _consolidate(artist, wallet3);
+        uint64 effective = uint64(block.timestamp + 30 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingAdded(artistId, wallet3, effective);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[1].effectiveAt, effective);
+
+        vm.warp(block.timestamp + 10 days);
+        _stage(artistKey, _identity(artist, payout), 0);
+        assertEq(_cancellers().length, 1, "pending: no standing yet");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        vm.warp(effective + 1 days);
+        _revoke(artist, wallet3);
+        _stage(artistKey, _identity(thief, thief), thiefKey);
+        address[] memory c = _cancellers();
+        assertEq(c.length, 2);
+        assertEq(c[1], wallet3);
+        vm.prank(wallet3);
+        registry.cancelChange(artistId);
+    }
+
+    /// @dev N2 inverted: a recorded wallet beyond the bounded scan is checked directly, so a
+    ///      wallet that is still established is never marked missing or removed.
+    function test_N2_StillEstablishedWalletBeyondTheScanKeepsStanding() public {
+        address[16] memory j;
+        for (uint256 i; i < 16; ++i) {
+            j[i] = address(uint160(0xA000 + i));
+            _delegate(artist, j[i], FAR);
+        }
+        _consolidate(artist, wallet2);
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 2);
+        for (uint256 i; i < 16; ++i) {
+            _delegate(j[i], artist, FAR);
+        }
+        vm.warp(block.timestamp + 30 days);
+        vm.recordLogs();
+        registry.refreshStanding(artistId);
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != IArtistRegistry.StandingMissing.selector);
+        }
+        assertTrue(_hasStanding(wallet2), "kept while established");
+    }
+
+    /// @dev N2 direct check: after a rotation, a recorded wallet that is consolidated with the new
+    ///      authority beyond the new authority's 32-entry scan is checked directly and keeps
+    ///      standing instead of being marked missing.
+    function test_N2_DirectCheckBeyondTheNewAuthoritysScan() public {
+        for (uint256 i; i < 32; ++i) {
+            _delegate(newAuthority, address(uint160(0xB000 + i)), FAR);
+        }
+        _consolidate(newAuthority, wallet);
+        vm.warp(block.timestamp + 30 days);
+        (address[] memory live,) = adapter.consolidations(newAuthority);
+        assertEq(live.length, 0, "beyond the scan");
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        Standing[] memory s = registry.standingOf(artistId);
+        assertEq(s.length, 1);
+        assertEq(s[0].wallet, wallet);
+        assertEq(s[0].missingSince, 0, "still consolidated with the new authority");
+    }
+
+    // ----------------------------------------------------------------- T1: snapshot mechanics
+
+    /// @dev S09: a full snapshot keeps its missing entries for their grace and records nothing
+    ///      new; slots free up only as missing entries age out.
+    function test_Standing_FullSnapshotKeepsMissingEntriesAndSkipsNewOnes() public {
+        for (uint256 i; i < 15; ++i) {
+            _consolidate(artist, address(uint160(0x6000 + i)));
+        }
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 16);
+        for (uint256 i; i < 3; ++i) {
+            _revoke(artist, address(uint160(0x6000 + i)));
+        }
+        registry.refreshStanding(artistId);
+        for (uint256 i; i < 5; ++i) {
+            _consolidate(artist, address(uint160(0x6100 + i)));
+        }
+        vm.warp(block.timestamp + 30 days - 1);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 16, "bounded");
+        assertTrue(_hasStanding(address(uint160(0x6000))), "missing entry kept");
+        assertFalse(_hasStanding(address(uint160(0x6100))), "no eviction for new wallets");
+
+        vm.warp(block.timestamp + 1);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 16);
+        assertFalse(_hasStanding(address(uint160(0x6000))), "aged out");
+        assertTrue(_hasStanding(address(uint160(0x6100))), "recorded in a freed slot");
+    }
+
+    /// @dev S10: removing a non-last entry removes that wallet, not another.
+    function test_Standing_RemovesExactlyTheMissingWallet() public {
+        _consolidate(artist, wallet2);
+        _consolidate(artist, newAuthority);
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[0].wallet, wallet);
+        _revoke(artist, wallet);
+        registry.refreshStanding(artistId);
+        vm.warp(block.timestamp + 30 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRemoved(artistId, wallet);
+        registry.refreshStanding(artistId);
+        assertFalse(_hasStanding(wallet));
+        assertTrue(_hasStanding(wallet2));
+        assertTrue(_hasStanding(newAuthority));
+        assertEq(registry.standingOf(artistId).length, 2);
+    }
+
+    /// @dev With one free slot, an established wallet takes it before a pending one, even one that
+    ///      comes earlier in the delegate list.
+    function test_Standing_EstablishedWalletsTakeFreeSlotsBeforePendingOnes() public {
+        for (uint256 i; i < 14; ++i) {
+            _consolidate(artist, address(uint160(0x6000 + i)));
+        }
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 15);
+        address pending = makeAddr("pending");
+        address established = makeAddr("established");
+        _delegate(artist, pending, FAR); // first in the list, one-sided for now
+        _consolidate(artist, established);
+        vm.warp(block.timestamp + 30 days);
+        _delegate(pending, artist, FAR); // now consolidated, but young
+        registry.refreshStanding(artistId);
+        assertTrue(_hasStanding(established), "established first");
+        assertFalse(_hasStanding(pending), "no slot left for the pending wallet");
+    }
+
+    /// @dev S18: a heartbeat refreshes standing.
+    function test_Standing_HeartbeatRefreshes() public {
+        _consolidate(artist, wallet2);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(artist);
+        registry.heartbeat(artistId);
+        assertTrue(_hasStanding(wallet2));
+    }
+
+    /// @dev After a rotation with a full snapshot, the previous authority's wallets keep standing
+    ///      for the grace and the new authority's wallets are recorded only as those age out.
+    function test_Standing_PostRotationFullSnapshot() public {
+        for (uint256 i; i < 15; ++i) {
+            _consolidate(artist, address(uint160(0x6000 + i)));
+        }
+        _consolidate(newAuthority, wallet2);
+        vm.warp(block.timestamp + 30 days);
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        assertEq(registry.standingOf(artistId).length, 16);
+        assertFalse(_hasStanding(wallet2), "full: not yet recorded");
+        _stageOverride(ChangeKind.CONTESTED, _identity(thief, thief), thiefKey);
+        assertEq(_cancellers().length, 16, "the previous wallets, within their grace");
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId).length, 1);
+        assertTrue(_hasStanding(wallet2));
     }
 
     // ----------------------------------------------------------------- M1: payout freeze
@@ -325,6 +507,80 @@ contract ArtistRegistryReviewTest is IdentityFixture {
             .length;
         emit log_named_uint("stageChange all-cold worst-case transaction gas", total);
         assertLt(total, 5_000_000);
+    }
+
+    /// @dev N3: staging with a full snapshot that all goes missing (each checked directly) plus a
+    ///      32-entry scan of distinct cold wallets, signed by an established wallet; all cold.
+    function test_N3_StageWorstCaseFitsTheCap() public {
+        _setupWorstCase();
+        ArtistIdentity memory next = _identity(newAuthority, payout);
+        uint64 deadline = uint64(block.timestamp + 1);
+        bytes32 digest = _digest(next, deadline);
+        bytes memory sig = _sign(0x7100, digest);
+        bytes memory acceptance = _sign(newKey, digest);
+        _coolAll();
+        uint256 before = gasleft();
+        registry.stageChange(artistId, next, vm.addr(0x7100), deadline, sig, acceptance);
+        uint256 used = before - gasleft();
+        emit log_named_uint("stageChange N3 worst case (execution)", used);
+        assertEq(_cancellers().length, 16);
+        assertLt(used + 21_000 + 16 * 900, 8_000_000);
+    }
+
+    /// @dev N3: a refresh that removes 16 aged-out entries and records 16 new ones, all cold.
+    function test_N3_RefreshWorstCaseFitsTheCap() public {
+        _setupWorstCase();
+        registry.refreshStanding(artistId);
+        vm.warp(block.timestamp + 30 days);
+        _coolAll();
+        uint256 before = gasleft();
+        registry.refreshStanding(artistId);
+        uint256 used = before - gasleft();
+        emit log_named_uint("refreshStanding N3 worst case (execution)", used);
+        assertEq(registry.standingOf(artistId).length, 16);
+        assertLt(used + 21_000, 8_000_000);
+    }
+
+    function _setupWorstCase() private {
+        for (uint256 i; i < 15; ++i) {
+            _consolidate(artist, address(uint160(0x6000 + i)));
+        }
+        vm.warp(block.timestamp + 30 days);
+        registry.refreshStanding(artistId);
+        _revoke(artist, wallet);
+        for (uint256 i; i < 15; ++i) {
+            _revoke(artist, address(uint160(0x6000 + i)));
+        }
+        for (uint256 i; i < 16; ++i) {
+            address w = address(uint160(0x7800 + i));
+            _delegate(artist, w, FAR);
+            for (uint256 k; k < 4; ++k) {
+                _delegate(w, artist, block.timestamp + 1);
+            }
+        }
+        for (uint256 i; i < 16; ++i) {
+            address e = vm.addr(0x7100 + i);
+            _delegate(artist, e, FAR);
+            for (uint256 k; k < 3; ++k) {
+                _delegate(e, artist, block.timestamp + 1);
+            }
+            _delegate(e, artist, FAR);
+        }
+        vm.warp(block.timestamp + 30 days);
+    }
+
+    function _coolAll() private {
+        vm.cool(address(delegation));
+        vm.cool(address(registry));
+        vm.cool(address(adapter));
+    }
+
+    function _hasStanding(address w) internal view returns (bool) {
+        Standing[] memory s = registry.standingOf(artistId);
+        for (uint256 i; i < s.length; ++i) {
+            if (s[i].wallet == w) return true;
+        }
+        return false;
     }
 
     function _assertActivityNow() internal view {

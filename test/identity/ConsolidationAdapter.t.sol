@@ -172,6 +172,58 @@ contract ConsolidationAdapterTest is IdentityFixture {
         assertEq(wallets[1], wallet2);
     }
 
+    /// @dev `effectiveAt` is the later side's earliest live registration plus 30 days, and zero
+    ///      unless both sides hold a live registration.
+    function test_EffectiveAt_FollowsTheLaterSide() public {
+        assertEq(adapter.effectiveAt(a, b), 0);
+        _delegate(a, b, FAR);
+        assertEq(adapter.effectiveAt(a, b), 0, "one-sided");
+        vm.warp(block.timestamp + 5 days);
+        _delegate(b, a, FAR);
+        uint64 expected = uint64(block.timestamp + 30 days);
+        assertEq(adapter.effectiveAt(a, b), expected);
+        assertEq(adapter.effectiveAt(b, a), expected);
+        assertFalse(adapter.isEstablished(a, b));
+        vm.warp(expected);
+        assertTrue(adapter.isEstablished(a, b));
+        _revoke(b, a);
+        assertEq(adapter.effectiveAt(a, b), 0, "revoked");
+        assertEq(adapter.effectiveAt(a, a), 0, "self");
+    }
+
+    /// @dev `consolidations` lists young consolidations too, with their effective times, and
+    ///      skips one-sided and expired ones; `establishedWallets` lists only established ones.
+    function test_Consolidations_IncludeYoungOnes() public {
+        address young = makeAddr("young");
+        address expired = makeAddr("expired");
+        _consolidate(a, b);
+        vm.warp(block.timestamp + 30 days);
+        _consolidate(a, young);
+        _delegate(a, expired, block.timestamp + 1);
+        _delegate(expired, a, FAR);
+        _delegate(a, stranger, FAR);
+        vm.warp(block.timestamp + 1);
+        (address[] memory wallets, uint64[] memory times) = adapter.consolidations(a);
+        assertEq(wallets.length, 2);
+        assertEq(wallets[0], b);
+        assertEq(times[0], block.timestamp - 1);
+        assertEq(wallets[1], young);
+        assertEq(times[1], block.timestamp - 1 + 30 days);
+        address[] memory established = adapter.establishedWallets(a);
+        assertEq(established.length, 1);
+        assertEq(established[0], b);
+    }
+
+    /// @dev `consolidations` returns everything the 32-entry scan sees, beyond 16.
+    function test_Consolidations_ReturnTheWholeScan() public {
+        for (uint256 i; i < 20; ++i) {
+            _consolidate(a, address(uint160(0x1000 + i)));
+        }
+        (address[] memory wallets,) = adapter.consolidations(a);
+        assertEq(wallets.length, 20);
+        assertEq(adapter.establishedWallets(a).length, 0);
+    }
+
     function test_EstablishedWallets_EmptyWithoutDelegations() public view {
         assertEq(adapter.establishedWallets(stranger).length, 0);
     }

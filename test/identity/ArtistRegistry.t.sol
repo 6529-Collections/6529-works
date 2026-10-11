@@ -624,15 +624,14 @@ contract ArtistRegistryTest is IdentityFixture {
         ArtistIdentity memory next = _identity(newAuthority, payout);
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 3 days);
-        bytes memory acceptance = _sign(
-            newKey,
-            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
-        );
+        bytes32 digest =
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
+        bytes memory acceptance = _sign(newKey, digest);
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
         vm.prank(guardian);
         registry.vetoChange(artistId);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AcceptanceUsed.selector, digest));
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
     }
@@ -655,10 +654,14 @@ contract ArtistRegistryTest is IdentityFixture {
             registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
         );
         bytes32 vs = bytes32(uint256(v - 27) << 255 | uint256(s));
+        bytes memory used = abi.encodeWithSelector(
+            IArtistRegistry.AcceptanceUsed.selector,
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
         vm.startPrank(governor);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(used);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(used);
         registry.stageOverride(
             artistId, ChangeKind.CONTESTED, next, evidence, deadline, abi.encodePacked(r, vs)
         );

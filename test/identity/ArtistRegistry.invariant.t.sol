@@ -11,6 +11,7 @@ import {
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ArtistRegistryHandler, IdentityActors } from "./ArtistRegistryHandler.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
+import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
 
 /// @notice Stateful invariants for the artist registry (ADR 0001 section 11). The handler stages,
 ///         overrides, cancels, vetoes, replays, executes, refreshes standing and moves time and
@@ -22,11 +23,15 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
 
     function setUp() public override {
         super.setUp();
+        SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
+        vm.prank(admin);
+        registry.bindSplitFactory(address(factory));
         handler = new ArtistRegistryHandler(
             IdentityActors({
                 registry: registry,
                 adapter: adapter,
                 delegation: delegation,
+                factory: factory,
                 artistId: artistId,
                 guardian: guardian,
                 governor: governor,

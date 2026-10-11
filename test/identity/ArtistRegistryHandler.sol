@@ -6,8 +6,14 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
+import {
+    ArtistIdentity,
+    ChangeKind,
+    PendingChange,
+    Standing
+} from "src/interfaces/types/IdentityTypes.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
+import { SplitFactoryWalletsMock } from "../mocks/identity/IdentityWorksMocks.sol";
 
 /// @notice The accounts the handler drives. `keys` are the artist key, an established
 ///         consolidated wallet, a fresh key and a thief; `payouts` are payout candidates.
@@ -15,6 +21,7 @@ struct IdentityActors {
     ArtistRegistry registry;
     ConsolidationAdapter adapter;
     DelegationManagementMock delegation;
+    SplitFactoryWalletsMock factory;
     uint256 artistId;
     address guardian;
     address governor;
@@ -27,15 +34,17 @@ struct IdentityActors {
 ///         error it reverts with, then makes the call and checks it. Covered: signed STANDARD
 ///         changes by the authority, a consolidated wallet and a thief; two-sided overrides;
 ///         cancels by every kind of caller; guardian vetoes and redirect attempts; replays of used
-///         payloads and acceptances; heartbeats; nonce burns; standing refreshes; consolidation
-///         revocations and renewals; and time. Ghosts of the identity, nonce and last activity
-///         change only with the calls that may change them.
+///         payloads and acceptances; heartbeats; nonce burns; standing refreshes, checked against
+///         a standing model; consolidations made and revoked between any two keys; payouts that
+///         become split wallets, so stale changes are cleared at execution; and time. Ghosts of
+///         the identity, nonce and last activity change only with the calls that may change them.
 contract ArtistRegistryHandler is Test {
     bytes32 internal constant PROFILE = keccak256("profile/punk6529");
 
     ArtistRegistry internal immutable registry;
     ConsolidationAdapter internal immutable adapter;
     DelegationManagementMock internal immutable delegation;
+    SplitFactoryWalletsMock internal immutable factory;
     uint256 internal immutable artistId;
     address internal immutable guardian;
     address internal immutable governor;
@@ -48,7 +57,8 @@ contract ArtistRegistryHandler is Test {
     uint256 public ghostNonce;
     bytes32 public ghostCancellers;
     uint256 public executed;
-    bool internal walletConsolidated = true;
+    uint256 public cleared;
+    mapping(bytes32 pair => bool) internal consolidated;
 
     struct Used {
         ArtistIdentity next;
@@ -76,6 +86,7 @@ contract ArtistRegistryHandler is Test {
         registry = a.registry;
         adapter = a.adapter;
         delegation = a.delegation;
+        factory = a.factory;
         artistId = a.artistId;
         guardian = a.guardian;
         governor = a.governor;
@@ -85,6 +96,7 @@ contract ArtistRegistryHandler is Test {
         ghostPayout = identity.payout;
         ghostAuthority = identity.authority;
         ghostLastActivity = last;
+        consolidated[_pair(vm.addr(keys[0]), vm.addr(keys[1]))] = true;
     }
 
     // ----------------------------------------------------------------- actions
@@ -98,7 +110,7 @@ contract ArtistRegistryHandler is Test {
         bytes32 digest = registry.changeDigest(artistId, next, ghostNonce, deadline);
         Used memory u = Used(next, vm.addr(signerKey), deadline, _sign(signerKey, digest), "");
         u.acceptance = _sign(nextKey, digest);
-        bytes memory err = _stageError(u.signer);
+        bytes memory err = _stageError(u.signer, next.payout);
         if (err.length != 0) vm.expectRevert(err);
         registry.stageChange(artistId, next, u.signer, deadline, u.signature, u.acceptance);
         if (err.length != 0) return;
@@ -111,7 +123,7 @@ contract ArtistRegistryHandler is Test {
     function replayLast() external {
         Used memory u = lastUsed;
         if (u.signer == address(0)) return;
-        bytes memory err = _stageError(u.signer);
+        bytes memory err = _stageError(u.signer, u.next.payout);
         vm.expectRevert(err.length != 0 ? err : _sel(IArtistRegistry.InvalidSignature.selector));
         registry.stageChange(artistId, u.next, u.signer, u.deadline, u.signature, u.acceptance);
     }
@@ -164,7 +176,7 @@ contract ArtistRegistryHandler is Test {
         );
         vm.prank(guardian);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e"), 0, "");
-        _expect(_stageError(guardian));
+        _expect(_stageError(guardian, next.payout));
         registry.stageChange(artistId, next, guardian, type(uint64).max, "", "");
     }
 
@@ -179,8 +191,19 @@ contract ArtistRegistryHandler is Test {
                 )
             );
         }
+        bool due = p.kind != ChangeKind.NONE && block.timestamp >= p.executableAt;
+        bool stale = due && factory.isWallet(p.next.payout);
+        if (stale) {
+            vm.expectEmit(address(registry));
+            emit IArtistRegistry.ChangeCancelled(artistId, address(registry), false);
+        }
         registry.executeChange(artistId);
-        if (p.kind == ChangeKind.NONE || block.timestamp < p.executableAt) return;
+        if (!due) return;
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        if (stale) {
+            ++cleared;
+            return;
+        }
         uint64 delay = p.kind == ChangeKind.STANDARD ? 7 days : 180 days;
         assertEq(p.executableAt, p.stagedAt + delay);
         assertGe(block.timestamp, p.stagedAt + delay);
@@ -209,26 +232,60 @@ contract ArtistRegistryHandler is Test {
         ghostLastActivity = uint64(block.timestamp);
     }
 
+    /// @dev Checks a refresh against the standing model: removals only after the grace, every
+    ///      entry's missing flag matches the live consolidation, new entries are live with the
+    ///      source's `effectiveAt`, and every consolidated key is recorded unless the snapshot is
+    ///      full.
     function refreshStanding() external {
+        Standing[] memory before = registry.standingOf(artistId);
         registry.refreshStanding(artistId);
+        Standing[] memory next = registry.standingOf(artistId);
+        assertLe(next.length, 16);
+        for (uint256 i; i < before.length; ++i) {
+            if (_find(next, before[i].wallet) != type(uint256).max) continue;
+            assertTrue(before[i].missingSince != 0, "removed while not missing");
+            assertGe(block.timestamp, uint256(before[i].missingSince) + 30 days, "removed early");
+        }
+        for (uint256 i; i < next.length; ++i) {
+            uint64 due = adapter.effectiveAt(ghostAuthority, next[i].wallet);
+            assertEq(next[i].missingSince == 0, due != 0, "missing flag");
+            if (_find(before, next[i].wallet) == type(uint256).max) {
+                assertEq(next[i].effectiveAt, due, "recorded effectiveAt");
+            }
+        }
+        if (next.length == 16) return;
+        for (uint256 k; k < 4; ++k) {
+            address w = vm.addr(keys[k]);
+            if (adapter.effectiveAt(ghostAuthority, w) != 0) {
+                assertTrue(_find(next, w) != type(uint256).max, "consolidated but not recorded");
+            }
+        }
     }
 
-    /// @dev Revokes or renews the consolidation of the original artist key and its wallet, as a
-    ///      thief holding the artist key (or the artist) could.
-    function toggleWalletConsolidation() external {
-        address artist = vm.addr(keys[0]);
-        address wallet = vm.addr(keys[1]);
+    /// @dev Makes or revokes a two-way consolidation between two keys, as their holders (or a key
+    ///      thief) could.
+    function toggleConsolidation(uint256 seedA, uint256 seedB) external {
+        address x = vm.addr(keys[seedA % 4]);
+        address y = vm.addr(keys[seedB % 4]);
+        if (x == y) return;
+        bytes32 pair = _pair(x, y);
         address all = delegation.ALL_COLLECTIONS();
-        if (walletConsolidated) {
-            vm.prank(artist);
-            delegation.revokeDelegationAddress(all, wallet, 999);
+        if (consolidated[pair]) {
+            vm.prank(x);
+            delegation.revokeDelegationAddress(all, y, 999);
         } else {
-            vm.prank(artist);
-            delegation.registerDelegationAddress(all, wallet, type(uint64).max, 999, true, 0);
-            vm.prank(wallet);
-            delegation.registerDelegationAddress(all, artist, type(uint64).max, 999, true, 0);
+            vm.prank(x);
+            delegation.registerDelegationAddress(all, y, type(uint64).max, 999, true, 0);
+            vm.prank(y);
+            delegation.registerDelegationAddress(all, x, type(uint64).max, 999, true, 0);
         }
-        walletConsolidated = !walletConsolidated;
+        consolidated[pair] = !consolidated[pair];
+    }
+
+    /// @dev Flags or unflags a payout candidate as a deployed split wallet.
+    function flagSplitWallet(uint256 seed) external {
+        address w = payouts[1 + seed % 2];
+        factory.setWallet(w, !factory.isWallet(w));
     }
 
     function warp(uint256 seconds_) external {
@@ -251,27 +308,33 @@ contract ArtistRegistryHandler is Test {
     }
 
     /// @dev The registry's check order for `stageChange` up to the signature.
-    function _stageError(address signer) private view returns (bytes memory) {
+    function _stageError(address signer, address payout) private view returns (bytes memory) {
         if (registry.pendingChange(artistId).kind != ChangeKind.NONE) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
         }
         if (signer != ghostAuthority && !adapter.isEstablished(ghostAuthority, signer)) {
             return _notAuthorized(signer);
         }
+        if (factory.isWallet(payout)) return _sel(IArtistRegistry.InvalidIdentity.selector);
         return "";
     }
 
-    /// @dev The registry's check order for `stageOverride` (identities here are always valid).
+    /// @dev The registry's check order for `stageOverride`.
     function _overrideError(Accepted memory u) private view returns (bytes memory) {
+        if (factory.isWallet(u.next.payout)) return _sel(IArtistRegistry.InvalidIdentity.selector);
         if (u.kind != ChangeKind.CONTESTED && block.timestamp < ghostLastActivity + 365 days) {
             return abi.encodeWithSelector(
                 IArtistRegistry.NotDormant.selector, artistId, ghostLastActivity
             );
         }
-        if (
-            u.next.authority != ghostAuthority
-                && (block.timestamp > u.deadline || usedDigest[u.digest])
-        ) return _sel(IArtistRegistry.InvalidSignature.selector);
+        if (u.next.authority != ghostAuthority) {
+            if (usedDigest[u.digest]) {
+                return abi.encodeWithSelector(IArtistRegistry.AcceptanceUsed.selector, u.digest);
+            }
+            if (block.timestamp > u.deadline) {
+                return _sel(IArtistRegistry.InvalidSignature.selector);
+            }
+        }
         if (registry.pendingChange(artistId).kind > ChangeKind.STANDARD) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
         }
@@ -283,6 +346,17 @@ contract ArtistRegistryHandler is Test {
         assertEq(uint8(p.kind), uint8(kind));
         ghostCancellers = keccak256(abi.encode(p.cancellers));
         ++ghostNonce;
+    }
+
+    function _find(Standing[] memory list, address w) private pure returns (uint256) {
+        for (uint256 i; i < list.length; ++i) {
+            if (list[i].wallet == w) return i;
+        }
+        return type(uint256).max;
+    }
+
+    function _pair(address x, address y) private pure returns (bytes32) {
+        return x < y ? keccak256(abi.encode(x, y)) : keccak256(abi.encode(y, x));
     }
 
     function _expect(bytes memory err) private {

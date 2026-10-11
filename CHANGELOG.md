@@ -23,11 +23,13 @@
   and every `restricted` function in `src/` by `tools/check_genesis.py` in CI.
 - Identity: `ArtistRegistry` and `ConsolidationAdapter` (ADR 0001 §11). The
   registry has 7-day STANDARD changes and 180-day two-sided overrides, a sticky
-  recovery-standing snapshot with a 30-day public grace, a payout freeze while a
-  change would move the payout, payout validation, and one-shot bindings. The
-  adapter reads 6529 consolidations with age and expiry. `IArtistRegistry`
-  gains the standing surface and `FederatedListFull`, and
-  `OVERRIDE_ACCEPTANCE` is nonce-free and consumed once by digest.
+  recovery-standing snapshot (young consolidations recorded as pending, a 30-day
+  public grace for missing wallets), a payout freeze while a change would move
+  the payout, payout validation, and one-shot bindings. The adapter reads 6529
+  consolidations with age and expiry. `IArtistRegistry` gains the standing
+  surface, `FederatedListFull` and `AcceptanceUsed`; `IConsolidationSource`
+  gains `consolidations` and `effectiveAt`; `OVERRIDE_ACCEPTANCE` is nonce-free
+  and consumed once by digest.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on

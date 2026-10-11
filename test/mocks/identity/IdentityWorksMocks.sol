@@ -78,8 +78,21 @@ contract OversizedConsolidationSource is InterfaceStub {
         wallets = new address[](17);
     }
 
+    function consolidations(address)
+        external
+        pure
+        returns (address[] memory wallets, uint64[] memory effectiveAt)
+    {
+        wallets = new address[](33);
+        effectiveAt = new uint64[](33);
+    }
+
     function isEstablished(address, address) external pure returns (bool) {
         return false;
+    }
+
+    function effectiveAt(address, address) external pure returns (uint64) {
+        return 0;
     }
 }
 

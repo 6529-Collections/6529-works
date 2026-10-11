@@ -4,8 +4,8 @@ The slim artist registry (`artistId`, authority address, profile document hash,
 6529 profile ID) through which artist payouts resolve, and the consolidation
 adapter that reads the 6529 delegation contract's registration and expiry
 dates directly. Identity and payout changes wait 7 days, cancellers come from
-a sticky standing snapshot plus the currently established wallets, and
-contested changes, estates and lost keys use the 180-day public override.
+a sticky standing snapshot of consolidated wallets, and contested changes,
+estates and lost keys use the 180-day public override.
 Signatures are checked with the shared verifier in `libraries/`. Governed by
 [ADR 0001 §11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery),
 including its "Hardening" decisions.
@@ -62,35 +62,59 @@ acceptances are unaffected (`test_Override_AcceptanceSurvivesANonceBurn`).
 
 ## Recovery standing (sticky snapshot)
 
-Each artist has a snapshot of at most 16 wallets with recovery standing. These
-calls refresh it:
+Each artist has a snapshot of at most 16 consolidated wallets. These calls
+refresh it:
 - registration;
 - every staging;
 - a heartbeat;
 - an executed change, which refreshes for the identity it installs;
 - `refreshStanding(artistId)`, which anyone may call and which is not activity.
 
+**Keeper.** A permissionless refresh keeper, or the 6529.io UI, calls
+`refreshStanding` after consolidation events. One refresh any time after
+consolidating is enough to record a wallet.
+
 A refresh does three things:
-- It adds the authority's currently established wallets while there is room
-  (`StandingAdded`).
-- It marks a wallet that is no longer established as missing
-  (`StandingMissing`). The wallet keeps its standing.
-- It removes a wallet that has been missing for at least 30 days
+- **Records.** It records every live two-way consolidation it sees
+  (`StandingAdded`, with `effectiveAt`). A young one is recorded as pending,
+  with `effectiveAt` set to its registration time plus 30 days. A pending entry
+  confers no standing before `effectiveAt`.
+- **Marks missing.** A recorded wallet that is no longer consolidated is marked
+  missing (`StandingMissing`) and keeps its standing. Before marking, the
+  registry checks the wallet directly with the source (`effectiveAt`), not only
+  against the bounded scan, so a wallet that is still consolidated is never
+  marked missing.
+- **Removes.** It removes a wallet missing for at least 30 days
   (`StandingRemoved`). Removal needs a refresh that observes the elapsed 30
   days.
 
-**Captured cancellers** are the snapshot's wallets with standing (in snapshot
-order, missing for less than 30 days included) plus the currently established
-wallets, deduplicated, at most 16.
+**When the snapshot is full,** nothing is evicted early. Slots free up only as
+missing entries pass their 30-day grace and are removed. Free slots go to
+established wallets before pending ones. A key holder therefore cannot push
+recorded wallets out by consolidating more.
 
-**What this guarantees.** Someone holding the authority key controls the
-live consolidation data. They can revoke the artist's consolidations,
-reorder the delegate list, or add a sub-delegate. None of that strips the
-artist's recorded wallets of standing, even before staging. To do so, the key
-holder must let a refresh record the wallet missing (a public event) and then
-wait 30 days. `test_PoC1_RevokeThenStageStillCapturesTheWallet`,
-`test_PoC2_SwapAndPopCannotDisplaceStanding` and
-`test_Standing_LostOnlyAfterAPublicThirtyDayGrace` cover this.
+**After a rotation,** the previous authority's wallets stay in the snapshot as
+missing, with standing, for the grace. A full snapshot then admits the new
+authority's wallets only as those age out
+(`test_Standing_PostRotationFullSnapshot`).
+
+**Captured cancellers** are the snapshot's entries whose `effectiveAt` has
+passed, including missing ones within their grace. The staging's own refresh
+has already removed the rest. That makes at most 16.
+
+**What this guarantees.** Someone holding the authority key controls the live
+consolidation data. They can revoke the artist's consolidations, reorder the
+delegate list, or add a sub-delegate. None of that strips a recorded wallet of
+standing, even before staging. To do so, the key holder must let a refresh
+record the wallet missing (a public event) and then wait 30 days. These tests
+cover it:
+- `test_PoC1_RevokeThenStageStillCapturesTheWallet`;
+- `test_PoC2_SwapAndPopCannotDisplaceStanding`;
+- `test_N1_YoungWalletRecordedPendingIsCapturedAfterRevocation`;
+- `test_Standing_LostOnlyAfterAPublicThirtyDayGrace`.
+
+A wallet that no refresh has ever recorded has no standing. That is why the
+keeper refreshes after consolidation events.
 
 ## Payout freeze
 
@@ -180,6 +204,10 @@ if the caller cannot supply it, so a gas-starved transaction cannot truncate a
 walk. The getters cost at most about 16,000 gas cold (a registration read is
 seven cold slots). The 50,000 stipend assumes no repricing triples that.
 
+`consolidations` returns every consolidated wallet the 32-entry scan sees, with
+its `effectiveAt`. `effectiveAt(account, wallet)` checks one pair directly.
+Both include young consolidations.
+
 The adapter is a live view that the account's keys control:
 - the account's own key can add delegations;
 - any use-case-998 sub-delegate of the account can write its delegations
@@ -218,30 +246,34 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   The artist should revoke the N-to-A consolidation after rotating. A keeps
   standing for the 30-day grace after a refresh records it missing.
 - **Override acceptances.** They are nonce-free and single-use by digest. A
-  key holder cannot void a scheduled override by burning nonces, and the same
-  acceptance cannot stage twice, after a veto or a cancel
+  key holder cannot void a scheduled override by burning nonces. Reusing an
+  acceptance, after a veto or a cancel, reverts with `AcceptanceUsed`
   (`test_Override_SameAcceptanceCannotBeConsumedTwice`).
 - **Statements before mint (v1 limitation).** `isArtist` returns false for
   pre-mint subjects `(address(0), uint256(itemHash))`, because the registry
   cannot map an item hash to its lead artist. ARTIST statements start once a
   work is minted.
 
-## Residual risk: the thief's wallets after a hijack
+## Residual risk: wallets of anyone who holds the key for 30 days
 
 This is an owner decision, escalated by the integrator.
 
-**The attack.** The snapshot keeps the artist's wallets from being stripped,
-but captured wallets can cancel any override. After a hijack executes:
-1. A refresh adds the wallets established for the thief's new authority. The
-   thief can prepare these in advance with their own key.
-2. When the network stages the 180-day CONTESTED override, those wallets are
-   captured alongside the artist's genuine wallets. The genuine wallets keep
-   standing for 30 days after the hijack's refresh records them missing.
-3. The thief's wallet cancels the override, and every re-staged override the
-   same way.
+**The attack.** Captured wallets can cancel any override, and the snapshot
+records every wallet consolidated with the current authority. Anyone who holds
+the authority key for at least 30 days can consolidate wallets of their own
+with it. Once those consolidations are 30 days old and a refresh has recorded
+them, those wallets gain standing.
+- **Before a hijack.** A thief who quietly holds the artist's key for 30 days
+  gains wallets that are captured with the artist's genuine wallets. When the
+  network stages the 180-day CONTESTED override, the thief's wallet cancels it,
+  and every re-staged override the same way.
+- **After a hijack executes.** The thief's own prepared wallets, consolidated
+  with the thief's new authority, are recorded at the execution. The artist's
+  genuine wallets keep standing for 30 days after the hijack's refresh records
+  them missing.
 
 `test_PoC3_ResidualRiskThiefWalletsCancelOverridesAfterAHijack` demonstrates
-this. The guardian can veto changes but cannot undo a cancel.
+the post-hijack case. The guardian can veto changes but cannot undo a cancel.
 
 **Owner options, not implemented:**
 - **(b) Cap override cancels.** After a set number of cancels, only the
@@ -260,8 +292,8 @@ and `test/identity/ConsolidationAdapter.t.sol`. All are far inside the
 16,777,216-gas transaction cap.
 - `establishedWallets`, worst case (32 distinct cold entries, six cold reads
   each): about 2.8M gas.
-- `stageChange` with 16 non-established and 16 established distinct cold
-  entries, all added to the snapshot and captured: about 3.2M gas per
-  transaction, including intrinsic and calldata gas.
-- The upper bound for any staging or registration is the full scan, plus 16
-  snapshot entries, plus 16 captured cancellers: under 4M gas.
+- `stageChange` at the worst case: 16 recorded wallets all gone missing, each
+  checked directly, plus a 32-entry scan, signed by an established wallet. It
+  costs about 3.7M gas to execute.
+- `refreshStanding` removing 16 aged-out entries and recording 16 new ones:
+  about 3.2M gas.
