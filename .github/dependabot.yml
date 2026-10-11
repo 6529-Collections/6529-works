@@ -1,0 +1,14 @@
+# Dependabot updates GitHub Actions only. Actions are pinned to full commit SHAs in
+# .github/workflows; because every pin is the commit of a release tag, Dependabot keeps
+# it as a SHA and bumps it to the newest release's SHA. Review each bump like any other change.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"

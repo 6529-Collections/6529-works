@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/6529-Collections/6529-works/security/advisories/new
+    about: Exploitable vulnerabilities go through GitHub private vulnerability reporting, never a public issue. See SECURITY.md.
+  - name: Security policy
+    url: https://github.com/6529-Collections/6529-works/blob/main/SECURITY.md
+    about: Scope, what to include, and what to do if private reporting is unavailable.
+  - name: ADR 0001, the v1 scope
+    url: https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0001-v1-scope.md
+    about: Check the accepted scope before requesting a feature. Anything outside it needs a new ADR.
