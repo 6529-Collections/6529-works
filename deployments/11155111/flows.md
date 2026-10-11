@@ -294,7 +294,7 @@ Every registration used all collections (`0x8888…8888`) with `allTokens` set.
 | Operation | r2 Sepolia | r2 Prague | Ratio | New slots (r2) | r1 Sepolia |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | [`registerDelegationAddress`, artist to the new wallet](https://sepolia.etherscan.io/tx/0xf093e53c9a80a916f21adc4b6f73c3039c21a93eb22c9019740495755f0fbfda) | 1,037,027 | 243,947 | 4.25 | 9 | [1,134,947](https://sepolia.etherscan.io/tx/0xfc78300958f918120e84cde2321b01010e9e9ac2d82405e7df5e657a1de6c8da) |
-| [`registerDelegationAddress`, the new wallet to the artist](https://sepolia.etherscan.io/tx/0xaa6bfb38c66027412b6feabc26b4c77cab291a960c4dac85b12faa465b29f09a) | 1,037,027 | 243,947 | 4.25 | | [1,134,947](https://sepolia.etherscan.io/tx/0x19956e6f633c3b217644f258f0dafcb835a77d194f07b861a49713daaa5218f6) |
+| [`registerDelegationAddress`, the new wallet to the artist](https://sepolia.etherscan.io/tx/0xaa6bfb38c66027412b6feabc26b4c77cab291a960c4dac85b12faa465b29f09a) | 1,037,027 | 243,947 | 4.25 | not counted; same gas as the row above | [1,134,947](https://sepolia.etherscan.io/tx/0x19956e6f633c3b217644f258f0dafcb835a77d194f07b861a49713daaa5218f6) |
 | [`refreshStanding`: records the new wallet as pending](https://sepolia.etherscan.io/tx/0xf0247dd9ba2d33bac4d2d942cabe92c0fa087c4abc24612c1db1d10b39b64edf) | 247,970 | 157,250 | 1.58 | 1 | [299,112](https://sepolia.etherscan.io/tx/0xdf1b2f11489fe98bd84147e0303171293d5efee24f932a1e15a65dbeeaa8dd7e) |
 | [`refreshStanding`: nothing changed](https://sepolia.etherscan.io/tx/0xc1277927beca0017659ee636800d82cb2ff34e099964609a63d2e18ebec8d3f3) | 128,785 | 117,484 | 1.10 | 0 | [81,853](https://sepolia.etherscan.io/tx/0x931fc2d32ac8a7ce1bd4ffcaf691368bcaef0c237166672fb4e66a35aeb79da3) |
 
@@ -334,7 +334,7 @@ own cost 145,701 gas on Sepolia and 56,581 on Prague. The callback therefore use
 | [`openRecord`](https://sepolia.etherscan.io/tx/0x7a9d11dbe76068d415a69c3c168d101f68120346483407d5f510e776d30c0cdb) | 505,752 | 159,172 | 3.18 | 4 | [505,752](https://sepolia.etherscan.io/tx/0xf9370976e664990715e9542db9e21a20766e4fb331629d0eb0ff399546b728ef) |
 | [`syncOnChain`](https://sepolia.etherscan.io/tx/0xdc3dffa1b07f33625fdd30fcae3f89cc4850e694c58bb88f9af4d8f28c5e01ea) | 58,821 | 56,121 | 1.05 | 0 | [58,821](https://sepolia.etherscan.io/tx/0x67ccfad8934453687681896de637b3ac44079481af07b5cfe061ce088599678f) |
 | [ETH transfer to an empty account](https://sepolia.etherscan.io/tx/0x2a17f820226306402ae407d79f08e49c63e5adfcb974772888b1eda0ec5236f4) | 204,600 | 21,000 | 9.74 | an account | [204,600](https://sepolia.etherscan.io/tx/0xb9a7e27a0878f34f7e37a5926d7b388d48e9c57c012786e056b421fa8073545a) |
-| ETH transfer to an existing account | | | | | [21,000](https://sepolia.etherscan.io/tx/0x8bcda1443b73fbbf7fdc4a5953375afa4d66215468c055cbe9d258336922b7f7) |
+| ETH transfer to an existing account (not sent on r2) | | | | | [21,000](https://sepolia.etherscan.io/tx/0x8bcda1443b73fbbf7fdc4a5953375afa4d66215468c055cbe9d258336922b7f7) |
 
 ## Budgets under Glamsterdam (r2)
 

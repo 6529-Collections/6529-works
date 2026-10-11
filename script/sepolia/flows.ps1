@@ -280,6 +280,9 @@ switch ($Step) {
     }
     'collections' {
         $stream = $Contracts.Stream.address
+        # Creates only the collections an instance lacks, so a re-run is a no-op where both
+        # exist. r1's two were created under earlier names ("r1 Flows", "r1 Flows 2"); the
+        # package uses collection IDs 1 and 2, not names.
         $count = [int](Invoke-Cli 'cast' @('call', $stream, 'collectionCount()(uint256)', '--rpc-url', $Rpc)).Trim()
         foreach ($name in (@('Flows', 'Flows 2') | Select-Object -Skip $count)) {
             $hash = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/collection/$name")).Trim()
