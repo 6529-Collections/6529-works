@@ -2,7 +2,8 @@
 
 One OpenZeppelin 5.7.0 `AccessManager` governs 6529 Stream, 6529 Editions and
 every satellite. The design follows [ADR 0001](../../docs/adr/0001-v1-scope.md) §13,
-with the guardian's veto and pause powers from §11 and §12. There are no bespoke
+with the guardian's veto and pause powers from §11 and §12, as amended by
+[ADR 0002](../../docs/adr/0002-access-manager-hardening.md). There are no bespoke
 executor, policy or registry contracts.
 
 | File | Purpose |
@@ -236,7 +237,7 @@ A deploy script must:
   mapping made `canCall` misreport admins that did not also hold META, so it was
   removed.
 
-## Decisions (owner review, 11 October 2026)
+## Decisions (review of PR #7, 11 October 2026; recorded in ADR 0002)
 
 - **`MINTER`:** 30-day grant delay.
 - **Curation signers:**
