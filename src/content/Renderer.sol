@@ -73,9 +73,9 @@ contract Renderer is IRenderer {
     /// @notice The largest JavaScript primary, in stored bytes, wrapped in the HTML page.
     uint256 public constant SCRIPT_LIMIT = 16_384;
     /// @notice The largest record file, in bytes: one store chunk.
-    uint256 public constant MAX_RECORD_BYTES = SSTORE2.MAX_CHUNK_LENGTH;
+    uint256 public constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
-    uint256 public constant MAX_ARTISTS = 16;
+    uint256 public constant MAX_ARTISTS = Limits.MAX_ARTISTS;
 
     /// @notice The content store the media and records are read from (immutable).
     IContentStore public immutable contentStore;
