@@ -29,10 +29,10 @@ abstract contract AuctionInvariantBase is AuctionBase {
             statements,
             escrow,
             MockERC20(currency),
-            [guardian, unpauser, setter, platform]
+            [guardian, unpauser, setter, platform, pauser]
         );
         targetContract(address(handler));
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = AuctionHandler.start.selector;
         selectors[1] = AuctionHandler.bid.selector;
         selectors[2] = AuctionHandler.warp.selector;
@@ -42,6 +42,8 @@ abstract contract AuctionInvariantBase is AuctionBase {
         selectors[6] = AuctionHandler.withdrawBid.selector;
         selectors[7] = AuctionHandler.cancel.selector;
         selectors[8] = AuctionHandler.claim.selector;
+        selectors[9] = AuctionHandler.claimDelivery.selector;
+        selectors[10] = AuctionHandler.toggleStartPause.selector;
         targetSelector(FuzzSelector(address(handler), selectors));
     }
 
@@ -109,7 +111,7 @@ abstract contract AuctionInvariantBase is AuctionBase {
         for (uint256 i; i < handler.salesCount(); ++i) {
             vm.warp(block.timestamp + 8 days);
             handler.settle(i);
-            handler.claimDelivery(i);
+            handler.claimDelivery(i, false);
         }
         for (uint256 i; i < handler.actorsCount(); ++i) {
             handler.claim(i);

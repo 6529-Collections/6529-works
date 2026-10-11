@@ -776,8 +776,8 @@ contract EnglishAuctionTest is AuctionBase {
             vm.expectRevert(
                 abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId)
             );
-            vm.prank(alice);
-            auction.claimDelivery(saleId, alice);
+            vm.prank(bob);
+            auction.claimDelivery(saleId, bob);
             vm.expectEmit(address(auction));
             emit IEnglishAuction.DeliveryClaimed(saleId, address(winner), carol);
             winner.execute(
@@ -832,6 +832,44 @@ contract EnglishAuctionTest is AuctionBase {
         vm.expectRevert(EnglishAuction.DeliveryInsufficientGas.selector);
         auction.settle{ gas: 250_000 }(saleId);
         assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction));
+    }
+
+    /// @dev A recipient contract that can neither receive the token nor make the claim does not
+    ///      strand it: the winning bidder claims it to any address. Nobody else can.
+    function test_ClaimDelivery_TheWinnerCanRedirect() public {
+        HostileActor recipient = new HostileActor();
+        recipient.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        uint256 saleId = _start();
+        vm.deal(alice, 1 ether);
+        vm.prank(alice);
+        auction.bid{ value: 1 ether }(saleId, address(recipient), _direct(alice, 1 ether));
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.pendingDelivery(saleId), address(recipient));
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, bob);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.DeliveryClaimed(saleId, address(recipient), carol);
+        vm.prank(alice);
+        auction.claimDelivery(saleId, carol);
+        assertEq(stream.ownerOf(1), carol);
+        assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    /// @dev With no bids only the artist may claim a pending delivery.
+    function test_ClaimDelivery_NoBidsOnlyTheArtist() public {
+        HostileActor artistWallet = new HostileActor();
+        artistWallet.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        PrimaryTerms memory t = _terms(ETH);
+        t.creator = address(artistWallet);
+        stream.setTerms(t);
+        uint256 saleId = _start();
+        _end(saleId);
+        auction.settle(saleId);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, alice);
     }
 
     function test_ClaimDelivery_RejectsBadDestinations() public {
@@ -905,15 +943,79 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.pendingDelivery(7), address(0));
     }
 
+    // --------------------------------------------------------------------- emergency pause
+
+    /// @dev The emergency pause stops only new starts; every live auction carries on.
+    function test_EmergencyPause_StopsOnlyNewStarts() public {
+        uint256 live = _start();
+        _bidEth(live, alice, 1 ether);
+        uint256 quiet = _start();
+        vm.expectEmit(address(auction));
+        emit EnglishAuction.Paused(pauser);
+        vm.prank(pauser);
+        auction.pause();
+        assertTrue(auction.paused());
+
+        vm.expectRevert(EnglishAuction.EnforcedPause.selector);
+        _start();
+        vm.deal(carol, 1 ether);
+        vm.prank(carol);
+        vm.expectRevert(EnglishAuction.EnforcedPause.selector);
+        auction.startWithBid{ value: 1 ether }(
+            address(stream), "", address(0), _direct(carol, 1 ether)
+        );
+
+        _bidEth(live, bob, 2 ether);
+        vm.prank(alice);
+        auction.claim(ETH, alice);
+        _pause(quiet);
+        vm.prank(unpauser);
+        auction.resume(quiet);
+        _end(live);
+        auction.settle(live);
+        assertEq(stream.ownerOf(_tokenIdOf(live)), bob);
+        assertEq(seller.balance, 1.5 ether);
+
+        vm.expectEmit(address(auction));
+        emit EnglishAuction.Unpaused(unpauser);
+        vm.prank(unpauser);
+        auction.unpause();
+        assertFalse(auction.paused());
+        _start();
+    }
+
+    function test_EmergencyPause_RolesAndStateChecks() public {
+        vm.prank(guardian);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
+        );
+        auction.pause();
+        vm.prank(unpauser);
+        vm.expectRevert(EnglishAuction.ExpectedPause.selector);
+        auction.unpause();
+        vm.prank(pauser);
+        auction.pause();
+        vm.prank(pauser);
+        vm.expectRevert(EnglishAuction.EnforcedPause.selector);
+        auction.pause();
+        vm.prank(pauser);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, pauser)
+        );
+        auction.unpause();
+    }
+
     function test_GovernedFunctionsRejectEthAndOutsiders() public {
-        bytes[5] memory calls = [
-            abi.encodeCall(auction.pause, (1, bytes32(0))),
+        bytes[7] memory calls = [
+            abi.encodeWithSelector(DISPUTE_PAUSE, 1, bytes32(0)),
+            abi.encodeWithSelector(START_PAUSE),
+            abi.encodeWithSelector(START_UNPAUSE),
             abi.encodeCall(auction.resume, (1)),
             abi.encodeCall(auction.cancel, (1, bytes32(0))),
             abi.encodeCall(auction.setOpeningBid, (ETH, 0, 1)),
             abi.encodeCall(auction.setTarget, (alice, true))
         ];
-        vm.deal(alice, 5);
+        vm.deal(alice, 7);
         for (uint256 i; i < calls.length; ++i) {
             vm.prank(alice);
             (bool ok, bytes memory reason) = address(auction).call{ value: 1 }(calls[i]);

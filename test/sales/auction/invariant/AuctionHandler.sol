@@ -31,6 +31,7 @@ contract AuctionHandler is Test {
     address public immutable unpauser;
     address public immutable setter;
     address public immutable platform;
+    address public immutable pauser;
     address public immutable sink = makeAddr("sink");
 
     address[] public actors;
@@ -50,7 +51,7 @@ contract AuctionHandler is Test {
         StatementLog statements_,
         RevenueEscrow escrow_,
         MockERC20 token_,
-        address[4] memory roles
+        address[5] memory roles
     ) {
         auction = auction_;
         stream = stream_;
@@ -58,7 +59,8 @@ contract AuctionHandler is Test {
         escrow = escrow_;
         token = token_;
         currency = address(token_);
-        (guardian, unpauser, setter, platform) = (roles[0], roles[1], roles[2], roles[3]);
+        (guardian, unpauser, setter, platform, pauser) =
+        (roles[0], roles[1], roles[2], roles[3], roles[4]);
         hostile = new HostileActor();
         hostile.configure(HostileActor.Behaviour.REVERT, HostileActor.Behaviour.REVERT);
         actors.push(makeAddr("bidder0"));
@@ -70,7 +72,7 @@ contract AuctionHandler is Test {
     // ---------------------------------------------------------------------------- actions
 
     function start() external {
-        if (sales.length >= MAX_SALES) return;
+        if (sales.length >= MAX_SALES || auction.paused()) return;
         sales.push(auction.start(address(stream), ""));
     }
 
@@ -105,6 +107,18 @@ contract AuctionHandler is Test {
         }
         ghostDeposited += amount;
         ++hits["bid"];
+    }
+
+    /// @dev The emergency pause stops only new starts; live auctions must carry on.
+    function toggleStartPause() external {
+        if (auction.paused()) {
+            vm.prank(unpauser);
+            auction.unpause();
+        } else {
+            vm.prank(pauser);
+            auction.pause();
+        }
+        ++hits["startPause"];
     }
 
     function warp(uint256 seconds_) external {
@@ -186,17 +200,20 @@ contract AuctionHandler is Test {
         ++hits["claim"];
     }
 
-    function claimDelivery(uint256 saleSeed) external {
+    /// @dev The pending recipient claims, or the winning bidder does on its behalf.
+    function claimDelivery(uint256 saleSeed, bool asWinner) external {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
-        address pending = auction.pendingDelivery(saleId);
-        if (pending == address(0)) return;
-        if (pending == address(hostile)) {
+        address claimant = auction.pendingDelivery(saleId);
+        if (claimant == address(0)) return;
+        address winner = auction.auction(saleId).bidder;
+        if (asWinner && winner != address(0)) claimant = winner;
+        if (claimant == address(hostile)) {
             hostile.execute(
                 address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, sink))
             );
         } else {
-            vm.prank(pending);
+            vm.prank(claimant);
             auction.claimDelivery(saleId, sink);
         }
         ++hits["delivery"];

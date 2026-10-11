@@ -31,6 +31,11 @@ abstract contract AuctionBase is Test {
     uint64 internal constant PLATFORM = Roles.PLATFORM;
     uint64 internal constant PARAMETER_SETTER = Roles.PARAMETER_SETTER;
     uint64 internal constant SUCCESSOR_SETTER = Roles.SUCCESSOR_SETTER;
+    uint64 internal constant PAUSER = Roles.PAUSER;
+    /// @dev `pause` is overloaded: the per-auction dispute pause and the emergency start pause.
+    bytes4 internal constant DISPUTE_PAUSE = bytes4(keccak256("pause(uint256,bytes32)"));
+    bytes4 internal constant START_PAUSE = bytes4(keccak256("pause()"));
+    bytes4 internal constant START_UNPAUSE = bytes4(keccak256("unpause()"));
 
     uint32 internal constant DURATION = 24 hours;
     uint32 internal constant WINDOW = 15 minutes;
@@ -50,6 +55,7 @@ abstract contract AuctionBase is Test {
     EnglishAuction internal auction;
 
     address internal guardian = makeAddr("guardian");
+    address internal pauser = makeAddr("pauser");
     address internal unpauser = makeAddr("unpauser");
     address internal setter = makeAddr("setter");
     address internal successor = makeAddr("successor");
@@ -83,6 +89,7 @@ abstract contract AuctionBase is Test {
         auction = _deploy(address(permit2));
         stream.setTerms(_terms(ETH));
         _grant(GUARDIAN, guardian);
+        _grant(PAUSER, pauser);
         _grant(UNPAUSER, unpauser);
         _grant(PARAMETER_SETTER, setter);
         _grant(SUCCESSOR_SETTER, successor);
@@ -109,7 +116,9 @@ abstract contract AuctionBase is Test {
             targets
         );
         stream.setAdmittedMinter(address(a), true);
-        _map(address(a), IEnglishAuction.pause.selector, GUARDIAN);
+        _map(address(a), DISPUTE_PAUSE, GUARDIAN);
+        _map(address(a), START_PAUSE, PAUSER);
+        _map(address(a), START_UNPAUSE, UNPAUSER);
         _map(address(a), IEnglishAuction.resume.selector, UNPAUSER);
         _map(address(a), IEnglishAuction.cancel.selector, PARAMETER_SETTER);
         _map(address(a), IEnglishAuction.setConfig.selector, PARAMETER_SETTER);

@@ -17,7 +17,6 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
 import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
-import { BoundedParameter } from "../governance/BoundedParameter.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
@@ -55,10 +54,11 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      later bids need. Seller, fee recipient, fee share and the no-bid recipient are read back from
 ///      the token (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`. A VRF item's seed
 ///      is checked by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint
-///      data is opaque here. A pause is recorded once (`pausedAt`) and ends by itself after
-///      {MAX_PAUSE}: views and every mutating entry point treat it as resumed at
-///      `pausedAt + MAX_PAUSE`, and the first mutating call after that writes the resumption
-///      down. Every bid checks that the locked currency is still active in the allowlist
+///      data is opaque here. A pause is recorded once (`pausedAt`) and is live through
+///      `pausedAt + MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay
+///      exactly at day 5 still lands. After that it ends by itself: views and every mutating
+///      entry point treat it as resumed with a {MAX_PAUSE} pause, and the first mutating call
+///      writes the resumption down. Every bid checks that the locked currency is still active in the allowlist
 ///      (deprecation is an emergency stop for running auctions); settlement, refunds and claims
 ///      never read the allowlist.
 contract EnglishAuction is
@@ -80,7 +80,7 @@ contract EnglishAuction is
     /// @notice The smallest governed relative increment (1%, out of 100,000).
     uint32 public constant MIN_INCREMENT_SHARE = 1_000;
     /// @notice An opening bid is at most this many increment floors of its currency (1 ETH for
-    ///         the 0.001 ETH floor): the absolute ceiling of a raise-only parameter.
+    ///         the 0.001 ETH floor): the absolute ceiling of the governed opening bid.
     uint256 public constant OPENING_BID_FLOORS = 1_000;
     /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
     uint256 public constant PAYOUT_GAS = 100_000;
@@ -111,6 +111,14 @@ contract EnglishAuction is
         uint256 bid;
     }
 
+    /// @dev The governed parameters and the emergency start pause: one slot, read once per start.
+    struct Settings {
+        uint32 duration;
+        uint32 extensionWindow;
+        uint32 incrementShare;
+        bool paused;
+    }
+
     /// @dev The values a sale locks at start, shared by every sale that locked the same ones.
     struct Terms {
         address currency;
@@ -132,7 +140,7 @@ contract EnglishAuction is
 
     /// @inheritdoc ISaleAdapter
     address public federationRegistry;
-    AuctionConfig private _config;
+    Settings private _settings;
     uint16 private _termsCount;
     mapping(address token => bool) private _listed;
     mapping(bytes32 key => uint16) private _termsIds;
@@ -141,6 +149,15 @@ contract EnglishAuction is
     mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
+    /// @notice The emergency pause stopped new sales from starting.
+    event Paused(address account);
+    /// @notice New sales may start again.
+    event Unpaused(address account);
+
+    /// @notice Starts are paused.
+    error EnforcedPause();
+    /// @notice Starts are not paused.
+    error ExpectedPause();
     /// @notice A dependency has no code, is a delegated account, or lacks its ERC-165 interface.
     error InvalidDependency(address dependency);
     /// @notice A configuration is outside the bounds above.
@@ -153,6 +170,8 @@ contract EnglishAuction is
     error InvalidRecipient(address recipient);
     /// @notice The caller is not the high bidder.
     error NotHighBidder(address caller);
+    /// @notice The opening bid is above its absolute ceiling.
+    error OpeningBidAboveCeiling(uint256 next, uint256 ceiling);
     /// @notice The caller cannot forward {DELIVERY_GAS} in full.
     error DeliveryInsufficientGas();
 
@@ -189,6 +208,7 @@ contract EnglishAuction is
     // ------------------------------------------------------------------------------- start
 
     /// @inheritdoc IEnglishAuction
+    /// @dev Reverts with `EnforcedPause` while the emergency pause is on.
     function start(address token, bytes calldata mintData)
         external
         nonReentrant
@@ -268,7 +288,9 @@ contract EnglishAuction is
     ///      token. With no bids the artist is recorded as the recipient. Marks the token's primary
     ///      sale settled (`IStream.markPrimarySettled`, E11) while the token is still in custody,
     ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold
-    ///      up the edition.
+    ///      up the edition. With no bids and no resolvable artist (the token reports a zero
+    ///      creator) it reverts with `InvalidRecipient(address(0))` and moves nothing; anyone may
+    ///      retry once the artist registry resolves the artist again.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         s.status = AuctionState.SETTLED;
@@ -286,10 +308,15 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
+    /// @dev The pending recipient or the winning bidder (the payer of the high bid) may claim, to
+    ///      any address except zero and this adapter, so a recipient contract that cannot make the
+    ///      call does not strand the token. With no bids only the artist (the pending recipient)
+    ///      may. If neither the recipient nor the winner can make the call, the token stays in
+    ///      custody: that is the winner's choice of recipient.
     function claimDelivery(uint256 saleId, address to) external nonReentrant {
         Sale storage s = _sales[saleId];
         address pending = s.recipient;
-        if (s.flags & _DELIVERY_PENDING == 0 || msg.sender != pending) {
+        if (s.flags & _DELIVERY_PENDING == 0 || (msg.sender != pending && msg.sender != s.bidder)) {
             revert NoPendingDelivery(saleId);
         }
         if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
@@ -360,6 +387,28 @@ contract EnglishAuction is
 
     // -------------------------------------------------------------------------- governance
 
+    /// @notice Stops new sales from starting (`start`, `startWithBid`). PAUSER role, immediate.
+    /// @dev Auctions already started are untouched: bids, settlement, claims, refunds and
+    ///      withdrawals go on, because stopping a live auction near its end would distort its
+    ///      outcome. The per-auction dispute pause, `pause(saleId, disputeRef)`, is separate.
+    function pause() external restricted {
+        if (_settings.paused) revert EnforcedPause();
+        _settings.paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /// @notice Lets new sales start again. UNPAUSER role.
+    function unpause() external restricted {
+        if (!_settings.paused) revert ExpectedPause();
+        _settings.paused = false;
+        emit Unpaused(msg.sender);
+    }
+
+    /// @notice Whether new sales are stopped from starting.
+    function paused() external view returns (bool) {
+        return _settings.paused;
+    }
+
     /// @inheritdoc ISaleAdapter
     function setTarget(address token, bool listed) external restricted {
         _setTarget(token, listed);
@@ -385,7 +434,7 @@ contract EnglishAuction is
         external
         restricted
     {
-        AuctionConfig memory c = _config;
+        Settings memory c = _settings;
         if (
             c.duration != expected.duration || c.extensionWindow != expected.extensionWindow
                 || c.incrementShare != expected.incrementShare
@@ -394,18 +443,17 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
-    /// @dev A raise-only `BoundedParameter` (ADR 0001 sections 5 and 13.9): the first value is
-    ///      at most the ceiling, each later one at most double the current, never above
-    ///      {OPENING_BID_FLOORS} increment floors. Applies to sales that start afterwards. The
-    ///      currency must be active in the allowlist.
+    /// @dev Moves either way, zero included, within an absolute ceiling of {OPENING_BID_FLOORS}
+    ///      increment floors (capped at `uint128`). The raise-only rule of ADR 0001 section 13.9
+    ///      covers gas parameters, not prices. Applies to sales that start afterwards. The currency
+    ///      must be active in the allowlist.
     function setOpeningBid(address currency, uint256 expected, uint256 next) external restricted {
         uint256 current = _openingBids[currency];
         if (current != expected) revert ExpectedValueMismatch();
         uint256 ceiling =
             Math.min(allowlist.incrementFloor(currency) * OPENING_BID_FLOORS, type(uint128).max);
-        _openingBids[currency] = current == 0
-            ? BoundedParameter.initial(next, ceiling)
-            : BoundedParameter.raise(current, next, ceiling);
+        if (next > ceiling) revert OpeningBidAboveCeiling(next, ceiling);
+        _openingBids[currency] = next;
         emit OpeningBidSet(currency, current, next);
     }
 
@@ -434,7 +482,7 @@ contract EnglishAuction is
         a.pausedTotal = s.pausedTotal;
         // The pause clock is in seconds; a validator moves it by seconds, not days.
         // forge-lint: disable-next-line(block-timestamp)
-        if (a.pausedAt != 0 && block.timestamp >= a.pausedAt + MAX_PAUSE) {
+        if (a.pausedAt != 0 && block.timestamp > a.pausedAt + MAX_PAUSE) {
             a.endTime += MAX_PAUSE;
             a.pausedAt = 0;
             a.pausedTotal = MAX_PAUSE;
@@ -457,7 +505,7 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     function config() external view returns (AuctionConfig memory) {
-        return _config;
+        return _currentConfig();
     }
 
     /// @inheritdoc IEnglishAuction
@@ -501,6 +549,8 @@ contract EnglishAuction is
     // ---------------------------------------------------------------------------- internal
 
     function _start(address token, bytes calldata mintData) private returns (uint256 saleId) {
+        Settings memory c = _settings;
+        if (c.paused) revert EnforcedPause();
         bool listed = _listed[token];
         if (!listed && !isTarget(token)) revert TargetNotAllowed(token);
         (uint256 tokenId, PrimaryTerms memory terms) =
@@ -508,7 +558,7 @@ contract EnglishAuction is
         if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {
             revert IMintTarget.SaleKindMismatch(SaleKind.ENGLISH_AUCTION, terms.saleKind);
         }
-        Terms memory t = _lockTerms(token, listed, terms.currency);
+        Terms memory t = _lockTerms(token, listed, terms.currency, c);
         if (
             tokenId >> 32 != 0 || terms.seller == address(0) || terms.feeRecipient == address(0)
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
@@ -518,7 +568,7 @@ contract EnglishAuction is
         saleId = saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
         if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId, s.status);
-        uint32 endTime = SafeCast.toUint32(block.timestamp + _config.duration);
+        uint32 endTime = SafeCast.toUint32(block.timestamp + c.duration);
         s.token = token;
         // Safe: `tokenId >> 32 == 0` was checked above.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -541,7 +591,7 @@ contract EnglishAuction is
     /// @dev The values a sale locks: `CURRENCY_DEFAULT` resolved once to the product's default
     ///      (6529 Stream for listed tokens, Federated for registry tokens), which must be active,
     ///      the governed parameters, and a federated token's fee.
-    function _lockTerms(address token, bool listed, address currency)
+    function _lockTerms(address token, bool listed, address currency, Settings memory c)
         private
         view
         returns (Terms memory t)
@@ -551,7 +601,6 @@ contract EnglishAuction is
         } else if (!allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
-        AuctionConfig memory c = _config;
         t.currency = currency;
         // Safe: `setOpeningBid` caps every opening bid at `type(uint128).max`.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -772,7 +821,7 @@ contract EnglishAuction is
         uint256 pausedAt = s.pausedAt;
         // The pause clock is in seconds; a validator moves it by seconds, not days.
         // forge-lint: disable-next-line(block-timestamp)
-        if (pausedAt != 0 && block.timestamp >= pausedAt + MAX_PAUSE) {
+        if (pausedAt != 0 && block.timestamp > pausedAt + MAX_PAUSE) {
             _endPause(saleId, s, MAX_PAUSE);
         }
         AuctionState state = _state(s);
@@ -787,7 +836,8 @@ contract EnglishAuction is
         emit AuctionResumed(saleId, end);
     }
 
-    /// @dev The derived state: PAUSED while a pause is live, ENDED once the end has passed.
+    /// @dev The derived state: PAUSED while a pause is live (through `pausedAt + MAX_PAUSE`
+    ///      inclusive), ENDED once the end has passed.
     function _state(Sale storage s) private view returns (AuctionState) {
         AuctionState status = s.status;
         if (status != AuctionState.ACTIVE) return status;
@@ -795,7 +845,7 @@ contract EnglishAuction is
         uint256 pausedAt = s.pausedAt;
         if (pausedAt != 0) {
             // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp < pausedAt + MAX_PAUSE) return AuctionState.PAUSED;
+            if (block.timestamp <= pausedAt + MAX_PAUSE) return AuctionState.PAUSED;
             end += MAX_PAUSE;
         }
         // forge-lint: disable-next-line(block-timestamp)
@@ -821,8 +871,15 @@ contract EnglishAuction is
                 || next.extensionWindow > next.duration || next.incrementShare < MIN_INCREMENT_SHARE
                 || next.incrementShare > Splits.DENOMINATOR
         ) revert InvalidConfig();
-        emit ConfigSet(_config, next);
-        _config = next;
+        emit ConfigSet(_currentConfig(), next);
+        Settings storage st = _settings;
+        (st.duration, st.extensionWindow, st.incrementShare) =
+        (next.duration, next.extensionWindow, next.incrementShare);
+    }
+
+    function _currentConfig() private view returns (AuctionConfig memory) {
+        Settings storage st = _settings;
+        return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare);
     }
 
     function _requireContract(address dependency) private view {

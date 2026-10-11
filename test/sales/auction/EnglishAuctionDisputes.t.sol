@@ -5,7 +5,6 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 import {
     CURRENCY_DEFAULT,
     PRODUCT_FEDERATED,
@@ -152,9 +151,9 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.warp(end - 10 minutes);
         _pause(saleId);
         uint256 pausedAt = block.timestamp;
-        vm.warp(pausedAt + 7 days - 1);
-        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED));
         vm.warp(pausedAt + 7 days);
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED), "inclusive");
+        vm.warp(pausedAt + 7 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE), "resumed, no call");
         assertEq(a.endTime, end + 7 days);
@@ -258,7 +257,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _expectState(saleId, IEnglishAuction.AuctionState.ACTIVE);
         auction.cancel(saleId, outcome);
         _pause(saleId);
-        vm.warp(block.timestamp + 7 days);
+        vm.warp(block.timestamp + 7 days + 1);
         vm.prank(setter);
         _expectState(saleId, IEnglishAuction.AuctionState.ACTIVE);
         auction.cancel(saleId, outcome);
@@ -269,9 +268,29 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.cancel(saleId, outcome);
     }
 
-    /// @dev The upheld outcome is a 48-hour action: scheduled by day 5 it executes inside the
-    ///      7-day pause; scheduled later it lands after the pause and is refused. A 48-hour
-    ///      action scheduled exactly at day 5 becomes executable as the pause ends, too late.
+    /// @dev The pause window is inclusive: `cancel` lands at exactly `pausedAt + 7 days` and is
+    ///      refused one second later.
+    function test_Cancel_PauseWindowBoundary() public {
+        uint256 inside = _start();
+        uint256 outside = _start();
+        _pause(inside);
+        _pause(outside);
+        uint256 pausedAt = block.timestamp;
+        bytes32 insideOutcome = _recordOutcome(_tokenIdOf(inside));
+        bytes32 outsideOutcome = _recordOutcome(_tokenIdOf(outside));
+        vm.warp(pausedAt + 7 days);
+        vm.prank(setter);
+        auction.cancel(inside, insideOutcome);
+        assertEq(uint8(_state(inside)), uint8(IEnglishAuction.AuctionState.CANCELLED));
+        vm.warp(pausedAt + 7 days + 1);
+        vm.prank(setter);
+        _expectState(outside, IEnglishAuction.AuctionState.ACTIVE);
+        auction.cancel(outside, outsideOutcome);
+    }
+
+    /// @dev The upheld outcome is a 48-hour action. Scheduled exactly at day 5 of the pause it
+    ///      becomes executable at `pausedAt + 7 days`, which the inclusive window still accepts;
+    ///      scheduled one second later it lands after the pause and is refused.
     function test_Cancel_ThroughTheStandardDelay() public {
         address council = makeAddr("council");
         manager.grantRole(PARAMETER_SETTER, council, 48 hours);
@@ -285,19 +304,19 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         bytes memory late = abi.encodeCall(auction.cancel, (other, otherOutcome));
 
         uint256 pausedAt = block.timestamp;
-        vm.warp(pausedAt + 4 days);
+        vm.warp(pausedAt + 5 days);
         vm.prank(council);
         manager.schedule(address(auction), onTime, 0);
-        vm.warp(pausedAt + 5 days + 12 hours);
+        vm.warp(pausedAt + 5 days + 1);
         vm.prank(council);
         manager.schedule(address(auction), late, 0);
 
-        vm.warp(pausedAt + 6 days);
+        vm.warp(pausedAt + 7 days);
         vm.prank(council);
         manager.execute(address(auction), onTime);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.CANCELLED));
 
-        vm.warp(pausedAt + 7 days + 12 hours);
+        vm.warp(pausedAt + 7 days + 1);
         vm.prank(council);
         _expectState(other, IEnglishAuction.AuctionState.ACTIVE);
         manager.execute(address(auction), late);
@@ -326,35 +345,25 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(a.endTime - block.timestamp, 12 hours, "new sales use the new config");
     }
 
-    function test_SetOpeningBid_RaiseOnlyWithinTheCeiling() public {
+    /// @dev The opening bid is a two-way compare-and-set price within an absolute ceiling.
+    function test_SetOpeningBid_MovesBothWaysWithinTheCeiling() public {
         uint256 ceiling = ETH_FLOOR * auction.OPENING_BID_FLOORS();
         vm.startPrank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(
-                BoundedParameter.ParameterAboveCeiling.selector, ceiling + 1, ceiling
+                EnglishAuction.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
             )
         );
         auction.setOpeningBid(ETH, 0, ceiling + 1);
-        vm.expectRevert(BoundedParameter.ParameterZero.selector);
-        auction.setOpeningBid(ETH, 0, 0);
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.OpeningBidSet(ETH, 0, 0.1 ether);
-        auction.setOpeningBid(ETH, 0, 0.1 ether);
+        emit IEnglishAuction.OpeningBidSet(ETH, 0, 0.5 ether);
+        auction.setOpeningBid(ETH, 0, 0.5 ether);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setOpeningBid(ETH, 0, 0.2 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                BoundedParameter.ParameterNotRaised.selector, 0.1 ether, 0.05 ether
-            )
-        );
-        auction.setOpeningBid(ETH, 0.1 ether, 0.05 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                BoundedParameter.ParameterStepTooLarge.selector, 0.1 ether, 0.2 ether + 1
-            )
-        );
-        auction.setOpeningBid(ETH, 0.1 ether, 0.2 ether + 1);
-        auction.setOpeningBid(ETH, 0.1 ether, 0.2 ether);
+        auction.setOpeningBid(ETH, 0.5 ether, 0.2 ether);
+        auction.setOpeningBid(ETH, 0.2 ether, ceiling);
+        auction.setOpeningBid(ETH, ceiling, 0);
+        auction.setOpeningBid(ETH, 0, 0.2 ether);
         vm.expectRevert(abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, alice));
         auction.setOpeningBid(alice, 0, 1);
         vm.stopPrank();
@@ -367,16 +376,23 @@ contract EnglishAuctionDisputesTest is AuctionBase {
             abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, 0.2 ether, 0.1 ether)
         );
         auction.bid{ value: 0.1 ether }(saleId, address(0), _direct(alice, 0.1 ether));
+        vm.prank(setter);
+        auction.setOpeningBid(ETH, 0.2 ether, 0);
+        assertEq(auction.minimumBid(saleId), 0.2 ether, "locked for the running sale");
     }
 
-    function testFuzz_SetOpeningBid_NeverLowersOrJumps(uint256 first, uint256 next) public {
+    function testFuzz_SetOpeningBid_AnyValueUpToTheCeiling(uint256 first, uint256 next) public {
         uint256 ceiling = ETH_FLOOR * auction.OPENING_BID_FLOORS();
-        first = bound(first, 1, ceiling);
+        first = bound(first, 0, ceiling);
         vm.prank(setter);
         auction.setOpeningBid(ETH, 0, first);
         vm.prank(setter);
-        if (next <= first || next > ceiling || next - first > first) {
-            vm.expectRevert();
+        if (next > ceiling) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    EnglishAuction.OpeningBidAboveCeiling.selector, next, ceiling
+                )
+            );
             auction.setOpeningBid(ETH, first, next);
             assertEq(auction.openingBid(ETH), first);
         } else {
