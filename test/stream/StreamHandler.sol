@@ -55,7 +55,6 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     bytes32[] internal _spareRecords;
     address[] public actors;
     uint256[] public collections;
-    address[] internal _sellers;
     MockEconomics internal _econ;
     ISplitFactory internal _factory;
     address internal _feeRecipient;
@@ -67,6 +66,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 => bool) public burned;
     mapping(uint256 => bool) public opened;
     mapping(uint256 => address) public ghostReceiver;
+    mapping(uint256 => address) public ghostSeller;
     mapping(uint256 => uint32) public ghostRate;
     mapping(uint256 => bool) public finalized;
     mapping(uint256 => bool) public settled;
@@ -118,18 +118,14 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         return collections.length;
     }
 
-    /// @dev The economics mock whose terms `mint` randomizes, the real split factory for the
-    ///      independent receiver ghost, and the sellers and fee recipient to draw from.
-    function setEconomics(
-        MockEconomics econ,
-        ISplitFactory factory,
-        address feeRecipient,
-        address[] calldata sellers
-    ) external {
+    /// @dev The economics mock whose fee terms `mint` randomizes, the real split factory for
+    ///      the independent receiver ghost, and the fee recipient.
+    function setEconomics(MockEconomics econ, ISplitFactory factory, address feeRecipient)
+        external
+    {
         _econ = econ;
         _factory = factory;
         _feeRecipient = feeRecipient;
-        _sellers = sellers;
     }
 
     function actorCount() external view returns (uint256) {
@@ -143,8 +139,9 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     // -------------------------------------------------------------------------------- actions
 
     /// @dev Mints the next item into a random collection under random fee terms (no fee a
-    ///      quarter of the time). The receiver ghost is computed here from those terms with the
-    ///      real split factory, independently of Stream's derivation.
+    ///      quarter of the time), with every second item's payees replaced by a random fixed
+    ///      payee. The seller and receiver ghosts are computed here from the payees and those
+    ///      terms with the real split factory, independently of Stream's derivation.
     function mint(uint256 seed, uint32 feeShare, uint32 rate) external {
         if (nextItem >= _items.length) return;
         uint256 index = nextItem++;
@@ -153,7 +150,14 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         item.collectionId = collectionId;
         _items[index] = abi.encode(item, media);
 
-        address sellerWallet = _sellers[(seed >> 8) % _sellers.length];
+        if ((seed >> 8) % 2 == 0) {
+            item.payees = new ISplitWallet.Payee[](1);
+            item.payees[0] = ISplitWallet.Payee(
+                0, address(uint160(uint256(keccak256(abi.encode(seed))))), 100_000
+            );
+            _items[index] = abi.encode(item, media);
+        }
+        address sellerWallet = _factory.walletFor(item.payees, bytes32(0));
         feeShare = (seed >> 16) % 4 == 0 ? 0 : uint32(bound(feeShare, 1, 99_999));
         rate = uint32(bound(rate, 0, 100_000));
         address fee = feeShare == 0 ? address(0) : _feeRecipient;
@@ -163,6 +167,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         (uint256 tokenId,) = auction.start(stream, _request(item));
         if (tokenId != expected) ++violations;
         ++ghostMinted;
+        ghostSeller[tokenId] = sellerWallet;
         ghostReceiver[tokenId] = _expectedReceiver(sellerWallet, fee, feeShare);
         ghostRate[tokenId] = rate;
         ghostCollection[tokenId] = collectionId;

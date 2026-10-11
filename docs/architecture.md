@@ -151,10 +151,13 @@ default when the sale starts".
      the payees, the move signature, and single use plus uniqueness in one
      storage word.
    - A VRF item reverts unless its seed is delivered.
-   - Stream assigns the token ID and serial and locks the predicted seller and
-     fee terms from `IEconomicsResolver.newWorkTerms`. It stores the item hash,
+   - Stream assigns the token ID and serial and locks the fee terms from
+     `IEconomicsResolver.economics` and the predicted seller wallet from
+     `ISplitFactory.walletFor` over the item's payees (what `newWorkTerms`
+     returns, without its royalty-receiver derivation). It stores the item hash,
      the seller, the lead artist and one packed word; the royalty receiver is
-     derived from the seller and fee terms, not stored.
+     derived from the seller and fee terms when `royaltyInfo` is called, not
+     stored.
    - The auction stores its sale and starts the 24-hour clock.
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against

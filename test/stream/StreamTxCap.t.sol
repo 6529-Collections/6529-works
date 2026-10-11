@@ -70,6 +70,13 @@ contract StreamTxCapTest is RecordsFixture {
             item.parties[i] = Party(account, PartyRole.COLLABORATOR);
             item.payees[i] = ISplitWallet.Payee(uint256(uint160(account)), address(0), 6_250);
         }
+        // The split factory needs the payees in canonical order: by artist ID.
+        for (uint256 i = 1; i < 16; ++i) {
+            for (
+                uint256 j = i; j > 0 && item.payees[j - 1].artistId > item.payees[j].artistId; --j) {
+                (item.payees[j - 1], item.payees[j]) = (item.payees[j], item.payees[j - 1]);
+            }
+        }
         item.license = License(string(_repeat("l", 64)), _registerText("long license"));
     }
 

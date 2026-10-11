@@ -810,7 +810,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, 10_000, item, state, deadline, sigs);
         (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
-        assertEq(receiver, _defaultRoyaltyWallet());
+        assertEq(receiver, _royaltyWallet(_sellerOf(item.payees), feeRecipient, 25_000));
         assertEq(amount, 0.1 ether);
         assertEq(records.record(tokenId).version, 1);
         bytes32 next = records.workStateHash(tokenId);

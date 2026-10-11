@@ -15,7 +15,11 @@ import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { CURRENCY_DEFAULT, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import {
+    CURRENCY_DEFAULT,
+    ProductEconomics,
+    WorkTerms
+} from "src/interfaces/types/EconomicsTypes.sol";
 import { MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -200,12 +204,11 @@ contract MockEconomics is Supports165 {
         blocked[currency] = value;
     }
 
-    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
-        external
-        view
-        returns (WorkTerms memory)
-    {
-        return _terms;
+    /// @dev The fee terms of `_terms`; Stream derives the seller from the item's payees, so
+    ///      `_terms.seller` and `_terms.royaltyReceiver` are not used. There is no
+    ///      `newWorkTerms`: a call to it would revert.
+    function economics(bytes32) external view returns (ProductEconomics memory) {
+        return ProductEconomics(_terms.feeRecipient, _terms.feeShare, _terms.royaltyRate);
     }
 
     function resolveCurrency(bytes32, address requested) external view returns (address) {
@@ -227,12 +230,8 @@ contract ConstantEconomics is Supports165 {
         return type(IEconomicsResolver).interfaceId;
     }
 
-    function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
-        external
-        pure
-        returns (WorkTerms memory)
-    {
-        return WorkTerms(address(0x5e11e7), address(0xfee), 25_000, address(0x7071), 6_529);
+    function economics(bytes32) external pure returns (ProductEconomics memory) {
+        return ProductEconomics(address(0xfee), 25_000, 6_529);
     }
 
     function resolveCurrency(bytes32, address) external pure returns (address) {
