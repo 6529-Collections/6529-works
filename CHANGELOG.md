@@ -8,6 +8,10 @@
 - ADR 0002 records how the AccessManager hardening in ADR 0001 §13 is implemented:
   a guardian-cancellable subclassed manager, guardian rules, a cold recovery admin
   and the selector delay classes decided during the build.
+- Governance: `WorksAccessManager` (guardians cancel any scheduled operation;
+  nobody cancels their own revocation), the canonical role and delay-class table
+  (`Roles.sol`), a one-shot configurator that owns its manager and reads it back,
+  and `BoundedParameter` for raise-only parameters.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
