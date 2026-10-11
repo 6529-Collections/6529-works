@@ -16,12 +16,13 @@ pragma solidity ^0.8.24;
 ///      - a duplicate key of a requested top-level member, and more elements than a caller's `max`.
 ///      The caller checks UTF-8 separately (`Utf8`).
 ///
-///      {object} is the only function that validates. {members} and {elements} navigate a value
-///      of a document {object} has accepted: they skip values without checking them again (about
-///      a tenth of the cost) and are safe, but not meaningful, on any other text: they never read
-///      outside the bytes and give `ok` false when the text is not what they look for. Strings are
-///      scanned a word at a time where they hold no quote, backslash or control byte, so a long
-///      plain string costs about 5 gas a byte.
+///      {object} is the only function that validates. {members}, {elements} and {records}
+///      navigate a value of a document {object} has accepted: they skip values without checking
+///      them again, so the walk costs about what the check did, and they are safe, but not
+///      meaningful, on any other text: they never read outside the bytes and give `ok` false
+///      when the text is not what they look for. Strings are scanned a word at a time where
+///      they hold no quote, backslash or control byte, so a long plain string costs about 5 gas
+///      a byte; the other values cost 1,000 to 2,000 gas each, which `MAX_VALUES` bounds.
 library JsonScan {
     uint256 internal constant MAX_DEPTH = 8;
     uint256 internal constant MAX_VALUES = 1_024;

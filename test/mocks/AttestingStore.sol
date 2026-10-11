@@ -5,8 +5,10 @@ import { ContentStore } from "src/content/ContentStore.sol";
 
 /// @dev The content store as the renderer expects it to be (decision H1): the `ContentStore` plus
 ///      a permissionless, one-time, strict check of a `Base64` file, `attestBase64`, and its
-///      result, `isBase64Attested`. The real function lands with the content-store PR; this is the
-///      interface the renderer is written against. The check reads every chunk and accepts only
+///      result, `isBase64Attested`. The real ones are in the content store's `IContentStore` (the
+///      base64 attestation PR, where `attestBase64` is chunked and returns whether it is done);
+///      this stand-in checks the whole file in one call, and the renderer is written against
+///      `isBase64Attested`. The check reads every chunk and accepts only
 ///      the RFC 4648 section 4 alphabet, with `=` padding at the very end (no whitespace, no
 ///      `-_`), a length that is a multiple of four, and records a pass for good.
 contract AttestingStore is ContentStore {
@@ -16,7 +18,7 @@ contract AttestingStore is ContentStore {
 
     error NotBase64(bytes32 fileId);
 
-    function attestBase64(bytes32 fileId) external {
+    function attestBase64(bytes32 fileId) external returns (bool done) {
         FileInfo memory info = this.fileInfo(fileId);
         require(info.encoding == Encoding.Base64 && this.isComplete(fileId), "not a base64 file");
         if (info.length % 4 != 0) revert NotBase64(fileId);
@@ -30,6 +32,7 @@ contract AttestingStore is ContentStore {
             seen += chunk.length;
         }
         _attested[fileId] = true;
+        return true;
     }
 
     function isBase64Attested(bytes32 fileId) external view returns (bool) {

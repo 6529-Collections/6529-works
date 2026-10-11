@@ -30,6 +30,14 @@ contract JsonScanHarness {
         return JsonScan.elements(json, start, max);
     }
 
+    function records(bytes memory json, uint256 start, bytes32[] memory keys, uint256 max)
+        external
+        pure
+        returns (bool, uint256[] memory)
+    {
+        return JsonScan.records(json, start, keys, max);
+    }
+
     function slice(bytes memory json, uint256 span) external pure returns (bytes memory) {
         return JsonScan.slice(json, span);
     }
@@ -157,6 +165,93 @@ contract JsonScanTest is Test {
         assertEq(_text(json, m[1]), '"x"');
 
         (ok,) = h.members('{"o":[1]}', 5, keys); // not an object
+        assertFalse(ok);
+    }
+
+    // ---------------------------------------------------------------- records
+
+    function _two() internal pure returns (bytes32[] memory k) {
+        k = new bytes32[](2);
+        k[0] = keccak256("trait_type");
+        k[1] = keccak256("value");
+    }
+
+    function test_Records_SpansOfEachElementAndItsMembers() public view {
+        bytes memory json =
+            '{"attributes":[{"trait_type":"a","value":1},{"value":[2,{"x":"}"}],"trait_type":"b\\\\"},{}, { "trait_type" : "c" , "value" : null , "other" : "]" }]}';
+        uint256[] memory s = _obj(json, _keys1("attributes"));
+        (bool ok, uint256[] memory r) = h.records(json, s[0] >> 128, _two(), 8);
+
+        assertTrue(ok);
+        assertEq(r.length, 4 * 3);
+        assertEq(_text(json, r[0]), '{"trait_type":"a","value":1}');
+        assertEq(_text(json, r[1]), '"a"');
+        assertEq(_text(json, r[2]), "1");
+        assertEq(_text(json, r[3]), '{"value":[2,{"x":"}"}],"trait_type":"b\\\\"}');
+        assertEq(_text(json, r[4]), '"b\\\\"');
+        assertEq(_text(json, r[5]), '[2,{"x":"}"}]');
+        assertEq(_text(json, r[6]), "{}");
+        assertEq(r[7], 0);
+        assertEq(r[8], 0);
+        assertEq(_text(json, r[10]), '"c"');
+        assertEq(_text(json, r[11]), "null");
+    }
+
+    function test_Records_LimitsAndWhatIsNotAnObject() public view {
+        bytes32[] memory top = _keys1("a");
+        bytes memory json = '{"a":[{"k":1},{"k":2}],"b":[1],"c":{},"d":[],"e":[{"k":1,"k":2}]}';
+        bytes32[] memory k = _keys1("k");
+
+        uint256[] memory s = _obj(json, top);
+        (bool ok, uint256[] memory r) = h.records(json, s[0] >> 128, k, 2);
+        assertTrue(ok);
+        assertEq(r.length, 4);
+        (ok,) = h.records(json, s[0] >> 128, k, 1);
+        assertFalse(ok, "one element too many");
+
+        bytes32[] memory more = new bytes32[](4);
+        more[0] = keccak256("b");
+        more[1] = keccak256("c");
+        more[2] = keccak256("d");
+        more[3] = keccak256("e");
+        s = _obj(json, more);
+        (ok,) = h.records(json, s[0] >> 128, k, 4);
+        assertFalse(ok, "an element that is a number");
+        (ok,) = h.records(json, s[1] >> 128, k, 4);
+        assertFalse(ok, "not an array");
+        (ok, r) = h.records(json, s[2] >> 128, k, 4);
+        assertTrue(ok, "an empty array");
+        assertEq(r.length, 0);
+        (ok,) = h.records(json, s[3] >> 128, k, 4);
+        assertFalse(ok, "a duplicated key inside an element");
+    }
+
+    /// @dev The navigation functions never revert and never read outside the text, whatever they
+    ///      are given: not JSON, a start past the end, a text that stops in the middle of a value.
+    function testFuzz_Navigation_IsSafeOnAnyText(bytes memory json, uint256 start, uint8 pick)
+        public
+        view
+    {
+        start = bound(start, 0, json.length + 2);
+        bytes32[] memory k = _two();
+        if (pick % 3 == 0) h.members(json, start, k);
+        if (pick % 3 == 1) h.elements(json, start, 4);
+        if (pick % 3 == 2) h.records(json, start, k, 4);
+        h.accepts(json);
+    }
+
+    function test_Navigation_TextThatStopsInTheMiddleOfAValue() public view {
+        bytes memory json = '{"a":[{"k":"x';
+        (bool ok,) = h.elements(json, 5, 4);
+        assertFalse(ok);
+        (ok,) = h.members(json, 6, _keys1("k"));
+        assertFalse(ok);
+        (ok,) = h.records(json, 5, _keys1("k"), 4);
+        assertFalse(ok);
+        json = '{"a":[1,2';
+        (ok,) = h.elements(json, 5, 4);
+        assertFalse(ok);
+        (ok,) = h.elements(json, 500, 4);
         assertFalse(ok);
     }
 

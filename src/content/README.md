@@ -317,7 +317,10 @@ is not available." and a field that says why:
 The ARTIST seed is stored when the record opens, so it appears only after.
 `fullTokenURI` reverts with `RendererNotInlineable` for such a work: there is
 nothing to inline. Reads that fail still revert (above): that is a broken
-dependency, not a broken record.
+dependency, not a broken record. So does a work whose media list does not start
+with a `PRIMARY` file, and an edition whose content hash is not its master's
+primary file's (`RendererRecordInvalid`): the satellite and Editions are meant to
+make both impossible, and a renderer should not paper over a broken invariant.
 
 ### The record
 
