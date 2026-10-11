@@ -558,25 +558,33 @@ contract RendererTest is RendererBase {
 
     // ---------------------------------------------------------------- license
 
-    function test_License_UrlIsTheSpdxPage() public {
+    function test_License_UrlIsTheSpdxPageInTheOriginalCase() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         assertEq(_str(_out(), ".license_url"), "https://spdx.org/licenses/CC0-1.0.html");
 
-        records.setLicense(ID, License("gpl-3.0-or-later", bytes32(0)));
-        assertEq(_str(_out(), ".license_url"), "https://spdx.org/licenses/gpl-3.0-or-later.html");
+        records.setLicense(ID, License("GPL-3.0-or-later", bytes32(0)));
+        string memory j = _out();
+        assertEq(_str(j, ".license"), "GPL-3.0-or-later");
+        assertEq(_str(j, ".license_url"), "https://spdx.org/licenses/GPL-3.0-or-later.html");
     }
 
-    function test_License_NoUrlForALicenseRefOrAnEmptyId() public {
+    function test_License_NoUrlForALicenseRefInAnyCaseOrAnEmptyId() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        string[3] memory ids = ["licenseref-all-rights-reserved", "licenseref-", ""];
+        string[5] memory ids =
+            ["LicenseRef-All-Rights-Reserved", "licenseref-x", "LICENSEREF-X", "LicenseRef-", ""];
         for (uint256 i; i < ids.length; ++i) {
             records.setLicense(ID, License(ids[i], bytes32(0)));
             string memory j = _out();
             assertEq(_str(j, ".license"), ids[i]);
             assertFalse(_has(j, ".license_url"), ids[i]);
         }
+        // Near misses still get a page.
+        records.setLicense(ID, License("LicenseRe-1", bytes32(0)));
+        assertTrue(_has(_out(), ".license_url"));
+        records.setLicense(ID, License("Licenseref", bytes32(0)));
+        assertTrue(_has(_out(), ".license_url"));
     }
 
     // ---------------------------------------------------------------- disputes

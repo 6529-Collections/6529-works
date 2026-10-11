@@ -452,7 +452,7 @@ contract RendererMediaTest is RendererBase {
 
     // ---------------------------------------------------------------- the HTML page of a script
 
-    bytes internal constant HEAD_MARK = "<script>window.works={tokenId:7,seed:null};";
+    bytes internal constant HEAD_MARK = "<script>window.works={v:1,tokenId:7,seed:null};";
     bytes internal constant TAIL = "</script></body></html>";
 
     function _page() internal view returns (bytes memory) {
@@ -554,14 +554,14 @@ contract RendererMediaTest is RendererBase {
         assertTrue(
             _contains(
                 _page(),
-                bytes(string.concat('<script>window.works={tokenId:7,seed:"', seed, '"};go();'))
+                bytes(string.concat('<script>window.works={v:1,tokenId:7,seed:"', seed, '"};go();'))
             )
         );
 
         // No seed at all is null.
         core.seedPolicy = SeedPolicy.NONE;
         stream.setWork(ID, core);
-        assertTrue(_contains(_page(), "window.works={tokenId:7,seed:null};go();"));
+        assertTrue(_contains(_page(), "window.works={v:1,tokenId:7,seed:null};go();"));
     }
 
     function test_Script_NotInlinedUnlessIdentityStoredUtf8AndSmall() public {

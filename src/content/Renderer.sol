@@ -98,9 +98,10 @@ contract Renderer is IRenderer {
         Limits.MAX_LOCATORS_PER_FILE * (Limits.MAX_URI_BYTES + 192) + 64;
 
     string private constant PREFIX = "data:application/json;utf8,";
-    /// @dev The page around a JavaScript primary. `window.works` is the script's interface:
-    ///      `tokenId` and `seed` (`"0x"` hex, or null when the work has no seed). The script
-    ///      text follows `window.works={...};`.
+    /// @dev The page around a JavaScript primary. `window.works` is the script's interface, public
+    ///      and stable: `v` (the version of this interface, 1), `tokenId` and `seed` (`"0x"` hex,
+    ///      or null when the work has no seed). A change to it needs a new `v`. The script text
+    ///      follows `window.works={...};`.
     string private constant SHELL_HEAD = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" '
         'content="width=device-width,initial-scale=1"><style>html,body{margin:0;height:100%;'
         "overflow:hidden}</style></head><body><script>window.works=";
@@ -444,7 +445,7 @@ contract Renderer is IRenderer {
         bytes memory html = bytes.concat(
             bytes(SHELL_HEAD),
             abi.encodePacked(
-                "{tokenId:",
+                "{v:1,tokenId:",
                 Strings.toString(c.id),
                 ",seed:",
                 seed == 0 ? bytes("null") : _quote(Strings.toHexString(uint256(seed), 32)),
@@ -469,7 +470,10 @@ contract Renderer is IRenderer {
             AFTER_GAS
         );
         if (!ok) return m;
+        // A file with no locator gives an empty one (kind NONE). The implicit on-chain locator
+        // has no URL either, but copies may be registered, so only that case looks further.
         (Locator memory l,) = abi.decode(ret, (Locator, uint256));
+        if (l.kind == LocatorKind.NONE) return m;
         if (l.kind != LocatorKind.ONCHAIN && bytes(l.uri).length != 0) {
             return Media(Mode.Locator, 0, 0, _str(l.uri));
         }
@@ -667,12 +671,18 @@ contract Renderer is IRenderer {
         );
     }
 
-    /// @dev The SPDX page of a license identifier, none for a `licenseref-` expression. Identifiers
-    ///      are normalised lowercase (`IWorkRecords`), and text files have no locators of their
-    ///      own (locators are for media files), so this is the license's URL.
+    /// @dev The SPDX page of a license identifier, with its original case (spdx.org URLs are case
+    ///      sensitive), none for a `LicenseRef-` expression in any case. Text files have no
+    ///      locators of their own (locators are for media files), so this is the license's URL.
     function _licenseUrl(string memory spdxId) private pure returns (bytes memory) {
         bytes memory id = bytes(spdxId);
-        if (id.length == 0 || _startsWith(id, "licenseref-")) return "";
+        bytes memory prefix = "licenseref-";
+        bool ref = id.length >= prefix.length;
+        for (uint256 i; ref && i < prefix.length; ++i) {
+            bytes1 b = id[i];
+            ref = (b >= "A" && b <= "Z" ? bytes1(uint8(b) + 32) : b) == prefix[i];
+        }
+        if (id.length == 0 || ref) return "";
         return abi.encodePacked("https://spdx.org/licenses/", id, ".html");
     }
 

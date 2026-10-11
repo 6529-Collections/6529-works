@@ -176,7 +176,7 @@ contract RendererGasTest is RendererBase {
         stream.setCollection(1, IStream.Collection("A collection", bytes32(0), 9));
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));
         bytes32 text = _file("licence", IDENTITY, "text/plain");
-        records.setLicense(ID, License("licenseref-studio-1", text));
+        records.setLicense(ID, License("LicenseRef-Studio-1", text));
         records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://licence"));
         disputeLog.set(address(stream), ID, bytes32(uint256(1)));
 

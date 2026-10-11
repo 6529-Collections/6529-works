@@ -148,7 +148,8 @@ contract MockWorkRecords {
             return (Locator(LocatorKind.ONCHAIN, ""), type(uint256).max);
         }
         Locator[] storage list = locatorLists[id][fileId];
-        require(list.length != 0, "no locator");
+        // A file without a locator gives an empty one instead of reverting.
+        if (list.length == 0) return (Locator(LocatorKind.NONE, ""), type(uint256).max);
         return (list[0], 0);
     }
 

@@ -339,8 +339,10 @@ more size. Every string from the Stream, a locator or the store (a collection
 name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
 `JsonEscape` and percent-escaped by `DataUri`. The JSON carries `name`,
 `description`, `image`, `animation_url`, `media_url`, `content_type`,
-`content_hash` (the primary's decoded SHA-256), `license`, `license_url` (the SPDX
-page; none for a `licenseref-` expression) and `attributes`.
+`content_hash` (the primary's decoded SHA-256), `license` (the SPDX identifier as
+stored, in its original case), `license_url` (its page on spdx.org, whose URLs are
+case sensitive, so the original case; none for a `LicenseRef-` expression in any
+case) and `attributes`.
 
 ### Media
 
@@ -348,7 +350,7 @@ page; none for a `licenseref-` expression) and `attributes`.
 | --- | --- |
 | complete, work on-chain complete, stored as `Base64`, at most the threshold | `data:<mime>;base64,` plus the stored text, concatenated as it is |
 | the same, stored as `Identity`, at most an eighth of the threshold | base64-encoded on-chain |
-| `text/javascript` or `application/javascript`, `Identity`, at most 16 KiB, UTF-8 | an HTML page that sets `window.works` and runs the script (below) |
+| `text/javascript` or `application/javascript`, `Identity`, at most 16 KiB, UTF-8 | an HTML page that sets `window.works` (version 1) and runs the script (below) |
 | anything else: larger, incomplete, `Gzip` or `GzipBase64` | the preferred locator (and `media_url`) |
 
 - **The threshold** is `inlineThreshold()`, in stored bytes, set at deployment
@@ -387,9 +389,18 @@ page; none for a `licenseref-` expression) and `attributes`.
 
 A JavaScript primary cannot be shown as a `data:` URI, so the renderer wraps it: a
 fixed HTML page whose first script sets
-`window.works={tokenId:<id>,seed:<"0x…" or null>};` and then runs the work's
-script. `window.works` is the script's whole interface, so it is part of what a
-finalized work pins. The script text is the only artist-controlled text placed
+
+```js
+window.works = { v: 1, tokenId: <id>, seed: <"0x…" hex string, or null> };
+```
+
+and then runs the work's script. `seed` is null when the work has no seed. **This
+object is a public, stable API.** A finalized work pins its renderer, so scripts in
+the field depend on it exactly as it is: the `window.works` of version 1 never
+changes meaning, and any change to its fields needs a new `v` (and so a new
+renderer). Scripts should check `window.works.v`.
+
+The script text is the only artist-controlled text placed
 inside the renderer's own markup, so it goes through `HtmlScript.neutralize`:
 `</script` (any case) and `<!--` each gain a backslash after the `<`, which keeps
 their meaning inside JavaScript strings, template literals and comments. `<!--`
@@ -422,3 +433,15 @@ record (24,575 bytes with 16 artists and 64 attributes), 1.5M; a 16 KiB script p
 worst case (a non-image primary of 256 KiB `Base64`, an 8 KiB `Identity` preview, a
 maximal record, a collection, a seed, a dispute and a license), 5.2M. The limit is
 8M.
+
+### Known gaps in v1
+
+- **No gzip page.** `Gzip` and `GzipBase64` files are served by locator only. A
+  later renderer can add a decompression page (renderers are pinned per work).
+- **No dependency bundling.** Libraries from the dependency registry are not
+  inlined into the script page; a script page is one self-contained file.
+- **Scripts only up to 16 KiB** go through the page, and `Identity` media only up
+  to an eighth of the threshold (32 KiB at the default); bigger files go by
+  locator, or should be stored as `Base64` (or, for an HTML artwork, as `text/html`).
+- **Core-only metadata** (a record that is not open) has no ARTIST seed, because
+  that seed is stored when the record opens.
