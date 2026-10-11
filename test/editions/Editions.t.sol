@@ -40,6 +40,7 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionsBase } from "./EditionsBase.sol";
 import {
     EditionsAdapterMock,
+    EditionsPackages,
     EditionsRendererMock,
     EditionsStreamMock,
     GasBurnerReceiver1155,
@@ -145,7 +146,7 @@ contract EditionsTest is EditionsBase {
         vm.expectEmit(true, true, false, true, address(stream));
         emit EditionLinked(id, address(editions), id);
         vm.prank(outsider); // permissionless
-        assertEq(editions.createEdition(id, item), id, "edition ID is the master's token ID");
+        assertEq(_createEdition(id, item), id, "edition ID is the master's token ID");
 
         // Editions -> Stream: (stream, workId, contentHash).
         (address s, uint256 workId, bytes32 contentHash) = editions.masterOf(id);
@@ -179,11 +180,11 @@ contract EditionsTest is EditionsBase {
         item.kind = ItemKind.ORIGINAL;
         uint256 id = _master(item);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
         // Relabelling the item as a master changes its hash, so it matches nothing.
         item.kind = ItemKind.EDITION_MASTER;
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     function test_CreateEdition_RefusesMismatchedItem() public {
@@ -192,7 +193,7 @@ contract EditionsTest is EditionsBase {
         PackageItem memory other = _fixedItem(10); // another master's item
         _master(other);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
-        editions.createEdition(id, other);
+        _createEdition(id, other);
     }
 
     /// @dev Any change to the approved item (here: price, size, content hash, payees, license)
@@ -208,7 +209,7 @@ contract EditionsTest is EditionsBase {
         if (field == 3) item.payees[0].share -= 1;
         if (field == 4) item.license.spdxId = "LicenseRef-AllRightsReserved";
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     /// @dev The registry accepts a claim only for the item Stream consumed for that content hash.
@@ -221,13 +222,13 @@ contract EditionsTest is EditionsBase {
                 IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_EDITIONS, item.contentHash
             )
         );
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     function test_CreateEdition_RefusesUnknownMaster() public {
         PackageItem memory item = _fixedItem(10);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
-        editions.createEdition(1, item);
+        _createEdition(1, item);
     }
 
     /// @dev D14: a master still in auction custody, live or paused for a dispute, gets no
@@ -236,23 +237,70 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _masterInAuction(item);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
         stream.burnMaster(id); // dispute upheld
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
 
         PackageItem memory sold = _fixedItem(10);
         uint256 soldId = _masterInAuction(sold);
         stream.settle(soldId, COLLECTOR);
-        editions.createEdition(soldId, sold);
+        _createEdition(soldId, sold);
         assertTrue(editions.exists(soldId));
+    }
+
+    /// @dev Integrator decision (option c): the caller proves the item in a package root the
+    ///      registry still reports approved, so a guardian revocation blocks the edition.
+    function test_CreateEdition_RequiresApprovedPackageProof() public {
+        PackageItem memory item = _fixedItem(10);
+        uint256 id = _master(item);
+        bytes32 itemHash = WorksHashing.itemHash(item);
+        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+
+        bytes32[] memory none = new bytes32[](0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.ItemNotInPackage.selector, root, itemHash)
+        );
+        editions.createEdition(id, item, root, none);
+        (bytes32 unknownRoot, bytes32[] memory unknownProof) = EditionsPackages.packageOf(item, 7);
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, unknownRoot)
+        );
+        editions.createEdition(id, item, unknownRoot, unknownProof);
+
+        registry.revoke(root);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
+        editions.createEdition(id, item, root, proof);
+        assertFalse(editions.exists(id));
+    }
+
+    /// @dev The accepted edge case: an item listed in two packages passes through whichever is
+    ///      still approved, even when the one it was minted from was revoked.
+    function test_CreateEdition_SecondApprovedPackageAdmits() public {
+        PackageItem memory item = _fixedItem(10);
+        uint256 id = _master(item);
+        (bytes32 rootA,) = EditionsPackages.packageOf(item, 0);
+        registry.revoke(rootA);
+        (bytes32 rootB, bytes32[] memory proofB) = EditionsPackages.packageOf(item, 1);
+        registry.approve(rootB);
+        editions.createEdition(id, item, rootB, proofB);
+        assertTrue(editions.exists(id));
+    }
+
+    /// @dev Until `IEditions` adopts the four-argument form, the interface's two-argument form
+    ///      reverts.
+    function test_CreateEdition_TwoArgumentFormReverts() public {
+        PackageItem memory item = _fixedItem(10);
+        uint256 id = _master(item);
+        vm.expectRevert(abi.encodeWithSelector(Editions.PackageProofRequired.selector, id));
+        editions.createEdition(id, item);
     }
 
     function test_CreateEdition_RefusesSecondCreate() public {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _create(item);
         vm.expectRevert(abi.encodeWithSelector(IEditions.EditionExists.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     function test_CreateEdition_ReentryThroughStreamHitsEditionExists() public {
@@ -260,7 +308,7 @@ contract EditionsTest is EditionsBase {
         uint256 id = _master(item);
         stream.setReentryItem(item);
         stream.setLinkMode(EditionsStreamMock.LinkMode.REENTER);
-        editions.createEdition(id, item);
+        _createEdition(id, item);
         assertEq(
             stream.reentryError(), abi.encodeWithSelector(IEditions.EditionExists.selector, id)
         );
@@ -298,7 +346,7 @@ contract EditionsTest is EditionsBase {
     function _expectBadTerms(PackageItem memory item) internal {
         uint256 id = _master(item);
         vm.expectRevert(abi.encodeWithSelector(Editions.InvalidEditionTerms.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     /// @dev The sale adapter owns the currency (ADR 0001 section 5): Editions returns the stored
@@ -339,7 +387,7 @@ contract EditionsTest is EditionsBase {
                 WorksHashing.itemHash(first)
             )
         );
-        editions.createEdition(twinId, twin);
+        _createEdition(twinId, twin);
     }
 
     function test_CreateEdition_RefusesHashClaimedInEditions() public {
@@ -352,7 +400,7 @@ contract EditionsTest is EditionsBase {
                 IPackageRegistry.ContentUsed.selector, PRODUCT_EDITIONS, item.contentHash, claimedBy
             )
         );
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     function test_CreateEdition_FailsClosedWhenStreamDoesNotLink() public {
@@ -360,10 +408,10 @@ contract EditionsTest is EditionsBase {
         uint256 id = _master(item);
         stream.setLinkMode(EditionsStreamMock.LinkMode.IGNORE);
         vm.expectRevert(abi.encodeWithSelector(Editions.LinkFailed.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
         stream.setLinkMode(EditionsStreamMock.LinkMode.WRONG_ID);
         vm.expectRevert(abi.encodeWithSelector(Editions.LinkFailed.selector, id));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
         assertFalse(editions.exists(id), "nothing persists");
     }
 
@@ -372,7 +420,7 @@ contract EditionsTest is EditionsBase {
         uint256 id = _master(item);
         stream.bind(address(workRecordsMock), outsider);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, address(editions)));
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     function test_CreateEdition_LinkIsPermanent() public {
@@ -407,9 +455,11 @@ contract EditionsTest is EditionsBase {
         item.payees[n - 1].share += uint32(100_000 % n);
         item.license.spdxId = "LicenseRef-6529-Works-Custom-License-With-A-Long-Identifier";
         uint256 id = _master(item);
-        bytes memory callData = abi.encodeCall(IEditions.createEdition, (id, item));
+        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+        // Calldata cost: a nonzero selector stand-in plus the ABI-encoded arguments.
+        bytes memory callData = bytes.concat(bytes4(0xffffffff), abi.encode(id, item, root, proof));
         uint256 g = gasleft();
-        editions.createEdition(id, item);
+        editions.createEdition(id, item, root, proof);
         uint256 execution = g - gasleft();
         uint256 txGas = 21_000 + _calldataGas(callData) + execution;
         console2.log("createEdition worst case: execution", execution);

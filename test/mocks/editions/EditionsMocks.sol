@@ -27,10 +27,30 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 /// @notice Mocks of other lanes' contracts for the 6529 Editions tests. Each implements only
 ///         the slice of its interface that Editions calls, with the same ABI, plus test knobs.
 
+/// @dev A deterministic package for an item: a two-leaf tree of the item's leaf and a sibling
+///      leaf derived from `salt`, so different salts give different roots for the same item.
+library EditionsPackages {
+    function packageOf(PackageItem memory item, uint256 salt)
+        internal
+        pure
+        returns (bytes32 root, bytes32[] memory proof)
+    {
+        bytes32 itemHash = WorksHashing.itemHash(item);
+        bytes32 leaf = WorksHashing.leaf(itemHash);
+        bytes32 sibling = keccak256(abi.encode("sibling", itemHash, salt));
+        proof = new bytes32[](1);
+        proof[0] = sibling;
+        root = leaf < sibling
+            ? keccak256(abi.encode(leaf, sibling))
+            : keccak256(abi.encode(sibling, leaf));
+    }
+}
+
 /// @dev The package registry's content claims: Stream's consume records `contentHash -> itemHash`
 ///      under PRODUCT_STREAM; Editions may claim a hash under PRODUCT_EDITIONS only for the item
 ///      Stream consumed, once (`IPackageRegistry.claimContent`).
 contract EditionsRegistryMock {
+    mapping(bytes32 => IPackageRegistry.PackageStatus) internal _status;
     mapping(bytes32 => bytes32) public consumedItemOf;
     mapping(bytes32 => bytes32) public editionClaimOf;
     address public stream;
@@ -42,6 +62,22 @@ contract EditionsRegistryMock {
     function bindCallers(address stream_, address editions_) external {
         stream = stream_;
         editions = editions_;
+    }
+
+    function approve(bytes32 root) external {
+        _status[root] = IPackageRegistry.PackageStatus.APPROVED;
+    }
+
+    function revoke(bytes32 root) external {
+        _status[root] = IPackageRegistry.PackageStatus.REVOKED;
+    }
+
+    function packageOf(bytes32 root)
+        external
+        view
+        returns (IPackageRegistry.PackageStatus, bytes32, address)
+    {
+        return (_status[root], keccak256(abi.encode("evidence", root)), address(0xC0FFEE));
     }
 
     function setSkipStreamUniqueness(bool skip) external {
@@ -301,7 +337,8 @@ contract EditionsStreamMock {
         if (linkMode == LinkMode.IGNORE) return;
         if (linkMode == LinkMode.REENTER) {
             PackageItem memory item = abi.decode(reentryItem, (PackageItem));
-            try IEditions(editions).createEdition(tokenId, item) {
+            (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+            try Editions(editions).createEdition(tokenId, item, root, proof) {
                 reentryError = "";
             } catch (bytes memory reason) {
                 reentryError = reason;
@@ -437,12 +474,13 @@ contract ReentrantReceiver1155 is ERC1155Holder {
                 (ok, reason) = address(editions)
                     .call(abi.encodeCall(IMintTarget.mint, (address(this), id, 1, "")));
             } else {
-                (ok, reason) = address(editions)
-                    .call(
-                        abi.encodeCall(
-                            IEditions.createEdition, (id, abi.decode(_item, (PackageItem)))
-                        )
-                    );
+                PackageItem memory item = abi.decode(_item, (PackageItem));
+                (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+                try Editions(address(editions)).createEdition(id, item, root, proof) {
+                    ok = true;
+                } catch (bytes memory r) {
+                    reason = r;
+                }
             }
             reentrySucceeded = ok;
             if (!ok) reentryError = reason;

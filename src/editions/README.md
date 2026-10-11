@@ -10,11 +10,14 @@ from `sales/`. Governed by
 [ADR 0001 §6](../../docs/adr/0001-v1-scope.md#6-6529-editions), with
 the exclusivity rule in §3 and the license rule in §8.
 
-**Link.** `createEdition(workId, item)` is permissionless. It accepts only the
-exact item the master was minted from (Stream's stored item hash), and only
-after the master's sale has settled (`IStream.primarySaleSettled`, marked by
-the minting adapter at settle), so a disputed or burned master never gets an
-edition. It locks the `PRODUCT_EDITIONS` economics (seller, fee, royalty),
+**Link.** `createEdition(workId, item, packageRoot, proof)` is permissionless. It
+accepts only the exact item the master was minted from (Stream's stored item
+hash), proven by `proof` to be in a package root the registry still reports
+approved, so a guardian revocation blocks the edition at no cost to the auction
+start. An item listed in two packages passes through whichever is still
+approved; this edge case is accepted. It also needs the master's sale to have
+settled (`IStream.primarySaleSettled`, marked by the minting adapter at
+settle), so a disputed or burned master never gets an edition. It locks the `PRODUCT_EDITIONS` economics (seller, fee, royalty),
 claims the content hash in the package registry (which accepts only the item
 Stream consumed for that hash, once), calls `IStream.linkEdition`, and
 verifies Stream's side before returning. The edition ID is the master's token
@@ -32,8 +35,9 @@ locks it when it opens a sale.
 
 **Reads.** `royaltyInfo` uses the receiver locked at creation and the current
 rate (out of 100,000), from local storage. Only the bound work-records
-satellite may change the rate (`setRoyaltyRate`, after every party's consent
-and a governed action); the receiver never changes. `licenseOf` reads the
+satellite may change the rate: when a master is re-rated there (every party's
+consent plus a governed action), it re-rates the linked edition through
+`setRoyaltyRate`. The receiver never changes. `licenseOf` reads the
 master's license from the work-records satellite (`RecordNotOpen` until the
 record is opened), and `uri` is served by `IStream.rendererOf(id)`. ERC-4906
 `MetadataUpdate` is emitted at creation, on a rate change and whenever the

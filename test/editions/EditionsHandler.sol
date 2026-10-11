@@ -8,7 +8,11 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { EditionFormat, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { EditionsAdapterMock, EditionsStreamMock } from "../mocks/editions/EditionsMocks.sol";
+import {
+    EditionsAdapterMock,
+    EditionsPackages,
+    EditionsStreamMock
+} from "../mocks/editions/EditionsMocks.sol";
 
 /// @notice Drives 6529 Editions with purchases through the right and the wrong adapter, mints by
 ///         a non-minter, burns from adapter custody, transfers between holders, time warps,
@@ -146,7 +150,8 @@ contract EditionsHandler is Test {
     function recreate(uint256 editionSeed) external {
         uint256 i = editionSeed % _ids.length;
         PackageItem memory item = abi.decode(_items[i], (PackageItem));
-        try editions.createEdition(_ids[i], item) {
+        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+        try editions.createEdition(_ids[i], item, root, proof) {
             ++unexpected;
         } catch (bytes memory reason) {
             if (!_is(reason, IEditions.EditionExists.selector)) ++unexpected;

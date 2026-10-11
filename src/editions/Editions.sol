@@ -7,6 +7,7 @@ import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
@@ -38,7 +39,10 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///         work of kind EDITION_MASTER (ADR 0001 section 6).
 /// @dev The edition ID equals the master's Stream token ID. `createEdition` is permissionless:
 ///      it accepts only the exact package item the master was minted from (its item hash is the
-///      one Stream stored), and only after the master's sale has settled
+///      one Stream stored), proven by a Merkle proof to be an item of a package root the registry
+///      still reports approved, so a guardian revocation blocks the edition at no cost to the
+///      auction start (an item listed in two packages passes through whichever is still
+///      approved: an accepted edge case), and only after the master's sale has settled
 ///      (`IStream.primarySaleSettled`, which the minting adapter marks at settle), so a disputed
 ///      or burned master never gets an edition. It
 ///      locks the edition's economics (seller, network fee, royalty), claims the master's
@@ -53,7 +57,8 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      stored currency, possibly `CURRENCY_DEFAULT`; the adapter resolves and locks it when it
 ///      opens a sale (ADR 0001 section 5). Royalties are read from this contract's storage with
 ///      no external call; payees never change, and only the bound work-records satellite may
-///      change the rate, after every party's consent and a governed action (decision D19). The
+///      change the rate: when a master's rate changes there (every party's consent and a governed
+///      action, decision D19), it re-rates the linked edition through `setRoyaltyRate`. The
 ///      license and `uri` come from the master. ERC-4906 events follow the master: one per
 ///      edition from the work-records satellite, and a batch over every ID when Stream's default
 ///      renderer or a global or collection preferred location changes (decision E11).
@@ -118,6 +123,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     error NotAdmittedMinter(address caller);
     /// @notice A royalty rate above 100,000.
     error InvalidRoyaltyRate(uint32 rate);
+    /// @notice Creating an edition needs the package root and proof (the four-argument form).
+    error PackageProofRequired(uint256 workId);
 
     /// @param authority_ The AccessManager that governs this contract.
     /// @param stream_ The 6529 Stream contract; the other wiring is read from it.
@@ -148,24 +155,35 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     // ----------------------------------------------------------------------- the link
 
     /// @inheritdoc IEditions
-    function createEdition(uint256 workId, PackageItem calldata item)
-        external
-        returns (uint256 editionId)
-    {
-        Record storage r = _records[workId];
-        if (r.edition.contentHash != 0) revert EditionExists(workId);
-        IStream.WorkCore memory master = IStream(stream).work(workId);
-        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
-        if (
-            !IStream(stream).primarySaleSettled(workId) || item.kind != ItemKind.EDITION_MASTER
-                || master.kind != ItemKind.EDITION_MASTER || itemHash != master.itemHash
-                || item.contentHash == 0
-        ) revert NotEditionMaster(workId);
+    /// @dev TODO(#10 follow-up): superseded by the four-argument form, which carries the package
+    ///      root and proof (integrator decision); removed when `IEditions` adopts it.
+    function createEdition(uint256 workId, PackageItem calldata) external pure returns (uint256) {
+        revert PackageProofRequired(workId);
+    }
 
+    /// @notice Creates the edition of master `workId` from its approved package item once the
+    ///         master's sale has settled. Permissionless. The item must hash to the master's
+    ///         stored item hash, `proof` must place it in `packageRoot`, and the registry must
+    ///         still report `packageRoot` approved, so a revoked package blocks the edition. Records
+    ///         `(stream, workId, contentHash)`, claims the content hash for the Editions product,
+    ///         locks `PRODUCT_EDITIONS` economics and calls `IStream.linkEdition`.
+    /// @param workId The master's Stream token ID, which becomes the edition ID.
+    /// @param item The master's package item.
+    /// @param packageRoot A package root containing the item, still approved.
+    /// @param proof The item's Merkle proof under `packageRoot` (`WorksHashing.leaf` convention).
+    /// @return editionId The new edition ID (equal to `workId`).
+    function createEdition(
+        uint256 workId,
+        PackageItem calldata item,
+        bytes32 packageRoot,
+        bytes32[] calldata proof
+    ) external returns (uint256 editionId) {
+        (bytes32 itemHash, uint256 artistId) = _admit(workId, item, packageRoot, proof);
         EditionTerms memory terms = item.edition;
         _checkTerms(workId, terms);
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
 
+        Record storage r = _records[workId];
         Edition storage e = r.edition;
         e.contentHash = item.contentHash;
         e.terms = terms;
@@ -174,7 +192,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         e.feeShare = w.feeShare;
         e.royaltyReceiver = w.royaltyReceiver;
         e.royaltyRate = w.royaltyRate;
-        r.artistId = master.artistId;
+        r.artistId = artistId;
         emit EditionCreated(workId, item.contentHash, terms);
         emit MetadataUpdate(workId);
 
@@ -229,8 +247,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @notice Sets an edition's royalty rate; the receiver (payees) never changes. Only the
-    ///         bound work-records satellite may call, after it verified every party's consent and
-    ///         the governed action (decision D19). A master without an edition is a no-op.
+    ///         bound work-records satellite may call: it re-rates a master's linked edition
+    ///         together with the master, after every party's consent and the governed action
+    ///         (decision D19). A master without an edition is a no-op.
     /// @param editionId The edition, which is also its master's token ID.
     /// @param rate The new rate, out of 100,000.
     function setRoyaltyRate(uint256 editionId, uint32 rate) external {
@@ -395,6 +414,32 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     // ----------------------------------------------------------------------- internals
+
+    /// @dev The checks of `createEdition`: no edition yet, the master settled and of kind
+    ///      EDITION_MASTER, the item its stored one, and the item in a still-approved package.
+    function _admit(
+        uint256 workId,
+        PackageItem calldata item,
+        bytes32 packageRoot,
+        bytes32[] calldata proof
+    ) private view returns (bytes32 itemHash, uint256 artistId) {
+        if (exists(workId)) revert EditionExists(workId);
+        IStream.WorkCore memory master = IStream(stream).work(workId);
+        itemHash = WorksHashing.itemHashCalldata(item);
+        if (
+            !IStream(stream).primarySaleSettled(workId) || item.kind != ItemKind.EDITION_MASTER
+                || master.kind != ItemKind.EDITION_MASTER || itemHash != master.itemHash
+                || item.contentHash == 0
+        ) revert NotEditionMaster(workId);
+        if (!MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))) {
+            revert IPackageRegistry.ItemNotInPackage(packageRoot, itemHash);
+        }
+        (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
+        if (status != IPackageRegistry.PackageStatus.APPROVED) {
+            revert IPackageRegistry.PackageNotApproved(packageRoot);
+        }
+        return (itemHash, master.artistId);
+    }
 
     /// @dev ADR 0001 section 13.6: code, no EIP-7702 delegation, and ERC-165 support.
     function _installable(address target, bytes4 interfaceId) private view returns (bool) {

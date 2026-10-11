@@ -23,6 +23,7 @@ import {
     EditionsAdapterMock,
     EditionsArtistsMock,
     EditionsEconomicsMock,
+    EditionsPackages,
     EditionsRegistryMock,
     EditionsRendererMock,
     EditionsStreamMock,
@@ -152,12 +153,21 @@ abstract contract EditionsBase is Test {
 
     /// @dev A master whose auction has not settled (live or paused for a dispute).
     function _masterInAuction(PackageItem memory item) internal returns (uint256) {
+        (bytes32 root,) = EditionsPackages.packageOf(item, 0);
+        registry.approve(root);
         return stream.mintMaster(item, CUSTODY);
+    }
+
+    /// @dev `createEdition` with the item's package (salt 0). Makes no external call before it,
+    ///      so a preceding `vm.prank` or `vm.expectRevert` applies to `createEdition` itself.
+    function _createEdition(uint256 id, PackageItem memory item) internal returns (uint256) {
+        (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+        return editions.createEdition(id, item, root, proof);
     }
 
     function _create(PackageItem memory item) internal returns (uint256 id) {
         id = _master(item);
-        editions.createEdition(id, item);
+        _createEdition(id, item);
     }
 
     function _one(bytes4 selector) internal pure returns (bytes4[] memory s) {
