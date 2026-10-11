@@ -13,6 +13,7 @@ import { DeployGuards } from "script/DeployGuards.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { Verify } from "script/Verify.s.sol";
+import { Editions } from "src/editions/Editions.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
@@ -140,13 +141,14 @@ contract DeployScriptTest is Test {
         assertTrue(vm.parseJsonBool(record, ".placeholders"));
         assertTrue(vm.parseJsonBool(record, ".delegationMock"));
         assertEq(vm.parseJsonString(record, ".entropy"), "none");
-        assertEq(vm.parseJsonStringArray(record, ".standIns").length, 1);
+        assertEq(vm.parseJsonStringArray(record, ".standIns").length, 0, "no stand-ins");
+        assertEq(vm.parseJsonStringArray(record, ".pendingLanes").length, 0, "no pending lanes");
         assertEq(vm.parseJsonAddress(record, ".params.factory"), DeployGuards.CREATE2_FACTORY);
         assertEq(vm.parseJsonAddress(record, ".params.deployer"), address(this));
         assertEq(vm.parseJsonBytes32(record, ".cc0TextFileId"), d.cc0TextFileId);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 13);
-        assertEq(calls, 11);
+        assertEq(targets, 14);
+        assertEq(calls, 18);
         assertEq(holders, 17);
     }
 
@@ -197,7 +199,10 @@ contract DeployScriptTest is Test {
 
     // ------------------------------------------------------------------ off anvil: inputs
 
-    function test_OffAnvilEveryInputPassesAndTheRunStopsAtThePendingRenderer() public {
+    /// Off anvil with every input valid: the run deploys, passes the deployment guards,
+    /// configures and records; Verify then confirms the record with the off-anvil checks
+    /// (no placeholders or stand-ins, the pinned CC0 text, the manifest file, the policy).
+    function test_OffAnvilRunDeploysAndVerifies() public {
         _sepolia();
         Deploy.Run memory r = deployer.prepare();
         assertFalse(r.local);
@@ -206,8 +211,33 @@ contract DeployScriptTest is Test {
         assertEq(keccak256(r.p.cc0Text), keccak256(CC0));
         assertEq(r.manifest.digest, sha256(MANIFEST));
         assertEq(r.manifest.uri, "ar://epoch-0");
-        vm.expectRevert(DeployV1.RendererPending.selector);
-        deployer.run();
+
+        vm.recordLogs();
+        DeployV1.Deployment memory d = deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        string memory record = deployer.lastRecord();
+        assertFalse(vm.parseJsonBool(record, ".placeholders"));
+        assertTrue(vm.parseJsonBool(record, ".delegationMock"), "the Sepolia mock");
+        assertEq(vm.parseJsonString(record, ".entropy"), "none");
+        assertEq(d.renderer.inlineThreshold(), DeployV1.RENDERER_INLINE_THRESHOLD);
+
+        // Verify reads the same inputs: the genesis copy, the manifest file and the CC0 pin.
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        verifier.setCc0Digest(sha256(CC0));
+        vm.warp(block.timestamp + 5 days);
+        (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
+        assertEq(targets, 14);
+        assertEq(calls, 18);
+        assertEq(holders, 17);
+        // Without the manifest file, or with the anvil CC0 pin, it does not verify.
+        verifier.setCc0Digest(keccak256("another text"));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.Cc0NotCanonical.selector, sha256(CC0), keccak256("another text")
+            )
+        );
+        verifier.verify(record);
     }
 
     function test_OffAnvilEveryRequiredInputIsRequired() public {
@@ -571,17 +601,18 @@ contract DeployScriptTest is Test {
 
     function test_NothingTheGenesisNamesMayBeDropped() public {
         DeployV1.Deployment memory d = DeployV1.deploy(_localParams());
-        vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.DroppedFromGenesis.selector, "Editions")
-        );
-        this.checkNothingDroppedExternal(d, true);
-        // With Editions present, only the entropy module is missing: allowed only when declined.
-        d.editions = makeAddr("editions");
+        // Only the entropy module is missing: allowed only when declined.
         this.checkNothingDroppedExternal(d, true);
         vm.expectRevert(
             abi.encodeWithSelector(DeployGuards.DroppedFromGenesis.selector, "EntropyModule")
         );
         this.checkNothingDroppedExternal(d, false);
+        // A deployment without a contract the genesis governs is refused.
+        d.editions = Editions(address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.DroppedFromGenesis.selector, "Editions")
+        );
+        this.checkNothingDroppedExternal(d, true);
     }
 
     function test_HoldersCannotBeDeploymentContracts() public {
@@ -617,8 +648,11 @@ contract DeployScriptTest is Test {
         r.p = p;
         r.manifest = DeployV1.Manifest(keccak256("manifest"), "ar://m");
         GovernanceConfig.Config memory cfg = DeployV1.config(d, r.json);
+        r.local = false;
+        deployer.checkDeployment(d, r, cfg); // the committed policy, nothing dropped
+        d.editions = Editions(address(0));
         r.local = true;
-        deployer.checkDeployment(d, r, cfg);
+        deployer.checkDeployment(d, r, cfg); // anvil: not checked
         r.local = false;
         vm.expectRevert(
             abi.encodeWithSelector(DeployGuards.DroppedFromGenesis.selector, "Editions")
@@ -642,6 +676,7 @@ contract DeployScriptTest is Test {
         vm.expectRevert(Verify.PlaceholdersOffAnvil.selector);
         verifier.verify(record);
         record = _tamper(record, '"placeholders":true', '"placeholders":false');
+        record = _tamper(record, '"standIns":[]', '"standIns":["Renderer"]');
         vm.expectRevert(abi.encodeWithSelector(Verify.StandInsOffAnvil.selector, "Renderer"));
         verifier.verify(record);
     }

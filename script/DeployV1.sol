@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
+import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
@@ -18,6 +19,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { Editions } from "src/editions/Editions.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
@@ -31,7 +33,6 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
-import { RendererStandIn } from "./standins/RendererStandIn.sol";
 
 /// @title DeployV1
 /// @notice Deploys every v1 contract in dependency order and installs the genesis
@@ -42,10 +43,10 @@ import { RendererStandIn } from "./standins/RendererStandIn.sol";
 ///      (config/README.md). Every contract is created with CREATE2 under `Params.namespace`, so
 ///      its address depends only on the namespace, its initcode (`initcode`) and the CREATE2
 ///      deployer, and `predict` recomputes it. The governance map and the wiring come from the
-///      genesis JSON, with the deployed addresses substituted by contract name. Contracts not
-///      deployed (a pending lane on anvil, the optional entropy module) are left out of both,
-///      with any wiring that names them; `dropped` lists them, and `Deploy.s.sol` refuses any
-///      off anvil except an explicitly declined entropy module.
+///      genesis JSON, with the deployed addresses substituted by contract name. A contract not
+///      deployed (the optional entropy module) is left out of both, with any wiring that names
+///      it; `dropped` lists what is left out, and `Deploy.s.sol` refuses anything there off
+///      anvil except an explicitly declined entropy module.
 library DeployV1 {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
@@ -67,6 +68,8 @@ library DeployV1 {
     ///         11 October 2026 after both sources served the same 7,048 bytes with this digest
     ///         (the first fetched twice). Off anvil, `Deploy.s.sol` and `Verify.s.sol` refuse
     ///         any other text.
+    /// @notice The default renderer's inline threshold (`Renderer.DEFAULT_INLINE_THRESHOLD`).
+    uint256 internal constant RENDERER_INLINE_THRESHOLD = 262_144;
     bytes32 internal constant CC0_LEGALCODE_SHA256 =
         0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499;
 
@@ -120,13 +123,11 @@ library DeployV1 {
         EnglishAuction englishAuction;
         FixedPriceSale fixedPriceSale;
         DutchSale dutchSale;
-        /// The `RendererStandIn` on anvil until the renderer (#20) merges.
-        address renderer;
+        /// The default renderer 6529 Stream pins (ADR 0001 §8).
+        Renderer renderer;
         Stream stream;
         WorkRecords workRecords;
-        /// Zero until Editions (#14) merges; its slot in `deploy` is marked, and off anvil
-        /// `deploy` refuses to run without it (`EditionsPending`).
-        address editions;
+        Editions editions;
     }
 
     /// @notice The epoch-0 governance manifest: the SHA-256 of the signed manifest JSON and
@@ -139,11 +140,6 @@ library DeployV1 {
     error UnknownContract(string name);
     error UnknownRoleName(string name);
     error UnsupportedWiringSignature(string signature);
-    /// @notice The renderer (#20) has not merged: only a local dry run may deploy, with the
-    ///         `RendererStandIn`.
-    error RendererPending();
-    /// @notice Editions (#14) has not merged: only a local dry run may deploy without it.
-    error EditionsPending();
     error EmptyText();
     /// @notice CREATE2 produced no contract and no revert reason (the address is taken).
     error Create2Failed(string name);
@@ -168,9 +164,6 @@ library DeployV1 {
                 d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
             }
         }
-        // Editions (#14) joins `order` after WorkRecords as it merges:
-        //   Editions(manager, stream, stream.codehash, p.marketOwner)
-        requireEditions();
     }
 
     /// @notice The addresses `deploy(p)` creates through CREATE2 deployer `factory`, recomputed
@@ -199,7 +192,7 @@ library DeployV1 {
     /// @notice The contracts `deploy` creates with CREATE2, in order. The entropy module is
     ///         included only with a VRF coordinator; the manager is created by the configurator.
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[20] memory all = [
+        string[21] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -217,6 +210,7 @@ library DeployV1 {
             "Renderer",
             "Stream",
             "WorkRecords",
+            "Editions",
             "EnglishAuction",
             "FixedPriceSale",
             "DutchSale"
@@ -312,10 +306,11 @@ library DeployV1 {
             );
         }
         if (n == keccak256("Renderer")) {
-            // The renderer (#20) replaces the stand-in as it merges:
-            //   Renderer(contentStore, statementLog, inlineThreshold)
-            requireRenderer();
-            return type(RendererStandIn).creationCode;
+            // The ADR 0001 inline threshold (256 KiB), the gas matrix's measured bound.
+            return _code(
+                type(Renderer).creationCode,
+                abi.encode(d.contentStore, d.statementLog, RENDERER_INLINE_THRESHOLD)
+            );
         }
         return _initcodeCore(p, d, n, name);
     }
@@ -337,7 +332,7 @@ library DeployV1 {
                     d.economicsResolver,
                     d.entropyModule,
                     d.renderer,
-                    d.renderer.codehash,
+                    address(d.renderer).codehash,
                     p.marketOwner
                 )
             );
@@ -347,6 +342,13 @@ library DeployV1 {
             return _code(
                 type(WorkRecords).creationCode,
                 abi.encode(m, d.stream, d.contentStore, License("CC0-1.0", d.cc0TextFileId))
+            );
+        }
+        if (n == keccak256("Editions")) {
+            // 6529 Editions pins 6529 Stream's code hash.
+            return _code(
+                type(Editions).creationCode,
+                abi.encode(m, d.stream, address(d.stream).codehash, p.marketOwner)
             );
         }
         if (n == keccak256("EnglishAuction")) {
@@ -384,17 +386,6 @@ library DeployV1 {
     ///         `Deploy.s.sol` requires code there.
     function auctionPermit2(Params memory p) internal view returns (address) {
         return p.permit2.code.length != 0 ? p.permit2 : address(0);
-    }
-
-    /// @notice Off anvil, refuses to deploy until the renderer (#20) merges: until then the
-    ///         `RendererStandIn` takes its place, on anvil only.
-    function requireRenderer() internal view {
-        if (block.chainid != LOCAL_CHAIN_ID) revert RendererPending();
-    }
-
-    /// @notice Off anvil, refuses to deploy until Editions (#14) merges.
-    function requireEditions() internal view {
-        if (block.chainid != LOCAL_CHAIN_ID) revert EditionsPending();
     }
 
     /// @notice The CREATE2 salt of contract `name` under `p.namespace`.
@@ -452,7 +443,7 @@ library DeployV1 {
     // ------------------------------------------------------------------ names
 
     /// @notice The deployed address of a contract or peer named in the genesis JSON, or zero
-    ///         if it is not deployed (pending lane or optional module).
+    ///         if it is not deployed (the optional entropy module).
     function addressOf(Deployment memory d, string memory name) internal pure returns (address) {
         bytes32 n = keccak256(bytes(name));
         if (n == keccak256("WorksAccessManager")) return address(d.manager);
@@ -474,10 +465,10 @@ library DeployV1 {
         if (n == keccak256("EnglishAuction")) return address(d.englishAuction);
         if (n == keccak256("FixedPriceSale")) return address(d.fixedPriceSale);
         if (n == keccak256("DutchSale")) return address(d.dutchSale);
-        if (n == keccak256("Renderer")) return d.renderer;
+        if (n == keccak256("Renderer")) return address(d.renderer);
         if (n == keccak256("Stream")) return address(d.stream);
         if (n == keccak256("WorkRecords")) return address(d.workRecords);
-        if (n == keccak256("Editions")) return d.editions;
+        if (n == keccak256("Editions")) return address(d.editions);
         revert UnknownContract(name);
     }
 
@@ -523,13 +514,13 @@ library DeployV1 {
         } else if (n == keccak256("DutchSale")) {
             d.dutchSale = DutchSale(a);
         } else if (n == keccak256("Renderer")) {
-            d.renderer = a;
+            d.renderer = Renderer(a);
         } else if (n == keccak256("Stream")) {
             d.stream = Stream(a);
         } else if (n == keccak256("WorkRecords")) {
             d.workRecords = WorkRecords(a);
         } else if (n == keccak256("Editions")) {
-            d.editions = a;
+            d.editions = Editions(a);
         } else {
             revert UnknownContract(name);
         }

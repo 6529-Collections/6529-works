@@ -323,15 +323,15 @@ contract Deploy is ScriptIO {
         }
     }
 
+    /// @dev Lanes not deployed yet: none since Editions (#14) merged.
     function _pending() internal pure returns (string[] memory pending) {
-        pending = new string[](2);
-        (pending[0], pending[1]) = ("Renderer", "Editions");
+        pending = new string[](0);
     }
 
-    /// @dev Protocol contracts replaced by stand-ins: the renderer, on anvil only. (The
-    ///      delegation mock is an external dependency, recorded as `delegationMock`.)
-    function _standIns(bool local) internal pure returns (string[] memory list) {
-        list = new string[](local ? 1 : 0);
-        if (local) list[0] = "Renderer";
+    /// @dev Protocol contracts replaced by stand-ins: none since the renderer (#20) merged.
+    ///      The field stays so Verify can refuse a record that has any. (The delegation mock is
+    ///      an external dependency, recorded as `delegationMock`.)
+    function _standIns(bool) internal pure returns (string[] memory list) {
+        list = new string[](0);
     }
 }

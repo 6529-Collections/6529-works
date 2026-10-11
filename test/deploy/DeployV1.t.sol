@@ -30,6 +30,7 @@ import { License } from "src/interfaces/types/PackageTypes.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
+import { Editions } from "src/editions/Editions.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
@@ -130,10 +131,6 @@ contract DeployV1Test is Test {
         return DeployV1.config(d, genesis);
     }
 
-    function requireEditionsExternal() external view {
-        DeployV1.requireEditions();
-    }
-
     function wiringExternal(DeployV1.Deployment memory d, string memory genesis)
         external
         view
@@ -154,14 +151,13 @@ contract DeployV1Test is Test {
             GovernanceConfig.Config memory cfg,
             GovernanceConfig.Call[] memory calls
         ) = _genesis(_params());
-        // Every merged contract with a governance map; Editions (pending) and the optional
-        // entropy module are not deployed here.
-        assertEq(cfg.targets.length, 13, "governed targets");
+        // Every v1 contract with a governance map; the optional entropy module is not
+        // deployed here.
+        assertEq(cfg.targets.length, 14, "governed targets");
         assertEq(cfg.grants.length, 17, "holders");
-        // Stream's WorkRecords bind, the package registry's Stream bind, the artist registry's
-        // three binds, the auction's minter grant and target, three default currencies and the
-        // manifest; the rest name Editions.
-        assertEq(calls.length, 11, "wiring calls");
+        // Every wiring call in the genesis JSON: the binds, the admitted minters, the sale
+        // targets, three default currencies and the manifest.
+        assertEq(calls.length, 18, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
@@ -176,9 +172,23 @@ contract DeployV1Test is Test {
         assertEq(d.artistRegistry.stream(), address(d.stream));
         assertTrue(d.stream.isAdmittedMinter(address(d.englishAuction)));
         assertTrue(d.englishAuction.isTarget(address(d.stream)));
-        assertEq(d.stream.defaultRenderer(), d.renderer);
         assertEq(d.stream.owner(), makeAddr("marketOwner"));
-        assertEq(d.editions, address(0), "Editions pending");
+        // The real renderer, pinned by Stream.
+        assertEq(d.stream.defaultRenderer(), address(d.renderer));
+        assertEq(address(d.renderer.contentStore()), address(d.contentStore));
+        assertEq(address(d.renderer.statementLog()), address(d.statementLog));
+        assertEq(d.renderer.inlineThreshold(), d.renderer.DEFAULT_INLINE_THRESHOLD());
+        // 6529 Editions, linked to Stream and its records, with the fixed-price and Dutch sales
+        // as its minters and targets.
+        assertEq(d.editions.stream(), address(d.stream));
+        assertEq(d.stream.editions(), address(d.editions));
+        assertEq(IPackageRegistry(address(d.packageRegistry)).editions(), address(d.editions));
+        assertEq(d.editions.workRecords(), address(d.workRecords));
+        assertTrue(d.editions.isAdmittedMinter(address(d.fixedPriceSale)));
+        assertTrue(d.editions.isAdmittedMinter(address(d.dutchSale)));
+        assertTrue(d.fixedPriceSale.isTarget(address(d.editions)));
+        assertTrue(d.dutchSale.isTarget(address(d.editions)));
+        assertEq(d.editions.owner(), makeAddr("marketOwner"));
         (uint64 count,) = IStatementLog(address(d.statementLog)).chainOf(address(d.manager), 0);
         assertEq(count, 1, "epoch-0 manifest recorded at genesis");
         // Auctions can start at once: every product has its default currency from genesis.
@@ -220,7 +230,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 14);
+        assertEq(cfg.targets.length, 15);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);
@@ -319,18 +329,14 @@ contract DeployV1Test is Test {
 
     // ------------------------------------------------------------------ fail closed
 
-    function test_TheRendererStandInIsRefusedOffAnvil() public {
+    function test_TheLibraryDeploysTheSameSystemOffAnvil() public {
+        // No stand-in remains: the library deploys the whole system on any chain (the guards
+        // that differ off anvil are the scripts').
         DeployV1.Params memory p = _params();
         vm.chainId(11_155_111); // Sepolia
-        vm.expectRevert(DeployV1.RendererPending.selector);
-        this.deployExternal(p);
-    }
-
-    function test_EditionsIsRequiredOffAnvil() public {
-        this.requireEditionsExternal(); // anvil: the pending lane may be missing
-        vm.chainId(11_155_111);
-        vm.expectRevert(DeployV1.EditionsPending.selector);
-        this.requireEditionsExternal();
+        DeployV1.Deployment memory d = this.deployExternal(p);
+        assertTrue(address(d.renderer).code.length != 0);
+        assertTrue(address(d.editions).code.length != 0);
     }
 
     function test_TheRolesTableMustBeRolesSol() public {
@@ -363,8 +369,12 @@ contract DeployV1Test is Test {
     function test_DroppedListsWhatTheDeploymentLacks() public {
         DeployV1.Deployment memory d = DeployV1.deploy(_params());
         string[] memory gone = DeployV1.dropped(d, json);
-        // Editions (pending) and the entropy module (no coordinator) are not deployed: their
-        // targets, and every wiring call on or naming Editions.
+        // Only the entropy module (no coordinator) is left out; no wiring names it.
+        assertEq(gone.length, 1);
+        assertEq(gone[0], "EntropyModule");
+        // Without Editions, its target and every wiring call on or naming it would be.
+        d.editions = Editions(address(0));
+        gone = DeployV1.dropped(d, json);
         assertEq(gone.length, 9);
         assertEq(gone[0], "Editions");
         assertEq(gone[1], "EntropyModule");
