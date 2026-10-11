@@ -29,12 +29,8 @@ interface IDutchSale is ISaleAdapter {
 
     /// @notice The sale has not started or is closed.
     error SaleNotOpen(uint256 saleId);
-    /// @notice A sale of this token is already open.
-    error SaleAlreadyOpen(address token, uint256 id);
     /// @notice The current unit price is above the buyer's limit.
     error PriceAboveLimit(uint256 price, uint256 maxUnitPrice);
-    /// @notice The caller is neither the token's creator nor the PLATFORM role.
-    error NotSaleManager(address caller);
 
     /// @notice Opens a Dutch sale of token `id` starting at `startTime` (not in the past).
     ///         Callable by the creator or the PLATFORM role.

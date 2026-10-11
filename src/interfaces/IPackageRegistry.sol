@@ -57,6 +57,8 @@ interface IPackageRegistry is IERC165 {
     );
     /// @notice 6529 Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
     event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
+    /// @notice An upheld-dispute burn released a content hash; `itemHash` is tombstoned.
+    event ContentReleased(bytes32 indexed contentHash, bytes32 indexed itemHash);
     /// @notice An artist revoked an unused move nonce.
     event MoveRevoked(uint256 indexed artistId, uint256 indexed nonce);
     /// @notice The curation verifier changed; `codeHash` is the pinned code hash of `next`.
@@ -111,8 +113,10 @@ interface IPackageRegistry is IERC165 {
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
     function registerPackage(bytes32 packageRoot, bytes32 evidenceHash, bytes calldata attestation)
         external;
-    /// @notice Revokes an approval; items not yet consumed can no longer mint. GUARDIAN role
-    ///         (immediate: a tightening action, for a compromised curation signer).
+    /// @notice Revokes an approval; items not yet consumed can no longer mint. Also pre-revokes
+    ///         a root not yet registered (`NONE` to `REVOKED`), which can then never be
+    ///         registered. GUARDIAN role (immediate: a tightening action, for a compromised
+    ///         curation signer).
     function revokePackage(bytes32 packageRoot, bytes32 reasonHash) external;
     /// @notice Records a party's acceptance of a package root. Permissionless relay of the
     ///         party's `Typehashes.PACKAGE_ACCEPTANCE` signature.
@@ -132,6 +136,11 @@ interface IPackageRegistry is IERC165 {
         bytes32[] calldata proof,
         MoveAuthorization calldata move
     ) external returns (bytes32 itemHash, uint256 artistId);
+    /// @notice Releases `contentHash` after an upheld-dispute burn: checks that `itemHash`
+    ///         consumed it, clears its `PRODUCT_STREAM` claim, and tombstones `itemHash` so it can
+    ///         never be consumed again. Bound 6529 Stream only, through
+    ///         `IStream.releaseContent` for a burned token.
+    function releaseContent(bytes32 contentHash, bytes32 itemHash) external;
     /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
     ///         already record `itemHash` for it. Bound 6529 Editions only.
     function claimContent(bytes32 contentHash, bytes32 itemHash) external;

@@ -60,10 +60,19 @@ library Typehashes {
         "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint256 nonce,"
         "uint64 deadline)"
     );
-    /// @notice The creator approves a fixed-price phase configuration (fixed-price domain).
+    /// @notice One fixed-price phase, as typed inside `PHASE_CONFIGURATION`.
+    bytes32 internal constant PHASE = keccak256(
+        "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,"
+        "bool leafPriced)"
+    );
+    /// @notice The creator approves a fixed-price phase configuration, binding the resolved
+    ///         currency, the package unit price and every phase (fixed-price domain). The phases
+    ///         hash as an EIP-712 array: `keccak256` of the concatenated
+    ///         `keccak256(abi.encode(PHASE, phase))` of each phase.
     bytes32 internal constant PHASE_CONFIGURATION = keccak256(
-        "PhaseConfiguration(address token,uint256 id,bytes32 phasesHash,uint256 nonce,"
-        "uint64 deadline)"
+        "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,"
+        "Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,"
+        "uint32 walletCap,bool payerKeyed,bool leafPriced)"
     );
 
     // ----- Permit2 witnesses (relayable payment intents, signed in Permit2's own domain) -----

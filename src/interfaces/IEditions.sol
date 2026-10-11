@@ -88,7 +88,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         `IStream.linkEdition`. Permissionless: the item is checked against the master's
     ///         stored item hash, and `proof` places it in `packageRoot`, which must still be
     ///         approved (not revoked) in the package registry. Claims the content hash for the
-    ///         Editions product and locks `PRODUCT_EDITIONS` economics from the resolver.
+    ///         Editions product and locks `PRODUCT_EDITIONS` economics from the resolver. Reverts
+    ///         for edition terms with a non-zero price and `CURRENCY_DEFAULT`.
     /// @return editionId The new edition ID (equal to `workId`).
     function createEdition(
         uint256 workId,

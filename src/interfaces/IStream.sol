@@ -27,6 +27,11 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      `IWorkRecords` when the record opens. Everything else is in `WorkMinted` and in the
 ///      published package.
 ///
+///      An upheld dispute burns the token from auction custody (`IMintTarget.burn`). Anyone may
+///      then call `releaseContent`, which passes the burned work's stored item hash to
+///      `IPackageRegistry.releaseContent`: the content hash is freed for its rightful artist and
+///      the item is tombstoned.
+///
 ///      Satellites are bound once each (`bindWorkRecords`, `bindEditions`): ERC-165 checked, not
 ///      EIP-7702 delegated accounts, never changed. Governed functions are non-payable; each
 ///      names the `Roles` role its selector maps to.
@@ -102,6 +107,12 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
     ///         seed policy).
     error InvalidMintRequest();
+    /// @notice The collection name is empty or too long.
+    error InvalidCollectionName();
+    /// @notice The royalty rate exceeds 100,000.
+    error InvalidRoyaltyRate(uint32 rate);
+    /// @notice The token is not burned.
+    error NotBurned(uint256 tokenId);
     /// @notice The VRF seed of this item has not been delivered.
     error SeedNotDelivered(bytes32 itemHash);
     /// @notice The work is not an edition master, or its edition is already linked.
@@ -143,8 +154,26 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     function totalMinted() external view returns (uint256);
     /// @notice The number of live tokens (minted minus burned).
     function totalSupply() external view returns (uint256);
-    /// @notice What Stream stores for a work. Reverts with `UnknownWork`.
+    /// @notice What Stream stores for a work, with the derived royalty receiver. Reverts with
+    ///         `UnknownWork`.
     function work(uint256 tokenId) external view returns (WorkCore memory);
+    /// @notice The stored core fields only, without deriving the royalty receiver: the cheap read
+    ///         `IWorkRecords` uses. Reverts with `UnknownWork`.
+    function coreOf(uint256 tokenId)
+        external
+        view
+        returns (
+            bytes32 itemHash,
+            uint256 artistId,
+            uint256 collectionId,
+            ItemKind kind,
+            SeedPolicy seedPolicy,
+            uint32 royaltyRate
+        );
+    /// @notice After an upheld-dispute burn, passes the burned work's stored item hash and
+    ///         `contentHash` to `IPackageRegistry.releaseContent`, which checks the pair.
+    ///         Permissionless; reverts with `NotBurned` for a live or unminted token.
+    function releaseContent(uint256 tokenId, bytes32 contentHash) external;
     /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
     ///         Reverts with `UnknownWork`.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
@@ -152,9 +181,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         winner, a pending claim, or the artist); false before, and for burned or unminted
     ///         IDs. A packed flag; it gates edition creation.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
-    /// @notice Marks a token's primary sale settled, at settlement, without waiting for delivery,
-    ///         so a winner who never claims cannot block the edition. Only the adapter that
-    ///         minted the token.
+    /// @notice Marks a token's primary sale settled, at settlement, while the token is still in
+    ///         the adapter's custody and without waiting for delivery, so a winner who never
+    ///         claims cannot block the edition. Only the adapter that minted the token.
     function markPrimarySettled(uint256 tokenId) external;
 
     // ----- rendering -----

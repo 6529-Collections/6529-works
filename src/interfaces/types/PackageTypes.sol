@@ -49,9 +49,10 @@ struct Party {
 }
 
 /// @notice A work's license (ADR 0001 section 8, owner direction 11 October 2026).
-/// @dev `spdxId` is an SPDX identifier or `licenseref-` expression, normalised to lowercase
-///      `[a-z0-9.+-]` (at most `Limits.MAX_LICENSE_ID_BYTES`), for example `cc0-1.0`; its
-///      canonical key is `WorksHashing.licenseKey(spdxId)`, and a license
+/// @dev `spdxId` is an SPDX identifier or `LicenseRef-` expression in its original case, for
+///      display and URLs, from `[A-Za-z0-9.+-]` (at most `Limits.MAX_LICENSE_ID_BYTES`), for
+///      example `CC0-1.0`; its canonical key is `WorksHashing.licenseKey(spdxId)`, keccak256 of
+///      the ID lowercased, and a license
 ///      is identified by that key plus `textFileId`, the `IContentStore` file ID of the full
 ///      license text. CC0 irrevocability is checked on the key. Editions carry their master's
 ///      license.
@@ -75,6 +76,8 @@ struct SaleTerms {
 
 /// @notice The edition an EDITION_MASTER item anchors (ADR 0001 section 6).
 /// @dev `price` is the unit price for FIXED_PRICE sales and the starting price for DUTCH sales.
+///      A non-zero `price` must name an explicit `currency`: `CURRENCY_DEFAULT` is allowed only
+///      with a zero price, because a price is meaningless without its currency.
 ///      `saleKind` is `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`; `params` is that kind's
 ///      encoding (empty for fixed price, `abi.encode(DutchParams)` for Dutch). For an ORIGINAL
 ///      item every field is zero or empty.

@@ -26,7 +26,8 @@ interface IRenderer is IERC165 {
     ///         primary file is at most 1 MB. Reverts otherwise.
     function fullTokenURI(address token, uint256 tokenId) external view returns (string memory);
 
-    /// @notice The largest primary file, in stored bytes, that `tokenURI` inlines (256 KiB
-    ///         until the Sepolia matrix sets the final value).
+    /// @notice The largest primary file `tokenURI` inlines, measured in cost-weighted bytes (an
+    ///         `Identity`-encoded byte counts 8x), 256 KiB until the Sepolia matrix sets the
+    ///         final value.
     function inlineThreshold() external view returns (uint256);
 }

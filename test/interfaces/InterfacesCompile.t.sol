@@ -35,18 +35,18 @@ import { Limits } from "../../src/interfaces/types/Limits.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xaaf75889), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x75bdcb73), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0xaeda2e27), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xa5bd946e), "IEditions");
-        assertEq(type(ISaleAdapter).interfaceId, bytes4(0xd6a7f839), "ISaleAdapter");
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x1613e72f), "IEnglishAuction");
-        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x0a6bae4b), "IFixedPriceSale");
+        assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xc1a8b12f), "IEnglishAuction");
+        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0xfedd2754), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0xb1c10995), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0xb7ab1d96), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xa5daf688), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xc0f6f835), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0xc45d6fce), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
@@ -58,7 +58,7 @@ contract InterfacesCompileTest is Test {
         );
         assertEq(type(IArtistRegistry).interfaceId, bytes4(0x491f37b7), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0xc99f1cff), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0x2ed47f27), "IEntropyModule");
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0x3a410101), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");
     }
 
@@ -117,6 +117,8 @@ contract InterfacesCompileTest is Test {
         assertEq(Limits.MAX_MEDIA_FILES, 32);
         assertEq(Limits.MAX_LICENSE_ID_BYTES, 64);
         assertEq(Limits.MAX_URI_BYTES, 2_048);
-        assertEq(Limits.MAX_PROOF_LENGTH, 32);
+        assertEq(Limits.MAX_PROOF_DEPTH, 32);
+        assertEq(Limits.MAX_RECORD_BYTES, 24_575);
+        assertEq(Limits.MAX_ARTISTS, 16);
     }
 }

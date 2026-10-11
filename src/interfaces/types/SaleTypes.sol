@@ -45,8 +45,10 @@ struct Payment {
 /// @notice What a token contract tells a sale adapter about a primary sale.
 /// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
 ///      Stream token, sets only the sale kind, seller, fee and creator). `currency` is the item's
-///      or edition's currency: `CURRENCY_ETH`, an allowlisted ERC-20, or `CURRENCY_DEFAULT`, which
-///      the adapter resolves (`IEconomicsResolver.resolveCurrency`) and locks when the sale starts.
+///      or edition's currency: `CURRENCY_ETH` or an allowlisted ERC-20; `CURRENCY_DEFAULT` only
+///      with a zero `price` (a non-zero price must name its currency). The adapter resolves
+///      `CURRENCY_DEFAULT` (`IEconomicsResolver.resolveCurrency`) and locks the currency when the
+///      sale starts.
 ///      `price` is the unit price for FIXED_PRICE, the starting price for DUTCH and zero for
 ///      ENGLISH_AUCTION. `seller` receives the artist portion (a split wallet's predicted CREATE2
 ///      address, which may not be deployed), `feeRecipient` the network portion, `feeShare` out of

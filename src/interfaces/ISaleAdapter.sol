@@ -63,6 +63,10 @@ interface ISaleAdapter is IERC165 {
     event TargetSet(address indexed token, bool listed);
     /// @notice The federation registry changed.
     event FederationRegistrySet(address previous, address next);
+    /// @notice `account` paused the adapter.
+    event Paused(address account);
+    /// @notice `account` unpaused the adapter.
+    event Unpaused(address account);
 
     /// @notice The token contract is neither listed nor active in the federation registry.
     error TargetNotAllowed(address token);
@@ -70,11 +74,27 @@ interface ISaleAdapter is IERC165 {
     error NothingToClaim(address account, address currency);
     /// @notice The payment does not match the method, the amount, `msg.value` or the payer.
     error InvalidPayment();
+    /// @notice No sale has this ID.
+    error UnknownSale(uint256 saleId);
+    /// @notice The adapter is paused, so no sale may open, start or sell.
+    error SalePaused();
+    /// @notice A sale of this token is already open.
+    error SaleAlreadyOpen(address token, uint256 id);
+    /// @notice The caller is neither the token's creator nor the PLATFORM role.
+    error NotSaleManager(address caller);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
 
     /// @notice This adapter's `SaleKind` label.
     function saleKind() external view returns (bytes32);
+    /// @notice Pauses the adapter: no new opens or purchases, and for the auction no new `start`.
+    ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role
+    ///         (immediate).
+    function pause() external;
+    /// @notice Unpauses the adapter. UNPAUSER role.
+    function unpause() external;
+    /// @notice Whether the adapter is paused.
+    function paused() external view returns (bool);
     /// @notice Whether `token` may be sold: listed by governance, or active in the federation
     ///         registry.
     function isTarget(address token) external view returns (bool);

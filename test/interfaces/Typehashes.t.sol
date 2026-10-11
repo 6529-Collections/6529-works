@@ -54,8 +54,11 @@ contract TypehashesTest is Test {
             0xcccdd16a86d667337789cb112f688c2a3aabcf081e5b281efc5ea2c4ed5e26f0
         );
         assertEq(
+            Typehashes.PHASE, 0x921a1eebb9b36af81620ff4a1a8cefecb30f1bef4e32aa373c694354dc051290
+        );
+        assertEq(
             Typehashes.PHASE_CONFIGURATION,
-            0x478fdca2250bff3308ee2e9f645397cb387134f7829888377d7a6262516cb071
+            0xc0bdf7233be7e163d786ce38b78bb30cd3a1712cdf5e947f32db0af1ed32d534
         );
     }
 

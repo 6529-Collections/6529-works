@@ -97,8 +97,8 @@ signatures (each in its contract's domain) and fixed-price allowlist leaves.
 | package root | OpenZeppelin `MerkleProof` root (sorted pairs) over leaves `keccak256(bytes.concat(itemHash))`; equal to `StandardMerkleTree` with leaf values `[PACKAGE_ITEM_DOMAIN, item]` |
 | media hash | `keccak256(abi.encode(MEDIA_DOMAIN, media))` over every media file (file ID, decoded SHA-256, role), primary first; fixed by approval |
 | content hash | the decoded SHA-256 of the primary media, carried by the item; the per-product uniqueness key |
-| record file ID | the content-store file ID of a work's JSON descriptive record; editable until finalize |
-| license key | keccak256 of the ASCII-lowercased SPDX ID; CC0 is `keccak256("cc0-1.0")` |
+| record file ID | the content-store file ID of a work's JSON descriptive record: one chunk of at most 24,575 bytes, `Identity` encoding, at most 16 artists; editable until finalize |
+| license key | keccak256 of the ASCII-lowercased SPDX ID (the ID itself keeps its case, from `[A-Za-z0-9.+-]`); CC0 is `keccak256("cc0-1.0")` |
 | file ID | `keccak256(abi.encode(chunkHashes, length, encoding, mimeType, sha256Hash))` (`IContentStore.manifestId`) |
 | split wallet | the economics split factory's CREATE2 address over a canonical payee list (fixed payees by address, then artist-resolved payees by artist ID); predicted before deployment |
 | artist ID | `artistIdOf(account)` if nonzero, otherwise `uint256(uint160(account))`; fits in 160 bits and never changes |
@@ -137,9 +137,9 @@ default when the sale starts".
    identity and counts as artist activity.
 4. **Seed (VRF works only).** Anyone calls `IEntropyModule.requestSeed(item,
    packageRoot, proof)` for an approved, unconsumed VRF item. The seed is keyed
-   by item hash, and a request still undelivered after the retry delay may be
-   repeated by anyone, superseding it. Nothing is in custody yet, so nothing can
-   get stuck.
+   by item hash. While no seed is fixed, anyone may add another request after
+   the retry delay (at least 3 days); the first delivery wins and later ones are
+   no-ops. Nothing is in custody yet, so nothing can get stuck.
 5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
    `revokeMove` cancels an unused one.
 6. **Start (permissionless, 350K gas per steady-state start).** Anyone calls
@@ -167,7 +167,7 @@ default when the sale starts".
    currency's increment floor; later bids add `max(5%, floor)`. Late bids extend the end, outbid bidders are
    credited and `claim`, and PERMIT2 bids carry the `Bid` witness.
 9. **Settle (permissionless).** `settle` delivers the token or records a pending
-   claim (`claimDelivery`).
+   claim (`claimDelivery`, where the winner names the recipient).
    - Seller and fee terms are read back from the token, and the predicted seller
      wallet and the fee recipient are paid; failed pushes go to the escrow.
    - With no bids, the token goes to the artist's current authority, resolved
@@ -214,10 +214,11 @@ default when the sale starts".
 2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators.
    - The STORAGE_OPERATOR role sets preferences. The most specific one wins:
      the file index, then the collection kind, then the global kind, then the
-     first registered locator.
+     first registered locator. A file with no locator yields an empty one.
    - It cannot add, remove or alter locators.
-3. The artist calls `finalize(tokenId, expectedStateHash)`: the record becomes
-   immutable and Stream's default renderer is pinned.
+3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
+   is on-chain complete: the record becomes immutable and Stream's default
+   renderer is pinned.
 4. Anyone uploads the media's chunks and calls `syncOnChain`; the work is then
    permanently on-chain complete. This does not change the state hash.
 5. Amendments need agreement plus a governed action:
@@ -260,7 +261,11 @@ default when the sale starts".
    PARAMETER_SETTER role then calls `cancel(saleId, outcomeRef)` while the
    auction is still paused.
    - `outcomeRef` must equal `latestDisputeOutcome`.
-   - The bid is credited back and the token is burned; the item stays consumed.
+   - The window is inclusive (`block.timestamp <= pausedUntil`).
+   - The bid is credited back and the token is burned. Anyone then calls
+     `IStream.releaseContent(tokenId, contentHash)`, which passes the burned
+     work's item hash to `IPackageRegistry.releaseContent`: the content hash is
+     freed for its rightful artist and the item is tombstoned.
 4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
    ends by itself when the allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
@@ -295,7 +300,7 @@ interfaces name the role each governed selector is meant to map to:
 | Role | Selectors |
 | --- | --- |
 | ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `bindSplitFactory`; `IEditions.bindWorkRecords` |
-| GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage`, `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset` |
+| GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset` |
 | UNPAUSER | `IEnglishAuction.resume` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator) |

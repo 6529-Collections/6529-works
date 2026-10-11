@@ -50,7 +50,8 @@ interface IMintTarget {
 
     /// @notice Burns `amount` of token `id` from the calling adapter's own balance after its sale
     ///         was cancelled (ADR 0001 section 12: an upheld dispute burns the token, leaving a
-    ///         gap in the ID sequence). Admitted minters only.
+    ///         gap in the ID sequence). Admitted minters, and the adapter that minted the token
+    ///         even if it has since been removed, so a cancelled sale can always burn.
     function burn(uint256 id, uint256 amount) external;
 
     /// @notice Whether `adapter` may call `mint` and `burn`.

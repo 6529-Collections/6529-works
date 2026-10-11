@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ISaleAdapter } from "./ISaleAdapter.sol";
-import { Payment } from "./types/SaleTypes.sol";
+import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 
 /// @title IEnglishAuction
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
@@ -122,7 +122,8 @@ interface IEnglishAuction is ISaleAdapter {
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
     ///         the seller and the network fee. Permissionless.
     function settle(uint256 saleId) external;
-    /// @notice The pending recipient claims its token to `to`.
+    /// @notice The winner whose delivery is pending names the recipient `to` and receives the
+    ///         token there.
     function claimDelivery(uint256 saleId, address to) external;
 
     /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
@@ -132,8 +133,9 @@ interface IEnglishAuction is ISaleAdapter {
     ///         once the 7-day allowance runs out, without any call.
     function resume(uint256 saleId) external;
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
-    ///         burns the token. PARAMETER_SETTER role, while paused. `outcomeRef` must be nonzero
-    ///         and equal `IStatementLog.latestDisputeOutcome(token, tokenId)`.
+    ///         burns the token. PARAMETER_SETTER role, while paused: the window is inclusive,
+    ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and equal
+    ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
     /// @notice The high bidder withdraws its bid while the auction is paused; it is credited back
     ///         and the auction has no bid.
@@ -142,14 +144,18 @@ interface IEnglishAuction is ISaleAdapter {
     /// @notice Sets the auction parameters, within the implementation's ceilings.
     ///         PARAMETER_SETTER role, compare-and-set.
     function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next) external;
-    /// @notice Sets a currency's opening bid (zero at launch; the first bid is still at least 1).
-    ///         PARAMETER_SETTER role, compare-and-set.
+    /// @notice Sets a currency's opening bid, raising or lowering it up to the implementation's
+    ///         ceiling (zero at launch; the first bid is still at least 1). PARAMETER_SETTER role,
+    ///         compare-and-set.
     function setOpeningBid(address currency, uint256 expected, uint256 next) external;
 
     /// @notice The derived sale ID: `uint256(keccak256(abi.encode(token, tokenId)))`.
     function saleIdOf(address token, uint256 tokenId) external pure returns (uint256);
     /// @notice An auction. Reverts for an unknown sale ID.
     function auction(uint256 saleId) external view returns (Auction memory);
+    /// @notice A sale's locked terms: token, token ID and currency from the auction, seller and
+    ///         fee terms read back from the token.
+    function lockedTerms(uint256 saleId) external view returns (LockedTerms memory);
     /// @notice The smallest bid accepted now.
     function minimumBid(uint256 saleId) external view returns (uint256);
     /// @notice The governed auction parameters.

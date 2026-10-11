@@ -23,8 +23,10 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///
 ///      Artist consent to discounts: a leaf price below the package price counts only in a sale
 ///      whose phases the artist approved, by opening it as the `creator` or by the creator's
-///      `Typehashes.PHASE_CONFIGURATION` signature (`phasesHash = keccak256(abi.encode(phases))`,
-///      single-use revocable nonce). Otherwise such a purchase reverts with `PriceBelowPackage`.
+///      `Typehashes.PHASE_CONFIGURATION` signature, which binds the resolved currency, the package
+///      unit price and every phase as a typed `Phase[]` (single-use revocable nonce). Otherwise
+///      such a purchase reverts with `PriceBelowPackage`. Purchase counts are kept per edition
+///      `(token, id, phase, account)`, not per sale, so reopening a sale cannot reset a cap.
 ///      `saleKind()` is `SaleKind.FIXED_PRICE`; PERMIT2 purchases use
 ///      `Typehashes.PURCHASE_WITNESS`, and `payment.amount` is the exact total.
 interface IFixedPriceSale is ISaleAdapter {
@@ -68,14 +70,10 @@ interface IFixedPriceSale is ISaleAdapter {
 
     /// @notice The phase is unknown or not open now, or the sale is closed.
     error PhaseNotOpen(uint256 saleId, uint256 phase);
-    /// @notice A sale of this token is already open.
-    error SaleAlreadyOpen(address token, uint256 id);
     /// @notice The allowlist proof does not verify.
     error NotAllowlisted(uint256 saleId, uint256 phase, address account);
     /// @notice The purchase exceeds the wallet's cap in this phase.
     error WalletCapExceeded(uint256 saleId, uint256 phase, address account);
-    /// @notice The caller is neither the token's creator nor the PLATFORM role.
-    error NotSaleManager(address caller);
     /// @notice A leaf price below the package price, in a sale the artist did not approve.
     error PriceBelowPackage(uint256 leafPrice, uint256 packagePrice);
     /// @notice The consent is expired, its nonce is used, or the signature is not the creator's.
@@ -90,7 +88,8 @@ interface IFixedPriceSale is ISaleAdapter {
         Phase[] calldata phases,
         ArtistConsent calldata consent
     ) external returns (uint256 saleId);
-    /// @notice Closes a sale. Callable by the creator or the PLATFORM role.
+    /// @notice Closes a sale. Callable by the creator or the PLATFORM role at any time, and by
+    ///         anyone once all of its phases have ended.
     function closeSale(uint256 saleId) external;
     /// @notice Buys `p.quantity` copies at the phase's unit price.
     function purchase(Purchase calldata p, bytes32[] calldata proof, Payment calldata payment)
@@ -109,8 +108,8 @@ interface IFixedPriceSale is ISaleAdapter {
     function openSaleOf(address token, uint256 id) external view returns (uint256 saleId);
     /// @notice A sale's phases.
     function phases(uint256 saleId) external view returns (Phase[] memory);
-    /// @notice Copies `account` bought in a phase (counted against its cap).
-    function purchased(uint256 saleId, uint256 phase, address account)
+    /// @notice Copies `account` bought of token `id` in phase `phase` (counted against its cap).
+    function purchased(address token, uint256 id, uint256 phase, address account)
         external
         view
         returns (uint256);

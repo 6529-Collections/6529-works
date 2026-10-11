@@ -12,7 +12,10 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      store (RFC 8785 canonical; keys `name`, `description`, `artists`, `year`, `medium`,
 ///      `dimensions`, `attributes` as `[{trait_type, value}]`, `dependencies` as
 ///      `[{name, version}]`, and `files` mapping relative paths to media indexes); this contract
-///      stores only its file ID. A record opens with the approved file and the approved media;
+///      stores only its file ID. Bounds, enforced by `openRecord` and `setRecord`: the record file
+///      is a single content-store chunk of at most `Limits.MAX_RECORD_BYTES` (24,575) bytes with
+///      `Identity` encoding, lists at most `Limits.MAX_ARTISTS` artists, and its `year` is a JSON
+///      number. A record opens with the approved file and the approved media;
 ///      until finalize the artist may point the work at a new record file, but media never
 ///      changes.
 ///
@@ -84,7 +87,7 @@ interface IWorkRecords {
     /// @notice The item or media does not match the work's committed item hash, the media
     ///         commitment, the content hash, the content store's declared SHA-256 or a limit.
     error InvalidRecordData(uint256 tokenId);
-    /// @notice The record file is not registered in the content store.
+    /// @notice The record file is not registered in the content store, or breaks a record bound.
     error UnknownRecordFile(bytes32 recordFileId);
     /// @notice The caller is not the work's artist.
     error NotWorkArtist(uint256 tokenId, address caller);
@@ -106,6 +109,13 @@ interface IWorkRecords {
     /// @notice The renderer lacks ERC-165 support for `IRenderer` or the code hash, or is an
     ///         EIP-7702 delegated account.
     error InvalidRenderer(address renderer);
+    /// @notice An installed dependency lacks code, ERC-165 support or the expected code hash, or
+    ///         is an EIP-7702 delegated account.
+    error InvalidDependency(address dependency);
+    /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`.
+    error InvalidLicense();
+    /// @notice The work is not finalized (an errata repin needs a finalized work).
+    error WorkNotFinalized(uint256 tokenId);
 
     /// @notice The 6529 Stream core this satellite serves (immutable).
     function stream() external view returns (address);
@@ -123,7 +133,8 @@ interface IWorkRecords {
     ///         until finalize. Re-publishing the current file is a no-op.
     function setRecord(uint256 tokenId, bytes32 recordFileId, bytes32 expectedStateHash) external;
     /// @notice The artist finalizes the work: the record becomes immutable and Stream's current
-    ///         default renderer is pinned (ADR 0001 section 10).
+    ///         default renderer is pinned (ADR 0001 section 10). The record file must be on-chain
+    ///         complete, so a finalized work's record is always readable.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks the work on-chain complete once every media file is complete in the
     ///         content store. Permissionless and one-way; does not change the state hash.
@@ -196,9 +207,11 @@ interface IWorkRecords {
     ///         file's preferred index, then the collection's preferred kind, then the global
     ///         preferred kind, then the first registered locator. A kind matches only if the file
     ///         has a locator of that kind (ONCHAIN only if the file is complete), and then its
-    ///         first such locator is used. Reverts if the file has no locator at all.
+    ///         first such locator is used. Returns an empty locator (kind NONE) when the file has
+    ///         no locator at all.
     /// @return locator The chosen locator.
-    /// @return index Its registration index, or `type(uint256).max` for the implicit ONCHAIN one.
+    /// @return index Its registration index, or `type(uint256).max` for the implicit ONCHAIN one
+    ///         and for none.
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view

@@ -37,9 +37,9 @@ contract WorksHashingTest is Test {
     bytes32 internal constant GOLDEN_MEDIA_HASH =
         0x0a5c4982d55e403ee21588e7c9851a93c5898c87550395b244dca3b145c735c3;
     bytes32 internal constant GOLDEN_ITEM_HASH =
-        0x48255b45e91b8fe0b52be5b868373f586cc5b29dbce22126296926f109276ce1;
+        0x8c3d40f88019da4b66062bbc721b27d9fad44e3061e87d6e8d39cfe4ba0feb55;
     bytes32 internal constant GOLDEN_LEAF =
-        0x104226a56e48723ff236e34e66e31a23740c7d4c5904b7087710304a68b16482;
+        0x4304572d88646e921991ab525d4ebf5b92a7d306d21581ca070f1affc3aa9e37;
     bytes32 internal constant GOLDEN_CC0_KEY =
         0xc524702ec980d5da7df189fec7f0c9b69529a70700cfd88d07f8cc34d042ad71;
 
@@ -65,7 +65,7 @@ contract WorksHashingTest is Test {
         item.payees[0] = ISplitWallet.Payee(0, A3, 10_000);
         item.payees[1] = ISplitWallet.Payee(uint256(uint160(A1)), address(0), 65_000);
         item.payees[2] = ISplitWallet.Payee(uint256(uint160(A2)), address(0), 25_000);
-        item.license = License("cc0-1.0", keccak256("cc0 text"));
+        item.license = License("CC0-1.0", keccak256("cc0 text"));
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = keccak256("seed");
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
