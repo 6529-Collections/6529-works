@@ -231,7 +231,11 @@ contract RendererMediaTest is RendererBase {
     function test_Locator_GzipFilesAreNeverInlined() public {
         IContentStore.Encoding[2] memory encodings = [GZIP, GZIP_BASE64];
         for (uint256 i; i < 2; ++i) {
-            bytes32 file = _file(_data(500, 12 + i), encodings[i], PNG);
+            // A `GzipBase64` file is valid base64 text, and the store attests it as it does a
+            // `Base64` file; its bytes are a gzip stream, though, and are never the media.
+            bytes memory stored = i == 0 ? _data(500, 12) : bytes(Base64.encode(_data(375, 13)));
+            bytes32 file = _file(stored, encodings[i], PNG);
+            if (i == 1) assertTrue(_attested(file));
             _install(file);
             records.addLocator(ID, file, Locator(LocatorKind.ARWEAVE, AR));
             string memory j = _out();

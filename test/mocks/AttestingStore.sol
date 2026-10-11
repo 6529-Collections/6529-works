@@ -20,7 +20,12 @@ contract AttestingStore is ContentStore {
 
     function attestBase64(bytes32 fileId) external returns (bool done) {
         FileInfo memory info = this.fileInfo(fileId);
-        require(info.encoding == Encoding.Base64 && this.isComplete(fileId), "not a base64 file");
+        // `Base64` and `GzipBase64` can be attested; a renderer inlines only the first.
+        require(
+            (info.encoding == Encoding.Base64 || info.encoding == Encoding.GzipBase64)
+                && this.isComplete(fileId),
+            "not a base64 file"
+        );
         if (info.length % 4 != 0) revert NotBase64(fileId);
         uint256 seen;
         bool padded;

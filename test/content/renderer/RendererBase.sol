@@ -73,7 +73,7 @@ abstract contract RendererBase is ContentBase {
         returns (bytes32 fileId)
     {
         fileId = _unattested(stored, encoding, mime);
-        if (encoding == BASE64) _attest(fileId);
+        if (encoding == BASE64 || encoding == GZIP_BASE64) _attest(fileId);
     }
 
     /// @dev Like `_file`, but a `Base64` file is not attested, whatever its text.

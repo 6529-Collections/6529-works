@@ -383,19 +383,23 @@ contract RendererReviewTest is RendererBase {
         _install(_file(png, IDENTITY, "image/png"));
         records.setLicense(ID, License("LicenseRef-Studio-1", text));
 
-        // The text file is not one of the work's media: no URL, and no read of a locator for it.
+        // The text file is not one of the work's media: no URL, even if the satellite happens to
+        // know a copy of it (locators exist for media files, and are not read for other files).
+        records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://not-media"));
         string memory j = _out();
         assertEq(_str(j, ".license_text_file"), vm.toString(text));
         assertFalse(_has(j, ".license_url"));
 
         // Listed, but with no copy anywhere: still no URL.
+        bytes32 bare = _file("Other terms.", IDENTITY, "text/plain");
+        records.setLicense(ID, License("LicenseRef-Studio-1", bare));
         bytes32 file = _file(png, IDENTITY, "image/png");
         MediaFile[] memory media = new MediaFile[](2);
         media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(text, _sha(text), FileRole.AUXILIARY);
+        media[1] = MediaFile(bare, _sha(bare), FileRole.AUXILIARY);
         records.setMedia(ID, media);
         j = _out();
-        assertEq(_str(j, ".license_text_file"), vm.toString(text));
+        assertEq(_str(j, ".license_text_file"), vm.toString(bare));
         assertFalse(_has(j, ".license_url"));
     }
 
