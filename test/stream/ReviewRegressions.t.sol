@@ -226,7 +226,7 @@ contract ReviewRegressionsTest is RecordsFixture {
         assertEq(records.record(tokenId).recordFileId, good);
     }
 
-    /// @dev N1a: an approved two-chunk record (a JSON record over 24,575 bytes) opens, and the
+    /// @dev N1a: an approved two-chunk record (longer than one content-store chunk) opens, and the
     ///      artist replaces it with `setRecord` before finalize.
     function test_twoChunkRecordOpensAndIsFixable() public {
         MediaFile[] memory media = _single(1, true);
@@ -234,7 +234,8 @@ contract ReviewRegressionsTest is RecordsFixture {
         bytes32[] memory hashes = new bytes32[](2);
         hashes[0] = keccak256("chunk0");
         hashes[1] = keccak256("chunk1");
-        item.recordFileId = _manifest(hashes, 24_575 + 100, IContentStore.Encoding.Identity);
+        item.recordFileId =
+            _manifest(hashes, store.CHUNK_SIZE() + 100, IContentStore.Encoding.Identity);
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
         assertTrue(records.isOpen(tokenId));

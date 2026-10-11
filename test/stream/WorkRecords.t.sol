@@ -342,9 +342,20 @@ contract WorkRecordsTest is RecordsFixture {
         _expectBadRecord(3, _recordFile(_oneChunk(json), IContentStore.Encoding.Base64, true));
         // Two stored chunks, and so longer than `MAX_RECORD_BYTES`.
         bytes[] memory two = new bytes[](2);
-        two[0] = new bytes(Limits.MAX_RECORD_BYTES);
+        two[0] = new bytes(store.CHUNK_SIZE());
         two[1] = "}";
         _expectBadRecord(4, _recordFile(two, IContentStore.Encoding.Identity, true));
+        // One chunk, one byte over the bound (when the bound is below a full chunk).
+        if (Limits.MAX_RECORD_BYTES < store.CHUNK_SIZE()) {
+            _expectBadRecord(
+                5,
+                _recordFile(
+                    _oneChunk(new bytes(Limits.MAX_RECORD_BYTES + 1)),
+                    IContentStore.Encoding.Identity,
+                    true
+                )
+            );
+        }
     }
 
     /// @dev A full chunk is accepted, and the JSON is not parsed here: the renderer validates

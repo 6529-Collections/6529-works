@@ -72,7 +72,7 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   minted work. Every per-token function reverts with `RecordNotOpen` until
   then.
 - **Record files.** `setRecord` and `finalize` accept a record file only if it
-  is registered, `Identity`-encoded, at most 24,575 bytes (one chunk) and
+  is registered, `Identity`-encoded, at most `Limits.MAX_RECORD_BYTES` (one chunk) and
   complete. These checks are O(1). An approved record that breaks them still
   opens; the renderer serves core-only metadata with a record status, and the
   artist replaces it with `setRecord` before finalize. The JSON is not parsed

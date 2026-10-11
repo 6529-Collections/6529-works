@@ -16,7 +16,7 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      stored as they are, so an approved record file can never keep a minted work from
 ///      opening. Structural bounds, enforced by `setRecord` and `finalize`, each O(1): the
 ///      record file is registered in the content store, complete, and a single `Identity`
-///      chunk of at most `Limits.MAX_RECORD_BYTES` (24,575) bytes. The JSON itself (at most
+///      chunk of at most `Limits.MAX_RECORD_BYTES` bytes. The JSON itself (at most
 ///      `Limits.MAX_ARTISTS` artists, a numeric `year`, the key set) is validated by the
 ///      renderer, which renders core-only metadata with a record status for an invalid or
 ///      out-of-bounds record. Until finalize the artist may point the work at a new record

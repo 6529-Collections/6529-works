@@ -660,10 +660,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @dev The record file's structural bounds: registered, at most `Limits.MAX_RECORD_BYTES`
-    ///      (the store's layout rule makes that exactly one chunk), `Identity` encoding, and
-    ///      complete (that one chunk stored). Each check is O(1). The JSON itself is not parsed here: the renderer validates it and
-    ///      falls back to core-only metadata for an invalid record. Only the store's
-    ///      `ContentFileUnknown` reads as unregistered; any other store failure propagates.
+    ///      (at most one chunk, so the store's layout rule makes it exactly one), `Identity`
+    ///      encoding, and complete (that one chunk stored). Each check is O(1). The JSON itself
+    ///      is not parsed here: the renderer validates it and falls back to core-only metadata
+    ///      for an invalid record. Only the store's `ContentFileUnknown` reads as unregistered;
+    ///      any other store failure propagates.
     function _checkRecordFile(bytes32 fileId) private view {
         (bool ok, bytes memory info) =
             contentStore.staticcall(abi.encodeCall(IContentStore.fileInfo, (fileId)));
