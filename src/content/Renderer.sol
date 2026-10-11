@@ -42,13 +42,16 @@ import { JsonScan } from "./JsonScan.sol";
 ///      complete, or when it is not acceptable, the work gets core-only metadata from Stream with
 ///      a `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a
 ///      revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
-///      `Identity`, is over one chunk, is not UTF-8 or JSON (no key with a backslash, no `\u0000`
-///      or lone surrogate escape, at most `JsonScan.MAX_VALUES` values and eight levels), has no
-///      name or a wrong type, lists more than `MAX_ARTISTS` artists or `MAX_ATTRIBUTES`
-///      attributes, holds more than `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an
-///      integer of at most six digits, or has an attribute that is not a string name and a string
-///      or number value, or whose name is one the renderer writes itself. These bounds are what
-///      keep the cost of any record within 8M gas (see `RendererGas.t.sol`).
+///      `Identity`, is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a
+///      backslash, no `\u0000`, lone surrogate or bad hex digit in an escape, no number of more
+///      than 24 bytes or with more than two exponent digits, at most `JsonScan.MAX_VALUES` values
+///      and escapes together, eight levels), has no name or a wrong type, lists more than
+///      `MAX_ARTISTS` artists or `MAX_ATTRIBUTES` attributes, holds more than `MAX_ESCAPES` `%`
+///      and `#`, gives a `year` that is not an integer of at most six digits, or has an attribute
+///      that is not an object of at most eight different members with a string `trait_type` and
+///      a string or number `value`, or whose name has a backslash or is one the renderer writes
+///      itself. These bounds are what keep the cost of any record within 8M gas, whatever its
+///      bytes (see `RendererGas.t.sol`, a row for every class of byte).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is
@@ -65,7 +68,8 @@ import { JsonScan } from "./JsonScan.sol";
 ///      served by locator only. A JavaScript primary (stored as `Identity`, and whose record
 ///      declares no `dependencies`) is wrapped in a small HTML page that sets `window.works` in a
 ///      script of its own (see `SHELL_HEAD`), with `</script` and `<!--` neutralized in the
-///      artist's (see `HtmlScript` for what that changes). Otherwise the preferred locator is
+///      artist's (see `HtmlScript` for what that changes; a script with more than
+///      `MAX_SCRIPT_LT` `<` is not wrapped). Otherwise the preferred locator is
 ///      given, plus a small on-chain preview if the work lists a complete PREVIEW image: a
 ///      preview is inlined by the same rules as a primary, so an unattested `Base64` preview is
 ///      given by locator. A satellite that cannot answer for a locator fails the call.
@@ -92,9 +96,12 @@ contract Renderer is IRenderer {
     /// @notice The most artists a record may list.
     uint256 public constant MAX_ARTISTS = Limits.MAX_ARTISTS;
     /// @notice The most attributes a record may list (each costs about 15,000 gas to check).
-    uint256 public constant MAX_ATTRIBUTES = 128;
+    uint256 internal constant MAX_ATTRIBUTES = 128;
+    /// @notice The most `<` a script may hold and still be wrapped in the HTML page (each costs up
+    ///         to about 2,800 gas to neutralize).
+    uint256 internal constant MAX_SCRIPT_LT = 1_024;
     /// @notice The most `%` and `#` a record may hold (each costs about 200 gas to escape).
-    uint256 public constant MAX_ESCAPES = 2_048;
+    uint256 internal constant MAX_ESCAPES = 2_048;
 
     /// @notice The content store the media and records are read from (immutable).
     IContentStore public immutable contentStore;
@@ -417,24 +424,33 @@ contract Renderer is IRenderer {
         return (ok, a.length == 0 ? bytes("") : JsonScan.slice(j, (start << 128) | end));
     }
 
-    /// @dev Whether the quoted trait name `t` (a span, so never empty) is not a string, holds an
-    ///      escape for an ASCII character (`\u00` and a digit below 8: it could spell a reserved
-    ///      name), or is one of the names the renderer uses itself, by the first four bytes of its
-    ///      hash. A clash with another name only makes that record render core-only, so four
-    ///      bytes are enough. The text is valid JSON, so a backslash is followed by its escape,
-    ///      and a `\u` by four hex digits.
-    function _reserved(bytes memory t) private pure returns (bool) {
-        for (uint256 i; i < t.length; ++i) {
-            if (t[i] != "\\") continue;
-            if (t[++i] == "u" && t[i + 1] == "0" && t[i + 2] == "0" && t[i + 3] < "8") return true;
+    /// @dev Whether the quoted trait name `t` (a span, so never empty) is not a string, holds a
+    ///      backslash (as a key may not: an escape could spell a reserved name), or is one of the
+    ///      names the renderer uses itself, by the first four bytes of its hash. Those are all at
+    ///      most 19 bytes with their quotes, so only a name that short is hashed: the cost is
+    ///      one cheap pass over the bytes, not a read per byte. A clash with another name only
+    ///      makes that record render core-only, so four bytes are enough.
+    function _reserved(bytes memory t) private pure returns (bool bad) {
+        uint256 n = t.length;
+        assembly ("memory-safe") {
+            let p := add(t, 0x20)
+            bad := iszero(eq(byte(0, mload(p)), 0x22))
+            for { let e := add(p, n) } lt(p, e) { p := add(p, 1) } {
+                if eq(byte(0, mload(p)), 0x5c) {
+                    bad := 1
+                    break
+                }
+            }
         }
-        // `bytes4(keccak256(name))` of each quoted trait name the renderer writes itself: "Artist",
-        // "Artist ID", "Year", "Medium", "Dimensions", "Collection", "Serial", "Edition of",
-        // "Seed", "Dispute statement". (A test checks every one.)
-        bytes4 h = bytes4(keccak256(t));
-        return t[0] != '"' || h == 0xa685b276 || h == 0x4efd9a81 || h == 0x2b90e9a0
-            || h == 0x48d25b09 || h == 0xc1703126 || h == 0x3b9b07f9 || h == 0xe7eb4234
-            || h == 0xfc75eca5 || h == 0x8781d344 || h == 0x46a5ab8c;
+        if (!bad && n <= 19) {
+            // `bytes4(keccak256(name))` of each quoted trait name the renderer writes itself:
+            // "Artist", "Artist ID", "Year", "Medium", "Dimensions", "Collection", "Serial",
+            // "Edition of", "Seed", "Dispute statement". (A test checks every one.)
+            bytes4 h = bytes4(keccak256(t));
+            bad = h == 0xa685b276 || h == 0x4efd9a81 || h == 0x2b90e9a0 || h == 0x48d25b09
+                || h == 0xc1703126 || h == 0x3b9b07f9 || h == 0xe7eb4234 || h == 0xfc75eca5
+                || h == 0x8781d344 || h == 0x46a5ab8c;
+        }
     }
 
     /// @dev A string or number (what a trait value can be).
@@ -543,6 +559,8 @@ contract Renderer is IRenderer {
         bytes memory raw = new bytes(length);
         _copyFile(id, length, _ptr(raw));
         if (!Utf8.isValid(raw)) return m;
+        (bool ok, string memory safe) = HtmlScript.neutralize(string(raw), MAX_SCRIPT_LT);
+        if (!ok) return m;
         bytes32 seed = _seed(c);
         bytes memory html = bytes.concat(
             bytes(SHELL_HEAD),
@@ -553,7 +571,7 @@ contract Renderer is IRenderer {
                 seed == 0 ? bytes("null") : _quote(Strings.toHexString(uint256(seed), 32)),
                 "};</script><script>"
             ),
-            bytes(HtmlScript.neutralize(string(raw))),
+            bytes(safe),
             bytes(SHELL_TAIL)
         );
         m.text = bytes.concat("data:text/html;base64,", bytes(Base64.encode(html)));

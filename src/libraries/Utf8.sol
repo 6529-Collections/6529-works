@@ -8,7 +8,9 @@ pragma solidity ^0.8.24;
 ///      sequences. Ported from 6529Stream PR #744's `StreamStaticText.isValidUtf8` (word-skip over ASCII)
 ///      and `StreamScriptBundles._utf8` (state carried across chunk boundaries).
 ///
-///      Each code point is checked from one word load; ASCII runs are skipped a word at a time.
+///      Each code point is checked from one word load; ASCII runs are skipped a word at a time, and
+///      the common two- and three-byte sequences take a shorter path (about a quarter of the gas
+///      of the general one, which checks every lead byte's special range).
 ///      A stream state is 0 at a code-point boundary. Otherwise it packs the partial sequence
 ///      as `remaining | lo << 8 | hi << 16`: the number of continuation bytes still due and the
 ///      inclusive range allowed for the next one. Pass only 0 or a state returned by
@@ -105,6 +107,20 @@ library Utf8 {
                         }
                     }
                     continue
+                }
+                // The common cases first, a sequence of two bytes (C2-DF) or three (E1-EC, EE-EF)
+                // that ends inside the chunk, whose continuations take the plain range 80-BF.
+                if and(lt(sub(c, 0xc2), 0x1e), lt(add(p, 1), end)) {
+                    if lt(sub(byte(1, w), 0x80), 0x40) {
+                        p := add(p, 2)
+                        continue
+                    }
+                }
+                if and(lt(sub(c, 0xe1), 0x0f), and(iszero(eq(c, 0xed)), lt(add(p, 2), end))) {
+                    if and(lt(sub(byte(1, w), 0x80), 0x40), lt(sub(byte(2, w), 0x80), 0x40)) {
+                        p := add(p, 3)
+                        continue
+                    }
                 }
                 // A lead byte: n continuations, the first of them within [lo, hi].
                 let n := 0

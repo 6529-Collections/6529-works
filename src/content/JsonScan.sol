@@ -11,10 +11,16 @@ pragma solidity ^0.8.24;
 ///        is never a second `name`);
 ///      - `\u0000`, a lone surrogate escape (`\uD800` to `\uDFFF` not in a high-low pair), because
 ///        parsers differ on them (serde_json and PostgreSQL reject them);
-///      - more than `MAX_VALUES` values (every string, number, literal, array and object below
-///        the top-level object is one; keys are not), and nesting deeper than `MAX_DEPTH`;
-///      - a duplicate key of a requested top-level member, and more elements than a caller's `max`.
-///      The caller checks UTF-8 separately (`Utf8`).
+///      - a number of more than 24 bytes or with an exponent of more than two digits, so every
+///        number is a finite binary64 (`1e400` is one parsers read differently) and the digits
+///        are bounded;
+///      - more than `MAX_VALUES` values and escapes together (every string, number, literal,
+///        array and object below the top-level object is one, and so is every backslash escape,
+///        a surrogate pair being two; keys are not), and nesting deeper than `MAX_DEPTH`: this
+///        is what bounds the cost of a document, whatever its bytes;
+///      - a duplicate key of a requested top-level member, and more elements than a caller's `max`;
+///      - in {records}, an element that has more than eight members or two with the same key.
+///      The caller checks UTF-8 separately (`Utf8`), and bounds the size of the text.
 ///
 ///      {object} is the only function that validates. {members}, {elements} and {records}
 ///      navigate a value of a document {object} has accepted: they skip values without checking
@@ -22,7 +28,8 @@ pragma solidity ^0.8.24;
 ///      meaningful, on any other text: they never read outside the bytes and give `ok` false
 ///      when the text is not what they look for. Strings are scanned a word at a time where
 ///      they hold no quote, backslash or control byte, so a long plain string costs about 5 gas
-///      a byte; the other values cost 1,000 to 2,000 gas each, which `MAX_VALUES` bounds.
+///      a byte; a value or an escape costs 1,000 to 2,000 gas, which `MAX_VALUES` bounds. White
+///      space costs about 40 gas a byte, which the caller's bound on the size of the text bounds.
 library JsonScan {
     uint256 internal constant MAX_DEPTH = 8;
     uint256 internal constant MAX_VALUES = 1_024;
@@ -152,8 +159,10 @@ library JsonScan {
                     let d := byte(0, mload(add(p, k)))
                     let n := sub(d, 0x30)
                     if iszero(lt(n, 10)) {
-                        n := add(sub(or(d, 0x20), 0x61), 10)
-                        if iszero(lt(n, 16)) { n := 0x10000 }
+                        // A letter a-f in either case (`@` and a backtick are one below `a`).
+                        let l := sub(or(d, 0x20), 0x61)
+                        n := 0x10000
+                        if lt(l, 6) { n := add(l, 10) }
                     }
                     v := or(shl(4, v), n)
                 }
@@ -161,8 +170,11 @@ library JsonScan {
 
             // The pointer after the escape whose backslash is just before p, or zero: one of
             // `"\/bfnrt`, or `u` and four hex digits that are not NUL and not a lone surrogate.
-            function escape(p, e) -> q {
-                if iszero(lt(p, e)) { leave }
+            // Each escape (a surrogate pair is two) counts as a value against the budget.
+            function escape(p, e, ctx) -> q {
+                let n := add(mload(ctx), 1)
+                mstore(ctx, n)
+                if or(gt(n, 1024), iszero(lt(p, e))) { leave }
                 let c := byte(0, mload(p))
                 p := add(p, 1)
                 if or(
@@ -187,13 +199,17 @@ library JsonScan {
                 if lt(sub(e, p), 6) { leave }
                 if iszero(eq(shr(240, mload(p)), 0x5c75)) { leave }
                 let w := hex4(add(p, 2))
-                if and(iszero(lt(w, 0xdc00)), lt(w, 0xe000)) { q := add(p, 6) }
+                if and(iszero(lt(w, 0xdc00)), lt(w, 0xe000)) {
+                    q := add(p, 6)
+                    mstore(ctx, add(n, 1))
+                    if gt(add(n, 1), 1024) { q := 0 }
+                }
             }
 
             // The pointer after the string that opens at p, or zero. Mode 0: a value, 1: an
             // object key (no backslash), 2: a string of a validated document, skipped without
             // checking (only quotes and backslashes matter).
-            function str(p, e, kind) -> q {
+            function str(p, e, kind, ctx) -> q {
                 if iszero(and(lt(p, e), eq(byte(0, mload(p)), 0x22))) { leave }
                 p := add(p, 1)
                 // OR-ed into the control-byte test, so that mode 2 never flags one.
@@ -248,7 +264,7 @@ library JsonScan {
                                 continue
                             }
                             if kind { leave }
-                            p := escape(p, e)
+                            p := escape(p, e, ctx)
                             if iszero(p) { leave }
                             continue
                         }
@@ -266,7 +282,10 @@ library JsonScan {
             }
 
             // `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`: the pointer after it, or zero.
+            // At most 24 bytes and an exponent of at most two digits, so every number is a finite
+            // binary64 (parsers disagree about 1e400) and the digits are bounded.
             function num(p, e) -> q {
+                let t0 := p
                 if and(lt(p, e), eq(byte(0, mload(p)), 0x2d)) { p := add(p, 1) }
                 if iszero(lt(p, e)) { leave }
                 let c := byte(0, mload(p))
@@ -287,9 +306,10 @@ library JsonScan {
                         if or(eq(c, 0x2b), eq(c, 0x2d)) { p := add(p, 1) }
                     }
                     c := digits(p, e)
-                    if eq(c, p) { leave }
+                    if or(eq(c, p), gt(sub(c, p), 2)) { leave }
                     p := c
                 }
+                if gt(sub(p, t0), 24) { leave }
                 q := p
             }
 
@@ -324,7 +344,7 @@ library JsonScan {
                 mstore(ctx, n)
                 if or(gt(n, 1024), iszero(lt(p, e))) { leave }
                 switch byte(0, mload(p))
-                case 0x22 { q := str(p, e, 0) }
+                case 0x22 { q := str(p, e, 0, ctx) }
                 case 0x7b { if depth { q := obj(p, e, sub(depth, 1), ctx) } }
                 case 0x5b { if depth { q := arr(p, e, sub(depth, 1), ctx) } }
                 case 0x74 { q := lit(p, e, 4, 0x74727565) }
@@ -368,7 +388,7 @@ library JsonScan {
                 }
                 for { } 1 { } {
                     let at := p
-                    p := str(p, e, 1)
+                    p := str(p, e, 1, ctx)
                     if iszero(p) { leave }
                     let h := 0
                     if eq(depth, 8) { h := keccak256(add(at, 1), sub(sub(p, at), 2)) }
@@ -395,11 +415,11 @@ library JsonScan {
 
             // The pointer after the value at p of a validated document, or zero. Nothing is
             // checked, but nothing outside [p, e) is read.
-            function skip(p, e) -> q {
+            function skip(p, e, ctx) -> q {
                 if iszero(lt(p, e)) { leave }
                 let c := byte(0, mload(p))
                 if eq(c, 0x22) {
-                    q := str(p, e, 2)
+                    q := str(p, e, 2, ctx)
                     leave
                 }
                 if or(eq(c, 0x7b), eq(c, 0x5b)) {
@@ -407,7 +427,7 @@ library JsonScan {
                     for { let t := p } lt(t, e) { } {
                         c := byte(0, mload(t))
                         if eq(c, 0x22) {
-                            t := str(t, e, 2)
+                            t := str(t, e, 2, ctx)
                             if iszero(t) { leave }
                             continue
                         }
@@ -436,7 +456,8 @@ library JsonScan {
 
             // The pointer after the object at p of a validated document, or zero, with the
             // members the caller asked for captured in `sp`.
-            function navObj(p, e, ctx, sp) -> q {
+            // With `distinct`, at most 8 members, all with different keys.
+            function navObj(p, e, ctx, sp, distinct) -> q {
                 if iszero(and(lt(p, e), eq(byte(0, mload(p)), 0x7b))) { leave }
                 p := ws(add(p, 1), e)
                 if iszero(lt(p, e)) { leave }
@@ -444,15 +465,23 @@ library JsonScan {
                     q := add(p, 1)
                     leave
                 }
-                for { } 1 { } {
+                for { let m := 0 } 1 { } {
                     let at := p
-                    p := str(p, e, 2)
+                    p := str(p, e, 2, ctx)
                     if iszero(p) { leave }
                     let h := keccak256(add(at, 1), sub(sub(p, at), 2))
+                    if distinct {
+                        if gt(m, 7) { leave }
+                        for { let k := 0 } lt(k, m) { k := add(k, 1) } {
+                            if eq(mload(add(add(ctx, 0x80), shl(5, k))), h) { leave }
+                        }
+                        mstore(add(add(ctx, 0x80), shl(5, m)), h)
+                        m := add(m, 1)
+                    }
                     p := ws(p, e)
                     if iszero(and(lt(p, e), eq(byte(0, mload(p)), 0x3a))) { leave }
                     at := ws(add(p, 1), e)
-                    p := skip(at, e)
+                    p := skip(at, e, ctx)
                     if iszero(p) { leave }
                     if iszero(capture(ctx, sp, h, at, p)) { leave }
                     p := ws(p, e)
@@ -490,8 +519,8 @@ library JsonScan {
                     let at := p
                     let slot := add(add(sp, 0x20), shl(5, mul(n, stride)))
                     switch objects
-                    case 0 { p := skip(at, e) }
-                    default { p := navObj(at, e, ctx, slot) }
+                    case 0 { p := skip(at, e, ctx) }
+                    default { p := navObj(at, e, ctx, slot, 1) }
                     if iszero(p) { leave }
                     mstore(
                         slot,
@@ -511,9 +540,10 @@ library JsonScan {
                 }
             }
 
-            // ctx: the value count, the keys, the spans, the start of the text.
+            // ctx: the value count, the keys, the spans, the start of the text, and room for the
+            // key hashes of the members of one element (eight).
             let ctx := mload(0x40)
-            mstore(0x40, add(ctx, 0x80))
+            mstore(0x40, add(ctx, 0x180))
             let base := add(json, 0x20)
             let e := add(base, mload(json))
             mstore(ctx, 0)
@@ -528,7 +558,7 @@ library JsonScan {
                     if q { r := eq(ws(q, e), e) }
                 }
             }
-            case 1 { r := iszero(iszero(navObj(add(base, start), e, ctx, spans))) }
+            case 1 { r := iszero(iszero(navObj(add(base, start), e, ctx, spans, 0))) }
             default { r := navElements(add(base, start), e, ctx, eq(mode, 3)) }
         }
     }
