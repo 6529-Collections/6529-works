@@ -48,11 +48,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev Locators per file the artist may add, and separately the platform (16 in all).
     uint256 private constant LOCATOR_QUOTA = Limits.MAX_LOCATORS_PER_FILE / 2;
 
-    /// @notice A consented, governed royalty-rate change was applied (in the core and, for a
-    ///         linked master, its edition). `stateHash` is the work's new state hash.
-    /// @dev Local until `IWorkRecords` declares it (interface change request on PR #22).
-    event RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash);
-
     /// @dev Word 0: the pin, version, media count and flags. `roles` packs each file's role in
     ///      eight bits, file `i` at bits `8i`.
     struct RecordData {
@@ -132,12 +127,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // --------------------------------------------------------------------------------- records
 
     /// @inheritdoc IWorkRecords
-    /// @dev Trust obligation: the media commitments checked here (1 to 32 files, the PRIMARY
-    ///      first and alone, its SHA-256 equal to `item.contentHash`, every declaration matching
-    ///      the content store) are not checked at mint, so a mis-committed item mints and can
-    ///      never open. The curation signer's tooling MUST simulate `openRecord` for an item
-    ///      before attesting it. The license ID is checked at mint, by the core, with the same
-    ///      `SpdxId` rule; a non-default license's text must be registered in the content store.
+    /// @dev The approved record file and license are stored as they are, without the
+    ///      structural record-file gate or a license-text check, so neither can freeze a
+    ///      minted work: an invalid record renders core-only metadata until the artist sets a
+    ///      valid one, and `finalize` enforces both. Trust obligation: the media commitments
+    ///      checked here (1 to 32 files, the PRIMARY first and alone, its SHA-256 equal to
+    ///      `item.contentHash`, every declaration matching the content store) are not checked
+    ///      at mint, so a mis-committed item mints and can never open. The curation signer's
+    ///      tooling MUST simulate `openRecord` for an item before attesting it.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external
     {
@@ -149,7 +146,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
                 || files > Limits.MAX_MEDIA_FILES || WorksHashing.mediaHash(media) != item.mediaHash
                 || media[0].sha256Hash != item.contentHash
         ) revert InvalidRecordData(tokenId);
-        _checkRecordFile(item.recordFileId);
         uint256 roles = 0;
         bytes32[32] storage list = _media[tokenId];
         IContentStore store = IContentStore(contentStore);
@@ -171,7 +167,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         r.mediaHash = item.mediaHash;
         r.roles = roles;
         if (!_isDefaultLicense(item.license)) {
-            _requireLicenseText(item.license.textFileId);
             r.customLicense = true;
             _licenses[tokenId] = item.license;
         }
@@ -195,15 +190,16 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev `openRecord` and `setRecord` already admit only a complete record file, and stored
-    ///      chunks are permanent; the check is repeated here because finalize is what promises
-    ///      a readable record, and on a single chunk it is cheap.
+    /// @dev The approved record file reaches here unchecked when the artist never replaced it,
+    ///      so finalize applies the structural bounds itself. The license text must be complete
+    ///      on-chain, so a finalized work's license text is permanent (ADR 0001 section 8).
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external {
         RecordData storage r = _open(tokenId);
         if (r.finalized) revert WorkIsFinalized(tokenId);
         _onlyArtist(tokenId);
         _checkState(tokenId, expectedStateHash);
         _checkRecordFile(r.recordFileId);
+        _requireLicenseText(r.customLicense ? _licenses[tokenId].textFileId : cc0TextFileId, true);
         address renderer = IStream(stream).defaultRenderer();
         r.renderer = renderer;
         r.finalized = true;
@@ -309,10 +305,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // ------------------------------------------------------------------------------ amendments
 
     /// @inheritdoc IWorkRecords
-    /// @dev Only CC0 irrevocability is enforced on-chain (on the canonical key). Whether `next`
-    ///      is more permissive than the current license is a judgement the artist's and every
-    ///      party's consent plus the governed action carry; the contract does not order licenses.
-    ///      A license with the current key and text is a no-op.
+    /// @dev Only CC0 irrevocability is enforced on-chain, on the canonical key: a CC0 work may
+    ///      only correct its text file. Whether `next` is more permissive than the current
+    ///      license is a judgement the artist's and every party's consent plus the governed
+    ///      action carry; the contract does not order licenses. A license with the current key
+    ///      and text is a no-op. The new text must be registered, and complete on-chain once
+    ///      the work is finalized.
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -325,7 +323,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         License memory previous = licenseOf(tokenId);
         bytes32 nextKey = _relicenseKey(tokenId, previous, next);
         if (nextKey == 0) return;
-        _requireLicenseText(next.textFileId);
+        _requireLicenseText(next.textFileId, r.finalized);
         bytes32 structHash =
             _relicenseHash(tokenId, nextKey, next.textFileId, expectedStateHash, deadline);
         _checkConsents(tokenId, item, structHash, deadline, partySignatures);
@@ -413,8 +411,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     /// @dev The artist and the platform each have a quota of `MAX_LOCATORS_PER_FILE / 2` (8)
-    ///      locators per file, so neither can exhaust the other's; a URI already registered for
-    ///      the file is refused.
+    ///      locators per file, so neither can exhaust the other's. A URI already registered for
+    ///      the file is refused, compared as exact bytes; the set is shared, so whichever side
+    ///      adds a URI first holds it (it is listed either way).
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
         _open(tokenId);
         bool byArtist = _isArtist(tokenId, msg.sender);
@@ -444,8 +443,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev Every locator of a file is a copy of that one file, so any choice among them is
-    ///      hash-equal (ADR 0001 section 8). ONCHAIN matches on the work's stored
+    /// @dev Every locator is registered as a copy of that one file (ADR 0001 section 8); it is
+    ///      not verified on-chain, so the storage operator chooses only among the copies
+    ///      registered for the file. ONCHAIN matches on the work's stored
     ///      `onChainComplete` flag (`syncOnChain`), never on a content-store completeness scan,
     ///      which costs a read per chunk. With no registered locator, a synced work's file
     ///      resolves to the implicit ONCHAIN copy; otherwise the result is the empty locator
@@ -523,7 +523,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // -------------------------------------------------------------------------------- internal
 
     /// @dev The canonical key of `next`, or zero when it is the current license (a no-op).
-    ///      Reverts when leaving CC0 or for an invalid identifier.
+    ///      Reverts when leaving CC0 (CC0 to CC0 with another text file is a correction) or for
+    ///      an invalid identifier.
     function _relicenseKey(uint256 tokenId, License memory previous, License calldata next)
         private
         pure
@@ -532,8 +533,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bytes32 previousKey = WorksHashing.licenseKey(previous.spdxId);
         nextKey = WorksHashing.licenseKey(next.spdxId);
         if (nextKey == previousKey && next.textFileId == previous.textFileId) return 0;
-        if (previousKey == WorksHashing.CC0_LICENSE_KEY) revert LicenseIrrevocable(tokenId);
-        if (!SpdxId.isValid(next.spdxId)) revert InvalidLicense();
+        bytes32 cc0 = WorksHashing.CC0_LICENSE_KEY;
+        if (previousKey == cc0 && nextKey != cc0) revert LicenseIrrevocable(tokenId);
+        if (!SpdxId.isValidCalldata(next.spdxId)) revert InvalidLicense();
     }
 
     function _relicenseHash(
@@ -638,10 +640,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         (,,,,, rate) = _core(tokenId);
     }
 
-    /// @dev A license's text must be a registered content-store file. An unknown file reverts
-    ///      with the store's `ContentFileUnknown`; a registered one has a nonzero SHA-256.
-    function _requireLicenseText(bytes32 textFileId) private view {
-        if (IContentStore(contentStore).sha256Of(textFileId) == 0) revert InvalidLicense();
+    /// @dev A license's text must be a registered content-store file, and complete on-chain
+    ///      when `stored`. An unknown file reverts with the store's `ContentFileUnknown`; a
+    ///      registered one has a nonzero SHA-256.
+    function _requireLicenseText(bytes32 textFileId, bool stored) private view {
+        IContentStore store = IContentStore(contentStore);
+        if (stored ? !store.isComplete(textFileId) : store.sha256Of(textFileId) == 0) {
+            revert InvalidLicense();
+        }
     }
 
     /// @dev Applies a consented rate in the core and a linked edition, then reports it.
@@ -653,9 +659,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         _refresh(tokenId);
     }
 
-    /// @dev The record file's structural bounds: registered, a single chunk of at most
-    ///      `Limits.MAX_RECORD_BYTES`, `Identity` encoding, and complete (that one chunk stored).
-    ///      Each check is O(1). The JSON itself is not parsed here: the renderer validates it and
+    /// @dev The record file's structural bounds: registered, at most `Limits.MAX_RECORD_BYTES`
+    ///      (the store's layout rule makes that exactly one chunk), `Identity` encoding, and
+    ///      complete (that one chunk stored). Each check is O(1). The JSON itself is not parsed here: the renderer validates it and
     ///      falls back to core-only metadata for an invalid record. Only the store's
     ///      `ContentFileUnknown` reads as unregistered; any other store failure propagates.
     function _checkRecordFile(bytes32 fileId) private view {
@@ -672,19 +678,16 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             }
         }
         // `FileInfo` comes back as one dynamic tuple: offset, sha256Hash, length, chunkCount,
-        // encoding, then the MIME type. The trusted store's encoding is read in place.
+        // encoding, then the MIME type. The trusted store's fields are read in place.
         uint256 length;
-        uint256 chunkCount;
         uint256 encoding;
         if (info.length < 0xc0) revert UnknownRecordFile(fileId);
         assembly ("memory-safe") {
             length := mload(add(info, 0x60))
-            chunkCount := mload(add(info, 0x80))
             encoding := mload(add(info, 0xa0))
         }
         if (
-            chunkCount != 1 || length > Limits.MAX_RECORD_BYTES
-                || encoding != uint256(IContentStore.Encoding.Identity)
+            length > Limits.MAX_RECORD_BYTES || encoding != uint256(IContentStore.Encoding.Identity)
                 || !IContentStore(contentStore).isComplete(fileId)
         ) revert UnknownRecordFile(fileId);
     }

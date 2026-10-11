@@ -59,13 +59,6 @@ contract Stream is ERC721, AccessManaged, IStream {
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
 
-    /// @notice The primary sale settled, so the token can no longer be burned.
-    error SaleAlreadySettled(uint256 tokenId);
-
-    /// @notice The contract URI changed from `previous` to `next` (the setter's old and new
-    ///         values, beside ERC-7572's `ContractURIUpdated`).
-    event ContractURISet(string previous, string next);
-
     /// @dev A token's three words. `feeRecipientId` and `minterId` index `_feeRecipients` and
     ///      the admitted minters, both from 1.
     struct TokenData {
@@ -280,7 +273,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         emit AdmittedMinterSet(adapter, admitted);
     }
 
-    /// @inheritdoc IStream
+    /// @inheritdoc IMintTarget
     /// @dev A repeat is a no-op.
     function markPrimarySettled(uint256 tokenId) external {
         TokenData storage t = _live(tokenId);
@@ -559,11 +552,12 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev Stream rules the registry does not know: auction-only with empty parameters, a lead
-    ///      party, an existing collection, a coherent seed policy, and a license ID
-    ///      `WorkRecords` accepts, so no license can leave a minted work unopenable. The media
-    ///      commitments `openRecord` checks (at most 32 files, the primary first with the
-    ///      item's content hash) are not visible here: the curation signer's tooling must
-    ///      simulate `openRecord` before attesting an item.
+    ///      party, an existing collection, a coherent seed policy, and a license ID that follows
+    ///      the `SpdxId` rule `WorkRecords` applies at relicense. `openRecord` stores the
+    ///      approved record file and license as they are; the media commitments it checks (at
+    ///      most 32 files, the primary first with the item's content hash) are not visible
+    ///      here, so the curation signer's tooling must simulate `openRecord` before attesting
+    ///      an item.
     function _checkItem(PackageItem calldata item) private view {
         SeedPolicy policy = item.seedPolicy;
         if (
@@ -571,7 +565,7 @@ contract Stream is ERC721, AccessManaged, IStream {
                 || item.parties.length == 0 || !_collections[item.collectionId].exists
                 || (policy == SeedPolicy.ARTIST) != (item.seed != 0)
                 || (policy == SeedPolicy.VRF && entropyModule == address(0))
-                || !SpdxId.isValid(item.license.spdxId)
+                || !SpdxId.isValidCalldata(item.license.spdxId)
         ) revert InvalidMintRequest();
     }
 

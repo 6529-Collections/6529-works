@@ -12,12 +12,15 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      store (RFC 8785 canonical; keys `name`, `description`, `artists`, `year`, `medium`,
 ///      `dimensions`, `attributes` as `[{trait_type, value}]`, `dependencies` as
 ///      `[{name, version}]`, and `files` mapping relative paths to media indexes); this contract
-///      stores only its file ID. Bounds, enforced by `openRecord` and `setRecord`: the record file
-///      is a single content-store chunk of at most `Limits.MAX_RECORD_BYTES` (24,575) bytes with
-///      `Identity` encoding, lists at most `Limits.MAX_ARTISTS` artists, and its `year` is a JSON
-///      number. A record opens with the approved file and the approved media;
-///      until finalize the artist may point the work at a new record file, but media never
-///      changes.
+///      stores only its file ID. A record opens with the approved file and the approved media,
+///      stored as they are, so an approved record file can never keep a minted work from
+///      opening. Structural bounds, enforced by `setRecord` and `finalize`, each O(1): the
+///      record file is registered in the content store, complete, and a single `Identity`
+///      chunk of at most `Limits.MAX_RECORD_BYTES` (24,575) bytes. The JSON itself (at most
+///      `Limits.MAX_ARTISTS` artists, a numeric `year`, the key set) is validated by the
+///      renderer, which renders core-only metadata with a record status for an invalid or
+///      out-of-bounds record. Until finalize the artist may point the work at a new record
+///      file, but media never changes.
 ///
 ///      "The artist" is the current authority of the work's lead artist ID. The state hash
 ///      commits to the token ID, the version, the record file ID, the license key and text, the
@@ -60,6 +63,10 @@ interface IWorkRecords {
     event WorkOnChainComplete(uint256 indexed tokenId);
     /// @notice A work's license changed, by every party's agreement plus a governed action.
     event LicenseChanged(uint256 indexed tokenId, License previous, License next);
+    /// @notice A work's royalty rate changed, by every party's agreement plus a governed action
+    ///         (applied in 6529 Stream and, for a linked master, its edition). `stateHash` is the
+    ///         work's new state hash.
+    event RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash);
     /// @notice The errata path replaced a finalized work's renderer pin (ADR 0001 section 10);
     ///         `codeHash` is the pinned code hash of `next`.
     event RendererRepinned(
@@ -97,12 +104,14 @@ interface IWorkRecords {
     error StateHashMismatch(bytes32 expected, bytes32 actual);
     /// @notice A party signature is missing, expired or does not verify.
     error InvalidConsent(uint256 tokenId, uint256 partyIndex);
-    /// @notice A CC0 dedication is irrevocable, so the license cannot change.
+    /// @notice A CC0 dedication is irrevocable, so the license key cannot change (only a CC0
+    ///         text file can be corrected).
     error LicenseIrrevocable(uint256 tokenId);
     /// @notice The file is not one of the work's media files.
     error FileNotInWork(uint256 tokenId, bytes32 fileId);
-    /// @notice The locator kind is NONE or ONCHAIN, the URI is malformed, or the file already has
-    ///         `Limits.MAX_LOCATORS_PER_FILE` locators.
+    /// @notice The locator kind is NONE or ONCHAIN, the URI is malformed or already registered for
+    ///         the file, or the caller's quota for the file (the artist's or the platform's half
+    ///         of `Limits.MAX_LOCATORS_PER_FILE`) is used up.
     error InvalidLocator();
     /// @notice A media file still lacks chunks in the content store.
     error NotOnChainComplete(uint256 tokenId);
@@ -112,7 +121,10 @@ interface IWorkRecords {
     /// @notice An installed dependency lacks code, ERC-165 support or the expected code hash, or
     ///         is an EIP-7702 delegated account.
     error InvalidDependency(address dependency);
-    /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`.
+    /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`, the deployment's
+    ///         default license is not CC0, a license text file declares no SHA-256, or a license
+    ///         text that must be permanent (at finalize, or relicensing a finalized work) is not
+    ///         complete on-chain.
     error InvalidLicense();
     /// @notice The work is not finalized (an errata repin needs a finalized work).
     error WorkNotFinalized(uint256 tokenId);
@@ -126,15 +138,23 @@ interface IWorkRecords {
     ///         auction-start path). Checks the item against Stream's stored item hash, `media`
     ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`, and
     ///         each file's declared SHA-256 against `IContentStore.sha256Of`; stores the record
-    ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license.
+    ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license as approved.
+    ///         Neither the record file's bounds nor the license text are checked here, so
+    ///         neither can freeze a minted work: `setRecord` corrects a record before finalize,
+    ///         and `finalize` enforces both.
+    /// @dev The media commitments are not visible at mint, so a mis-committed item mints and can
+    ///      never open: the curation signer's tooling MUST simulate `openRecord` for an item
+    ///      before attesting it. The license ID is checked at mint by 6529 Stream.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external;
-    /// @notice The artist points the work at a new record file, registered in the content store,
-    ///         until finalize. Re-publishing the current file is a no-op.
+    /// @notice The artist points the work at a new record file, which must meet the structural
+    ///         bounds, until finalize. Re-publishing the current file is a no-op.
     function setRecord(uint256 tokenId, bytes32 recordFileId, bytes32 expectedStateHash) external;
     /// @notice The artist finalizes the work: the record becomes immutable and Stream's current
-    ///         default renderer is pinned (ADR 0001 section 10). The record file must be on-chain
-    ///         complete, so a finalized work's record is always readable.
+    ///         default renderer is pinned (ADR 0001 section 10). The record file must meet the
+    ///         structural bounds, completeness included, and the license text must be complete
+    ///         on-chain, so a finalized work's record and license text are permanent and
+    ///         readable.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks the work on-chain complete once every media file is complete in the
     ///         content store. Permissionless and one-way; does not change the state hash.
@@ -161,7 +181,11 @@ interface IWorkRecords {
     /// @notice Changes a work's license toward more permissive terms. PARAMETER_SETTER role plus
     ///         an EIP-712 `Typehashes.RELICENSE` signature from every party of `item`, in order,
     ///         each by its current authority. Reverts with `LicenseIrrevocable` when the current
-    ///         license key is `WorksHashing.CC0_LICENSE_KEY`.
+    ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not (a CC0 work may
+    ///         correct its text file). The new license's text file must be registered in the
+    ///         content store, and complete on-chain for a finalized work. Only CC0
+    ///         irrevocability is enforced on-chain; whether `next` is more permissive rests with
+    ///         the consents and the governed action.
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -171,9 +195,10 @@ interface IWorkRecords {
         bytes[] calldata partySignatures
     ) external;
     /// @notice Changes a work's royalty rate (payees never change). FUNDS_SETTER role plus a
-    ///         `Typehashes.ROYALTY_RATE_CHANGE` signature from every party of `item`; calls
-    ///         `IStream.setRoyaltyRate` and, for an edition master, `IEditions.setRoyaltyRate` on
-    ///         the linked edition.
+    ///         `Typehashes.ROYALTY_RATE_CHANGE` signature from every party of `item`. Bumps the
+    ///         version before its external calls, calls `IStream.setRoyaltyRate` and, for an
+    ///         edition master, `IEditions.setRoyaltyRate` on the linked edition, then emits
+    ///         `RoyaltyRateSet` and ERC-4906. An unchanged rate is a no-op.
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -199,16 +224,20 @@ interface IWorkRecords {
 
     /// @notice Appends an ARWEAVE or IPFS locator for one of the work's media files. Callable by
     ///         the artist or the PLATFORM role, also after finalize (delivery routing stays
-    ///         operable). At most `Limits.MAX_URI_BYTES` per URI.
+    ///         operable). At most `Limits.MAX_URI_BYTES` per URI. Each file takes at most half
+    ///         of `Limits.MAX_LOCATORS_PER_FILE` (8) from the artist and half from the platform,
+    ///         so neither can exhaust the other's, and a URI already registered for the file is
+    ///         refused (`InvalidLocator`).
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
     /// @notice A file's registered locators, in registration order.
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);
     /// @notice The locator `tokenURI` serves for a file. The most specific setting wins: the
     ///         file's preferred index, then the collection's preferred kind, then the global
-    ///         preferred kind, then the first registered locator. A kind matches only if the file
-    ///         has a locator of that kind (ONCHAIN only if the file is complete), and then its
-    ///         first such locator is used. Returns an empty locator (kind NONE) when the file has
-    ///         no locator at all.
+    ///         preferred kind, then the first registered locator, then the implicit ONCHAIN copy.
+    ///         A kind matches only if the file has a locator of that kind, and then its first
+    ///         such locator is used; ONCHAIN matches only a work `syncOnChain` marked on-chain
+    ///         complete (the stored flag, never a content-store scan). Returns an empty locator
+    ///         (kind NONE) when nothing matches.
     /// @return locator The chosen locator.
     /// @return index Its registration index, or `type(uint256).max` for the implicit ONCHAIN one
     ///         and for none.

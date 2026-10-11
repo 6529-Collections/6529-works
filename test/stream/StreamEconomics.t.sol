@@ -64,4 +64,36 @@ contract StreamEconomicsTest is StreamFixture {
         );
         assertEq(deployed, receiver);
     }
+
+    /// @dev With the resolver's fee set to zero (and a zero recipient) the receiver is the
+    ///      seller wallet; after a governed fee change, new works get the new receiver and
+    ///      existing ones keep theirs.
+    function test_receiverAtZeroFeeAndAfterAFeeChange() public {
+        resolver.setFeeTerms(PRODUCT_STREAM, 1, address(0), 0);
+        PackageItem memory item = _item(1);
+        item.collectionId = wiredCollection;
+        (uint256 tokenId, PrimaryTerms memory terms) = auction.start(wired, _request(item));
+        WorkTerms memory w = resolver.newWorkTerms(PRODUCT_STREAM, item.payees);
+        assertEq(w.feeShare, 0);
+        assertEq(terms.feeRecipient, address(0));
+        (address receiver,) = wired.royaltyInfo(tokenId, 1 ether);
+        assertEq(receiver, w.royaltyReceiver);
+        assertEq(receiver, w.seller);
+        assertEq(wired.work(tokenId).royaltyReceiver, w.royaltyReceiver);
+
+        address other = makeAddr("otherFee");
+        resolver.setFeeTerms(PRODUCT_STREAM, 2, other, 12_345);
+        PackageItem memory second = _item(2);
+        second.collectionId = wiredCollection;
+        (uint256 secondId,) = auction.start(wired, _request(second));
+        WorkTerms memory w2 = resolver.newWorkTerms(PRODUCT_STREAM, second.payees);
+        (address r2,) = wired.royaltyInfo(secondId, 1 ether);
+        assertEq(r2, w2.royaltyReceiver);
+        assertEq(
+            r2,
+            splitFactory.createWallet(Splits.royaltyPayees(w2.seller, other, 12_345), bytes32(0))
+        );
+        (receiver,) = wired.royaltyInfo(tokenId, 1 ether);
+        assertEq(receiver, w.seller);
+    }
 }

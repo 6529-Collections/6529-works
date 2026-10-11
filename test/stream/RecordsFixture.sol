@@ -66,8 +66,15 @@ abstract contract RecordsFixture is StreamFixture {
         if (upload) store.writeChunk(data);
     }
 
-    /// @dev Registers (without uploading) the `text/plain` file `_textFileId(text)` names.
+    /// @dev Registers and stores the `text/plain` file `_textFileId(text)` names, so a license
+    ///      using it can finalize.
     function _registerText(bytes memory text) internal returns (bytes32 fileId) {
+        fileId = _registerTextOnly(text);
+        store.writeChunk(text);
+    }
+
+    /// @dev Registers the `text/plain` file `_textFileId(text)` names without storing it.
+    function _registerTextOnly(bytes memory text) internal returns (bytes32 fileId) {
         bytes32[] memory hashes = new bytes32[](1);
         hashes[0] = keccak256(text);
         fileId = store.registerManifest(

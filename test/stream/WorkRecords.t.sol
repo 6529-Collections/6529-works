@@ -178,22 +178,49 @@ contract WorkRecordsTest is RecordsFixture {
         // (`Stream.t.sol`, `test_mint_revertsForStreamRuleBreaks`).
     }
 
-    /// @dev A non-default license's text must be registered in the content store.
-    function test_openRecord_needsRegisteredLicenseText() public {
-        MediaFile[] memory media = _single(1, false);
+    /// @dev `openRecord` stores the approved license as it is, so an unregistered text cannot
+    ///      freeze the work; `finalize` is where the text must be stored.
+    function test_openRecord_storesUnregisteredLicenseText() public {
+        MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
         bytes32 unknown = keccak256("unregistered text");
         item.license = License("MIT", unknown);
         uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        assertEq(records.licenseOf(tokenId).textFileId, unknown);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
-        records.openRecord(tokenId, item, media);
+        records.finalize(tokenId, state);
+    }
 
-        media = _single(2, false);
-        item = _recordsItem(2, media);
-        item.license = License("MIT", _registerText("MIT text"));
-        tokenId = _mint(item);
+    /// @dev Finalize needs the license text complete on-chain, the default CC0 text included,
+    ///      so a finalized work's license text is permanent (ADR 0001 section 8).
+    function test_finalize_needsStoredLicenseText() public {
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = License("MIT", _registerTextOnly("MIT text"));
+        uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
-        assertEq(records.licenseOf(tokenId).textFileId, item.license.textFileId);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.finalize(tokenId, state);
+        store.writeChunk("MIT text");
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        assertTrue(records.record(tokenId).finalized);
+
+        // The deployment's default CC0 text is held to the same rule.
+        bytes32 cc0Text = records.cc0TextFileId();
+        (uint256 cc0Work,) = _work(2);
+        state = records.workStateHash(cc0Work);
+        vm.mockCall(
+            address(store), abi.encodeCall(IContentStore.isComplete, (cc0Text)), abi.encode(false)
+        );
+        vm.prank(artist);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.finalize(cc0Work, state);
     }
 
     /// @dev The SPDX ID is stored in its original case; the key is of its lowercase form.
@@ -207,27 +234,60 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).licenseKey, keccak256("cc-by-4.0"));
     }
 
+    error Broken();
+
     /// @dev Only the store's "unknown file" error reads as unregistered; any other store
     ///      failure propagates instead of passing for a plausible default.
-    function test_openRecord_storeFailuresPropagate() public {
+    function test_storeFailuresPropagate() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, true);
-        BrokenStore broken = new BrokenStore();
-        WorkRecords other = new WorkRecords(
-            address(manager), address(stream), address(broken), _license("cc0-1.0")
+        vm.mockCallRevert(
+            address(store),
+            abi.encodeWithSelector(IContentStore.sha256Of.selector),
+            abi.encodeWithSelector(Broken.selector)
         );
-        vm.expectRevert(BrokenStore.Broken.selector);
-        other.openRecord(tokenId, item, media);
+        vm.expectRevert(Broken.selector);
+        records.openRecord(tokenId, item, media);
+        vm.clearMockedCalls();
+        records.openRecord(tokenId, item, media);
+
+        bytes32 next = _record(77);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.mockCallRevert(
+            address(store),
+            abi.encodeWithSelector(IContentStore.fileInfo.selector),
+            abi.encodeWithSelector(Broken.selector)
+        );
+        vm.prank(artist);
+        vm.expectRevert(Broken.selector);
+        records.setRecord(tokenId, next, state);
     }
 
-    function test_openRecord_rejectsUnknownRecordFile() public {
-        MediaFile[] memory media = _single(1, false);
+    /// @dev An unregistered approved record file still opens (the renderer serves core-only
+    ///      metadata); finalize refuses it until the artist sets a valid one.
+    function test_openRecord_storesUnknownRecordFile() public {
+        MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
         item.recordFileId = keccak256("no such record");
         uint256 tokenId = _mint(item);
-        vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, item.recordFileId)
-        );
         records.openRecord(tokenId, item, media);
+        assertEq(records.record(tokenId).recordFileId, item.recordFileId);
+        _expectRecordFixable(tokenId, item.recordFileId);
+    }
+
+    /// @dev `bad` is the work's record: finalize refuses it, and the artist replaces it with a
+    ///      valid record and finalizes.
+    function _expectRecordFixable(uint256 tokenId, bytes32 bad) internal {
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, bad));
+        records.finalize(tokenId, state);
+        bytes32 good = _record(tokenId + 500);
+        vm.prank(artist);
+        records.setRecord(tokenId, good, state);
+        state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        assertEq(records.record(tokenId).recordFileId, good);
     }
 
     /// @dev Registers a record manifest over `chunks` with `encoding`, uploading them if asked.
@@ -252,7 +312,8 @@ contract WorkRecordsTest is RecordsFixture {
         chunks[0] = data;
     }
 
-    /// @dev `recordFileId` is refused both by `setRecord` and by `openRecord`.
+    /// @dev `recordFileId` is refused by `setRecord`; as an approved record it still opens,
+    ///      and the artist fixes it before finalize.
     function _expectBadRecord(uint256 salt, bytes32 recordFileId) internal {
         (uint256 tokenId,) = _work(salt);
         bytes32 state = records.workStateHash(tokenId);
@@ -262,18 +323,16 @@ contract WorkRecordsTest is RecordsFixture {
         );
         records.setRecord(tokenId, recordFileId, state);
 
-        MediaFile[] memory media = _single(salt + 1000, false);
+        MediaFile[] memory media = _single(salt + 1000, true);
         PackageItem memory item = _recordsItem(salt + 1000, media);
         item.recordFileId = recordFileId;
         tokenId = _mint(item);
-        vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, recordFileId)
-        );
         records.openRecord(tokenId, item, media);
+        _expectRecordFixable(tokenId, recordFileId);
     }
 
-    /// @dev The structural record bounds, at open and at every set: one complete `Identity`
-    ///      chunk of at most `MAX_RECORD_BYTES`.
+    /// @dev The structural record bounds, at every set and at finalize: one complete
+    ///      `Identity` chunk of at most `MAX_RECORD_BYTES`.
     function test_recordBounds_rejectStructuralBreaks() public {
         bytes memory json = '{"name":"r"}';
         // Registered, not stored yet.
@@ -733,7 +792,7 @@ contract WorkRecordsTest is RecordsFixture {
         emit IStream.RoyaltyRateChanged(tokenId, 6_529, 10_000);
         // The new state hash: version 1 at the new rate.
         vm.expectEmit(true, false, false, false, address(records));
-        emit WorkRecords.RoyaltyRateSet(tokenId, 6_529, 10_000, bytes32(0));
+        emit IWorkRecords.RoyaltyRateSet(tokenId, 6_529, 10_000, bytes32(0));
         vm.expectEmit(address(stream));
         emit MetadataUpdate(tokenId);
         vm.recordLogs();
@@ -748,7 +807,7 @@ contract WorkRecordsTest is RecordsFixture {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bool found;
         for (uint256 i; i < logs.length; ++i) {
-            if (logs[i].topics[0] == WorkRecords.RoyaltyRateSet.selector) {
+            if (logs[i].topics[0] == IWorkRecords.RoyaltyRateSet.selector) {
                 (,, bytes32 reported) = abi.decode(logs[i].data, (uint32, uint32, bytes32));
                 assertEq(reported, next);
                 found = true;
@@ -1248,19 +1307,5 @@ contract WorkRecordsTest is RecordsFixture {
             )
         );
         assertEq(records.workStateHash(tokenId), expected);
-    }
-}
-
-/// @notice A content store whose reads fail with an error other than "unknown file".
-contract BrokenStore {
-    error Broken();
-
-    function fileInfo(bytes32) external pure returns (IContentStore.FileInfo memory) {
-        revert Broken();
-    }
-
-    /// @dev Answers for the constructor's CC0-text check.
-    function sha256Of(bytes32) external pure returns (bytes32) {
-        return keccak256("text");
     }
 }

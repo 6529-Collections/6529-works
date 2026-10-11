@@ -695,13 +695,13 @@ contract StreamTest is StreamFixture {
     function test_burn_neverAfterSettlement() public {
         _mint(1);
         auction.settle(stream, 1);
-        vm.expectRevert(abi.encodeWithSelector(Stream.SaleAlreadySettled.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, 1));
         auction.burn(stream, 1, 1);
         address collector = makeAddr("collector");
         auction.deliver(address(stream), 1, collector);
         vm.prank(collector);
         stream.transferFrom(collector, address(auction), 1);
-        vm.expectRevert(abi.encodeWithSelector(Stream.SaleAlreadySettled.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, 1));
         auction.burn(stream, 1, 1);
     }
 
@@ -1111,14 +1111,14 @@ contract StreamTest is StreamFixture {
 
     function test_contractURI() public {
         vm.expectEmit(address(stream));
-        emit Stream.ContractURISet("", "ipfs://contract");
+        emit IStream.ContractURISet("", "ipfs://contract");
         vm.expectEmit(address(stream));
         emit IStream.ContractURIUpdated();
         vm.prank(governor);
         stream.setContractURI("ipfs://contract");
         assertEq(stream.contractURI(), "ipfs://contract");
         vm.expectEmit(address(stream));
-        emit Stream.ContractURISet("ipfs://contract", "ipfs://next");
+        emit IStream.ContractURISet("ipfs://contract", "ipfs://next");
         vm.prank(governor);
         stream.setContractURI("ipfs://next");
         vm.prank(outsider);

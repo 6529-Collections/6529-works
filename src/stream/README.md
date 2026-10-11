@@ -11,7 +11,7 @@ with the "Core" row of the §17 reuse plan.
 | --- | --- | --- |
 | `Stream.sol` | [`IStream`](../interfaces/IStream.sol), [`IMintTarget`](../interfaces/IMintTarget.sol) | The ERC-721 core: minting for consumed package items, supply and burns, collections and serials, the terms locked at mint, `royaltyInfo`, the edition link, the marketplace owner and contract URI, `tokenURI` forwarding. |
 | `WorkRecords.sol` | [`IWorkRecords`](../interfaces/IWorkRecords.sol) | The records satellite: descriptive record files, media, licenses, ARTIST seeds, the state hash, finalize and renderer pins, on-chain completeness, amendments, locators and preferred location. |
-| `SpdxId.sol` | none | The license-ID rule both contracts apply: 1 to 64 bytes of `[A-Za-z0-9.+-]`, in the ID's original case. |
+| `SpdxId.sol` | none | The license-ID rule Stream applies at mint and `WorkRecords` at deploy and relicense: 1 to 64 bytes of `[A-Za-z0-9.+-]`, in the ID's original case, one 256-bit mask lookup per byte. |
 
 Tests are in [`test/stream/`](../../test/stream) and mocks of other lanes'
 contracts in [`test/mocks/stream/`](../../test/mocks/stream).
@@ -65,16 +65,18 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
 - **Opening.** Nothing is written at mint. `openRecord` is permissionless: it
   checks the item against the core's item hash, the media list against
   `mediaHash`, the primary's SHA-256 against `contentHash`, and every file's
-  SHA-256 against the content store's declaration. It stores the record file ID,
-  one word per media file plus one word of roles, an ARTIST seed, and a license
-  only when it is not the default CC0, whose text file must be registered in the
-  content store. Every per-token function reverts with `RecordNotOpen` until
+  SHA-256 against the content store's declaration. It stores the approved
+  record file ID as it is, one word per media file plus one word of roles, an
+  ARTIST seed, and the approved license when it is not the default CC0. Neither
+  the record file nor the license text is checked here, so neither can freeze a
+  minted work. Every per-token function reverts with `RecordNotOpen` until
   then.
-- **Record files.** `openRecord`, `setRecord` and `finalize` accept a record
-  file only if it is registered, a single `Identity` chunk of at most 24,575
-  bytes, and complete. These checks are O(1). The JSON is not parsed on-chain:
-  the renderer validates it and falls back to core-only metadata for an invalid
-  record.
+- **Record files.** `setRecord` and `finalize` accept a record file only if it
+  is registered, `Identity`-encoded, at most 24,575 bytes (one chunk) and
+  complete. These checks are O(1). An approved record that breaks them still
+  opens; the renderer serves core-only metadata with a record status, and the
+  artist replaces it with `setRecord` before finalize. The JSON is not parsed
+  on-chain: the renderer validates it the same way.
 - **Licenses.** The SPDX ID keeps its original case (`CC0-1.0`); only the
   license key, `keccak256` of the lowercased ID, is case-insensitive.
 - **State hash.** It commits to the token ID, the version, the record file, the
@@ -85,19 +87,25 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   EIP-712 consent, each by its current authority, plus a governed action. Only
   CC0 irrevocability is enforced on-chain, on the canonical license key; whether
   a new license is more permissive is the judgement of the parties' consent plus
-  governance, and the contract does not order licenses. A relicense's text file
-  must be registered. A royalty-rate change bumps the version before its
-  external calls, emits `RoyaltyRateSet` and refreshes the metadata. A repin
-  needs the lead artist and the 30-day class, and binds the renderer's code
-  hash.
-- **Finalize** checks the record file again, so a finalized record is always
-  readable on-chain.
+  governance, and the contract does not order licenses. A CC0 work may still
+  correct its text file (CC0 to CC0). A relicense's text file must be
+  registered, and stored on-chain once the work is finalized. A royalty-rate
+  change bumps the version before its external calls, emits `RoyaltyRateSet`
+  and refreshes the metadata. A repin needs the lead artist and the 30-day
+  class, and binds the renderer's code hash.
+- **Finalize** applies the record-file checks and requires the license text,
+  the default CC0 text included, to be complete on-chain. A finalized work's
+  record and license text are therefore permanent and readable on-chain.
 - **Locators.** Append-only ARWEAVE and IPFS copies of media files: at most 8
   per file added by the artist and 8 by the platform, so neither can exhaust
-  the other's, and no URI twice. Preferred location: the file's index, then the
-  collection's kind, then the global kind, then the first registered locator,
-  then the implicit ONCHAIN copy. ONCHAIN matches only a work that
-  `syncOnChain` marked on-chain complete (a stored flag, never a content-store
-  scan); with nothing found the result is the empty locator (kind NONE). Every
-  locator of a file is a copy of that file, so the storage operator can only
-  choose among hash-equal copies.
+  the other's. A URI already registered for the file is refused, compared as
+  exact bytes, so a different spelling of the same content counts as new. The
+  set of registered URIs is shared, so whichever side adds a URI first holds it
+  against its own quota, and the URI is listed either way. Preferred location:
+  the file's index, then the collection's kind, then the global kind, then the
+  first registered locator, then the implicit ONCHAIN copy. ONCHAIN matches
+  only a work that `syncOnChain` marked on-chain complete (a stored flag, never
+  a content-store scan); with nothing found the result is the empty locator
+  (kind NONE). Locators are not verified on-chain: each is registered as a copy
+  of that one file, and the storage operator chooses only among the copies
+  registered for it.

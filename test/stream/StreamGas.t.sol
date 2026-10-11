@@ -67,6 +67,18 @@ contract StreamGasTest is StreamFixture {
         assertLe(used, MINT_SHARE_BUDGET);
     }
 
+    /// @dev The license-ID check at its longest: a 64-character ID, against the typical
+    ///      7-character `cc0-1.0`.
+    function test_gas_mintShare_longestLicenseId() public {
+        _measure(_item(1));
+        PackageItem memory item = _item(2);
+        item.license.spdxId = "LicenseRef-6529-Works-Long-Identifier-For-Gas-Measurement-12345.";
+        assertEq(bytes(item.license.spdxId).length, 64);
+        uint256 used = _measure(item);
+        console2.log("Stream.mint share, 64-byte license ID:", used);
+        assertLe(used, MINT_SHARE_BUDGET);
+    }
+
     /// @dev The adapter holds no other token (no concurrent auction), so its balance word is
     ///      written from zero.
     function test_gas_mintShare_idleAdapter() public {
