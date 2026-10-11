@@ -16,8 +16,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///      The execution includes a cold call into the target (2,600 gas a real transaction does not
 ///      pay), so the figures are slightly pessimistic.
 ///
-///      Steady state (ADR 0003): Stream, the collection, the auction's custody balance and the
-///      artist's move-nonce word have all been written before. Items are single-artist works
+///      Steady state (ADR 0003): Stream, the collection, the auction's custody balance, the
+///      artist's move-nonce word and the auction's shared sale terms (with and without the
+///      increment floor a first bid locks) have all been written before. Items are single-artist works
 ///      (the artist is the sole, artist-resolved payee) in an eight-item package (proof depth 3).
 contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant ITEMS = 8;
@@ -47,10 +48,14 @@ contract IntegrationGasReport is IntegrationBase {
         _keep(root, works);
     }
 
+    /// @dev Two live sales, one with a bid: every per-system record a start or a first bid
+    ///      writes once (the fee recipient, the sale terms with and without their increment
+    ///      floor, the custody balance, the artist's nonce word) already exists.
     function _steadyState() internal {
         Work[] memory works = _package(root);
-        _start(root, works, 0);
+        (uint256 first,) = _start(root, works, 0);
         _start(root, works, 1);
+        _ethBid(first, makeAddr("earlierBidder"), 1 ether);
     }
 
     function _startData(uint256 index) internal returns (bytes memory) {
@@ -79,6 +84,26 @@ contract IntegrationGasReport is IntegrationBase {
         (uint256 total, uint256 execution) = _measure(bidder, address(auction), data, 1 ether);
         _row("startWithBid, steady state", total, execution);
         assertLe(total, START_BUDGET, "ADR 0003: startWithBid <= 350K at steady state");
+    }
+
+    /// @dev Tracked, not gated: the first bid placed under a set of sale terms nobody has bid
+    ///      under yet (after genesis, a new currency, or an auction config or opening-bid
+    ///      change). Live sales exist, but none has a bid.
+    function test_Gas_StartWithBid_FirstBidUnderNewTerms() public {
+        Work[] memory works = _package(root);
+        _start(root, works, 0);
+        _start(root, works, 1);
+        bytes memory data = abi.encodeCall(
+            auction.startWithBid,
+            (
+                address(stream),
+                _mintData(root, works, 2),
+                address(0),
+                Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
+            )
+        );
+        (uint256 total, uint256 execution) = _measure(bidder, address(auction), data, 1 ether);
+        _row("startWithBid, first bid under new terms (one-time)", total, execution);
     }
 
     function test_Gas_Start_FirstWorkInANewCollection() public {
