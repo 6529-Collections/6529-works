@@ -1,6 +1,7 @@
 # ADR 0001: 6529 Works v1 scope
 
-Status: Accepted by the owner, 11 October 2026.
+Status: Accepted by the owner, 11 October 2026. §13 is amended by
+[ADR 0002](0002-access-manager-hardening.md).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
 ([6529Stream PR #745](https://github.com/6529-Collections/6529Stream/pull/745)),
