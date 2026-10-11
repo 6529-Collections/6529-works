@@ -32,9 +32,10 @@ import {
     License,
     PackageItem
 } from "../interfaces/types/PackageTypes.sol";
-import { DutchParams, PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
+import { PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { EditionRules } from "./EditionRules.sol";
 
 /// @title Editions
 /// @notice 6529 Editions: the one shared ERC-1155 of editions, each anchored by a 6529 Stream
@@ -72,8 +73,6 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      artist registry are taken from it. Stream and the package registry bind Editions, and
 ///      genesis binds Stream's work-records satellite here once.
 contract Editions is IEditions, ERC1155, AccessManaged {
-    /// @dev `abi.encode(DutchParams)`: three static words.
-    uint256 private constant DUTCH_PARAMS_LENGTH = 96;
     /// @dev The binding name of the work-records satellite, as 6529 Stream names it.
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     /// @dev Minter status: never admitted, admitted, or admitted once and since removed.
@@ -164,8 +163,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ) external returns (uint256 editionId) {
         (bytes32 itemHash, IStream.WorkCore memory master) =
             _admit(workId, item, packageRoot, proof);
+        _checkTerms(workId, item.edition);
         EditionTerms memory terms = item.edition;
-        _checkTerms(workId, terms);
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
 
         Record storage r = _records[workId];
@@ -205,15 +204,16 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev Removal is unchecked; an adapter once admitted can still burn its own copies.
+    /// @dev Emits only on a change: admitting an admitted adapter, or removing one that is not
+    ///      admitted (never admitted, or already removed), is a silent no-op. Removal is unchecked;
+    ///      an adapter once admitted can still burn its own copies.
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
+        uint8 status = _minterStatus[adapter];
+        if (admitted == (status == MINTER_ADMITTED)) return;
         if (admitted && !_installable(adapter, type(ISaleAdapter).interfaceId)) {
             revert InvalidBinding(adapter);
         }
-        uint8 status = _minterStatus[adapter];
-        if (admitted) status = MINTER_ADMITTED;
-        else if (status != MINTER_NONE) status = MINTER_REMOVED;
-        _minterStatus[adapter] = status;
+        _minterStatus[adapter] = admitted ? MINTER_ADMITTED : MINTER_REMOVED;
         emit AdmittedMinterSet(adapter, admitted);
     }
 
@@ -426,8 +426,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         itemHash = WorksHashing.itemHashCalldata(item);
         if (
             !IStream(stream).primarySaleSettled(workId) || item.kind != ItemKind.EDITION_MASTER
-                || master.kind != ItemKind.EDITION_MASTER || itemHash != master.itemHash
-                || item.contentHash == 0 || proof.length > Limits.MAX_PROOF_DEPTH
+                || itemHash != master.itemHash || item.contentHash == 0
+                || proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert NotEditionMaster(workId);
         (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
@@ -445,20 +445,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (e.contentHash == 0) revert UnknownEdition(editionId);
     }
 
-    /// @dev A nonzero price needs an explicit currency. FIXED: a nonzero size and no window.
-    ///      OPEN: a nonzero window, size optional. Fixed price carries no params; Dutch carries
-    ///      `DutchParams` resting at or below the price.
-    function _checkTerms(uint256 workId, EditionTerms memory t) private pure {
+    /// @dev The shared rule (`EditionRules.isValid`, also enforced by the package registry at
+    ///      `consume`), with the priced-default case reported by its own error.
+    function _checkTerms(uint256 workId, EditionTerms calldata t) private pure {
         if (t.currency == CURRENCY_DEFAULT && t.price != 0) revert PricedDefaultCurrency(workId);
-        bool shape = t.format == EditionFormat.FIXED ? t.size != 0 && t.window == 0 : t.window != 0;
-        if (t.saleKind == SaleKind.FIXED_PRICE) {
-            shape = shape && t.params.length == 0;
-        } else if (t.saleKind == SaleKind.DUTCH && t.params.length == DUTCH_PARAMS_LENGTH) {
-            shape = shape && abi.decode(t.params, (DutchParams)).restingPrice <= t.price;
-        } else {
-            shape = false;
-        }
-        if (!shape) revert InvalidEditionTerms(workId);
+        if (!EditionRules.isValid(t)) revert InvalidEditionTerms(workId);
     }
 
     function _primaryTerms(uint256 id, Edition storage e)

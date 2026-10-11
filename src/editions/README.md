@@ -33,8 +33,11 @@ when it is nonzero; minting stops if the master is burned. Burned copies still
 count toward the size. The sale adapter owns the currency: `primaryTerms` and
 `mint` return the package's stored currency (possibly `CURRENCY_DEFAULT`, which
 is allowed only with a zero price), and the adapter resolves and locks it when
-it opens a sale. Every copy is sold at mint, so `markPrimarySettled` is a no-op
-that any adapter ever admitted may call; everyone else is refused.
+it opens a sale. Edition terms follow one rule, `EditionRules.isValid`, which the
+package registry also applies at `consume`: a master whose edition could not be
+created, or not be sold by its Dutch adapter, never mints. Every copy is sold at
+mint, so `markPrimarySettled` is a no-op that any adapter ever admitted may
+call; everyone else is refused. `setAdmittedMinter` emits only on a change.
 
 **Reads.** `royaltyInfo` uses the receiver locked at creation and the current
 rate (out of 100,000), from local storage. The rate starts at the master's

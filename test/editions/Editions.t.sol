@@ -9,6 +9,7 @@ import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {
     IERC1155MetadataURI
 } from "@openzeppelin/contracts/token/ERC1155/extensions/IERC1155MetadataURI.sol";
+import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { Editions } from "src/editions/Editions.sol";
@@ -43,6 +44,7 @@ import {
     EditionsPackages,
     EditionsRendererMock,
     EditionsStreamMock,
+    EditionsWorkRecordsMock,
     GasBurnerReceiver1155,
     NoHookReceiver1155,
     ReentrantReceiver1155,
@@ -272,6 +274,44 @@ contract EditionsTest is EditionsBase {
         assertFalse(editions.exists(id));
     }
 
+    /// @dev A chain-shaped package puts the item `depth` levels deep, so its proof has `depth`
+    ///      nodes. At `Limits.MAX_PROOF_DEPTH` it is accepted; one level deeper it is refused even
+    ///      though the proof verifies against an approved root.
+    function test_CreateEdition_ProofDepthBounded() public {
+        uint256 max = Limits.MAX_PROOF_DEPTH;
+        PackageItem memory item = _fixedItem(5);
+        uint256 id = _master(item);
+        (bytes32 deepRoot, bytes32[] memory deepProof) = _chain(item, max + 1);
+        registry.approve(deepRoot);
+        assertTrue(
+            MerkleProof.verify(deepProof, deepRoot, WorksHashing.leaf(WorksHashing.itemHash(item))),
+            "the over-deep proof itself verifies"
+        );
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
+        editions.createEdition(id, item, deepRoot, deepProof);
+
+        (bytes32 root, bytes32[] memory proof) = _chain(item, max);
+        registry.approve(root);
+        editions.createEdition(id, item, root, proof);
+        assertTrue(editions.exists(id));
+    }
+
+    function _chain(PackageItem memory item, uint256 depth)
+        internal
+        pure
+        returns (bytes32 node, bytes32[] memory proof)
+    {
+        node = WorksHashing.leaf(WorksHashing.itemHash(item));
+        proof = new bytes32[](depth);
+        for (uint256 i; i < depth; ++i) {
+            bytes32 sibling = keccak256(abi.encode("chain", i));
+            proof[i] = sibling;
+            node = node < sibling
+                ? keccak256(abi.encode(node, sibling))
+                : keccak256(abi.encode(sibling, node));
+        }
+    }
+
     /// @dev The accepted edge case: an item listed in two packages passes through whichever is
     ///      still approved, even when the one it was minted from was revoked.
     function test_CreateEdition_SecondApprovedPackageAdmits() public {
@@ -329,6 +369,15 @@ contract EditionsTest is EditionsBase {
         _expectBadTerms(item);
         item = _openItem(1 days, 0);
         item.edition.params = abi.encode(DutchParams(PRICE + 1, 1 days, 0)); // rests above start
+        _expectBadTerms(item);
+        item = _openItem(1 days, 0);
+        item.edition.params = abi.encode(DutchParams(PRICE / 10, 0, 0)); // falls, no duration
+        _expectBadTerms(item);
+        item = _openItem(1 days, 0);
+        item.edition.params = abi.encode(DutchParams(PRICE / 10, 100, 7)); // steps do not divide
+        _expectBadTerms(item);
+        item = _openItem(1 days, 0);
+        item.edition.params = abi.encode(uint256(0), uint256(1) << 64, uint256(0)); // malformed
         _expectBadTerms(item);
     }
 
@@ -561,13 +610,25 @@ contract EditionsTest is EditionsBase {
         emit IMintTarget.AdmittedMinterSet(adapter, true);
         editions.setAdmittedMinter(adapter, true);
         assertTrue(editions.isAdmittedMinter(adapter));
-        // Removal is unchecked, so even an unadmissible address can be cleared.
         vm.expectEmit(true, false, false, true, address(editions));
-        emit IMintTarget.AdmittedMinterSet(outsider, false);
-        editions.setAdmittedMinter(outsider, false);
+        emit IMintTarget.AdmittedMinterSet(adapter, false);
         editions.setAdmittedMinter(adapter, false);
-        vm.stopPrank();
         assertFalse(editions.isAdmittedMinter(adapter));
+
+        // Emits only on a change: removing a never-admitted or already-removed address, or
+        // admitting an admitted adapter, is a silent no-op.
+        vm.recordLogs();
+        editions.setAdmittedMinter(outsider, false); // never admitted (and not admissible)
+        editions.setAdmittedMinter(adapter, false); // already removed
+        editions.setAdmittedMinter(address(fixedAdapter), true); // already admitted
+        assertEq(vm.getRecordedLogs().length, 0);
+        assertFalse(editions.isAdmittedMinter(outsider));
+        assertTrue(editions.isAdmittedMinter(address(fixedAdapter)));
+        vm.stopPrank();
+        // The never-admitted address gained no burn right from the no-op removal.
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, outsider));
+        editions.burn(1, 1);
     }
 
     function _expectNotAdmissible(address adapter) internal {
@@ -1024,6 +1085,8 @@ contract EditionsTest is EditionsBase {
         vm.startPrank(admin);
         _expectInvalidBinding(fresh, address(0));
         _expectInvalidBinding(fresh, address(renderer)); // not the satellite Stream bound
+        address other = address(new EditionsWorkRecordsMock()); // a valid IWorkRecords...
+        _expectInvalidBinding(fresh, other); // ...that Stream did not bind
         stream.bind(address(renderer), address(editions)); // bound, but no IWorkRecords ERC-165
         _expectInvalidBinding(fresh, address(renderer));
         stream.bind(outsider, address(editions)); // Stream bound an EOA

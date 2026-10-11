@@ -26,6 +26,7 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
+import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -964,6 +965,35 @@ contract PackageRegistryTest is CurationBase {
         _expectInvalid(item, _keys(leadKey, collabKey));
         item.edition.price = 0;
         _expectValid(item, _keys(leadKey, collabKey));
+    }
+
+    /// @dev The registry applies the same edition-terms rule as 6529 Editions
+    ///      (`EditionRules.isValid`), so a master whose edition could never be created, or never
+    ///      be sold by its Dutch adapter, is refused at `consume`, before it can mint.
+    function test_invalidItem_masterEditionTermsSharedRule() public {
+        uint256[] memory keys = _keys(leadKey, collabKey);
+        PackageItem memory item = _masterItem(SHA_A);
+        item.edition.saleKind = SaleKind.ENGLISH_AUCTION; // no edition adapter sells it
+        _expectInvalid(item, keys);
+        item = _masterItem(SHA_A);
+        item.edition.saleKind = keccak256("RAFFLE");
+        _expectInvalid(item, keys);
+        item = _masterItem(SHA_A);
+        item.edition.params = hex"01"; // fixed price takes no params
+        _expectInvalid(item, keys);
+
+        item = _masterItem(SHA_A);
+        item.edition.saleKind = SaleKind.DUTCH;
+        item.edition.params = abi.encode(DutchParams(0.02 ether, 1 hours, 0)); // rests above start
+        _expectInvalid(item, keys);
+        item.edition.params = abi.encode(DutchParams(0.001 ether, 0, 0)); // falls with no duration
+        _expectInvalid(item, keys);
+        item.edition.params = abi.encode(DutchParams(0.001 ether, 100, 7)); // steps do not divide
+        _expectInvalid(item, keys);
+        item.edition.params = abi.encode(uint256(0), uint256(1) << 64, uint256(0)); // not a uint64
+        _expectInvalid(item, keys);
+        item.edition.params = abi.encode(DutchParams(0.001 ether, 100, 10));
+        _expectValid(item, keys);
     }
 
     function test_invalidItem_parties() public {
