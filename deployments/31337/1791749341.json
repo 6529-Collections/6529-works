@@ -1,0 +1,133 @@
+{
+  "cc0TextFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
+  "cc0TextSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+  "chainId": 31337,
+  "configHash": "0xe3b8da1045ae651e38b4611c407f4172f62a14624e7a01cccb3ff613a78165e6",
+  "confirmed": false,
+  "contracts": {
+    "ArtistRegistry": {
+      "address": "0xb44d19Ce8ad97b9D68266e2f63C38dB382e667aF",
+      "codehash": "0x44d3ba186a997f8331a345ccfa8692a18e3267f6a9c150b7af8515b79b8b66ac"
+    },
+    "AssetAllowlist": {
+      "address": "0x4209d1bF97fC907db95CCf992cAd634b6621f3F2",
+      "codehash": "0x54d75443d560b206836eafe946e23bfd54c09415e3cb7a8c0ca67fe4203aa1ff"
+    },
+    "ClaimRouter": {
+      "address": "0x12B1CE0F955B9FA24B6Fb8f28Da89bAA130a102A",
+      "codehash": "0x23e41b2773f3cb18a74aa5c45114ef10ae66874fea7eb7d87cd0b1fa4b5d8898"
+    },
+    "ConsolidationAdapter": {
+      "address": "0xf2474E7B6Da9ACEBfdd3a096d411EC50ad4d9768",
+      "codehash": "0x96ae34e8ebf660b2babb4683d0774e220e150bf89dc914dd50158e16aa13cee7"
+    },
+    "ContentStore": {
+      "address": "0x90dab9862487FAaeDBeF52542148E5983CC155c5",
+      "codehash": "0x8fb0a2c67e7a7096fb8fa1e87be9fdc54cc7e7fba486d094999f2bd25df7cc50"
+    },
+    "CurationVerifier": {
+      "address": "0x5411D871B1BFc8558e7fbA0803f5a046b6FCf16d",
+      "codehash": "0xbbe0504e997daca6b75103248231c32fa79af5198b7f8da22b3f94c837b182a6"
+    },
+    "DependencyRegistry": {
+      "address": "0x013dDB7B43f058Ee1AF2421d099d12Eb6aEf645D",
+      "codehash": "0x6ccb25a2c362e0e55bcbe3946467e7390bc1aec97a15774d10051db7e4228e48"
+    },
+    "DutchSale": {
+      "address": "0xd397711DdEb77BB7E07809e69BFaCB7687DA9203",
+      "codehash": "0xe2fc1809085da4d0d1b469fcd5e98fe29b3bb99e5d9ad6e54d7bc3156743a6cf"
+    },
+    "EconomicsResolver": {
+      "address": "0x2a5C62CB21fBAb99bac81598B0Dc25Cc8e085Ee9",
+      "codehash": "0x4d6072412e0855b87d7f68f5c58003eee8aedc75266ddcf7feb51b2a555afd53"
+    },
+    "Editions": {
+      "address": "0x0671fE0985bf59a9408a1f86E4702D4b621478e2",
+      "codehash": "0x45008a0b27b92e936fe2d7e09aa809afffd072755537ccb519bcc2d93918b96f"
+    },
+    "EnglishAuction": {
+      "address": "0x29F826B6d1EFeC53Ae6068ac38A0dF4a39981609",
+      "codehash": "0x0321fae4047b0e30a1611585020fa8bc402b23ff0af4df5e4e869d82246a1e61"
+    },
+    "FixedPriceSale": {
+      "address": "0x40e804F494f0d02126d182448b5430b439aF8c27",
+      "codehash": "0xd135bd5b470111d8474435a8cec04ef321d4ee6cf9e63e6b29abbe33708502e0"
+    },
+    "GovernanceConfigurator": {
+      "address": "0xAE691A9C33cA28B88d53dF5de6d423f7665dF47A",
+      "codehash": "0xd7f2824d2e772f10857e11b7eef60aff2c2002153c62d5160dff870e92fa706b"
+    },
+    "PackageRegistry": {
+      "address": "0xe0eA1210B1E8AdA272F0944A9482A12A72423E62",
+      "codehash": "0x38aa2625a70a650a70507128344328d0ca345704083f2cfcad825621d0e9a441"
+    },
+    "ReleaseVerifier": {
+      "address": "0xD3761cb127F84Ce20C2223B9eC610f963Bf105ce",
+      "codehash": "0x967b26c538650997e7047581cef20d4496122d0986c8bbc34550cc29160e26c0"
+    },
+    "Renderer": {
+      "address": "0x7d6958a6D9246Fce6CE7313f0493CDd3A4Da3f80",
+      "codehash": "0x84517e9b42285d001cc019deda051a4869c80c3e38299928f641074b3a7bfdcc"
+    },
+    "RevenueEscrow": {
+      "address": "0x6378cE57734Fe04532Eec0a2fa03f8D324188773",
+      "codehash": "0x34320eccb06073c7bc0a50b5ae1424b098c731e15955831506c034bd82d1f42c"
+    },
+    "SplitFactory": {
+      "address": "0xE3767318ADb97b9a9336327e8f019dAf432cec10",
+      "codehash": "0xef3fcaacd2b82393522198332f43dfdf70192b6cf40471c28713e39d30550bc7"
+    },
+    "StatementLog": {
+      "address": "0x7512C246947dEC802b8bb713eAeC3DBB8887D19b",
+      "codehash": "0xec1e9ab4669dc9976713ca77c8570bb4324a5047609556ef19a380ceba802fb4"
+    },
+    "Stream": {
+      "address": "0x1cAFCC61F72bC6a57472b0F15595DC72BB073662",
+      "codehash": "0xc7417b6ea0598f385d964ed874f09651b6259e4f6cdb367666f841540fb593d9"
+    },
+    "WorkRecords": {
+      "address": "0xe186eBB8495c28A65C5C639e9B090A7b89B44567",
+      "codehash": "0x6c53cc7881ea494a21663e0a9eccc7da28aa5aa815c5508290258219c3a37bc9"
+    },
+    "WorksAccessManager": {
+      "address": "0xfb19514E37234D435575f0da4af648060d117255",
+      "codehash": "0x323db4674fa36f5b5ca30e0cd77fc228bba5a500a6d50a2316922d89a95139b1"
+    }
+  },
+  "delegationCodeHash": "0x25382bc5e8ef8f8c5bdeb89893f11de4eef19cc728d9676354dd85cee6577a4b",
+  "delegationMock": true,
+  "entropy": "none",
+  "genesisConfig": "config/genesis.example.json",
+  "manifestDigest": "0xc7e5cbf5b233d69b1adbed84d434f21684538fcba57d202999091865e9c4fc1c",
+  "manifestPath": "",
+  "manifestUri": "ar://placeholder-epoch-0",
+  "note": "Written from the simulation before the broadcast; Verify.s.sol confirms it on chain.",
+  "params": {
+    "auctionDuration": 86400,
+    "auctionExtensionWindow": 900,
+    "auctionIncrementShare": 5000,
+    "delegation": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "ethIncrementFloor": "1000000000000000",
+    "factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "marketOwner": "0x000000000000000000000000000000000000c002",
+    "namespace": "0xe352ca778143318533cb3dc8cdd9bca6c035af4646ea7d778ecab44a7da9c005",
+    "networkFeeRecipient": "0x000000000000000000000000000000000000C001",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "vrfCallbackGasLimit": 0,
+    "vrfConfirmations": 0,
+    "vrfCoordinator": "0x0000000000000000000000000000000000000000",
+    "vrfCoordinatorCodeHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "vrfKeyHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "vrfNativePayment": false,
+    "vrfRetryDelay": 0,
+    "vrfSubscriptionId": "0"
+  },
+  "pendingLanes": [],
+  "placeholders": true,
+  "standIns": [],
+  "startBlock": 0,
+  "timestamp": 1791749341,
+  "wiringCalls": 19,
+  "wiringHash": "0xa5d978d6fb527fecb41eff42fd40eb89f0140401bdcc65733da8268e7827d7fc"
+}
