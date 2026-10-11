@@ -1,0 +1,44 @@
+# 6529 Works: Foundry configuration. Budgets: see ADR 0001 and tools/check_budgets.py.
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+auto_detect_remappings = false
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
+]
+solc_version = "0.8.37"
+auto_detect_solc = false
+# Prague is the newest fork whose semantics v1 needs (EIP-7702 in tests); it adds
+# no opcodes over Cancun, so the bytecode runs unchanged on current mainnet.
+evm_version = "prague"
+optimizer = true
+optimizer_runs = 200
+via_ir = false
+# ADR 0001: CBOR metadata with an IPFS hash so Sourcify/Etherscan report exact matches.
+bytecode_hash = "ipfs"
+cbor_metadata = true
+fs_permissions = []
+# EIP-170/EIP-3860 stay enforced: code_size_limit is deliberately not raised.
+
+[profile.default.fuzz]
+runs = 256
+
+# Lint production code on every build; tests build byte fixtures with deliberate casts.
+[profile.default.lint]
+ignore = ["test/**/*.sol"]
+
+[profile.default.invariant]
+runs = 256
+depth = 128
+fail_on_revert = true
+show_metrics = true
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = true
