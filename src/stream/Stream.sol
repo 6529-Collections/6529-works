@@ -58,7 +58,8 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
     /// @notice The longest accepted SPDX identifier, in bytes.
     uint256 public constant MAX_SPDX_BYTES = 64;
 
-    bytes32 private constant CC0 = keccak256("CC0-1.0");
+    /// @dev The canonical key (D20) of CC0: keccak256 of the lowercase SPDX identifier.
+    bytes32 private constant CC0_KEY = keccak256("cc0-1.0");
 
     /// @dev `keccak256(abi.encode(license))` of license 1, the product default at deployment,
     ///      which most works use: matching it costs no storage read at mint.
@@ -300,7 +301,7 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         _onlyRecords();
         TokenData storage t = _live(tokenId);
         License memory previous = _licenses[t.licenseId - 1];
-        if (keccak256(bytes(previous.spdxId)) == CC0) revert LicenseIrrevocable(tokenId);
+        if (licenseKey(previous.spdxId) == CC0_KEY) revert LicenseIrrevocable(tokenId);
         _checkLicense(next);
         t.licenseId = _licenseId(next);
         emit LicenseChanged(tokenId, previous, next);
@@ -428,6 +429,18 @@ contract Stream is ERC721, AccessManaged, IStreamCore {
         return interfaceId == bytes4(0x49064906) || interfaceId == type(IERC2981).interfaceId
             || interfaceId == type(IMintTarget).interfaceId
             || interfaceId == type(IStreamCore).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    /// @notice The canonical key of an SPDX identifier (D20): keccak256 of its ASCII-lowercase
+    ///         form, so `CC0-1.0` and `cc0-1.0` are one license for irrevocability.
+    function licenseKey(string memory spdxId) public pure returns (bytes32) {
+        bytes memory lower = bytes(spdxId);
+        lower = bytes.concat(lower); // copy: never modify the caller's string
+        for (uint256 i; i < lower.length; ++i) {
+            bytes1 c = lower[i];
+            if (c >= "A" && c <= "Z") lower[i] = bytes1(uint8(c) + 32);
+        }
+        return keccak256(lower);
     }
 
     // -------------------------------------------------------------------------------- internal

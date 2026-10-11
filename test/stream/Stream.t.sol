@@ -513,6 +513,26 @@ contract StreamTest is StreamFixture {
         recordsMock.setLicense(stream, 1, _license("CC-BY-4.0"));
     }
 
+    function test_setLicense_cc0IsIrrevocableInAnyCase() public {
+        _bindSatellites();
+        PackageItem memory item = _item(1);
+        item.license = _license("cc0-1.0");
+        _mint(item);
+        vm.expectRevert(abi.encodeWithSelector(IStreamCore.LicenseIrrevocable.selector, 1));
+        recordsMock.setLicense(stream, 1, _license("MIT"));
+        assertEq(stream.licenseKey("CC0-1.0"), keccak256("cc0-1.0"));
+        assertEq(stream.licenseKey("Cc0-1.0"), stream.licenseKey("cC0-1.0"));
+        assertEq(stream.licenseKey("MIT"), keccak256("mit"));
+    }
+
+    function testFuzz_licenseKey_lowercasesAsciiOnly(bytes memory raw) public view {
+        bytes memory lower = bytes.concat(raw);
+        for (uint256 i; i < lower.length; ++i) {
+            if (lower[i] >= "A" && lower[i] <= "Z") lower[i] = bytes1(uint8(lower[i]) + 32);
+        }
+        assertEq(stream.licenseKey(string(raw)), keccak256(lower));
+    }
+
     function test_setLicense_reverts() public {
         _bindSatellites();
         PackageItem memory item = _item(1);

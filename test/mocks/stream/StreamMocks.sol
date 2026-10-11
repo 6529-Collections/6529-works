@@ -299,3 +299,20 @@ contract ConstantAuction is IERC721Receiver {
         return IERC721Receiver.onERC721Received.selector;
     }
 }
+
+/// @notice Entropy module mock: seeds are delivered by the test.
+contract MockEntropy {
+    mapping(address => mapping(uint256 => bytes32)) internal _seeds;
+
+    function deliver(address token, uint256 tokenId, bytes32 seed) external {
+        _seeds[token][tokenId] = seed;
+    }
+
+    function isDelivered(address token, uint256 tokenId) external view returns (bool) {
+        return _seeds[token][tokenId] != 0;
+    }
+
+    function seedOf(address token, uint256 tokenId) external view returns (bytes32) {
+        return _seeds[token][tokenId];
+    }
+}

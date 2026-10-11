@@ -129,6 +129,8 @@ interface IStreamCore is IERC4906, IERC2981, IMintTarget {
     function itemHashOf(uint256 tokenId) external view returns (bytes32);
     /// @notice A live token's license.
     function licenseOf(uint256 tokenId) external view returns (License memory);
+    /// @notice The canonical key of an SPDX identifier: keccak256 of its ASCII-lowercase form.
+    function licenseKey(string memory spdxId) external pure returns (bytes32);
     /// @notice A live token's royalty receiver and rate (out of 100,000).
     function royaltyOf(uint256 tokenId) external view returns (address receiver, uint32 rate);
 
