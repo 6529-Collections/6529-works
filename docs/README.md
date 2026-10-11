@@ -64,7 +64,8 @@ Every v1 module is on `main`; see the [module table](../README.md#modules).
 
 - [`config/`](../config/README.md): the committed genesis configuration and policy, with
   placeholder addresses, checked in CI by `tools/check_genesis.py`.
-- [`script/`](../script/README.md): deployment and verification scripts, still to come.
+- [`script/`](../script/README.md): the deploy library, genesis and readback scripts, and the
+  Sepolia runbook.
 - [`ops/DELIVERY_PLAN.md`](../ops/DELIVERY_PLAN.md): phases, exit criteria and current status.
 
 ## Tooling

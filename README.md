@@ -187,10 +187,12 @@ in `lib/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and, for automated agents, [AG
   Stream and its records satellite, Editions, curation, the English auction and the
   fixed-price and Dutch sales, economics, identity, the content store and renderer, the
   statement log, the entropy module and governance with genesis wiring.
+  The deploy library, genesis and readback scripts and a Sepolia runbook are in
+  [`script/`](script/README.md); they have been dry-run on a local chain only.
   End-to-end flows on the real, integrated contracts are in `test/integration/`, with a
-  gas report: steady-state `start` about 276K, `startWithBid` about 319K, and
+  gas report: steady-state `start` about 276K, `startWithBid` about 317K, and
   `tokenURI` at most about 7.8M with every record cap filled.
-- **What does not exist yet.** The deploy script, The Sepolia deployment (it needs the owner's keys and Safes), the external audit and
+- **What does not exist yet.** The Sepolia deployment (it needs the owner's keys and Safes), the external audit and
   mainnet. [ADR 0003](docs/adr/0003-build-time-decisions.md) lists the open owner decisions.
 - **v1.1 and deferred.** 6529 Stream Federated ships in v1.1, and only if needed.
   Deferred beyond v1: other Stream sale types (buy-now, offers, private sales,

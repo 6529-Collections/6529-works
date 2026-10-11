@@ -71,8 +71,12 @@ script/          deployment and verification
 - **Build-time decisions:** [ADR 0003](../docs/adr/0003-build-time-decisions.md).
 - **Integration:**
   - end-to-end flows pass on the real contracts;
-  - steady-state `start` is about 276K gas, and `startWithBid` about 319K (two-party about 327K);
+  - steady-state `start` is about 276K gas, and `startWithBid` about 317K (two-party about 325K);
   - `tokenURI` is at most about 7.8M gas.
+- **Deployment:**
+  - the deploy library, genesis and readback scripts are done;
+  - they have been dry-run on a local chain with Verify passing after the 5-day delay;
+  - the Sepolia runbook is in `script/README.md`.
 - **Next (phase 7, testnet):**
   - the owner decides the open items in ADR 0003;
   - the owner provisions the Safes, the curation signers, the VRF subscription and the

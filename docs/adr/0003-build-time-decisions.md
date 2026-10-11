@@ -288,8 +288,8 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   | Measure | Gas |
   | --- | --- |
   | `start` | about 276K |
-  | `startWithBid` | about 319K |
-  | Two-party `startWithBid` | about 327K |
+  | `startWithBid` | about 317K |
+  | Two-party `startWithBid` | about 325K |
   | `settle` | about 176K |
 
   One-time costs are measured but not gated:
