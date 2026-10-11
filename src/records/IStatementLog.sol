@@ -14,10 +14,11 @@ enum Role {
 
 /// @notice The content of one statement about a subject.
 /// @dev The subject is `(token, id)`: a token contract and token ID, or, when `token` is
-///      `address(0)`, a work ID that has no token yet. The content is `content` (a hash of the
-///      document) located by at most one of `uri` or `fileId` (a `ContentStore` file ID);
-///      both empty is a bare hash commitment. `supersedes` is the entry hash of an earlier
-///      entry this one corrects or replaces, or zero.
+///      `address(0)`, a work ID that has no token yet. The log does not link the two kinds of
+///      subject; the Stream or the package registry does. The content is `content` (a hash of the
+///      document) located by exactly one of a non-empty `uri` or a non-zero `fileId` (a
+///      `ContentStore` file ID). `supersedes` is the entry hash of an earlier entry this one
+///      corrects or replaces, or zero.
 struct Statement {
     address token;
     uint256 id;
@@ -40,6 +41,8 @@ interface IStatementLog {
     /// @param kind The statement kind (also inside `statement`, indexed for filtering).
     /// @param signer The account that spoke, whether it called directly or by relay.
     /// @param role The role `signer` spoke as.
+    /// @param resolver The artist resolver that vouched for the signer, for ARTIST entries; zero
+    ///        for every other role. It is part of the entry hash.
     /// @param index The zero-based position of this entry in the subject's chain.
     /// @param recordedAt The block timestamp of the append.
     /// @param entryHash The hash identifying this entry; later entries cite it in `supersedes`.
@@ -50,12 +53,17 @@ interface IStatementLog {
         bytes32 indexed kind,
         address indexed signer,
         Role role,
+        address resolver,
         uint64 index,
         uint64 recordedAt,
         bytes32 entryHash,
         bytes32 head,
         Statement statement
     );
+
+    /// @notice A relayed entry spent `nonce` of `signer`. Emitted right after the entry's
+    ///         {StatementAppended}, so a relayed entry is distinguishable from a direct one.
+    event StatementRelayed(bytes32 indexed entryHash, address indexed signer, uint256 nonce);
 
     /// @notice `signer` revoked an unused relay nonce.
     event NonceRevoked(address indexed signer, uint256 indexed nonce);
@@ -78,6 +86,12 @@ interface IStatementLog {
     error InvalidHashRef(uint16 algorithm);
     /// @notice Both a URI and a `ContentStore` file ID were given.
     error ConflictingLocators();
+    /// @notice Neither a URI nor a `ContentStore` file ID was given.
+    error MissingLocator();
+    /// @notice The kind is reserved to another role (see {StatementKinds}).
+    error ReservedKind(bytes32 kind, Role role);
+    /// @notice The signer is the AccessManager; no statement may be attributed to it.
+    error AuthorityCannotSign();
     /// @notice The URI is longer than the limit or is not well-formed UTF-8.
     error InvalidUri();
     /// @notice `signer` does not hold `role` for this subject.
@@ -126,4 +140,12 @@ interface IStatementLog {
 
     /// @notice Returns how many entries a subject has and its current chain head.
     function chainOf(address token, uint256 id) external view returns (uint64 count, bytes32 head);
+
+    /// @notice Returns the entry hash of a subject's latest DISPUTE_OUTCOME entry, or zero.
+    /// @dev This is how a renderer shows dispute status (ADR 0001 section 12) without scanning
+    ///      events: the entry itself is in the log's events under that hash.
+    function latestDisputeOutcome(address token, uint256 id)
+        external
+        view
+        returns (bytes32 entryHash);
 }

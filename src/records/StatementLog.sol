@@ -14,28 +14,38 @@ import { Utf8 } from "../libraries/Utf8.sol";
 import { isKnownHashAlgorithm } from "./HashRef.sol";
 import { IArtistRoleResolver } from "./IArtistRoleResolver.sol";
 import { IStatementLog, Role, Statement } from "./IStatementLog.sol";
+import { StatementKinds } from "./StatementKinds.sol";
 
 /// @title StatementLog
 /// @notice The one append-only, signed statement log for works (ADR 0001 section 12).
 /// @dev Per subject the contract stores a count and a rolling hash-chain head,
-///      `head' = keccak256(abi.encode(head, entryHash))`, and emits each entry in full. Nothing is
-///      ever edited or deleted: a correction is a new entry whose `supersedes` cites the earlier
-///      entry's hash. That citation is not checked on-chain, because checking would cost one more
-///      storage write per entry; readers verify it against the chain rebuilt from events.
+///      `head' = keccak256(abi.encode(HEAD_DOMAIN, head, entryHash))`, and emits each entry in
+///      full. Nothing is ever edited or deleted: a correction is a new entry whose `supersedes`
+///      cites the earlier entry's hash. That citation is not checked on-chain, because checking
+///      would cost one more storage write per entry; readers verify it against the chain rebuilt
+///      from events. The log does not link a work-ID subject to the token-ID subject it later
+///      becomes: the Stream or the package registry holds that link.
 ///
 ///      Authorization per role:
 ///      - ARTIST: the pluggable {IArtistRoleResolver} says the signer is an artist of the subject.
 ///      - OWNER: the signer owns the subject's ERC-721 token or holds a balance of its ERC-1155 ID.
 ///      - CURATOR and PLATFORM: the signer may call {appendCurator} or {appendPlatform} under the
 ///        AccessManager, so governance maps those two selectors to roles.
-///      ARTIST and OWNER never consult the AccessManager, so no governance role, admin included,
-///      can write them. The one governed lever is {setArtistResolver}, which is delayed and public.
+///
+///      Trust boundary. No governance role has a direct path to an ARTIST or OWNER statement: those
+///      roles never consult the AccessManager. But ARTIST authority is exactly as strong as the
+///      resolver's code, whatever governs the resolver's answers, {setArtistResolver}, and the
+///      AccessManager that can call it or replace this contract's authority. The code-hash pin
+///      binds bytecode, not behaviour. So {setArtistResolver} must map to the 30-day class, and
+///      every ARTIST entry records the resolver that vouched for it, in its hash and its event, so
+///      a swap can never pass unnoticed. OWNER authority is only as strong as the token contract.
+///      No statement is ever attributed to the AccessManager.
 contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     /// @notice The longest accepted URI, in bytes.
     uint256 public constant MAX_URI_BYTES = 2_048;
 
-    /// @dev Gas forwarded to each token ownership read.
-    uint256 private constant OWNER_READ_GAS = 50_000;
+    /// @notice Gas forwarded to each token ownership read.
+    uint256 public constant OWNER_READ_GAS = 50_000;
 
     bytes32 private constant HASHREF_TYPEHASH =
         keccak256("HashRef(uint16 algorithm,bytes32 digest)");
@@ -46,9 +56,20 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         "Authorization(uint8 role,address signer,uint256 nonce,uint64 deadline,Statement statement)HashRef(uint16 algorithm,bytes32 digest)Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)"
     );
     bytes32 private constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
+    bytes32 private constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
 
     struct Chain {
         uint64 count;
+        bytes32 head;
+    }
+
+    /// @dev The values of one entry while it is built; keeps {_append} within the stack.
+    struct Entry {
+        bytes32 key;
+        uint64 index;
+        uint64 recordedAt;
+        address resolver;
+        bytes32 entryHash;
         bytes32 head;
     }
 
@@ -56,6 +77,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     address public artistResolver;
 
     mapping(bytes32 subjectKey => Chain) private _chains;
+    mapping(bytes32 subjectKey => bytes32 entryHash) private _latestDispute;
     mapping(address signer => mapping(uint256 word => uint256 bits)) private _nonceBitmap;
 
     /// @param authority_ The AccessManager that governs this log.
@@ -101,7 +123,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         uint256 nonce,
         uint64 deadline,
         bytes calldata signature
-    ) external returns (bytes32) {
+    ) external returns (bytes32 entryHash) {
         // A deadline is a wall-clock bound by design; validator timestamp drift is immaterial.
         // forge-lint: disable-next-line(block-timestamp)
         if (deadline < block.timestamp) revert DeadlineExpired(deadline);
@@ -110,7 +132,8 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
             _hashTypedDataV4(_authorizationHash(role, statement, signer, nonce, deadline));
         if (!SignatureVerifier.isValid(signer, digest, signature)) revert InvalidSignature(signer);
         if (!_isAuthorized(role, statement, signer)) revert NotAuthorized(role, signer);
-        return _append(role, signer, statement);
+        entryHash = _append(role, signer, statement);
+        emit StatementRelayed(entryHash, signer, nonce);
     }
 
     /// @inheritdoc IStatementLog
@@ -120,7 +143,8 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @notice Replaces the artist resolver (compare-and-set, code-hash pinned).
-    /// @dev Governed; give it the 30-day verifier class (ADR 0001 section 13). Zero disables
+    /// @dev Governed. It decides who may speak as an artist, so the deploy configuration must
+    ///      map it to the 30-day verifier class (ADR 0001 section 13) and no faster. Zero disables
     ///      ARTIST statements. Non-payable, as every governed function is.
     /// @param expected The resolver the proposer saw; a stale proposal reverts.
     /// @param next The new resolver, or zero.
@@ -137,6 +161,11 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     function chainOf(address token, uint256 id) external view returns (uint64, bytes32) {
         Chain storage chain = _chains[subjectKey(token, id)];
         return (chain.count, chain.head);
+    }
+
+    /// @inheritdoc IStatementLog
+    function latestDisputeOutcome(address token, uint256 id) external view returns (bytes32) {
+        return _latestDispute[subjectKey(token, id)];
     }
 
     /// @notice Returns the EIP-712 digest `signer` must sign for {appendSigned}.
@@ -162,47 +191,64 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
 
     function _append(Role role, address signer, Statement calldata statement)
         private
-        returns (bytes32 entryHash)
+        returns (bytes32)
     {
-        _validate(statement);
-        bytes32 key = subjectKey(statement.token, statement.id);
-        Chain storage chain = _chains[key];
-        uint64 index = chain.count;
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint64 recordedAt = uint64(block.timestamp);
-        entryHash = keccak256(
-            abi.encode(
-                ENTRY_DOMAIN,
-                block.chainid,
-                address(this),
-                key,
-                index,
-                role,
-                signer,
-                recordedAt,
-                _statementHash(statement)
+        if (signer == authority()) revert AuthorityCannotSign();
+        _validate(statement, role);
+        Entry memory e = Entry({
+            key: subjectKey(statement.token, statement.id),
+            index: 0,
+            // forge-lint: disable-next-line(unsafe-typecast)
+            recordedAt: uint64(block.timestamp),
+            resolver: role == Role.ARTIST ? artistResolver : address(0),
+            entryHash: 0,
+            head: 0
+        });
+        Chain storage chain = _chains[e.key];
+        e.index = chain.count;
+        // Every word is static, so two encodings joined equal one `abi.encode` of all ten.
+        e.entryHash = keccak256(
+            bytes.concat(
+                abi.encode(ENTRY_DOMAIN, block.chainid, address(this), e.key, e.index),
+                abi.encode(role, signer, e.resolver, e.recordedAt, _statementHash(statement))
             )
         );
-        bytes32 head = keccak256(abi.encode(chain.head, entryHash));
-        chain.count = index + 1;
-        chain.head = head;
+        e.head = keccak256(abi.encode(HEAD_DOMAIN, chain.head, e.entryHash));
+        chain.count = e.index + 1;
+        chain.head = e.head;
+        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) _latestDispute[e.key] = e.entryHash;
         emit StatementAppended(
-            key, statement.kind, signer, role, index, recordedAt, entryHash, head, statement
+            e.key,
+            statement.kind,
+            signer,
+            role,
+            e.resolver,
+            e.index,
+            e.recordedAt,
+            e.entryHash,
+            e.head,
+            statement
         );
+        return e.entryHash;
     }
 
-    function _validate(Statement calldata s) private pure {
+    function _validate(Statement calldata s, Role role) private pure {
         if (s.token == address(0) && s.id == 0) revert InvalidSubject();
         if (s.kind == 0) revert InvalidKind();
+        if (
+            s.kind == StatementKinds.DISPUTE_OUTCOME && role != Role.PLATFORM
+                || s.kind == StatementKinds.CURATION_EVIDENCE && role != Role.CURATOR
+        ) revert ReservedKind(s.kind, role);
         if (s.schema == 0) revert InvalidSchema();
         if (s.content.digest == 0 || !isKnownHashAlgorithm(s.content.algorithm)) {
             revert InvalidHashRef(s.content.algorithm);
         }
-        if (bytes(s.uri).length != 0) {
-            if (s.fileId != 0) revert ConflictingLocators();
-            if (bytes(s.uri).length > MAX_URI_BYTES || !Utf8.isValid(bytes(s.uri))) {
-                revert InvalidUri();
-            }
+        // Exactly one locator: a URI or a ContentStore file.
+        bool hasUri = bytes(s.uri).length != 0;
+        if (hasUri && s.fileId != 0) revert ConflictingLocators();
+        if (!hasUri && s.fileId == 0) revert MissingLocator();
+        if (hasUri && (bytes(s.uri).length > MAX_URI_BYTES || !Utf8.isValid(bytes(s.uri)))) {
+            revert InvalidUri();
         }
     }
 
@@ -220,21 +266,23 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         if (role != Role.CURATOR && role != Role.PLATFORM) return false;
         bytes4 selector =
             role == Role.CURATOR ? this.appendCurator.selector : this.appendPlatform.selector;
-        (bool immediate,) =
+        (bool immediate, uint32 delay) =
             AuthorityUtils.canCallWithDelay(authority(), who, address(this), selector);
-        return immediate;
+        return immediate && delay == 0;
     }
 
     /// @dev Tries ERC-721 `ownerOf`, then ERC-1155 `balanceOf`, each gas-capped and size-capped so
     ///      a hostile token can neither burn the caller's gas nor return a bomb. Any failure is
-    ///      "not the owner".
+    ///      "not the owner". Any holder of an edition counts as an owner of that token ID.
     function _owns(address token, uint256 id, address who) private view returns (bool) {
         if (token == address(0) || who == address(0)) return false;
         (bool ok, bytes memory result) = BoundedCall.tryRead(
             token, abi.encodeCall(IERC721.ownerOf, (id)), OWNER_READ_GAS, 32, 0
         );
-        if (ok) {
-            return result.length == 32 && abi.decode(result, (uint256)) == uint256(uint160(who));
+        // Only a full 32-byte answer is an ERC-721 answer; anything else (a revert, an empty
+        // fallback return) falls through to the ERC-1155 read.
+        if (ok && result.length == 32) {
+            return abi.decode(result, (uint256)) == uint256(uint160(who));
         }
         (ok, result) = BoundedCall.tryRead(
             token, abi.encodeCall(IERC1155.balanceOf, (who, id)), OWNER_READ_GAS, 32, 0

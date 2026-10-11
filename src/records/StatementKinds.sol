@@ -3,8 +3,10 @@ pragma solidity ^0.8.24;
 
 /// @title StatementKinds
 /// @notice Well-known statement kinds. A kind is only a `bytes32` label: the log accepts any
-///         non-zero value, so new kinds need no deployment. Consumers must read a kind together
-///         with the entry's signer role, because the log does not tie kinds to roles.
+///         non-zero value, so new kinds need no deployment. Two kinds are reserved:
+///         DISPUTE_OUTCOME only under the PLATFORM role and CURATION_EVIDENCE only under the
+///         CURATOR role. Every other kind may be written under any role, so consumers must read
+///         a kind together with the entry's signer role.
 /// @dev Constants only; nothing here is linked bytecode.
 library StatementKinds {
     /// @notice A statement by the artist about a work.
@@ -21,8 +23,10 @@ library StatementKinds {
     bytes32 internal constant FIXITY_CHECK = keccak256("FIXITY_CHECK");
     /// @notice A museum accession record, including package hashes recorded at accession.
     bytes32 internal constant ACCESSION = keccak256("ACCESSION");
-    /// @notice The recorded outcome of a dispute (ADR 0001 section 12).
+    /// @notice The recorded outcome of a dispute (ADR 0001 section 12). Reserved to PLATFORM; the
+    ///         log keeps the latest one per subject for renderers.
     bytes32 internal constant DISPUTE_OUTCOME = keccak256("DISPUTE_OUTCOME");
-    /// @notice The evidence hash behind a curation approval (ADR 0001 section 3).
+    /// @notice The evidence hash behind a curation approval (ADR 0001 section 3). Reserved to
+    ///         CURATOR.
     bytes32 internal constant CURATION_EVIDENCE = keccak256("CURATION_EVIDENCE");
 }

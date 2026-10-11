@@ -10,6 +10,12 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 /// @dev Must support ERC-165 for this interface, because the log checks that at install time
 ///      (ADR 0001 section 13, requirement 6). `token == address(0)` means `id` is a work ID that
 ///      has no token yet (for example an approved package item).
+///
+///      Trust. The log trusts this contract's answers completely: ARTIST authority is no stronger
+///      than the resolver. The log pins a code hash at install, which binds bytecode, not
+///      behaviour, so an implementation that forwards to a mutable backend is only as trustworthy
+///      as whoever controls that backend. An implementation must therefore be immutable, or be
+///      governed no faster than the 30-day class (ADR 0001 section 13), with every change public.
 interface IArtistRoleResolver is IERC165 {
     /// @notice Returns whether `account` is currently an artist (or authorised artist key) of
     ///         the subject `(token, id)`.
