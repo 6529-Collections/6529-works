@@ -430,13 +430,13 @@ contract RendererReviewTest is RendererBase {
 
     /// @dev The backslash check reads a name a word at a time: it finds a backslash (here the first
     ///      byte of an escaped backslash) at every offset of names of every length up to two words
-    ///      and a bit, and takes the same names without one, whatever follows them in memory.
+    ///      and a bit, and takes the same names without one.
     function test_L2_ABackslashIsFoundAtEveryOffset() public {
         for (uint256 length = 2; length < 71; ++length) {
-            for (uint256 at; at + 2 <= length; at += (length < 40 ? 1 : 7)) {
+            for (uint256 pos; pos + 2 <= length; pos += (length < 40 ? 1 : 7)) {
                 bytes memory name = _fill("a", length);
-                name[at] = "\\";
-                name[at + 1] = "\\";
+                name[pos] = "\\";
+                name[pos + 1] = "\\";
                 _raw(_traitRecord(string(name)));
                 _assertCoreOnly("invalid");
             }
