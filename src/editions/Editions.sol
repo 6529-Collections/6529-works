@@ -5,6 +5,7 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
@@ -29,6 +30,17 @@ import {
 } from "../interfaces/types/PackageTypes.sol";
 import { DutchParams, PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+
+/// @notice Whether a Stream master's primary sale has settled (ADR 0001 section 6; PR #10
+///         review decision D14).
+/// @dev A minimal local interface until the revised `IStream` names this read. It must be true
+///      only once the master's auction has settled, so a master that is still in auction custody,
+///      paused for a dispute, or burned after an upheld dispute never gets an edition.
+interface IMasterSale {
+    /// @notice Whether the primary sale of Stream token `tokenId` has settled.
+    function primarySaleSettled(uint256 tokenId) external view returns (bool);
+}
 
 /// @title Editions
 /// @notice 6529 Editions: the one shared ERC-1155 of editions, each anchored by a 6529 Stream
@@ -36,7 +48,9 @@ import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 /// @dev The edition ID equals the master's Stream token ID. `createEdition` is permissionless:
 ///      it accepts only the exact package item the master was minted from (its item hash is the
 ///      one Stream recorded), only while the package is approved and the item consumed, and only
-///      once the master's seed is known. It locks the edition's economics and currency, claims
+///      after the master's auction has settled, so a disputed or burned master never gets an
+///      edition (a VRF master's seed is delivered before its auction starts). It locks the
+///      edition's economics and currency, claims
 ///      the master's content hash under `PRODUCT_EDITIONS` (so editions never share media, while
 ///      an edition reuses its own master's hash, which Stream claimed under `PRODUCT_STREAM`),
 ///      and writes both directions of the link in one transaction, verifying Stream's side
@@ -44,15 +58,16 @@ import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 ///
 ///      Copies are minted only by MINTER adapters whose sale kind matches the package's, at
 ///      most `size` copies ever (burns do not free supply), and for OPEN editions only during
-///      `window` seconds from the first mint. Minting stops if the master is burned. Royalties
-///      are the terms locked at creation, read from this contract's storage with no external
-///      call. The license and `uri` come from the master: `uri` is served by the master's
-///      renderer, which reads the master's content-store bytes.
+///      `window` seconds from the first mint. Royalties are the terms locked at creation, read
+///      from this contract's storage with no external call. The license and `uri` come from the
+///      master: `uri` is served by the master's renderer, which reads the master's content-store
+///      bytes. ERC-4906 `MetadataUpdate` is emitted when an edition is created.
 ///
-///      Wiring is immutable and taken from Stream at deployment, so Editions always talks to the
-///      same package registry, economics resolver and artist registry as its masters. Editions
-///      needs the SYSTEM role on the package registry (`claimContent`) and must be Stream's
-///      `editions()` (`linkEdition`).
+///      Wiring is immutable. Stream is checked at deployment (code, no EIP-7702 delegation,
+///      ERC-165 for ERC-721, pinned code hash), and the package registry, economics resolver and
+///      artist registry are taken from it, so Editions always talks to the same contracts as its
+///      masters. The package registry must bind Editions as its Editions caller (`claimContent`)
+///      and Stream must name it as `editions()` (`linkEdition`).
 contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev `abi.encode(DutchParams)`: three static words.
     uint256 private constant DUTCH_PARAMS_LENGTH = 96;
@@ -79,13 +94,19 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @notice An OPEN edition's window started with its first mint; minting ends at `end`.
     event EditionWindowOpened(uint256 indexed editionId, uint64 start, uint256 end);
+    /// @notice ERC-4906: the metadata of edition `_tokenId` changed.
+    event MetadataUpdate(uint256 _tokenId);
 
     /// @notice A required address is zero.
     error ZeroAddress();
+    /// @notice `stream_` has no code, is an EIP-7702 delegated account, or is not an ERC-721.
+    error InvalidStream(address stream_);
+    /// @notice Stream's code hash is not the reviewed one.
+    error StreamCodeHashMismatch(bytes32 expected, bytes32 actual);
+    /// @notice The master's auction has not settled.
+    error MasterNotSettled(uint256 workId);
     /// @notice The master's package is revoked or its item is not consumed.
     error MasterNotApproved(uint256 workId);
-    /// @notice The master's VRF seed is not delivered yet.
-    error MasterSeedPending(uint256 workId);
     /// @notice The item's edition terms are malformed (format, size, window, sale kind, params).
     error InvalidEditionTerms(uint256 workId);
     /// @notice Stream did not record the link back to this edition.
@@ -97,12 +118,19 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @param authority_ The AccessManager that governs this contract.
     /// @param stream_ The 6529 Stream contract; the other wiring is read from it.
+    /// @param streamCodeHash The reviewed code hash of `stream_`.
     /// @param owner_ The initial marketplace owner.
-    constructor(address authority_, address stream_, address owner_)
+    constructor(address authority_, address stream_, bytes32 streamCodeHash, address owner_)
         ERC1155("")
         AccessManaged(authority_)
     {
-        if (stream_ == address(0)) revert ZeroAddress();
+        if (
+            stream_.code.length == 0 || DelegatedEOA.isDelegated(stream_)
+                || !ERC165Checker.supportsInterface(stream_, type(IERC721).interfaceId)
+        ) revert InvalidStream(stream_);
+        if (stream_.codehash != streamCodeHash) {
+            revert StreamCodeHashMismatch(streamCodeHash, stream_.codehash);
+        }
         IStream s = IStream(stream_);
         (address registry, address resolver, address artists) =
             (s.packageRegistry(), s.economics(), s.artistRegistry());
@@ -127,6 +155,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         Record storage r = _records[workId];
         if (r.edition.contentId != 0) revert EditionExists(workId);
         IStream.WorkInfo memory master = IStream(stream).work(workId);
+        if (!IMasterSale(stream).primarySaleSettled(workId)) revert MasterNotSettled(workId);
         bytes32 itemHash = WorksHashing.itemHash(item);
         if (
             item.kind != ItemKind.EDITION_MASTER || master.kind != ItemKind.EDITION_MASTER
@@ -140,8 +169,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ) {
             revert MasterNotApproved(workId);
         }
-        (,, bool seedAvailable) = IStream(stream).seedOf(workId);
-        if (!seedAvailable) revert MasterSeedPending(workId);
 
         EditionTerms memory terms = item.edition;
         _checkTerms(workId, terms);
@@ -158,6 +185,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         e.royaltyRate = w.royaltyRate;
         r.artistId = master.artistId;
         emit EditionCreated(workId, item.contentId, terms);
+        emit MetadataUpdate(workId);
 
         // Protocol calls, after every effect above: a reentrant `createEdition` hits EditionExists.
         _contentHashes[workId] = packageRegistry.claimContent(PRODUCT_EDITIONS, item.contentId);
@@ -208,7 +236,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         bytes32 kind = ISaleAdapter(msg.sender).saleKind();
         if (kind != e.terms.saleKind) revert SaleKindMismatch(e.terms.saleKind, kind);
         uint256 cap = e.terms.size == 0 ? type(uint64).max : e.terms.size;
-        if (amount > cap - e.minted || !_masterLive(id)) revert EditionUnavailable(id);
+        if (amount > cap - e.minted) revert EditionUnavailable(id);
         if (e.terms.format == EditionFormat.OPEN) {
             uint64 start = e.windowStart;
             if (start == 0) {
@@ -330,15 +358,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             shape = false;
         }
         if (!shape) revert InvalidEditionTerms(workId);
-    }
-
-    /// @dev Whether the master still exists on Stream; any failure to read it counts as burned.
-    function _masterLive(uint256 id) private view returns (bool) {
-        try IERC721(stream).ownerOf(id) returns (address holder) {
-            return holder != address(0);
-        } catch {
-            return false;
-        }
     }
 
     function _primaryTerms(uint256 id, Edition storage e)

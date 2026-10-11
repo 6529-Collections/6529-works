@@ -11,10 +11,10 @@ import { EditionsAdapterMock, EditionsStreamMock } from "../mocks/editions/Editi
 
 /// @notice Drives 6529 Editions with purchases through the right and the wrong adapter, mints by
 ///         a non-minter, burns from adapter custody, transfers between holders, time warps,
-///         master burns and repeated `createEdition` calls. Before each mint it predicts the
-///         outcome from the edition's terms (size, OPEN window from the first mint, master
-///         alive); any accepted call the model rejects, or rejected call it accepts, is counted
-///         in `unexpected`. Ghost counters mirror minted, burned and window starts.
+///         secondary sales of the master and repeated `createEdition` calls. Before each mint it
+///         predicts the outcome from the edition's terms (size, OPEN window from the first mint);
+///         any accepted call the model rejects, or rejected call it accepts, is counted in
+///         `unexpected`. Ghost counters mirror minted, burned and window starts.
 contract EditionsHandler is Test {
     Editions internal immutable editions;
     EditionsStreamMock internal immutable stream;
@@ -28,7 +28,6 @@ contract EditionsHandler is Test {
     mapping(uint256 => uint256) public ghostMinted;
     mapping(uint256 => uint256) public ghostBurned;
     mapping(uint256 => uint64) public ghostWindowStart;
-    mapping(uint256 => bool) public masterBurned;
     /// @notice Calls whose outcome differed from the model.
     uint256 public unexpected;
     /// @notice Copies accepted at or after an OPEN window's end.
@@ -73,7 +72,7 @@ contract EditionsHandler is Test {
         uint256 start = e.windowStart == 0 ? block.timestamp : e.windowStart;
         bool inWindow = !open || block.timestamp < start + e.terms.window;
         uint256 cap = e.terms.size == 0 ? type(uint64).max : e.terms.size;
-        bool expectOk = inWindow && amount <= cap - e.minted && !masterBurned[id];
+        bool expectOk = inWindow && amount <= cap - e.minted;
 
         try _adapterFor(e.terms.saleKind).buy(editions, id, to, amount) {
             if (!expectOk) ++unexpected;
@@ -149,18 +148,13 @@ contract EditionsHandler is Test {
         try editions.createEdition(_ids[i], item) {
             ++unexpected;
         } catch (bytes memory reason) {
-            // The existence check comes first, so a repeat fails with EditionExists even after
-            // the master is burned.
             if (!_is(reason, IEditions.EditionExists.selector)) ++unexpected;
         }
     }
 
-    /// @dev Rare: an upheld dispute burns a master (one call in 32 does).
-    function burnMaster(uint256 editionSeed) external {
-        if (editionSeed % 32 != 0) return;
-        uint256 id = _ids[(editionSeed / 32) % _ids.length];
-        stream.burnMaster(id);
-        masterBurned[id] = true;
+    /// @dev The settled master changes hands on the secondary market; editions are unaffected.
+    function moveMaster(uint256 editionSeed, uint256 holderSeed) external {
+        stream.settle(_ids[editionSeed % _ids.length], _holders[holderSeed % _holders.length]);
     }
 
     // ------------------------------------------------------------------ views for invariants

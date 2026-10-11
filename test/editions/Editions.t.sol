@@ -50,8 +50,12 @@ import {
     WrongSelectorReceiver1155
 } from "../mocks/editions/EditionsMocks.sol";
 
-/// @dev Fails the constructor's wiring checks: Stream reports no economics resolver.
+/// @dev An ERC-721 by ERC-165 that reports no economics resolver.
 contract UnwiredStream {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId != 0xffffffff;
+    }
+
     function packageRegistry() external pure returns (address) {
         return address(1);
     }
@@ -87,15 +91,36 @@ contract EditionsTest is EditionsBase {
     function test_Constructor_EmitsOwnership() public {
         vm.expectEmit(true, true, false, false);
         emit IEditions.OwnershipTransferred(address(0), marketOwner);
-        new Editions(address(manager), address(stream), marketOwner);
+        new Editions(address(manager), address(stream), address(stream).codehash, marketOwner);
     }
 
     function test_Constructor_RejectsMissingWiring() public {
-        vm.expectRevert(Editions.ZeroAddress.selector);
-        new Editions(address(manager), address(0), marketOwner);
         address unwired = address(new UnwiredStream());
         vm.expectRevert(Editions.ZeroAddress.selector);
-        new Editions(address(manager), unwired, marketOwner);
+        new Editions(address(manager), unwired, unwired.codehash, marketOwner);
+    }
+
+    /// @dev ADR 0001 section 13.6 install checks: code, no EIP-7702 delegation, ERC-165 for
+    ///      ERC-721, and the reviewed code hash.
+    function test_Constructor_ChecksStreamInstall() public {
+        _expectInvalidStream(address(0));
+        _expectInvalidStream(outsider); // an EOA
+        address delegated = makeAddr("delegated");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(stream)));
+        _expectInvalidStream(delegated);
+        _expectInvalidStream(address(renderer)); // code, but no ERC-165
+        bytes32 wrong = keccak256("not the reviewed stream");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Editions.StreamCodeHashMismatch.selector, wrong, address(stream).codehash
+            )
+        );
+        new Editions(address(manager), address(stream), wrong, marketOwner);
+    }
+
+    function _expectInvalidStream(address s) internal {
+        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidStream.selector, s));
+        new Editions(address(manager), s, s.codehash, marketOwner);
     }
 
     // ------------------------------------------------------------------ createEdition
@@ -108,6 +133,8 @@ contract EditionsTest is EditionsBase {
 
         vm.expectEmit(true, true, false, true, address(editions));
         emit IEditions.EditionCreated(id, item.contentId, item.edition);
+        vm.expectEmit(false, false, false, true, address(editions));
+        emit Editions.MetadataUpdate(id);
         vm.expectEmit(true, true, false, true, address(registry));
         emit ContentClaimed(PRODUCT_EDITIONS, sha, item.contentId);
         vm.expectEmit(true, true, false, true, address(stream));
@@ -188,14 +215,28 @@ contract EditionsTest is EditionsBase {
         editions.createEdition(id, item);
     }
 
-    function test_CreateEdition_RefusesUnknownOrBurnedMaster() public {
+    function test_CreateEdition_RefusesUnknownMaster() public {
         PackageItem memory item = _fixedItem(10);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 1));
         editions.createEdition(1, item);
-        uint256 id = _master(item);
-        stream.burnMaster(id);
+    }
+
+    /// @dev D14: a master still in auction custody, live or paused for a dispute, gets no
+    ///      edition; an upheld dispute burns it, so it never does.
+    function test_CreateEdition_RequiresSettledMaster() public {
+        PackageItem memory item = _fixedItem(10);
+        uint256 id = _masterInAuction(item);
+        vm.expectRevert(abi.encodeWithSelector(Editions.MasterNotSettled.selector, id));
+        editions.createEdition(id, item);
+        stream.burnMaster(id); // dispute upheld
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, id));
         editions.createEdition(id, item);
+
+        PackageItem memory sold = _fixedItem(10);
+        uint256 soldId = _masterInAuction(sold);
+        stream.settle(soldId, COLLECTOR);
+        editions.createEdition(soldId, sold);
+        assertTrue(editions.exists(soldId));
     }
 
     function test_CreateEdition_RefusesSecondCreate() public {
@@ -235,15 +276,13 @@ contract EditionsTest is EditionsBase {
         editions.createEdition(id, item);
     }
 
-    function test_CreateEdition_WaitsForVrfSeed() public {
+    /// @dev A VRF master's seed is delivered before its auction starts (D4), so a settled VRF
+    ///      master links like any other.
+    function test_CreateEdition_SettledVrfMaster() public {
         PackageItem memory item = _fixedItem(10);
         item.seedPolicy = SeedPolicy.VRF;
-        uint256 id = _master(item);
-        vm.expectRevert(abi.encodeWithSelector(Editions.MasterSeedPending.selector, id));
-        editions.createEdition(id, item);
-        stream.deliverSeed(id);
-        editions.createEdition(id, item);
-        assertTrue(editions.exists(id));
+        uint256 id = _create(item);
+        assertFalse(editions.primaryTerms(id, "").revealPending);
     }
 
     function test_CreateEdition_RefusesMalformedTerms() public {
@@ -536,14 +575,6 @@ contract EditionsTest is EditionsBase {
         dutchAdapter.buy(editions, id, buyer, 2);
         dutchAdapter.buy(editions, id, buyer, 1);
         assertEq(editions.edition(id).minted, type(uint64).max);
-    }
-
-    function test_Mint_StopsWhenMasterBurned() public {
-        uint256 id = _create(_fixedItem(10));
-        fixedAdapter.buy(editions, id, buyer, 1);
-        stream.burnMaster(id); // an upheld dispute burns the master
-        vm.expectRevert(abi.encodeWithSelector(IEditions.EditionUnavailable.selector, id));
-        fixedAdapter.buy(editions, id, buyer, 1);
     }
 
     function test_Mint_CreatorFollowsArtistRecovery() public {

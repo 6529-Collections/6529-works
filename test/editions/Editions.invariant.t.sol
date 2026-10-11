@@ -43,13 +43,13 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         selectors[5] = EditionsHandler.transfer.selector;
         selectors[6] = EditionsHandler.warp.selector;
         selectors[7] = EditionsHandler.recreate.selector;
-        selectors[8] = EditionsHandler.burnMaster.selector;
+        selectors[8] = EditionsHandler.moveMaster.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
 
-    /// @notice Every mint matched the model: within size, inside the OPEN window, master alive,
-    ///         right sale kind, MINTER only; and no copy was accepted late or beyond the size.
+    /// @notice Every mint matched the model: within size, inside the OPEN window, right sale
+    ///         kind, MINTER only; and no copy was accepted late or beyond the size.
     function invariant_MintsFollowEditionTerms() public view {
         assertEq(handler.unexpected(), 0, "an outcome differed from the edition terms");
         assertEq(handler.lateMints(), 0, "a copy was minted after the window closed");

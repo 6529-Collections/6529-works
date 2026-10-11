@@ -40,6 +40,8 @@ abstract contract EditionsBase is Test {
     uint256 internal constant PRICE = 0.01 ether;
     /// @dev Stream's auction custody, which holds a master until its auction settles.
     address internal constant CUSTODY = address(0xA0C7);
+    /// @dev The master's auction winner.
+    address internal constant COLLECTOR = address(0xC011);
 
     AccessManager internal manager;
     EditionsRegistryMock internal registry;
@@ -73,7 +75,8 @@ abstract contract EditionsBase is Test {
             address(registry), address(economics), address(artists), address(renderer)
         );
         registry.setStream(address(stream));
-        editions = new Editions(address(manager), address(stream), marketOwner);
+        editions =
+            new Editions(address(manager), address(stream), address(stream).codehash, marketOwner);
         stream.setEditions(address(editions));
         registry.setSystem(address(editions));
         fixedAdapter = new EditionsAdapterMock(SaleKind.FIXED_PRICE);
@@ -132,12 +135,16 @@ abstract contract EditionsBase is Test {
         return _item(EditionFormat.OPEN, size, window, SaleKind.DUTCH);
     }
 
-    /// @dev Approves a one-item package and mints its master into auction custody.
-    function _master(PackageItem memory item) internal returns (uint256) {
-        return _masterIn(_root(item), item);
+    /// @dev Approves a one-item package, mints its master into auction custody and settles the
+    ///      auction to a collector.
+    function _master(PackageItem memory item) internal returns (uint256 id) {
+        id = _masterInAuction(item);
+        stream.settle(id, COLLECTOR);
     }
 
-    function _masterIn(bytes32 root, PackageItem memory item) internal returns (uint256) {
+    /// @dev A master whose auction has not settled (live or paused for a dispute).
+    function _masterInAuction(PackageItem memory item) internal returns (uint256) {
+        bytes32 root = _root(item);
         registry.approve(root);
         return stream.mintMaster(root, item, CUSTODY);
     }

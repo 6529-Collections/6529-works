@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
@@ -18,7 +20,7 @@ import {
     ProductEconomics,
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
-import { ItemKind, License, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { ItemKind, License, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
@@ -181,9 +183,10 @@ contract EditionsRendererMock {
     }
 }
 
-/// @dev 6529 Stream, reduced to masters and the Stream side of the edition link. `LinkMode`
-///      makes the Stream side misbehave: ignore the link, record another ID, or reenter
-///      `createEdition` with a stored item.
+/// @dev 6529 Stream, reduced to masters, their primary-sale settlement and the Stream side of
+///      the edition link. A master is minted into auction custody and is unsettled until
+///      `settle`. `LinkMode` makes the Stream side misbehave: ignore the link, record another
+///      ID, or reenter `createEdition` with a stored item.
 contract EditionsStreamMock {
     enum LinkMode {
         NORMAL,
@@ -205,7 +208,7 @@ contract EditionsStreamMock {
     mapping(uint256 => IStream.WorkInfo) internal _works;
     mapping(uint256 => address) internal _owners;
     mapping(uint256 => License) internal _licenses;
-    mapping(uint256 => bool) public seedPending;
+    mapping(uint256 => bool) public primarySaleSettled;
     mapping(uint256 => address) public pinnedRenderer;
     mapping(uint256 => uint256) internal _linked;
 
@@ -250,15 +253,17 @@ contract EditionsStreamMock {
         w.seedPolicy = item.seedPolicy;
         _owners[id] = to;
         _licenses[id] = item.license;
-        seedPending[id] = item.seedPolicy == SeedPolicy.VRF;
     }
 
+    /// @dev The auction settled and delivered the master to `to`.
+    function settle(uint256 id, address to) external {
+        _owners[id] = to;
+        primarySaleSettled[id] = true;
+    }
+
+    /// @dev An upheld dispute burns the master in custody.
     function burnMaster(uint256 id) external {
         delete _owners[id];
-    }
-
-    function deliverSeed(uint256 id) external {
-        seedPending[id] = false;
     }
 
     function setLicense(uint256 id, License calldata next) external {
@@ -285,8 +290,8 @@ contract EditionsStreamMock {
         if (holder == address(0)) revert IStream.UnknownWork(id);
     }
 
-    function seedOf(uint256 id) external view returns (SeedPolicy, bytes32, bool) {
-        return (_works[id].seedPolicy, bytes32(0), !seedPending[id]);
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId;
     }
 
     function licenseOf(uint256 id) external view returns (License memory) {
