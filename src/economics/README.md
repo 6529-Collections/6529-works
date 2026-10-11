@@ -29,7 +29,18 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
   redirects it.
 - **A split wallet cannot be an artist's payout address**, because it cannot
   pull. An artist who wants revenue to flow into another split should name that
-  wallet as a fixed payee instead.
+  wallet as a fixed payee instead. More generally, a payout address must never
+  be a protocol contract (the claim router, the escrow, a split wallet); the
+  identity lane validates this.
+- **Rotating a payout address does not revoke its signatures.** A key the
+  payout moved away from cannot release, but if the payout returns to it
+  (A, then B, then A), its unexpired authorizations work again. Revoke
+  outstanding nonces with `ReleaseVerifier.revokeNonce`, or sign short
+  deadlines.
+- **Push can pre-empt a fixed payee's signed release.** Anyone may push a fixed
+  payee's whole balance to its own account first; a signed release of an exact
+  amount then reverts without consuming its nonce, and the funds are already in
+  the payee's account. Sign `type(uint256).max` to take whatever is due.
 - `ClaimRouter.claim` handles fixed payees only. A plain item for an artist
   payee fails, and continue mode skips it. Artists batch through
   `claimSigned`, with one signature per wallet.
@@ -53,7 +64,9 @@ and cannot flush. Governance deploys an equivalent replacement: the same payee
 list with another salt. It then calls `recover(wallet, replacement, asset)` to
 move the credit, after which anyone flushes it to the replacement.
 
-- No account's share changes, so no consent is needed (ADR 0001 §7).
+- `recover` deviates from ADR 0001 §7's consent wording; consent is trivially
+  satisfied because payees are identical. Recorded in ADR 0003.
+- A credit the replacement already holds is added to, never overwritten.
 - The original wallet must be deployed first; anyone can deploy it.
 - Recovery reaches only escrow credits. The blocked wallet's own balance stays
   stuck until the token unblocks it.
@@ -82,7 +95,8 @@ intrinsic and calldata gas:
 
 Delay classes follow
 [ADR 0002](../../docs/adr/0002-access-manager-hardening.md); the `recover` row is
-the integrator's decision for this PR, still to be added there:
+recorded in ADR 0003. Every allowlist setter is compare-and-set on a per-asset
+(or per-product) revision that every change bumps:
 
 | Selector | Role (`src/governance/Roles.sol`) | Class |
 | --- | --- | --- |

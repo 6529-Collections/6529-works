@@ -10,7 +10,10 @@ interface IReleaseVerifier {
     ///         `recipient`.
     /// @dev Signed as the EIP-712 type `ReleaseAuthorization` in the verifier's domain, which binds
     ///      the chain; the struct binds the wallet. `account` is the signer and must be the payee's
-    ///      payout address when the authorization is used, so a replaced artist key stops working.
+    ///      payout address when the authorization is used, so a key the payout moved away from
+    ///      cannot release. Moving away does not revoke its signatures, though: if the payout
+    ///      returns to that key (A, then B, then A again) its unexpired authorizations work again.
+    ///      Revoke outstanding nonces explicitly with {revokeNonce}, or sign short deadlines.
     ///      `amount` is released exactly; `type(uint256).max` releases the whole releasable amount.
     struct Authorization {
         address wallet;

@@ -18,9 +18,10 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 /// @dev Crediting and flushing are permissionless and never consult the asset allowlist: a credit
 ///      is backed by funds that arrived by exact balance delta, and credits are isolated per asset,
 ///      so a hostile token can only affect its own credits. The one governed path, {recover},
-///      moves a credit only to a replacement split wallet with an identical payee configuration,
-///      so no account's share changes and no consent is needed (ADR 0001 section 7). Funds force-
-///      sent or transferred here without a deposit are never owed to anyone and stay put.
+///      moves a credit only to a replacement split wallet with an identical payee configuration.
+///      It deviates from the consent wording of ADR 0001 section 7: consent is trivially satisfied
+///      because the payees and shares are identical (recorded in ADR 0003). Funds force-sent or
+///      transferred here without a deposit are never owed to anyone and stay put.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
     /// @inheritdoc IRevenueEscrow
     ISplitFactory public immutable factory;

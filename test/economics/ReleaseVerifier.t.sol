@@ -241,6 +241,54 @@ contract ReleaseVerifierTest is EconomicsBase {
         assertEq(wallet.releaseWithAuthorization(a, sig), 1 ether);
     }
 
+    /// @dev Documents a review nit, ported from `test_R2_H1_OldSignatureDiesOnChangeAndRevivesOnReturn`:
+    ///      rotating the payout away does not revoke a signature; A -> B -> A revives it, so an
+    ///      artist revokes outstanding nonces explicitly.
+    function test_RotatingThePayoutAwayDoesNotRevokeSignatures() public {
+        IReleaseVerifier.Authorization memory a = _a(iArtist, artistPayout, type(uint256).max, 42);
+        bytes memory sig = _sign(artistPk, a);
+        address b = makeAddr("B");
+        resolver.set(ARTIST, b);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artistPayout, b)
+        );
+        wallet.releaseWithAuthorization(a, sig);
+
+        resolver.set(ARTIST, artistPayout);
+        uint256 snap = vm.snapshotState();
+        assertEq(wallet.releaseWithAuthorization(a, sig), 2 ether, "revived on return");
+        vm.revertToState(snap);
+
+        // The mitigation: revoke the nonce explicitly.
+        vm.prank(artistPayout);
+        verifier.revokeNonce(42);
+        vm.expectRevert(
+            abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, artistPayout, 42)
+        );
+        wallet.releaseWithAuthorization(a, sig);
+    }
+
+    /// @dev Documents a review nit: anyone may push a fixed payee's balance to its own account
+    ///      first; the payee's signed exact-amount release then reverts without consuming its
+    ///      nonce, and the funds already sit in the payee's account. A max-amount signature takes
+    ///      whatever is due instead.
+    function test_PushCanPreemptAFixedPayeesSignedRelease() public {
+        IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 5 ether, 1);
+        bytes memory sig = _sign(alicePk, a);
+        vm.prank(makeAddr("anyone"));
+        wallet.release(ETH, iAlice);
+        assertEq(alice.balance, 5 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.AmountExceedsReleasable.selector, 5 ether, 0)
+        );
+        wallet.releaseWithAuthorization(a, sig);
+        assertFalse(verifier.nonceUsed(alice, 1));
+
+        vm.deal(address(wallet), address(wallet).balance + 2 ether);
+        IReleaseVerifier.Authorization memory all = _a(iAlice, alice, type(uint256).max, 2);
+        assertEq(wallet.releaseWithAuthorization(all, _sign(alicePk, all)), 1 ether);
+    }
+
     function test_OnlyTheNamedWalletConsumesAnAuthorization() public {
         SplitWallet other = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
         vm.deal(address(other), 10 ether);

@@ -13,6 +13,10 @@ import { IReleaseVerifier } from "./IReleaseVerifier.sol";
 ///      so a lost key cannot be paid before recovery redirects it (ADR 0001 section 11). A split
 ///      wallet therefore cannot serve as an artist's payout address, because it cannot pull;
 ///      nest a wallet as a fixed payee instead.
+///      Because fixed payees are push, anyone may release a fixed payee's whole balance to its
+///      own account just before that payee's signed release of an exact amount; the signed
+///      release then reverts (nothing or too little left) without consuming its nonce, and the
+///      funds are in the payee's account. Sign `type(uint256).max` to take whatever is due.
 interface ISplitWallet {
     /// @notice One share holder. Exactly one of `artistId` and `account` is non-zero. A fixed payee
     ///         names its `account`. An artist-resolved payee names its `artistId` and is paid at the

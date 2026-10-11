@@ -93,7 +93,7 @@ contract EconomicsInvariantTest is Test {
         // The handler exercises governed recovery as the admin (zero delay in this campaign).
         manager.grantRole(manager.ADMIN_ROLE(), address(handler), 0);
 
-        bytes4[] memory selectors = new bytes4[](15);
+        bytes4[] memory selectors = new bytes4[](16);
         selectors[0] = EconomicsHandler.release.selector;
         selectors[1] = EconomicsHandler.releaseTo.selector;
         selectors[2] = EconomicsHandler.releaseSigned.selector;
@@ -109,6 +109,7 @@ contract EconomicsInvariantTest is Test {
         selectors[12] = EconomicsHandler.toggleFee.selector;
         selectors[13] = EconomicsHandler.rebaseTo.selector;
         selectors[14] = EconomicsHandler.toggleOpen.selector;
+        selectors[15] = EconomicsHandler.revokeNonce.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }

@@ -70,7 +70,9 @@ interface IRevenueEscrow {
     /// @notice Moves everything owed to `wallet` in `asset` to `replacement`, a distinct wallet of
     ///         the same factory with an identical payee configuration (another salt).
     /// @dev Governed: `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days). It rescues credits for a
-    ///      wallet a token has blocked; the blocked wallet's own balance stays where it is. No share
-    ///      changes, so no account's consent is needed. Both wallets must be deployed.
+    ///      wallet a token has blocked; the blocked wallet's own balance stays where it is. This
+    ///      deviates from the consent wording of ADR 0001 section 7; consent is trivially
+    ///      satisfied because the payees are identical (recorded in ADR 0003). Both wallets must be
+    ///      deployed. A credit the replacement already holds is added to, never overwritten.
     function recover(address wallet, address replacement, address asset) external;
 }
