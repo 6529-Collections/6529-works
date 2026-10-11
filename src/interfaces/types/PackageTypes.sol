@@ -92,7 +92,7 @@ struct EditionTerms {
 ///      `contentId` is the `IContentStore` file ID of the primary media, which must be
 ///      registered in the content store before the sale starts. The item's content hash (the
 ///      ADR's uniqueness key) is the SHA-256 of the decoded primary media that the store declares
-///      for it, `IContentStore.fileInfo(contentId).sha256Hash`: it does not depend on MIME type or
+///      for it, `IContentStore.sha256Of(contentId)`: it does not depend on MIME type or
 ///      encoding, so the same media re-encoded is still the same content. 6529 Stream and
 ///      6529 Editions each reject a content hash already used in that product.
 ///      `metadataHash` is `WorksHashing.workRecordHash` of the approved work record. `parties`

@@ -20,7 +20,7 @@ import { MoveAuthorization, PackageItem, PartyAcceptance } from "./types/Package
 ///         ID), and the lead artist's move authorization.
 ///      Item and leaf hashes are defined by `WorksHashing`. Content uniqueness is keyed on the
 ///      content hash: the decoded SHA-256 the content store declares for the primary file
-///      (`IContentStore.fileInfo(contentId).sha256Hash`), which the registry reads itself so a
+///      (`IContentStore.sha256Of(contentId)`), which the registry reads itself so a
 ///      package can never declare a hash its file does not have. Uniqueness is scoped by product
 ///      ID: each consumed item claims its content hash under `PRODUCT_STREAM`, and each edition
 ///      under `PRODUCT_EDITIONS`, so each product rejects media it already used, whatever its

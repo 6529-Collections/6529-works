@@ -6,7 +6,10 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
 import { IContentStore } from "../../src/interfaces/IContentStore.sol";
-import { ICurationVerifier } from "../../src/interfaces/ICurationVerifier.sol";
+import {
+    ICurationSignerVerifier,
+    ICurationVerifier
+} from "../../src/interfaces/ICurationVerifier.sol";
 import { IDependencyRegistry } from "../../src/interfaces/IDependencyRegistry.sol";
 import { IDutchSale } from "../../src/interfaces/IDutchSale.sol";
 import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol";
@@ -33,11 +36,14 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IEditions).interfaceId, bytes4(0xf1fda5e4), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x0f69444d), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x784c9e1c), "IEnglishAuction");
-        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x4b904dda), "IFixedPriceSale");
+        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x9f085ac7), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0x5a75af36), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
+        assertEq(
+            type(ICurationSignerVerifier).interfaceId, bytes4(0xb2046b46), "ICurationSignerVerifier"
+        );
         assertEq(type(IPackageRegistry).interfaceId, bytes4(0x8b682b8a), "IPackageRegistry");
-        assertEq(type(IContentStore).interfaceId, bytes4(0xcce4e4aa), "IContentStore");
+        assertEq(type(IContentStore).interfaceId, bytes4(0xc45d6fce), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
         assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x70039a3b), "IEconomicsResolver");
@@ -64,6 +70,14 @@ contract InterfacesCompileTest is Test {
         IArtistRoleResolver resolver = IArtistRegistry(address(0x6529));
         IERC165 introspection = resolver;
         assertEq(address(introspection), address(0x6529));
+    }
+
+    /// @dev The package registry depends only on the pluggable verifier, which the v1
+    ///      signer verifier extends; the pluggable surface stays one function.
+    function test_signerVerifierIsCurationVerifier() public pure {
+        ICurationVerifier verifier = ICurationSignerVerifier(address(0x6529));
+        assertEq(address(verifier), address(0x6529));
+        assertEq(type(ICurationVerifier).interfaceId, ICurationVerifier.isApproved.selector);
     }
 
     /// @dev Split wallets resolve artist payouts through the economics lane's

@@ -141,6 +141,12 @@ interface IContentStore {
     /// @notice What the manifest declares about `fileId`.
     function fileInfo(bytes32 fileId) external view returns (FileInfo memory);
 
+    /// @notice The declared SHA-256 of the decoded file: `fileInfo(fileId).sha256Hash` without
+    ///         the rest of the record. Products key content uniqueness on it (it does not depend
+    ///         on MIME type or encoding), and reading one value keeps the auction start cheap.
+    ///         Reverts for an unknown file.
+    function sha256Of(bytes32 fileId) external view returns (bytes32);
+
     /// @notice The hash of chunk `index` of `fileId`.
     function chunkHash(bytes32 fileId, uint256 index) external view returns (bytes32);
 

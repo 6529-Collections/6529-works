@@ -529,6 +529,38 @@ contract ContentStoreTest is ContentBase {
         store.read(fileId, 0, 1);
     }
 
+    // ---------------------------------------------------------------- content hash
+
+    function test_Sha256Of_IsTheDeclaredDigest() public {
+        bytes memory file = _data(CHUNK + 7, 21);
+        (, bytes32[] memory hashes) = _split(file);
+        bytes32 digest = sha256(file);
+        bytes32 fileId = store.registerManifest(hashes, file.length, IDENTITY, HTML, digest);
+        assertEq(store.sha256Of(fileId), digest);
+        assertEq(store.sha256Of(fileId), store.fileInfo(fileId).sha256Hash);
+    }
+
+    /// @dev The same decoded media declared with another MIME type is another file ID but the
+    ///      same content hash, which is why products key uniqueness on `sha256Of`.
+    function test_Sha256Of_IndependentOfMimeType() public {
+        bytes memory file = _data(300, 22);
+        (, bytes32[] memory hashes) = _split(file);
+        bytes32 digest = sha256(file);
+        bytes32 asHtml = store.registerManifest(hashes, file.length, IDENTITY, HTML, digest);
+        bytes32 asText = store.registerManifest(hashes, file.length, IDENTITY, "text/plain", digest);
+        assertTrue(asHtml != asText);
+        assertEq(store.sha256Of(asHtml), store.sha256Of(asText));
+    }
+
+    function testFuzz_Sha256Of_MatchesFileInfo(uint16 length, bytes32 digest) public {
+        vm.assume(digest != bytes32(0));
+        bytes memory file = _data(uint256(length) + 1, 23);
+        (, bytes32[] memory hashes) = _split(file);
+        bytes32 fileId = store.registerManifest(hashes, file.length, IDENTITY, HTML, digest);
+        assertEq(store.sha256Of(fileId), digest);
+        assertEq(store.sha256Of(fileId), store.fileInfo(fileId).sha256Hash);
+    }
+
     // ---------------------------------------------------------------- unknown files
 
     function test_UnknownFileRevertsEverywhere() public {
@@ -536,6 +568,8 @@ contract ContentStoreTest is ContentBase {
         bytes memory err = abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, id);
         vm.expectRevert(err);
         store.fileInfo(id);
+        vm.expectRevert(err);
+        store.sha256Of(id);
         vm.expectRevert(err);
         store.isComplete(id);
         vm.expectRevert(err);

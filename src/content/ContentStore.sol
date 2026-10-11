@@ -120,6 +120,11 @@ contract ContentStore is IContentStore {
     }
 
     /// @inheritdoc IContentStore
+    function sha256Of(bytes32 fileId) external view returns (bytes32) {
+        return _file(fileId).sha256Hash;
+    }
+
+    /// @inheritdoc IContentStore
     function chunkHash(bytes32 fileId, uint256 index) external view returns (bytes32) {
         File storage f = _file(fileId);
         if (index >= f.chunks.length) revert ContentChunkIndexOutOfBounds(fileId, index);

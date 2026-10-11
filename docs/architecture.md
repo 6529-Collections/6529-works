@@ -55,7 +55,7 @@ ADR wins. The precise contract surfaces are the interfaces in
 | --- | --- | --- |
 | `IStream` (+ `IMintTarget`) | 6529 Stream ERC-721 (`src/stream/`) | §1, §4, §7, §8, §10, §12 |
 | `IEditions` (+ `IMintTarget`) | 6529 Editions ERC-1155 (`src/editions/`) | §6 |
-| `IPackageRegistry`, `ICurationVerifier` | package registry, v1 verifier (`src/curation/`) | §3 |
+| `IPackageRegistry`, `ICurationVerifier` (v1: `ICurationSignerVerifier`) | package registry, v1 verifier (`src/curation/`) | §3 |
 | `IContentStore`, `IDependencyRegistry`, `IRenderer` | content store, dependency registry, renderer (`src/content/`) | §8 |
 | `ISaleAdapter`, `IEnglishAuction`, `IFixedPriceSale`, `IDutchSale` | shared sale adapters (`src/sales/`) | §5, §6, §12 |
 | `IEconomicsResolver`; the economics lane's `ISplitFactory`, `ISplitWallet`, `IRevenueEscrow`, `IAssetAllowlist`, `IClaimRouter`, `IArtistPayoutResolver` (marked * above) | money routing (`src/economics/`) | §5, §7 |
@@ -97,7 +97,7 @@ fixed-price allowlist leaves include `block.chainid` and the adapter's address
 | split wallet | the economics split factory's CREATE2 address over a canonical payee list (fixed payees by address, then artist-resolved payees by artist ID); predicted before deployment |
 | file ID | `keccak256(abi.encode(chunkHashes, length, encoding, mimeType, sha256Hash))` (`IContentStore.manifestId`) |
 | content ID | the file ID of a work's primary media, committed by the package item |
-| content hash | the decoded SHA-256 the content store declares for the content ID (`fileInfo(contentId).sha256Hash`); the per-product uniqueness key, independent of MIME type and encoding |
+| content hash | the decoded SHA-256 the content store declares for the content ID (`IContentStore.sha256Of(contentId)`); the per-product uniqueness key, independent of MIME type and encoding |
 | token ID | one global sequence on 6529 Stream, from 1, assigned at sale start, never reused |
 | edition ID | equal to the master's Stream token ID |
 | artist ID | `uint256(uint160(first authority))`, fixed when the first package acceptance creates the identity; known before any transaction and the same on every chain |
@@ -167,7 +167,9 @@ default when the sale starts".
 3. The lead artist or the PLATFORM role opens a sale on the fixed-price or
    Dutch adapter. Fixed price may run allowlist phases: each phase has a Merkle
    root of leaves bound to the receiving wallet (or the payer, for payer-keyed
-   phases), a per-wallet cap and an optional per-wallet price.
+   phases), a per-wallet cap and an optional per-wallet price. A per-wallet
+   price below the package price counts only if the artist approved the phase
+   configuration, by opening the sale or by signing `PhaseConfiguration`.
 4. Each purchase calls `IEditions.mint` through the adapter, which enforces the
    size or window, pays the seller wallet and the fee, and emits `SaleSettled`.
    The edition renders its master's content through the master's renderer.
@@ -227,10 +229,10 @@ default when the sale starts".
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| Curation signer | Attest that a package root was approved (the v1 verifier trusts the key, not the vote) | Mint without party consent and the artist's move signature; alter an item; reuse an item or a content ID |
-| Guardian Safes | Pause a live auction (at most 7 days), veto identity changes, revoke unconsumed package approvals, cancel scheduled governance operations | Redirect funds or identities; cancel an auction; resume it |
+| Curation signer | Attest that a package root was approved (the v1 verifier trusts the key, not the vote); the guardian can disable a key at once, and re-enabling takes 30 days | Mint without party consent and the artist's move signature; alter an item; reuse an item or a content ID |
+| Guardian Safes | Pause a live auction (at most 7 days), veto identity changes, revoke unconsumed package approvals, disable a curation signer, cancel scheduled governance operations | Redirect funds or identities; cancel an auction; resume it |
 | Storage operator | Switch the preferred location among registered, hash-equal locators | Add, remove or change locators; change content hashes |
-| Platform | Create collections, add locators, open edition sales and phases, post platform statements | Change prices, currencies, sizes or content of an approved package |
+| Platform | Create collections, add locators, open edition sales and phases, post platform statements | Change prices, currencies, sizes or content of an approved package; set allowlist prices below the package price without the artist's signed approval |
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set | Change a work's royalty, license or renderer pin without the artist's co-signature |
 | Lead artist (current authority) | Move to Stream, edit the record until finalize, finalize, co-sign amendments, open edition sales | Change the approved content ID, parties, shares or sale terms |
 | Sale adapters (MINTER) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
@@ -249,7 +251,7 @@ The interfaces name the role each governed selector is meant to map to:
 
 | Role | Selectors |
 | --- | --- |
-| GUARDIAN | `IAssetAllowlist.deprecateAsset` (economics lane; tightening), `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` |
+| GUARDIAN | `IAssetAllowlist.deprecateAsset` (economics lane; tightening), `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage`, `ICurationSignerVerifier.disableSigner` |
 | UNPAUSER | `IEnglishAuction.resume` |
 | STORAGE_OPERATOR | `IStream.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`, `IStream.addLocator` (also the artist), sale `openSale` and `closeSale` (also the creator) |
@@ -257,7 +259,7 @@ The interfaces name the role each governed selector is meant to map to:
 | SYSTEM (proposed) | `IPackageRegistry.consume`, `claimContent`; `IArtistRegistry.register`, `heartbeat` (also the artist) |
 | PARAMETER_SETTER (48 hours) | `IStream.relicense`, `setContractURI`; `IEditions.setContractURI`; `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`; `IEconomicsResolver.setDefaultLicense`; economics lane `IAssetAllowlist.admitAsset`, `setIncrementFloor`, `setDefaultCurrency`; `IArtistRegistry.stageOverride`; `IFederationRegistry.setStatus`, `setArtistDelisted` |
 | FUNDS_SETTER (14 days) | `IStream.setRoyalty`, `setOwner`; `IEditions.setOwner`; `IEconomicsResolver.setEconomics` |
-| SUCCESSOR_SETTER (30 days) | `IStream.setEditions`, `setDefaultRenderer`, `repinRenderer`; `IPackageRegistry.setVerifier`; `IArtistRegistry.setConsolidationSource`; `ISaleAdapter.setTarget` |
+| SUCCESSOR_SETTER (30 days) | `IStream.setEditions`, `setDefaultRenderer`, `repinRenderer`; `IPackageRegistry.setVerifier`; `ICurationSignerVerifier.enableSigner`; `IArtistRegistry.setConsolidationSource`; `ISaleAdapter.setTarget` |
 
 Governed functions are non-payable. Setters for funds, recipients, verifiers
 and renderers take the expected current value. Work amendments (`relicense`,

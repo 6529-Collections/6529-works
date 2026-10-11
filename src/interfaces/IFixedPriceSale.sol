@@ -19,6 +19,13 @@ import { Payment } from "./types/SaleTypes.sol";
 ///      phase and `price` the per-wallet unit price, used only when the phase is `leafPriced`.
 ///      A phase with a zero `root` is public, limited per recipient by `walletCap` (zero means
 ///      no limit). Phases may overlap in time; purchases name their phase.
+///      Artist consent to discounts (ADR 0001 section 6): a leaf price below the package price
+///      is accepted only in a sale whose phase configuration the artist approved, either by
+///      opening the sale as the `creator` or through the creator's EIP-712 signature over
+///      `PhaseConfiguration(address token,uint256 id,bytes32 phasesHash,uint256 nonce,
+///      uint64 deadline)`, with `phasesHash = keccak256(abi.encode(phases))` and a single-use,
+///      revocable nonce. In any other sale a leaf price below the package price reverts with
+///      `PriceBelowPackage`; leaf prices at or above it need no consent.
 ///      `saleKind()` is `SaleKind.FIXED_PRICE`.
 interface IFixedPriceSale is ISaleAdapter {
     /// @notice One phase of a sale.
@@ -31,7 +38,17 @@ interface IFixedPriceSale is ISaleAdapter {
         bool leafPriced;
     }
 
-    /// @notice A sale's locked terms. `closed` is set by `closeSale`.
+    /// @notice The creator's signed approval of a phase configuration. Empty `signature` when
+    ///         the creator opens the sale itself or no approval is needed.
+    struct ArtistConsent {
+        uint256 nonce;
+        uint64 deadline;
+        bytes signature;
+    }
+
+    /// @notice A sale's locked terms. `price` is the package unit price. `artistApproved` is
+    ///         true when the creator approved the phases, so leaf prices may go below `price`.
+    ///         `closed` is set by `closeSale`.
     struct FixedSale {
         address token;
         uint256 id;
@@ -41,6 +58,7 @@ interface IFixedPriceSale is ISaleAdapter {
         address feeRecipient;
         uint32 feeShare;
         address creator;
+        bool artistApproved;
         bool closed;
     }
 
@@ -57,8 +75,10 @@ interface IFixedPriceSale is ISaleAdapter {
         uint256 leafPrice;
     }
 
-    /// @notice A sale's phases were set when it opened.
-    event PhasesSet(uint256 indexed saleId, Phase[] phases);
+    /// @notice A sale's phases were set when it opened, with or without the artist's approval.
+    event PhasesSet(uint256 indexed saleId, Phase[] phases, bool artistApproved);
+    /// @notice A creator revoked an unused phase-configuration nonce.
+    event ConsentNonceRevoked(address indexed creator, uint256 indexed nonce);
     /// @notice A sale was closed before its supply or phases ran out.
     event SaleClosed(uint256 indexed saleId);
 
@@ -70,12 +90,25 @@ interface IFixedPriceSale is ISaleAdapter {
     error WalletCapExceeded(uint256 saleId, uint256 phase, address account);
     /// @notice The caller is neither the token's creator nor the PLATFORM role.
     error NotSaleManager(address caller);
+    /// @notice A leaf price below the package price, in a sale the artist did not approve.
+    error PriceBelowPackage(uint256 leafPrice, uint256 packagePrice);
+    /// @notice The artist consent is expired, its nonce is used, or the signature is not the
+    ///         creator's.
+    error InvalidArtistConsent();
 
     /// @notice Opens a sale of token `id` with 1 to `Limits.MAX_PHASES` phases. Callable by the
-    ///         lead artist (the terms' `creator`) or the PLATFORM role.
-    function openSale(address token, uint256 id, Phase[] calldata phases)
-        external
-        returns (uint256 saleId);
+    ///         lead artist (the terms' `creator`) or the PLATFORM role. A PLATFORM opener may
+    ///         pass the creator's `consent` to allow leaf prices below the package price; a
+    ///         non-empty consent must verify, and consumes its nonce.
+    function openSale(
+        address token,
+        uint256 id,
+        Phase[] calldata phases,
+        ArtistConsent calldata consent
+    ) external returns (uint256 saleId);
+
+    /// @notice Revokes one of the caller's unused phase-configuration nonces.
+    function revokeConsentNonce(uint256 nonce) external;
 
     /// @notice Closes a sale. Callable by the creator or the PLATFORM role.
     function closeSale(uint256 saleId) external;
@@ -95,6 +128,16 @@ interface IFixedPriceSale is ISaleAdapter {
         external
         view
         returns (uint256);
+    /// @notice Whether a creator's phase-configuration nonce is used or revoked.
+    function isConsentNonceUsed(address creator, uint256 nonce) external view returns (bool);
+    /// @notice The EIP-712 digest a creator signs to approve `phases` for token `id`.
+    function phaseConfigurationDigest(
+        address token,
+        uint256 id,
+        Phase[] calldata phases,
+        uint256 nonce,
+        uint64 deadline
+    ) external view returns (bytes32);
     /// @notice The allowlist leaf for the given values, as defined above.
     function allowlistLeaf(
         uint256 saleId,
