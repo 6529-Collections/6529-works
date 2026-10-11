@@ -103,9 +103,9 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
 
     /// @notice A required address is zero.
     error InvalidAddress();
-    /// @notice The token's terms are unusable: no seller or fee recipient, a fee share above the
-    ///         denominator, federated code that differs from its registry entry, or a mint that
-    ///         returned another token ID.
+    /// @notice The token's terms are unusable: no seller, no fee recipient for a non-zero fee
+    ///         share, a fee share above the denominator, federated code that differs from its
+    ///         registry entry, or a mint that returned another token ID.
     error InvalidSaleTerms(address token, uint256 id);
     /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
     error PricedDefaultCurrency(address token, uint256 id);
@@ -255,7 +255,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             t.feeRecipient = economicsResolver.networkFeeRecipient(product);
         }
         if (
-            t.seller == address(0) || t.feeRecipient == address(0)
+            t.seller == address(0) || (t.feeShare != 0 && t.feeRecipient == address(0))
                 || t.feeShare > Splits.DENOMINATOR
         ) revert InvalidSaleTerms(token, id);
     }
@@ -429,11 +429,15 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             && ERC165Checker.supportsInterface(dependency, interfaceId);
     }
 
+    /// @dev A zero amount (no fee share, or a gift) pays nothing, so a zero-fee sale needs no
+    ///      fee recipient.
     function _pay(address currency, address to, uint256 amount) private {
-        if (currency == CURRENCY_ETH) {
-            RevenuePayment.payETH(escrow, to, amount, ETH_PAYOUT_GAS);
-        } else {
-            RevenuePayment.payERC20(escrow, to, currency, amount);
+        if (amount != 0) {
+            if (currency == CURRENCY_ETH) {
+                RevenuePayment.payETH(escrow, to, amount, ETH_PAYOUT_GAS);
+            } else {
+                RevenuePayment.payERC20(escrow, to, currency, amount);
+            }
         }
     }
 }

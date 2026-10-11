@@ -138,7 +138,7 @@ contract FederationRegistryTest is FixedPriceBase {
     function test_FederatedSale_FailsClosedWithoutResolverEconomics() public {
         registry.setEntry(address(fed), FED_FEE, true);
         _install();
-        resolver.set(PRODUCT_FEDERATED, address(0), 0);
+        resolver.unset(PRODUCT_FEDERATED);
         vm.expectRevert(
             abi.encodeWithSelector(IEconomicsResolver.UnknownProduct.selector, PRODUCT_FEDERATED)
         );
