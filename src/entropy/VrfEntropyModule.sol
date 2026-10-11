@@ -1,0 +1,371 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
+import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
+import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import { BoundedParameter } from "../governance/BoundedParameter.sol";
+import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
+import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
+import { PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
+import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
+
+/// @title VrfEntropyModule
+/// @notice The optional VRF module of seeded 1/1s revealed before bidding (ADR 0001 section 9),
+///         on Chainlink VRF v2.5 with a subscription. One seed per work, keyed by the package
+///         item's hash, never per copy.
+/// @dev Flow (review decision D4). The seed is requested BEFORE a token exists: anyone calls
+///      {requestSeed} for a VRF item of an approved package; the coordinator later
+///      calls {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no
+///      call into the token or the auction. The auction's `start` requires {isDelivered}, mints
+///      and opens the clock, and the Stream reads the seed through {seedOf} by item hash. Nothing
+///      is in custody while a seed is outstanding, so nothing can be stuck.
+///
+///      Spam gate. Each request spends subscription funds, so a request is accepted only for an
+///      item that the network already curated and that needs a seed: the caller passes the whole
+///      item, the module hashes it itself, the item's seed policy must be VRF, the package root
+///      must be approved (not revoked) in the package registry, `proof` must place the item in
+///      that root, and the item's content hash must not be consumed. Every failure of the gate is
+///      `NotRequestable(itemHash)`. This keeps {requestSeed} open to anyone (the
+///      artist, a relayer, a bot) with no privileged step, while the total possible spend is one
+///      draw per approved VRF item, plus a repeat per `retryDelay` for each one whose draw never
+///      arrived. A guardian's `revokePackage` stops further requests at once. The gate is checked
+///      on every call, repeats included.
+///
+///      Repeat. A request still undelivered `retryDelay` seconds after it was made may be
+///      requested again by anyone. A repeat ADDS a request and never invalidates an earlier one:
+///      Chainlink VRF v2.5 does not expire a pending request on-chain, so the oracle may still
+///      deliver an earlier request late, and a delivery for any outstanding request is accepted.
+///      The first delivery fixes the seed; every later delivery for the item is a silent no-op
+///      (it must not revert, so the oracle's fulfilment succeeds). Superseding the old request
+///      would let an observer who sees a disliked late delivery pending in the mempool front-run
+///      a repeat to discard it. Residual risk: while two requests are outstanding at once, whoever
+///      orders the two deliveries (a searcher or block builder) chooses which of two independent
+///      random words becomes the seed; `retryDelay` (3 days at least) keeps that window rare.
+///
+///      Trust. The coordinator can only deliver the seed of an item it was asked for, and the
+///      first delivery is final: a delivered seed never changes. Governance chooses the
+///      coordinator ({setCoordinator}, 30-day class, compare-and-set, code hash pinned) and the
+///      request parameters ({setConfig}, 48-hour class, compare-and-set, with a raise-only
+///      callback gas limit). Request IDs are scoped to their coordinator, so a coordinator swap
+///      orphans in-flight requests of the old one; each is requested again after `retryDelay`.
+contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
+    /// @notice The request parameters.
+    /// @param subscriptionId The funded VRF v2.5 subscription; this module must be its consumer.
+    /// @param keyHash The gas lane.
+    /// @param callbackGasLimit Gas the coordinator forwards to {rawFulfillRandomWords}.
+    /// @param confirmations Blocks the oracle waits before answering.
+    /// @param nativePayment Whether the subscription pays in native currency instead of LINK.
+    struct VrfConfig {
+        uint256 subscriptionId;
+        bytes32 keyHash;
+        uint32 callbackGasLimit;
+        uint16 confirmations;
+        bool nativePayment;
+    }
+
+    /// @dev One item's randomness; `seed` is meaningful only once `delivered`.
+    struct Seed {
+        uint256 requestId;
+        bytes32 seed;
+        uint64 requestedAt;
+        bool delivered;
+    }
+
+    /// @notice The lowest callback gas limit: the callback uses well under half of it.
+    uint32 public constant MIN_CALLBACK_GAS = 100_000;
+    /// @notice The absolute ceiling of the callback gas limit (the coordinator's own maximum).
+    uint32 public constant MAX_CALLBACK_GAS = 2_500_000;
+    /// @notice The fewest confirmations accepted (Ethereum mainnet's coordinator minimum).
+    uint16 public constant MIN_CONFIRMATIONS = 3;
+    /// @notice The most confirmations the coordinator accepts.
+    uint16 public constant MAX_CONFIRMATIONS = 200;
+    /// @notice The shortest `retryDelay`. Not an expiry (VRF v2.5 requests never expire on-chain):
+    ///         a repeat is only worth its cost once a delivery is plainly overdue.
+    uint64 public constant MIN_RETRY_DELAY = 3 days;
+    /// @notice The longest `retryDelay`.
+    uint64 public constant MAX_RETRY_DELAY = 30 days;
+    /// @notice The longest Merkle proof accepted: a package of 2^32 items.
+    uint256 public constant MAX_PROOF_LENGTH = 32;
+
+    /// @dev `bytes4(keccak256("VRF ExtraArgsV1"))`, the tag of the v2.5 request options.
+    bytes4 private constant EXTRA_ARGS_V1_TAG = 0x92fd1338;
+
+    /// @inheritdoc IEntropyModule
+    uint64 public immutable retryDelay;
+    /// @notice The package registry whose approved packages and consumed items gate requests
+    ///         (immutable).
+    IPackageRegistry public immutable packageRegistry;
+    /// @inheritdoc IEntropyModule
+    /// @dev The only caller of {rawFulfillRandomWords}.
+    address public coordinator;
+
+    VrfConfig private _config;
+    mapping(bytes32 itemHash => Seed) private _seeds;
+    /// @dev Every request ever made, never removed: a delivery for any of them is accepted. Keyed
+    ///      by coordinator too, so IDs of different coordinators can never collide (not even after
+    ///      A to B to A) and a coordinator can only deliver the requests it was given.
+    mapping(address coordinator => mapping(uint256 requestId => bytes32 itemHash)) private _items;
+
+    /// @notice The request parameters changed.
+    event ConfigSet(VrfConfig previous, VrfConfig next);
+
+    /// @notice A request parameter is zero or outside its bounds (the gas limit's ceiling is
+    ///         enforced by `BoundedParameter`).
+    error InvalidConfig();
+    /// @notice `retryDelay` is outside `[MIN_RETRY_DELAY, MAX_RETRY_DELAY]`.
+    error InvalidRetryDelay(uint64 retryDelay);
+    /// @notice The coordinator has no code, is an EIP-7702 delegated account, or is the current
+    ///         coordinator (a swap to itself).
+    error InvalidCoordinator(address coordinator);
+    /// @notice The package registry has no code, is an EIP-7702 delegated account, or does not
+    ///         support `IPackageRegistry` through ERC-165.
+    error InvalidRegistry(address registry);
+    /// @notice The code at `account` does not have the pinned hash.
+    error CodeHashMismatch(address account, bytes32 expected, bytes32 actual);
+    /// @notice {rawFulfillRandomWords} was called by someone other than the coordinator.
+    error OnlyCoordinatorCanFulfill(address have, address want);
+    /// @notice The request ID was never issued by the current coordinator.
+    error UnknownRequest(uint256 requestId);
+    /// @notice The coordinator returned a zero or already used request ID.
+    error InvalidRequestId(uint256 requestId);
+    /// @notice The coordinator delivered other than exactly one random word.
+    error InvalidRandomWords(uint256 requestId);
+
+    /// @param authority_ The AccessManager that governs this module.
+    /// @param coordinator_ The VRF v2.5 coordinator.
+    /// @param coordinatorCodeHash The reviewed code hash `coordinator_` must have.
+    /// @param config_ The initial request parameters.
+    /// @param retryDelay_ Seconds before an undelivered request may be requested again.
+    /// @param packageRegistry_ The package registry that gates requests.
+    /// @param packageRegistryCodeHash The reviewed code hash `packageRegistry_` must have.
+    constructor(
+        address authority_,
+        address coordinator_,
+        bytes32 coordinatorCodeHash,
+        VrfConfig memory config_,
+        uint64 retryDelay_,
+        IPackageRegistry packageRegistry_,
+        bytes32 packageRegistryCodeHash
+    ) AccessManaged(authority_) {
+        if (retryDelay_ < MIN_RETRY_DELAY || retryDelay_ > MAX_RETRY_DELAY) {
+            revert InvalidRetryDelay(retryDelay_);
+        }
+        _checkCoordinator(coordinator_, coordinatorCodeHash);
+        // The install checks every dependency gets (decision D8): code that is not an EIP-7702
+        // delegation, ERC-165 support, and the reviewed code hash.
+        address registry = address(packageRegistry_);
+        if (
+            registry.code.length == 0 || DelegatedEOA.isDelegated(registry)
+                || !ERC165Checker.supportsInterface(registry, type(IPackageRegistry).interfaceId)
+        ) revert InvalidRegistry(registry);
+        _checkCodeHash(registry, packageRegistryCodeHash);
+        VrfConfig memory c = config_;
+        c.callbackGasLimit =
+            SafeCast.toUint32(BoundedParameter.initial(c.callbackGasLimit, MAX_CALLBACK_GAS));
+        _validate(c);
+        retryDelay = retryDelay_;
+        packageRegistry = packageRegistry_;
+        coordinator = coordinator_;
+        _config = c;
+        emit CoordinatorSet(address(0), coordinator_, coordinatorCodeHash);
+        emit ConfigSet(VrfConfig(0, 0, 0, 0, false), c);
+    }
+
+    /// @inheritdoc IEntropyModule
+    /// @dev Reverts with `NotRequestable` unless `item.seedPolicy` is VRF, `packageRoot` is
+    ///      approved in the package registry, `proof` places the item in it, and the item's content
+    ///      hash is unconsumed. Then, if the seed is not delivered and no request is outstanding
+    ///      (or `retryDelay` has passed since the last one), requests one random word. A repeat
+    ///      adds a request; every outstanding request may still deliver, and the first delivery
+    ///      wins. The request time is written before the coordinator is called and the request ID
+    ///      only after, so a reentrant call finds a pending request and cannot deliver the new ID,
+    ///      which is not yet recorded. A reentrant delivery of an EARLIER request is valid; the
+    ///      seed is then already delivered when the call returns, and the new request is recorded
+    ///      (its late delivery is a no-op) but is not announced as the item's current request.
+    /// @param item The package item; the module computes its hash (`WorksHashing.itemHash`).
+    /// @param packageRoot An approved package root.
+    /// @param proof The Merkle proof of `WorksHashing.leaf(itemHash)` under `packageRoot`.
+    /// @return requestId The coordinator's ID for the new request.
+    function requestSeed(PackageItem calldata item, bytes32 packageRoot, bytes32[] calldata proof)
+        external
+        returns (uint256 requestId)
+    {
+        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
+        if (!_requestable(item, itemHash, packageRoot, proof)) revert NotRequestable(itemHash);
+        Seed storage seed = _seeds[itemHash];
+        if (seed.delivered) revert SeedAlreadyDelivered(itemHash);
+        if (seed.requestedAt != 0) {
+            uint64 retryAt = seed.requestedAt + retryDelay;
+            // The delay is a day or more; validator timestamp drift is immaterial.
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp < retryAt) revert RequestPending(itemHash, retryAt);
+        }
+        seed.requestedAt = uint64(block.timestamp);
+
+        VrfConfig memory c = _config;
+        address coord = coordinator;
+        requestId = IVRFCoordinatorV2Plus(coord)
+            .requestRandomWords(
+                IVRFCoordinatorV2Plus.RandomWordsRequest({
+                keyHash: c.keyHash,
+                subId: c.subscriptionId,
+                requestConfirmations: c.confirmations,
+                callbackGasLimit: c.callbackGasLimit,
+                numWords: 1,
+                extraArgs: abi.encodeWithSelector(EXTRA_ARGS_V1_TAG, c.nativePayment)
+            })
+            );
+        if (requestId == 0 || _items[coord][requestId] != 0) revert InvalidRequestId(requestId);
+        _items[coord][requestId] = itemHash;
+        // The coordinator may have delivered an earlier request while this one was being made.
+        if (!seed.delivered) {
+            seed.requestId = requestId;
+            emit SeedRequested(itemHash, requestId);
+        }
+    }
+
+    /// @notice The VRF callback: stores the seed of the item `requestId` was made for.
+    /// @dev Only the coordinator may call it, for a request ID it was issued by this module's
+    ///      request. Any outstanding request of an undelivered item delivers, and the first
+    ///      delivery is final: a later delivery for the same item is a silent no-op that does not
+    ///      revert, so the oracle's fulfilment succeeds and nothing can be re-drawn. The seed is
+    ///      the random word unchanged, so anyone can check it against the oracle's proof. A
+    ///      malformed delivery reverts and is absorbed by the coordinator.
+    /// @param requestId The coordinator's request ID.
+    /// @param randomWords The delivered words: exactly one.
+    function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
+        if (msg.sender != coordinator) revert OnlyCoordinatorCanFulfill(msg.sender, coordinator);
+        bytes32 itemHash = _items[msg.sender][requestId];
+        if (itemHash == 0) revert UnknownRequest(requestId);
+        Seed storage seed = _seeds[itemHash];
+        if (seed.delivered) return;
+        if (randomWords.length != 1) revert InvalidRandomWords(requestId);
+        bytes32 word = bytes32(randomWords[0]);
+        seed.seed = word;
+        seed.delivered = true;
+        emit SeedDelivered(itemHash, requestId, word);
+    }
+
+    /// @notice Sets the request parameters. Governed (map to the 48-hour `PARAMETER_SETTER`
+    ///         class), non-payable, compare-and-set: `expected` must equal the current value.
+    /// @dev The callback gas limit may only be raised (`BoundedParameter.raise`: at most doubled
+    ///      per step, never above `MAX_CALLBACK_GAS`) or left as it is, so a hostile or mistaken
+    ///      setter can neither starve the callback nor overspend the subscription.
+    /// @param expected The current parameters.
+    /// @param next The new parameters.
+    function setConfig(VrfConfig calldata expected, VrfConfig calldata next) external restricted {
+        VrfConfig memory current = _config;
+        if (keccak256(abi.encode(expected)) != keccak256(abi.encode(current))) {
+            revert ExpectedValueMismatch();
+        }
+        _validate(next);
+        VrfConfig memory updated = next;
+        if (next.callbackGasLimit != current.callbackGasLimit) {
+            updated.callbackGasLimit = SafeCast.toUint32(
+                BoundedParameter.raise(
+                    current.callbackGasLimit, next.callbackGasLimit, MAX_CALLBACK_GAS
+                )
+            );
+        }
+        _config = updated;
+        emit ConfigSet(current, updated);
+    }
+
+    /// @inheritdoc IEntropyModule
+    /// @dev Request IDs are scoped to their coordinator, so requests made through the old one can
+    ///      no longer be delivered; they are requested again after `retryDelay`. Delivered seeds
+    ///      are unaffected. `next` must differ from the current coordinator, have code, not be an
+    ///      EIP-7702 delegated account, and have the pinned code hash. Switching coordinators
+    ///      also needs a new subscription: see the README's runbook.
+    function setCoordinator(address expected, address next, bytes32 nextCodeHash)
+        external
+        restricted
+    {
+        if (expected != coordinator) revert ExpectedValueMismatch();
+        if (next == expected) revert InvalidCoordinator(next);
+        _checkCoordinator(next, nextCodeHash);
+        emit CoordinatorSet(expected, next, nextCodeHash);
+        coordinator = next;
+    }
+
+    /// @notice The request parameters.
+    /// @return The current parameters.
+    function config() external view returns (VrfConfig memory) {
+        return _config;
+    }
+
+    /// @inheritdoc IEntropyModule
+    function isDelivered(bytes32 itemHash) external view returns (bool) {
+        return _seeds[itemHash].delivered;
+    }
+
+    /// @inheritdoc IEntropyModule
+    function seedOf(bytes32 itemHash) external view returns (bytes32) {
+        Seed storage seed = _seeds[itemHash];
+        if (!seed.delivered) revert SeedNotDelivered(itemHash);
+        return seed.seed;
+    }
+
+    /// @inheritdoc IEntropyModule
+    function requestOf(bytes32 itemHash)
+        external
+        view
+        returns (uint256 requestId, uint64 requestedAt)
+    {
+        Seed storage seed = _seeds[itemHash];
+        return (seed.requestId, seed.requestedAt);
+    }
+
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        override(ERC165, IERC165)
+        returns (bool)
+    {
+        return interfaceId == type(IEntropyModule).interfaceId
+            || super.supportsInterface(interfaceId);
+    }
+
+    /// @dev The spam gate: a VRF item, an approved package root, a proof that places the item in
+    ///      it, and an item whose content hash the registry has not consumed (by this item or, if
+    ///      the hash was claimed by another item, by that one: either way it can never mint).
+    function _requestable(
+        PackageItem calldata item,
+        bytes32 itemHash,
+        bytes32 packageRoot,
+        bytes32[] calldata proof
+    ) private view returns (bool) {
+        if (item.seedPolicy != SeedPolicy.VRF || proof.length > MAX_PROOF_LENGTH) return false;
+        (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
+        return status == IPackageRegistry.PackageStatus.APPROVED
+            && MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
+            && packageRegistry.consumedItemOf(item.contentHash) == 0;
+    }
+
+    function _checkCoordinator(address account, bytes32 codeHash) private view {
+        if (account.code.length == 0 || DelegatedEOA.isDelegated(account)) {
+            revert InvalidCoordinator(account);
+        }
+        _checkCodeHash(account, codeHash);
+    }
+
+    function _checkCodeHash(address account, bytes32 expected) private view {
+        if (account.codehash != expected) {
+            revert CodeHashMismatch(account, expected, account.codehash);
+        }
+    }
+
+    function _validate(VrfConfig memory c) private pure {
+        if (
+            c.subscriptionId == 0 || c.keyHash == 0 || c.callbackGasLimit < MIN_CALLBACK_GAS
+                || c.confirmations < MIN_CONFIRMATIONS || c.confirmations > MAX_CONFIRMATIONS
+        ) revert InvalidConfig();
+    }
+}
