@@ -3,8 +3,10 @@ pragma solidity ^0.8.24;
 
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IArtistPayoutResolver } from "src/interfaces/IArtistPayoutResolver.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 
@@ -27,8 +29,13 @@ contract PackageRegistryStub is InterfaceStub {
     constructor() InterfaceStub(type(IPackageRegistry).interfaceId) { }
 }
 
-/// @notice The two 6529 Stream reads the artist registry makes: `work(id).artistId` and
-///         `editions()`. `work` reverts with `UnknownWork` for unminted or burned IDs, like Stream.
+/// @notice Stands in for the v1.1 federation registry.
+contract FederationRegistryStub is InterfaceStub {
+    constructor() InterfaceStub(type(IFederationRegistry).interfaceId) { }
+}
+
+/// @notice The two 6529 Stream reads the artist registry makes: `artistOf(id)` and `editions()`.
+///         `artistOf` reverts with `UnknownWork` for unminted or burned IDs, like Stream.
 contract StreamWorksMock is InterfaceStub {
     address public editions;
     mapping(uint256 => uint256) internal _artistOf;
@@ -43,9 +50,9 @@ contract StreamWorksMock is InterfaceStub {
         _artistOf[tokenId] = artistId;
     }
 
-    function work(uint256 tokenId) external view returns (IStream.WorkInfo memory info) {
+    function artistOf(uint256 tokenId) external view returns (uint256) {
         if (_artistOf[tokenId] == 0) revert IStream.UnknownWork(tokenId);
-        info.artistId = _artistOf[tokenId];
+        return _artistOf[tokenId];
     }
 }
 
@@ -74,5 +81,37 @@ contract OversizedConsolidationSource is InterfaceStub {
 
     function isEstablished(address, address) external pure returns (bool) {
         return false;
+    }
+}
+
+/// @notice The economics split factory's `isWallet`, settable by tests.
+contract SplitFactoryWalletsMock {
+    mapping(address => bool) public isWallet;
+
+    function setWallet(address wallet, bool deployed) external {
+        isWallet[wallet] = deployed;
+    }
+}
+
+/// @notice A pull-only artist-resolved split payee, as the economics lane defines it: only the
+///         current `payoutAddress` may pull, and zero means unresolved, so nothing releases.
+contract PullOnlyPayeeMock {
+    IArtistPayoutResolver public immutable resolver;
+    uint256 public immutable artistId;
+
+    error NotPayoutAddress(address caller, address payoutAddress);
+
+    constructor(IArtistPayoutResolver resolver_, uint256 artistId_) payable {
+        resolver = resolver_;
+        artistId = artistId_;
+    }
+
+    function release() external {
+        address payoutAddress = resolver.payoutAddress(artistId);
+        if (payoutAddress == address(0) || msg.sender != payoutAddress) {
+            revert NotPayoutAddress(msg.sender, payoutAddress);
+        }
+        (bool ok,) = payoutAddress.call{ value: address(this).balance }("");
+        require(ok, "transfer failed");
     }
 }

@@ -49,7 +49,7 @@ interface IDelegationManagement {
 ///      registrations per direction. Only an account's own keys can append to its delegate list,
 ///      and appends go to the end, so wallets consolidated before a key compromise keep their
 ///      places at the front.
-contract ConsolidationAdapter is IConsolidationSource, IERC165 {
+contract ConsolidationAdapter is IConsolidationSource {
     /// @notice The delegation contract's "all collections" collection address.
     address public constant ALL_COLLECTIONS = 0x8888888888888888888888888888888888888888;
     /// @notice The delegation contract's consolidation use case.

@@ -5,24 +5,23 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
+import { IArtistPayoutResolver } from "src/interfaces/IArtistPayoutResolver.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
 import {
     EditionsMastersMock,
+    FederationRegistryStub,
     OversizedConsolidationSource,
     PackageRegistryStub,
+    PullOnlyPayeeMock,
+    SplitFactoryWalletsMock,
     StreamWorksMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
-
-/// @dev The economics lane's `IArtistPayoutResolver`, redeclared under another name so this suite
-///      does not depend on that unmerged lane and no two interfaces share a name.
-interface IPayoutResolverView {
-    function payoutAddress(uint256 artistId) external view returns (address);
-}
 
 /// @notice Unit and attack-path tests for the artist registry (ADR 0001 section 11).
 contract ArtistRegistryTest is IdentityFixture {
@@ -39,7 +38,6 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.artistIdOf(artist), artistId);
         assertEq(registry.authorityOf(artistId), artist);
         assertEq(registry.payoutAddress(artistId), artist);
-        assertEq(registry.artistCount(), 1);
         assertEq(registry.changeNonce(artistId), 0);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
     }
@@ -49,7 +47,6 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ArtistRegistered(uint256(uint160(stranger)), identity);
         _register(stranger);
-        assertEq(registry.artistCount(), 2);
     }
 
     function test_Register_RevertsForTakenAccount() public {
@@ -63,13 +60,14 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Register_RevertsForAnyoneButThePackageRegistry() public {
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.UnboundCaller.selector, admin));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, admin));
         vm.prank(admin);
         registry.register(stranger, PROFILE, PROFILE_DOC);
     }
 
     function testFuzz_Register_ArtistIdIsTheFirstAuthority(address account) public {
         vm.assume(account != address(0) && registry.artistIdOf(account) == 0);
+        vm.assume(account != packageRegistry && account != address(registry));
         assertEq(_register(account), uint256(uint160(account)));
         assertEq(registry.authorityOf(uint256(uint160(account))), account);
     }
@@ -98,7 +96,7 @@ contract ArtistRegistryTest is IdentityFixture {
         PendingChange memory p = registry.pendingChange(artistId);
         assertEq(keccak256(abi.encode(p)), keccak256(abi.encode(expected)));
         assertEq(registry.changeNonce(artistId), 1);
-        assertEq(registry.payoutAddress(artistId), artist, "payout unchanged while pending");
+        assertEq(registry.payoutAddress(artistId), address(0), "payout frozen while pending");
     }
 
     function test_StageChange_ByEstablishedWallet() public {
@@ -230,7 +228,8 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Replay_OtherRegistryRejected() public {
-        ArtistRegistry other = new ArtistRegistry(address(manager), adapter);
+        ArtistRegistry other =
+            new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
         _configureRoles(address(other));
         vm.prank(admin);
         other.bindPackageRegistry(packageRegistry);
@@ -248,17 +247,20 @@ contract ArtistRegistryTest is IdentityFixture {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory signature = _sign(artistKey, _digest(next, deadline));
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.NonceRevoked(artistId, 0);
-        vm.prank(wallet);
+        emit IArtistRegistry.NonceRevoked(artistId, 0);
+        vm.prank(artist);
         registry.revokeNonce(artistId);
         assertEq(registry.changeNonce(artistId), 1);
         vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
         registry.stageChange(artistId, next, artist, deadline, signature, "");
     }
 
-    function test_RevokeNonce_RevertsForStranger() public {
+    function test_RevokeNonce_RevertsForAnyoneButTheAuthority() public {
         _expectNotAuthorized(stranger);
         vm.prank(stranger);
+        registry.revokeNonce(artistId);
+        _expectNotAuthorized(wallet);
+        vm.prank(wallet);
         registry.revokeNonce(artistId);
     }
 
@@ -321,7 +323,7 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.warp(block.timestamp + wait);
         if (wait < 7 days) vm.expectRevert();
         registry.executeChange(artistId);
-        assertEq(registry.payoutAddress(artistId), wait < 7 days ? artist : payout);
+        assertEq(registry.payoutAddress(artistId), wait < 7 days ? address(0) : payout);
     }
 
     // ----------------------------------------------------------------- cancellation
@@ -424,9 +426,9 @@ contract ArtistRegistryTest is IdentityFixture {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
         );
         registry.stageOverride(
-            artistId, ChangeKind.CONTESTED, _identity(guardian, guardian), keccak256("e")
+            artistId, ChangeKind.CONTESTED, _identity(guardian, guardian), keccak256("e"), 0, ""
         );
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.UnboundCaller.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, guardian));
         registry.register(guardian, PROFILE, PROFILE_DOC);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
@@ -435,7 +437,9 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
         );
-        registry.setConsolidationSource(current, IConsolidationSource(address(delegation)));
+        registry.setConsolidationSource(
+            current, IConsolidationSource(address(delegation)), address(delegation).codehash
+        );
         vm.stopPrank();
         _expectNotAuthorized(guardian);
         registry.stageChange(artistId, _identity(guardian, guardian), guardian, 1, "", "");
@@ -527,14 +531,14 @@ contract ArtistRegistryTest is IdentityFixture {
         ArtistIdentity memory next = _identity(artist, payout);
         vm.startPrank(governor);
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
-        registry.stageOverride(artistId, ChangeKind.NONE, next, keccak256("e"));
+        registry.stageOverride(artistId, ChangeKind.NONE, next, keccak256("e"), 0, "");
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
-        registry.stageOverride(artistId, ChangeKind.STANDARD, next, keccak256("e"));
+        registry.stageOverride(artistId, ChangeKind.STANDARD, next, keccak256("e"), 0, "");
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
-        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, bytes32(0));
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, bytes32(0), 0, "");
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
         registry.stageOverride(
-            artistId, ChangeKind.CONTESTED, _identity(address(0), payout), keccak256("e")
+            artistId, ChangeKind.CONTESTED, _identity(address(0), payout), keccak256("e"), 0, ""
         );
         vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
         registry.stageOverride(
@@ -549,7 +553,7 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         vm.prank(stranger);
         registry.stageOverride(
-            artistId, ChangeKind.CONTESTED, _identity(stranger, stranger), keccak256("e")
+            artistId, ChangeKind.CONTESTED, _identity(stranger, stranger), keccak256("e"), 0, ""
         );
     }
 
@@ -559,12 +563,9 @@ contract ArtistRegistryTest is IdentityFixture {
         address delayed = makeAddr("delayedSetter");
         vm.prank(admin);
         manager.grantRole(PARAMETER_SETTER, delayed, 48 hours);
-        bytes memory call = abi.encodeWithSelector(
-            STAGE_OVERRIDE,
-            artistId,
-            ChangeKind.CONTESTED,
-            _identity(artist, payout),
-            keccak256("e")
+        bytes memory call = abi.encodeCall(
+            ArtistRegistry.stageOverride,
+            (artistId, ChangeKind.CONTESTED, _identity(artist, payout), keccak256("e"), 0, "")
         );
         vm.prank(delayed);
         manager.schedule(address(registry), call, 0);
@@ -593,7 +594,7 @@ contract ArtistRegistryTest is IdentityFixture {
             registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
         vm.startPrank(governor);
         vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
-        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, "");
         vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
         registry.stageOverride(
             artistId, ChangeKind.CONTESTED, next, evidence, deadline, _sign(thiefKey, digest)
@@ -639,8 +640,8 @@ contract ArtistRegistryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- heartbeat
 
-    function test_Heartbeat_ByAuthorityWalletAndPackageRegistry() public {
-        address[3] memory callers = [artist, wallet, packageRegistry];
+    function test_Heartbeat_ByAuthorityAndWallet() public {
+        address[2] memory callers = [artist, wallet];
         for (uint256 i; i < callers.length; ++i) {
             vm.warp(block.timestamp + 1 days);
             vm.expectEmit(address(registry));
@@ -652,9 +653,12 @@ contract ArtistRegistryTest is IdentityFixture {
         }
     }
 
-    function test_Heartbeat_RevertsForStrangerAndFreshWallet() public {
+    function test_Heartbeat_RevertsForStrangerPackageRegistryAndFreshWallet() public {
         _expectNotAuthorized(stranger);
         vm.prank(stranger);
+        registry.heartbeat(artistId);
+        _expectNotAuthorized(packageRegistry);
+        vm.prank(packageRegistry);
         registry.heartbeat(artistId);
         _consolidate(artist, wallet2);
         _expectNotAuthorized(wallet2);
@@ -664,7 +668,7 @@ contract ArtistRegistryTest is IdentityFixture {
 
     function test_Heartbeat_RevertsForUnknownArtist() public {
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 9));
-        vm.prank(packageRegistry);
+        vm.prank(artist);
         registry.heartbeat(9);
     }
 
@@ -676,34 +680,47 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ConsolidationSourceSet(address(adapter), address(next));
         vm.prank(successorSetter);
-        registry.setConsolidationSource(adapter, next);
+        registry.setConsolidationSource(adapter, next, address(next).codehash);
         assertEq(address(registry.consolidationSource()), address(next));
     }
 
     function test_SetConsolidationSource_RevertsForStaleExpected() public {
         vm.expectRevert(IArtistRegistry.ExpectedValueMismatch.selector);
         vm.prank(successorSetter);
-        registry.setConsolidationSource(IConsolidationSource(stranger), adapter);
+        registry.setConsolidationSource(
+            IConsolidationSource(stranger), adapter, address(adapter).codehash
+        );
     }
 
-    function test_SetConsolidationSource_RevertsForCodelessDelegatedOrNon165Source() public {
+    function test_SetConsolidationSource_RevertsForBadSourceOrCodeHash() public {
         vm.startPrank(successorSetter);
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.InvalidSource.selector, stranger));
-        registry.setConsolidationSource(adapter, IConsolidationSource(stranger));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, stranger));
+        registry.setConsolidationSource(adapter, IConsolidationSource(stranger), bytes32(0));
         address delegated = makeAddr("delegated7702");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(adapter)));
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.InvalidSource.selector, delegated));
-        registry.setConsolidationSource(adapter, IConsolidationSource(delegated));
-        vm.expectRevert(
-            abi.encodeWithSelector(ArtistRegistry.InvalidSource.selector, address(delegation))
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, delegated));
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(delegated), delegated.codehash
         );
-        registry.setConsolidationSource(adapter, IConsolidationSource(address(delegation)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(delegation))
+        );
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(address(delegation)), address(delegation).codehash
+        );
+        // A source whose code differs from the reviewed hash.
+        IConsolidationSource other =
+            new ConsolidationAdapter(IDelegationManagement(address(delegation)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(other))
+        );
+        registry.setConsolidationSource(adapter, other, keccak256("reviewed elsewhere"));
         vm.stopPrank();
     }
 
     function test_Constructor_RevertsForCodelessSource() public {
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.InvalidSource.selector, stranger));
-        new ArtistRegistry(address(manager), IConsolidationSource(stranger));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, stranger));
+        new ArtistRegistry(address(manager), IConsolidationSource(stranger), bytes32(0));
     }
 
     function test_SetConsolidationSource_RevertsForNonSetter() public {
@@ -711,14 +728,16 @@ contract ArtistRegistryTest is IdentityFixture {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
         );
         vm.prank(artist);
-        registry.setConsolidationSource(adapter, adapter);
+        registry.setConsolidationSource(adapter, adapter, address(adapter).codehash);
     }
 
     function test_Stage_RevertsWhenTheSourceReturnsTooManyWallets() public {
         OversizedConsolidationSource bad = new OversizedConsolidationSource();
         vm.prank(successorSetter);
-        registry.setConsolidationSource(adapter, IConsolidationSource(address(bad)));
-        _armRevert(abi.encodeWithSelector(ArtistRegistry.InvalidSource.selector, address(bad)));
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(address(bad)), address(bad).codehash
+        );
+        _armRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(bad)));
         _stage(artistKey, _identity(artist, payout), 0);
     }
 
@@ -727,25 +746,25 @@ contract ArtistRegistryTest is IdentityFixture {
         address federation = _federationStub();
         vm.startPrank(admin);
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.Bound("STREAM", address(stream));
+        emit IArtistRegistry.Bound("STREAM", address(stream));
         registry.bindStream(address(stream));
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.Bound("FEDERATION_REGISTRY", federation);
+        emit IArtistRegistry.Bound("FEDERATION_REGISTRY", federation);
         registry.bindFederationRegistry(federation);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtistRegistry.AlreadyBound.selector, bytes32("STREAM"))
+            abi.encodeWithSelector(IArtistRegistry.AlreadyBound.selector, bytes32("STREAM"))
         );
         registry.bindStream(address(stream));
         vm.expectRevert(
             abi.encodeWithSelector(
-                ArtistRegistry.AlreadyBound.selector, bytes32("FEDERATION_REGISTRY")
+                IArtistRegistry.AlreadyBound.selector, bytes32("FEDERATION_REGISTRY")
             )
         );
         registry.bindFederationRegistry(federation);
         address another = address(new PackageRegistryStub());
         vm.expectRevert(
             abi.encodeWithSelector(
-                ArtistRegistry.AlreadyBound.selector, bytes32("PACKAGE_REGISTRY")
+                IArtistRegistry.AlreadyBound.selector, bytes32("PACKAGE_REGISTRY")
             )
         );
         registry.bindPackageRegistry(another);
@@ -756,24 +775,29 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Bindings_RejectInvalidTargets() public {
-        ArtistRegistry fresh = new ArtistRegistry(address(manager), adapter);
+        ArtistRegistry fresh =
+            new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
         address delegated = makeAddr("delegated7702");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", packageRegistry));
         vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.InvalidBinding.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
         fresh.bindPackageRegistry(stranger);
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.InvalidBinding.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, delegated));
         fresh.bindPackageRegistry(delegated);
         vm.expectRevert(
-            abi.encodeWithSelector(ArtistRegistry.InvalidBinding.selector, address(adapter))
+            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(adapter))
         );
         fresh.bindPackageRegistry(address(adapter));
         vm.expectRevert(
-            abi.encodeWithSelector(ArtistRegistry.InvalidBinding.selector, packageRegistry)
+            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, packageRegistry)
         );
         fresh.bindStream(packageRegistry);
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.InvalidBinding.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
         fresh.bindFederationRegistry(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, packageRegistry)
+        );
+        fresh.bindFederationRegistry(packageRegistry);
         vm.stopPrank();
     }
 
@@ -791,20 +815,20 @@ contract ArtistRegistryTest is IdentityFixture {
     function test_ListFederatedContract_OnlyByTheFederationRegistry() public {
         address federation = _federationStub();
         address token = makeAddr("federatedToken");
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.UnboundCaller.selector, federation));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, federation));
         vm.prank(federation);
         registry.listFederatedContract(artistId, token);
 
         vm.prank(admin);
         registry.bindFederationRegistry(federation);
         vm.expectEmit(address(registry));
-        emit ArtistRegistry.FederatedContractListed(artistId, token);
+        emit IArtistRegistry.FederatedContractListed(artistId, token);
         vm.prank(federation);
         registry.listFederatedContract(artistId, token);
         assertEq(registry.federatedContracts(artistId).length, 1);
         assertEq(registry.federatedContracts(artistId)[0], token);
 
-        vm.expectRevert(abi.encodeWithSelector(ArtistRegistry.UnboundCaller.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, stranger));
         vm.prank(stranger);
         registry.listFederatedContract(artistId, token);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 5));
@@ -848,7 +872,7 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.supportsInterface(type(IERC165).interfaceId));
         assertTrue(registry.supportsInterface(type(IArtistRoleResolver).interfaceId));
         assertTrue(registry.supportsInterface(type(IArtistRegistry).interfaceId));
-        assertTrue(registry.supportsInterface(type(IPayoutResolverView).interfaceId));
+        assertTrue(registry.supportsInterface(type(IArtistPayoutResolver).interfaceId));
         assertFalse(registry.supportsInterface(0xffffffff));
     }
 
@@ -859,6 +883,154 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.authorityOf(5);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 5));
         registry.artist(5);
+    }
+
+    // ----------------------------------------------------------------- payout freeze
+
+    /// @dev A pending payout change freezes `payoutAddress`; the outcome unfreezes it.
+    function test_PayoutFreeze_WhileAPayoutChangeIsPending() public {
+        _stage(artistKey, _identity(artist, payout), 0);
+        assertEq(registry.payoutAddress(artistId), address(0));
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        assertEq(registry.payoutAddress(artistId), artist, "restored by a cancel");
+
+        _stage(artistKey, _identity(artist, payout), 0);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        assertEq(registry.payoutAddress(artistId), artist, "restored by a veto");
+
+        _stage(artistKey, _identity(artist, payout), 0);
+        vm.warp(block.timestamp + 7 days);
+        assertEq(registry.payoutAddress(artistId), address(0), "frozen until executed");
+        registry.executeChange(artistId);
+        assertEq(registry.payoutAddress(artistId), payout, "the new payout");
+    }
+
+    /// @dev A STANDARD change that keeps the payout (an authority or profile change) does not
+    ///      freeze it.
+    function test_PayoutFreeze_NotForChangesThatKeepThePayout() public {
+        _stage(artistKey, _identity(newAuthority, artist), newKey);
+        assertEq(registry.payoutAddress(artistId), artist);
+    }
+
+    /// @dev Every pending override freezes the payout, even one that keeps it.
+    function test_PayoutFreeze_WhileAnOverrideIsPending() public {
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, artist), newKey);
+        assertEq(registry.payoutAddress(artistId), address(0));
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        assertEq(registry.payoutAddress(artistId), artist);
+    }
+
+    /// @dev The economics re-review case: a thief holding the stolen key (the current authority
+    ///      and payout) cannot pull accrued balances while the network's 180-day recovery override
+    ///      is pending, and cannot cancel it; the recovered payout pulls after execution.
+    function test_Attack_ThiefCannotPullDuringARecoveryOverride() public {
+        PullOnlyPayeeMock payee = new PullOnlyPayeeMock{ value: 1 ether }(registry, artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(PullOnlyPayeeMock.NotPayoutAddress.selector, artist, address(0))
+        );
+        vm.prank(artist); // the thief, with the stolen key
+        payee.release();
+        _expectNotAuthorized(artist);
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+
+        vm.warp(block.timestamp + 180 days);
+        registry.executeChange(artistId);
+        vm.prank(newAuthority);
+        payee.release();
+        assertEq(newAuthority.balance, 1 ether);
+        assertEq(artist.balance, 0);
+    }
+
+    // ----------------------------------------------------------------- payout validation
+
+    /// @dev Pull-only artist payees: a protocol contract or a split wallet as the payout would
+    ///      strand or stall funds, and is rejected at staging.
+    function test_PayoutValidation_RejectsProtocolContractsAndSplitWallets() public {
+        (StreamWorksMock stream, EditionsMastersMock editions) = _wireStream();
+        SplitFactoryWalletsMock factory = _wireSplitFactory();
+        address splitWallet = makeAddr("splitWallet");
+        factory.setWallet(splitWallet, true);
+        address[6] memory bad = [
+            packageRegistry,
+            address(stream),
+            address(editions),
+            address(registry),
+            splitWallet,
+            address(0)
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _armRevert(abi.encodeWithSelector(IArtistRegistry.InvalidIdentity.selector));
+            _stage(artistKey, _identity(artist, bad[i]), 0);
+            _armRevert(abi.encodeWithSelector(IArtistRegistry.InvalidIdentity.selector));
+            _stageOverride(ChangeKind.CONTESTED, _identity(artist, bad[i]), 0);
+        }
+        _stage(artistKey, _identity(artist, payout), 0);
+    }
+
+    function test_PayoutValidation_RegistrationRejectsASplitWallet() public {
+        SplitFactoryWalletsMock factory = _wireSplitFactory();
+        address splitWallet = makeAddr("splitWallet");
+        factory.setWallet(splitWallet, true);
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        _register(splitWallet);
+    }
+
+    /// @dev A split wallet deployed at the payout's address while the change waits is caught at
+    ///      execution (fail closed); the guardian or a canceller then clears the change.
+    function test_PayoutValidation_RecheckedAtExecution() public {
+        SplitFactoryWalletsMock factory = _wireSplitFactory();
+        _stage(artistKey, _identity(artist, payout), 0);
+        factory.setWallet(payout, true);
+        vm.warp(block.timestamp + 7 days);
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        registry.executeChange(artistId);
+    }
+
+    function test_BindSplitFactory_OneShotAndRequiresCode() public {
+        vm.startPrank(admin);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
+        registry.bindSplitFactory(stranger);
+        SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.Bound("SPLIT_FACTORY", address(factory));
+        registry.bindSplitFactory(address(factory));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.AlreadyBound.selector, bytes32("SPLIT_FACTORY"))
+        );
+        registry.bindSplitFactory(address(factory));
+        vm.stopPrank();
+        assertEq(registry.splitFactory(), address(factory));
+    }
+
+    // ----------------------------------------------------------------- residual risk
+
+    /// @dev Residual risk (README, owner decision pending): a thief who holds the artist key for
+    ///      30 days can establish a consolidation with a wallet of their own. That wallet is then
+    ///      captured as a canceller of the network's 180-day override, and its cancel kills the
+    ///      override. This test demonstrates the current, ADR-conformant behaviour.
+    function test_ResidualRisk_ThiefWalletCapturedAsOverrideCanceller() public {
+        address thiefWallet = makeAddr("thiefWallet");
+        // The thief, holding the artist key, consolidates the key with their own wallet.
+        _consolidate(artist, thiefWallet);
+        vm.warp(block.timestamp + 30 days);
+        assertTrue(adapter.isEstablished(artist, thiefWallet));
+
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        address[] memory cancellers = _cancellers();
+        assertEq(cancellers.length, 2);
+        assertEq(cancellers[1], thiefWallet);
+
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ChangeCancelled(artistId, thiefWallet, false);
+        vm.prank(thiefWallet);
+        registry.cancelChange(artistId);
+        assertEq(registry.authorityOf(artistId), artist, "the override was killed");
     }
 
     // ----------------------------------------------------------------- gas
@@ -905,25 +1077,72 @@ contract ArtistRegistryTest is IdentityFixture {
     /// @dev Computed with `cast keccak` and `cast sig`, the way off-chain tools compute them.
     function test_Golden_TypehashesAndSelectors() public view {
         assertEq(
-            registry.IDENTITY_CHANGE_TYPEHASH(),
+            Typehashes.IDENTITY_CHANGE,
             0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0
         );
         assertEq(
-            registry.OVERRIDE_ACCEPTANCE_TYPEHASH(),
+            Typehashes.OVERRIDE_ACCEPTANCE,
             0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
         );
-        assertEq(registry.PAYOUT_RESOLVER_INTERFACE_ID(), bytes4(0x9b2c1793));
-        assertEq(IPayoutResolverView.payoutAddress.selector, bytes4(0x9b2c1793));
+        assertEq(type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793));
         (, string memory name, string memory version,,,,) = registry.eip712Domain();
         assertEq(name, "6529 Works Artist Registry");
         assertEq(version, "1");
     }
 
+    /// @dev The digests are standard EIP-712 over the registry's domain, as wallets compute them.
+    function test_Golden_DigestsAreStandardEip712() public view {
+        ArtistIdentity memory next = _identity(newAuthority, payout);
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256(
+                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+                ),
+                keccak256("6529 Works Artist Registry"),
+                keccak256("1"),
+                block.chainid,
+                address(registry)
+            )
+        );
+        bytes32 change = keccak256(
+            abi.encode(
+                Typehashes.IDENTITY_CHANGE,
+                artistId,
+                next.authority,
+                next.payout,
+                next.profileId,
+                next.profileDocHash,
+                uint256(3),
+                uint64(9)
+            )
+        );
+        assertEq(
+            registry.changeDigest(artistId, next, 3, 9),
+            keccak256(abi.encodePacked(hex"1901", domain, change))
+        );
+        bytes32 acceptance = keccak256(
+            abi.encode(
+                Typehashes.OVERRIDE_ACCEPTANCE,
+                artistId,
+                uint8(ChangeKind.ESTATE),
+                next.authority,
+                next.payout,
+                next.profileId,
+                next.profileDocHash,
+                keccak256("e"),
+                uint64(9)
+            )
+        );
+        assertEq(
+            registry.overrideDigest(artistId, ChangeKind.ESTATE, next, keccak256("e"), 9),
+            keccak256(abi.encodePacked(hex"1901", domain, acceptance))
+        );
+    }
+
     // ----------------------------------------------------------------- helpers
 
-    function _federationStub() internal returns (address federation) {
-        federation = makeAddr("federation");
-        vm.etch(federation, hex"00");
+    function _federationStub() internal returns (address) {
+        return address(new FederationRegistryStub());
     }
 
     function _expectNotAuthorized(address account) internal {
@@ -953,6 +1172,12 @@ contract ArtistRegistryTest is IdentityFixture {
             evidenceHash: bytes32(0),
             cancellers: _walletOnly()
         });
+    }
+
+    function _wireSplitFactory() internal returns (SplitFactoryWalletsMock factory) {
+        factory = new SplitFactoryWalletsMock();
+        vm.prank(admin);
+        registry.bindSplitFactory(address(factory));
     }
 
     function _wireStream() internal returns (StreamWorksMock stream, EditionsMastersMock editions) {

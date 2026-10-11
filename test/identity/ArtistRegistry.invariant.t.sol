@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
+import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ArtistRegistryHandler, IdentityActors } from "./ArtistRegistryHandler.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
@@ -31,10 +31,16 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     }
 
     /// @dev The payout address and the authority change only through executed changes: they
-    ///      always equal the ghosts, which only a successful `executeChange` updates.
+    ///      always equal the ghosts, which only a successful `executeChange` updates. The payout
+    ///      resolves to zero exactly while an override, or a change that moves it, is pending.
     function invariant_PayoutChangesOnlyThroughExecutedChanges() public view {
-        assertEq(registry.payoutAddress(artistId), handler.ghostPayout());
+        (ArtistIdentity memory identity,) = registry.artist(artistId);
+        assertEq(identity.payout, handler.ghostPayout());
         assertEq(registry.authorityOf(artistId), handler.ghostAuthority());
+        PendingChange memory p = registry.pendingChange(artistId);
+        bool frozen = p.kind != ChangeKind.NONE
+            && (p.kind != ChangeKind.STANDARD || p.next.payout != identity.payout);
+        assertEq(registry.payoutAddress(artistId), frozen ? address(0) : handler.ghostPayout());
     }
 
     /// @dev Every executed change waited its full delay (7 days, or 180 for overrides); no
@@ -60,6 +66,5 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
     /// @dev The current authority always resolves to the artist ID.
     function invariant_AuthorityResolvesToTheArtist() public view {
         assertEq(registry.artistIdOf(registry.authorityOf(artistId)), artistId);
-        assertEq(registry.artistCount(), 1);
     }
 }

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
@@ -16,14 +17,9 @@ import { PackageRegistryStub } from "../mocks/identity/IdentityWorksMocks.sol";
 ///         (genesis wiring), plus one registered artist whose wallet has been consolidated (both
 ///         directions, all collections) for 60 days.
 abstract contract IdentityFixture is Test {
-    // Role IDs as in the governance lane's `Roles.sol` (PR #7).
-    uint64 internal constant GUARDIAN = 1;
-    uint64 internal constant PARAMETER_SETTER = 9;
-    uint64 internal constant SUCCESSOR_SETTER = 11;
-
-    /// @dev The two `stageOverride` overloads: without and with the new authority's acceptance.
-    bytes4 internal constant STAGE_OVERRIDE = 0x8b1fc71c;
-    bytes4 internal constant STAGE_OVERRIDE_ACCEPTED = 0xf27323a6;
+    uint64 internal constant GUARDIAN = Roles.GUARDIAN;
+    uint64 internal constant PARAMETER_SETTER = Roles.PARAMETER_SETTER;
+    uint64 internal constant SUCCESSOR_SETTER = Roles.SUCCESSOR_SETTER;
 
     uint256 internal constant START = 1_750_000_000;
     uint256 internal constant FAR = type(uint64).max;
@@ -69,7 +65,7 @@ abstract contract IdentityFixture is Test {
         manager = new AccessManager(admin);
         delegation = new DelegationManagementMock();
         adapter = new ConsolidationAdapter(IDelegationManagement(address(delegation)));
-        registry = new ArtistRegistry(address(manager), adapter);
+        registry = new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
         packageRegistry = address(new PackageRegistryStub());
         _configureRoles(address(registry));
         vm.prank(admin);
@@ -83,8 +79,7 @@ abstract contract IdentityFixture is Test {
     function _configureRoles(address target) internal {
         vm.startPrank(admin);
         _map(target, ArtistRegistry.vetoChange.selector, GUARDIAN);
-        _map(target, STAGE_OVERRIDE, PARAMETER_SETTER);
-        _map(target, STAGE_OVERRIDE_ACCEPTED, PARAMETER_SETTER);
+        _map(target, ArtistRegistry.stageOverride.selector, PARAMETER_SETTER);
         _map(target, ArtistRegistry.setConsolidationSource.selector, SUCCESSOR_SETTER);
         // The bind* selectors stay on the AccessManager default (ADMIN): genesis wiring.
         manager.grantRole(GUARDIAN, guardian, 0);
@@ -158,7 +153,8 @@ abstract contract IdentityFixture is Test {
         );
     }
 
-    /// @dev Stages an override as the governor; a new authority accepts with `acceptKey`.
+    /// @dev Stages an override as the governor; a new authority accepts with `acceptKey` (zero
+    ///      for none).
     function _stageOverride(ChangeKind kind, ArtistIdentity memory next, uint256 acceptKey)
         internal
     {
@@ -174,8 +170,7 @@ abstract contract IdentityFixture is Test {
             delete armedRevert;
         }
         vm.prank(governor);
-        if (acceptKey == 0) registry.stageOverride(artistId, kind, next, evidence);
-        else registry.stageOverride(artistId, kind, next, evidence, deadline, acceptance);
+        registry.stageOverride(artistId, kind, next, evidence, deadline, acceptance);
     }
 
     function _cancellers() internal view returns (address[] memory) {
@@ -184,5 +179,11 @@ abstract contract IdentityFixture is Test {
 
     function _source() internal view returns (IConsolidationSource) {
         return registry.consolidationSource();
+    }
+
+    /// @dev The registry's ID-derivation rule, as documented in `IArtistRegistry`.
+    function _idOf(address account) internal view returns (uint256 id) {
+        id = registry.artistIdOf(account);
+        if (id == 0) id = uint256(uint160(account));
     }
 }

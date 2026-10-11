@@ -173,7 +173,7 @@ contract ArtistRegistryHandler is Test {
         ArtistIdentity memory next =
             ArtistIdentity(guardian, payouts[payoutSeed % 3], PROFILE, bytes32(0));
         vm.prank(guardian);
-        try registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e")) {
+        try registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e"), 0, "") {
             ++violations;
         } catch { }
         try registry.stageChange(artistId, next, guardian, type(uint64).max, "", "") {
@@ -195,7 +195,7 @@ contract ArtistRegistryHandler is Test {
     }
 
     function heartbeat(uint256 callerSeed) external {
-        address caller = callerSeed % 5 == 4 ? packageRegistry : _caller(callerSeed);
+        address caller = _caller(callerSeed);
         vm.prank(caller);
         try registry.heartbeat(artistId) { } catch { }
     }
