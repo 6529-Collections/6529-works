@@ -409,10 +409,18 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    function test_TheCommittedCc0DigestIsNotPinnedYet() public view {
-        // Flip this when a maintainer pins the digest of the legalcode.txt file.
-        assertEq(DeployV1.CC0_LEGALCODE_SHA256, bytes32(0));
-        assertEq(deployer.cc0Digest(), bytes32(0));
+    /// The canonical CC0 1.0 legal code (legalcode.txt, 7,048 bytes), pinned from two sources.
+    function test_TheCanonicalCc0DigestIsPinned() public {
+        bytes32 canonical = 0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499;
+        assertEq(DeployV1.CC0_LEGALCODE_SHA256, canonical);
+        assertEq(DeployV1.CC0_LEGALCODE_LENGTH, 7048);
+        assertEq(
+            DeployV1.CC0_LEGALCODE_URL,
+            "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt"
+        );
+        // Both scripts require it unless a test overrides it.
+        assertEq(new Deploy().cc0Digest(), canonical);
+        assertEq(new Verify().cc0Digest(), canonical);
     }
 
     function test_AnvilChecksAGivenCc0FileOnceTheDigestIsPinned() public {
@@ -690,16 +698,19 @@ contract DeployScriptTest is Test {
             _tamper(record, vm.toString(recorded), vm.toString(keccak256("other text")));
         vm.expectRevert(abi.encodeWithSelector(VerifyV1.Cc0Mismatch.selector, "SHA-256"));
         verifier.verify(tampered);
-        // Off anvil the recorded digest must be the pinned canonical one.
-        vm.expectRevert(abi.encodeWithSelector(Verify.Cc0NotCanonical.selector, recorded, 0));
-        verifier.checkCc0External(d, record, false);
-        verifier.setCc0Digest(keccak256("the canonical text"));
+        // Off anvil the recorded digest must be the pinned canonical one: the anvil
+        // placeholder text is not.
         vm.expectRevert(
             abi.encodeWithSelector(
-                Verify.Cc0NotCanonical.selector, recorded, keccak256("the canonical text")
+                Verify.Cc0NotCanonical.selector, recorded, DeployV1.CC0_LEGALCODE_SHA256
             )
         );
         verifier.checkCc0External(d, record, false);
+        // No pin at all is refused too.
+        verifier.setCc0Digest(bytes32(0));
+        vm.expectRevert(abi.encodeWithSelector(Verify.Cc0NotCanonical.selector, recorded, 0));
+        verifier.checkCc0External(d, record, false);
+        // A deployment whose stored text is the pinned one passes.
         verifier.setCc0Digest(recorded);
         verifier.checkCc0External(d, record, false);
     }

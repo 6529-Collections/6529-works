@@ -13,8 +13,7 @@ code hashes with the record, but it does not rebuild the bytecode.
 6529 Works is pre-audit and not deployed. A Sepolia run is a testnet rehearsal, not a launch,
 and it is **not runnable yet**. Off anvil, the deploy refuses to proceed until:
 - the Renderer (#20) merges (`RendererPending`);
-- Editions (#14) merges (`EditionsPending`);
-- a maintainer pins the canonical CC0 digest (`Cc0DigestNotPinned`, step 6).
+- Editions (#14) merges (`EditionsPending`).
 
 The library already deploys identity (#16), Stream and WorkRecords (#22).
 
@@ -221,22 +220,23 @@ store. The file must be registered when WorkRecords is constructed, and complete
 work finalizes. Genesis therefore stores it first, right after the content store. It passes
 the file ID to the `EconomicsResolver` and to WorkRecords.
 
-The text is the plain-text legal code that Creative Commons publishes at
-<https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt>
-(`DeployV1.CC0_LEGALCODE_URL`). Its SHA-256 is pinned in `DeployV1.CC0_LEGALCODE_SHA256`, and
-off anvil both scripts refuse any other text.
+The text is the plain-text CC0 1.0 Universal legal code that Creative Commons publishes. It
+is pinned in `DeployV1`:
 
-**The digest is not pinned yet.** It could not be verified from the build environment, so the
-constant is zero and every off-anvil run stops with `Cc0DigestNotPinned`. To pin it, a
-maintainer does the following, by PR:
-1. Fetches the file.
-2. Checks it against an independent copy.
-3. Sets the constant to `0x` followed by the output of `sha256sum legalcode.txt`.
-4. Updates `test_TheCommittedCc0DigestIsNotPinnedYet`.
+| | |
+| --- | --- |
+| Source | <https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt> (`CC0_LEGALCODE_URL`) |
+| Same file, Creative Commons' data repository | <https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/main/docs/publicdomain/zero/1.0/legalcode.txt> (`CC0_LEGALCODE_MIRROR`) |
+| Size | 7,048 bytes, `text/plain` (`CC0_LEGALCODE_LENGTH`) |
+| SHA-256 | `0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499` (`CC0_LEGALCODE_SHA256`) |
+
+Both sources served the same bytes with this digest when it was pinned on 11 October 2026.
+Off anvil both scripts refuse any other text.
 
 For a run:
 1. Save the file under `config/` (the script can read only `./config`; the file is not
-   committed) and set `CC0_TEXT_PATH=config/<file>`.
+   committed), check it with `sha256sum` (the digest above) and `wc -c` (7048), and set
+   `CC0_TEXT_PATH=config/<file>`.
 2. After the broadcast, Verify checks the stored copy:
    - WorkRecords and every product's default license name the recorded file;
    - the file is complete;

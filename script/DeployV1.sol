@@ -58,11 +58,17 @@ library DeployV1 {
     /// @notice Where the CC0 1.0 Universal legal code is published in plain text.
     string internal constant CC0_LEGALCODE_URL =
         "https://creativecommons.org/publicdomain/zero/1.0/legalcode.txt";
-    /// @notice The SHA-256 of the file at `CC0_LEGALCODE_URL`, the default license text of every
-    ///         work. NOT PINNED YET: it could not be verified from the build environment, so it
-    ///         is zero, and `Deploy.s.sol` and `Verify.s.sol` refuse every chain but anvil until
-    ///         a maintainer fetches the file, checks it and sets this constant.
-    bytes32 internal constant CC0_LEGALCODE_SHA256 = bytes32(0);
+    /// @notice The same file in Creative Commons' own data repository.
+    string internal constant CC0_LEGALCODE_MIRROR =
+        "https://raw.githubusercontent.com/creativecommons/cc-legal-tools-data/main/docs/publicdomain/zero/1.0/legalcode.txt";
+    /// @notice The size of that file: 7,048 bytes of `text/plain`.
+    uint256 internal constant CC0_LEGALCODE_LENGTH = 7048;
+    /// @notice The SHA-256 of that file, the default license text of every work. Pinned on
+    ///         11 October 2026 after both sources served the same 7,048 bytes with this digest
+    ///         (the first fetched twice). Off anvil, `Deploy.s.sol` and `Verify.s.sol` refuse
+    ///         any other text.
+    bytes32 internal constant CC0_LEGALCODE_SHA256 =
+        0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499;
 
     struct Params {
         /// The operator account that broadcasts the genesis and alone may call `configure`.
