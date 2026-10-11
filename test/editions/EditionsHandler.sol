@@ -5,6 +5,7 @@ import { Test } from "forge-std/Test.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { EditionFormat, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { EditionsAdapterMock, EditionsStreamMock } from "../mocks/editions/EditionsMocks.sol";
@@ -94,7 +95,7 @@ contract EditionsHandler is Test {
         try wrong.buy(editions, id, _holders[0], amount) {
             ++unexpected;
         } catch (bytes memory reason) {
-            if (!_is(reason, Editions.SaleKindMismatch.selector)) ++unexpected;
+            if (!_is(reason, IMintTarget.SaleKindMismatch.selector)) ++unexpected;
         }
     }
 

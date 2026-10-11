@@ -19,7 +19,6 @@ import {
     SeedPolicy
 } from "src/interfaces/types/PackageTypes.sol";
 import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import {
     EditionsAdapterMock,
     EditionsArtistsMock,
@@ -31,14 +30,15 @@ import {
 } from "../mocks/editions/EditionsMocks.sol";
 
 /// @dev Deploys 6529 Editions against mocks of Stream, the package registry, the economics
-///      resolver, the artist registry and the renderer, under a plain OpenZeppelin AccessManager
-///      with the role IDs of `src/governance/Roles.sol` (governance lane) and zero delays, plus a
-///      fixed-price and a Dutch adapter holding MINTER.
+///      resolver, the artist registry, the work-records satellite and the renderer, under a plain
+///      OpenZeppelin AccessManager with the role IDs of `src/governance/Roles.sol` and zero
+///      delays, plus a fixed-price and a Dutch adapter holding MINTER. Genesis wiring is complete:
+///      Stream and the registry bind Editions, and Editions binds the work-records satellite
+///      (ADMIN, the default role of unmapped selectors).
 abstract contract EditionsBase is Test {
     uint64 internal constant MINTER = 6;
     uint64 internal constant PARAMETER_SETTER = 9;
     uint64 internal constant FUNDS_SETTER = 10;
-    uint64 internal constant SUCCESSOR_SETTER = 11;
     uint256 internal constant PRICE = 0.01 ether;
     /// @dev Stream's auction custody, which holds a master until its auction settles.
     address internal constant CUSTODY = address(0xA0C7);
@@ -77,14 +77,13 @@ abstract contract EditionsBase is Test {
         stream = new EditionsStreamMock(
             address(registry), address(economics), address(artists), address(renderer)
         );
-        registry.setStream(address(stream));
         editions =
             new Editions(address(manager), address(stream), address(stream).codehash, marketOwner);
-        stream.setEditions(address(editions));
-        registry.setSystem(address(editions));
+        workRecordsMock = new EditionsWorkRecordsMock();
+        stream.bind(address(workRecordsMock), address(editions));
+        registry.bindCallers(address(stream), address(editions));
         fixedAdapter = new EditionsAdapterMock(SaleKind.FIXED_PRICE);
         dutchAdapter = new EditionsAdapterMock(SaleKind.DUTCH);
-        workRecordsMock = new EditionsWorkRecordsMock();
 
         vm.startPrank(admin);
         bytes4[] memory minting = new bytes4[](2);
@@ -97,29 +96,27 @@ abstract contract EditionsBase is Test {
         manager.setTargetFunctionRole(
             address(editions), _one(IEditions.setOwner.selector), FUNDS_SETTER
         );
-        manager.setTargetFunctionRole(
-            address(editions), _one(Editions.bindWorkRecords.selector), SUCCESSOR_SETTER
-        );
-        manager.grantRole(SUCCESSOR_SETTER, governor, 0);
         manager.grantRole(MINTER, address(fixedAdapter), 0);
         manager.grantRole(MINTER, address(dutchAdapter), 0);
         manager.grantRole(PARAMETER_SETTER, governor, 0);
         manager.grantRole(FUNDS_SETTER, governor, 0);
+        editions.bindWorkRecords(address(workRecordsMock));
         vm.stopPrank();
     }
 
     // ----------------------------------------------------------------- package items
 
-    /// @dev An EDITION_MASTER item with fresh, registered content: the lead artist and a
-    ///      collaborator, a canonical payee list (fixed payee first, then the artist ID), CC0.
+    /// @dev An EDITION_MASTER item with fresh content: the lead artist and a collaborator, a
+    ///      canonical payee list (fixed payee first, then the artist ID), CC0.
     function _item(EditionFormat format, uint64 size, uint64 window, bytes32 saleKind)
         internal
         returns (PackageItem memory item)
     {
         item.kind = ItemKind.EDITION_MASTER;
         item.collectionId = 1;
-        item.contentId = keccak256(abi.encode("content", ++_contentNonce));
-        item.metadataHash = keccak256(abi.encode("record", _contentNonce));
+        item.contentHash = sha256(abi.encode("content", ++_contentNonce));
+        item.mediaHash = keccak256(abi.encode("media", _contentNonce));
+        item.recordFileId = keccak256(abi.encode("record", _contentNonce));
         item.parties = new Party[](2);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
         item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
@@ -132,7 +129,6 @@ abstract contract EditionsBase is Test {
         bytes memory params =
             saleKind == SaleKind.DUTCH ? abi.encode(DutchParams(PRICE / 10, 1 days, 0)) : bytes("");
         item.edition = EditionTerms(format, size, window, PRICE, CURRENCY_ETH, saleKind, params);
-        registry.setContent(item.contentId, sha256(abi.encode(item.contentId)));
     }
 
     function _fixedItem(uint64 size) internal returns (PackageItem memory) {
@@ -143,8 +139,8 @@ abstract contract EditionsBase is Test {
         return _item(EditionFormat.OPEN, size, window, SaleKind.DUTCH);
     }
 
-    /// @dev Approves a one-item package, mints its master into auction custody and settles the
-    ///      auction to a collector.
+    /// @dev Mints a master into auction custody (consuming its item) and settles the auction to
+    ///      a collector.
     function _master(PackageItem memory item) internal returns (uint256 id) {
         id = _masterInAuction(item);
         stream.settle(id, COLLECTOR);
@@ -152,23 +148,12 @@ abstract contract EditionsBase is Test {
 
     /// @dev A master whose auction has not settled (live or paused for a dispute).
     function _masterInAuction(PackageItem memory item) internal returns (uint256) {
-        bytes32 root = _root(item);
-        registry.approve(root);
-        return stream.mintMaster(root, item, CUSTODY);
-    }
-
-    function _root(PackageItem memory item) internal pure returns (bytes32) {
-        return WorksHashing.leaf(WorksHashing.itemHash(item));
+        return stream.mintMaster(item, CUSTODY);
     }
 
     function _create(PackageItem memory item) internal returns (uint256 id) {
         id = _master(item);
         editions.createEdition(id, item);
-    }
-
-    function _bindWorkRecords() internal {
-        vm.prank(governor);
-        editions.bindWorkRecords(address(workRecordsMock), address(workRecordsMock).codehash);
     }
 
     function _one(bytes4 selector) internal pure returns (bytes4[] memory s) {

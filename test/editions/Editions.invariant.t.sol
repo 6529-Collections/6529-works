@@ -14,7 +14,7 @@ import { EditionsHandler } from "./EditionsHandler.sol";
 contract EditionsInvariantTest is StdInvariant, EditionsBase {
     EditionsHandler internal handler;
     uint256[] internal ids;
-    bytes32[] internal contentIds;
+    bytes32[] internal contentHashes;
     address[] internal royaltyReceivers;
     uint256[] internal royaltyAmounts;
 
@@ -27,7 +27,7 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         for (uint256 i; i < items.length; ++i) {
             uint256 id = _create(items[i]);
             ids.push(id);
-            contentIds.push(items[i].contentId);
+            contentHashes.push(items[i].contentHash);
             (address receiver, uint256 amount) = editions.royaltyInfo(id, 1 ether);
             royaltyReceivers.push(receiver);
             royaltyAmounts.push(amount);
@@ -82,13 +82,13 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
     }
 
     /// @notice The link and the locked terms never change: both directions, the content and the
-    ///         royalty.
+    ///         royalty (no handler action changes the rate).
     function invariant_LinkAndRoyaltyFixed() public view {
         for (uint256 i; i < ids.length; ++i) {
-            (address s, uint256 workId, bytes32 contentId) = editions.masterOf(ids[i]);
+            (address s, uint256 workId, bytes32 contentHash) = editions.masterOf(ids[i]);
             assertEq(s, address(stream));
             assertEq(workId, ids[i]);
-            assertEq(contentId, contentIds[i]);
+            assertEq(contentHash, contentHashes[i]);
             (address linked, uint256 editionId) = stream.editionOf(ids[i]);
             assertEq(linked, address(editions));
             assertEq(editionId, ids[i]);

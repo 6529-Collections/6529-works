@@ -6,16 +6,13 @@ import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { Editions } from "src/editions/Editions.sol";
-import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import {
-    CURRENCY_DEFAULT,
-    CURRENCY_ETH,
+    PRODUCT_EDITIONS,
     PRODUCT_STREAM,
     Payee,
     ProductEconomics,
@@ -28,113 +25,71 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 /// @notice Mocks of other lanes' contracts for the 6529 Editions tests. Each implements only
 ///         the slice of its interface that Editions calls, with the same ABI, plus test knobs.
 
-/// @dev The package registry: approvals, consumption and per-product content uniqueness keyed
-///      on a simulated content store's decoded SHA-256 (`setContent`).
+/// @dev The package registry's content claims: Stream's consume records `contentHash -> itemHash`
+///      under PRODUCT_STREAM; Editions may claim a hash under PRODUCT_EDITIONS only for the item
+///      Stream consumed, once (`IPackageRegistry.claimContent`).
 contract EditionsRegistryMock {
-    error NotSystem(address caller);
-
-    mapping(bytes32 => IPackageRegistry.PackageStatus) public status;
-    mapping(bytes32 => bool) public isConsumed;
-    mapping(bytes32 => bytes32) public sha256Of;
-    mapping(bytes32 => mapping(bytes32 => bool)) public isContentUsed;
-    address public system;
+    mapping(bytes32 => bytes32) public consumedItemOf;
+    mapping(bytes32 => bytes32) public editionClaimOf;
     address public stream;
+    address public editions;
     bool public skipStreamUniqueness;
 
-    event ContentClaimed(bytes32 indexed product, bytes32 indexed contentHash, bytes32 contentId);
+    event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
 
-    function setSystem(address s) external {
-        system = s;
-    }
-
-    function setStream(address s) external {
-        stream = s;
-    }
-
-    function setContent(bytes32 contentId, bytes32 sha) external {
-        sha256Of[contentId] = sha;
-    }
-
-    function approve(bytes32 root) external {
-        status[root] = IPackageRegistry.PackageStatus.APPROVED;
-    }
-
-    function revoke(bytes32 root) external {
-        status[root] = IPackageRegistry.PackageStatus.REVOKED;
-    }
-
-    function setConsumed(bytes32 itemHash, bool consumed) external {
-        isConsumed[itemHash] = consumed;
-    }
-
-    function preclaim(bytes32 product, bytes32 sha) external {
-        isContentUsed[product][sha] = true;
+    function bindCallers(address stream_, address editions_) external {
+        stream = stream_;
+        editions = editions_;
     }
 
     function setSkipStreamUniqueness(bool skip) external {
         skipStreamUniqueness = skip;
     }
 
-    function packageOf(bytes32 root)
-        external
-        view
-        returns (IPackageRegistry.PackageStatus, bytes32)
-    {
-        return (status[root], keccak256(abi.encode("evidence", root)));
+    /// @dev Makes the registry report another consumed item for `contentHash`.
+    function setConsumedItem(bytes32 contentHash, bytes32 itemHash) external {
+        consumedItemOf[contentHash] = itemHash;
     }
 
-    /// @dev What Stream's mint does through `consume`, reduced to the bookkeeping.
-    function consume(bytes32 root, bytes32 itemHash, bytes32 contentId) external {
-        if (msg.sender != stream) revert NotSystem(msg.sender);
-        if (status[root] != IPackageRegistry.PackageStatus.APPROVED) {
-            revert IPackageRegistry.PackageNotApproved(root);
+    function preclaim(bytes32 contentHash, bytes32 itemHash) external {
+        editionClaimOf[contentHash] = itemHash;
+    }
+
+    /// @dev What Stream's mint does through `consume`, reduced to the uniqueness word.
+    function consume(bytes32 itemHash, bytes32 contentHash) external {
+        if (msg.sender != stream) revert IPackageRegistry.NotBoundCaller(msg.sender);
+        bytes32 claimedBy = consumedItemOf[contentHash];
+        if (claimedBy != 0 && !skipStreamUniqueness) {
+            revert IPackageRegistry.ContentUsed(PRODUCT_STREAM, contentHash, claimedBy);
         }
-        if (isConsumed[itemHash]) revert IPackageRegistry.ItemConsumedAlready(itemHash);
-        isConsumed[itemHash] = true;
-        if (!skipStreamUniqueness) _claim(PRODUCT_STREAM, contentId);
+        consumedItemOf[contentHash] = itemHash;
     }
 
-    function claimContent(bytes32 product, bytes32 contentId) external returns (bytes32) {
-        if (msg.sender != system) revert NotSystem(msg.sender);
-        return _claim(product, contentId);
-    }
-
-    function _claim(bytes32 product, bytes32 contentId) internal returns (bytes32 sha) {
-        sha = sha256Of[contentId];
-        if (sha == 0) revert IContentStore.ContentFileUnknown(contentId);
-        if (isContentUsed[product][sha]) revert IPackageRegistry.ContentUsed(product, sha);
-        isContentUsed[product][sha] = true;
-        emit ContentClaimed(product, sha, contentId);
+    function claimContent(bytes32 contentHash, bytes32 itemHash) external {
+        if (msg.sender != editions) revert IPackageRegistry.NotBoundCaller(msg.sender);
+        if (consumedItemOf[contentHash] != itemHash) {
+            revert IPackageRegistry.ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
+        }
+        bytes32 claimedBy = editionClaimOf[contentHash];
+        if (claimedBy != 0) {
+            revert IPackageRegistry.ContentUsed(PRODUCT_EDITIONS, contentHash, claimedBy);
+        }
+        editionClaimOf[contentHash] = itemHash;
+        emit ContentClaimed(contentHash, itemHash);
     }
 }
 
-/// @dev The economics resolver: governed product economics, an allowlist and a default
-///      currency; split wallets are deterministic stand-ins for predicted CREATE2 addresses.
+/// @dev The economics resolver: governed product economics; split wallets are deterministic
+///      stand-ins for predicted CREATE2 addresses.
 contract EditionsEconomicsMock {
     ProductEconomics public eco;
-    address public defaultCurrency;
-    mapping(address => bool) public allowed;
 
     constructor(address feeRecipient) {
         eco = ProductEconomics(feeRecipient, 25_000, 6_529);
-        allowed[CURRENCY_ETH] = true;
     }
 
     function setEconomics(ProductEconomics calldata next) external {
         eco = next;
-    }
-
-    function setAllowed(address currency, bool ok) external {
-        allowed[currency] = ok;
-    }
-
-    function setDefaultCurrency(address currency) external {
-        defaultCurrency = currency;
-    }
-
-    function resolveCurrency(bytes32, address requested) external view returns (address c) {
-        c = requested == CURRENCY_DEFAULT ? defaultCurrency : requested;
-        if (!allowed[c]) revert IEconomicsResolver.CurrencyNotAllowed(c);
     }
 
     function newWorkTerms(bytes32 product, Payee[] calldata payees)
@@ -184,8 +139,31 @@ contract EditionsRendererMock {
     }
 }
 
-/// @dev 6529 Stream, reduced to masters, their primary-sale settlement and the Stream side of
-///      the edition link. A master is minted into auction custody and is unsettled until
+/// @dev The work-records satellite: each master's license (CC0 unless set), and its calls into
+///      Editions as the bound satellite.
+contract EditionsWorkRecordsMock {
+    mapping(uint256 => License) internal _licenses;
+
+    function setLicense(uint256 id, License calldata next) external {
+        _licenses[id] = next;
+    }
+
+    function licenseOf(uint256 id) external view returns (License memory l) {
+        l = _licenses[id];
+        if (bytes(l.spdxId).length == 0) l = License("CC0-1.0", keccak256("CC0 1.0 legal code"));
+    }
+
+    function notify(Editions editions, uint256 workId) external {
+        editions.notifyMasterUpdated(workId);
+    }
+
+    function setRate(Editions editions, uint256 editionId, uint32 rate) external {
+        editions.setRoyaltyRate(editionId, rate);
+    }
+}
+
+/// @dev 6529 Stream core, reduced to masters, their primary-sale settlement and the Stream side
+///      of the edition link. A master is minted into auction custody and is unsettled until
 ///      `settle`. `LinkMode` makes the Stream side misbehave: ignore the link, record another
 ///      ID, or reenter `createEdition` with a stored item.
 contract EditionsStreamMock {
@@ -199,6 +177,7 @@ contract EditionsStreamMock {
     address public packageRegistry;
     address public economics;
     address public artistRegistry;
+    address public workRecords;
     address public editions;
     address public defaultRenderer;
     uint256 public totalMinted;
@@ -206,10 +185,9 @@ contract EditionsStreamMock {
     bytes public reentryItem;
     bytes public reentryError;
 
-    mapping(uint256 => IStream.WorkInfo) internal _works;
+    mapping(uint256 => IStream.WorkCore) internal _works;
     mapping(uint256 => address) internal _owners;
-    mapping(uint256 => License) internal _licenses;
-    mapping(uint256 => bool) public primarySaleSettled;
+    mapping(uint256 => bool) internal _settled;
     mapping(uint256 => address) public pinnedRenderer;
     mapping(uint256 => uint256) internal _linked;
 
@@ -224,8 +202,9 @@ contract EditionsStreamMock {
 
     // ----- knobs
 
-    function setEditions(address e) external {
-        editions = e;
+    function bind(address workRecords_, address editions_) external {
+        workRecords = workRecords_;
+        editions = editions_;
     }
 
     function setLinkMode(LinkMode mode) external {
@@ -236,67 +215,53 @@ contract EditionsStreamMock {
         reentryItem = abi.encode(item);
     }
 
-    function mintMaster(bytes32 root, PackageItem calldata item, address to)
-        external
-        returns (uint256 id)
-    {
-        bytes32 itemHash = WorksHashing.itemHash(item);
-        EditionsRegistryMock(packageRegistry).consume(root, itemHash, item.contentId);
+    function mintMaster(PackageItem calldata item, address to) external returns (uint256 id) {
+        bytes32 itemHash = WorksHashing.itemHashCalldata(item);
+        EditionsRegistryMock(packageRegistry).consume(itemHash, item.contentHash);
         id = ++totalMinted;
-        IStream.WorkInfo storage w = _works[id];
-        w.packageRoot = root;
+        IStream.WorkCore storage w = _works[id];
         w.itemHash = itemHash;
-        w.contentId = item.contentId;
-        w.metadataHash = item.metadataHash;
-        w.collectionId = item.collectionId;
         w.artistId = uint256(uint160(item.parties[0].account));
+        w.collectionId = item.collectionId;
         w.kind = item.kind;
         w.seedPolicy = item.seedPolicy;
         _owners[id] = to;
-        _licenses[id] = item.license;
     }
 
-    /// @dev The auction settled and delivered the master to `to`.
+    /// @dev The auction settled and delivered the master to `to` (or a later transfer).
     function settle(uint256 id, address to) external {
         _owners[id] = to;
-        primarySaleSettled[id] = true;
+        _settled[id] = true;
     }
 
     /// @dev An upheld dispute burns the master in custody.
     function burnMaster(uint256 id) external {
         delete _owners[id];
-    }
-
-    function setLicense(uint256 id, License calldata next) external {
-        _licenses[id] = next;
+        delete _settled[id];
     }
 
     function pinRenderer(uint256 id, address renderer) external {
         pinnedRenderer[id] = renderer;
     }
 
-    function corruptContentId(uint256 id, bytes32 contentId) external {
-        _works[id].contentId = contentId;
-    }
-
     // ----- the IStream slice Editions reads
-
-    function work(uint256 id) external view returns (IStream.WorkInfo memory) {
-        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
-        return _works[id];
-    }
-
-    function ownerOf(uint256 id) external view returns (address holder) {
-        holder = _owners[id];
-        if (holder == address(0)) revert IStream.UnknownWork(id);
-    }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId;
     }
 
-    function licenseOf(uint256 id) external view returns (License memory) {
-        return _licenses[id];
+    function work(uint256 id) external view returns (IStream.WorkCore memory) {
+        if (_owners[id] == address(0)) revert IStream.UnknownWork(id);
+        return _works[id];
+    }
+
+    function primarySaleSettled(uint256 id) external view returns (bool) {
+        return _settled[id] && _owners[id] != address(0);
+    }
+
+    function ownerOf(uint256 id) external view returns (address holder) {
+        holder = _owners[id];
+        if (holder == address(0)) revert IStream.UnknownWork(id);
     }
 
     function rendererOf(uint256 id) external view returns (address r) {
@@ -310,7 +275,7 @@ contract EditionsStreamMock {
     }
 
     function linkEdition(uint256 tokenId, uint256 editionId) external {
-        if (msg.sender != editions) revert IStream.NotEditions(msg.sender);
+        if (msg.sender != editions) revert IStream.NotBound(msg.sender);
         if (_works[tokenId].kind != ItemKind.EDITION_MASTER || _linked[tokenId] != 0) {
             revert IStream.EditionLinkInvalid(tokenId);
         }
@@ -325,13 +290,6 @@ contract EditionsStreamMock {
         }
         _linked[tokenId] = linkMode == LinkMode.WRONG_ID ? editionId + 1 : editionId;
         emit EditionLinked(tokenId, editions, editionId);
-    }
-}
-
-/// @dev The work-records satellite, reduced to reporting a master's metadata change.
-contract EditionsWorkRecordsMock {
-    function notify(Editions editions, uint256 workId) external {
-        editions.notifyMasterUpdated(workId);
     }
 }
 
