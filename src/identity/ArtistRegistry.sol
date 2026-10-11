@@ -22,6 +22,7 @@ import {
 } from "../interfaces/types/IdentityTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
@@ -86,6 +87,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     uint64 public constant override CONTEST_TIMEOUT = 365 days;
     /// @notice The most federated contracts listed per artist.
     uint256 public constant MAX_FEDERATED = 64;
+    /// @dev Gas forwarded to the statement log's `artistResolver()` when it is bound.
+    uint256 private constant BIND_READ_GAS = 50_000;
 
     struct Artist {
         ArtistIdentity identity;
@@ -155,11 +158,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     /// @dev The statement log does not implement ERC-165: code, no EIP-7702, and its
-    ///      `artistResolver()` naming this registry are checked instead.
+    ///      `artistResolver()` naming this registry are checked instead, with a bounded read.
     function bindStatementLog(address target) external restricted {
         _checkBinding(target, bytes4(0));
-        (bool ok, bytes memory resolver) =
-            target.staticcall(abi.encodeWithSignature("artistResolver()"));
+        (bool ok, bytes memory resolver) = BoundedCall.tryRead(
+            target, abi.encodeWithSignature("artistResolver()"), BIND_READ_GAS, 32, 0
+        );
         if (!ok || resolver.length != 32 || abi.decode(resolver, (address)) != address(this)) {
             revert InvalidBinding(target);
         }

@@ -6,6 +6,7 @@ import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import {
     DisputeOutcomeLogMock,
+    HostileResolverMock,
     PullOnlyPayeeMock,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
@@ -395,5 +396,26 @@ contract ContestedOverridesTest is IdentityFixture {
         emit IArtistRegistry.Bound("STATEMENT_LOG", address(mine));
         vm.prank(admin);
         registry.bindStatementLog(address(mine));
+    }
+
+    /// The resolver read is bounded: a log that needs more than 50,000 gas or returns more than
+    /// one word is refused, even when it names this registry.
+    function test_BindStatementLog_ResolverReadIsBounded() public {
+        IdentityFixture.setUp();
+        HostileResolverMock fair = new HostileResolverMock(address(registry), 0, 32);
+        HostileResolverMock hungry = new HostileResolverMock(address(registry), 60_000, 32);
+        HostileResolverMock wide = new HostileResolverMock(address(registry), 0, 64);
+        vm.startPrank(admin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(hungry))
+        );
+        registry.bindStatementLog(address(hungry));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(wide))
+        );
+        registry.bindStatementLog(address(wide));
+        registry.bindStatementLog(address(fair));
+        vm.stopPrank();
+        assertEq(registry.statementLog(), address(fair));
     }
 }

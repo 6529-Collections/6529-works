@@ -141,3 +141,28 @@ contract DisputeOutcomeLogMock {
         latestDisputeOutcome[token][id] = outcome;
     }
 }
+
+/// @notice Answers any call with `resolver` as its first word, after burning `burn` gas, in a
+///         return of `size` bytes (at least 32).
+contract HostileResolverMock {
+    address private immutable resolver;
+    uint256 private immutable burn;
+    uint256 private immutable size;
+
+    constructor(address resolver_, uint256 burn_, uint256 size_) {
+        resolver = resolver_;
+        burn = burn_;
+        size = size_;
+    }
+
+    fallback() external {
+        uint256 start = gasleft();
+        while (start - gasleft() < burn) { }
+        address r = resolver;
+        uint256 n = size;
+        assembly {
+            mstore(0, r)
+            return(0, n)
+        }
+    }
+}
