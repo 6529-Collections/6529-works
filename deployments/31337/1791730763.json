@@ -1,7 +1,7 @@
 {
   "cc0TextFileId": "0x9f46e20456eeea030a50165bd0e75d2b4cd08673c4768dcc49d095bbf4169bff",
   "chainId": 31337,
-  "configHash": "0x4f25b97456f8030258ba946f0495a3e6cd27a7c774fe28e8a0b0e3a152b459da",
+  "configHash": "0xbc2787657c1abe3af214cf76690af0219d7281141e2add6fcbeb195822b9bc4a",
   "contracts": {
     "ArtistRegistry": {
       "address": "0x5922d96F3a7d2cbF3d87bA5BbBb2d3B6958FAC14",
@@ -32,8 +32,8 @@
       "codehash": "0x6ccb25a2c362e0e55bcbe3946467e7390bc1aec97a15774d10051db7e4228e48"
     },
     "DutchSale": {
-      "address": "0x0E6993470FB1A2b5eb22C1B9548c946e68920717",
-      "codehash": "0x7e646419b8ae170ac109a7e9aa0a0c2ff8881db93a848ae6133119df14d2a5ac"
+      "address": "0x46F2711AAd236135C38aC3867da0c493C888d685",
+      "codehash": "0xf7333672e479b08795c6dac65611ee24e091a700373578fa5fba72c2e8639e2b"
     },
     "EconomicsResolver": {
       "address": "0xe0b55d44C08c0E3C4239583fe6a63719D1C9316E",
@@ -44,8 +44,8 @@
       "codehash": "0x43812c71e0ef932f180cd9ac7e3ef424c0954af40df421ca15fc35e940c5f325"
     },
     "FixedPriceSale": {
-      "address": "0x9CD8A36890E9A84295c99d122859771848706a26",
-      "codehash": "0xbccf409344b9cc60265b92c9f809f6ceec7e1101aeef3a8ef519c5ce6271c6a3"
+      "address": "0xFEc72cf3B3fe28c1f0A08dA33c1c7A8a13A228F9",
+      "codehash": "0x510b3e0d18e3fb98ee5e9199dff6e42794a00a5f9ea9a2ab172b425502464ec0"
     },
     "GovernanceConfigurator": {
       "address": "0xC8Cd434F1Cef60f0C24da0376820D9ace2817Ee0",
@@ -76,12 +76,12 @@
       "codehash": "0xeb6453457acc878cc0749846bb38e9499fcdffbb5a09f7cc5ec154ae8fd170c9"
     },
     "Stream": {
-      "address": "0xbB3Ccef3C5C6Dd2526132b27f7Eab697139b76F6",
-      "codehash": "0x9be2d6dc18623c92d01952892bdf08e26babb99994127e19e0f4a903508c7f40"
+      "address": "0xf6eD423604E4474461C81CE40726a1df68d656bD",
+      "codehash": "0xd0d406c45f01f29beed81693a2f29ef3619ad2fc45974e0c9481844eb2d1c0d4"
     },
     "WorkRecords": {
-      "address": "0xE2c298a02b4A9a6Ef0fAAFF446FEA081024a80e3",
-      "codehash": "0xca572312f99e295c21ee19a0481498ae5bdbe0a4072eed36f8273fd245409016"
+      "address": "0xe72E90D6DAf9ee909A3D934E99443C3468949ec0",
+      "codehash": "0x835a10964307d176454f937e0d24a5db9e7de20542276664e777b39eebae08ba"
     },
     "WorksAccessManager": {
       "address": "0x94C6ab32855774E07f953b5404B3AEaFEBC7a6C4",
@@ -106,7 +106,7 @@
     "DelegationManagement"
   ],
   "startBlock": 0,
-  "timestamp": 1791729827,
+  "timestamp": 1791730763,
   "wiringCalls": 11,
-  "wiringHash": "0xe90e3fce9ce91ca5723a78d137ada01ecf2840ef9c760d73a371fd003a32092a"
+  "wiringHash": "0x109ee698850cfdd6cb10a40c17097b1b395513d00cd7053b7e063019235f9f3e"
 }
