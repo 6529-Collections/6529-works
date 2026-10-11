@@ -51,7 +51,10 @@ library SSTORE2 {
         uint256 first = 1;
         if (codeLength != 0) {
             assembly ("memory-safe") {
-                extcodecopy(pointer, 0, 0, 1) // scratch space
+                // Copy one code byte into scratch space. `mload(0)` reads a full word, but
+                // only its most significant byte (the copied code byte) is meaningful; the
+                // other 31 bytes are stale scratch contents and `byte(0, ...)` discards them.
+                extcodecopy(pointer, 0, 0, 1)
                 first := byte(0, mload(0))
             }
         }

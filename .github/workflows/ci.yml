@@ -99,7 +99,65 @@ jobs:
         run: forge test
 
       - name: Budget gates
-        run: python tools/check_budgets.py
+        # The measured profile is explicit: adding a Foundry profile must not silently
+        # change which bytecode the EIP-170 gate measures.
+        run: python tools/check_budgets.py --profile default
 
       - name: Budget checker unit tests
         run: python -m tools.test_check_budgets
+
+  static-analysis:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    # Runs in parallel with Contracts and counts against the same 15-minute CI budget.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12.13"
+
+      # Slither compiles through Foundry (crytic-compile runs `forge build`).
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Install Slither
+        # Every package is pinned and hash-checked; wheels only, so nothing is built.
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary=:all: --no-deps -r requirements-tools.lock
+
+      - name: Triage checker unit tests
+        run: python -m tools.test_check_slither
+
+      - name: Slither
+        # Fails on any High or Medium finding without a row in docs/security/slither-triage.md.
+        run: python tools/check_slither.py

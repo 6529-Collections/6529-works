@@ -119,6 +119,10 @@ library BoundedCall {
             offset := mload(add(data, 0x20))
             length := mload(add(data, 0x40))
         }
+        // `length > data.length` is a cheap early-out, not the payload check. It makes an absurd
+        // length (for example near 2**256) return `false` instead of overflowing in `_roundUp`
+        // when the caller's `maxLength` is huge. The exact check `data.length - 64 == padded`
+        // below is what binds the length to the payload and rejects trailing bytes.
         if (offset != 32 || length > maxLength || length > data.length) return (false, value);
         uint256 padded = _roundUp(length);
         if (data.length - 64 != padded) return (false, value);

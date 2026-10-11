@@ -15,6 +15,11 @@
    - invariants for anything that moves money;
    - gas checks where the budgets apply.
 5. `forge build` and `forge test` must pass, and the CI budgets must hold.
+6. Static analysis must stay clean: Slither runs in CI, and a High or Medium finding
+   needs a reviewed row in [docs/security/slither-triage.md](docs/security/slither-triage.md)
+   (or a fix). Run it locally with `python tools/check_slither.py` after
+   `python -m pip install -r requirements-tools.in`, which installs the same pinned Slither
+   on any platform; CI installs the Linux hash lock, `requirements-tools.lock`.
 
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md),
 never in public issues or PRs.

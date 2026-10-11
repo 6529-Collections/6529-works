@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 _SPEC = importlib.util.spec_from_file_location(
     "check_budgets", Path(__file__).with_name("check_budgets.py")
@@ -174,16 +175,105 @@ class BudgetTest(unittest.TestCase):
         self.assertIn("A runtime 24577 > 24576", out)
         self.assertIn("B initcode 49153 > 49152", out)
 
-    def test_root_and_profile_detection(self) -> None:
+    def test_malformed_size_entries_fail_naming_the_contract(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
+        malformed = {
+            "Good": {"runtime_size": 100, "init_size": 120},
+            "NotAnObject": 123,
+            "NullEntry": None,
+            "ListEntry": [1, 2],
+            "MissingInit": {"runtime_size": 100},
+            "MissingRuntime": {"init_size": 100},
+            "StringSize": {"runtime_size": "100", "init_size": 120},
+            "FloatSize": {"runtime_size": 100.5, "init_size": 120},
+            "BoolSize": {"runtime_size": True, "init_size": 120},
+            "NullSize": {"runtime_size": None, "init_size": 120},
+            "NegativeSize": {"runtime_size": -1, "init_size": 120},
+        }
+        code, out = self.repo.run("--sizes-json", str(self.repo.sizes(malformed)))
+        self.assertEqual(code, 1)
+        for name in malformed:
+            if name != "Good":
+                self.assertIn(f"FAIL {name}: malformed size entry", out)
+        self.assertNotIn("Good:", out)
+        self.assertIn("FAIL 11 contracts within EIP-170/EIP-3860 (largest Good 100 bytes)", out)
+
+    def test_malformed_entry_does_not_hide_an_oversized_contract(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
+        sizes = {
+            "Broken": {"runtime_size": "big"},
+            "Huge": {"runtime_size": 24_577, "init_size": 100},
+        }
+        code, out = self.repo.run("--sizes-json", str(self.repo.sizes(sizes)))
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL Broken: malformed size entry", out)
+        self.assertIn("FAIL Huge runtime 24577 > 24576", out)
+
+    def test_only_malformed_entries_report_no_largest_contract(self) -> None:
+        report = cb.Report()
+        cb.check_sizes({"Broken": {}}, report)
+        self.assertEqual(len(report.failures), 2)
+        self.assertIn("FAIL Broken: malformed size entry", report.failures[0])
+        self.assertIn("(no contracts)", report.failures[1])
+
+    def test_non_object_forge_output_fails_cleanly(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
+        code, out = self.repo.run("--sizes-json", str(self.repo.sizes([1, 2, 3])))
+        self.assertEqual(code, 1)
+        self.assertIn("expected a JSON object from forge", out)
+
+    def test_empty_forge_output_has_no_contracts(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
+        code, out = self.repo.run("--sizes-json", str(self.repo.sizes({})))
+        self.assertEqual(code, 0, out)
+        self.assertIn("0 contracts within EIP-170/EIP-3860 (no contracts)", out)
+
+    def test_root_is_the_nearest_foundry_toml_ancestor(self) -> None:
         (self.repo.root / "foundry.toml").write_text("[profile.default]\n", encoding="utf-8")
         nested = self.repo.root / "tools" / "v1"
         nested.mkdir(parents=True)
         self.assertEqual(cb.find_root(nested), self.repo.root)
-        self.assertEqual(cb.detect_profile(self.repo.root), "default")
+
+    def _measured_profile(self, *args: str) -> str:
+        """The profile main() asks forge to measure, without running forge."""
+        calls: list[str] = []
+
+        def fake_forge_sizes(root: Path, profile: str) -> dict:
+            calls.append(profile)
+            return {}
+
+        real = cb.forge_sizes
+        cb.forge_sizes = fake_forge_sizes
+        try:
+            code, out = self.repo.run(*args)
+        finally:
+            cb.forge_sizes = real
+        self.assertEqual(code, 0, out)
+        self.assertEqual(len(calls), 1)
+        return calls[0]
+
+    def test_measured_profile_defaults_to_default(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
+        self.assertEqual(self._measured_profile(), "default")
+
+    def test_a_v1_profile_in_foundry_toml_is_not_preferred(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
         (self.repo.root / "foundry.toml").write_text(
-            "[profile.default]\n\n[profile.v1]\nsrc = \"src\"\n", encoding="utf-8"
+            '[profile.default]\n\n[profile.v1]\nsrc = "src"\n', encoding="utf-8"
         )
-        self.assertEqual(cb.detect_profile(self.repo.root), "v1")
+        self.assertEqual(self._measured_profile(), "default")
+
+    def test_explicit_profile_flag_is_used(self) -> None:
+        self.repo.write("A.sol", "contract A {}\n")
+        self.assertEqual(self._measured_profile("--profile", "default"), "default")
+        self.assertEqual(self._measured_profile("--profile", "ci"), "ci")
+
+    def test_forge_runs_under_the_requested_profile(self) -> None:
+        completed = mock.Mock(returncode=0, stdout="{}", stderr="")
+        with mock.patch.object(cb.subprocess, "run", return_value=completed) as run:
+            self.assertEqual(cb.forge_sizes(self.repo.root, "ci"), {})
+        self.assertEqual(run.call_args.kwargs["env"]["FOUNDRY_PROFILE"], "ci")
+        self.assertEqual(run.call_args.args[0], ["forge", "build", "--sizes", "--json"])
 
     def test_missing_src_is_an_error(self) -> None:
         (self.repo.root / "src").rmdir()
