@@ -99,16 +99,20 @@ A deploy script must:
    the hardened one and its only initial admin is the configurator. The deployer is
    the only account allowed to call `configure`.
 2. **Deploy every target with `authority = configurator.worksManager()`.**
-3. **Call `configurator.configure(cfg, manifestHash)`.**
+3. **Call `configurator.configure(cfg, manifestHash, wiring)`.**
    - `cfg.grants` lists `(role, account)` pairs.
    - `cfg.targets` lists each target with its `(selector, role)` pairs.
-   - The call validates `cfg` and installs, in one transaction:
+   - `wiring` lists the genesis calls (see "Genesis wiring" below).
+   - The call validates `cfg` and `wiring` and installs, in one transaction:
      - labels, guardians and grant delays for every role;
      - 30-day target admin delays, the manager's included;
+     - the genesis wiring calls, as zero-delay `ADMIN`;
      - function roles;
      - grants at their class delays.
    - It then renounces `ADMIN` and emits `GovernanceConfigured(manager,
-     keccak256(abi.encode(cfg)), manifestHash)`.
+     keccak256(abi.encode(cfg)), manifestHash, keccak256(abi.encode(wiring)))`.
+   - [`config/genesis.example.json`](../../config/genesis.example.json) is the
+     committed example of `cfg` and `wiring` for every v1 contract.
 4. **Wait `minSetback()` (5 days).** Grant and target-admin delays become
    effective then. The admins' 30-day execution delay covers that window.
 5. **Run `configurator.verify(cfg)` (CI readback via `eth_call`).** It reverts with
@@ -116,6 +120,25 @@ A deploy script must:
    - the configurator still holds `ADMIN`;
    - a configured admin lacks the full 30-day delay, or has a reduction pending;
    - any role, holder or selector differs from `cfg`.
+
+**Genesis wiring.** The one-shot `bind*` calls (`IStream.bindWorkRecords`,
+`IPackageRegistry.bindStream`, `IArtistRegistry.bindPackageRegistry` and the rest)
+and the admitted-minter and sale-target grants are `restricted`. After genesis they
+resolve to a 30-day role, or to `ADMIN` if unmapped, so the system could not operate
+for 30 days. `configure` therefore executes them itself:
+
+- **Timing:** they run after the roles and target admin delays are installed, but
+  before any selector is mapped. Every wired selector still resolves to the
+  configurator's zero-delay `ADMIN`, even one that `cfg` then maps to a 30-day role,
+  such as `setAdmittedMinter`.
+- **Allowed calls:** at most `MAX_WIRING_CALLS` (64), each to a configured target and
+  never with an access-management selector (the manager's role-admin, scheduling and
+  cancel functions, or `setAuthority`). A call to the manager is rejected, because the
+  manager is never a configured target.
+- **Failure:** a reverting call reverts the whole configuration with the callee's
+  error, and the configurator keeps no role either way.
+- **Gas:** the example genesis configuration with 64 binds costs about 6.5M gas, 39%
+  of the EIP-7825 cap of 2^24, including worst-case calldata.
 
 **What `validate` rejects** (and readback re-checks where `AccessManager` exposes it):
 
