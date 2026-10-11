@@ -38,19 +38,20 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     }
 
     /// @notice A work's on-chain state.
-    /// @dev `contentId`, `kind`, `collectionId`, `serial`, `artistId`, `split`, `seedPolicy`,
+    /// @dev `contentId`, `kind`, `collectionId`, `serial`, `artistId`, `seller`, `seedPolicy`,
     ///      `packageRoot` and `itemHash` never change after mint. `metadataHash` is the hash of the
     ///      current work record (initially the approved one). `recordPublished` is true once a
-    ///      record with that hash is stored. `renderer` is zero until finalize pins it.
+    ///      record with that hash is stored. `renderer` is zero until finalize pins it. `seller`
+    ///      is the predicted address of the split wallet of the item's payees.
     struct WorkInfo {
         bytes32 packageRoot;
         bytes32 itemHash;
         bytes32 contentId;
         bytes32 metadataHash;
-        bytes32 split;
+        address seller;
         uint256 collectionId;
         uint64 serial;
-        uint64 artistId;
+        uint256 artistId;
         ItemKind kind;
         SeedPolicy seedPolicy;
         bool recordPublished;
@@ -66,7 +67,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
         uint256 indexed collectionId,
         bytes32 indexed itemHash,
         uint64 serial,
-        uint64 artistId,
+        uint256 artistId,
         ItemKind kind,
         bytes32 packageRoot,
         bytes32 contentId,
@@ -159,7 +160,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     function packageRegistry() external view returns (address);
     /// @notice The artist registry that resolves each work's artist (immutable).
     function artistRegistry() external view returns (address);
-    /// @notice The economics resolver whose terms works lock at mint (immutable).
+    /// @notice The economics resolver whose `PRODUCT_STREAM` terms works lock at mint
+    ///         (immutable).
     function economics() external view returns (address);
     /// @notice The content store holding media, license texts and dependencies (immutable).
     function contentStore() external view returns (address);

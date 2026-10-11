@@ -13,19 +13,30 @@ address constant CURRENCY_ETH = address(0);
 // locked currency.
 address constant CURRENCY_DEFAULT = address(type(uint160).max);
 
-/// @notice One recipient of a split wallet (ADR 0001 sections 7 and 11).
-/// @dev When `artistResolved` is true the wallet pays `IArtistRegistry.payoutOf` of `account`'s
-///      artist ID at release time, so recovery and estates redirect balances already accrued
-///      (ADR 0001 section 11 "Hardening"); otherwise it pays `account` itself. `share` is out of
-///      `SHARE_DENOMINATOR`; a split's accounts are distinct, its shares sum to 100,000, and it
-///      has at most `Limits.MAX_SPLIT_RECIPIENTS` recipients.
-struct SplitRecipient {
+// Product identifiers (ADR 0001 section 2). They scope default currencies, economics and
+// content uniqueness.
+bytes32 constant PRODUCT_STREAM = keccak256("PRODUCT_STREAM");
+bytes32 constant PRODUCT_EDITIONS = keccak256("PRODUCT_EDITIONS");
+bytes32 constant PRODUCT_FEDERATED = keccak256("PRODUCT_FEDERATED");
+
+/// @notice One share holder of a split wallet: an exact mirror of the economics lane's
+///         `ISplitWallet.Payee` (ADR 0001 sections 7 and 11), to be deduplicated when that
+///         interface moves here.
+/// @dev Exactly one of `artistId` and `account` is nonzero. A fixed payee names its `account`;
+///      an artist-resolved payee names its `artistId` and is paid at
+///      `IArtistRegistry.payoutAddress(artistId)` when funds are released, so recovery and
+///      estates redirect balances already accrued. `share` is out of `SHARE_DENOMINATOR` and the
+///      shares of a list sum to 100,000. A payee list is canonical when it is sorted strictly by
+///      `(artistId, account)`: fixed payees first by address, then artist-resolved payees by
+///      artist ID. The split wallet's address is a CREATE2 address committing to the canonical
+///      list, known before the wallet is deployed.
+struct Payee {
+    uint256 artistId;
     address account;
     uint32 share;
-    bool artistResolved;
 }
 
-/// @notice The network's governed economics for one product (6529 Stream, 6529 Editions).
+/// @notice The network's governed economics for one product.
 /// @dev `feeShare` is the network part of primary sales and of royalties (25,000 at launch);
 ///      `royaltyRate` is the ERC-2981 rate for new works (6,529 at launch). Both are out of
 ///      `SHARE_DENOMINATOR`.
@@ -36,30 +47,15 @@ struct ProductEconomics {
 }
 
 /// @notice The terms a new work locks at mint (ADR 0001 section 7 "locked at mint").
-/// @dev `seller` is the artist-portion split wallet. `royaltyReceiver` is the split wallet that
-///      pays royalties `SHARE_DENOMINATOR - feeShare` to `seller` and `feeShare` to
-///      `feeRecipient`. Both wallets are deployed.
+/// @dev `seller` is the split wallet of the item's payees (the artist portion). `royaltyReceiver`
+///      is the split wallet paying `SHARE_DENOMINATOR - feeShare` to `seller` and `feeShare` to
+///      `feeRecipient`. Both are predicted CREATE2 addresses: they may not be deployed yet, which
+///      is safe because ETH and ERC-20 transfers to them are held until anyone deploys the
+///      wallet, and a sale start never pays the roughly 1.6M gas a deployment costs.
 struct WorkTerms {
     address seller;
     address feeRecipient;
     uint32 feeShare;
     address royaltyReceiver;
     uint32 royaltyRate;
-}
-
-/// @notice Whether a currency may be used (ADR 0001 sections 5 and 7).
-/// @dev ACTIVE currencies may start new sales. DEPRECATED currencies start no new sales but
-///      everything already owed in them stays claimable and withdrawable.
-enum CurrencyStatus {
-    NONE,
-    ACTIVE,
-    DEPRECATED
-}
-
-/// @notice A currency's governed configuration.
-/// @dev `incrementFloor` is the absolute minimum English-auction bid increment in that
-///      currency's units (0.001 ETH for ETH); the increment is `max(5%, incrementFloor)`.
-struct CurrencyConfig {
-    CurrencyStatus status;
-    uint256 incrementFloor;
 }

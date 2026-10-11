@@ -6,7 +6,9 @@ pragma solidity ^0.8.24;
 ///         start, settlement and claim events, the sale kind, the admitted token contracts, and
 ///         pull-based credits.
 /// @dev Adapters mint only through `IMintTarget` and lock the returned `PrimaryTerms` when a sale
-///      starts. Proceeds are pushed to the seller split wallet and the network fee recipient;
+///      starts. Proceeds are pushed to the seller split wallet and the network fee recipient.
+///      The seller wallet is a predicted CREATE2 address that may not be deployed yet: adapters
+///      pay it by plain transfer and never deploy it (about 1.6M gas) on a sale path;
 ///      a push that fails is credited to the revenue escrow instead, so no recipient can block
 ///      a sale. Refunds and overpayments are credited here and claimed by the account (pull).
 ///      Every ERC-20 movement is checked by exact balance delta. A sale ID is unique within one
@@ -34,7 +36,7 @@ interface ISaleAdapter {
     /// @param quantity The number of tokens sold.
     /// @param currency The locked currency.
     /// @param price The realized total price, equal to `sellerProceeds + fee`.
-    /// @param seller The artist-portion split wallet.
+    /// @param seller The artist-portion split wallet (possibly not yet deployed).
     /// @param sellerProceeds The amount paid (or escrowed) to `seller`.
     /// @param feeRecipient The network recipient.
     /// @param fee The amount paid (or escrowed) to `feeRecipient`.

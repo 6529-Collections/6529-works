@@ -18,10 +18,7 @@ import { IFixedPriceSale } from "../../src/interfaces/IFixedPriceSale.sol";
 import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
-import { IRevenueEscrow } from "../../src/interfaces/IRevenueEscrow.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
-import { ISplitFactory } from "../../src/interfaces/ISplitFactory.sol";
-import { ISplitWallet } from "../../src/interfaces/ISplitWallet.sol";
 import { IStream } from "../../src/interfaces/IStream.sol";
 import { Limits } from "../../src/interfaces/types/Limits.sol";
 
@@ -33,24 +30,21 @@ contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xc488ca68), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0xddf03480), "IStream");
-        assertEq(type(IEditions).interfaceId, bytes4(0x9d032088), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0xf1fda5e4), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x0f69444d), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x784c9e1c), "IEnglishAuction");
         assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x4b904dda), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0x5a75af36), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x8ca10840), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0x8b682b8a), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0xcce4e4aa), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
-        assertEq(type(ISplitFactory).interfaceId, bytes4(0x5ca6fba4), "ISplitFactory");
-        assertEq(type(ISplitWallet).interfaceId, bytes4(0xd474cce1), "ISplitWallet");
-        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x36775333), "IEconomicsResolver");
-        assertEq(type(IRevenueEscrow).interfaceId, bytes4(0xe7b2cf38), "IRevenueEscrow");
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0x28b21349), "IArtistRegistry");
+        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x70039a3b), "IEconomicsResolver");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xa31364a7), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0xc99f1cff), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0xe3ffb038), "IEntropyModule");
-        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x51b0a0ec), "IFederationRegistry");
+        assertEq(type(IFederationRegistry).interfaceId, bytes4(0x826099fe), "IFederationRegistry");
     }
 
     /// @dev The minimal mint surface stays tiny: three functions.
@@ -72,9 +66,16 @@ contract InterfacesCompileTest is Test {
         assertEq(address(introspection), address(0x6529));
     }
 
+    /// @dev Split wallets resolve artist payouts through the economics lane's
+    ///      `IArtistPayoutResolver.payoutAddress(uint256)`, which the artist registry implements.
+    function test_artistRegistryIsPayoutResolver() public pure {
+        assertEq(
+            IArtistRegistry.payoutAddress.selector, bytes4(keccak256("payoutAddress(uint256)"))
+        );
+    }
+
     function test_limits() public pure {
         assertEq(Limits.MAX_PARTIES, 16);
-        assertEq(Limits.MAX_SPLIT_RECIPIENTS, 100);
         assertEq(Limits.MAX_WORK_RECORD_BYTES, 24_575);
         assertEq(Limits.MAX_URI_BYTES, 2_048);
     }

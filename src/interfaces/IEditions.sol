@@ -24,10 +24,10 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param terms The edition terms from the approved package item.
     /// @param minted Copies minted so far.
     /// @param windowStart When the first copy was minted (the OPEN window starts), or zero.
-    /// @param seller The artist-portion split wallet, locked at creation.
+    /// @param seller The artist-portion split wallet (a predicted address), locked at creation.
     /// @param feeRecipient The network recipient, locked at creation.
     /// @param feeShare The network share of primary sales, out of 100,000, locked at creation.
-    /// @param royaltyReceiver The royalty split wallet, locked at creation.
+    /// @param royaltyReceiver The royalty split wallet (a predicted address), locked at creation.
     /// @param royaltyRate The royalty rate, out of 100,000, locked at creation.
     struct Edition {
         bytes32 contentId;
@@ -68,7 +68,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         `(stream, workId, contentId)` and calls `IStream.linkEdition`. Permissionless: the
     ///         item is checked against the master's committed item hash. Claims the content hash
     ///         (the decoded SHA-256 of `contentId`) in the package registry for the Editions
-    ///         product and locks economics from the resolver.
+    ///         product and locks `PRODUCT_EDITIONS` economics from the resolver.
     /// @param workId The master's Stream token ID.
     /// @param item The master's package item.
     /// @return editionId The new edition ID (equal to `workId`).

@@ -8,11 +8,14 @@ import { Payment } from "./types/SaleTypes.sol";
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5, 9
 ///         and 12).
 /// @dev Starting is permissionless: anyone may submit the start, which mints the token into this
-///      adapter's custody through `IMintTarget.mint` and starts the clock. For a VRF work the
+///      adapter's custody through `IMintTarget.mint` and starts the clock. The start never
+///      deploys a split wallet (about 1.6M gas): the seller and royalty wallets are predicted
+///      CREATE2 addresses, paid by plain transfer and deployed later by anyone. For a VRF work the
 ///      start requests the seed from the entropy module and the clock starts in `activate`, once
 ///      the seed is delivered; no bid is accepted before. Bids must reach `minimumBid`: the
 ///      opening bid while there is none, then the high bid plus `max(incrementShare, the
-///      currency's increment floor)`. A bid in the last `extensionWindow` seconds moves the end
+///      currency's increment floor)`, the floor read from the economics lane's asset allowlist
+///      and locked at start. A bid in the last `extensionWindow` seconds moves the end
 ///      to `extensionWindow` seconds after it. An outbid bidder is credited (pull). Settlement
 ///      is permissionless after the end and never depends on the winner accepting the token:
 ///      a failed delivery leaves a pending claim. With no bids the token goes to the lead artist.
@@ -42,8 +45,8 @@ interface IEnglishAuction is ISaleAdapter {
         uint32 incrementShare;
     }
 
-    /// @notice One auction; `seller`, `feeRecipient`, `feeShare`, `creator` and `currency` are
-    ///         locked at start.
+    /// @notice One auction; `seller`, `feeRecipient`, `feeShare`, `creator`, `currency` and
+    ///         `incrementFloor` are locked at start.
     /// @param bidder The high bidder (the payer of the high bid), or zero.
     /// @param recipient Who receives the token if the high bid wins.
     /// @param pausedAt When the current pause began, or zero.
@@ -52,6 +55,7 @@ interface IEnglishAuction is ISaleAdapter {
         address token;
         uint256 tokenId;
         address currency;
+        uint256 incrementFloor;
         address seller;
         address feeRecipient;
         uint32 feeShare;

@@ -30,12 +30,12 @@ ADR wins. The precise contract surfaces are the interfaces in
      |   |        v                          +----------------+  +-------------+  |
      |   |  +-----------------+   payout     |    IStream     |  |  IEditions  |  v
      |   |  | IArtistRegistry |<-------------|  ERC-721, works|<>|  ERC-1155   | +--------------+
-     |   |  | (IArtistRole-   |              |  records, pins |  |  editions   | |IRevenueEscrow|
+     |   |  | (IArtistRole-   |              |  records, pins |  |  editions   | |RevenueEscrow*|
      |   |  |  Resolver)      |              +----------------+  +-------------+ +--------------+
      |   |  +-----------------+                |  |  |  |  royalty, seller
      |   |        ^ consolidation              |  |  |  v
      |   |        | (6529 delegation)          |  |  |  +--------------+  +---------------+
-     |   +--------+-- consume (SYSTEM) --------+  |  |  | ISplitFactory|->| ISplitWallet  |
+     |   +--------+-- consume (SYSTEM) --------+  |  |  | SplitFactory*|->| SplitWallet*  |
      |                                            |  |  +--------------+  | (artist-      |
      |    +--------------------+   terms, currency|  |                    |  resolved pay)|
      |    | IEconomicsResolver |<-----------------+  |                    +---------------+
@@ -58,7 +58,7 @@ ADR wins. The precise contract surfaces are the interfaces in
 | `IPackageRegistry`, `ICurationVerifier` | package registry, v1 verifier (`src/curation/`) | §3 |
 | `IContentStore`, `IDependencyRegistry`, `IRenderer` | content store, dependency registry, renderer (`src/content/`) | §8 |
 | `ISaleAdapter`, `IEnglishAuction`, `IFixedPriceSale`, `IDutchSale` | shared sale adapters (`src/sales/`) | §5, §6, §12 |
-| `ISplitFactory`, `ISplitWallet`, `IEconomicsResolver`, `IRevenueEscrow` | money routing (`src/economics/`) | §5, §7 |
+| `IEconomicsResolver`; the economics lane's `ISplitFactory`, `ISplitWallet`, `IRevenueEscrow`, `IAssetAllowlist`, `IClaimRouter`, `IArtistPayoutResolver` (marked * above) | money routing (`src/economics/`) | §5, §7 |
 | `IArtistRegistry` (+ `IArtistRoleResolver`), `IConsolidationSource` | artist registry, consolidation adapter (`src/identity/`) | §11 |
 | `IStatementLog` | statement log (`src/records/`) | §12, §15 |
 | `IEntropyModule` | optional VRF module (`src/stream/` or its own folder) | §9 |
@@ -66,11 +66,15 @@ ADR wins. The precise contract surfaces are the interfaces in
 
 Shared types live in [`src/interfaces/types/`](../src/interfaces/types/):
 package items and sale terms (`PackageTypes`), media and work records
-(`ContentTypes`), payments and primary terms (`SaleTypes`), shares, splits and
-currencies (`EconomicsTypes`), artist identities (`IdentityTypes`), the bounds on
+(`ContentTypes`), payments and primary terms (`SaleTypes`), shares, payees,
+currencies and product IDs (`EconomicsTypes`), artist identities
+(`IdentityTypes`), the bounds on
 every user-supplied array (`Limits`), and the one definition of every protocol
 hash (`WorksHashing`). Statement types and kinds
-come from the records lane, content-store types from the content lane.
+come from the records lane, content-store types from the content lane, and
+the split, escrow and allowlist interfaces from the economics lane (in
+`src/economics/interfaces/` until they move here; `Payee` mirrors its
+`ISplitWallet.Payee` exactly until then).
 
 ## Identifiers and hashes
 
@@ -90,13 +94,14 @@ fixed-price allowlist leaves include `block.chainid` and the adapter's address
 | item hash | `keccak256(abi.encode(PACKAGE_ITEM_DOMAIN, item))` |
 | package root | OpenZeppelin `MerkleProof` root (sorted pairs) over leaves `keccak256(bytes.concat(itemHash))`; equal to `StandardMerkleTree` with leaf values `[PACKAGE_ITEM_DOMAIN, item]` |
 | work record hash | `keccak256(abi.encode(WORK_RECORD_DOMAIN, work))`, committed as `PackageItem.metadataHash` |
-| split ID | `keccak256(abi.encode(SPLIT_DOMAIN, recipients))`; an item's split is `partySplitId(parties)` |
+| split wallet | the economics split factory's CREATE2 address over a canonical payee list (fixed payees by address, then artist-resolved payees by artist ID); predicted before deployment |
 | file ID | `keccak256(abi.encode(chunkHashes, length, encoding, mimeType, sha256Hash))` (`IContentStore.manifestId`) |
 | content ID | the file ID of a work's primary media, committed by the package item |
 | content hash | the decoded SHA-256 the content store declares for the content ID (`fileInfo(contentId).sha256Hash`); the per-product uniqueness key, independent of MIME type and encoding |
 | token ID | one global sequence on 6529 Stream, from 1, assigned at sale start, never reused |
 | edition ID | equal to the master's Stream token ID |
-| artist ID | sequential `uint64` in the artist registry, from the first package acceptance |
+| artist ID | `uint256(uint160(first authority))`, fixed when the first package acceptance creates the identity; known before any transaction and the same on every chain |
+| product ID | `PRODUCT_STREAM`, `PRODUCT_EDITIONS`, `PRODUCT_FEDERATED` (`keccak256` of the name); scopes economics, default currencies and content uniqueness |
 | sale ID | sequential per adapter |
 | kinds | `bytes32` labels: `SaleKind.*` and `StatementKinds.*`, so new kinds need no format change |
 
@@ -111,11 +116,12 @@ default when the sale starts".
 1. **Prepare (off-chain and permissionless).** The artist uploads media to
    Arweave and IPFS and registers each file's manifest in the content store
    (`registerManifest`). Tools build the package document; each item commits
-   its content ID, the work record hash, the parties and shares, the split, the
-   collection, kind, license, seed policy and sale terms. Anyone creates the
-   artist-portion split (`ISplitFactory.createSplit`, every party
-   artist-resolved) and the royalty split (artist split plus the network), so
-   the start deploys nothing.
+   its content ID, the work record hash, the parties, the canonical payee list
+   of the artist portion (shares out of 100,000; every payee a party), the
+   collection, kind, license, seed policy and sale terms. Artist IDs are derived
+   from addresses, so the payee list can name artist-resolved payees before any
+   identity exists. Split wallets are not deployed: their CREATE2 addresses are
+   predicted, and anyone may deploy them later (about 1.6M gas each).
 2. **Vote and approve.** Voters approve the package root in a 6529 wave. The
    curation signer signs `PackageApproval(packageRoot, evidenceHash)`; anyone
    calls `IPackageRegistry.registerPackage`, which asks the verifier and stores
@@ -127,8 +133,10 @@ default when the sale starts".
 5. **Start (permissionless).** Anyone calls `IEnglishAuction.start(stream,
    abi.encode(StreamMintRequest))` (or `startWithBid`). The auction calls
    `IStream.mint`, which calls `IPackageRegistry.consume` (proof, consents,
-   shares, split, move signature, single use, and uniqueness of the content hash
-   it reads from the content store), assigns the next token ID and collection serial, locks royalty and seller terms from
+   canonical payees covered by parties, move signature, single use, and
+   uniqueness under `PRODUCT_STREAM` of the content hash it reads from the
+   content store), assigns the next token ID and collection serial, locks the
+   predicted seller and royalty wallets and rates from
    `IEconomicsResolver.newWorkTerms`, mints into auction custody and returns
    `PrimaryTerms`. The auction locks the currency and terms and starts the
    24-hour clock. For a VRF work it calls `IEntropyModule.request`, and the
@@ -139,12 +147,13 @@ default when the sale starts".
    intent).
 7. **Settle (permissionless).** After the end, `settle` delivers the token to
    the winner, or records a pending claim if delivery fails (`claimDelivery`),
-   and pays the seller split and the network fee, crediting the revenue escrow
-   if a push fails. With no bids the token goes to the lead artist.
+   and pays the seller wallet (deployed or not) and the network fee, depositing
+   into the revenue escrow if a push fails. With no bids the token goes to the lead artist.
 8. **Royalties.** Marketplaces read `royaltyInfo` (6.529% at launch), which
    reads the terms locked at mint without any external call. Royalties flow to
-   the royalty split; recipients `release` from split wallets, and
-   artist-resolved shares pay the artist registry's current payout address.
+   the royalty wallet; payees `release` from split wallets (or in batches
+   through the claim router), and artist-resolved payees are paid at
+   `IArtistRegistry.payoutAddress(artistId)`, read at release time.
 
 ### Edition master and edition sale
 
@@ -152,7 +161,7 @@ default when the sale starts".
    price, currency, sale kind). The master is auctioned as above.
 2. Anyone calls `IEditions.createEdition(workId, item)`. Editions checks the
    item against the master's committed item hash, claims the master's content
-   hash for the Editions product, locks economics, records `(stream, workId, contentId)` and
+   hash under `PRODUCT_EDITIONS`, locks economics, records `(stream, workId, contentId)` and
    calls `IStream.linkEdition`. Both directions are written in one transaction
    and never change; the edition ID equals the master's token ID.
 3. The lead artist or the PLATFORM role opens a sale on the fixed-price or
@@ -160,7 +169,7 @@ default when the sale starts".
    root of leaves bound to the receiving wallet (or the payer, for payer-keyed
    phases), a per-wallet cap and an optional per-wallet price.
 4. Each purchase calls `IEditions.mint` through the adapter, which enforces the
-   size or window, pays the seller split and the fee, and emits `SaleSettled`.
+   size or window, pays the seller wallet and the fee, and emits `SaleSettled`.
    The edition renders its master's content through the master's renderer.
 
 ### Upload, finalize, upgrade
@@ -193,7 +202,7 @@ default when the sale starts".
    guardian (`vetoChange`, veto only) can cancel.
 3. After 7 days anyone calls `executeChange`. Future payouts follow the new
    payout address, including balances already accrued in artist-resolved
-   split shares.
+   split payees.
 4. Contested changes, estates and lost keys without consolidation use
    `stageOverride` (PARAMETER_SETTER role) with a 180-day public notice; estates
    and lost keys need a year without signed activity. Only captured wallets, not
@@ -240,13 +249,13 @@ The interfaces name the role each governed selector is meant to map to:
 
 | Role | Selectors |
 | --- | --- |
-| GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` |
+| GUARDIAN | `IAssetAllowlist.deprecateAsset` (economics lane; tightening), `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` |
 | UNPAUSER | `IEnglishAuction.resume` |
 | STORAGE_OPERATOR | `IStream.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`, `IStream.addLocator` (also the artist), sale `openSale` and `closeSale` (also the creator) |
 | MINTER | `IMintTarget.mint`, `IMintTarget.burn` on 6529 Stream and 6529 Editions |
 | SYSTEM (proposed) | `IPackageRegistry.consume`, `claimContent`; `IArtistRegistry.register`, `heartbeat` (also the artist) |
-| PARAMETER_SETTER (48 hours) | `IStream.relicense`, `setContractURI`; `IEditions.setContractURI`; `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`; `IEconomicsResolver.setCurrency`, `setDefaultCurrency`, `setDefaultLicense`; `IArtistRegistry.stageOverride`; `IFederationRegistry.setStatus`, `setArtistDelisted` |
+| PARAMETER_SETTER (48 hours) | `IStream.relicense`, `setContractURI`; `IEditions.setContractURI`; `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`; `IEconomicsResolver.setDefaultLicense`; economics lane `IAssetAllowlist.admitAsset`, `setIncrementFloor`, `setDefaultCurrency`; `IArtistRegistry.stageOverride`; `IFederationRegistry.setStatus`, `setArtistDelisted` |
 | FUNDS_SETTER (14 days) | `IStream.setRoyalty`, `setOwner`; `IEditions.setOwner`; `IEconomicsResolver.setEconomics` |
 | SUCCESSOR_SETTER (30 days) | `IStream.setEditions`, `setDefaultRenderer`, `repinRenderer`; `IPackageRegistry.setVerifier`; `IArtistRegistry.setConsolidationSource`; `ISaleAdapter.setTarget` |
 
@@ -260,8 +269,9 @@ signature bound to the work's state hash.
 - **Start gas (at most 300K).** The start path consumes an item, mints, locks
   terms and opens the auction in one transaction. Implementations should store
   only what later reads need, pack it, and keep everything else in events.
-  Package preparation deploys split wallets and registers manifests beforehand,
-  and the registry can key single use and content uniqueness in one slot.
+  Split wallets are paid at predicted addresses and never deployed on the
+  start path; package preparation registers manifests beforehand; and the
+  registry can key single use and content uniqueness in one slot.
 - **`tokenURI` gas (at most 8M).** The renderer inlines media only for on-chain
   complete works under the inline threshold; larger media go through chunked
   reads.

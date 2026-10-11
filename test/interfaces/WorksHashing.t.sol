@@ -24,8 +24,11 @@ import {
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
-    SHARE_DENOMINATOR,
-    SplitRecipient
+    PRODUCT_EDITIONS,
+    PRODUCT_FEDERATED,
+    PRODUCT_STREAM,
+    Payee,
+    SHARE_DENOMINATOR
 } from "../../src/interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 
@@ -35,29 +38,30 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract WorksHashingTest is Test {
     address internal constant A1 = 0x1111111111111111111111111111111111111111;
     address internal constant A2 = 0x2222222222222222222222222222222222222222;
+    address internal constant A3 = 0x3333333333333333333333333333333333333333;
 
-    bytes32 internal constant GOLDEN_SPLIT_ID =
-        0x4186dfcc05a326c030fa3cd00c82314e836d420bf744af38d224a9456eca5c68;
     bytes32 internal constant GOLDEN_ITEM_HASH =
-        0x57a38fca6197a1289624f813e33342b1df992b7a8ee6e65316c643d06fdd1488;
+        0x5dda82c6b05dcd646e378abc10196f6b6f4ab5720fc4d807899955818f56d733;
     bytes32 internal constant GOLDEN_LEAF =
-        0xccd5d4a9f7361fa00614dd702b9fb300419bc702852b2156fff4158915c9b53e;
+        0x76436c9263904eb16f08569ad40b2c4291b12cb13e50381498be657cc05680ae;
     bytes32 internal constant GOLDEN_WORK_HASH =
         0x6b4de16764850366c1b437cbb70a951bd364b5419f7af48a390a5a3e654e7a53;
 
-    function _parties() internal pure returns (Party[] memory parties) {
-        parties = new Party[](2);
-        parties[0] = Party(A1, 75_000, PartyRole.ARTIST);
-        parties[1] = Party(A2, 25_000, PartyRole.COLLABORATOR);
-    }
-
+    /// @dev A lead artist, a credited and paid collaborator (artist-resolved), and a fixed payee
+    ///      who is also a party, in canonical payee order: fixed first, then by artist ID.
     function _item() internal pure returns (PackageItem memory item) {
         item.kind = ItemKind.EDITION_MASTER;
         item.collectionId = 7;
         item.contentId = keccak256("content");
         item.metadataHash = keccak256("metadata");
-        item.parties = _parties();
-        item.split = WorksHashing.partySplitId(item.parties);
+        item.parties = new Party[](3);
+        item.parties[0] = Party(A1, PartyRole.ARTIST);
+        item.parties[1] = Party(A2, PartyRole.COLLABORATOR);
+        item.parties[2] = Party(A3, PartyRole.COLLABORATOR);
+        item.payees = new Payee[](3);
+        item.payees[0] = Payee(0, A3, 10_000);
+        item.payees[1] = Payee(uint256(uint160(A1)), address(0), 65_000);
+        item.payees[2] = Payee(uint256(uint160(A2)), address(0), 25_000);
         item.license = License("CC0-1.0", keccak256("cc0 text"));
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = keccak256("seed");
@@ -88,7 +92,6 @@ contract WorksHashingTest is Test {
     function test_domainLabels() public pure {
         assertEq(WorksHashing.PACKAGE_ITEM_DOMAIN, keccak256("6529WORKS_PACKAGE_ITEM_V1"));
         assertEq(WorksHashing.WORK_RECORD_DOMAIN, keccak256("6529WORKS_WORK_RECORD_V1"));
-        assertEq(WorksHashing.SPLIT_DOMAIN, keccak256("6529WORKS_SPLIT_V1"));
     }
 
     function test_constants() public pure {
@@ -98,6 +101,13 @@ contract WorksHashingTest is Test {
         assertEq(SaleKind.ENGLISH_AUCTION, keccak256("ENGLISH_AUCTION"));
         assertEq(SaleKind.FIXED_PRICE, keccak256("FIXED_PRICE"));
         assertEq(SaleKind.DUTCH, keccak256("DUTCH"));
+        assertEq(PRODUCT_STREAM, 0x8d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de2);
+        assertEq(
+            PRODUCT_EDITIONS, 0xdda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b
+        );
+        assertEq(
+            PRODUCT_FEDERATED, 0x12f6fbd5cb8f4522cd7d37f0fdc7097a4960a4f90e7a869820d34c7bdb75edff
+        );
     }
 
     function test_itemHash_golden() public pure {
@@ -109,17 +119,6 @@ contract WorksHashingTest is Test {
 
     function test_workRecordHash_golden() public pure {
         assertEq(WorksHashing.workRecordHash(_work()), GOLDEN_WORK_HASH);
-    }
-
-    function test_partySplitId_golden() public pure {
-        assertEq(WorksHashing.partySplitId(_parties()), GOLDEN_SPLIT_ID);
-        SplitRecipient[] memory recipients = new SplitRecipient[](2);
-        recipients[0] = SplitRecipient(A1, 75_000, true);
-        recipients[1] = SplitRecipient(A2, 25_000, true);
-        assertEq(WorksHashing.splitId(recipients), GOLDEN_SPLIT_ID);
-        // A non-resolved recipient is a different split.
-        recipients[1].artistResolved = false;
-        assertTrue(WorksHashing.splitId(recipients) != GOLDEN_SPLIT_ID);
     }
 
     /// @dev Package roots are chain-independent: no chain ID enters the item hash.
@@ -137,14 +136,18 @@ contract WorksHashingTest is Test {
     }
 
     function testFuzz_itemHash_bindsShares(uint32 share) public pure {
-        vm.assume(share != 75_000);
+        vm.assume(share != 65_000);
         PackageItem memory item = _item();
-        item.parties[0].share = share;
+        item.payees[1].share = share;
         assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
     }
 
-    function test_itemHash_bindsCurrencyAndKind() public pure {
+    function test_itemHash_bindsPayeeKindCurrencyAndKind() public pure {
         PackageItem memory item = _item();
+        // The same account as a fixed payee instead of artist-resolved is a different item.
+        item.payees[1] = Payee(0, A1, 65_000);
+        assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
+        item = _item();
         item.sale.currency = CURRENCY_ETH;
         assertTrue(WorksHashing.itemHash(item) != GOLDEN_ITEM_HASH);
         item = _item();

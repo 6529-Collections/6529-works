@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Payee } from "./EconomicsTypes.sol";
+
 /// @notice What a package item mints on 6529 Stream (ADR 0001 sections 3 and 6).
 /// @dev ORIGINAL is a 1/1. EDITION_MASTER is a 1/1 that also anchors exactly one 6529 Editions
 ///      edition, created from the same item after the master is minted.
@@ -10,9 +12,9 @@ enum ItemKind {
 }
 
 /// @notice How a listed party is credited (ADR 0001 section 3).
-/// @dev ARTIST parties are credited authors; COLLABORATOR parties share the artist portion
-///      without authorship. The first party of every item is the lead ARTIST, whose current
-///      authority signs "move to Stream", edits the work record and finalizes.
+/// @dev ARTIST parties are credited authors; COLLABORATOR parties are credited contributors.
+///      The first party of every item is the lead ARTIST, whose current authority signs "move to
+///      Stream", edits the work record and finalizes.
 enum PartyRole {
     ARTIST,
     COLLABORATOR
@@ -36,15 +38,13 @@ enum EditionFormat {
     OPEN
 }
 
-/// @notice A party named by a package item: who is credited and paid, and how much.
+/// @notice A party named by a package item: someone credited, paid, or both.
 /// @dev `account` is the address that signs the package root (ADR 0001 section 3 "every listed
-///      party signs"). It maps to an artist ID in the artist registry, created on first
-///      acceptance, so later payouts follow that identity through recovery. `share` is the
-///      party's part of the artist portion, out of `SHARE_DENOMINATOR` (100,000); an item's
-///      shares are each nonzero and sum to exactly 100,000.
+///      party signs"). It maps to an artist identity in the artist registry, created on first
+///      acceptance with the artist ID `uint256(uint160(account))`, so tools know every artist ID
+///      before any transaction and later payouts follow that identity through recovery.
 struct Party {
     address account;
-    uint32 share;
     PartyRole role;
 }
 
@@ -95,17 +95,18 @@ struct EditionTerms {
 ///      for it, `IContentStore.fileInfo(contentId).sha256Hash`: it does not depend on MIME type or
 ///      encoding, so the same media re-encoded is still the same content. 6529 Stream and
 ///      6529 Editions each reject a content hash already used in that product.
-///      `metadataHash` is `WorksHashing.workRecordHash` of the approved work record. `split`
-///      must equal `WorksHashing.partySplitId(parties)`, the split wallet that receives the
-///      artist portion. `parties` holds 1 to `Limits.MAX_PARTIES` entries. `seed` is nonzero
-///      only under `SeedPolicy.ARTIST`.
+///      `metadataHash` is `WorksHashing.workRecordHash` of the approved work record. `parties`
+///      holds 1 to `Limits.MAX_PARTIES` distinct accounts. `payees` is the canonical payee list
+///      of the split wallet that receives the artist portion (shares out of 100,000); every payee
+///      is a party, either by its account (fixed) or by its artist ID (artist-resolved), so
+///      nobody is paid without having signed. `seed` is nonzero only under `SeedPolicy.ARTIST`.
 struct PackageItem {
     ItemKind kind;
     uint256 collectionId;
     bytes32 contentId;
     bytes32 metadataHash;
     Party[] parties;
-    bytes32 split;
+    Payee[] payees;
     License license;
     SeedPolicy seedPolicy;
     bytes32 seed;

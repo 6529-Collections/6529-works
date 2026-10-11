@@ -46,7 +46,8 @@ struct Payment {
 ///      when it starts"). `currency` is already resolved: `CURRENCY_ETH` or an active allowlisted
 ///      ERC-20, never `CURRENCY_DEFAULT`. `price` is the unit price for FIXED_PRICE, the starting
 ///      price for DUTCH and zero for ENGLISH_AUCTION (whose opening bid is governed). `seller`
-///      receives the artist portion (the work's split wallet), `feeRecipient` the network
+///      receives the artist portion (the work's split wallet, a predicted CREATE2 address
+///      that may not be deployed yet), `feeRecipient` the network
 ///      portion, `feeShare` out of `SHARE_DENOMINATOR`. `creator` is the lead artist's current
 ///      authority: it receives an auction token that drew no bids and may schedule edition
 ///      sales. `revealPending` is true while a VRF seed is outstanding; no bid or purchase is
