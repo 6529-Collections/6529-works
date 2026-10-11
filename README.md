@@ -164,7 +164,13 @@ python tools/check_budgets.py --profile default
 python tools/check_markdown_links.py
 ```
 
-Slither needs a one-time `python -m pip install -r requirements-tools.in`, then:
+Slither needs a one-time install of the pinned, hash-locked toolchain (ideally in a virtualenv):
+
+```bash
+python -m pip install --require-hashes --only-binary=:all: --no-deps -r requirements-tools.lock
+```
+
+Then:
 
 ```bash
 python tools/check_slither.py
