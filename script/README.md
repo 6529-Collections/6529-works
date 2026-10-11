@@ -393,7 +393,7 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.**
-  - **On anvil, with Prague costs,** the whole system is 25 transactions and about 64.8M gas,
+  - **On anvil, with Prague costs,** the whole system is 25 transactions and about 64.7M gas,
     including the delegation mock. The largest transaction is the renderer's creation, at
     about 5.4M, within the 16,777,216-gas EIP-7825 cap.
   - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,

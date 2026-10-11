@@ -2,7 +2,7 @@
   "cc0TextFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
   "cc0TextSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
   "chainId": 31337,
-  "configHash": "0xe248bfe9621251cf8cd9f1278c56053c7132360fe1b6d911e862467242a8b5a2",
+  "configHash": "0x9a659d708cad093f66b01d11a46db656705d54f28ac9d29b09ccd4ac7a4c1bfb",
   "confirmed": false,
   "contracts": {
     "ArtistRegistry": {
@@ -42,8 +42,8 @@
       "codehash": "0x0b8245e8992700c011a6e9075d06d2eaada95babf740fa7aa5668960f6d3b830"
     },
     "Editions": {
-      "address": "0x4e56d9853154177102F83a7E5DAA8A04E1d92906",
-      "codehash": "0xb44187e420946d4f969fcbf3d33c451d615b7d20778011eecf1379ccb21a3b0d"
+      "address": "0x3142720d166007d67650486F76927E3fDC172AC6",
+      "codehash": "0xccc0fc02f50f50504207bcdde40389107ef214fc537916eb95d6ec846e664b90"
     },
     "EnglishAuction": {
       "address": "0x81cA3a0C73f2C577D39f6EbADF5d1Eb9Eb62e13e",
@@ -127,7 +127,7 @@
   "placeholders": true,
   "standIns": [],
   "startBlock": 0,
-  "timestamp": 1791745941,
+  "timestamp": 1791747292,
   "wiringCalls": 18,
-  "wiringHash": "0xb4f015b2d9bf64d4de855be5656dd3950ae577a22a52a82c40c8d337cf19bc60"
+  "wiringHash": "0x698f05e581c5e3183fc6de6ed54d94cb4185f5a8c1889998c891bdeb44fe7dba"
 }
