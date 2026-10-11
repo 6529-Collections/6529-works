@@ -171,8 +171,12 @@ unknown file and for any file not yet attested.
 `attestBase64(fileId)` reads the chunks, checks them, and records the result for
 good:
 
-- **Who and when.** Anyone, once the file is complete. A call on an attested file
-  is a no-op that returns true, emits nothing and reads no chunk.
+- **Who and when.** Anyone. A call reads the chunks it checks, so each must
+  exist at its required length. A call that reaches the end of the file also
+  reads the file's last one or two chunks to find the `=` padding, so the last
+  call cannot succeed until the file is complete; earlier calls on a big file do
+  not need the end, and can run while it is still being uploaded. A call on an
+  attested file is a no-op that returns true, emits nothing and reads no chunk.
 - **What is checked.** Every byte is in `[A-Za-z0-9+/]`, except that `=` may be
   the last one or two bytes of the whole file (a final `=` or `==`, which can
   straddle the last chunk boundary), and the file's length is a multiple of 4.
@@ -191,7 +195,7 @@ good:
   returns true (`Base64Progress` is emitted in between, `Base64Attested` once at
   the end). A file of up to 48 chunks (about 1.18 MB, so a full 1 MiB) is one
   call, and the largest file the store accepts (512 chunks) is eleven. The limit
-  keeps the worst call, 48 distinct cold chunks, at about half of EIP-7825's
+  keeps the worst call (48 cold chunks plus the last one, read for the padding) at about half of EIP-7825's
   16,777,216 gas cap.
 
 The check is a word-at-a-time SWAR scan (`Base64Validator`): once every byte of a
@@ -228,7 +232,7 @@ its storage and the chunk contracts are all first touches, as in a fresh
 | `read`, 1 MB (43 chunks) | 9,678,000 |
 | `attestBase64`, 256 KiB (11 chunks), as a transaction | 1,943,000 |
 | `attestBase64`, 1 MiB (43 chunks), as a transaction | 7,565,000 |
-| `attestBase64`, a full call of 48 distinct cold chunks, as a transaction | 8,502,000 (limit 16,777,216) |
+| `attestBase64`, the worst call (48 distinct cold chunks, then the last chunk for the padding), as a transaction | 8,502,000 (limit 16,777,216) |
 
 The figures are as measured on the toolchain above and drift with compiler and
 optimizer changes, while the tests assert only loose ceilings, so re-measure with
