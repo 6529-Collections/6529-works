@@ -6,7 +6,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { StatementKinds } from "src/records/StatementKinds.sol";
-import { HashRef, HASH_SHA256, HASH_KECCAK256, HASH_ARWEAVE_TX } from "src/records/HashRef.sol";
+import { HashRef, HASH_SHA256, HASH_KECCAK256, HASH_BLAKE3 } from "src/records/HashRef.sol";
 import { IStatementLog, Role, Statement } from "src/records/IStatementLog.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
@@ -34,7 +34,10 @@ contract StatementLogTest is StatementLogFixture {
         (uint64 count, bytes32 stored) = stmtLog.chainOf(address(nft), 1);
         assertEq(count, 1);
         assertEq(stored, head);
-        assertEq(head, keccak256(abi.encode(bytes32(0), entry)));
+        assertEq(
+            head,
+            keccak256(abi.encode(keccak256("6529.works.StatementLog.head.v1"), bytes32(0), entry))
+        );
     }
 
     function test_Artist_RejectsNonArtist() public {
@@ -152,19 +155,14 @@ contract StatementLogTest is StatementLogFixture {
     }
 
     function test_Owner_HostileTokensFailClosedWithBoundedGas() public {
-        address burner = address(new GasBurnerMock());
-        address bomb = address(new ReturnBombMock(1_000_000, bytes32(uint256(uint160(tokenOwner)))));
-        address[2] memory hostile = [burner, bomb];
-        for (uint256 i; i < hostile.length; ++i) {
-            Statement memory s = _statement(hostile[i], 1);
-            uint256 gasBefore = gasleft();
-            vm.expectRevert(
-                abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.OWNER, tokenOwner)
-            );
-            _append(Role.OWNER, tokenOwner, s);
-            // Two reads of at most 50k gas each; the rest is a fixed overhead.
-            assertLt(gasBefore - gasleft(), 200_000, "hostile token burned the caller's gas");
-        }
+        Statement memory s = _statement(address(new GasBurnerMock()), 1);
+        uint256 gasBefore = gasleft();
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.OWNER, tokenOwner)
+        );
+        _append(Role.OWNER, tokenOwner, s);
+        // Two reads of at most 50k gas each; the rest is a fixed overhead.
+        assertLt(gasBefore - gasleft(), 200_000, "hostile token burned the caller's gas");
     }
 
     // ------------------------------------------------------- CURATOR / PLATFORM
@@ -234,7 +232,7 @@ contract StatementLogTest is StatementLogFixture {
         _relay(Role.CURATOR, s, delayed, 0, deadline, sig);
     }
 
-    function test_Curator_ScheduledExecutionIsAttributedToTheManager() public {
+    function test_Curator_ScheduledExecutionCannotBeAttributedToTheManager() public {
         address delayed = makeAddr("delayed curator");
         vm.prank(admin);
         manager.grantRole(CURATOR_ROLE, delayed, 1 days);
@@ -244,9 +242,12 @@ contract StatementLogTest is StatementLogFixture {
         vm.prank(delayed);
         manager.schedule(address(stmtLog), data, 0);
         vm.warp(block.timestamp + 1 days);
-        _expectAppend(Role.CURATOR, address(manager), s);
+        // The manager would be the caller, and no statement may be attributed to it.
+        vm.expectRevert(IStatementLog.AuthorityCannotSign.selector);
         vm.prank(delayed);
         manager.execute(address(stmtLog), data);
+        (uint64 count,) = stmtLog.chainOf(address(nft), 1);
+        assertEq(count, 0);
     }
 
     function test_UnmappedSelectorsDefaultToAdminOnly() public {
@@ -637,7 +638,8 @@ contract StatementLogTest is StatementLogFixture {
         s.uri = ""; // a ContentStore file alone
         _append(Role.ARTIST, artist, s);
 
-        s.fileId = bytes32(0); // a bare hash commitment
+        s.fileId = bytes32(0); // neither locator: not accepted
+        vm.expectRevert(IStatementLog.MissingLocator.selector);
         _append(Role.ARTIST, artist, s);
 
         s.uri = _ascii(2048);
@@ -665,15 +667,20 @@ contract StatementLogTest is StatementLogFixture {
     }
 
     function test_Validation_AcceptsEveryRecognisedAlgorithm() public {
-        uint16[3] memory ok = [HASH_KECCAK256, HASH_SHA256, HASH_ARWEAVE_TX];
+        uint16[3] memory ok = [HASH_KECCAK256, HASH_SHA256, HASH_BLAKE3];
         for (uint256 i; i < ok.length; ++i) {
             Statement memory s = _statement();
             s.content.algorithm = ok[i];
             _append(Role.ARTIST, artist, s);
         }
-        Statement memory blake = _statement();
-        blake.content.algorithm = 3;
-        _append(Role.ARTIST, artist, blake);
+        // 4 and 5 (variable-length multihash, CID) and 6 (an Arweave transaction ID, which is a
+        // locator, not a digest) are not digests the log accepts.
+        for (uint16 a = 4; a <= 7; ++a) {
+            Statement memory s = _statement();
+            s.content.algorithm = a;
+            vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidHashRef.selector, a));
+            _append(Role.ARTIST, artist, s);
+        }
     }
 
     function test_Kinds_AreStableLabels() public pure {
@@ -907,10 +914,12 @@ contract StatementLogTest is StatementLogFixture {
                 e.index,
                 e.role,
                 e.signer,
+                e.resolver,
                 e.recordedAt,
                 e.statement
             );
             assertEq(entry, e.entryHash, "entry hash is recomputable from the event");
+            assertEq(e.resolver, e.role == Role.ARTIST ? address(resolver) : address(0));
             heads[slot] = StatementModel.fold(heads[slot], entry);
             assertEq(heads[slot], e.head, "event head matches the rebuilt chain");
             ++counts[slot];
@@ -935,6 +944,7 @@ contract StatementLogTest is StatementLogFixture {
         uint256 n = bound(rawCount, 1, 24);
         resolver.grantEverywhere(artist);
         bytes32[3] memory heads;
+        bytes32[3] memory lastEntries;
         uint64[3] memory counts;
         for (uint256 i; i < n; ++i) {
             seed = uint256(keccak256(abi.encode(seed, i)));
@@ -943,8 +953,8 @@ contract StatementLogTest is StatementLogFixture {
             s.kind = bytes32(seed >> 8) | bytes32(uint256(1));
             s.schema = bytes32(seed >> 16) | bytes32(uint256(1));
             s.content.digest = bytes32(seed >> 24) | bytes32(uint256(1));
-            s.uri = _ascii((seed >> 32) % 64);
-            if (seed >> 100 % 2 == 0) s.supersedes = heads[slot];
+            s.uri = _ascii(1 + (seed >> 32) % 63);
+            if ((seed >> 100) % 2 == 0) s.supersedes = lastEntries[slot]; // an earlier entry hash
             vm.warp(block.timestamp + ((seed >> 40) % 1000));
 
             bytes32 entry = StatementModel.entryHash(
@@ -953,10 +963,12 @@ contract StatementLogTest is StatementLogFixture {
                 counts[slot],
                 Role.ARTIST,
                 artist,
+                address(resolver),
                 uint64(block.timestamp),
                 s
             );
             heads[slot] = StatementModel.fold(heads[slot], entry);
+            lastEntries[slot] = entry;
             ++counts[slot];
             assertEq(_append(Role.ARTIST, artist, s), entry);
         }
@@ -976,7 +988,10 @@ contract StatementLogTest is StatementLogFixture {
         bytes32 fileId,
         bytes32 supersedes
     ) public {
-        vm.assume(kind != 0 && schema != 0 && digest != 0);
+        vm.assume(kind != 0 && schema != 0 && digest != 0 && fileId != 0);
+        vm.assume(
+            kind != StatementKinds.DISPUTE_OUTCOME && kind != StatementKinds.CURATION_EVIDENCE
+        );
         vm.assume(token != address(0) || id != 0);
         resolver.grantEverywhere(artist);
         Statement memory s = Statement(

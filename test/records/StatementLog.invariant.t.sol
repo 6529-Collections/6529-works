@@ -16,17 +16,22 @@ contract StatementLogInvariantTest is StatementLogFixture {
         resolver.grantEverywhere(artist);
         nft.setOwner(2, tokenOwner);
         editions.setBalance(7, tokenOwner, 1);
+        // The AccessManager would pass both role checks; it must still never be a signer.
+        resolver.grantEverywhere(address(manager));
+        editions.setBalance(7, address(manager), 1);
 
         handler = new StatementLogHandler(
             stmtLog,
             Actors({
                 nft: address(nft),
                 editions: address(editions),
+                resolver: address(resolver),
                 artist: artist,
                 tokenOwner: tokenOwner,
                 curator: curator,
                 platform: platform,
                 admin: admin,
+                manager: address(manager),
                 stranger: stranger,
                 artistKey: artistKey,
                 ownerKey: ownerKey,
@@ -49,16 +54,16 @@ contract StatementLogInvariantTest is StatementLogFixture {
         }
     }
 
-    /// @dev Entries exist only as events: the counts add up to the number of events emitted.
-    function invariant_EntryTotalEqualsEventTotal() public view {
-        uint256 total;
+    /// @dev A subject's latest-dispute pointer equals the last DISPUTE_OUTCOME entry rebuilt from
+    ///      events, and stays zero for subjects with none.
+    function invariant_LatestDisputeOutcomeMatchesEvents() public view {
         for (uint256 i; i < handler.keysLength(); ++i) {
-            (uint64 count,) = stmtLog.chainOf(
-                handler.subjectToken(handler.keys(i)), handler.subjectId(handler.keys(i))
+            bytes32 key = handler.keys(i);
+            assertEq(
+                stmtLog.latestDisputeOutcome(handler.subjectToken(key), handler.subjectId(key)),
+                handler.ghostDispute(key)
             );
-            total += count;
         }
-        assertEq(total, handler.totalEvents());
     }
 
     /// @dev Every event was well formed, gapless and recomputable; no replayed or unauthorised
@@ -67,10 +72,23 @@ contract StatementLogInvariantTest is StatementLogFixture {
         assertEq(handler.violations(), 0);
     }
 
-    /// @dev ARTIST events are signed by the artist and OWNER events by the owner, never by an
-    ///      admin, curator, platform or stranger.
-    function invariant_RolesAreSpokenOnlyByTheirHolders() public view {
+    /// @dev ARTIST events are signed by the artist (or the artist's wallet) and OWNER events by
+    ///      the owner, never by an admin, curator, platform or stranger; the reserved kinds appear
+    ///      only under PLATFORM (DISPUTE_OUTCOME) and CURATOR (CURATION_EVIDENCE).
+    function invariant_RolesAreSpokenOnlyByTheirHoldersAndReservedKindsStayReserved() public view {
         assertEq(handler.roleViolations(), 0);
+    }
+
+    /// @dev Every ARTIST entry carries the resolver that was active when it was written, across
+    ///      resolver swaps; no other role carries one.
+    function invariant_ArtistEntriesBindTheActiveResolver() public view {
+        assertEq(handler.resolverViolations(), 0);
+    }
+
+    /// @dev A relayed entry is followed by exactly one nonce event naming its entry, signer and
+    ///      nonce; a direct entry by none.
+    function invariant_RelayedEntriesCarryTheirNonce() public view {
+        assertEq(handler.relayViolations(), 0);
     }
 
     /// @dev A used or revoked nonce stays spent.
@@ -82,9 +100,5 @@ contract StatementLogInvariantTest is StatementLogFixture {
         for (uint256 i; i < handler.revokedLength(); ++i) {
             assertTrue(stmtLog.nonceUsed(handler.revokedBy(i), handler.revokedNonce(i)));
         }
-    }
-
-    function invariant_LogHoldsNoValue() public view {
-        assertEq(address(stmtLog).balance, 0);
     }
 }

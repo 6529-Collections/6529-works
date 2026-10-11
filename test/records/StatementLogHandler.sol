@@ -7,27 +7,34 @@ import { StatementKinds } from "src/records/StatementKinds.sol";
 import { HashRef, HASH_SHA256 } from "src/records/HashRef.sol";
 import { Role, Statement } from "src/records/IStatementLog.sol";
 import { StatementModel } from "./StatementModel.sol";
+import { ArtistResolverMock } from "../mocks/RecordsMocks.sol";
+import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
 
-/// @notice The accounts and subjects the handler works with. The artist resolver already accepts
-///         `artist` for every subject; `tokenOwner` owns `nft` 1 and 2 and holds `editions` 7.
+/// @notice The accounts and subjects the handler works with. `resolver` is the log's initial
+///         artist resolver and already accepts `artist` for every subject; `tokenOwner` owns `nft`
+///         1 and 2 and holds `editions` 7.
 struct Actors {
     address nft;
     address editions;
+    address resolver;
     address artist;
     address tokenOwner;
     address curator;
     address platform;
     address admin;
+    address manager;
     address stranger;
     uint256 artistKey;
     uint256 ownerKey;
     uint256 curatorKey;
 }
 
-/// @notice Drives the statement log with random valid appends (direct, relayed, curator, platform),
-///         nonce revocations, replays and unauthorised attempts. After every call it rebuilds the
-///         chain from the emitted events with {StatementModel} and keeps ghost copies of every
-///         subject's count and head for the invariants to compare with contract storage.
+/// @notice Drives the statement log with random valid appends (direct, relayed by EOA and by an
+///         ERC-1271 wallet, curator, platform), resolver swaps, nonce revocations, replays, and
+///         unauthorised, tampered, expired and reserved-kind attempts. After every call it rebuilds
+///         the chain from the emitted events with {StatementModel} and keeps ghost copies of every
+///         subject's count, head and latest dispute outcome for the invariants to compare with
+///         contract storage.
 contract StatementLogHandler is Test {
     struct Authorization {
         Role role;
@@ -41,6 +48,9 @@ contract StatementLogHandler is Test {
     StatementLog internal immutable book;
     Actors internal a;
     address internal immutable curatorSigner;
+    address internal immutable wallet;
+    address internal immutable resolverB;
+    address public currentResolver;
 
     bytes32[] public keys;
     mapping(bytes32 => bool) internal known;
@@ -48,26 +58,50 @@ contract StatementLogHandler is Test {
     mapping(bytes32 => uint256) public subjectId;
     mapping(bytes32 => uint64) public ghostCount;
     mapping(bytes32 => bytes32) public ghostHead;
+    mapping(bytes32 => bytes32) public ghostDispute;
     mapping(bytes32 => bytes32) internal lastEntry;
 
     Authorization[] internal authorizations;
-    uint256 internal nextNonce;
-    /// @notice Nonces spent by revocation, per signer.
+    uint256 internal nonceCounter;
     address[] public revokedBy;
     uint256[] public revokedNonce;
 
+    /// @dev Scratch from the latest `_record`, to check relayed-nonce events.
+    uint256 internal relayedSeen;
+    bytes32 internal lastAppended;
+    bytes32 internal relayedEntry;
+    address internal relayedSigner;
+    uint256 internal relayedNonce;
+
     uint256 public totalEvents;
-    /// @notice Malformed events, gaps, hash mismatches, replays or unauthorised appends that worked.
+    /// @notice Malformed events, gaps, hash mismatches, replays or unauthorised, tampered, expired
+    ///         or reserved-kind appends that worked.
     uint256 public violations;
-    /// @notice Events whose signer does not fit the role it claims.
+    /// @notice Events whose signer does not fit the role it claims, or whose kind is reserved to
+    ///         another role.
     uint256 public roleViolations;
+    /// @notice ARTIST events that do not carry the resolver that was active, or other roles that
+    ///         carry one.
+    uint256 public resolverViolations;
+    /// @notice Relayed entries without exactly one matching nonce event, or direct ones with one.
+    uint256 public relayViolations;
     uint256 public relayedAppends;
     uint256 public refusedAttempts;
+    uint256 public resolverSwaps;
 
     constructor(StatementLog book_, Actors memory actors) {
         book = book_;
         a = actors;
         curatorSigner = vm.addr(actors.curatorKey);
+        address wallet_ = address(new ERC1271WalletMock(vm.addr(actors.artistKey)));
+        ArtistResolverMock other = new ArtistResolverMock();
+        // Both resolvers vouch for the artist and the artist's contract wallet, everywhere.
+        other.grantEverywhere(actors.artist);
+        other.grantEverywhere(wallet_);
+        ArtistResolverMock(actors.resolver).grantEverywhere(wallet_);
+        wallet = wallet_;
+        resolverB = address(other);
+        currentResolver = actors.resolver;
     }
 
     // ------------------------------------------------------------------ actions
@@ -77,7 +111,7 @@ contract StatementLogHandler is Test {
         Statement memory s = _statement(seed, 4);
         vm.prank(a.artist);
         book.append(Role.ARTIST, s);
-        _expectOne();
+        _expectDirect();
     }
 
     function appendOwner(uint256 seed) external {
@@ -85,57 +119,59 @@ contract StatementLogHandler is Test {
         Statement memory s = _statement(seed, 3); // tokens only: a work ID has no owner
         vm.prank(a.tokenOwner);
         book.append(Role.OWNER, s);
-        _expectOne();
+        _expectDirect();
     }
 
     function appendCurator(uint256 seed) external {
         _begin(seed);
         Statement memory s = _statement(seed, 4);
+        if ((seed >> 60) % 4 == 0) s.kind = StatementKinds.CURATION_EVIDENCE;
         vm.prank(a.curator);
         book.appendCurator(s);
-        _expectOne();
+        _expectDirect();
     }
 
     function appendPlatform(uint256 seed) external {
         _begin(seed);
         Statement memory s = _statement(seed, 4);
+        if ((seed >> 60) % 4 == 0) s.kind = StatementKinds.DISPUTE_OUTCOME;
         vm.prank(a.platform);
         book.appendPlatform(s);
-        _expectOne();
+        _expectDirect();
     }
 
+    /// @dev A valid relayed entry, signed by the artist, the owner or the curator key.
     function appendRelayed(uint256 seed) external {
         _begin(seed);
-        uint256 pick = (seed >> 3) % 3;
-        Role role = pick == 0 ? Role.ARTIST : pick == 1 ? Role.OWNER : Role.CURATOR;
-        uint256 key = pick == 0 ? a.artistKey : pick == 1 ? a.ownerKey : a.curatorKey;
-        Statement memory s = _statement(seed, role == Role.OWNER ? 3 : 4);
-        Authorization memory auth = Authorization({
-            role: role,
-            statement: s,
-            signer: vm.addr(key),
-            nonce: nextNonce++,
-            deadline: type(uint64).max, // never expires, so a replay always reaches the nonce check
-            signature: ""
-        });
-        bytes32 digest = StatementModel.digest(
-            block.chainid, address(book), role, s, auth.signer, auth.nonce, auth.deadline
-        );
-        (uint8 v, bytes32 r, bytes32 sv) = vm.sign(key, digest);
-        auth.signature = abi.encodePacked(r, sv, v);
-        authorizations.push(auth);
+        Authorization memory auth = _validAuthorization(seed);
+        _submit(auth);
+    }
 
-        vm.prank(a.stranger);
-        book.appendSigned(role, s, auth.signer, auth.nonce, auth.deadline, auth.signature);
-        ++relayedAppends;
-        _expectOne();
+    /// @dev A valid relayed ARTIST entry whose signer is an ERC-1271 contract wallet.
+    function appendRelayedByWallet(uint256 seed) external {
+        _begin(seed);
+        Statement memory s = _statement(seed, 4);
+        Authorization memory auth =
+            _sign(Role.ARTIST, s, a.artistKey, wallet, type(uint64).max, _freshNonce());
+        _submit(auth);
+    }
+
+    /// @dev Governance swaps the artist resolver; ARTIST entries from now on must carry the new one.
+    function swapResolver(uint256 seed) external {
+        _begin(seed);
+        address next = currentResolver == a.resolver ? resolverB : a.resolver;
+        vm.prank(a.admin);
+        book.setArtistResolver(currentResolver, next, next.codehash);
+        currentResolver = next;
+        ++resolverSwaps;
+        _record();
     }
 
     /// @dev Spends a fresh nonce by revocation; a later relay of it must fail.
     function revokeNonce(uint256 seed) external {
         _begin(seed);
         address signer = seed % 2 == 0 ? a.artist : a.tokenOwner;
-        uint256 nonce = nextNonce++;
+        uint256 nonce = _freshNonce();
         vm.prank(signer);
         book.revokeNonce(nonce);
         revokedBy.push(signer);
@@ -148,22 +184,49 @@ contract StatementLogHandler is Test {
         if (authorizations.length == 0) return;
         _begin(seed);
         Authorization memory auth = authorizations[seed % authorizations.length];
-        vm.prank(a.stranger);
-        try book.appendSigned(
-            auth.role, auth.statement, auth.signer, auth.nonce, auth.deadline, auth.signature
-        ) {
-            ++violations;
-        } catch {
-            ++refusedAttempts;
-        }
+        _mustFail(auth.role, auth.statement, auth.signer, auth.nonce, auth.deadline, auth.signature);
+        _record();
+    }
+
+    /// @dev Changes one signed field (or the role or the nonce) of a valid authorization; the
+    ///      relay must fail and must not spend the real nonce.
+    function tamperedRelay(uint256 seed) external {
+        _begin(seed);
+        Authorization memory auth = _validAuthorization(seed);
+        Role role = auth.role;
+        Statement memory s = auth.statement;
+        uint256 nonce = auth.nonce;
+        uint64 deadline = auth.deadline;
+        uint256 how = (seed >> 70) % 5;
+        if (how == 0) s.uri = string.concat(s.uri, "x");
+        if (how == 1) nonce += 1;
+        if (how == 2) deadline -= 1;
+        if (how == 3) role = role == Role.ARTIST ? Role.OWNER : Role.ARTIST;
+        if (how == 4) s.supersedes = bytes32(uint256(s.supersedes) + 1);
+        _mustFail(role, s, auth.signer, nonce, deadline, auth.signature);
+        if (book.nonceUsed(auth.signer, auth.nonce)) ++violations; // a failed relay spends nothing
+        _record();
+    }
+
+    /// @dev A correctly signed authorization whose deadline has already passed.
+    function expiredRelay(uint256 seed) external {
+        _begin(seed);
+        Statement memory s = _statement(seed, 4);
+        Authorization memory auth = _sign(
+            Role.ARTIST, s, a.artistKey, a.artist, uint64(block.timestamp - 1), _freshNonce()
+        );
+        _mustFail(auth.role, s, auth.signer, auth.nonce, auth.deadline, auth.signature);
+        if (book.nonceUsed(auth.signer, auth.nonce)) ++violations;
         _record();
     }
 
     /// @dev Everyone who is not the subject's artist or owner tries to speak as one.
     function unauthorized(uint256 seed) external {
         _begin(seed);
-        address[6] memory actors =
-            [a.stranger, a.admin, a.curator, a.platform, curatorSigner, address(book)];
+        // The manager passes the ARTIST and OWNER role checks (see the invariant setUp), so only
+        // the rule against attributing statements to it can stop it.
+        address[7] memory actors =
+            [a.stranger, a.admin, a.curator, a.platform, curatorSigner, address(book), a.manager];
         address actor = actors[(seed >> 5) % actors.length];
         Role role = (seed >> 9) % 2 == 0 ? Role.ARTIST : Role.OWNER;
         Statement memory s = _statement(seed, role == Role.OWNER ? 3 : 4);
@@ -176,6 +239,41 @@ contract StatementLogHandler is Test {
         // The artist is not an owner, and the owner is not an artist.
         vm.prank(role == Role.OWNER ? a.artist : a.tokenOwner);
         try book.append(role, s) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        _record();
+    }
+
+    /// @dev The reserved kinds under a role that does not own them.
+    function reservedKindMisuse(uint256 seed) external {
+        _begin(seed);
+        Statement memory dispute = _statement(seed, 3);
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        Statement memory evidence = _statement(seed, 3);
+        evidence.kind = StatementKinds.CURATION_EVIDENCE;
+
+        vm.prank(a.artist);
+        try book.append(Role.ARTIST, dispute) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        vm.prank(a.tokenOwner);
+        try book.append(Role.OWNER, evidence) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        vm.prank(a.curator);
+        try book.appendCurator(dispute) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        vm.prank(a.platform);
+        try book.appendPlatform(evidence) {
             ++violations;
         } catch {
             ++refusedAttempts;
@@ -206,8 +304,68 @@ contract StatementLogHandler is Test {
         vm.warp(block.timestamp + ((seed >> 128) % 2 days));
     }
 
+    /// @dev Spread across bitmap words: half are hashes, half are multiples of 37 (so they walk
+    ///      through the low words and cross word boundaries). Every nonce is distinct.
+    function _freshNonce() internal returns (uint256) {
+        uint256 c = nonceCounter++;
+        return c % 2 == 0 ? uint256(keccak256(abi.encode("nonce", c))) : c * 37;
+    }
+
+    function _validAuthorization(uint256 seed) internal returns (Authorization memory) {
+        uint256 pick = (seed >> 3) % 3;
+        Role role = pick == 0 ? Role.ARTIST : pick == 1 ? Role.OWNER : Role.CURATOR;
+        uint256 key = pick == 0 ? a.artistKey : pick == 1 ? a.ownerKey : a.curatorKey;
+        Statement memory s = _statement(seed, role == Role.OWNER ? 3 : 4);
+        if (role == Role.CURATOR && (seed >> 60) % 4 == 0) {
+            s.kind = StatementKinds.CURATION_EVIDENCE;
+        }
+        return _sign(role, s, key, vm.addr(key), type(uint64).max, _freshNonce());
+    }
+
+    function _sign(
+        Role role,
+        Statement memory s,
+        uint256 key,
+        address signer,
+        uint64 deadline,
+        uint256 nonce
+    ) internal view returns (Authorization memory auth) {
+        auth = Authorization(role, s, signer, nonce, deadline, "");
+        bytes32 digest =
+            StatementModel.digest(block.chainid, address(book), role, s, signer, nonce, deadline);
+        (uint8 v, bytes32 r, bytes32 sv) = vm.sign(key, digest);
+        auth.signature = abi.encodePacked(r, sv, v);
+    }
+
+    /// @dev Relays `auth` from a stranger and checks the relayed-nonce event.
+    function _submit(Authorization memory auth) internal {
+        authorizations.push(auth);
+        vm.prank(a.stranger);
+        book.appendSigned(
+            auth.role, auth.statement, auth.signer, auth.nonce, auth.deadline, auth.signature
+        );
+        ++relayedAppends;
+        _expectRelayed(auth);
+    }
+
+    function _mustFail(
+        Role role,
+        Statement memory s,
+        address signer,
+        uint256 nonce,
+        uint64 deadline,
+        bytes memory signature
+    ) internal {
+        vm.prank(a.stranger);
+        try book.appendSigned(role, s, signer, nonce, deadline, signature) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+    }
+
     /// @dev The subjects: (nft,1), (nft,2), (editions,7), (no token, work 5). `count` limits how
-    ///      many are eligible.
+    ///      many are eligible. Exactly one locator is set: a URI or a file ID.
     function _statement(uint256 seed, uint256 count) internal view returns (Statement memory s) {
         uint256 pick = (seed >> 16) % count;
         address token = a.nft;
@@ -220,27 +378,44 @@ contract StatementLogHandler is Test {
         s.schema = bytes32(uint256(keccak256(abi.encode(seed, "schema"))) | 1);
         s.content =
             HashRef(HASH_SHA256, bytes32(uint256(keccak256(abi.encode(seed, "digest"))) | 1));
-        uint256 uriLength = (seed >> 24) % 48;
-        bytes memory uri = new bytes(uriLength);
-        for (uint256 i; i < uriLength; ++i) {
-            uri[i] = "u";
-        }
-        s.uri = string(uri);
-        if (uriLength == 0 && (seed >> 32) % 2 == 0) {
+        if ((seed >> 32) % 3 == 0) {
             s.fileId = keccak256(abi.encode(seed, "file"));
+        } else {
+            uint256 uriLength = 1 + (seed >> 24) % 47;
+            bytes memory uri = new bytes(uriLength);
+            for (uint256 i; i < uriLength; ++i) {
+                uri[i] = "u";
+            }
+            s.uri = string(uri);
         }
         if ((seed >> 40) % 2 == 0) s.supersedes = lastEntry[StatementModel.subjectKey(token, id)];
     }
 
-    function _expectOne() internal {
+    function _expectDirect() internal {
         if (_record() != 1) ++violations;
+        if (relayedSeen != 0) ++relayViolations; // a direct entry spends no nonce
+    }
+
+    function _expectRelayed(Authorization memory auth) internal {
+        if (_record() != 1) ++violations;
+        bool ok = relayedSeen == 1 && relayedEntry == lastAppended && relayedNonce == auth.nonce
+            && relayedSigner == auth.signer;
+        if (!ok) ++relayViolations;
     }
 
     /// @dev Rebuilds each emitted entry's hash and chain head from the event alone, and checks them
     ///      against the previous ghost state.
     function _record() internal returns (uint256 appended) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
+        relayedSeen = 0;
         for (uint256 i; i < logs.length; ++i) {
+            if (StatementModel.isRelayed(logs[i], address(book))) {
+                ++relayedSeen;
+                relayedEntry = logs[i].topics[1];
+                relayedSigner = address(uint160(uint256(logs[i].topics[2])));
+                relayedNonce = abi.decode(logs[i].data, (uint256));
+                continue;
+            }
             if (!StatementModel.isAppended(logs[i], address(book))) continue;
             StatementModel.Appended memory e = StatementModel.decode(logs[i]);
             ++appended;
@@ -253,7 +428,14 @@ contract StatementLogHandler is Test {
                 subjectId[key] = e.statement.id;
             }
             bytes32 entry = StatementModel.entryHash(
-                address(book), block.chainid, e.index, e.role, e.signer, e.recordedAt, e.statement
+                address(book),
+                block.chainid,
+                e.index,
+                e.role,
+                e.signer,
+                e.resolver,
+                e.recordedAt,
+                e.statement
             );
             bool ok = e.index == ghostCount[key] && entry == e.entryHash
                 && key == StatementModel.subjectKey(e.statement.token, e.statement.id)
@@ -263,15 +445,25 @@ contract StatementLogHandler is Test {
             if (!ok) ++violations;
             ++ghostCount[key];
             lastEntry[key] = entry;
-            if (!_signerFitsRole(e.role, e.signer)) ++roleViolations;
+            lastAppended = entry;
+            if (e.statement.kind == StatementKinds.DISPUTE_OUTCOME) ghostDispute[key] = entry;
+            if (!_signerFitsRole(e.role, e.signer) || _reservedElsewhere(e)) ++roleViolations;
+            address expected = e.role == Role.ARTIST ? currentResolver : address(0);
+            if (e.resolver != expected) ++resolverViolations;
         }
     }
 
     function _signerFitsRole(Role role, address signer) internal view returns (bool) {
-        if (role == Role.ARTIST) return signer == a.artist;
+        if (role == Role.ARTIST) return signer == a.artist || signer == wallet;
         if (role == Role.OWNER) return signer == a.tokenOwner;
         if (role == Role.CURATOR) return signer == a.curator || signer == curatorSigner;
         if (role == Role.PLATFORM) return signer == a.platform;
         return false;
+    }
+
+    function _reservedElsewhere(StatementModel.Appended memory e) internal pure returns (bool) {
+        bytes32 kind = e.statement.kind;
+        return (kind == StatementKinds.DISPUTE_OUTCOME && e.role != Role.PLATFORM)
+            || (kind == StatementKinds.CURATION_EVIDENCE && e.role != Role.CURATOR);
     }
 }

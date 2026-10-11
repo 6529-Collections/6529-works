@@ -81,26 +81,35 @@ abstract contract StatementLogFixture is Test {
     ///      head the model predicts. Call it immediately before the append (and any `prank`).
     function _expectAppend(Role role, address signer, Statement memory s)
         internal
-        returns (bytes32 entry, bytes32 head)
+        returns (bytes32, bytes32)
     {
-        (uint64 count, bytes32 previous) = stmtLog.chainOf(s.token, s.id);
-        uint64 recordedAt = uint64(block.timestamp);
-        entry = StatementModel.entryHash(
-            address(stmtLog), block.chainid, count, role, signer, recordedAt, s
+        StatementModel.Appended memory e;
+        e.subjectKey = StatementModel.subjectKey(s.token, s.id);
+        e.kind = s.kind;
+        e.signer = signer;
+        e.role = role;
+        e.resolver = role == Role.ARTIST ? stmtLog.artistResolver() : address(0);
+        bytes32 previous;
+        (e.index, previous) = stmtLog.chainOf(s.token, s.id);
+        e.recordedAt = uint64(block.timestamp);
+        e.entryHash = StatementModel.entryHash(
+            address(stmtLog), block.chainid, e.index, role, signer, e.resolver, e.recordedAt, s
         );
-        head = StatementModel.fold(previous, entry);
+        e.head = StatementModel.fold(previous, e.entryHash);
         vm.expectEmit(true, true, true, true, address(stmtLog));
         emit IStatementLog.StatementAppended(
-            StatementModel.subjectKey(s.token, s.id),
-            s.kind,
-            signer,
-            role,
-            count,
-            recordedAt,
-            entry,
-            head,
+            e.subjectKey,
+            e.kind,
+            e.signer,
+            e.role,
+            e.resolver,
+            e.index,
+            e.recordedAt,
+            e.entryHash,
+            e.head,
             s
         );
+        return (e.entryHash, e.head);
     }
 
     function _append(Role role, address from, Statement memory s) internal returns (bytes32) {

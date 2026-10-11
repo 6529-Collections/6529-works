@@ -9,6 +9,7 @@ import { Role, Statement } from "src/records/IStatementLog.sol";
 ///         use it to rebuild entry hashes, chain heads and EIP-712 digests from event data.
 library StatementModel {
     bytes32 internal constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
+    bytes32 internal constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
 
     /// @dev A decoded `StatementAppended` event.
     struct Appended {
@@ -16,6 +17,7 @@ library StatementModel {
         bytes32 kind;
         address signer;
         Role role;
+        address resolver;
         uint64 index;
         uint64 recordedAt;
         bytes32 entryHash;
@@ -58,26 +60,20 @@ library StatementModel {
         uint64 index,
         Role role,
         address signer,
+        address resolver,
         uint64 recordedAt,
         Statement memory s
     ) internal pure returns (bytes32) {
         return keccak256(
-            abi.encode(
-                ENTRY_DOMAIN,
-                chainId,
-                log,
-                subjectKey(s.token, s.id),
-                index,
-                role,
-                signer,
-                recordedAt,
-                statementHash(s)
+            bytes.concat(
+                abi.encode(ENTRY_DOMAIN, chainId, log, subjectKey(s.token, s.id), index),
+                abi.encode(role, signer, resolver, recordedAt, statementHash(s))
             )
         );
     }
 
     function fold(bytes32 head, bytes32 entry) internal pure returns (bytes32) {
-        return keccak256(abi.encode(head, entry));
+        return keccak256(abi.encode(HEAD_DOMAIN, head, entry));
     }
 
     /// @dev The EIP-712 digest for `appendSigned`, under an explicit domain.
@@ -121,8 +117,8 @@ library StatementModel {
         a.subjectKey = entry.topics[1];
         a.kind = entry.topics[2];
         a.signer = address(uint160(uint256(entry.topics[3])));
-        (a.role, a.index, a.recordedAt, a.entryHash, a.head, a.statement) =
-            abi.decode(entry.data, (Role, uint64, uint64, bytes32, bytes32, Statement));
+        (a.role, a.resolver, a.index, a.recordedAt, a.entryHash, a.head, a.statement) =
+            abi.decode(entry.data, (Role, address, uint64, uint64, bytes32, bytes32, Statement));
     }
 
     /// @dev Whether `entry` is a `StatementAppended` event emitted by `log`.
@@ -130,7 +126,13 @@ library StatementModel {
         return entry.emitter == log
             && entry.topics[0]
                 == keccak256(
-                "StatementAppended(bytes32,bytes32,address,uint8,uint64,uint64,bytes32,bytes32,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))"
+                "StatementAppended(bytes32,bytes32,address,uint8,address,uint64,uint64,bytes32,bytes32,(address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))"
             );
+    }
+
+    /// @dev Whether `entry` is a `StatementRelayed` event emitted by `log`.
+    function isRelayed(Vm.Log memory entry, address log) internal pure returns (bool) {
+        return entry.emitter == log
+            && entry.topics[0] == keccak256("StatementRelayed(bytes32,address,uint256)");
     }
 }
