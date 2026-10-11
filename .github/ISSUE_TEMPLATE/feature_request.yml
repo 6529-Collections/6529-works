@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a change or addition.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The v1 scope is fixed by [ADR 0001](https://github.com/6529-Collections/6529-works/blob/main/docs/adr/0001-v1-scope.md).
+        A change outside it needs a new ADR first, so say so below.
+        Budgets that every change must respect: 8-12K non-comment lines of Solidity, EIP-170,
+        at most 5 linked libraries, no delegatecall and no proxies, CI under 15 minutes.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - contracts (src/)
+        - tests
+        - scripts
+        - CI and tooling
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today, and for whom?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should change? Include the ADR 0001 sections affected.
+    validations:
+      required: true
+  - type: textarea
+    id: budget
+    attributes:
+      label: Cost and risk
+      description: Estimated lines of Solidity, contract size impact, new trust assumptions or admin powers, and security impact.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and checked ADR 0001.
+          required: true
+        - label: This is not an exploitable vulnerability report.
+          required: true

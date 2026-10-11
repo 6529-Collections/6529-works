@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a non-security bug or regression.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report exploitable vulnerabilities here.** Use private vulnerability reporting
+        as described in [SECURITY.md](https://github.com/6529-Collections/6529-works/blob/main/SECURITY.md).
+        This code is pre-audit, so please do not paste private keys or secrets.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - contracts (src/)
+        - tests
+        - scripts
+        - CI and tooling
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: What happens
+      description: The behaviour you see, with revert selectors, logs or trace output where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Cite the ADR 0001 section if it defines the behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: A failing Foundry test, commands or minimal steps.
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: The commit SHA you tested, and your Foundry version (`forge --version`).
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: This is not an exploitable vulnerability report.
+          required: true
