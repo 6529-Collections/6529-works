@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { HashRef } from "./HashRef.sol";
+import { HashRef } from "./types/HashRef.sol";
 
 /// @notice Who a statement speaks as. `NONE` is the zero value so an unset role can never pass.
 enum Role {

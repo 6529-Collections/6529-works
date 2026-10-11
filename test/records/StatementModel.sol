@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
-import { Role, Statement } from "src/records/IStatementLog.sol";
+import { Role, Statement } from "src/interfaces/IStatementLog.sol";
 
 /// @notice An independent restatement of the log's wire formats, written from the spec in
 ///         `src/records/README.md` and sharing no code or constants with `StatementLog`. Tests

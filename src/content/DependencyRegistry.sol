@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
-import { IContentStore } from "./IContentStore.sol";
-import { IDependencyRegistry } from "./IDependencyRegistry.sol";
+import { IContentStore } from "../interfaces/IContentStore.sol";
+import { IDependencyRegistry } from "../interfaces/IDependencyRegistry.sol";
 
 /// @title DependencyRegistry
 /// @notice Pinned library versions for generative works: `(name, version)` to a {ContentStore}

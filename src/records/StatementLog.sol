@@ -11,10 +11,10 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
-import { isKnownHashAlgorithm } from "./HashRef.sol";
-import { IArtistRoleResolver } from "./IArtistRoleResolver.sol";
-import { IStatementLog, Role, Statement } from "./IStatementLog.sol";
-import { StatementKinds } from "./StatementKinds.sol";
+import { isKnownHashAlgorithm } from "../interfaces/types/HashRef.sol";
+import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
+import { IStatementLog, Role, Statement } from "../interfaces/IStatementLog.sol";
+import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 
 /// @title StatementLog
 /// @notice The one append-only, signed statement log for works (ADR 0001 section 12).

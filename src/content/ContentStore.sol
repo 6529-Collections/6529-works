@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IContentStore } from "./IContentStore.sol";
+import { IContentStore } from "../interfaces/IContentStore.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 
 /// @title ContentStore
@@ -117,6 +117,11 @@ contract ContentStore is IContentStore {
     function fileInfo(bytes32 fileId) external view returns (FileInfo memory) {
         File storage f = _file(fileId);
         return FileInfo(f.sha256Hash, f.length, f.chunks.length, f.encoding, f.mimeType);
+    }
+
+    /// @inheritdoc IContentStore
+    function sha256Of(bytes32 fileId) external view returns (bytes32) {
+        return _file(fileId).sha256Hash;
     }
 
     /// @inheritdoc IContentStore

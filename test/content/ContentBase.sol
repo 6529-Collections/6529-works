@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { IContentStore } from "src/content/IContentStore.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 
 /// @dev Fixtures shared by the content tests: deterministic bytes, canonical chunking, and

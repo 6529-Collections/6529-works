@@ -4,9 +4,9 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
-import { StatementKinds } from "src/records/StatementKinds.sol";
-import { HashRef, HASH_SHA256 } from "src/records/HashRef.sol";
-import { IStatementLog, Role, Statement } from "src/records/IStatementLog.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
+import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { StatementModel } from "./StatementModel.sol";
 import { ArtistResolverMock, ERC721OwnerMock, ERC1155BalanceMock } from "../mocks/RecordsMocks.sol";
 

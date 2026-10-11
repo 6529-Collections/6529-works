@@ -5,9 +5,14 @@ import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
-import { StatementKinds } from "src/records/StatementKinds.sol";
-import { HashRef, HASH_SHA256, HASH_KECCAK256, HASH_BLAKE3 } from "src/records/HashRef.sol";
-import { IStatementLog, Role, Statement } from "src/records/IStatementLog.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import {
+    HashRef,
+    HASH_SHA256,
+    HASH_KECCAK256,
+    HASH_BLAKE3
+} from "src/interfaces/types/HashRef.sol";
+import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
 import {

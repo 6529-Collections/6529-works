@@ -14,8 +14,8 @@ the renderer; delivery routing stays operable).
 
 | File | Role |
 | --- | --- |
-| `IContentStore.sol`, `ContentStore.sol` | Permissionless, content-addressed file storage: chunks, manifests, completeness, verified range reads. No owner, no governance, no payable function. |
-| `IDependencyRegistry.sol`, `DependencyRegistry.sol` | Governed `(name, version)` to store-file map for shared libraries (p5.js, three.js). Immutable versions, deprecation as a flag. |
+| `ContentStore.sol` (interface: [`IContentStore`](../interfaces/IContentStore.sol)) | Permissionless, content-addressed file storage: chunks, manifests, completeness, verified range reads. No owner, no governance, no payable function. |
+| `DependencyRegistry.sol` (interface: [`IDependencyRegistry`](../interfaces/IDependencyRegistry.sol)) | Governed `(name, version)` to store-file map for shared libraries (p5.js, three.js). Immutable versions, deprecation as a flag. |
 
 Other contracts should depend on the interfaces. Tests are in
 [`test/content/`](../../test/content).

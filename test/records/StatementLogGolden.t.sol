@@ -3,9 +3,9 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
-import { StatementKinds } from "src/records/StatementKinds.sol";
-import { HashRef, HASH_SHA256 } from "src/records/HashRef.sol";
-import { Role, Statement } from "src/records/IStatementLog.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
+import { Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { ArtistResolverMock } from "../mocks/RecordsMocks.sol";
 
 /// @notice Golden vectors with fixed hex values for every wire format a verifier depends on: the

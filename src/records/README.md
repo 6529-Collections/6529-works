@@ -14,10 +14,10 @@ manifests).
 | File | Role |
 | --- | --- |
 | `StatementLog.sol` | The log: append paths, EIP-712 relay, nonces, chain heads, dispute pointer. |
-| `IStatementLog.sol` | `Role`, `Statement`, events, errors and the external surface. |
-| `HashRef.sol` | `HashRef{algorithm, digest}` and the recognised algorithm IDs. |
-| `IArtistRoleResolver.sol` | The one question the log asks the artist registry. |
-| `StatementKinds.sol` | Well-known kind labels (constants only, no bytecode). |
+| [`IStatementLog`](../interfaces/IStatementLog.sol) (in `src/interfaces/`) | `Role`, `Statement`, events, errors and the external surface. |
+| [`HashRef`](../interfaces/types/HashRef.sol) (in `src/interfaces/types/`) | `HashRef{algorithm, digest}` and the recognised algorithm IDs. |
+| [`IArtistRoleResolver`](../interfaces/IArtistRoleResolver.sol) (in `src/interfaces/`) | The one question the log asks the artist registry. |
+| [`StatementKinds`](../interfaces/types/StatementKinds.sol) (in `src/interfaces/types/`) | Well-known kind labels (constants only, no bytecode). |
 
 ## What is stored, what is emitted
 
