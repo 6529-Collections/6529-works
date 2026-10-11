@@ -249,9 +249,13 @@ contract StickyAllowanceToken is BlocklistTokenBase {
 
 /// @dev `transfer` burns more gas than a payer's direct-route allowance; `transferFrom` is cheap.
 contract GasHungryToken is MockERC20("Hungry", "HGT") {
+    uint256 public constant BURN = 400_000;
+
+    /// @dev Burns `BURN` gas before moving funds. Given less, it runs out of gas (no underflow:
+    ///      `start - gasleft()` only grows); given more, it succeeds.
     function transfer(address to, uint256 amount) public override returns (bool) {
-        uint256 stop = gasleft() - 400_000;
-        while (gasleft() > stop) { }
+        uint256 start = gasleft();
+        while (start - gasleft() < BURN) { }
         return super.transfer(to, amount);
     }
 }

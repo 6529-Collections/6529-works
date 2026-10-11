@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -133,6 +134,20 @@ contract ClaimRouterTest is EconomicsBase {
         IClaimRouter.Claim[] memory tooMany = new IClaimRouter.Claim[](max + 1);
         vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyClaims.selector, max + 1));
         router.claim(tooMany, true);
+    }
+
+    /// @dev Pins the per-item gas floors: a signed item adds the verifier's capped ERC-1271 check
+    ///      on top of a plain release, so its floor covers both, and each full batch can be offered
+    ///      its floors within the EIP-7825 cap.
+    function test_PerItemGasFloorsAreConsistent() public view {
+        assertEq(router.MIN_ITEM_GAS(), 200_000);
+        assertEq(router.MIN_SIGNED_ITEM_GAS(), 450_000);
+        assertGe(
+            router.MIN_SIGNED_ITEM_GAS(),
+            router.MIN_ITEM_GAS() + SignatureVerifier.ERC1271_GAS_LIMIT
+        );
+        assertLe((router.MAX_CLAIMS() + 1) * router.MIN_ITEM_GAS(), 16_777_216);
+        assertLe((router.MAX_SIGNED_CLAIMS() + 1) * router.MIN_SIGNED_ITEM_GAS(), 16_777_216);
     }
 
     function test_ContinueModeRevertsWhenItemsWouldBeStarved() public {

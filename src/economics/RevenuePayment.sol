@@ -66,8 +66,10 @@ library RevenuePayment {
         if (TokenTransfer.tryTransferExact(asset, wallet, amount, ERC20_TRANSFER_GAS)) {
             return false;
         }
-        TokenTransfer.approveExact(asset, address(escrow), amount);
+        TokenTransfer.approve(asset, address(escrow), amount);
         escrow.depositERC20(wallet, asset, amount);
+        // The escrow pulled exactly `amount`, so a standard token leaves no allowance. This is the
+        // only check that catches a token whose `transferFrom` does not spend the allowance.
         if (TokenTransfer.allowance(asset, address(this), address(escrow)) != 0) {
             revert EscrowAllowanceLeft(asset);
         }

@@ -106,12 +106,18 @@ library TokenTransfer {
         );
     }
 
-    /// @notice Approves exactly `amount` of `asset` to `spender`, or reverts.
-    function approveExact(address asset, address spender, uint256 amount) internal {
+    /// @notice Approves `amount` of `asset` to `spender`, or reverts unless the token returns
+    ///         exactly `true`.
+    /// @dev The resulting allowance is not read back: a caller that needs it consumed exactly
+    ///      checks the allowance after the pull (see `RevenuePayment.payERC20`). Too little makes
+    ///      the pull fail; anything left over fails that check.
+    function approve(address asset, address spender, uint256 amount) internal {
         if (
             _call(asset, abi.encodeCall(IERC20.approve, (spender, amount)), _ALL_GAS)
-                    != Outcome.True || allowance(asset, address(this), spender) != amount
-        ) revert TokenCallFailed(asset, IERC20.approve.selector);
+                != Outcome.True
+        ) {
+            revert TokenCallFailed(asset, IERC20.approve.selector);
+        }
     }
 
     /// @dev Only a transfer with a bounded `gasLimit` tolerates a clean refusal; the strict paths
