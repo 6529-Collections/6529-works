@@ -9,7 +9,628 @@
     "registerPerChunk": 22400,
     "registerPerMimeByte": 400,
     "registerLongMime": 45000,
+    "attestBase": 150000,
+    "attestPerChunk": 180000,
     "txGasCap": 16777216
+  },
+  "attest": {
+    "rule": "length % 4 == 0; every byte in [A-Za-z0-9+/] except that '=' may be the last one or two bytes of the whole text; the first bad byte's chunk is reported",
+    "acceptedAsFirst": "0x0000000000000000000000000000000007fffffe07fffffe03ff880000000000",
+    "acceptedAsLast": "0x0000000000000000000000000000000007fffffe07fffffe23ff880000000000",
+    "cases": [
+      {
+        "name": "no-padding",
+        "parts": [
+          [
+            "51554a44",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "one-pad",
+        "parts": [
+          [
+            "5155493d",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "two-pads",
+        "parts": [
+          [
+            "51513d3d",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "full-alphabet",
+        "parts": [
+          [
+            "4142434445464748494a4b4c4d4e4f505152535455565758595a6162636465666768696a6b6c6d6e6f707172737475767778797a303132333435363738392b2f",
+            1
+          ]
+        ],
+        "length": 64,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "plus-and-slash",
+        "parts": [
+          [
+            "2b2f2b2f",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "alphabet-extremes",
+        "parts": [
+          [
+            "2b2f3039415a617a",
+            1
+          ]
+        ],
+        "length": 8,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "three-full-chunks",
+        "parts": [
+          [
+            "41424344",
+            12288
+          ]
+        ],
+        "length": 49152,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "pad-in-the-last-of-three",
+        "parts": [
+          [
+            "41424344",
+            12287
+          ],
+          [
+            "41423d3d",
+            1
+          ]
+        ],
+        "length": 49152,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "two-pads-straddle-chunks",
+        "parts": [
+          [
+            "41",
+            24574
+          ],
+          [
+            "3d",
+            2
+          ]
+        ],
+        "length": 24576,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "one-pad-alone-in-the-last-chunk",
+        "parts": [
+          [
+            "41",
+            24575
+          ],
+          [
+            "3d",
+            1
+          ]
+        ],
+        "length": 24576,
+        "expect": "ok",
+        "chunk": null
+      },
+      {
+        "name": "equals-in-the-middle",
+        "parts": [
+          [
+            "51513d41",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "only-equals",
+        "parts": [
+          [
+            "3d3d3d3d",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "leading-equals",
+        "parts": [
+          [
+            "3d51554a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "three-equals",
+        "parts": [
+          [
+            "513d3d3d",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "equals-before-the-final-equals",
+        "parts": [
+          [
+            "413d413d",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "url-safe-minus",
+        "parts": [
+          [
+            "51552d4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "url-safe-underscore",
+        "parts": [
+          [
+            "51555f4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "newline",
+        "parts": [
+          [
+            "51550a4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "space",
+        "parts": [
+          [
+            "5155204a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "double-quote",
+        "parts": [
+          [
+            "5155224a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "backslash",
+        "parts": [
+          [
+            "51555c4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "percent",
+        "parts": [
+          [
+            "5155254a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "hash",
+        "parts": [
+          [
+            "5155234a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "less-than",
+        "parts": [
+          [
+            "51553c4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "nul",
+        "parts": [
+          [
+            "5155004a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "delete",
+        "parts": [
+          [
+            "51557f4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "high-bit",
+        "parts": [
+          [
+            "5155804a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "utf-8-letter",
+        "parts": [
+          [
+            "5155c3a9",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "below-plus",
+        "parts": [
+          [
+            "51552a4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "comma",
+        "parts": [
+          [
+            "51552c4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "period",
+        "parts": [
+          [
+            "51552e4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "colon",
+        "parts": [
+          [
+            "51553a4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "at-sign",
+        "parts": [
+          [
+            "5155404a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "open-bracket",
+        "parts": [
+          [
+            "51555b4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "backtick",
+        "parts": [
+          [
+            "5155604a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "open-brace",
+        "parts": [
+          [
+            "51557b4a",
+            1
+          ]
+        ],
+        "length": 4,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "three-pads-straddle-chunks",
+        "parts": [
+          [
+            "41",
+            24573
+          ],
+          [
+            "3d",
+            3
+          ]
+        ],
+        "length": 24576,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "equals-then-letter-at-the-boundary",
+        "parts": [
+          [
+            "41",
+            24574
+          ],
+          [
+            "3d41",
+            1
+          ]
+        ],
+        "length": 24576,
+        "expect": "alphabet",
+        "chunk": 0
+      },
+      {
+        "name": "bad-byte-in-the-second-chunk",
+        "parts": [
+          [
+            "41",
+            24575
+          ],
+          [
+            "24",
+            1
+          ]
+        ],
+        "length": 24576,
+        "expect": "alphabet",
+        "chunk": 1
+      },
+      {
+        "name": "bad-byte-then-more-text",
+        "parts": [
+          [
+            "41",
+            24575
+          ],
+          [
+            "25",
+            1
+          ],
+          [
+            "41414141",
+            5
+          ]
+        ],
+        "length": 24596,
+        "expect": "alphabet",
+        "chunk": 1
+      },
+      {
+        "name": "bad-byte-in-the-third-chunk",
+        "parts": [
+          [
+            "41",
+            49151
+          ],
+          [
+            "22",
+            1
+          ]
+        ],
+        "length": 49152,
+        "expect": "alphabet",
+        "chunk": 2
+      },
+      {
+        "name": "length-1",
+        "parts": [
+          [
+            "51",
+            1
+          ]
+        ],
+        "length": 1,
+        "expect": "length",
+        "chunk": null
+      },
+      {
+        "name": "length-2",
+        "parts": [
+          [
+            "5151",
+            1
+          ]
+        ],
+        "length": 2,
+        "expect": "length",
+        "chunk": null
+      },
+      {
+        "name": "length-3-padded",
+        "parts": [
+          [
+            "51513d",
+            1
+          ]
+        ],
+        "length": 3,
+        "expect": "length",
+        "chunk": null
+      },
+      {
+        "name": "length-5",
+        "parts": [
+          [
+            "51554a4451",
+            1
+          ]
+        ],
+        "length": 5,
+        "expect": "length",
+        "chunk": null
+      },
+      {
+        "name": "length-5-padded",
+        "parts": [
+          [
+            "51554a443d",
+            1
+          ]
+        ],
+        "length": 5,
+        "expect": "length",
+        "chunk": null
+      },
+      {
+        "name": "length-one-full-chunk",
+        "parts": [
+          [
+            "41",
+            24575
+          ]
+        ],
+        "length": 24575,
+        "expect": "length",
+        "chunk": null
+      },
+      {
+        "name": "length-is-checked-before-the-alphabet",
+        "parts": [
+          [
+            "51552d4a51",
+            1
+          ]
+        ],
+        "length": 5,
+        "expect": "length",
+        "chunk": null
+      }
+    ]
   },
   "vectors": [
     {

@@ -30,14 +30,17 @@ from tools.content import abi, calls, gas
 from tools.content import plan as pl
 from tools.content.address import checksum_address
 from tools.content.cli import main
-from tools.content.encoding import Encoding
+from tools.content.encoding import Encoding, base64_attestation_problem
 from tools.content.golden import ROOT, counter_bytes
 from tools.content.keccak import keccak256
+from tools.content.errors import RevertError
 from tools.content.rpc import JsonRpc
 
 ARTIFACT = ROOT / "out" / "ContentStore.sol" / "ContentStore.json"
 REQUIRED = os.environ.get("CONTENT_E2E_REQUIRE") == "1"
 MANIFEST_REGISTERED = keccak256(b"ManifestRegistered(bytes32,uint256,uint256,uint8,bytes32,string)")
+BASE64_PROGRESS = keccak256(b"Base64Progress(bytes32,uint256)")
+BASE64_ATTESTED = keccak256(b"Base64Attested(bytes32)")
 
 _anvil: subprocess.Popen[bytes] | None = None
 _rpc: JsonRpc | None = None
@@ -253,6 +256,140 @@ class AnvilEndToEndTest(unittest.TestCase):
         used = int(receipt["gasUsed"], 16)
         self.assertLessEqual(used, estimate.transaction)
         self.assertGreater(used, estimate.transaction * 9 // 10, "the model is far too loose")
+
+    # ---------------------------------------------------------------- base64 attestation
+
+    def topics(self, receipt: dict[str, Any]) -> list[str]:
+        return [log["topics"][0] for log in receipt["logs"]]
+
+    def test_the_emitted_attest_calls_attest_both_base64_encodings(self) -> None:
+        media = (b"attest me " * 2000) + counter_bytes(41, 20_000)
+        for encoding in (Encoding.BASE64, Encoding.GZIP_BASE64):
+            with self.subTest(encoding=encoding.label):
+                plan = pl.plan_from_media(media, "text/plain", encoding)
+                built = calls.build_calls(manifest_of(plan), plan.stored)
+                self.assertEqual(built[-1].name, "attestBase64")
+                self.stage(plan, attest=False)
+
+                # Complete and correct, but a renderer would not inline it yet.
+                code, out, err = self.cli("verify", plan, "-q", "--json")
+                report = json.loads(out)
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(
+                    (report["base64Attested"], report["attestCallsNeeded"]), (False, 1)
+                )
+                self.assertEqual(self.cli("verify", plan, "-q", "--require-attested")[0], 1)
+
+                receipt = send_call(built[-1])
+                self.assertEqual(receipt["status"], "0x1")
+                self.assertEqual(self.topics(receipt), ["0x" + BASE64_ATTESTED.hex()])
+                self.assertLessEqual(int(receipt["gasUsed"], 16), built[-1].estimate.transaction)
+
+                code, out, err = self.cli("verify", plan, "-q", "--json", "--require-attested")
+                report = json.loads(out)
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual((report["base64Attested"], report["base64TextValid"]), (True, True))
+
+    def test_a_file_of_more_than_48_chunks_takes_two_attest_calls(self) -> None:
+        # Zero media is the base64 text AAAA...: about 50 chunks, nearly all identical, so only
+        # two distinct chunks are uploaded and the flow stays quick. Gas for 48 DISTINCT cold
+        # chunks is measured against the model in UploaderAttest.t.sol.
+        media = bytes(920_000)
+        plan = pl.plan_from_media(media, "application/octet-stream", Encoding.BASE64)
+        self.assertGreater(len(plan.chunk_hashes), 48)
+        built = calls.build_calls(manifest_of(plan), plan.stored)
+        attests = [c for c in built if c.name == "attestBase64"]
+        self.assertEqual(len(attests), 2)
+        self.assertEqual(len(attests[0].chunk_indexes), 48)
+        self.assertEqual(attests[1].chunk_indexes, tuple(range(48, len(plan.chunk_hashes))))
+        self.stage(plan, attest=False)
+
+        first = send_call(attests[0])
+        self.assertEqual(first["status"], "0x1")
+        self.assertEqual(self.topics(first), ["0x" + BASE64_PROGRESS.hex()])
+        used = int(first["gasUsed"], 16)
+        self.assertLessEqual(used, attests[0].estimate.transaction)
+        self.assertLess(used, gas.TX_GAS_CAP * 55 // 100)
+        code, out, _ = self.cli("verify", plan, "-q", "--json")
+        self.assertEqual((code, json.loads(out)["base64Attested"]), (0, False))
+
+        second = send_call(attests[1])
+        self.assertEqual(second["status"], "0x1")
+        self.assertEqual(self.topics(second), ["0x" + BASE64_ATTESTED.hex()])
+        self.assertLessEqual(int(second["gasUsed"], 16), attests[1].estimate.transaction)
+        code, out, _ = self.cli("verify", plan, "-q", "--json", "--require-attested")
+        self.assertEqual((code, json.loads(out)["base64Attested"]), (0, True))
+
+        # A further call is a cheap no-op that still succeeds.
+        extra = send_call(attests[0])
+        self.assertEqual(extra["status"], "0x1")
+        self.assertEqual(extra["logs"], [])
+        self.assertLess(int(extra["gasUsed"], 16), 50_000)
+
+    def test_only_missing_stops_emitting_attest_calls_once_the_file_is_attested(self) -> None:
+        plan = pl.plan_from_media(counter_bytes(42, 30_000), "text/plain", Encoding.BASE64)
+        self.stage(plan, attest=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            manifest_path = Path(tmp) / "m.json"
+            manifest_path.write_text(
+                json.dumps(pl.manifest_dict(plan, "m.stored", None)), encoding="utf-8"
+            )
+            (Path(tmp) / "m.stored").write_bytes(plan.stored)
+            args = (
+                "calls", str(manifest_path), "--store", checksum_address(_store), "--rpc", _url,
+                "--only-missing", "--json", "--force",
+            )
+            code, out, err = run(*args)
+            self.assertEqual(code, 0, err)
+            self.assertEqual(
+                [t["name"] for t in json.loads(out)["transactions"]], ["attestBase64"]
+            )
+            built = calls.build_calls(
+                manifest_of(plan), plan.stored, skip_register=True,
+                present_chunk_hashes=plan.chunk_hashes,
+            )
+            self.assertEqual(send_call(built[-1])["status"], "0x1")
+            code, out, _ = run(*args)
+            document = json.loads(out)
+            self.assertEqual(document["transactions"], [])
+            self.assertTrue(document["skipped"]["attestBase64"])
+
+    def test_texts_the_tool_refuses_are_refused_by_the_contract_too(self) -> None:
+        # The strictness check against the real store: stage texts that break the rule directly
+        # (the tool would not plan them), then read the revert attestBase64 gives.
+        cases = {
+            b"QU-J": "ContentBase64Invalid({id}, 0)",
+            b"QQ=A": "ContentBase64Invalid({id}, 0)",
+            b"QUJDQ": "ContentBase64LengthInvalid({id}, 5)",
+            b"A" * 24_575 + b"$": "ContentBase64Invalid({id}, 1)",
+            b"A" * 24_573 + b"===": "ContentBase64Invalid({id}, 0)",
+        }
+        assert _rpc is not None
+        for text, expected in cases.items():
+            with self.subTest(text[:8], length=len(text)):
+                self.assertIsNotNone(base64_attestation_problem(text))
+                chunks = pl.split_chunks(text)
+                hashes = [pl.chunk_hash(c) for c in chunks]
+                digest = bytes([3] * 32)
+                register = abi.encode_register_manifest(
+                    hashes, len(text), int(Encoding.BASE64), "text/plain", digest
+                )
+                file_id = pl.manifest_id(hashes, len(text), Encoding.BASE64, "text/plain", digest)
+                for data in (register, *(abi.encode_write_chunk(c) for c in chunks)):
+                    receipt = _send(
+                        {
+                            "from": _sender,
+                            "to": checksum_address(_store),
+                            "data": "0x" + data.hex(),
+                            "gas": hex(6_000_000),
+                        }
+                    )
+                    self.assertEqual(receipt["status"], "0x1")
+                with self.assertRaises(RevertError) as ctx:
+                    _rpc.eth_call(_store, abi.encode_call(abi.ATTEST_BASE64, file_id))
+                self.assertEqual(str(ctx.exception), expected.format(id="0x" + file_id.hex()))
+                attested = _rpc.eth_call(_store, abi.encode_call(abi.IS_BASE64_ATTESTED, file_id))
+                self.assertFalse(abi.decode_bool(attested))
 
     def test_verify_refuses_an_address_with_no_contract(self) -> None:
         assert _rpc is not None

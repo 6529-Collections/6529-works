@@ -12,13 +12,15 @@ import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .encoding import Encoding, decode, encode
+from .encoding import Encoding, base64_attestation_problem, decode, encode
 from .errors import RevertError, ToolError
 from .plan import (
     CHUNK_SIZE,
     MAX_CHUNKS,
+    attest_call_count,
     chunk_count,
     chunk_hash,
+    describe_base64_problem,
     hex0x,
     manifest_id,
     validate_mime,
@@ -46,6 +48,9 @@ class Report:
     media_sha256_matches: bool | None = None
     media_length: int | None = None
     reproducible: bool | None = None
+    base64_attested: bool | None = None  # None: not a base64 file, or a store without it
+    base64_text_valid: bool | None = None  # this tool's reading of the attestation rule
+    attest_calls_needed: int | None = None
     complete: bool = False
     problems: list[str] = field(default_factory=list)
 
@@ -74,6 +79,9 @@ class Report:
             "mediaSha256Matches": self.media_sha256_matches,
             "mediaLength": self.media_length,
             "reproducible": self.reproducible,
+            "base64Attested": self.base64_attested,
+            "base64TextValid": self.base64_text_valid,
+            "attestCallsNeeded": self.attest_calls_needed,
             "problems": self.problems,
         }
 
@@ -113,10 +121,31 @@ class Report:
                     f"reproducible  {_yes_no(self.reproducible)} "
                     "(this tool's encoder gives the same stored bytes)",
                 ]
+        lines += self._base64_lines()
         for problem in self.problems:
             lines.append(f"PROBLEM       {problem}")
         lines.append("result        " + ("OK" if self.ok else "NOT OK"))
         return "\n".join(lines)
+
+
+    def _base64_lines(self) -> list[str]:
+        if self.encoding not in ("base64", "gzipbase64") or not self.registered:
+            return []
+        if self.base64_attested is True:
+            lines = ["base64        attested: a renderer will inline this file"]
+        elif self.base64_attested is False:
+            lines = [
+                "base64        NOT ATTESTED: a renderer will not inline this file until "
+                f"attestBase64 is called ({self.attest_calls_needed} call(s))"
+            ]
+        else:
+            lines = ["base64        attestation not available on this store"]
+        if self.base64_text_valid is not None:
+            lines.append(
+                "base64 text   "
+                + ("passes the attestation rule" if self.base64_text_valid else "FAILS the rule")
+            )
+        return lines
 
 
 def _yes_no(value: bool | None) -> str:
@@ -171,6 +200,10 @@ def verify_file(
         report.problems.append(f"the store reports an unknown encoding id {info.encoding}")
         return Result(report)
     report.encoding = encoding.label
+    if encoding.uses_base64:
+        report.base64_attested = client.is_base64_attested(file_id)
+        if report.base64_attested is False:
+            report.attest_calls_needed = attest_call_count(info.chunk_count)
 
     count = info.chunk_count
     if not 1 <= count <= MAX_CHUNKS or chunk_count(info.length) != count:
@@ -231,6 +264,16 @@ def verify_file(
     if not report.stored_length_matches:
         report.problems.append("the stored bytes are not as long as the manifest declares")
         return Result(report, stored)
+    if encoding.uses_base64:
+        text_problem = base64_attestation_problem(stored)
+        report.base64_text_valid = text_problem is None
+        if text_problem is not None:
+            report.problems.append(describe_base64_problem(text_problem, len(stored)))
+        if report.base64_attested and text_problem is not None:
+            report.problems.append(
+                "the store reports this file as attested, but its text fails the attestation rule "
+                "(wrong store, or an untrustworthy RPC)"
+            )
     try:
         media = decode(stored, encoding)
     except ToolError as exc:

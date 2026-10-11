@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import abi, gas
+from . import abi, gas, golden_attest
 from .encoding import Encoding, decode, encode
 from .errors import ToolError
 from .keccak import keccak256
@@ -136,6 +136,8 @@ def gas_model() -> dict[str, int]:
         "registerPerChunk": gas.REGISTER_CHUNK_GAS,
         "registerPerMimeByte": gas.REGISTER_MIME_BYTE_GAS,
         "registerLongMime": gas.REGISTER_LONG_MIME_GAS,
+        "attestBase": gas.ATTEST_BASE_GAS,
+        "attestPerChunk": gas.ATTEST_CHUNK_GAS,
         "txGasCap": gas.TX_GAS_CAP,
     }
 
@@ -158,6 +160,7 @@ def build() -> tuple[dict[str, Any], dict[str, bytes]]:
             "keccak256(abi.encode(uint256 seed, uint256 offset)) for offset = 0, 32, 64, ..."
         ),
         "gasModel": gas_model(),
+        "attest": golden_attest.build_document(),
         "vectors": vectors,
     }
     return document, streams
@@ -276,6 +279,8 @@ library UploaderGoldenData {{
     uint256 internal constant GAS_REGISTER_PER_CHUNK = {g["registerPerChunk"]};
     uint256 internal constant GAS_REGISTER_PER_MIME_BYTE = {g["registerPerMimeByte"]};
     uint256 internal constant GAS_REGISTER_LONG_MIME = {g["registerLongMime"]};
+    uint256 internal constant GAS_ATTEST_BASE = {g["attestBase"]};
+    uint256 internal constant GAS_ATTEST_PER_CHUNK = {g["attestPerChunk"]};
     uint256 internal constant TX_GAS_CAP = {g["txGasCap"]};
 """
     parts = [
@@ -291,6 +296,7 @@ library UploaderGoldenData {{
             hash_only,
             "Large gzip vectors: Solidity cannot gzip, so it checks the file ID and registration.",
         ),
+        golden_attest.render_solidity(document["attest"]),
         "\n\n".join(functions),
     ]
     return "\n\n".join(parts) + "\n}\n// forgefmt: disable-end\n"
@@ -335,6 +341,7 @@ def check() -> list[str]:
         problems.append("vectors.json has the wrong schema")
     if document.get("gasModel") != gas_model():
         problems.append("vectors.json gasModel differs from tools/content/gas.py")
+    problems += golden_attest.check_document(document.get("attest", {}))
     names = [v["name"] for v in document["vectors"]]
     if names != [s.name for s in SPECS]:
         problems.append("vectors.json lists different vectors than golden.SPECS")

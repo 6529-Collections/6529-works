@@ -40,6 +40,9 @@ JSON manifest.
    media, and computes the file ID exactly as `ContentStore.manifestId` does.
 5. Validates the MIME type with the contract's rule (lowercase `type/subtype`
    from `[a-z0-9+._-]`, one slash, at most 64 bytes).
+6. For `base64` and `gzipbase64`, checks the stored text against the
+   [attestation rule](#base64-attestation) and refuses a stream that
+   `attestBase64` would revert on, before any transaction pays for it.
 
 Output: `<FILE>.content.json` (or `-o`) and, unless the stream is the input file
 itself, `<manifest>.stored` beside it: the exact stored bytes. **For a gzip or
@@ -61,6 +64,10 @@ Emits the ordered transactions, **without broadcasting anything**:
 - one `registerManifest` (first by default; `--register last` puts it after the
   chunks), then one `writeChunk` per **distinct** chunk (a file that repeats a
   chunk needs it stored once);
+- for a `Base64` or `GzipBase64` file, `ceil(chunks / 48)` calls to
+  `attestBase64(fileId)` **last**, after the manifest is registered and every
+  chunk is stored, because attestation reads the chunks (see
+  [Base64 attestation](#base64-attestation); `--no-attest` leaves them out);
 - ABI-encoded calldata in `<manifest>.calls/NNN-<name>.calldata`, a machine
   readable `calls.json` (gas estimate and recommended gas limit per
   transaction), and `send.sh`, a script of `cast send` lines that is also
@@ -71,8 +78,11 @@ manifest commits to (length, every chunk hash, and the decoded media SHA-256),
 and it refuses a manifest whose `fileId` is not the hash of its own fields.
 
 `--only-missing --rpc URL` asks the chain and drops what it already has: a
-registered manifest and any chunk the store already holds. That is how a
-collector finishes an upload the artist started.
+registered manifest, any chunk the store already holds, and the attest calls if
+`isBase64Attested` is already true. That is how a collector finishes an upload
+the artist started. (Against a store that has no `attestBase64` it warns and
+emits no attest calls; against one whose `ATTEST_CHUNKS_PER_CALL` is not 48 it
+refuses, because the calls are sized for 48.)
 
 Run `send.sh` yourself, with your own signer:
 
@@ -102,7 +112,14 @@ contract:
   present chunk with `readChunk` and re-hashes it;
 - once complete, checks the length, decodes the stored bytes and compares the
   SHA-256 with the declared one, and reports whether this tool's encoder
-  reproduces the stored stream (informational).
+  reproduces the stored stream (informational);
+- for a `Base64` or `GzipBase64` file, **reports whether it is base64-attested**
+  (`isBase64Attested`) and how many `attestBase64` calls it still needs, and
+  checks the stored text against the attestation rule. A complete, correct file
+  that is not attested yet still verifies (its bytes are fine), but renderers
+  will not inline it; `--require-attested` makes that exit 1. If the store says
+  a file is attested while its text fails the rule, that is a problem (wrong
+  store, or an untrustworthy RPC).
 
 `--json` prints a machine-readable report. Output never contains the RPC URL
 (it usually carries an API key): errors name only scheme, host and port.
@@ -153,6 +170,44 @@ zlib forks (zlib-ng and others) differ. That is why `plan` re-checks
 reproduction on the machine it runs on, why the manifest records the zlib
 version, and why the encoded stream itself must be kept and published.
 
+## Base64 attestation
+
+A renderer copies a `Base64` or `GzipBase64` file's stored text verbatim into
+token JSON and `data:` URIs, and the store never looks at bytes while chunks are
+uploaded, so such a file is only a claim until `ContentStore.attestBase64(fileId)`
+has validated it. Anyone may call it, it is incremental (at most
+`ATTEST_CHUNKS_PER_CALL` = 48 chunks per call, repeat until it returns true) and
+permanent, and `isBase64Attested(fileId)` is what the renderer checks.
+
+The rule, which `base64_attestation_problem` in [`encoding.py`](encoding.py)
+mirrors: the length is a multiple of 4, every byte is in `[A-Za-z0-9+/]`, and `=`
+appears only as the last one or two bytes of the whole text (padding may
+straddle the last chunk boundary). Canonical trailing bits are not checked.
+Anything else, such as the URL-safe `-` and `_`, whitespace, a quote, a
+backslash, a byte of `0x80` or more, or `=` in the middle, makes the call revert
+with `ContentBase64Invalid(fileId, chunk)` (or `ContentBase64LengthInvalid`).
+
+What the tooling does about it:
+
+- **Before anything is emitted**, `plan --already-encoded` and `calls` run the
+  rule on the stored text and refuse a stream that would fail on chain, naming the
+  chunk the contract would report. (Text this tool encodes itself always passes.)
+- **`calls`** appends the attest calls, `ceil(chunks / 48)` of them: 1 up to 48
+  chunks (about 1.18 MB), 2 for 49 to 96, and 11 for the 512-chunk maximum. Each
+  is the same 36 bytes of calldata, `attestBase64(fileId)`, and each carries its
+  own gas estimate. They come last because each call reads the chunks it
+  validates and the call that reaches the end of the file also reads the last
+  chunk to find the padding, so the final call cannot succeed before the manifest
+  is registered and every chunk is stored. (Earlier calls on a big file do not
+  need the end and could run while the upload is still going; the tool keeps one
+  simple order.) Repeating a call on an attested file is a cheap no-op that
+  returns true.
+- **`verify`** reports the status (above).
+
+Cost falls on whoever calls it: about 175,000 gas per chunk, so about 8.5M gas for
+a full call of 48 distinct chunks (about half the Fusaka cap), and about 90M gas
+for a 512-chunk file.
+
 ## Manifest JSON
 
 `schema` is `6529-works/content-plan/v1`. Deterministic (no timestamps), fixed key
@@ -196,11 +251,18 @@ to emit any transaction above the cap, warns above three quarters of it, and set
 | --- | --- | --- | --- |
 | `writeChunk`, new 24,575-byte chunk | 5,107,875 | 5,020,261 | about 5.5M (33% of the cap) |
 | `registerManifest`, 512 chunks, `text/html` | 11,572,400 | 11,460,012 | about 11.9M (71%) |
+| `attestBase64`, the worst call (48 cold chunks, then the last chunk for the padding) | 8,790,000 | about 8,500,000 | about 8.8M (53%) |
 
 `writeChunk` is priced as a new chunk, the worst case; a chunk the store already
-holds costs about 16,000. The model constants (`gas.py`) are upper bounds fitted
-to measurements, and `UploaderGolden.t.sol` fuzzes both functions on a real
-`ContentStore` asserting that measured gas never exceeds the model.
+holds costs about 16,000. `attestBase64` is priced at 150,000 plus 180,000 per
+chunk validated. The worst call is 48 checked chunks plus one read of the file's
+last chunk for the padding (the call that reaches the end of the file does that;
+earlier calls do not), measured at about 8.50M against the model's 8.79M. The
+model constants (`gas.py`) are upper bounds fitted to measurements.
+`UploaderGolden.t.sol` fuzzes `writeChunk` and `registerManifest` on a real
+`ContentStore`, and `UploaderAttest.t.sol` measures `attestBase64` for 1, 11 and
+48 chunks, the worst call (the first call of a 49-chunk file) and the second
+call of that file, each asserting that measured gas never exceeds the model.
 
 A whole 12.58 MB file is 513 transactions and about 2.84 billion gas, about 2.8
 ETH at 1 gwei. One more thing to know before batching chunks with Multicall3:
@@ -219,7 +281,12 @@ themselves:
   files for every encoding, each with its file ID, chunk hashes, SHA-256 and
   `registerManifest` calldata. Large media is generated by
   `keccak256(abi.encode(seed, offset))`, the same generator as `ContentBase._data`
-  in the Foundry tests.
+  in the Foundry tests. A second set of cases, in
+  [`golden_attest.py`](golden_attest.py), lists base64 texts the store must
+  accept and refuse (valid padding, every kind of bad byte, the bytes next to the
+  alphabet's ranges, padding straddling chunks, a bad byte in the second and third
+  chunk, wrong lengths), with the error and chunk each should give, plus two
+  bitmaps that say which of the 256 byte values are accepted first and last.
 - **Foundry:** [`UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol)
   loads the same vectors (through the generated `UploaderGoldenData.sol`) and
   asserts, on a real `ContentStore`, the identical file IDs and chunk hashes, the
@@ -227,12 +294,18 @@ themselves:
   functions, that the Python-built calldata registers and uploads files that read
   back complete, and the gas model. Solidity cannot gzip, so large gzip vectors
   are checked from their hashes and file ID only; the small ones from their
-  committed stored bytes.
+  committed stored bytes. [`UploaderAttest.t.sol`](../../test/content/tooling/UploaderAttest.t.sol)
+  does the same for attestation: for every golden case, under both base64
+  encodings, the store attests the text or reverts with the same error and chunk
+  Python predicted, and for every byte value, first and last, the verdict equals
+  the Python bitmap.
 - **Python:** `test_*.py` here assert the same vectors, `cast`-derived keccak
   and ABI values, RFC 4648 and strict-decoder cases, the fake-store command line
   flows, and `test_anvil.py`, which sends the emitted calldata (with the
   recommended gas limits) to the compiled contract on a local Anvil node and
-  verifies and rebuilds the files.
+  verifies and rebuilds the files, runs the attest calls (including a file that
+  needs two) and checks `isBase64Attested`, and confirms the contract refuses
+  texts the tool refuses, with the error and chunk predicted.
 
 Regenerate after changing the vectors or the gas model, and commit the result:
 
