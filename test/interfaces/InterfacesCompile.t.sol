@@ -34,8 +34,8 @@ import { Limits } from "../../src/interfaces/types/Limits.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IMintTarget).interfaceId, bytes4(0xaaf75889), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0xaeda2e27), "IStream");
+        assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
+        assertEq(type(IStream).interfaceId, bytes4(0x4b62279d), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xa5bd946e), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
@@ -62,13 +62,13 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");
     }
 
-    /// @dev The mint surface stays small: three adapter calls plus the admitted-minter mapping.
+    /// @dev The mint surface stays small: four adapter calls plus the admitted-minter mapping.
     function test_mintTargetIsMinimal() public pure {
         assertEq(
             type(IMintTarget).interfaceId,
             IMintTarget.mint.selector ^ IMintTarget.primaryTerms.selector
                 ^ IMintTarget.burn.selector ^ IMintTarget.isAdmittedMinter.selector
-                ^ IMintTarget.setAdmittedMinter.selector
+                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.markPrimarySettled.selector
         );
     }
 

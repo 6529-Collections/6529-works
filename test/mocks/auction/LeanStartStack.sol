@@ -168,13 +168,16 @@ contract LeanStream is ERC721, IMintTarget {
     LeanEconomicsResolver public immutable resolver;
     LeanArtistRegistry public immutable artists;
     mapping(address adapter => bool) public isAdmittedMinter;
+    /// @dev A small minter ID per adapter, assigned once and kept after removal (L-3).
+    mapping(address adapter => uint8) public minterIdOf;
+    uint8 public minterCount;
     uint256 public lastId;
     mapping(uint256 collectionId => uint64) public collectionSize;
     /// @dev seller (160) | serial (64) | fee share (32).
     mapping(uint256 tokenId => uint256) public workSlot;
     mapping(uint256 tokenId => bytes32) public itemHashOf;
-    /// @dev artist ID (160) | royalty rate (32) | fee-recipient index (16) | collection ID (40) |
-    ///      flags (8, bit 0: primary sale settled).
+    /// @dev artist ID (160) | royalty rate (32) | fee-recipient index (16) | collection ID (32) |
+    ///      minter ID (8) | flags (8, bit 0: primary sale settled).
     mapping(uint256 tokenId => uint256) public artistSlot;
 
     event WorkMinted(
@@ -197,6 +200,7 @@ contract LeanStream is ERC721, IMintTarget {
 
     /// @dev In Stream, a `restricted` setter mapped to the 30-day class (E4).
     function setAdmittedMinter(address adapter, bool admitted) external {
+        if (minterIdOf[adapter] == 0) minterIdOf[adapter] = ++minterCount;
         isAdmittedMinter[adapter] = admitted;
         emit AdmittedMinterSet(adapter, admitted);
     }
@@ -240,7 +244,7 @@ contract LeanStream is ERC721, IMintTarget {
             uint256(uint160(w.seller)) | uint256(serial) << 160 | uint256(w.feeShare) << 224;
         itemHashOf[tokenId] = itemHash;
         artistSlot[tokenId] = artistId | uint256(w.royaltyRate) << 160 | 1 << 192
-            | uint256(uint40(collectionId)) << 208;
+            | uint256(uint32(collectionId)) << 208 | uint256(minterIdOf[msg.sender]) << 240;
         _mint(to, tokenId);
         emit WorkMinted(tokenId, itemHash, artistId, collectionId, serial);
     }
@@ -268,8 +272,13 @@ contract LeanStream is ERC721, IMintTarget {
         artistSlot[id] |= 1 << 248;
     }
 
+    /// @dev L-3: the adapter that minted the token (by minter ID), admitted or not.
     function burn(uint256 id, uint256) external {
-        require(isAdmittedMinter[msg.sender] && ownerOf(id) == msg.sender, "custody");
+        require(
+            uint8(artistSlot[id] >> 240) == minterIdOf[msg.sender] && minterIdOf[msg.sender] != 0
+                && ownerOf(id) == msg.sender,
+            "custody"
+        );
         _burn(id);
     }
 

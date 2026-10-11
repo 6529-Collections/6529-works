@@ -172,7 +172,7 @@ default when the sale starts".
      wallet and the fee recipient are paid; failed pushes go to the escrow.
    - With no bids, the token goes to the artist's current authority, resolved
      at settlement.
-   - Settlement calls `IStream.markPrimarySettled`, even when delivery is still
+   - Settlement calls `IMintTarget.markPrimarySettled`, even when delivery is still
      pending, so a winner who never claims cannot block the edition.
 10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and
     fee terms, and reads the stored rate.

@@ -54,6 +54,14 @@ interface IMintTarget {
     ///         even if it has since been removed, so a cancelled sale can always burn.
     function burn(uint256 id, uint256 amount) external;
 
+    /// @notice Marks token `id`'s primary sale settled, at settlement, while the token is still
+    ///         in the calling adapter's custody and without waiting for delivery, so a winner who
+    ///         never claims cannot block what depends on it (6529 Stream: edition creation).
+    ///         Only the adapter that minted the token. Every mint target implements it, so a sale
+    ///         can always settle; a token with nothing to record (6529 Editions) makes it a
+    ///         no-op.
+    function markPrimarySettled(uint256 id) external;
+
     /// @notice Whether `adapter` may call `mint` and `burn`.
     function isAdmittedMinter(address adapter) external view returns (bool);
     /// @notice Admits or removes a sale adapter (ERC-165 checked for `ISaleAdapter`, not an

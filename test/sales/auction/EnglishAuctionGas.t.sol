@@ -124,6 +124,68 @@ contract EnglishAuctionGasTest is Test {
         assertLe(total, REDESIGN_THRESHOLD, "above 400K the start path needs a redesign (D5)");
     }
 
+    /// @dev L-4: the 350K steady-state gate covers `startWithBid` too (a first bid for oneself
+    ///      writes two more slots: the bidder and the packed bid with its floor).
+    function test_StartWithBidGas_SteadyState() public {
+        _startItem(0, 1, artistPk);
+        _startItem(1, 2, otherArtistPk);
+        address bidder = makeAddr("gasBidder");
+        vm.deal(bidder, 1 ether);
+        bytes memory callData = abi.encodeCall(
+            auction.startWithBid,
+            (
+                address(stream),
+                _mintData(2, 3, artistPk),
+                address(0),
+                Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
+            )
+        );
+        _coolAll();
+        vm.prank(bidder);
+        uint256 before = gasleft();
+        (bool ok, bytes memory result) = address(auction).call{ value: 1 ether }(callData);
+        uint256 used = before - gasleft();
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(result, 0x20), mload(result))
+            }
+        }
+        (uint256 standard, uint256 floor) = _calldata(callData);
+        uint256 total = 21_000 + standard + used;
+        if (21_000 + floor > total) total = 21_000 + floor;
+        console2.log("startWithBid steady state, whole transaction", total);
+        assertLe(total, START_GATE, "steady-state start gate (E1) covers startWithBid");
+    }
+
+    /// @dev The steady state, but with no other token in custody (the adapter's ERC-721 balance
+    ///      is written from zero), and the first and second bids of a sale.
+    function test_StartAndBidGas_Profile() public {
+        _startItem(0, 1, artistPk);
+        _settleAway(_saleOf(1));
+        _startItem(1, 2, otherArtistPk);
+        _settleAway(_saleOf(2));
+        _measureStart(2, 3, artistPk, "steady state, idle custody");
+        uint256 saleId = _saleOf(3);
+        address b1 = makeAddr("b1");
+        address b2 = makeAddr("b2");
+        vm.deal(b1, 1 ether);
+        vm.deal(b2, 2 ether);
+        _coolAll();
+        vm.prank(b1);
+        uint256 before = gasleft();
+        auction.bid{ value: 1 ether }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, b1, 1 ether, 0, 0, "")
+        );
+        console2.log("first bid, execution (cold)", before - gasleft());
+        _coolAll();
+        vm.prank(b2);
+        before = gasleft();
+        auction.bid{ value: 2 ether }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, b2, 2 ether, 0, 0, "")
+        );
+        console2.log("second bid, execution (cold)", before - gasleft());
+    }
+
     /// @dev The auction's own part: everything except the token's `mint`, measured by
     ///      subtracting the mint call's gas reported by a probe on a fresh copy of the state.
     function test_StartGas_AuctionShare() public {

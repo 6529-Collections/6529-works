@@ -149,7 +149,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Pause_EndsByItselfAfterSevenDays() public {
         uint256 saleId = _start();
         uint256 end = auction.auction(saleId).endTime;
-        vm.warp(end - 10 minutes);
+        vm.warp(end - 20 minutes);
         _pause(saleId);
         uint256 pausedAt = block.timestamp;
         vm.warp(pausedAt + 7 days);
@@ -157,7 +157,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.warp(pausedAt + 7 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE), "resumed, no call");
-        assertEq(a.endTime, end + 7 days);
+        assertEq(a.endTime, end + 7 days, "the remaining 20 minutes, more than the window");
         assertEq(a.pausedAt, 0);
         assertEq(a.pausedTotal, 7 days);
         vm.prank(unpauser);
@@ -167,13 +167,15 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.expectEmit(address(auction));
         emit IEnglishAuction.AuctionResumed(saleId, uint64(end + 7 days));
         _bidEth(saleId, alice, 1 ether);
-        assertEq(auction.auction(saleId).endTime, block.timestamp + WINDOW, "anti-snipe applies");
         vm.prank(guardian);
         vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, saleId));
         auction.pause(saleId, bytes32(0));
+        vm.warp(end + 7 days - 1);
+        _bidEth(saleId, bob, 2 ether);
+        assertEq(auction.auction(saleId).endTime, block.timestamp + WINDOW, "anti-snipe applies");
         vm.warp(block.timestamp + WINDOW);
         auction.settle(saleId);
-        assertEq(stream.ownerOf(1), alice);
+        assertEq(stream.ownerOf(1), bob);
     }
 
     function test_Pause_ExpiredPauseSettlesWithoutAResumeCall() public {
@@ -182,9 +184,44 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _bidEth(saleId, alice, 1 ether);
         vm.warp(end - 1);
         _pause(saleId);
-        vm.warp(end + 7 days);
+        uint256 resumedEnd = block.timestamp + 7 days + WINDOW;
+        assertEq(auction.auction(saleId).endTime, end, "frozen while paused");
+        vm.warp(resumedEnd - 1);
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        vm.warp(resumedEnd);
         auction.settle(saleId);
         assertEq(stream.ownerOf(1), alice);
+    }
+
+    /// @dev L-2 (review PoC F3, inverted): a pause with seconds left, a withdrawal, and the
+    ///      automatic resumption leave at least the anti-snipe window, so the returning bidders
+    ///      can bid again.
+    function test_Resume_LeavesAtLeastTheWindow() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 10 ether);
+        uint256 end = auction.auction(saleId).endTime;
+        vm.warp(end - 1);
+        _pause(saleId);
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        vm.warp(block.timestamp + 7 days + 1);
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        assertEq(a.endTime, end - 1 + 7 days + WINDOW, "the window, not one second");
+        _bidEth(saleId, alice, 10 ether);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(1), alice, "sold");
+
+        uint256 other = _start();
+        uint256 otherEnd = auction.auction(other).endTime;
+        vm.warp(otherEnd - 5 minutes);
+        _pause(other);
+        vm.warp(block.timestamp + 1 days);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.AuctionResumed(other, uint64(block.timestamp + WINDOW));
+        vm.prank(unpauser);
+        auction.resume(other);
     }
 
     // ----------------------------------------------------------------------------- cancel
@@ -529,6 +566,7 @@ contract EnglishAuctionFederationTest is AuctionBase {
         vm.prank(successor);
         auction.setFederationRegistry(address(0), address(registry));
         IFederationRegistry.Entry memory e;
+        e.codeHash = address(federated).codehash;
         e.status = IFederationRegistry.Status.ACTIVE;
         e.feeShare = 10_000;
         registry.register(address(federated), e);

@@ -117,8 +117,11 @@ contract MockMintTarget is ERC721, IMintTarget {
         if (creatorNow != address(0)) t.creator = creatorNow;
     }
 
+    /// @dev L-3: admitted minters, and the adapter that minted the token even after removal.
     function burn(uint256 id, uint256 amount) external {
-        if (!isAdmittedMinter[msg.sender]) revert NotAdmittedMinter(msg.sender);
+        if (!isAdmittedMinter[msg.sender] && mintedBy[id] != msg.sender) {
+            revert NotAdmittedMinter(msg.sender);
+        }
         require(amount == 1 && ownerOf(id) == msg.sender, "burn");
         _burn(id);
         ++burned;
@@ -317,5 +320,20 @@ contract GasBurnerToken is PermitToken {
     function transfer(address, uint256) public pure override returns (bool) {
         while (true) { }
         return false;
+    }
+}
+
+/// @dev An EIP-2612 token that refuses transfers to blocked addresses (USDC-style), so payouts to
+///      a blocked wallet take the escrow route.
+contract BlockablePermitToken is PermitToken {
+    mapping(address => bool) public blocked;
+
+    function setBlocked(address account, bool isBlocked) external {
+        blocked[account] = isBlocked;
+    }
+
+    function _update(address from, address to, uint256 value) internal override {
+        require(!blocked[to], "blocked");
+        super._update(from, to, value);
     }
 }

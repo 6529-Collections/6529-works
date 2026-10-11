@@ -2,71 +2,99 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { MockERC20 } from "../../../mocks/EconomicsMocks.sol";
-import { HostileActor, MockMintTarget } from "../../../mocks/auction/AuctionMocks.sol";
+import {
+    BlockablePermitToken,
+    HostileActor,
+    MockMintTarget,
+    MockPermit2
+} from "../../../mocks/auction/AuctionMocks.sol";
 
-/// @dev Drives one currency's auctions through every lifecycle path: starts, bids from honest
-///      and hostile bidders, time, dispute pauses, withdrawals, upheld cancellations,
-///      resumptions, settlements, credit claims and pending-delivery claims. Every action is
-///      guarded so it never reverts (`fail_on_revert`), and ghost totals record what entered and
-///      left the auction.
+/// @dev Drives one currency's auctions through every lifecycle path: starts and start-with-bids,
+///      bids from honest and hostile bidders (direct, EIP-2612 permits and relayed Permit2
+///      intents for ERC-20), time, dispute pauses with and without withdrawals, upheld
+///      cancellations, resumptions, settlements (with the ERC-20 escrow route: the token blocks
+///      the seller wallet), credit claims, delivery claims by the recipient or the winner, the
+///      emergency start pause, and governance changes to the config, the opening bid and the
+///      increment floor. Every action is guarded so it never reverts (`fail_on_revert`), and
+///      ghost totals record what entered and left the auction.
 contract AuctionHandler is Test {
     uint256 internal constant MAX_SALES = 8;
+
+    struct Setup {
+        EnglishAuction auction;
+        MockMintTarget stream;
+        StatementLog statements;
+        RevenueEscrow escrow;
+        AssetAllowlist allowlist;
+        MockPermit2 permit2;
+        address currency;
+        address admin;
+        address guardian;
+        address unpauser;
+        address setter;
+        address platform;
+        address pauser;
+    }
 
     EnglishAuction public immutable auction;
     MockMintTarget public immutable stream;
     StatementLog public immutable statements;
     RevenueEscrow public immutable escrow;
-    MockERC20 public immutable token;
+    AssetAllowlist public immutable allowlist;
+    MockPermit2 public immutable permit2;
     address public immutable currency;
+    address public immutable admin;
     address public immutable guardian;
     address public immutable unpauser;
     address public immutable setter;
     address public immutable platform;
     address public immutable pauser;
     address public immutable sink = makeAddr("sink");
+    address public immutable relayer = makeAddr("handlerRelayer");
 
     address[] public actors;
+    uint256[] internal _keys;
     uint256[] public sales;
     HostileActor public hostile;
+    uint256 internal _permit2Nonce;
 
     uint256 public ghostDeposited;
     uint256 public ghostClaimed;
     mapping(uint256 saleId => uint256) public ghostSettlements;
     mapping(uint256 saleId => uint256) public ghostCancellations;
+    mapping(uint256 saleId => bool) internal _paused;
     /// @dev How often each path really ran, for coverage checks.
     mapping(bytes32 path => uint256) public hits;
 
-    constructor(
-        EnglishAuction auction_,
-        MockMintTarget stream_,
-        StatementLog statements_,
-        RevenueEscrow escrow_,
-        MockERC20 token_,
-        address[5] memory roles
-    ) {
-        auction = auction_;
-        stream = stream_;
-        statements = statements_;
-        escrow = escrow_;
-        token = token_;
-        currency = address(token_);
-        (guardian, unpauser, setter, platform, pauser) =
-        (roles[0], roles[1], roles[2], roles[3], roles[4]);
+    constructor(Setup memory c) {
+        (auction, stream, statements, escrow, allowlist, permit2) =
+        (c.auction, c.stream, c.statements, c.escrow, c.allowlist, c.permit2);
+        (currency, admin, guardian, unpauser, setter, platform, pauser) =
+        (c.currency, c.admin, c.guardian, c.unpauser, c.setter, c.platform, c.pauser);
         hostile = new HostileActor();
         hostile.configure(HostileActor.Behaviour.REVERT, HostileActor.Behaviour.REVERT);
-        actors.push(makeAddr("bidder0"));
-        actors.push(makeAddr("bidder1"));
-        actors.push(makeAddr("bidder2"));
+        for (uint256 i = 1; i <= 3; ++i) {
+            _keys.push(0xB1D0 + i);
+            actors.push(vm.addr(0xB1D0 + i));
+        }
         actors.push(address(hostile));
+        if (currency != address(0)) {
+            for (uint256 i; i < 3; ++i) {
+                vm.prank(actors[i]);
+                _token().approve(address(permit2), type(uint256).max);
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------- actions
@@ -74,51 +102,73 @@ contract AuctionHandler is Test {
     function start() external {
         if (sales.length >= MAX_SALES || auction.paused()) return;
         sales.push(auction.start(address(stream), ""));
+        ++hits["start"];
     }
 
-    function bid(uint256 saleSeed, uint256 actorSeed, uint256 amountSeed, bool forHostile)
+    function startWithBid(uint256 actorSeed, uint256 amountSeed) external {
+        if (sales.length >= MAX_SALES || auction.paused()) return;
+        if (currency != address(0) && !allowlist.isActive(currency)) return;
+        address bidder = actors[actorSeed % actors.length];
+        uint256 opening = auction.openingBid(currency);
+        uint256 amount = bound(amountSeed, opening == 0 ? 1 : opening, opening + 3 ether);
+        Payment memory p = _fund(bidder, amount);
+        bytes memory call =
+            abi.encodeCall(auction.startWithBid, (address(stream), "", address(0), p));
+        uint256 value = currency == address(0) ? amount : 0;
+        bytes memory result;
+        if (bidder == address(hostile)) {
+            result = hostile.execute(address(auction), value, call);
+            sales.push(abi.decode(result, (uint256)));
+        } else {
+            vm.prank(bidder);
+            sales.push(auction.startWithBid{ value: value }(address(stream), "", address(0), p));
+        }
+        ghostDeposited += amount;
+        ++hits["startWithBid"];
+    }
+
+    function bid(uint256 saleSeed, uint256 actorSeed, uint256 amountSeed, uint256 options)
         external
     {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
         if (auction.auction(saleId).state != IEnglishAuction.AuctionState.ACTIVE) return;
+        if (currency != address(0) && !allowlist.isActive(currency)) return;
         uint256 minimum = auction.minimumBid(saleId);
         uint256 amount = bound(amountSeed, minimum, minimum * 3 + 1 ether);
         address bidder = actors[actorSeed % actors.length];
-        address recipient = forHostile ? address(hostile) : address(0);
-        Payment memory p = Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "");
-        uint256 value = currency == address(0) ? amount : 0;
-        if (value != 0) vm.deal(bidder, value);
-        else token.mint(bidder, amount);
-        if (bidder == address(hostile)) {
-            if (value == 0) {
+        address recipient = options & 1 == 1 ? address(hostile) : address(0);
+        uint256 method =
+            currency == address(0) || bidder == address(hostile) ? 0 : (options >> 1) % 3;
+        if (method == 0) {
+            Payment memory p = _fund(bidder, amount);
+            uint256 value = currency == address(0) ? amount : 0;
+            if (bidder == address(hostile)) {
                 hostile.execute(
-                    currency, 0, abi.encodeCall(token.approve, (address(auction), amount))
+                    address(auction), value, abi.encodeCall(auction.bid, (saleId, recipient, p))
                 );
+            } else {
+                vm.prank(bidder);
+                auction.bid{ value: value }(saleId, recipient, p);
             }
-            hostile.execute(
-                address(auction), value, abi.encodeCall(auction.bid, (saleId, recipient, p))
-            );
+            ++hits["bid"];
+        } else if (method == 1) {
+            uint256 key = _keys[actorSeed % actors.length];
+            _token().mint(bidder, amount);
+            Payment memory p = _permit(key, amount);
+            vm.prank(bidder);
+            auction.bid(saleId, recipient, p);
+            ++hits["permit"];
         } else {
-            vm.startPrank(bidder);
-            if (value == 0) token.approve(address(auction), amount);
-            auction.bid{ value: value }(saleId, recipient, p);
-            vm.stopPrank();
+            uint256 key = _keys[actorSeed % actors.length];
+            _token().mint(bidder, amount);
+            Payment memory p =
+                _permit2Payment(key, saleId, recipient == address(0) ? bidder : recipient, amount);
+            vm.prank(relayer);
+            auction.bid(saleId, recipient, p);
+            ++hits["permit2"];
         }
         ghostDeposited += amount;
-        ++hits["bid"];
-    }
-
-    /// @dev The emergency pause stops only new starts; live auctions must carry on.
-    function toggleStartPause() external {
-        if (auction.paused()) {
-            vm.prank(unpauser);
-            auction.unpause();
-        } else {
-            vm.prank(pauser);
-            auction.pause();
-        }
-        ++hits["startPause"];
     }
 
     function warp(uint256 seconds_) external {
@@ -135,13 +185,13 @@ contract AuctionHandler is Test {
     }
 
     function pause(uint256 saleSeed) external {
-        if (sales.length == 0) return;
-        uint256 saleId = _sale(saleSeed);
-        if (auction.auction(saleId).state != IEnglishAuction.AuctionState.ACTIVE) return;
-        if (_pauseUsed(saleId)) return;
-        vm.prank(guardian);
-        auction.pause(saleId, keccak256(abi.encode(saleId)));
-        ++hits["pause"];
+        _pauseSale(saleSeed);
+    }
+
+    /// @dev A dispute pause followed at once by the high bidder's withdrawal.
+    function pauseAndWithdraw(uint256 saleSeed) external {
+        uint256 saleId = _pauseSale(saleSeed);
+        if (saleId != 0) _withdraw(saleId);
     }
 
     function resume(uint256 saleSeed) external {
@@ -155,12 +205,7 @@ contract AuctionHandler is Test {
 
     function withdrawBid(uint256 saleSeed) external {
         if (sales.length == 0) return;
-        uint256 saleId = _sale(saleSeed);
-        IEnglishAuction.Auction memory a = auction.auction(saleId);
-        if (a.state != IEnglishAuction.AuctionState.PAUSED || a.bidder == address(0)) return;
-        vm.prank(a.bidder);
-        auction.withdrawBid(saleId);
-        ++hits["withdraw"];
+        _withdraw(_sale(saleSeed));
     }
 
     function cancel(uint256 saleSeed) external {
@@ -219,6 +264,46 @@ contract AuctionHandler is Test {
         ++hits["delivery"];
     }
 
+    /// @dev The emergency pause stops only new starts; live auctions must carry on.
+    function toggleStartPause() external {
+        if (auction.paused()) {
+            vm.prank(unpauser);
+            auction.unpause();
+        } else {
+            vm.prank(pauser);
+            auction.pause();
+        }
+        ++hits["startPause"];
+    }
+
+    /// @dev Governance moves mid-campaign: the config, the opening bid (both ways) and the
+    ///      currency's increment floor. Running sales keep what they locked.
+    function govern(uint256 seed) external {
+        uint256 what = seed % 3;
+        if (what == 0) {
+            IEnglishAuction.AuctionConfig memory c = auction.config();
+            uint32 duration = uint32(bound(seed >> 8, 1 hours, 2 days));
+            IEnglishAuction.AuctionConfig memory next = IEnglishAuction.AuctionConfig(
+                duration,
+                uint32(bound(seed >> 40, 1 minutes, 1 hours)),
+                uint32(bound(seed >> 72, 1_000, 100_000))
+            );
+            vm.prank(setter);
+            auction.setConfig(c, next);
+        } else if (what == 1) {
+            uint256 ceiling = allowlist.incrementFloor(currency) * auction.OPENING_BID_FLOORS();
+            uint256 next = bound(seed >> 8, 0, ceiling / 10);
+            uint256 current = auction.openingBid(currency);
+            vm.prank(setter);
+            auction.setOpeningBid(currency, current, next);
+        } else {
+            (,, uint64 revision) = allowlist.assetConfig(currency);
+            vm.prank(admin);
+            allowlist.setIncrementFloor(currency, revision, bound(seed >> 8, 1e12, 0.1 ether));
+        }
+        ++hits["govern"];
+    }
+
     // ------------------------------------------------------------------------------ reads
 
     function salesCount() external view returns (uint256) {
@@ -229,15 +314,99 @@ contract AuctionHandler is Test {
         return actors.length;
     }
 
+    // ---------------------------------------------------------------------------- helpers
+
     function _sale(uint256 seed) internal view returns (uint256) {
         return sales[seed % sales.length];
     }
 
-    /// @dev Whether the handler already paused the sale (one pause per auction).
-    mapping(uint256 saleId => bool) internal _paused;
+    function _token() internal view returns (BlockablePermitToken) {
+        return BlockablePermitToken(currency);
+    }
 
-    function _pauseUsed(uint256 saleId) internal returns (bool used) {
-        used = _paused[saleId];
+    function _pauseSale(uint256 saleSeed) internal returns (uint256 saleId) {
+        if (sales.length == 0) return 0;
+        saleId = _sale(saleSeed);
+        if (auction.auction(saleId).state != IEnglishAuction.AuctionState.ACTIVE) return 0;
+        if (_paused[saleId]) return 0;
         _paused[saleId] = true;
+        vm.prank(guardian);
+        auction.pause(saleId, keccak256(abi.encode(saleId)));
+        ++hits["pause"];
+    }
+
+    function _withdraw(uint256 saleId) internal {
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        if (a.state != IEnglishAuction.AuctionState.PAUSED || a.bidder == address(0)) return;
+        if (a.bidder == address(hostile)) {
+            hostile.execute(address(auction), 0, abi.encodeCall(auction.withdrawBid, (saleId)));
+        } else {
+            vm.prank(a.bidder);
+            auction.withdrawBid(saleId);
+        }
+        ++hits["withdraw"];
+    }
+
+    /// @dev Funds `payer` for a DIRECT payment of `amount` and returns it.
+    function _fund(address payer, uint256 amount) internal returns (Payment memory) {
+        if (currency == address(0)) {
+            vm.deal(payer, amount);
+        } else {
+            _token().mint(payer, amount);
+            if (payer == address(hostile)) {
+                hostile.execute(
+                    currency, 0, abi.encodeCall(_token().approve, (address(auction), amount))
+                );
+            } else {
+                vm.prank(payer);
+                _token().approve(address(auction), amount);
+            }
+        }
+        return Payment(PaymentMethod.DIRECT, payer, amount, 0, 0, "");
+    }
+
+    function _permit(uint256 key, uint256 amount) internal view returns (Payment memory) {
+        address owner = vm.addr(key);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes32 structHash = keccak256(
+            abi.encode(
+                keccak256(
+                    "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+                ),
+                owner,
+                address(auction),
+                amount,
+                _token().nonces(owner),
+                deadline
+            )
+        );
+        bytes32 digest =
+            keccak256(abi.encodePacked("\x19\x01", _token().DOMAIN_SEPARATOR(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
+        return Payment(PaymentMethod.PERMIT, owner, amount, deadline, 0, abi.encodePacked(r, s, v));
+    }
+
+    function _permit2Payment(uint256 key, uint256 saleId, address recipient, uint256 amount)
+        internal
+        returns (Payment memory)
+    {
+        uint256 nonce = ++_permit2Nonce;
+        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom(
+            ISignatureTransfer.TokenPermissions(currency, amount), nonce, block.timestamp + 1 hours
+        );
+        bytes32 witness = keccak256(
+            abi.encode(Typehashes.BID_WITNESS, saleId, recipient, amount, permit.deadline)
+        );
+        bytes32 digest =
+            permit2.digest(permit, address(auction), witness, Typehashes.BID_WITNESS_TYPE);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
+        return Payment(
+            PaymentMethod.PERMIT2,
+            vm.addr(key),
+            amount,
+            permit.deadline,
+            nonce,
+            abi.encodePacked(r, s, v)
+        );
     }
 }

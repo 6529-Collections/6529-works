@@ -22,7 +22,6 @@ import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
-import { IStream } from "../interfaces/IStream.sol";
 import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 import {
     CURRENCY_DEFAULT,
@@ -94,8 +93,10 @@ contract EnglishAuction is
     uint8 private constant _PAUSE_USED = 1;
     uint8 private constant _DELIVERY_PENDING = 2;
 
-    /// @dev One auction. Slot 0 is written at start; the rest by bids, disputes and settlement.
-    ///      The increment floor is locked by the first bid, in the slot that bid writes anyway.
+    /// @dev One auction. Slot 0 is written at start; slot 1 by bids and disputes; slot 3 (the
+    ///      high bid and the increment floor the first bid locks) by bids. Slot 2 holds the
+    ///      recipient only when it differs from the bidder (zero means the bidder), and the
+    ///      artist after a no-bid settlement, so a bid for oneself writes two slots.
     struct Sale {
         address token;
         uint32 tokenId;
@@ -107,8 +108,8 @@ contract EnglishAuction is
         uint32 pausedAt;
         uint24 pausedTotal;
         address recipient;
+        uint128 bid;
         uint96 incrementFloor;
-        uint256 bid;
     }
 
     /// @dev The governed parameters and the emergency start pause: one slot, read once per start.
@@ -140,6 +141,9 @@ contract EnglishAuction is
 
     /// @inheritdoc ISaleAdapter
     address public federationRegistry;
+    /// @notice The code hash pinned when the federation registry was installed; a registry whose
+    ///         code no longer matches serves no token.
+    bytes32 public federationRegistryCodeHash;
     Settings private _settings;
     uint16 private _termsCount;
     mapping(address token => bool) private _listed;
@@ -258,7 +262,7 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
-    function withdrawBid(uint256 saleId) external {
+    function withdrawBid(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
         address bidder = s.bidder;
         if (bidder == address(0) || msg.sender != bidder) revert NotHighBidder(msg.sender);
@@ -279,7 +283,7 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     /// @dev Reads the seller, the fee terms and the artist's current authority back from the
     ///      token. With no bids the artist is recorded as the recipient. Marks the token's primary
-    ///      sale settled (`IStream.markPrimarySettled`, E11) while the token is still in custody,
+    ///      sale settled (`IMintTarget.markPrimarySettled`, E11) while the token is still in custody,
     ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold
     ///      up the edition. With no bids and no resolvable artist (the token reports a zero
     ///      creator) it reverts with `InvalidRecipient(address(0))` and moves nothing; anyone may
@@ -292,25 +296,31 @@ contract EnglishAuction is
             if (creator == address(0)) revert InvalidRecipient(creator);
             s.recipient = creator;
         }
-        uint256 fee = Math.mulDiv(s.bid, lt.feeShare, Splits.DENOMINATOR);
-        _pay(lt.currency, lt.seller, s.bid - fee);
+        uint256 price = s.bid;
+        uint256 fee = Math.mulDiv(price, lt.feeShare, Splits.DENOMINATOR);
+        _pay(lt.currency, lt.seller, price - fee);
         _pay(lt.currency, lt.feeRecipient, fee);
-        IStream(lt.token).markPrimarySettled(lt.id);
+        IMintTarget(lt.token).markPrimarySettled(lt.id);
         _deliver(saleId, s);
-        _emitSettled(saleId, s, lt);
+        _emitSettled(saleId, s, lt, fee);
     }
 
     /// @inheritdoc IEnglishAuction
     /// @dev The pending recipient or the winning bidder (the payer of the high bid) may claim, to
     ///      any address except zero and this adapter, so a recipient contract that cannot make the
-    ///      call does not strand the token. With no bids only the artist (the pending recipient)
-    ///      may. If neither the recipient nor the winner can make the call, the token stays in
-    ///      custody: that is the winner's choice of recipient.
+    ///      call does not strand the token. With no bids the artist may, as the authority
+    ///      recorded at settlement or the current one the token reports (L-5). If neither the
+    ///      recipient nor the winner can make the call, the token stays in custody: that is the
+    ///      winner's choice of recipient.
     function claimDelivery(uint256 saleId, address to) external nonReentrant {
         Sale storage s = _sales[saleId];
-        address pending = s.recipient;
-        if (s.flags & _DELIVERY_PENDING == 0 || (msg.sender != pending && msg.sender != s.bidder)) {
-            revert NoPendingDelivery(saleId);
+        address pending = _recipientOf(s);
+        if (s.flags & _DELIVERY_PENDING == 0) revert NoPendingDelivery(saleId);
+        if (msg.sender != pending && msg.sender != s.bidder) {
+            if (
+                s.bidder != address(0)
+                    || msg.sender != IMintTarget(s.token).primaryTerms(s.tokenId, "").creator
+            ) revert NoPendingDelivery(saleId);
         }
         if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
@@ -321,13 +331,13 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     function pendingDelivery(uint256 saleId) external view returns (address) {
         Sale storage s = _sales[saleId];
-        return s.flags & _DELIVERY_PENDING != 0 ? s.recipient : address(0);
+        return s.flags & _DELIVERY_PENDING != 0 ? _recipientOf(s) : address(0);
     }
 
     // ---------------------------------------------------------------------------- disputes
 
     /// @inheritdoc IEnglishAuction
-    function pause(uint256 saleId, bytes32 disputeRef) external restricted {
+    function pause(uint256 saleId, bytes32 disputeRef) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ACTIVE);
         if (s.flags & _PAUSE_USED != 0) revert PauseExhausted(saleId);
         s.flags |= _PAUSE_USED;
@@ -336,7 +346,7 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
-    function resume(uint256 saleId) external restricted {
+    function resume(uint256 saleId) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
         _endPause(saleId, s, block.timestamp - s.pausedAt);
     }
@@ -355,6 +365,8 @@ contract EnglishAuction is
                 || outcomeRef != IStatementLog(statementLog).latestDisputeOutcome(token, tokenId)
         ) revert OutcomeNotRecorded(saleId, outcomeRef);
         s.status = AuctionState.CANCELLED;
+        s.pausedTotal = SafeCast.toUint24(block.timestamp - s.pausedAt);
+        s.pausedAt = 0;
         _refundHighBid(saleId, s);
         IMintTarget(token).burn(tokenId, 1);
         emit AuctionCancelled(saleId, outcomeRef);
@@ -415,7 +427,7 @@ contract EnglishAuction is
 
     /// @inheritdoc ISaleAdapter
     /// @dev A nonzero registry must have code, not be a delegated account, and support
-    ///      `IFederationRegistry` through ERC-165 (D8).
+    ///      `IFederationRegistry` through ERC-165 (D8); its code hash is pinned (L-6).
     function setFederationRegistry(address expected, address next) external restricted {
         if (federationRegistry != expected) revert ExpectedValueMismatch();
         if (next != address(0)) {
@@ -425,6 +437,7 @@ contract EnglishAuction is
             }
         }
         federationRegistry = next;
+        federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
         emit FederationRegistrySet(expected, next);
     }
 
@@ -474,7 +487,7 @@ contract EnglishAuction is
         a.currency = t.currency;
         a.incrementFloor = s.incrementFloor;
         a.bidder = s.bidder;
-        a.recipient = s.recipient;
+        a.recipient = _recipientOf(s);
         a.bid = s.bid;
         a.endTime = s.endTime;
         a.pausedAt = s.pausedAt;
@@ -482,7 +495,7 @@ contract EnglishAuction is
         // The pause clock is in seconds; a validator moves it by seconds, not days.
         // forge-lint: disable-next-line(block-timestamp)
         if (a.pausedAt != 0 && block.timestamp > a.pausedAt + MAX_PAUSE) {
-            a.endTime += MAX_PAUSE;
+            a.endTime = uint64(_resumedEnd(s, MAX_PAUSE));
             a.pausedAt = 0;
             a.pausedTotal = MAX_PAUSE;
         }
@@ -516,7 +529,8 @@ contract EnglishAuction is
     function isTarget(address token) public view returns (bool) {
         if (_listed[token]) return true;
         address registry = federationRegistry;
-        return registry != address(0) && IFederationRegistry(registry).isActive(token);
+        return registry != address(0) && registry.codehash == federationRegistryCodeHash
+            && IFederationRegistry(registry).isActive(token);
     }
 
     /// @inheritdoc IERC165
@@ -554,7 +568,7 @@ contract EnglishAuction is
         if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {
             revert IMintTarget.SaleKindMismatch(SaleKind.ENGLISH_AUCTION, terms.saleKind);
         }
-        Terms memory t = _lockTerms(token, listed, terms.currency, c);
+        Terms memory t = _lockTerms(token, tokenId, listed, terms.currency, c);
         if (
             tokenId >> 32 != 0 || terms.seller == address(0)
                 || (terms.feeRecipient == address(0)
@@ -588,12 +602,15 @@ contract EnglishAuction is
 
     /// @dev The values a sale locks: `CURRENCY_DEFAULT` resolved once to the product's default
     ///      (6529 Stream for listed tokens, Federated for registry tokens), which must be active,
-    ///      the governed parameters, and a federated token's fee.
-    function _lockTerms(address token, bool listed, address currency, Settings memory c)
-        private
-        view
-        returns (Terms memory t)
-    {
+    ///      the governed parameters, and a federated token's fee from its registry entry, whose
+    ///      code hash must match the token's.
+    function _lockTerms(
+        address token,
+        uint256 tokenId,
+        bool listed,
+        address currency,
+        Settings memory c
+    ) private view returns (Terms memory t) {
         if (currency == CURRENCY_DEFAULT) {
             currency = allowlist.defaultCurrency(listed ? PRODUCT_STREAM : PRODUCT_FEDERATED);
         } else if (!allowlist.isActive(currency)) {
@@ -609,9 +626,13 @@ contract EnglishAuction is
         // forge-lint: disable-next-line(unsafe-typecast)
         t.extensionWindow = uint24(c.extensionWindow);
         if (!listed) {
+            IFederationRegistry.Entry memory e =
+                IFederationRegistry(federationRegistry).entry(token);
+            if (e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR) {
+                revert InvalidTerms(token, tokenId);
+            }
             t.federated = true;
-            t.registryFee = IFederationRegistry(federationRegistry).entry(token).feeShare;
-            if (t.registryFee > Splits.DENOMINATOR) revert InvalidTerms(token, 0);
+            t.registryFee = e.feeShare;
         }
     }
 
@@ -661,7 +682,11 @@ contract EnglishAuction is
         Terms storage t = _terms[s.termsId];
         address currency = t.currency;
         if (s.incrementFloor == 0) {
-            s.incrementFloor = SafeCast.toUint96(allowlist.incrementFloor(currency));
+            // A floor beyond 96 bits (7.9e28 base units) is capped: it is already a prohibitive
+            // increment, and capping keeps an absurd allowlist value from blocking the sale.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            s.incrementFloor =
+                uint96(Math.min(allowlist.incrementFloor(currency), type(uint96).max));
         } else if (!allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
@@ -671,8 +696,9 @@ contract EnglishAuction is
         address previous = s.bidder;
         if (previous != address(0)) _credit(previous, currency, saleId, s.bid);
         s.bidder = payment.payer;
-        s.recipient = recipient;
-        s.bid = payment.amount;
+        address stored = recipient == payment.payer ? address(0) : recipient;
+        if (s.recipient != stored) s.recipient = stored;
+        s.bid = SafeCast.toUint128(payment.amount);
         uint256 end = s.endTime;
         uint256 window = t.extensionWindow;
         // Anti-snipe compares seconds; validator drift only shifts the window edge.
@@ -767,7 +793,7 @@ contract EnglishAuction is
     ///      recipient that rejects it, runs out of gas, or hands it back leaves it here as a
     ///      pending claim instead.
     function _deliver(uint256 saleId, Sale storage s) private {
-        (address token, uint256 tokenId, address to) = (s.token, s.tokenId, s.recipient);
+        (address token, uint256 tokenId, address to) = (s.token, s.tokenId, _recipientOf(s));
         if (!BoundedCall.hasSufficientGas(gasleft(), DELIVERY_GAS, DELIVERY_RESERVE)) {
             revert DeliveryInsufficientGas();
         }
@@ -784,14 +810,15 @@ contract EnglishAuction is
 
     /// @dev Emitted from its own frame to stay within the legacy code generator's stack. The
     ///      high bid is zero when the auction drew no bids, so the price and fee are too.
-    function _emitSettled(uint256 saleId, Sale storage s, LockedTerms memory lt) private {
-        uint256 fee = Math.mulDiv(s.bid, lt.feeShare, Splits.DENOMINATOR);
+    function _emitSettled(uint256 saleId, Sale storage s, LockedTerms memory lt, uint256 fee)
+        private
+    {
         emit SaleSettled(
             saleId,
             lt.token,
             lt.id,
             s.bidder,
-            s.recipient,
+            _recipientOf(s),
             1,
             lt.currency,
             s.bid,
@@ -807,7 +834,7 @@ contract EnglishAuction is
         if (bidder == address(0)) return;
         _credit(bidder, _terms[s.termsId].currency, saleId, s.bid);
         s.bidder = address(0);
-        s.recipient = address(0);
+        if (s.recipient != address(0)) s.recipient = address(0);
         s.bid = 0;
     }
 
@@ -831,7 +858,7 @@ contract EnglishAuction is
     }
 
     function _endPause(uint256 saleId, Sale storage s, uint256 length) private {
-        uint32 end = SafeCast.toUint32(s.endTime + length);
+        uint32 end = SafeCast.toUint32(_resumedEnd(s, length));
         s.endTime = end;
         s.pausedTotal = SafeCast.toUint24(length);
         s.pausedAt = 0;
@@ -848,10 +875,24 @@ contract EnglishAuction is
         if (pausedAt != 0) {
             // forge-lint: disable-next-line(block-timestamp)
             if (block.timestamp <= pausedAt + MAX_PAUSE) return AuctionState.PAUSED;
-            end += MAX_PAUSE;
+            end = _resumedEnd(s, MAX_PAUSE);
         }
         // forge-lint: disable-next-line(block-timestamp)
         return block.timestamp < end ? AuctionState.ACTIVE : AuctionState.ENDED;
+    }
+
+    /// @dev The end after a pause of `length` seconds: the remaining time at the pause, but at
+    ///      least the anti-snipe window, counted from the resumption (L-2), so bidders who
+    ///      withdrew always have a window to return.
+    function _resumedEnd(Sale storage s, uint256 length) private view returns (uint256) {
+        uint256 pausedAt = s.pausedAt;
+        return pausedAt + length + Math.max(s.endTime - pausedAt, _terms[s.termsId].extensionWindow);
+    }
+
+    /// @dev The token's recipient: the stored one, or the bidder when none is stored.
+    function _recipientOf(Sale storage s) private view returns (address) {
+        address recipient = s.recipient;
+        return recipient == address(0) ? s.bidder : recipient;
     }
 
     function _setTarget(address token, bool listed) private {
