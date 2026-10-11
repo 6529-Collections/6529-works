@@ -17,7 +17,6 @@ import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
-import { ISplitWallet } from "../economics/interfaces/ISplitWallet.sol";
 import { Splits } from "../economics/Splits.sol";
 import { PRODUCT_STREAM, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
 import {
@@ -654,19 +653,18 @@ contract Stream is ERC721, AccessManaged, IStream {
         }
     }
 
-    /// @dev The seller with no fee; otherwise the split factory's salt-zero wallet for the
-    ///      canonical list (fixed payees sorted by address) of fee recipient and seller.
+    /// @dev The seller with no fee; otherwise the split factory's salt-zero wallet for
+    ///      `Splits.royaltyPayees`, the canonical list the economics resolver derives the same
+    ///      receiver from (fixed payees in address order).
     function _royaltyReceiver(TokenData storage t) private view returns (address) {
         address seller = t.seller;
         uint32 feeShare = t.feeShare;
         if (feeShare == 0) return seller;
-        address recipient = _feeRecipients[t.feeRecipientId - 1];
-        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
-        ISplitWallet.Payee memory fee = ISplitWallet.Payee(0, recipient, feeShare);
-        ISplitWallet.Payee memory rest =
-            ISplitWallet.Payee(0, seller, Splits.DENOMINATOR - feeShare);
-        (payees[0], payees[1]) = recipient < seller ? (fee, rest) : (rest, fee);
-        return ISplitFactory(splitFactory).walletFor(payees, bytes32(0));
+        return ISplitFactory(splitFactory)
+            .walletFor(
+                Splits.royaltyPayees(seller, _feeRecipients[t.feeRecipientId - 1], feeShare),
+                bytes32(0)
+            );
     }
 
     function _onlyBound(address bound) private view {
