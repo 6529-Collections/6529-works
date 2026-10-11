@@ -137,11 +137,82 @@ contract Base64ValidatorTest is Base64Base {
         assertTrue(Base64Validator.isAlphabet("", 0));
     }
 
-    function test_BytesBeforeLengthAreLeftAlone() public pure {
-        bytes memory buf = _text(50, 0, 1);
-        bytes memory copy = _slice(buf, 0, 50);
-        assertTrue(Base64Validator.isAlphabet(buf, 37));
-        assertEq(_slice(buf, 0, 37), _slice(copy, 0, 37));
+    /// @dev The validator writes a fill into the unused tail of the last word, so it must put
+    ///      everything back: the whole buffer is unchanged afterwards, tail included.
+    function test_TheWholeBufferIsLeftAlone() public pure {
+        for (uint256 length; length <= 70; ++length) {
+            bytes memory buf = _text(96, 0, 1);
+            for (uint256 i = length; i < 96; ++i) {
+                buf[i] = 0xee; // hostile bytes after the checked prefix
+            }
+            bytes32 before = keccak256(buf);
+            assertTrue(Base64Validator.isAlphabet(buf, length));
+            assertEq(keccak256(buf), before, "buffer changed");
+        }
+    }
+
+    /// @dev `bytes memory` from `abi.encodePacked` and `bytes.concat` is not padded to a whole
+    ///      word: the next object starts right after the last byte. An earlier version filled the
+    ///      tail of the last word in place and so overwrote that object's length word.
+    function test_DoesNotCorruptTheNextAllocation() public pure {
+        bytes memory packed = abi.encodePacked(bytes3(0x414141));
+        bytes memory next = new bytes(1);
+        next[0] = "Z";
+        assertTrue(Base64Validator.isAlphabet(packed, 3));
+        assertEq(next.length, 1, "the neighbour's length word");
+        assertEq(next[0], bytes1("Z"), "the neighbour's byte");
+        assertEq(packed, hex"414141");
+
+        bytes memory joined = bytes.concat(bytes3(0x414141), bytes2(0x4141));
+        bytes memory after_ = new bytes(40);
+        for (uint256 i; i < 40; ++i) {
+            after_[i] = 0xee;
+        }
+        bytes32 before = keccak256(after_);
+        assertTrue(Base64Validator.isAlphabet(joined, 5));
+        assertEq(after_.length, 40);
+        assertEq(keccak256(after_), before, "the neighbour's body");
+        assertEq(joined, hex"4141414141");
+    }
+
+    /// @dev Memory around an unpadded buffer, and the free pointer, are bit-for-bit unchanged for
+    ///      every checked length. Both hashes are taken before any assertion runs, because the
+    ///      assertion helpers use the memory above the free pointer, which the window covers.
+    function testFuzz_LeavesAllMemoryUntouched(bytes calldata raw, uint256 length) public pure {
+        length = bound(length, 0, raw.length);
+        bytes memory buf = bytes.concat(raw); // exactly raw.length bytes, not word-padded
+        bytes memory next = new bytes(96);
+        for (uint256 i; i < 96; ++i) {
+            next[i] = 0xee;
+        }
+        bool expected = true;
+        for (uint256 i; i < length; ++i) {
+            if (!_inAlphabet(uint8(raw[i]))) expected = false;
+        }
+
+        bytes32 before = _window(buf, next);
+        uint256 freePointer = _freePointer();
+        bool result = Base64Validator.isAlphabet(buf, length);
+        bytes32 afterwards = _window(buf, next);
+        uint256 freePointerAfter = _freePointer();
+
+        assertEq(result, expected);
+        assertEq(freePointerAfter, freePointer, "free pointer");
+        assertEq(afterwards, before, "memory changed");
+    }
+
+    function _freePointer() internal pure returns (uint256 pointer) {
+        assembly ("memory-safe") {
+            pointer := mload(0x40)
+        }
+    }
+
+    /// @dev A hash of memory from `first` to 64 bytes past the end of `last`.
+    function _window(bytes memory first, bytes memory last) internal pure returns (bytes32 h) {
+        assembly ("memory-safe") {
+            let finish := add(add(last, 0x20), and(add(mload(last), 31), not(31)))
+            h := keccak256(first, add(sub(finish, first), 64))
+        }
     }
 
     function testFuzz_ValidTextIsAccepted(uint256 length, uint256 seed) public pure {
@@ -626,6 +697,106 @@ contract Base64AttestTest is Base64Base {
         assertFalse(store.isBase64Attested(fileId));
     }
 
+    /// @dev A bad chunk exactly where the second call resumes (index n) must be found by call 2.
+    ///      Resuming one chunk late would skip it and let the file be attested.
+    function test_Attest_BadChunkAtTheResumeBoundary() public {
+        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 count = 2 * n + 1;
+        bytes32 fileId = _distinctChunks(count, _lastLength(count - 1), n, 0x22);
+        assertFalse(_attest(fileId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentBase64Invalid.selector, fileId, n)
+        );
+        _attest(fileId);
+        assertFalse(store.isBase64Attested(fileId));
+    }
+
+    /// @dev `n + 1` chunks: the second call has exactly one chunk to check, and it is bad. A
+    ///      completion test that is off by one would attest the file after the first call.
+    function test_Attest_TheLastChunkAloneInTheFinalCallIsChecked() public {
+        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 count = n + 1;
+        // 5 to 8 bytes, so that the total is still a multiple of 4.
+        bytes32 fileId = _distinctChunks(count, _lastLength(count - 1) + 4, n, 0x5c);
+        assertFalse(_attest(fileId), "the first call must not finish");
+        assertFalse(store.isBase64Attested(fileId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentBase64Invalid.selector, fileId, n)
+        );
+        _attest(fileId);
+        assertFalse(store.isBase64Attested(fileId));
+    }
+
+    /// @dev Distinct chunks over three calls, with the chunk at every call boundary poisoned in
+    ///      turn (the first of a call, the last of a call, and the ends of the file): each must
+    ///      be reported by index, whichever call reaches it.
+    function test_Attest_EveryBoundaryChunkIsValidated() public {
+        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 count = 2 * n + 2;
+        uint256[6] memory probes = [uint256(0), n - 1, n, 2 * n - 1, 2 * n, 2 * n + 1];
+        for (uint256 p; p < probes.length; ++p) {
+            bytes32 fileId =
+                _distinctChunks(count, _lastLength(count - 1) + (p + 1) * 4, probes[p], 0x7b);
+            bool reverted;
+            for (uint256 c; c < 3; ++c) {
+                try store.attestBase64(fileId) returns (bool) { }
+                catch (bytes memory err) {
+                    assertEq(
+                        err,
+                        abi.encodeWithSelector(
+                            IContentStore.ContentBase64Invalid.selector, fileId, probes[p]
+                        )
+                    );
+                    reverted = true;
+                    break;
+                }
+            }
+            assertTrue(reverted, "a poisoned chunk was skipped");
+            assertFalse(store.isBase64Attested(fileId));
+        }
+    }
+
+    /// @dev Calls that stop before the last two chunks do not look for padding, so they succeed
+    ///      while those chunks are still missing; the call that reaches them cannot.
+    function test_Attest_EarlyCallsNeedNothingFromTheEndOfTheFile() public {
+        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        uint256 count = 2 * n + 2;
+        bytes memory chunk = _text(CHUNK, 0, 140);
+        bytes memory beforeLast = _text(CHUNK, 0, 141);
+        bytes memory last = _text(_lastLength(count - 1), 1, 142);
+        bytes32[] memory hashes = new bytes32[](count);
+        for (uint256 i; i < count - 2; ++i) {
+            hashes[i] = keccak256(chunk);
+        }
+        hashes[count - 2] = keccak256(beforeLast);
+        hashes[count - 1] = keccak256(last);
+        bytes32 fileId = store.registerManifest(
+            hashes, (count - 1) * CHUNK + last.length, B64, "image/png", DIGEST
+        );
+        store.writeChunk(chunk); // the last two chunks are not uploaded
+
+        assertFalse(_attest(fileId), "chunks 0 to n - 1");
+        assertFalse(_attest(fileId), "chunks n to 2n - 1");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IContentStore.ContentChunkMissing.selector, fileId, count - 1, hashes[count - 1]
+            )
+        );
+        _attest(fileId); // reaches the end: the padding needs the last chunk
+        assertFalse(store.isBase64Attested(fileId));
+
+        store.writeChunk(last);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IContentStore.ContentChunkMissing.selector, fileId, count - 2, hashes[count - 2]
+            )
+        );
+        _attest(fileId);
+
+        store.writeChunk(beforeLast);
+        assertTrue(_attest(fileId));
+    }
+
     /// @dev The largest file the store accepts takes 11 calls, and every call fits the EIP-7825
     ///      gas cap. One chunk is listed 512 times, which makes the chunk reads warm after the
     ///      first; the cold, all-distinct worst case is `Base64WorstCaseGasTest`.
@@ -661,6 +832,32 @@ contract Base64AttestTest is Base64Base {
     ///      of 4 bytes.
     function _lastLength(uint256 copies) internal pure returns (uint256 length) {
         length = 4 - (copies * CHUNK) % 4;
+    }
+
+    /// @dev `count` chunks, all valid and all different, the last one `lastLength` bytes. Chunk
+    ///      `bad`, if it is below `count`, has `badByte` in its middle.
+    function _distinctChunks(uint256 count, uint256 lastLength, uint256 bad, bytes1 badByte)
+        internal
+        returns (bytes32 fileId)
+    {
+        bytes memory base = _text(CHUNK, 0, 777);
+        bytes memory alphabet = ALPHABET;
+        bytes32[] memory hashes = new bytes32[](count);
+        for (uint256 i; i < count; ++i) {
+            uint256 length = i + 1 == count ? lastLength : CHUNK;
+            bytes memory chunk = _slice(base, 0, length);
+            chunk[0] = alphabet[i & 63];
+            chunk[1] = alphabet[(i >> 6) & 63];
+            if (i == bad) chunk[length / 2] = badByte;
+            hashes[i] = keccak256(chunk);
+            store.writeChunk(chunk);
+            assembly ("memory-safe") {
+                mstore(0x40, chunk) // release the copy (test-only memory hygiene)
+            }
+        }
+        fileId = store.registerManifest(
+            hashes, (count - 1) * CHUNK + lastLength, B64, "video/mp4", DIGEST
+        );
     }
 
     /// @dev A manifest of `copies` identical full chunks of valid text, then a short last chunk
@@ -707,31 +904,80 @@ contract Base64GasTest is Base64Base {
     }
 }
 
-/// @dev The worst single call: `ATTEST_CHUNKS_PER_CALL` distinct chunks, every one cold.
+/// @dev The most expensive calls. A call checks at most `n = ATTEST_CHUNKS_PER_CALL` chunks, and
+///      a call that reaches the end of the file also reads the last one or two chunks for the `=`
+///      padding. Two shapes, each with every chunk distinct and cold:
+///      - `reachesEnd`: `n + 1` chunks. The first call checks `n` and reads the last chunk for
+///        the padding, so it makes `n + 1` cold chunk reads, the most of any call.
+///      - `straddles`: `n + 2` chunks ending "=" then a one-byte "=" chunk. The first call stops
+///        two chunks short and skips the padding (`n` cold reads); the second one reads the last
+///        two for the padding and checks them.
 contract Base64WorstCaseGasTest is Base64Base {
-    bytes32 internal fileId;
+    bytes32 internal reachesEnd;
+    bytes32 internal straddles;
 
     function setUp() public {
         store = new ContentStore();
         uint256 n = store.ATTEST_CHUNKS_PER_CALL();
-        bytes32[] memory hashes = new bytes32[](n);
-        bytes[] memory chunks = new bytes[](n);
+        assertLe(n + 2, 64, "the rotation gives 64 distinct chunks");
+        assertEq((n * CHUNK) % 4, 0, "n * CHUNK + 4 is a multiple of 4");
+        assertEq(((n + 1) * CHUNK + 1) % 4, 0, "(n + 1) * CHUNK + 1 is a multiple of 4");
+
+        bytes[] memory first = new bytes[](n);
         for (uint256 i; i < n; ++i) {
-            // Distinct chunks (rotation i), so each is a separate pointer and a cold read.
-            chunks[i] = _rotating(CHUNK, i);
-            hashes[i] = keccak256(chunks[i]);
+            first[i] = _rotating(CHUNK, i); // distinct, so each is a separate cold pointer
         }
-        // n * 24,575 bytes is a multiple of 4 when n is.
-        assertEq((n * CHUNK) % 4, 0);
-        fileId = store.registerManifest(hashes, n * CHUNK, B64, "video/mp4", DIGEST);
-        _uploadAll(chunks);
+        _uploadAll(first);
+
+        // reachesEnd: n full chunks, then "AA==".
+        bytes32[] memory a = new bytes32[](n + 1);
+        for (uint256 i; i < n; ++i) {
+            a[i] = keccak256(first[i]);
+        }
+        bytes memory tail = "AA==";
+        a[n] = keccak256(tail);
+        store.writeChunk(tail);
+        reachesEnd = store.registerManifest(a, n * CHUNK + 4, B64, "video/mp4", DIGEST);
+
+        // straddles: the same n chunks, a full chunk ending in "=", and a lone "=".
+        bytes32[] memory b = new bytes32[](n + 2);
+        for (uint256 i; i < n; ++i) {
+            b[i] = a[i];
+        }
+        bytes memory beforeLast = _rotating(CHUNK, n);
+        beforeLast[CHUNK - 1] = "=";
+        b[n] = keccak256(beforeLast);
+        bytes memory lone = "=";
+        b[n + 1] = keccak256(lone);
+        store.writeChunk(beforeLast);
+        store.writeChunk(lone);
+        straddles = store.registerManifest(b, (n + 1) * CHUNK + 1, B64, "video/mp4", DIGEST);
     }
 
-    function test_Gas_FullCallFitsTheTransactionGasCapWithMargin() public {
-        uint256 txGas = _attestTxGas(fileId);
-        console2.log("gas attestBase64, a full call of distinct cold chunks, transaction", txGas);
-        assertTrue(store.isBase64Attested(fileId));
-        assertLe(txGas, TX_GAS_CAP);
+    function test_Gas_FirstCallThatReachesTheEndFitsTheCapWithMargin() public {
+        uint256 txGas = _attestTxGas(reachesEnd);
+        console2.log("gas attestBase64, n chunks + padding read of the last, transaction", txGas);
+        assertFalse(store.isBase64Attested(reachesEnd), "the first call does not finish");
+        _assertWithinCapWithMargin(txGas);
+        assertTrue(_attest(reachesEnd));
+    }
+
+    function test_Gas_StraddlingPaddingFitsTheCapWithMargin() public {
+        uint256 first = _attestTxGas(straddles);
+        console2.log("gas attestBase64, straddling file, first call (n chunks), transaction", first);
+        assertFalse(store.isBase64Attested(straddles));
+        _assertWithinCapWithMargin(first);
+
+        uint256 second = _attestTxGas(straddles);
+        console2.log(
+            "gas attestBase64, straddling file, second call (2 chunks), transaction", second
+        );
+        assertTrue(store.isBase64Attested(straddles), "the second call finishes");
+        _assertWithinCapWithMargin(second);
+    }
+
+    function _assertWithinCapWithMargin(uint256 txGas) internal pure {
+        assertLe(txGas, TX_GAS_CAP, "fits the EIP-7825 cap");
         assertLe(txGas, TX_GAS_CAP * 55 / 100, "keeps 45% of the cap as margin");
     }
 }

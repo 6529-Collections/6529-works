@@ -16,30 +16,39 @@ pragma solidity ^0.8.24;
 library Base64Validator {
     /// @notice Whether the first `length` bytes of `data` are all in `[A-Za-z0-9+/]`. `=` is not
     ///         in the alphabet; the caller handles padding by excluding it from `length`.
-    /// @dev Destructive: it overwrites the bytes of `data` from `length` up to the next 32-byte
-    ///      boundary of its allocation, which a `bytes memory` always has. The caller must not
-    ///      rely on those bytes afterwards. `length` must not exceed `data.length`.
+    /// @dev Leaves memory as it found it. To check whole words it fills the bytes from `length`
+    ///      to the next 32-byte boundary with "A", which can lie past the end of `data`: a
+    ///      `bytes memory` from `new bytes(n)` or `abi.decode` is padded to a whole word, but one
+    ///      from `abi.encodePacked` or `bytes.concat` is not, and the fill would then overwrite
+    ///      the next object. So it saves the last word first and restores it afterwards, and
+    ///      nothing else is written. `length` must not exceed `data.length`.
     function isAlphabet(bytes memory data, uint256 length) internal pure returns (bool) {
         uint256 bad;
         assembly ("memory-safe") {
             let p := add(data, 0x20)
             let end := add(p, length)
-            // Fill the unused tail of the final word with "A" so whole words can be checked.
-            let rem := and(length, 31)
-            if rem {
-                let last := sub(end, rem)
-                let keep := not(shr(shl(3, rem), not(0)))
-                mstore(
-                    last,
-                    or(
-                        and(mload(last), keep),
-                        and(
-                            0x4141414141414141414141414141414141414141414141414141414141414141,
-                            not(keep)
+            // Fill the unused tail of the final word with "A" so whole words can be checked,
+            // keeping the word to put back. `last` stays zero when there is no partial word.
+            let last := 0
+            let saved := 0
+            {
+                let rem := and(length, 31)
+                if rem {
+                    last := sub(end, rem)
+                    saved := mload(last)
+                    let keep := not(shr(shl(3, rem), not(0)))
+                    mstore(
+                        last,
+                        or(
+                            and(saved, keep),
+                            and(
+                                0x4141414141414141414141414141414141414141414141414141414141414141,
+                                not(keep)
+                            )
                         )
                     )
-                )
-                end := add(last, 32)
+                    end := add(last, 32)
+                }
             }
             for { } lt(p, end) { p := add(p, 32) } {
                 let w := mload(p)
@@ -89,6 +98,7 @@ library Base64Validator {
                 // Rejected: a byte >= 0x80, or a byte not in the span, or a byte in a gap.
                 bad := or(bad, or(and(w, high), xor(and(and(span, not(gap)), high), high)))
             }
+            if last { mstore(last, saved) }
         }
         return bad == 0;
     }

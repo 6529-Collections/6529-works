@@ -189,9 +189,12 @@ interface IContentStore {
     ///         until it returns true.
     ///
     ///         Reverts with `ContentBase64Invalid(fileId, index)` for the first chunk with a bad
-    ///         byte, with `ContentChunkMissing` or `ContentChunkLengthMismatch` if the file is not
-    ///         complete (completeness is required before the last call can succeed), and with
-    ///         `ContentNotBase64` or `ContentBase64LengthInvalid` for a file that cannot qualify.
+    ///         byte, and with `ContentNotBase64` or `ContentBase64LengthInvalid` for a file that
+    ///         cannot qualify. Every chunk a call checks must exist at its required length, or it
+    ///         reverts with `ContentChunkMissing` or `ContentChunkLengthMismatch`. A call that
+    ///         reaches the end of the file (the last call, or the only one) also reads the file's
+    ///         last one or two chunks to find the `=` padding, so those must exist before it can
+    ///         succeed: the last call cannot succeed until the file is complete.
     /// @return done True when the whole file is attested.
     function attestBase64(bytes32 fileId) external returns (bool done);
 

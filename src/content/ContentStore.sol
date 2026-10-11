@@ -228,13 +228,16 @@ contract ContentStore is IContentStore {
     }
 
     /// @dev Checks chunks `[from, to)`. Everything before the `=` padding at the end of the file
-    ///      must be in the alphabet; the padding bytes themselves are accepted by {_padding}. Each
-    ///      verified chunk buffer is released afterwards, so memory stays at one chunk.
+    ///      must be in the alphabet; the padding bytes themselves are accepted by {_padding}. Only
+    ///      the last one or two chunks can hold padding, so a call that stops before them does not
+    ///      look for it. Each verified chunk buffer is released afterwards, so memory stays at one
+    ///      chunk.
     function _validateBase64(bytes32 fileId, File storage f, uint256 from, uint256 to)
         private
         view
     {
-        uint256 strictEnd = f.length - _padding(fileId, f);
+        uint256 strictEnd = f.length;
+        if (to + 1 >= f.chunks.length) strictEnd -= _padding(fileId, f);
         for (uint256 i = from; i < to; ++i) {
             uint256 mark;
             assembly ("memory-safe") {
