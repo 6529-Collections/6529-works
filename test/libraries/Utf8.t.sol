@@ -105,8 +105,19 @@ contract Utf8Test is Test {
     ///      after the end of the text for one of its continuations, whatever the memory holds
     ///      there (here 0xa9, a good continuation).
     function test_ShortPathsDoNotReadPastTheEnd() public pure {
-        bytes[6] memory cut =
-            [bytes(hex"c3"), hex"e2", hex"e282", hex"c3a9c3", hex"e282ace2", hex"e282ace282"];
+        bytes[11] memory cut = [
+            bytes(hex"c3"),
+            hex"e2",
+            hex"e282",
+            hex"e0a0", // a valid third byte after it would make U+0800
+            hex"ed9f", // ... and U+D7E9
+            hex"f0",
+            hex"f09f",
+            hex"f09f98", // ... and U+1F629
+            hex"c3a9c3",
+            hex"e282ace2",
+            hex"e282ace282"
+        ];
         for (uint256 pad; pad < 34; ++pad) {
             for (uint256 c; c < cut.length; ++c) {
                 bytes memory text = bytes.concat(new bytes(pad), cut[c]);
@@ -177,6 +188,21 @@ contract Utf8Test is Test {
                 bytes memory four = bytes.concat(three, hex"80");
                 _parity(three);
                 _parity(four);
+            }
+        }
+    }
+
+    /// @dev Each byte of a three- and four-byte sequence is checked on its own: every value of the
+    ///      third byte with a valid fourth, and every value of the fourth with a valid third.
+    function test_EveryThirdAndFourthByte() public pure {
+        for (uint256 lead = 0xe0; lead < 0xf5; ++lead) {
+            uint256 second = lead == 0xe0 ? 0xa0 : lead == 0xf0 ? 0x90 : 0x80;
+            for (uint256 b; b < 256; ++b) {
+                bytes memory head = abi.encodePacked(uint8(lead), uint8(second));
+                _parity(bytes.concat(head, abi.encodePacked(uint8(b))));
+                _parity(bytes.concat(head, abi.encodePacked(uint8(b), uint8(0x80))));
+                _parity(bytes.concat(head, hex"80", abi.encodePacked(uint8(b))));
+                _parity(bytes.concat(head, abi.encodePacked(uint8(b), uint8(0xa9)), "a"));
             }
         }
     }
