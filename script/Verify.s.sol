@@ -64,6 +64,9 @@ contract Verify is Script {
 
     /// @notice The recorded deployment's addresses.
     function load(string memory record) public view returns (DeployV1.Deployment memory d) {
+        if (vm.keyExistsJson(record, ".cc0TextFileId")) {
+            d.cc0TextFileId = vm.parseJsonBytes32(record, ".cc0TextFileId");
+        }
         string[22] memory names = DeployV1.names();
         for (uint256 i; i < names.length; ++i) {
             string memory key = string.concat(".contracts.", names[i], ".address");

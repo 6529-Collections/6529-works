@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
@@ -57,8 +58,9 @@ library DeployV1 {
         bytes32 namespace;
         /// Network share recipient of every product (EconomicsResolver defaults).
         address feeRecipient;
-        /// ContentStore file ID of the CC0 1.0 legal code (the default license text).
-        bytes32 cc0TextFileId;
+        /// The CC0 1.0 Universal legal code, plain text. Genesis stores it in the content store
+        /// (the default license text: WorkRecords requires it, and finalize needs it complete).
+        bytes cc0Text;
         /// Minimum ETH bid increment, 0.001 ether at launch (ADR 0001 §5).
         uint256 ethIncrementFloor;
         /// Permit2; the auction gets it only where it has code.
@@ -72,6 +74,8 @@ library DeployV1 {
     }
 
     struct Deployment {
+        /// Content store file ID of the CC0 legal code, uploaded at genesis.
+        bytes32 cc0TextFileId;
         GovernanceConfigurator configurator;
         WorksAccessManager manager;
         ContentStore contentStore;
@@ -111,6 +115,7 @@ library DeployV1 {
     /// @notice The identity lane has not merged: only a local dry run may deploy, with the
     ///         `ArtistRegistryStandIn`.
     error ArtistRegistryPending();
+    error EmptyText();
 
     // ------------------------------------------------------------------ deploy
 
@@ -130,7 +135,8 @@ library DeployV1 {
         //   d.renderer   = Renderer(contentStore, statementLog, inlineThreshold)
         //   d.stream     = Stream(manager, packageRegistry, artistRegistry, economicsResolver,
         //                         entropyModule, renderer, renderer.codehash, marketplaceOwner)
-        //   d.workRecords = WorkRecords(manager, stream, contentStore, CC0 license)
+        //   d.workRecords = WorkRecords(manager, stream, contentStore,
+        //                               License("CC0-1.0", d.cc0TextFileId))
         //   d.editions   = Editions(manager, stream, stream.codehash, marketplaceOwner)
     }
 
@@ -143,6 +149,30 @@ library DeployV1 {
         d.contentStore = new ContentStore{ salt: salt(p, "ContentStore") }();
         d.dependencyRegistry = new DependencyRegistry{ salt: salt(p, "DependencyRegistry") }(
             address(d.manager), d.contentStore
+        );
+        d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
+    }
+
+    /// @notice Stores `text` in `store` (identity encoding, `CHUNK_SIZE` chunks) and registers its
+    ///         manifest; returns the file ID. Writing bytes already stored is a no-op.
+    function uploadText(IContentStore store, bytes memory text, string memory mime)
+        internal
+        returns (bytes32 fileId)
+    {
+        if (text.length == 0) revert EmptyText();
+        uint256 size = store.CHUNK_SIZE();
+        bytes32[] memory hashes = new bytes32[]((text.length + size - 1) / size);
+        for (uint256 i; i < hashes.length; ++i) {
+            uint256 start = i * size;
+            uint256 end = start + size < text.length ? start + size : text.length;
+            bytes memory chunk = new bytes(end - start);
+            for (uint256 j; j < chunk.length; ++j) {
+                chunk[j] = text[start + j];
+            }
+            (hashes[i],) = store.writeChunk(chunk);
+        }
+        fileId = store.registerManifest(
+            hashes, text.length, IContentStore.Encoding.Identity, mime, sha256(text)
         );
     }
 
@@ -166,7 +196,7 @@ library DeployV1 {
         d.assetAllowlist =
             new AssetAllowlist{ salt: salt(p, "AssetAllowlist") }(m, p.ethIncrementFloor);
         d.economicsResolver = new EconomicsResolver{ salt: salt(p, "EconomicsResolver") }(
-            m, d.assetAllowlist, d.splitFactory, p.feeRecipient, p.cc0TextFileId
+            m, d.assetAllowlist, d.splitFactory, p.feeRecipient, d.cc0TextFileId
         );
         d.revenueEscrow = new RevenueEscrow{ salt: salt(p, "RevenueEscrow") }(m, d.splitFactory);
     }

@@ -42,7 +42,7 @@ contract DeployV1Test is Test {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/test");
         p.feeRecipient = makeAddr("feeRecipient");
-        p.cc0TextFileId = keccak256("cc0 text file");
+        p.cc0Text = bytes("CC0 1.0 Universal (test copy)");
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
@@ -107,6 +107,25 @@ contract DeployV1Test is Test {
         for (uint256 i; i < products.length; ++i) {
             assertEq(d.assetAllowlist.defaultCurrency(products[i]), address(0), "ETH");
         }
+    }
+
+    function test_GenesisStoresTheCc0TextCompleteOnChain() public {
+        DeployV1.Params memory p = _params();
+        (DeployV1.Deployment memory d,,) = _genesis(p);
+        assertTrue(d.contentStore.isComplete(d.cc0TextFileId));
+        assertEq(d.contentStore.sha256Of(d.cc0TextFileId), sha256(p.cc0Text));
+        assertEq(d.economicsResolver.defaultLicense(PRODUCT_STREAM).textFileId, d.cc0TextFileId);
+    }
+
+    function test_MultiChunkTextUploads() public {
+        DeployV1.Params memory p = _params();
+        p.cc0Text = new bytes(30_000); // two chunks
+        for (uint256 i; i < p.cc0Text.length; ++i) {
+            p.cc0Text[i] = bytes1(uint8(65 + i % 26));
+        }
+        DeployV1.Deployment memory d = DeployV1.deploy(p);
+        assertTrue(d.contentStore.isComplete(d.cc0TextFileId));
+        assertEq(d.contentStore.sha256Of(d.cc0TextFileId), sha256(p.cc0Text));
     }
 
     function test_EntropyModuleJoinsWhenACoordinatorIsGiven() public {
@@ -176,6 +195,7 @@ contract DeployV1Test is Test {
     function test_RecordedAddressesReload() public {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
         DeployV1.Deployment memory reloaded;
+        reloaded.cc0TextFileId = d.cc0TextFileId;
         string[22] memory names = DeployV1.names();
         for (uint256 i; i < names.length; ++i) {
             DeployV1.assign(reloaded, names[i], DeployV1.addressOf(d, names[i]));

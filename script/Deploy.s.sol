@@ -20,7 +20,8 @@ import { DeployV1 } from "./DeployV1.sol";
 ///      `deployments/<chainId>/<timestamp>.json`.
 contract Deploy is Script {
     /// @notice Placeholders used only on anvil (chain 31337), each recorded in the deployment.
-    bytes32 internal constant PLACEHOLDER_CC0 = keccak256("placeholder: CC0 1.0 legal code file");
+    string internal constant PLACEHOLDER_CC0 =
+        "6529 Works local dry run: placeholder for the CC0 1.0 Universal legal code.";
     bytes32 internal constant PLACEHOLDER_MANIFEST = keccak256("placeholder: epoch-0 manifest");
     address internal constant PLACEHOLDER_FEE_RECIPIENT = address(0xC001);
 
@@ -61,7 +62,7 @@ contract Deploy is Script {
         p.feeRecipient =
             vm.envOr("NETWORK_FEE_RECIPIENT", local ? PLACEHOLDER_FEE_RECIPIENT : address(0));
         if (p.feeRecipient == address(0)) revert MissingParameter("NETWORK_FEE_RECIPIENT");
-        p.cc0TextFileId = _bytes32("CC0_TEXT_FILE_ID", PLACEHOLDER_CC0, local);
+        p.cc0Text = _cc0Text(local);
         p.ethIncrementFloor = vm.envOr("ETH_INCREMENT_FLOOR", uint256(0.001 ether));
         p.permit2 = vm.envOr("PERMIT2", DeployV1.CANONICAL_PERMIT2);
         p.auction = IEnglishAuction.AuctionConfig(
@@ -80,6 +81,21 @@ contract Deploy is Script {
                 vm.envOr("VRF_NATIVE_PAYMENT", false)
             );
             p.vrfRetryDelay = uint64(vm.envOr("VRF_RETRY_DELAY", uint256(3 days)));
+        }
+    }
+
+    /// @dev The CC0 legal code from `CC0_TEXT_PATH` (under ./config, the only readable
+    ///      directory), checked against `CC0_TEXT_SHA256` when set; a placeholder on anvil.
+    function _cc0Text(bool local) internal view returns (bytes memory text) {
+        string memory path = vm.envOr("CC0_TEXT_PATH", string(""));
+        if (bytes(path).length == 0) {
+            if (!local) revert MissingParameter("CC0_TEXT_PATH");
+            return bytes(PLACEHOLDER_CC0);
+        }
+        text = bytes(vm.readFile(path));
+        bytes32 expected = vm.envOr("CC0_TEXT_SHA256", bytes32(0));
+        if (expected != bytes32(0) && sha256(text) != expected) {
+            revert MissingParameter("CC0_TEXT_SHA256 (the file does not match)");
         }
     }
 
@@ -121,6 +137,7 @@ contract Deploy is Script {
         vm.serializeBytes32(root, "namespace", p.namespace);
         vm.serializeString(root, "genesisConfig", genesis);
         vm.serializeBytes32(root, "manifestDigest", manifest.digest);
+        vm.serializeBytes32(root, "cc0TextFileId", d.cc0TextFileId);
         vm.serializeString(root, "manifestUri", manifest.uri);
         vm.serializeBytes32(root, "configHash", configHash);
         vm.serializeBytes32(root, "wiringHash", keccak256(abi.encode(calls)));
