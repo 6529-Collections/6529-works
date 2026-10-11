@@ -489,6 +489,25 @@ contract RendererTest is RendererBase {
         assertEq(_str(_out(), ".name"), "N");
     }
 
+    /// @dev A record one byte over the limit is invalid even when it is otherwise a fine record
+    ///      (white space after the closing brace), and at the limit it is read.
+    function test_Record_OneByteOverTheLimitIsInvalid() public {
+        bytes memory json = '{"name":"N"}';
+        uint256 limit = Limits.MAX_RECORD_BYTES;
+        bytes memory padded = new bytes(limit + 1);
+        for (uint256 i; i < padded.length; ++i) {
+            padded[i] = i < json.length ? json[i] : bytes1(" ");
+        }
+        _raw(padded);
+        _assertCoreOnly("invalid");
+        bytes memory exact = new bytes(limit);
+        for (uint256 i; i < exact.length; ++i) {
+            exact[i] = padded[i];
+        }
+        _raw(exact);
+        assertEq(_str(_out(), ".name"), "N");
+    }
+
     function test_Record_NotAFileTheStoreKnowsFailsClosed() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);

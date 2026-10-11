@@ -347,6 +347,12 @@ contract JsonScanTest is Test {
         assertFalse(h.accepts('{"a":"\\udc00\\udc00"}'));
         assertFalse(h.accepts('{"a":"\\ud800\\udc0"}'));
         assertFalse(h.accepts('{"a":"\\ud800\\u"}'));
+        // A high surrogate wants `\u` and a low surrogate next, not any two bytes and four digits
+        // that happen to be one.
+        assertFalse(h.accepts('{"a":"\\ud800xxdc00"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\xdc00"}'));
+        assertFalse(h.accepts('{"a":"\\ud800 \\udc00"}'));
+        assertFalse(h.accepts('{"a":"\\ud800uudc00"}'));
         assertFalse(h.accepts('{"a":"\\ud800\\'));
         assertFalse(h.accepts('{"a":"\\ud800'));
         assertTrue(h.accepts('{"a":"\\ud800\\udc00"}'));
