@@ -27,13 +27,15 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      `IWorkRecords` when the record opens. Everything else is in `WorkMinted` and in the
 ///      published package.
 ///
-///      An upheld dispute burns the token from auction custody (`IMintTarget.burn`). Anyone may
+///      An upheld dispute burns the token from auction custody (`IMintTarget.burn`, by the
+///      adapter that minted it, before the primary sale settled). Anyone may
 ///      then call `releaseContent`, which passes the burned work's stored item hash to
 ///      `IPackageRegistry.releaseContent`: the content hash is freed for its rightful artist and
 ///      the item is tombstoned.
 ///
 ///      Satellites are bound once each (`bindWorkRecords`, `bindEditions`): ERC-165 checked, not
-///      EIP-7702 delegated accounts, never changed. Governed functions are non-payable; each
+///      EIP-7702 delegated accounts, serving this Stream (`stream() == address(this)`), never
+///      changed. Governed functions are non-payable; each
 ///      names the `Roles` role its selector maps to.
 interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice A collection: a named grouping of works, possibly by several artists.
@@ -92,6 +94,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
+    /// @notice The contract URI changed from `previous` to `next` (emitted beside ERC-7572's
+    ///         parameterless `ContractURIUpdated`).
+    event ContractURISet(string previous, string next);
 
     /// @notice No live token has this ID.
     error UnknownWork(uint256 tokenId);
@@ -101,11 +106,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error UnboundCaller(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The target lacks code or the expected ERC-165 support, or is an EIP-7702 delegated
-    ///         account.
+    /// @notice The target lacks code or the expected ERC-165 support, is an EIP-7702 delegated
+    ///         account, or (a satellite) serves another Stream.
     error InvalidBinding(address target);
     /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
-    ///         seed policy).
+    ///         seed policy, license ID, fee terms).
     error InvalidMintRequest();
     /// @notice The collection name is empty or too long.
     error InvalidCollectionName();
@@ -113,18 +118,23 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error InvalidRoyaltyRate(uint32 rate);
     /// @notice The token is not burned.
     error NotBurned(uint256 tokenId);
+    /// @notice The token's primary sale settled, so it can no longer be burned.
+    error SaleAlreadySettled(uint256 tokenId);
     /// @notice The VRF seed of this item has not been delivered.
     error SeedNotDelivered(bytes32 itemHash);
-    /// @notice The work is not an edition master, or its edition is already linked.
+    /// @notice The work is not an edition master, its primary sale has not settled, its edition
+    ///         is already linked, or the edition ID is not the token ID.
     error EditionLinkInvalid(uint256 tokenId);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
 
     // ----- wiring -----
 
-    /// @notice Binds the work-records satellite, once (ERC-165 for `IWorkRecords`). ADMIN role.
+    /// @notice Binds the work-records satellite, once (ERC-165 for `IWorkRecords`, and
+    ///         `IWorkRecords(target).stream()` must be this contract). ADMIN role.
     function bindWorkRecords(address target) external;
-    /// @notice Binds 6529 Editions, once (ERC-165 for `IEditions`). ADMIN role.
+    /// @notice Binds 6529 Editions, once (ERC-165 for `IEditions`, and `IEditions(target).stream()`
+    ///         must be this contract). ADMIN role.
     function bindEditions(address target) external;
     /// @notice The bound `IWorkRecords` satellite.
     function workRecords() external view returns (address);
@@ -209,16 +219,18 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
         external
         view
         returns (address editionsContract, uint256 editionId);
-    /// @notice Records the edition of an EDITION_MASTER work, once. Bound 6529 Editions only, from
-    ///         `IEditions.createEdition`, which records the other direction in the same
-    ///         transaction.
+    /// @notice Records the edition of an EDITION_MASTER work, once, after the master's primary
+    ///         sale settled (D14, checked here as well as in Editions); the edition ID equals the
+    ///         token ID. Bound 6529 Editions only, from `IEditions.createEdition`, which records
+    ///         the other direction in the same transaction.
     function linkEdition(uint256 tokenId, uint256 editionId) external;
 
     // ----- marketplace metadata -----
 
     /// @notice ERC-7572 contract-level metadata URI.
     function contractURI() external view returns (string memory);
-    /// @notice Sets the contract URI. PARAMETER_SETTER role.
+    /// @notice Sets the contract URI (`ContractURISet`, `ContractURIUpdated`). PARAMETER_SETTER
+    ///         role.
     function setContractURI(string calldata uri) external;
     /// @notice The marketplace owner (held by 6529); it has no on-chain powers.
     function owner() external view returns (address);
