@@ -334,7 +334,7 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.** On anvil, today's set is 24 transactions and about 53M gas, including the
-  delegation mock and the renderer stand-in. The largest transaction is about 5.1M, under the
+  delegation mock and the renderer stand-in. The largest transaction is about 5.2M, under the
   16.8M EIP-7825 cap. The renderer and Editions add more, so use the simulation's estimate.
 - **The record.** The run writes `deployments/11155111/<timestamp>.json`. It holds:
   - every address and code hash;
