@@ -28,6 +28,8 @@ interface IAssetAllowlist {
     /// @notice `asset` has no code, is an EIP-7702 delegated account, or reports a balance above
     ///         its total supply. Unreadable balances or supply revert with the token-read error.
     error AssetNotAdmissible(address asset);
+    /// @notice Compare-and-set failed: the asset is in status `status` with floor `floor`.
+    error AdmissionMismatch(Status status, uint256 floor);
     /// @notice The requested change does not apply to an asset in status `current`.
     error InvalidStatusTransition(address asset, Status current);
     /// @notice `asset` is not active.
@@ -64,8 +66,11 @@ interface IAssetAllowlist {
         view
         returns (bool configured, address asset);
 
-    /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`.
-    function admitAsset(address asset, uint256 floor) external;
+    /// @notice Admits `asset` (expected `None`, floor 0), or re-admits a deprecated one (expected
+    ///         `Deprecated` and its stored floor), with increment floor `floor`. Re-admission is
+    ///         the only way back from deprecation.
+    function admitAsset(address asset, Status expectedStatus, uint256 expectedFloor, uint256 floor)
+        external;
 
     /// @notice Stops new sales from using active `asset`.
     function deprecateAsset(address asset) external;

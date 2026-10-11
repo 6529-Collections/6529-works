@@ -12,11 +12,11 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///         currency. Switching a product to USDC, or adding a 6529 token, is "admit the asset, then
 ///         change the default", with no contract change. Sales lock their currency and floor when
 ///         they start, so later changes only affect later sales.
-/// @dev Governed through AccessManager. Proposed delay classes (ADR 0001 section 13; the governance
-///      lane owns the final mapping): {admitAsset}, {setIncrementFloor} and {setDefaultCurrency} are
-///      standard actions; {deprecateAsset} only tightens and may be immediate. Direction rules live
-///      here because AccessManager only sees selectors. Nothing in the withdrawal paths reads this
-///      contract, so admission can never block a withdrawal.
+/// @dev Governed through AccessManager, with the delay classes of ADR 0002: {admitAsset} and
+///      {setDefaultCurrency} are funds-and-recipients actions (14 days), {setIncrementFloor} is
+///      standard (48 hours), and {deprecateAsset} only tightens and is immediate. Direction rules
+///      and compare-and-set live here because AccessManager only sees selectors. Nothing in the
+///      withdrawal paths reads this contract, so admission can never block a withdrawal.
 contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);
@@ -42,7 +42,16 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     }
 
     /// @inheritdoc IAssetAllowlist
-    function admitAsset(address asset, uint256 floor) external restricted {
+    /// @dev Compare-and-set on status and floor: an admission queued before an emergency
+    ///      deprecation, or before a floor change, reverts instead of silently re-activating.
+    function admitAsset(address asset, Status expectedStatus, uint256 expectedFloor, uint256 floor)
+        external
+        restricted
+    {
+        AssetConfig storage config = _assets[asset];
+        if (config.status != expectedStatus || config.incrementFloor != expectedFloor) {
+            revert AdmissionMismatch(config.status, config.incrementFloor);
+        }
         if (asset != ETH) {
             if (asset.code.length == 0 || DelegatedEOA.isDelegated(asset)) {
                 revert AssetNotAdmissible(asset);

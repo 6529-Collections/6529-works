@@ -40,7 +40,9 @@ library RevenuePayment {
         internal
         returns (bool escrowed)
     {
-        if (wallet == address(0)) revert IRevenueEscrow.InvalidWallet(wallet);
+        if (wallet == address(0) || wallet == address(escrow)) {
+            revert IRevenueEscrow.InvalidWallet(wallet);
+        }
         if (amount == 0) return false;
         if (!BoundedCall.hasSufficientGas(gasleft(), gasLimit, ETH_CALL_RESERVE)) {
             revert PaymentInsufficientGas(gasLimit);
@@ -57,7 +59,9 @@ library RevenuePayment {
         internal
         returns (bool escrowed)
     {
-        if (wallet == address(0)) revert IRevenueEscrow.InvalidWallet(wallet);
+        if (wallet == address(0) || wallet == address(escrow)) {
+            revert IRevenueEscrow.InvalidWallet(wallet);
+        }
         if (amount == 0) return false;
         if (TokenTransfer.tryTransferExact(asset, wallet, amount, ERC20_TRANSFER_GAS)) {
             return false;
