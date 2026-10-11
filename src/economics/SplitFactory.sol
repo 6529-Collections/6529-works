@@ -29,8 +29,9 @@ contract SplitFactory is ISplitFactory {
     }
 
     /// @inheritdoc ISplitFactory
+    /// @dev The wallet constructor validates `payees`, so an invalid list reverts on deployment.
     function createWallet(ISplitWallet.Payee[] calldata payees) external returns (address wallet) {
-        wallet = walletFor(payees);
+        wallet = _predict(payees);
         if (wallet.code.length != 0) return wallet;
         new SplitWallet{ salt: bytes32(0) }(resolver, payees);
         isWallet[wallet] = true;
@@ -38,8 +39,12 @@ contract SplitFactory is ISplitFactory {
     }
 
     /// @inheritdoc ISplitFactory
-    function walletFor(ISplitWallet.Payee[] calldata payees) public view returns (address) {
+    function walletFor(ISplitWallet.Payee[] calldata payees) external view returns (address) {
         Splits.validate(payees);
+        return _predict(payees);
+    }
+
+    function _predict(ISplitWallet.Payee[] calldata payees) private view returns (address) {
         bytes32 initCodeHash = keccak256(
             abi.encodePacked(type(SplitWallet).creationCode, abi.encode(resolver, payees))
         );

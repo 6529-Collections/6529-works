@@ -114,17 +114,44 @@ contract ClaimRouterTest is EconomicsBase {
         assertEq(token.balanceOf(address(router)), 0);
     }
 
-    function test_NoArtificialBatchCap() public {
+    function test_BatchesUpToMaxClaimsAndRejectsMore() public {
         ClaimWalletAdversary wallet = new ClaimWalletAdversary();
-        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](33);
-        for (uint256 i; i < 33; ++i) {
+        uint256 max = router.MAX_CLAIMS();
+        assertEq(max, 50);
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](max);
+        for (uint256 i; i < max; ++i) {
             claims[i] = IClaimRouter.Claim(address(wallet), ETH, 5);
         }
         uint256[] memory amounts = router.claim(claims, false);
-        assertEq(amounts.length, 33);
-        assertEq(wallet.releaseCalls(), 33);
+        assertEq(amounts.length, max);
+        assertEq(wallet.releaseCalls(), max);
         assertEq(wallet.lastPayee(), 5);
-        assertEq(amounts[32], 77);
+        assertEq(amounts[max - 1], 77);
+
+        IClaimRouter.Claim[] memory tooMany = new IClaimRouter.Claim[](max + 1);
+        vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyClaims.selector, max + 1));
+        router.claim(tooMany, true);
+    }
+
+    function test_ContinueModeRevertsWhenItemsWouldBeStarved() public {
+        SplitWallet first = _solo(alice);
+        SplitWallet second = _solo(bob);
+        vm.deal(address(first), 1 ether);
+        vm.deal(address(second), 1 ether);
+        IClaimRouter.Claim[] memory claims = _two(address(first), 0, address(second), 0);
+        // Three shares of about 100k each: below the 200k per-item floor, so the batch reverts rather
+        // than "succeeding" with every item out of gas.
+        (bool ok, bytes memory data) =
+            address(router).call{ gas: 300_000 }(abi.encodeCall(IClaimRouter.claim, (claims, true)));
+        assertFalse(ok);
+        bytes4 selector;
+        assembly ("memory-safe") {
+            selector := mload(add(data, 32))
+        }
+        assertEq(selector, IClaimRouter.ClaimInsufficientGas.selector);
+        assertEq(alice.balance, 0);
+        uint256[] memory amounts = router.claim{ gas: 1_000_000 }(claims, true);
+        assertEq(amounts[0] + amounts[1], 2 ether);
     }
 
     function test_FailedItemContinuesToLaterClaimWithExactReason() public {

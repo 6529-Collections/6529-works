@@ -6,7 +6,7 @@ import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { GasBurnerMock } from "../mocks/AdversarialTargets.sol";
-import { BlocklistToken, RejectingRecipient } from "../mocks/EconomicsMocks.sol";
+import { BlocklistToken, GasHungryToken, RejectingRecipient } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract RevenuePaymentTest is EconomicsBase {
@@ -65,6 +65,34 @@ contract RevenuePaymentTest is EconomicsBase {
     function test_PayETHRejectsZeroWallet() public {
         vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(0)));
         payer.payETH(address(0), 1 ether, GAS);
+    }
+
+    function test_ZeroAmountsAreNoOpsEvenWhenRefused() public {
+        RejectingRecipient refusing = new RejectingRecipient();
+        assertFalse(payer.payETH(address(refusing), 0, GAS));
+        usdc.setBlocked(address(wallet), true);
+        assertFalse(payer.payERC20(address(wallet), address(usdc), 0));
+        assertEq(escrow.totalOwed(ETH), 0);
+        assertEq(escrow.totalOwed(address(usdc)), 0);
+    }
+
+    function test_PayERC20RejectsZeroWallet() public {
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(0)));
+        payer.payERC20(address(0), address(usdc), 1);
+    }
+
+    function test_PayERC20RevertsWhenTheTokenCannotGetItsFullGas() public {
+        uint256 limit = RevenuePayment.ERC20_TRANSFER_GAS;
+        vm.expectRevert(abi.encodeWithSelector(TokenTransfer.TokenInsufficientGas.selector, limit));
+        payer.payERC20{ gas: 250_000 }(address(wallet), address(usdc), 1);
+        assertEq(escrow.totalOwed(address(usdc)), 0);
+    }
+
+    function test_GasHungryTokenIsEscrowedNotBlocking() public {
+        GasHungryToken hungry = new GasHungryToken();
+        hungry.mint(address(payer), 100);
+        assertTrue(payer.payERC20(address(wallet), address(hungry), 100));
+        assertEq(escrow.owed(address(wallet), address(hungry)), 100);
     }
 
     function test_PayERC20GoesStraightToTheWallet() public {

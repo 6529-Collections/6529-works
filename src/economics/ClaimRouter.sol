@@ -12,6 +12,15 @@ import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 ///      contained: at most one word of return data is copied on success and at most 256 bytes of
 ///      revert data on failure, and in continue mode each call gets only its share of the gas left.
 contract ClaimRouter is IClaimRouter {
+    /// @inheritdoc IClaimRouter
+    /// @dev A worst-case standard item costs about 130,000 gas, so a full atomic batch stays
+    ///      under 7M, and continue mode needs at most `(MAX_CLAIMS + 1) * MIN_ITEM_GAS` (10.2M).
+    uint256 public constant MAX_CLAIMS = 50;
+    /// @inheritdoc IClaimRouter
+    /// @dev Without a floor, a batch that never reverts lets gas estimation settle on a limit at
+    ///      which every item runs out of gas and nothing is claimed.
+    uint256 public constant MIN_ITEM_GAS = 200_000;
+
     uint256 private constant _MAX_REASON_BYTES = 256;
 
     /// @inheritdoc IClaimRouter
@@ -19,6 +28,7 @@ contract ClaimRouter is IClaimRouter {
         external
         returns (uint256[] memory amounts)
     {
+        if (claims.length > MAX_CLAIMS) revert TooManyClaims(claims.length);
         amounts = new uint256[](claims.length);
         for (uint256 i; i < claims.length; ++i) {
             amounts[i] = _claim(claims[i], i, continueOnFailure, claims.length - i);
@@ -39,6 +49,7 @@ contract ClaimRouter is IClaimRouter {
             // Continue mode splits the gas left between this call, the later items and the router,
             // recomputed per item so a failed item's share passes on. There is no fixed stipend.
             uint256 callGas = keepGoing ? gasleft() / (remaining + 1) : gasleft();
+            if (keepGoing && callGas < MIN_ITEM_GAS) revert ClaimInsufficientGas(index, callGas);
             bool ok;
             assembly ("memory-safe") {
                 ok := call(callGas, wallet, 0, add(input, 0x20), mload(input), 0x00, 0x20)

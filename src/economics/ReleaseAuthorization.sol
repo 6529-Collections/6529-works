@@ -26,8 +26,10 @@ abstract contract ReleaseAuthorization is ISplitWallet, IERC5267, ReentrancyGuar
     bytes32 private constant _DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
     );
-    bytes32 private constant _NAME_HASH = keccak256("6529 Works Split Wallet");
-    bytes32 private constant _VERSION_HASH = keccak256("1");
+    string private constant _NAME = "6529 Works Split Wallet";
+    string private constant _VERSION = "1";
+    bytes32 private constant _NAME_HASH = keccak256(bytes(_NAME));
+    bytes32 private constant _VERSION_HASH = keccak256(bytes(_VERSION));
 
     /// @inheritdoc ISplitWallet
     mapping(address account => mapping(uint256 nonce => bool)) public nonceUsed;
@@ -66,13 +68,7 @@ abstract contract ReleaseAuthorization is ISplitWallet, IERC5267, ReentrancyGuar
         )
     {
         return (
-            hex"0f",
-            "6529 Works Split Wallet",
-            "1",
-            block.chainid,
-            address(this),
-            bytes32(0),
-            new uint256[](0)
+            hex"0f", _NAME, _VERSION, block.chainid, address(this), bytes32(0), new uint256[](0)
         );
     }
 

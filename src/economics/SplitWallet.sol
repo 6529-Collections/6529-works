@@ -114,16 +114,16 @@ contract SplitWallet is ReleaseAuthorization {
     }
 
     /// @inheritdoc ISplitWallet
-    /// @dev Reverts while a release is in progress, so no caller reads half-updated accounting.
+    /// @dev Reverts while a release is in progress, so no caller reads half-updated accounting,
+    ///      and reverts with {ObservedDecreased} while the asset is frozen, so a frozen balance
+    ///      never reads as "nothing owed".
     function releasable(address asset, uint256 index)
         external
         view
         nonReentrantView
         returns (uint256)
     {
-        uint256 current = _observed(asset);
-        if (current < recordedObserved[asset]) return 0;
-        return Splits.entitlement(current, _payee(index).share) - released[asset][index];
+        return _due(asset, index, _observed(asset));
     }
 
     /// @dev Effects before the transfer; the shared guard blocks every reentry path.
@@ -138,29 +138,32 @@ contract SplitWallet is ReleaseAuthorization {
             revert InvalidRecipient(recipient);
         }
         uint256 current = _observed(asset);
-        uint256 recorded = recordedObserved[asset];
-        if (current < recorded) revert ObservedDecreased(asset, recorded, current);
-        // `current` never falls below the receipts any earlier release saw, so the cumulative
-        // entitlement never falls below what was released and this cannot underflow.
-        uint256 due = Splits.entitlement(current, _payees[index].share) - released[asset][index];
+        uint256 due = _due(asset, index, current);
         amount = requested == type(uint256).max ? due : requested;
         if (amount == 0) revert NothingToRelease(asset, index);
         if (amount > due) revert AmountExceedsReleasable(amount, due);
 
         released[asset][index] += amount;
         totalReleased[asset] += amount;
-        if (current != recorded) recordedObserved[asset] = current;
+        if (current != recordedObserved[asset]) recordedObserved[asset] = current;
         emit Released(asset, index, recipient, account, amount, current);
 
         if (asset == address(0)) {
-            bool ok;
-            assembly ("memory-safe") {
-                ok := call(gas(), recipient, amount, 0, 0, 0, 0)
+            if (!TokenTransfer.sendETH(recipient, amount, gasleft())) {
+                revert ETHTransferFailed(recipient, amount);
             }
-            if (!ok) revert ETHTransferFailed(recipient, amount);
         } else {
             TokenTransfer.transferExact(asset, recipient, amount);
         }
+    }
+
+    /// @dev Reverts if receipts fell below the recorded high-water mark. Otherwise `current` is at
+    ///      least the receipts every earlier release saw, so the cumulative entitlement is at
+    ///      least what was released and the subtraction cannot underflow.
+    function _due(address asset, uint256 index, uint256 current) private view returns (uint256) {
+        uint256 recorded = recordedObserved[asset];
+        if (current < recorded) revert ObservedDecreased(asset, recorded, current);
+        return Splits.entitlement(current, _payee(index).share) - released[asset][index];
     }
 
     function _observed(address asset) private view returns (uint256) {

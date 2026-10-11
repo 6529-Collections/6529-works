@@ -181,6 +181,15 @@ contract BlocklistToken is MockERC20("Blocklist", "USDB") {
     }
 }
 
+/// @dev `transfer` burns more gas than a payer's direct-route allowance; `transferFrom` is cheap.
+contract GasHungryToken is MockERC20("Hungry", "HGT") {
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        uint256 stop = gasleft() - 400_000;
+        while (gasleft() > stop) { }
+        return super.transfer(to, amount);
+    }
+}
+
 /// @dev Calls `hookTarget` with `hookData` after every transfer and records the outcome, like an
 ///      ERC-777 hook. Used to prove reentry through a token callback is blocked.
 contract CallbackToken is MockERC20("Callback", "CBT") {

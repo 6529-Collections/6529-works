@@ -44,11 +44,9 @@ contract RevenueEscrow is IRevenueEscrow, ReentrancyGuardTransient {
         totalOwed[asset] -= amount;
         emit Flushed(wallet, asset, msg.sender, amount);
         if (asset == address(0)) {
-            bool ok;
-            assembly ("memory-safe") {
-                ok := call(gas(), wallet, amount, 0, 0, 0, 0)
+            if (!TokenTransfer.sendETH(wallet, amount, gasleft())) {
+                revert ETHTransferFailed(wallet, amount);
             }
-            if (!ok) revert ETHTransferFailed(wallet, amount);
         } else {
             TokenTransfer.transferExact(asset, wallet, amount);
         }

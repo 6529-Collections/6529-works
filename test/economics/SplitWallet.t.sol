@@ -213,12 +213,13 @@ contract SplitWalletTest is EconomicsBase {
         wallet.release(address(rebasing), iAlice);
         assertEq(wallet.recordedObserved(address(rebasing)), 1000);
         rebasing.setIndex(0.5e18);
-        assertEq(wallet.releasable(address(rebasing), iBob), 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ISplitWallet.ObservedDecreased.selector, address(rebasing), 1000, 750
-            )
+        bytes memory frozen = abi.encodeWithSelector(
+            ISplitWallet.ObservedDecreased.selector, address(rebasing), 1000, 750
         );
+        // The read fails closed too: a frozen balance never reads as "nothing owed".
+        vm.expectRevert(frozen);
+        wallet.releasable(address(rebasing), iBob);
+        vm.expectRevert(frozen);
         wallet.release(address(rebasing), iBob);
         rebasing.setIndex(1e18);
         assertEq(wallet.release(address(rebasing), iBob), 300);

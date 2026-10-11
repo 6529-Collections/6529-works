@@ -222,6 +222,18 @@ contract ReleaseAuthorizationTest is EconomicsBase {
         assertEq(wallet.totalReleased(ETH), 0);
     }
 
+    function test_ReplayIsKeyedOnTheNonceNotTheSignatureBytes() public {
+        ISplitWallet.Authorization memory a = _auth(iAlice, alice, 1 ether, 1);
+        bytes32 digest = wallet.releaseDigest(a);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+        (, bytes32 vs) = vm.signCompact(alicePk, digest);
+        wallet.releaseWithAuthorization(a, abi.encodePacked(r, s, v));
+        // The ERC-2098 encoding of the same signature is different bytes, but the same nonce.
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.NonceAlreadyUsed.selector, alice, 1));
+        wallet.releaseWithAuthorization(a, abi.encodePacked(r, vs));
+        assertEq(recipient.balance, 1 ether);
+    }
+
     function test_CompactERC2098SignatureIsAccepted() public {
         ISplitWallet.Authorization memory a = _auth(iAlice, alice, 1 ether, 1);
         (bytes32 r, bytes32 vs) = vm.signCompact(alicePk, wallet.releaseDigest(a));
