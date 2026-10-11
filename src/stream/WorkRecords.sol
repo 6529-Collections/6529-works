@@ -241,10 +241,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         RecordData storage r = _open(tokenId);
         media = new MediaFile[](r.mediaCount);
         bytes32[32] storage list = _media[tokenId];
+        IContentStore store = IContentStore(contentStore);
         for (uint256 i; i < media.length; ++i) {
             bytes32 fileId = list[i];
-            (, bytes32 sha) = _sha256Of(fileId);
-            media[i] = MediaFile(fileId, sha, FileRole(uint8(r.roles >> (8 * i))));
+            media[i] =
+                MediaFile(fileId, store.sha256Of(fileId), FileRole(uint8(r.roles >> (8 * i))));
         }
     }
 
@@ -590,13 +591,20 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             && keccak256(bytes(license.spdxId)) == keccak256(bytes(_cc0SpdxId));
     }
 
-    /// @dev The content store's declared SHA-256 of `fileId`, or `known = false` for an
-    ///      unregistered file (the store reverts).
+    /// @dev The content store's declared SHA-256 of `fileId`, or `known = false` when the store
+    ///      reports the file unknown. Any other failure (including running out of gas)
+    ///      propagates, so a failed read never passes for an unregistered file.
     function _sha256Of(bytes32 fileId) private view returns (bool known, bytes32 sha) {
         try IContentStore(contentStore).sha256Of(fileId) returns (bytes32 declared) {
             return (true, declared);
-        } catch {
-            return (false, 0);
+        } catch (bytes memory reason) {
+            // Only the selector is compared, so truncating to four bytes is intended.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            if (reason.length < 4 || bytes4(reason) != IContentStore.ContentFileUnknown.selector) {
+                assembly ("memory-safe") {
+                    revert(add(reason, 0x20), mload(reason))
+                }
+            }
         }
     }
 

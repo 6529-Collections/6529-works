@@ -77,6 +77,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @notice The primary sale settled, so the token can no longer be burned.
     error SaleAlreadySettled(uint256 tokenId);
 
+    /// @notice The contract URI changed from `previous` to `next` (the setter's old and new
+    ///         values, beside ERC-7572's `ContractURIUpdated`).
+    event ContractURISet(string previous, string next);
+
     /// @dev A token's three words. `feeRecipientId` and `minterId` index `_feeRecipients` and
     ///      the admitted minters, both from 1.
     struct TokenData {
@@ -488,6 +492,7 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IStream
     function setContractURI(string calldata uri) external restricted {
+        emit ContractURISet(_contractURI, uri);
         _contractURI = uri;
         emit ContractURIUpdated();
     }
@@ -539,6 +544,7 @@ contract Stream is ERC721, AccessManaged, IStream {
                 revert(add(result, 0x20), mload(result))
             }
         }
+        if (result.length != 64) revert InvalidMintRequest();
         return abi.decode(result, (bytes32, uint256));
     }
 

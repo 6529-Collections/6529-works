@@ -18,8 +18,10 @@ import { StreamFixture } from "./StreamFixture.sol";
 ///         account is cold, so only Stream's storage, events, AccessManager check and call
 ///         overhead are measured; the real registry and auction costs come on top.
 contract StreamGasTest is StreamFixture {
-    /// @dev Regression guard for Stream's share of a typical start.
+    /// @dev Regression guards for Stream's share of the start, per case.
     uint256 internal constant MINT_SHARE_BUDGET = 145_000;
+    uint256 internal constant IDLE_ADAPTER_BUDGET = 160_000;
+    uint256 internal constant FIRST_MINT_BUDGET = 235_000;
 
     Stream internal lean;
     ConstantAuction internal adapter;
@@ -72,6 +74,7 @@ contract StreamGasTest is StreamFixture {
         lean.transferFrom(address(adapter), outsider, 1);
         uint256 used = _measure(_item(2));
         console2.log("Stream.mint share, idle adapter (balance from zero):", used);
+        assertLe(used, IDLE_ADAPTER_BUDGET);
     }
 
     /// @dev The derived receiver costs one `SplitFactory.walletFor` (a creation-code hash);
@@ -96,6 +99,7 @@ contract StreamGasTest is StreamFixture {
     function test_gas_mintShare_first() public {
         uint256 used = _measure(_item(1));
         console2.log("Stream.mint share, first mint ever:", used);
+        assertLe(used, FIRST_MINT_BUDGET);
     }
 
     function test_gas_mintShare_artistSeed() public {
@@ -105,5 +109,6 @@ contract StreamGasTest is StreamFixture {
         item.seed = keccak256("seed");
         uint256 used = _measure(item);
         console2.log("Stream.mint share, ARTIST seed:", used);
+        assertLe(used, MINT_SHARE_BUDGET);
     }
 }

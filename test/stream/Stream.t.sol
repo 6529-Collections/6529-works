@@ -13,19 +13,23 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
+    MoveAuthorization,
     PackageItem,
     Party,
     PartyRole,
-    SeedPolicy
+    SeedPolicy,
+    StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import {
+    MockEconomics,
     MockEditions,
     MockPackageRegistry,
     MockRenderer,
@@ -304,6 +308,44 @@ contract StreamTest is StreamFixture {
         auction.start(stream, data);
     }
 
+    /// @dev `_consume` forwards `data[32:]` as `consume`'s arguments without re-encoding. This
+    ///      pins the layout it relies on: after the leading offset word, the encoding of a
+    ///      `StreamMintRequest` is byte for byte the encoding of `(packageRoot, item, proof,
+    ///      move)`, for any number of parties, payees, proof nodes and signature bytes.
+    function testFuzz_mintRequestEncodesAsConsumeArguments(
+        uint8 parties,
+        uint8 proofLength,
+        uint8 signatureLength
+    ) public view {
+        PackageItem memory item = _item(1);
+        item.parties = new Party[](bound(parties, 1, 16));
+        for (uint256 i; i < item.parties.length; ++i) {
+            item.parties[i] = Party(address(uint160(0x1000 + i)), PartyRole.COLLABORATOR);
+        }
+        bytes32[] memory proof = new bytes32[](bound(proofLength, 0, 32));
+        for (uint256 i; i < proof.length; ++i) {
+            proof[i] = keccak256(abi.encode(i));
+        }
+        MoveAuthorization memory move =
+            MoveAuthorization(9, 1 days, new bytes(bound(signatureLength, 0, 130)));
+        bytes memory request = abi.encode(StreamMintRequest(keccak256("root"), item, proof, move));
+        bytes memory arguments = abi.encode(keccak256("root"), item, proof, move);
+        assertEq(uint256(bytes32(request)), 32);
+        assertEq(request.length, arguments.length + 32);
+        assertEq(keccak256(_tail(request)), keccak256(arguments));
+        assertEq(
+            abi.encodeCall(IPackageRegistry.consume, (keccak256("root"), item, proof, move)),
+            bytes.concat(IPackageRegistry.consume.selector, _tail(request))
+        );
+    }
+
+    function _tail(bytes memory data) internal pure returns (bytes memory out) {
+        out = new bytes(data.length - 32);
+        for (uint256 i; i < out.length; ++i) {
+            out[i] = data[i + 32];
+        }
+    }
+
     function test_mint_revertsForMalformedData() public {
         vm.expectRevert(IStream.InvalidMintRequest.selector);
         auction.start(stream, new bytes(159));
@@ -401,7 +443,9 @@ contract StreamTest is StreamFixture {
         item.sale.currency = address(0xBEEF);
         econ.setBlocked(address(0xBEEF), true);
         bytes memory data = _request(item);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(MockEconomics.CurrencyNotAllowed.selector, address(0xBEEF))
+        );
         auction.start(stream, data);
     }
 
@@ -959,10 +1003,16 @@ contract StreamTest is StreamFixture {
 
     function test_contractURI() public {
         vm.expectEmit(address(stream));
+        emit Stream.ContractURISet("", "ipfs://contract");
+        vm.expectEmit(address(stream));
         emit IStream.ContractURIUpdated();
         vm.prank(governor);
         stream.setContractURI("ipfs://contract");
         assertEq(stream.contractURI(), "ipfs://contract");
+        vm.expectEmit(address(stream));
+        emit Stream.ContractURISet("ipfs://contract", "ipfs://next");
+        vm.prank(governor);
+        stream.setContractURI("ipfs://next");
         vm.prank(outsider);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)

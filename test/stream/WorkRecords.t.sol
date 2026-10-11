@@ -167,6 +167,18 @@ contract WorkRecordsTest is RecordsFixture {
         _expectBadOpen(_mint(item), item, media);
     }
 
+    /// @dev Only the store's "unknown file" error reads as unregistered; any other store
+    ///      failure propagates instead of passing for a plausible default.
+    function test_openRecord_storeFailuresPropagate() public {
+        (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, true);
+        BrokenStore broken = new BrokenStore();
+        WorkRecords other = new WorkRecords(
+            address(manager), address(stream), address(broken), _license("cc0-1.0")
+        );
+        vm.expectRevert(BrokenStore.Broken.selector);
+        other.openRecord(tokenId, item, media);
+    }
+
     function test_openRecord_rejectsUnknownRecordFile() public {
         MediaFile[] memory media = _single(1, false);
         PackageItem memory item = _recordsItem(1, media);
@@ -440,12 +452,10 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).licenseKey, WorksHashing.CC0_LICENSE_KEY);
         assertEq(records.record(tokenId).version, 1);
 
-        // A replay of the same consents hits the version bump.
-        bytes32 current = records.workStateHash(tokenId);
+        // CC0 is now irrevocable. (Replay of consents is tested between non-CC0 licenses.)
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
         records.relicense(tokenId, _license("mit"), item, state, deadline, sigs);
-        assertTrue(current != state);
     }
 
     function test_relicense_betweenNonCc0Licenses() public {
@@ -1049,5 +1059,14 @@ contract WorkRecordsTest is RecordsFixture {
             )
         );
         assertEq(records.workStateHash(tokenId), expected);
+    }
+}
+
+/// @notice A content store whose `sha256Of` fails with an error other than "unknown file".
+contract BrokenStore {
+    error Broken();
+
+    function sha256Of(bytes32) external pure returns (bytes32) {
+        revert Broken();
     }
 }
