@@ -556,7 +556,9 @@ contract EnglishAuction is
         }
         Terms memory t = _lockTerms(token, listed, terms.currency, c);
         if (
-            tokenId >> 32 != 0 || terms.seller == address(0) || terms.feeRecipient == address(0)
+            tokenId >> 32 != 0 || terms.seller == address(0)
+                || (terms.feeRecipient == address(0)
+                    && (t.federated ? t.registryFee : terms.feeShare) != 0)
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
@@ -749,7 +751,10 @@ contract EnglishAuction is
         return high + Math.max(step, s.incrementFloor);
     }
 
+    /// @dev Pays nothing for a zero amount, so a zero-fee configuration may name no fee
+    ///      recipient (`RevenuePayment` rejects a zero wallet before it looks at the amount).
     function _pay(address currency, address wallet, uint256 amount) private {
+        if (amount == 0) return;
         if (currency == CURRENCY_ETH) {
             RevenuePayment.payETH(IRevenueEscrow(escrow), wallet, amount, PAYOUT_GAS);
         } else {

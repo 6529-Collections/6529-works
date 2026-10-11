@@ -670,6 +670,53 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(address(auction).balance, 0);
     }
 
+    /// @dev A zero-fee configuration may name no fee recipient: the start is accepted and the
+    ///      seller receives the whole price, with nothing paid on the fee side.
+    function test_ZeroFeeWithoutARecipient() public {
+        PrimaryTerms memory t = _terms(ETH);
+        t.feeShare = 0;
+        t.feeRecipient = address(0);
+        stream.setTerms(t);
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.SaleSettled(
+            saleId,
+            address(stream),
+            1,
+            alice,
+            alice,
+            1,
+            ETH,
+            1 ether,
+            seller,
+            1 ether,
+            address(0),
+            0
+        );
+        auction.settle(saleId);
+        assertEq(seller.balance, 1 ether);
+        assertEq(address(auction).balance, 0);
+        assertEq(escrow.owed(address(0), ETH), 0);
+
+        uint256 quiet = _start();
+        _end(quiet);
+        auction.settle(quiet);
+        assertEq(stream.ownerOf(2), artist, "no-bid settlement with no fee side");
+    }
+
+    /// @dev A non-zero fee share still needs a fee recipient.
+    function test_NonZeroFeeNeedsARecipient() public {
+        PrimaryTerms memory t = _terms(ETH);
+        t.feeRecipient = address(0);
+        stream.setTerms(t);
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), 1)
+        );
+        _start();
+    }
+
     function test_Settle_RevertsBeforeTheEnd() public {
         uint256 saleId = _start();
         vm.expectRevert(
