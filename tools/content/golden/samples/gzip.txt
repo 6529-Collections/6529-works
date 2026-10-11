@@ -1,0 +1,25 @@
+6529 Works golden vector: gzip encoding of a text file.
+Line 01: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 02: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 03: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 04: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 05: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 06: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 07: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 08: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 09: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 10: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 11: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 12: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 13: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 14: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 15: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 16: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 17: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 18: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 19: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 20: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 21: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 22: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 23: the content store keeps every byte it is given, addressed by its keccak-256 hash.
+Line 24: the content store keeps every byte it is given, addressed by its keccak-256 hash.
