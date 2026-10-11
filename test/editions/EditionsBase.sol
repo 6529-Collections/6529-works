@@ -6,7 +6,8 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { Editions } from "src/editions/Editions.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { CURRENCY_ETH, Payee } from "src/interfaces/types/EconomicsTypes.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
@@ -125,9 +126,9 @@ abstract contract EditionsBase is Test {
         item.parties = new Party[](2);
         item.parties[0] = Party(artist, PartyRole.ARTIST);
         item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
-        item.payees = new Payee[](2);
-        item.payees[0] = Payee(0, collaborator, 20_000);
-        item.payees[1] = Payee(uint256(uint160(artist)), address(0), 80_000);
+        item.payees = new ISplitWallet.Payee[](2);
+        item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
+        item.payees[1] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 80_000);
         item.license = License("CC0-1.0", keccak256("CC0 1.0 legal code"));
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");

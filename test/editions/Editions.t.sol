@@ -18,11 +18,11 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
     PRODUCT_EDITIONS,
-    Payee,
     ProductEconomics,
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
@@ -120,7 +120,7 @@ contract EditionsTest is EditionsBase {
     }
 
     function _expectInvalidStream(address s) internal {
-        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, s));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidBinding.selector, s));
         new Editions(address(manager), s, s.codehash, marketOwner);
     }
 
@@ -254,22 +254,20 @@ contract EditionsTest is EditionsBase {
     function test_CreateEdition_RequiresApprovedPackageProof() public {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);
-        bytes32 itemHash = WorksHashing.itemHash(item);
         (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
+        bytes memory notMaster = abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id);
 
-        bytes32[] memory none = new bytes32[](0);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.ItemNotInPackage.selector, root, itemHash)
-        );
-        editions.createEdition(id, item, root, none);
+        vm.expectRevert(notMaster);
+        editions.createEdition(id, item, root, new bytes32[](0)); // no proof
+        bytes32[] memory deep = new bytes32[](Limits.MAX_PROOF_DEPTH + 1);
+        vm.expectRevert(notMaster);
+        editions.createEdition(id, item, root, deep); // deeper than any package
         (bytes32 unknownRoot, bytes32[] memory unknownProof) = EditionsPackages.packageOf(item, 7);
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, unknownRoot)
-        );
-        editions.createEdition(id, item, unknownRoot, unknownProof);
+        vm.expectRevert(notMaster);
+        editions.createEdition(id, item, unknownRoot, unknownProof); // never approved
 
         registry.revoke(root);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
+        vm.expectRevert(notMaster);
         editions.createEdition(id, item, root, proof);
         assertFalse(editions.exists(id));
     }
@@ -285,15 +283,6 @@ contract EditionsTest is EditionsBase {
         registry.approve(rootB);
         editions.createEdition(id, item, rootB, proofB);
         assertTrue(editions.exists(id));
-    }
-
-    /// @dev Until `IEditions` adopts the four-argument form, the interface's two-argument form
-    ///      reverts.
-    function test_CreateEdition_TwoArgumentFormReverts() public {
-        PackageItem memory item = _fixedItem(10);
-        uint256 id = _master(item);
-        vm.expectRevert(abi.encodeWithSelector(Editions.PackageProofRequired.selector, id));
-        editions.createEdition(id, item);
     }
 
     function test_CreateEdition_RefusesSecondCreate() public {
@@ -454,7 +443,7 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);
         stream.bind(address(workRecordsMock), outsider);
-        vm.expectRevert(abi.encodeWithSelector(IStream.NotBound.selector, address(editions)));
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnboundCaller.selector, address(editions)));
         _createEdition(id, item);
     }
 
@@ -481,11 +470,11 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _openItem(30 days, type(uint64).max);
         uint256 n = Limits.MAX_PARTIES;
         item.parties = new Party[](n);
-        item.payees = new Payee[](n);
+        item.payees = new ISplitWallet.Payee[](n);
         for (uint256 i; i < n; ++i) {
             address account = address(uint160(0x1000 + i));
             item.parties[i] = Party(account, i == 0 ? PartyRole.ARTIST : PartyRole.COLLABORATOR);
-            item.payees[i] = Payee(0, account, uint32(100_000 / n));
+            item.payees[i] = ISplitWallet.Payee(0, account, uint32(100_000 / n));
         }
         item.payees[n - 1].share += uint32(100_000 % n);
         item.license.spdxId = "LicenseRef-6529-Works-Custom-License-With-A-Long-Identifier";
@@ -540,13 +529,13 @@ contract EditionsTest is EditionsBase {
     function test_Mint_OnlyAdmittedMinter() public {
         uint256 id = _create(_fixedItem(10));
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, outsider));
         editions.mint(outsider, id, 1, "");
         // An adapter that was removed can no longer mint.
         vm.prank(governor);
         editions.setAdmittedMinter(address(fixedAdapter), false);
         vm.expectRevert(
-            abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, address(fixedAdapter))
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(fixedAdapter))
         );
         fixedAdapter.buy(editions, id, buyer, 1);
     }
@@ -569,12 +558,12 @@ contract EditionsTest is EditionsBase {
         _expectNotAdmissible(delegated);
 
         vm.expectEmit(true, false, false, true, address(editions));
-        emit Editions.MinterAdmissionSet(adapter, true);
+        emit IMintTarget.AdmittedMinterSet(adapter, true);
         editions.setAdmittedMinter(adapter, true);
         assertTrue(editions.isAdmittedMinter(adapter));
         // Removal is unchecked, so even an unadmissible address can be cleared.
         vm.expectEmit(true, false, false, true, address(editions));
-        emit Editions.MinterAdmissionSet(outsider, false);
+        emit IMintTarget.AdmittedMinterSet(outsider, false);
         editions.setAdmittedMinter(outsider, false);
         editions.setAdmittedMinter(adapter, false);
         vm.stopPrank();
@@ -582,7 +571,7 @@ contract EditionsTest is EditionsBase {
     }
 
     function _expectNotAdmissible(address adapter) internal {
-        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, adapter));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidBinding.selector, adapter));
         editions.setAdmittedMinter(adapter, true);
     }
 
@@ -745,7 +734,7 @@ contract EditionsTest is EditionsBase {
         uint256 id = _create(_fixedItem(5));
         fixedAdapter.buy(editions, id, buyer, 2);
         vm.prank(buyer);
-        vm.expectRevert(abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, buyer));
+        vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, buyer));
         editions.burn(id, 1);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -758,6 +747,28 @@ contract EditionsTest is EditionsBase {
         vm.expectRevert(Editions.InvalidMintRequest.selector);
         fixedAdapter.burnHeld(editions, id, 0);
         assertEq(editions.balanceOf(buyer, id), 2);
+    }
+
+    /// @dev IMintTarget: an adapter removed after minting can still burn the copies it holds;
+    ///      a never-admitted account cannot.
+    function test_Burn_RemovedAdapterCanStillBurn() public {
+        uint256 id = _create(_fixedItem(5));
+        fixedAdapter.buy(editions, id, address(fixedAdapter), 2);
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(fixedAdapter), false);
+        assertFalse(editions.isAdmittedMinter(address(fixedAdapter)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(fixedAdapter))
+        );
+        fixedAdapter.buy(editions, id, buyer, 1);
+        fixedAdapter.burnHeld(editions, id, 2);
+        assertEq(editions.balanceOf(address(fixedAdapter), id), 0);
+
+        EditionsAdapterMock stranger = new EditionsAdapterMock(SaleKind.FIXED_PRICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(stranger))
+        );
+        stranger.burnHeld(editions, id, 1);
     }
 
     // ------------------------------------------------------------------ royalties
@@ -820,10 +831,10 @@ contract EditionsTest is EditionsBase {
         vm.expectRevert(abi.encodeWithSelector(Editions.InvalidRoyaltyRate.selector, 100_001));
         workRecordsMock.setRate(editions, id, 100_001);
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotWorkRecords.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, outsider));
         editions.setRoyaltyRate(id, 0);
         vm.prank(address(stream));
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotWorkRecords.selector, address(stream)));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, address(stream)));
         editions.setRoyaltyRate(id, 0);
 
         // A master without an edition is a silent no-op.
@@ -938,7 +949,7 @@ contract EditionsTest is EditionsBase {
         fixedAdapter.buy(editions, id, address(r), 1);
         assertEq(
             r.reentryError(),
-            abi.encodeWithSelector(Editions.NotAdmittedMinter.selector, address(r))
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(r))
         );
         assertEq(editions.edition(id).minted, 1);
     }
@@ -980,16 +991,18 @@ contract EditionsTest is EditionsBase {
 
         stream.bind(records, address(editions));
         vm.expectEmit(false, false, false, true, address(fresh));
-        emit IEditions.WorkRecordsBound(records);
+        emit IEditions.Bound("WORK_RECORDS", records);
         fresh.bindWorkRecords(records);
         assertEq(fresh.workRecords(), records);
-        vm.expectRevert(IEditions.AlreadyBound.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.AlreadyBound.selector, bytes32("WORK_RECORDS"))
+        );
         fresh.bindWorkRecords(records);
         vm.stopPrank();
     }
 
     function _expectInvalidBinding(Editions target, address records) internal {
-        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, records));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidBinding.selector, records));
         target.bindWorkRecords(records);
     }
 
@@ -998,7 +1011,7 @@ contract EditionsTest is EditionsBase {
         Editions fresh = _freshEditions();
         vm.prank(address(workRecordsMock));
         vm.expectRevert(
-            abi.encodeWithSelector(IEditions.NotWorkRecords.selector, address(workRecordsMock))
+            abi.encodeWithSelector(IEditions.UnboundCaller.selector, address(workRecordsMock))
         );
         fresh.notifyMasterUpdated(1);
 
@@ -1014,10 +1027,10 @@ contract EditionsTest is EditionsBase {
         assertEq(vm.getRecordedLogs().length, 0);
 
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotWorkRecords.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, outsider));
         editions.notifyMasterUpdated(id);
         vm.prank(address(stream));
-        vm.expectRevert(abi.encodeWithSelector(IEditions.NotWorkRecords.selector, address(stream)));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, address(stream)));
         editions.notifyMasterUpdated(id);
     }
 
@@ -1034,12 +1047,12 @@ contract EditionsTest is EditionsBase {
         workRecordsMock.notifyAll(editions);
 
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(Editions.NotNotifier.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, outsider));
         editions.notifyAllUpdated();
         // An unbound Editions accepts only Stream.
         Editions fresh = _freshEditions();
         vm.expectRevert(
-            abi.encodeWithSelector(Editions.NotNotifier.selector, address(workRecordsMock))
+            abi.encodeWithSelector(IEditions.UnboundCaller.selector, address(workRecordsMock))
         );
         workRecordsMock.notifyAll(fresh);
     }

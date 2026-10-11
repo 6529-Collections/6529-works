@@ -13,10 +13,10 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     PRODUCT_EDITIONS,
     PRODUCT_STREAM,
-    Payee,
     ProductEconomics,
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
@@ -95,7 +95,7 @@ contract EditionsRegistryMock {
 
     /// @dev What Stream's mint does through `consume`, reduced to the uniqueness word.
     function consume(bytes32 itemHash, bytes32 contentHash) external {
-        if (msg.sender != stream) revert IPackageRegistry.NotBoundCaller(msg.sender);
+        if (msg.sender != stream) revert IPackageRegistry.UnboundCaller(msg.sender);
         bytes32 claimedBy = consumedItemOf[contentHash];
         if (claimedBy != 0 && !skipStreamUniqueness) {
             revert IPackageRegistry.ContentUsed(PRODUCT_STREAM, contentHash, claimedBy);
@@ -104,7 +104,7 @@ contract EditionsRegistryMock {
     }
 
     function claimContent(bytes32 contentHash, bytes32 itemHash) external {
-        if (msg.sender != editions) revert IPackageRegistry.NotBoundCaller(msg.sender);
+        if (msg.sender != editions) revert IPackageRegistry.UnboundCaller(msg.sender);
         if (consumedItemOf[contentHash] != itemHash) {
             revert IPackageRegistry.ClaimNotAllowed(PRODUCT_EDITIONS, contentHash);
         }
@@ -130,7 +130,7 @@ contract EditionsEconomicsMock {
         eco = next;
     }
 
-    function newWorkTerms(bytes32 product, Payee[] calldata payees)
+    function newWorkTerms(bytes32 product, ISplitWallet.Payee[] calldata payees)
         external
         view
         returns (WorkTerms memory)
@@ -330,7 +330,7 @@ contract EditionsStreamMock {
     }
 
     function linkEdition(uint256 tokenId, uint256 editionId) external {
-        if (msg.sender != editions) revert IStream.NotBound(msg.sender);
+        if (msg.sender != editions) revert IStream.UnboundCaller(msg.sender);
         if (_works[tokenId].kind != ItemKind.EDITION_MASTER || _linked[tokenId] != 0) {
             revert IStream.EditionLinkInvalid(tokenId);
         }

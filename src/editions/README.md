@@ -17,15 +17,17 @@ approved, so a guardian revocation blocks the edition at no cost to the auction
 start. An item listed in two packages passes through whichever is still
 approved; this edge case is accepted. It also needs the master's sale to have
 settled (`IStream.primarySaleSettled`, marked by the minting adapter at
-settle), so a disputed or burned master never gets an edition. It locks the `PRODUCT_EDITIONS` economics (seller, fee, royalty),
-claims the content hash in the package registry (which accepts only the item
-Stream consumed for that hash, once), calls `IStream.linkEdition`, and
-verifies Stream's side before returning. The edition ID is the master's token
-ID, and nothing changes or removes a link.
+settle), so a disputed or burned master never gets an edition. It locks the
+`PRODUCT_EDITIONS` economics (seller, fee, royalty), claims the content hash in
+the package registry (which accepts only the item Stream consumed for that
+hash, once), calls `IStream.linkEdition`, and verifies Stream's side before
+returning. The edition ID is the master's token ID, and nothing changes or
+removes a link.
 
-**Minting.** Only admitted adapters (`isAdmittedMinter`, written by the
-governed `setAdmittedMinter` in the 30-day class, with ERC-165 and EIP-7702
-checks) whose `saleKind()` matches the package's may mint or burn. FIXED
+**Minting.** Only admitted adapters (`IMintTarget.isAdmittedMinter`, written by
+the governed `setAdmittedMinter` in the 30-day class, with ERC-165 and EIP-7702
+checks) whose `saleKind()` matches the package's may mint; an adapter removed
+since may still burn the copies it holds. FIXED
 editions stop at `size` copies; OPEN editions sell for `window` seconds from
 the first mint, capped at `size` when it is nonzero; minting stops if the
 master is burned. Burned copies still count toward the size. The sale
@@ -48,6 +50,6 @@ preferred location), emits one `BatchMetadataUpdate` over every ID.
 **Wiring.** Stream is checked at deployment (code, no EIP-7702 delegation,
 ERC-165 for ERC-721, the reviewed code hash), and the package registry,
 economics resolver and artist registry are read from it. Genesis binds Editions
-in Stream and in the package registry (their one-shot Editions binds), and then
+in Stream and in the package registry (their one-shot `bindEditions`), and then
 binds Stream's work-records satellite here once (`bindWorkRecords`, ADMIN, with
-ERC-165 and EIP-7702 checks).
+ERC-165 and EIP-7702 checks; `Bound("WORK_RECORDS", target)`).

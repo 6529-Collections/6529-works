@@ -110,7 +110,7 @@ contract EditionsHandler is Test {
         try editions.mint(_holders[1], id, amount, "") {
             ++unexpected;
         } catch (bytes memory reason) {
-            if (!_is(reason, Editions.NotAdmittedMinter.selector)) ++unexpected;
+            if (!_is(reason, IMintTarget.NotAdmittedMinter.selector)) ++unexpected;
         }
     }
 
