@@ -771,6 +771,26 @@ contract EditionsTest is EditionsBase {
         stranger.burnHeld(editions, id, 1);
     }
 
+    /// @dev Copies are sold at mint, so `markPrimarySettled` is a no-op for every adapter ever
+    ///      admitted (also after removal) and refused for anyone else.
+    function test_MarkPrimarySettled_NoOpForAdapters() public {
+        uint256 id = _create(_fixedItem(5));
+        fixedAdapter.buy(editions, id, buyer, 1);
+        IEditions.Edition memory before = editions.edition(id);
+        vm.recordLogs();
+        fixedAdapter.markSettled(editions, id);
+        assertEq(vm.getRecordedLogs().length, 0, "no event");
+        assertEq(keccak256(abi.encode(editions.edition(id))), keccak256(abi.encode(before)));
+
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(fixedAdapter), false);
+        fixedAdapter.markSettled(editions, id); // the minting adapter, since removed
+
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, outsider));
+        editions.markPrimarySettled(id);
+    }
+
     // ------------------------------------------------------------------ royalties
 
     function test_RoyaltyInfo_LockedTermsOutOf100k() public {
@@ -805,11 +825,35 @@ contract EditionsTest is EditionsBase {
         assertEq(afterChange.feeShare, before.feeShare);
         assertEq(afterChange.seller, before.seller);
 
-        // New editions lock the new defaults.
+        // New editions lock the new fee terms, but their rate is their master's (6.529%), never
+        // the product default.
         uint256 next = _create(_fixedItem(5));
         (, uint256 a3) = editions.royaltyInfo(next, 1 ether);
-        assertEq(a3, 0.1 ether);
+        assertEq(a3, 0.06529 ether);
         assertEq(editions.edition(next).feeRecipient, outsider);
+        assertEq(editions.edition(next).feeShare, 50_000);
+    }
+
+    /// @dev The edition starts at its master's current rate, not the `PRODUCT_EDITIONS` default,
+    ///      so a consented re-rate of the master before the edition exists carries over.
+    function test_CreateEdition_InheritsMasterRoyaltyRate() public {
+        economics.setEconomics(ProductEconomics(feeRecipient, 25_000, 12_345)); // ignored
+        PackageItem memory item = _fixedItem(5);
+        uint256 id = _master(item);
+        stream.setMasterRoyaltyRate(id, 9_000); // agreed by every party before the edition
+        _createEdition(id, item);
+        assertEq(editions.edition(id).royaltyRate, 9_000);
+        (address receiver, uint256 amount) = editions.royaltyInfo(id, 1 ether);
+        assertEq(amount, 0.09 ether);
+        assertEq(
+            receiver,
+            economics.newWorkTerms(PRODUCT_EDITIONS, item.payees).royaltyReceiver,
+            "the receiver is still the edition's split"
+        );
+        // A later re-rate reaches the edition through the work-records hook.
+        workRecordsMock.setRate(editions, id, 7_000);
+        (, amount) = editions.royaltyInfo(id, 1 ether);
+        assertEq(amount, 0.07 ether);
     }
 
     /// @dev D19: the rate changes only through the bound work-records satellite (which verifies

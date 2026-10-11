@@ -59,9 +59,11 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      `primaryTerms` and `mint` return the package's stored currency, possibly
 ///      `CURRENCY_DEFAULT` (allowed only with a zero price), and the adapter resolves and locks
 ///      it when it opens a sale (ADR 0001 section 5). Royalties are read from this contract's
-///      storage with no external call; the receiver never changes, and the bound work-records
-///      satellite re-rates an edition with its master, after every party's consent and a
-///      governed action. The license and `uri` come from the master. ERC-4906 events follow the
+///      storage with no external call. The receiver is the edition's split (from
+///      `PRODUCT_EDITIONS` economics) and never changes; the rate starts at the master's current
+///      rate, so a consented re-rate of the master before the edition exists carries over, and
+///      the bound work-records satellite re-rates the edition with its master afterwards (every
+///      party's consent plus a governed action). The license and `uri` come from the master. ERC-4906 events follow the
 ///      master: one per edition from the work-records satellite, and a batch over every ID when
 ///      Stream's default renderer or a global or collection preferred location changes.
 ///
@@ -160,7 +162,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         bytes32 packageRoot,
         bytes32[] calldata proof
     ) external returns (uint256 editionId) {
-        (bytes32 itemHash, uint256 artistId) = _admit(workId, item, packageRoot, proof);
+        (bytes32 itemHash, IStream.WorkCore memory master) =
+            _admit(workId, item, packageRoot, proof);
         EditionTerms memory terms = item.edition;
         _checkTerms(workId, terms);
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
@@ -173,8 +176,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         e.feeRecipient = w.feeRecipient;
         e.feeShare = w.feeShare;
         e.royaltyReceiver = w.royaltyReceiver;
-        e.royaltyRate = w.royaltyRate;
-        r.artistId = artistId;
+        // The master's current rate, not the product default: a consented re-rate of the master
+        // before the edition exists carries over; later ones arrive through `setRoyaltyRate`.
+        e.royaltyRate = master.royaltyRate;
+        r.artistId = master.artistId;
         emit EditionCreated(workId, item.contentHash, terms);
         emit MetadataUpdate(workId);
 
@@ -328,6 +333,14 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         _burn(msg.sender, id, amount);
     }
 
+    /// @inheritdoc IMintTarget
+    /// @dev Every edition copy is sold at mint, so there is nothing to settle: a no-op that any
+    ///      adapter ever admitted (the minting adapter included, even after removal) may call, so
+    ///      a generic adapter never fails here; anyone else is refused with `NotAdmittedMinter`.
+    function markPrimarySettled(uint256) external view {
+        if (_minterStatus[msg.sender] == MINTER_NONE) revert NotAdmittedMinter(msg.sender);
+    }
+
     // ----------------------------------------------------------------- royalties, rendering
 
     /// @inheritdoc IERC2981
@@ -407,9 +420,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         PackageItem calldata item,
         bytes32 packageRoot,
         bytes32[] calldata proof
-    ) private view returns (bytes32 itemHash, uint256 artistId) {
+    ) private view returns (bytes32 itemHash, IStream.WorkCore memory master) {
         if (exists(workId)) revert EditionExists(workId);
-        IStream.WorkCore memory master = IStream(stream).work(workId);
+        master = IStream(stream).work(workId);
         itemHash = WorksHashing.itemHashCalldata(item);
         if (
             !IStream(stream).primarySaleSettled(workId) || item.kind != ItemKind.EDITION_MASTER
@@ -419,7 +432,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ) revert NotEditionMaster(workId);
         (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
         if (status != IPackageRegistry.PackageStatus.APPROVED) revert NotEditionMaster(workId);
-        return (itemHash, master.artistId);
     }
 
     /// @dev ADR 0001 section 13.6: code, no EIP-7702 delegation, and ERC-165 support.

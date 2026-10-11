@@ -280,6 +280,7 @@ contract EditionsStreamMock {
         w.collectionId = item.collectionId;
         w.kind = item.kind;
         w.seedPolicy = item.seedPolicy;
+        w.royaltyRate = 6_529; // the launch rate Stream locks at mint
         _owners[id] = to;
     }
 
@@ -287,6 +288,11 @@ contract EditionsStreamMock {
     function settle(uint256 id, address to) external {
         _owners[id] = to;
         _settled[id] = true;
+    }
+
+    /// @dev A consented re-rate of the master (`IStream.setRoyaltyRate` from `WorkRecords`).
+    function setMasterRoyaltyRate(uint256 id, uint32 rate) external {
+        _works[id].royaltyRate = rate;
     }
 
     /// @dev An upheld dispute burns the master in custody.
@@ -377,6 +383,10 @@ contract EditionsAdapterMock is ERC1155Holder {
 
     function burnHeld(IMintTarget target, uint256 id, uint256 amount) external {
         target.burn(id, amount);
+    }
+
+    function markSettled(Editions target, uint256 id) external view {
+        target.markPrimarySettled(id);
     }
 
     function lastTerms() external view returns (PrimaryTerms memory) {
