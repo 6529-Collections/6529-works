@@ -79,7 +79,8 @@ contract EnglishAuction is
     /// @notice The smallest governed relative increment (1%, out of 100,000).
     uint32 public constant MIN_INCREMENT_SHARE = 1_000;
     /// @notice An opening bid is at most this many increment floors of its currency (1 ETH for
-    ///         the 0.001 ETH floor): the absolute ceiling of the governed opening bid.
+    ///         the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the
+    ///         absolute ceiling of the governed opening bid.
     uint256 public constant OPENING_BID_FLOORS = 1_000;
     /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
     uint256 public constant PAYOUT_GAS = 100_000;
@@ -130,7 +131,7 @@ contract EnglishAuction is
     struct Terms {
         address currency;
         uint96 incrementFloor;
-        uint128 openingBid;
+        uint96 openingBid;
         uint24 incrementShare;
         uint24 extensionWindow;
         uint32 registryFee;
@@ -464,14 +465,15 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     /// @dev Moves either way, zero included, within an absolute ceiling of {OPENING_BID_FLOORS}
-    ///      increment floors (capped at `uint128`). The raise-only rule of ADR 0001 section 13.9
-    ///      covers gas parameters, not prices. Applies to sales that start afterwards. The currency
-    ///      must be active in the allowlist.
+    ///      increment floors, capped at `type(uint96).max` (the largest bid) so that a bid can
+    ///      always meet it. The raise-only rule of ADR 0001 section 13.9 covers gas parameters,
+    ///      not prices. Applies to sales that start afterwards. The currency must be active in
+    ///      the allowlist.
     function setOpeningBid(address currency, uint256 expected, uint256 next) external restricted {
         uint256 current = _openingBids[currency];
         if (current != expected) revert ExpectedValueMismatch();
         uint256 ceiling =
-            Math.min(allowlist.incrementFloor(currency) * OPENING_BID_FLOORS, type(uint128).max);
+            Math.min(allowlist.incrementFloor(currency) * OPENING_BID_FLOORS, type(uint96).max);
         if (next > ceiling) revert OpeningBidAboveCeiling(next, ceiling);
         _openingBids[currency] = next;
         emit OpeningBidSet(currency, current, next);
@@ -625,9 +627,9 @@ contract EnglishAuction is
             revert IAssetAllowlist.AssetNotActive(currency);
         }
         t.currency = currency;
-        // Safe: `setOpeningBid` caps every opening bid at `type(uint128).max`.
+        // Safe: `setOpeningBid` caps every opening bid at `type(uint96).max`, the largest bid.
         // forge-lint: disable-next-line(unsafe-typecast)
-        t.openingBid = uint128(_openingBids[currency]);
+        t.openingBid = uint96(_openingBids[currency]);
         // Safe: `_setConfig` bounds both by 100,000.
         // forge-lint: disable-next-line(unsafe-typecast)
         t.incrementShare = uint24(c.incrementShare);
@@ -691,14 +693,16 @@ contract EnglishAuction is
         address currency = t.currency;
         if (t.incrementFloor == 0) {
             Terms memory locked = t;
-            // A floor beyond 96 bits (7.9e28 base units) is capped: it is already a prohibitive
-            // increment, and capping keeps an absurd allowlist value from blocking the sale.
+            // A floor at or above the 96-bit bid cap (7.9e28 base units) is stored as the cap:
+            // no later bid can then outbid, but an absurd allowlist value does not revert the
+            // first bid. The floor is at least 1 (the allowlist refuses zero), so this branch
+            // runs once per sale, on its first bid.
             // forge-lint: disable-next-line(unsafe-typecast)
             locked.incrementFloor =
                 uint96(Math.min(allowlist.incrementFloor(currency), type(uint96).max));
-            uint16 id = _termsId(locked);
-            s.termsId = id;
-            t = _terms[id];
+            // `t` keeps pointing at the start record: the two differ only in the floor, which
+            // the first bid does not use, and rereading the new record would cost a cold slot.
+            s.termsId = _termsId(locked);
         } else if (!allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }

@@ -50,6 +50,10 @@ contract EnglishAuctionGasTest is Test {
     uint256 internal constant TX_GAS_CAP = 16_777_216;
     /// @dev One fresh slot (22,100), the terms lookup, the allowlist reads and the event.
     uint256 internal constant AUCTION_SHARE_BUDGET = 50_000;
+    /// @dev The first `startWithBid` after governance changes the config, an opening bid or a
+    ///      floor writes up to two new terms records (the start record and the one with the
+    ///      floor), once per change: a bound, not the steady-state gate (PR #33 review).
+    uint256 internal constant FIRST_AFTER_CHANGE_BOUND = 450_000;
 
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
@@ -125,36 +129,35 @@ contract EnglishAuctionGasTest is Test {
     }
 
     /// @dev L-4: the 350K steady-state gate covers `startWithBid` too (a first bid for oneself
-    ///      writes two more slots: the bidder and the packed bid with its floor).
+    ///      writes one more slot: the bidder with the packed bid).
     function test_StartWithBidGas_SteadyState() public {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
-        address bidder = makeAddr("gasBidder");
-        vm.deal(bidder, 1 ether);
-        bytes memory callData = abi.encodeCall(
-            auction.startWithBid,
-            (
-                address(stream),
-                _mintData(2, 3, artistPk),
-                address(0),
-                Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
-            )
-        );
-        _coolAll();
-        vm.prank(bidder);
-        uint256 before = gasleft();
-        (bool ok, bytes memory result) = address(auction).call{ value: 1 ether }(callData);
-        uint256 used = before - gasleft();
-        if (!ok) {
-            assembly ("memory-safe") {
-                revert(add(result, 0x20), mload(result))
-            }
-        }
-        (uint256 standard, uint256 floor) = _calldata(callData);
-        uint256 total = 21_000 + standard + used;
-        if (21_000 + floor > total) total = 21_000 + floor;
-        console2.log("startWithBid steady state, whole transaction", total);
+        uint256 total = _measureStartWithBid("startWithBid steady state, whole transaction");
         assertLe(total, START_GATE, "steady-state start gate (E1) covers startWithBid");
+    }
+
+    /// @dev PR #33 review: the first `startWithBid` after a real config change writes both a
+    ///      new start record and a new floored record.
+    function test_StartWithBidGas_FirstAfterAConfigChange() public {
+        _startItem(0, 1, artistPk);
+        _priorBid(_startItem(1, 2, otherArtistPk));
+        auction.setConfig(
+            auction.config(), IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 6_000)
+        );
+        uint256 total = _measureStartWithBid("startWithBid after a config change, whole tx");
+        assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after a config change");
+    }
+
+    /// @dev PR #33 review: the first `startWithBid` after a real floor change reuses the start
+    ///      record and writes a new floored record.
+    function test_StartWithBidGas_FirstAfterAFloorChange() public {
+        _startItem(0, 1, artistPk);
+        _priorBid(_startItem(1, 2, otherArtistPk));
+        (,, uint64 revision) = allowlist.assetConfig(address(0));
+        allowlist.setIncrementFloor(address(0), revision, 0.002 ether);
+        uint256 total = _measureStartWithBid("startWithBid after a floor change, whole tx");
+        assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after a floor change");
     }
 
     /// @dev The steady state, but with no other token in custody (the adapter's ERC-721 balance
@@ -259,7 +262,8 @@ contract EnglishAuctionGasTest is Test {
 
     /// @dev A bid on an earlier sale: in steady state the terms record with the current
     ///      increment floor exists, since some earlier first bid locked it (E2). The first bid
-    ///      after a config or floor change creates it once (`test_FirstBidAfterAConfigChange`).
+    ///      after a deployment, a config change or a floor change creates it once
+    ///      (`test_FirstBidGas_CreatingItsTermsRecord`, and the bounded `startWithBid` tests).
     function _priorBid(uint256 saleId) internal {
         address bidder = makeAddr("priorBidder");
         vm.deal(bidder, 1 ether);
@@ -269,9 +273,9 @@ contract EnglishAuctionGasTest is Test {
         );
     }
 
-    /// @dev The one-off cost after governance changes the config or the floor: the first first
-    ///      bid writes the new terms record (two words, its key and the counter).
-    function test_FirstBidAfterAConfigChange() public {
+    /// @dev A first bid on a sale whose terms have no floored record yet (here, the first bid
+    ///      after deployment) writes it once: two words, its key and the counter.
+    function test_FirstBidGas_CreatingItsTermsRecord() public {
         uint256 saleId = _startItem(0, 1, artistPk);
         address bidder = makeAddr("firstEver");
         vm.deal(bidder, 1 ether);
@@ -282,6 +286,36 @@ contract EnglishAuctionGasTest is Test {
             saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
         );
         console2.log("first bid creating its terms record, execution (cold)", before - gasleft());
+    }
+
+    /// @dev Whole-transaction gas of a `startWithBid` of item 2 by a fresh bidder, everything
+    ///      cooled first.
+    function _measureStartWithBid(string memory label) internal returns (uint256 total) {
+        address bidder = makeAddr("gasBidder");
+        vm.deal(bidder, 1 ether);
+        bytes memory callData = abi.encodeCall(
+            auction.startWithBid,
+            (
+                address(stream),
+                _mintData(2, 3, artistPk),
+                address(0),
+                Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
+            )
+        );
+        _coolAll();
+        vm.prank(bidder);
+        uint256 before = gasleft();
+        (bool ok, bytes memory result) = address(auction).call{ value: 1 ether }(callData);
+        uint256 used = before - gasleft();
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(result, 0x20), mload(result))
+            }
+        }
+        (uint256 standard, uint256 floor) = _calldata(callData);
+        total = 21_000 + standard + used;
+        if (21_000 + floor > total) total = 21_000 + floor;
+        console2.log(label, total);
     }
 
     function _startItem(uint256 index, uint256 nonce, uint256 pk) internal returns (uint256) {

@@ -12,7 +12,11 @@ import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/t
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { FeeOnTransferToken } from "../../mocks/EconomicsMocks.sol";
-import { HostileActor, MockFederationRegistry } from "../../mocks/auction/AuctionMocks.sol";
+import {
+    HostileActor,
+    MockFederationRegistry,
+    PermitToken
+} from "../../mocks/auction/AuctionMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
 /// @dev A minimal federated template: every `IMintTarget` function, with the settlement hook as a
@@ -374,6 +378,109 @@ contract EnglishAuctionReviewTest is AuctionBase {
             abi.encodeWithSelector(SafeCast.SafeCastOverflowedUintDowncast.selector, 96, amount)
         );
         auction.bid{ value: amount }(saleId, address(0), _direct(alice, amount));
+    }
+
+    // ------------------------------------------------------------------- PR #33 review
+
+    /// @dev PR #33 review (survivor M8): a recipient already stored is replaced when the next
+    ///      bid names a different third party, and the token goes to the latest one.
+    function test_PR33_RecipientChangesBetweenThirdParties() public {
+        uint256 saleId = _start();
+        address dave = makeAddr("dave");
+        _bidFor(saleId, alice, carol, 1 ether);
+        _bidFor(saleId, bob, dave, 2 ether);
+        assertEq(auction.auction(saleId).recipient, dave);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), dave, "the winning bid's recipient");
+    }
+
+    /// @dev PR #33 review: withdrawing a bid for another clears the recipient but keeps the
+    ///      dispute pause, so no bid lands while it lasts.
+    function test_PR33_WithdrawForAnotherKeepsThePause() public {
+        uint256 saleId = _start();
+        _bidFor(saleId, alice, carol, 1 ether);
+        _pause(saleId);
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.PAUSED), "still paused");
+        assertEq(a.recipient, address(0));
+        vm.deal(bob, 2 ether);
+        vm.prank(bob);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.PAUSED
+            )
+        );
+        auction.bid{ value: 2 ether }(saleId, address(0), _direct(bob, 2 ether));
+    }
+
+    /// @dev PR #33 review: a bid for oneself that clears the stored recipient keeps the record
+    ///      that the one dispute pause was used.
+    function test_PR33_ClearingTheRecipientKeepsThePauseUsed() public {
+        uint256 saleId = _start();
+        _pause(saleId);
+        vm.prank(unpauser);
+        auction.resume(saleId);
+        _bidFor(saleId, alice, carol, 1 ether);
+        _bidEth(saleId, bob, 2 ether);
+        assertEq(auction.auction(saleId).recipient, bob);
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, saleId));
+        auction.pause(saleId, keccak256("second dispute"));
+    }
+
+    /// @dev PR #33 review (survivor M16): the floor locked by a withdrawn first bid still applies
+    ///      to the bids after the withdrawal, even when governance changes the floor meanwhile.
+    function test_PR33_FloorKeptForTheBidsAfterAWithdrawal() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _pause(saleId);
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        _setFloor(ETH, 0.5 ether);
+        vm.prank(unpauser);
+        auction.resume(saleId);
+        assertEq(auction.minimumBid(saleId), 1, "no bid: the opening bid, at least 1");
+        _bidEth(saleId, bob, 1 ether);
+        assertEq(auction.auction(saleId).incrementFloor, ETH_FLOOR, "kept, not relocked");
+        uint256 minimum = _minimumAfter(1 ether, ETH_FLOOR);
+        assertEq(auction.minimumBid(saleId), minimum);
+        _bidEth(saleId, carol, minimum);
+        assertEq(auction.auction(saleId).bidder, carol);
+    }
+
+    /// @dev PR #33 review (low): the opening bid's ceiling is the 96-bit bid cap, so every
+    ///      opening bid can be met.
+    function test_PR33_OpeningBidCappedAtTheLargestBid() public {
+        PermitToken big = new PermitToken();
+        allowlist.admitAsset(address(big), 0, 1e26);
+        uint256 cap = type(uint96).max;
+        vm.startPrank(setter);
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.OpeningBidAboveCeiling.selector, cap + 1, cap)
+        );
+        auction.setOpeningBid(address(big), 0, cap + 1);
+        auction.setOpeningBid(address(big), 0, cap);
+        vm.stopPrank();
+        stream.setTerms(_terms(address(big)));
+        uint256 saleId = auction.start(address(stream), "");
+        assertEq(auction.minimumBid(saleId), cap);
+        big.mint(alice, cap);
+        vm.startPrank(alice);
+        big.approve(address(auction), cap);
+        auction.bid(saleId, address(0), _direct(alice, cap));
+        vm.stopPrank();
+        assertEq(auction.auction(saleId).bid, cap);
+    }
+
+    function _bidFor(uint256 saleId, address payer, address recipient, uint256 amount) internal {
+        vm.deal(payer, payer.balance + amount);
+        vm.prank(payer);
+        auction.bid{ value: amount }(saleId, recipient, _direct(payer, amount));
     }
 }
 
