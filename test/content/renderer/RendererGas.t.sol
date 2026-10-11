@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { RendererBase } from "./RendererBase.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
@@ -240,6 +241,8 @@ contract RendererGasAdversarialTest is RendererBase {
     uint256 internal constant K_NAMES_PCT = 14; // the same, with 16 `%` in each
     uint256 internal constant K_NAMES_BS = 15; // names of `\\` escapes (refused: no backslash in a name)
     uint256 internal constant K_NAMES_UTF8 = 16; // attributes with names of 2-byte UTF-8
+    // The dearest mix: names of 2-byte UTF-8 that also hold as many `%` as the cap allows.
+    uint256 internal constant K_NAMES_MIX = 21;
     // The three escape classes again, with as many escapes as the budget takes (accepted).
     uint256 internal constant K_BACKSLASH_CAP = 17;
     uint256 internal constant K_UNICODE_CAP = 18;
@@ -369,7 +372,7 @@ contract RendererGasAdversarialTest is RendererBase {
     function setUp() public override {
         super.setUp();
         relay = new TokenURIRelay(renderer, address(stream));
-        limit = renderer.MAX_RECORD_BYTES();
+        limit = Limits.MAX_RECORD_BYTES;
         preview = _file(_data(renderer.PREVIEW_LIMIT() / 8, 70), IDENTITY, "image/png");
         html = _file(
             bytes(Base64.encode(_data(renderer.inlineThreshold() / 4 * 3, 71))), BASE64, "text/html"
@@ -442,6 +445,7 @@ contract RendererGasAdversarialTest is RendererBase {
         _both(K_NAMES_PCT, _names("a", 16, 132));
         _both(K_NAMES_BS, _names(hex"5c5c", 0, 132));
         _both(K_NAMES_UTF8, _names(hex"c3a9", 0, 130));
+        _both(K_NAMES_MIX, _names(hex"c3a9", 26, 130));
 
         // Records the renderer refuses: each must cost little.
         _members(W_BOMB_ARRAY, _bomb('{"name":"N","a":[', "0,", "]}"), tiny, 0);
@@ -657,6 +661,17 @@ contract RendererGasAdversarialTest is RendererBase {
 
     function test_Gas_LongNamesOfUtf8_Script() public {
         _row("130-byte attribute names of 2-byte UTF-8 + script + preview", 10 * K_NAMES_UTF8 + 2);
+    }
+
+    function test_Gas_LongNamesOfUtf8WithPercent_Html() public {
+        _row(
+            "130-byte names of 2-byte UTF-8, 26 % each + 256 KiB b64 + preview",
+            10 * K_NAMES_MIX + 1
+        );
+    }
+
+    function test_Gas_LongNamesOfUtf8WithPercent_Script() public {
+        _row("130-byte names of 2-byte UTF-8, 26 % each + script + preview", 10 * K_NAMES_MIX + 2);
     }
 
     // ---------------------------------------------------------------- refused records

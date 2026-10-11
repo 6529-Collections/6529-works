@@ -325,9 +325,10 @@ make both impossible, and a renderer should not paper over a broken invariant.
 ### The record
 
 A work's descriptive record is a JSON file in the content store, stored as
-`Identity`, at most one chunk (24,575 bytes: `MAX_RECORD_BYTES`, which equals the
-store's chunk size, and a test says so). The renderer reads it, checks it as UTF-8
-and with `JsonScan`, and copies validated JSON text, never decoded text:
+`Identity`, at most 12,288 bytes (12 KiB: `Limits.MAX_RECORD_BYTES`, shared with
+`WorkRecords`, which enforces it when a record is set; half a chunk, so one chunk
+always holds it). The renderer reads it, checks it as UTF-8 and with `JsonScan`,
+and copies validated JSON text, never decoded text:
 
 | Record member | Metadata |
 | --- | --- |
@@ -336,39 +337,67 @@ and with `JsonScan`, and copies validated JSON text, never decoded text:
 | `artists` (non-empty strings, at most 16) | one `Artist` trait each |
 | `year` (an integer, at most six digits) | the `Year` trait |
 | `medium`, `dimensions` (strings) | the `Medium` and `Dimensions` traits |
-| `attributes` (at most 128 objects with a string `trait_type` and a string or number `value`) | its elements, as they are, after the renderer's own traits |
+| `attributes` (at most 128 objects, each of at most eight different members, with a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
 | `dependencies` | validated; a script whose record declares any (anything but exactly `[]`) is not wrapped in the page |
 | any other member (`files`, ...) | validated and ignored |
+
+Write the record as RFC 8785 canonical JSON, as the tooling does: non-ASCII text
+stays as UTF-8, and only quotes, backslashes and control characters are escaped.
+Text written as `\uXXXX` escapes (what `json.dumps` does by default) is valid, but
+each escape counts against the budget below.
 
 **What makes a record invalid** (core-only metadata with `"record_status":
 "invalid"`, never a revert: the artist can fix the record until finalize, and
 nothing is guessed):
 
-- not `Identity`, over one chunk, or not well-formed UTF-8;
-- not an RFC 8259 object, or one of the scanner's extra rules: a key containing a
-  backslash (so `name` can never be a second `name`), a `\u0000` escape, a lone
-  surrogate escape (`\uD800` to `\uDFFF` outside a high-low pair), more than 1,024
-  values (`JsonScan.MAX_VALUES`: every string, number, literal, array and object
-  below the top-level one), nesting deeper than 8 levels, a duplicate of a member
-  the renderer reads;
+- not `Identity`, over 12,288 bytes, or not well-formed UTF-8;
+- not an RFC 8259 object, or one of the scanner's extra rules:
+  - a key containing a backslash (so `name` can never be a second `name`);
+  - an escape that is `\u0000`, a lone surrogate (`\uD800` to `\uDFFF` outside a
+    high-low pair) or has a character that is not a hex digit;
+  - a number of more than 24 bytes or with an exponent of more than two digits
+    (every number is a finite binary64; parsers read `1e400` differently);
+  - more than 1,024 values and escapes together (`JsonScan.MAX_VALUES`: every
+    string, number, literal, array and object below the top-level one counts one,
+    and so does every backslash escape, a surrogate pair counting two);
+  - nesting deeper than 8 levels, or a duplicate of a member the renderer reads;
 - a missing or empty `name`, a member of the wrong type, an empty artist, more than
   16 artists, a `year` that is not an integer of at most six digits (so no `1e400`
   and no `2026.5`);
 - more than 128 attributes, an attribute that is not an object with a string
-  `trait_type` and a string or number `value`, or a `trait_type` that is one of the
-  names the renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`,
-  `Dimensions`, `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`,
-  also when spelled with an escape for an ASCII character such as `Artist`):
-  those traits are the only ones the renderer vouches for;
+  `trait_type` and a string or number `value`, an attribute with more than eight
+  members or two with the same key (so `display_type` cannot be said twice and
+  read two ways), or a `trait_type` with a backslash or that is one of the names the
+  renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`, `Dimensions`,
+  `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`): those traits
+  are the only ones the renderer vouches for, and a name with a backslash could be
+  one of them spelled with an escape;
 - more than 2,048 `%` and `#` characters (`MAX_ESCAPES`).
 
-The limits are not taste: they are what keeps the cost of any record, with the
-costliest media next to it, under 8M gas (see Gas). A record is validated once
-(about 1,000 gas for a number, up to 2,000 for a short string) and the pieces the
-renderer needs are found by walking it again without checking, so the cost grows
-with the number of values, not their size: a long string costs about 5 gas a byte.
-Because the whole file is percent-escaped first, `%` and `#` inside it survive
-the URI.
+**Why these bounds.** The cost of a record has to be bounded whatever its bytes,
+with the costliest media next to it, under 8M gas, and each kind of byte costs
+differently. Measured on a record of 12 KiB of one kind of byte (the bytes, not
+the media):
+
+| What the record is full of | Gas (about) | Bounded by |
+| --- | --- | --- |
+| plain ASCII inside strings | 5 a byte | the size |
+| white space | 40 a byte | the size |
+| 2-byte UTF-8 (Cyrillic, accents) | 190 per character, 1.2M | the size |
+| 3-byte UTF-8 (CJK) | 280 per character, 1.1M | the size |
+| 4-byte UTF-8 (emoji) | 630 per character, 1.9M | the size |
+| a value (number, string, array, object), a backslash escape | 1,000 to 2,000 | 1,024 together |
+| a `%` or `#` | 470 | 2,048 |
+| an attribute | 9,000 to 18,000 | 128 |
+| a byte of an attribute name (read once, for a backslash) | 3 | the size |
+
+A record is validated once, and the pieces the renderer needs are found by walking
+it again without checking. The numbers are the reason for the size, not the other
+way round: halving it (from 24 KiB) halved every row of the table's per-byte
+classes, and the rows of `RendererGas.t.sol` hold every class at the full size
+next to the two costliest primaries (256 KiB of attested `Base64`, and a wrapped
+script). Because the whole file is percent-escaped first, `%` and `#` inside it
+survive the URI.
 
 ### Output
 
@@ -396,7 +425,7 @@ name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
 | --- | --- |
 | complete, work on-chain complete, stored as `Base64` and attested, at most the threshold | `data:<mime>;base64,` plus the stored text, concatenated as it is |
 | the same, stored as `Identity`, at most an eighth of the threshold | base64-encoded on-chain |
-| `text/javascript` or `application/javascript`, `Identity`, at most 16 KiB, UTF-8, no declared `dependencies` | an HTML page that sets `window.works` (version 1) and runs the script (below) |
+| `text/javascript` or `application/javascript`, `Identity`, at most 16 KiB, UTF-8, at most 1,024 `<`, no declared `dependencies` | an HTML page that sets `window.works` (version 1) and runs the script (below) |
 | anything else: larger, incomplete, unattested `Base64`, `Gzip` or `GzipBase64`, a script with dependencies | the preferred locator (and `media_url`) |
 
 - **The threshold** is `inlineThreshold()`, in stored bytes, set at deployment
@@ -473,8 +502,11 @@ JavaScript strings, template literals and comments. `<!--` matters because it ca
 start the HTML parser's "double escaped" state, after which the next `</script>`
 no longer closes the element. `JsonEscape.scriptText` handles only the first
 sequence, and costs about 300 gas a byte on text made of `<`, so this library does
-both in one linear pass (about 170 gas a byte at worst, which with the 16 KiB limit
-keeps the page under 4.4M gas for any script). A document (`text/html`) is inlined
+both in one pass, a word at a time, jumping from `<` to `<`: a script costs about 5
+gas a byte plus about 450 gas for each `<`. A script of nothing but `<` would cost
+7M gas, so a script with more than 1,024 `<` (`MAX_SCRIPT_LT`; real scripts have
+tens or hundreds) is not wrapped but served by locator, and the dearest page that
+is wrapped costs 2.2M gas. A document (`text/html`) is inlined
 as base64 and left as it is: it is never parsed together with the renderer's
 markup, and rewriting it would break it.
 
@@ -491,37 +523,53 @@ it (`"<" + "/script"`) and it passes through unchanged.
 Measured by `forge test --match-path 'test/content/renderer/RendererGas*' -vv`
 (Foundry 1.7.1, Solc 0.8.37, optimizer 200 runs): one call through a relay that
 behaves like Stream's `tokenURI` (call, copy the string out, return it), cold (the
-fixtures are built in `setUp`, a separate transaction), with pseudo-random file
-bytes. The content store is the real one; the Stream, the satellite and the log are
-mocks that answer from storage.
+fixtures are built in `setUp`, a separate transaction, and each test measures one
+work), with pseudo-random file bytes. The content store is the real one; the Stream,
+the satellite and the log are mocks that answer from storage.
 
 | Stored bytes of the primary file | `Base64` file | `Identity` file |
 | --- | --- | --- |
-| 32 KiB | 0.33M | 2.60M |
+| 32 KiB | 0.32M | 2.60M |
 | 64 KiB | 0.47M | 5.13M |
-| 128 KiB | 0.99M | 10.58M |
-| 256 KiB (the default threshold) | 2.65M | not inlined (it would cost 22M) |
+| 128 KiB | 0.98M | 10.58M |
+| 256 KiB (the default threshold) | 2.64M | not inlined (it would cost 22M) |
 
-A file over the threshold with a locator costs 0.19M; a 16 KiB script page 1.6M,
-and 3.3M to 4.4M for scripts made only of `<`, `</`, `<!-` or `</scrip`.
+A file over the threshold with a locator costs 0.18M; a 16 KiB script page 1.6M,
+and at most 2.2M for the scripts that are dearest to neutralize (1,024 `<` of any
+shape, `</script` the dearest). A script with more `<` than that is served by
+locator, for 0.7M.
 
-The worst cases are records at each limit, with the costliest media next to them (a
-non-image primary of 256 KiB `Base64`, an 8 KiB `Identity` preview), a collection
-whose name is all `%`, a seed, a dispute and a `LicenseRef` license with a text
-file and a locator. All are accepted, and under the 8M limit:
+**The worst cases.** Every class of byte at the full 12 KiB record, and every limit,
+each with the costliest media next to it: a non-image primary of 256 KiB attested
+`Base64` or the dearest wrapped script, an 8 KiB `Identity` preview, a collection
+whose name is all `%`, a seed, a dispute and a `LicenseRef` license with a text file
+and a locator. All are accepted (but the rows that say refused), and under the 8M
+limit:
 
-| Record | Gas |
-| --- | --- |
-| 1,024 values, in an ignored array of zeros | 4.7M |
-| 1,024 values, as members of the top-level object | 6.7M |
-| 128 attributes and 637 more values | 6.6M |
-| 2,048 `%` in a 24 KiB description | 6.2M |
-| a 16 KiB script of `</scrip`, a record of `%`, everything else | 5.5M |
+| Record | with 256 KiB `Base64` | with the script |
+| --- | --- | --- |
+| 1,024 values, in an ignored array of zeros | 4.8M | 4.2M |
+| 1,024 values, as members of the top-level object | 6.7M | 6.1M |
+| 128 attributes and 637 more values | 6.6M | 6.0M |
+| 77 attributes with 132-byte names | 5.8M | 5.1M |
+| the same, 16 `%` in each name | 6.6M | 5.8M |
+| the same, names of 2-byte UTF-8 | 6.5M | 5.7M |
+| the same, names of 2-byte UTF-8 with 26 `%` each (the dearest) | 7.5M | 6.7M |
+| a `%` every sixth byte of 12 KiB (2,048) | 5.4M | 4.6M |
+| 1,022 `\\` escapes in 12 KiB of text | 4.8M | 4.1M |
+| 1,022 `\u00e9` escapes in 12 KiB of text | 5.6M | 4.9M |
+| 511 surrogate pairs in 12 KiB of text | 5.4M | 4.7M |
+| 12 KiB of 2-byte UTF-8 | 5.6M | 4.9M |
+| 12 KiB of 3-byte UTF-8 | 5.4M | 4.6M |
+| 12 KiB of 4-byte UTF-8 | 6.2M | 5.4M |
+| 12 KiB of white space | 5.1M | 4.5M |
+| 12 KiB pretty-printed, one indented value a line | 5.5M | 5.0M |
 
-and refused records stay cheap, since the scan stops at the first fault: 0.8M to
-3.6M for a record of 12,000 zeros, of `[]`, of empty members, of `\u0000`, or of
-`%` past the cap (the dearest is the value cap reached with members, 3.6M), and
-2.2M for 129 attributes. Every figure includes the mocks' own reads.
+and refused records stay cheap, since the scan stops at the first fault: 12 KiB of
+escapes (over the budget) 1.2M to 2.0M, of `\u0000` 0.6M, of `%` past the cap 0.5M,
+arrays of zeros or `[]` 1.5M to 1.7M, empty members 3.4M and the value cap reached
+with members 3.5M (the dearest), 129 attributes 2.2M, and attribute names with a
+backslash 1.3M. Every figure includes the mocks' own reads.
 
 ### Known gaps in v1
 
@@ -530,10 +578,13 @@ and refused records stay cheap, since the scan stops at the first fault: 0.8M to
 - **No dependency bundling.** Libraries from the dependency registry are not
   inlined into the script page; a script page is one self-contained file, and a
   script whose record declares `dependencies` is served by locator.
-- **Scripts only up to 16 KiB** go through the page, and `Identity` media only up
-  to an eighth of the threshold (32 KiB at the default); bigger files go by
-  locator, or should be stored as `Base64` (or, for an HTML artwork, as `text/html`).
+- **Scripts only up to 16 KiB** and with at most 1,024 `<` go through the page, and
+  `Identity` media only up to an eighth of the threshold (32 KiB at the default);
+  bigger files go by locator, or should be stored as `Base64` (or, for an HTML
+  artwork, as `text/html`).
 - **Core-only metadata** (a record that is not usable) has no ARTIST seed, because
   that seed is stored when the record opens.
-- **Records are bounded**: 1,024 values, 128 attributes, 2,048 `%` or `#`. A work
-  whose record needs more should keep the rest in the files the record points to.
+- **Records are bounded**: 12 KiB, 1,024 values and escapes together, 128
+  attributes of at most eight members, 2,048 `%` or `#`, numbers of 24 bytes. A work
+  whose record needs more should keep the rest in the files the record points to,
+  and write non-ASCII text as UTF-8 rather than `\uXXXX` escapes.

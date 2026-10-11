@@ -101,6 +101,29 @@ contract Utf8Test is Test {
         }
     }
 
+    /// @dev The short paths read the bytes of a sequence from one word, and must not take a byte
+    ///      after the end of the text for one of its continuations, whatever the memory holds
+    ///      there (here 0xa9, a good continuation).
+    function test_ShortPathsDoNotReadPastTheEnd() public pure {
+        bytes[6] memory cut =
+            [bytes(hex"c3"), hex"e2", hex"e282", hex"c3a9c3", hex"e282ace2", hex"e282ace282"];
+        for (uint256 pad; pad < 34; ++pad) {
+            for (uint256 c; c < cut.length; ++c) {
+                bytes memory text = bytes.concat(new bytes(pad), cut[c]);
+                for (uint256 i; i < pad; ++i) {
+                    text[i] = "a";
+                }
+                uint256 length = text.length;
+                assembly ("memory-safe") {
+                    for { let i := 0 } lt(i, 40) { i := add(i, 1) } {
+                        mstore8(add(add(text, add(0x20, length)), i), 0xa9)
+                    }
+                }
+                assertFalse(Utf8.isValid(text), "a sequence cut short");
+            }
+        }
+    }
+
     function test_InvalidVectors() public pure {
         bytes[22] memory invalid = [
             bytes(hex"80"), // lone continuation

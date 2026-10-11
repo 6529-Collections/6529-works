@@ -92,9 +92,9 @@ contract Renderer is IRenderer {
     /// @notice The largest JavaScript primary, in stored bytes, wrapped in the HTML page.
     uint256 public constant SCRIPT_LIMIT = 16_384;
     /// @notice The largest record file, in bytes: one store chunk.
-    uint256 public constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
+    uint256 internal constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
-    uint256 public constant MAX_ARTISTS = Limits.MAX_ARTISTS;
+    uint256 internal constant MAX_ARTISTS = Limits.MAX_ARTISTS;
     /// @notice The most attributes a record may list (each costs about 15,000 gas to check).
     uint256 internal constant MAX_ATTRIBUTES = 128;
     /// @notice The most `<` a script may hold and still be wrapped in the HTML page (each costs up
@@ -428,15 +428,23 @@ contract Renderer is IRenderer {
     ///      backslash (as a key may not: an escape could spell a reserved name), or is one of the
     ///      names the renderer uses itself, by the first four bytes of its hash. Those are all at
     ///      most 19 bytes with their quotes, so only a name that short is hashed: the cost is
-    ///      one cheap pass over the bytes, not a read per byte. A clash with another name only
+    ///      one pass over the bytes a word at a time (about 3 gas a byte), not a read per byte. A clash with another name only
     ///      makes that record render core-only, so four bytes are enough.
     function _reserved(bytes memory t) private pure returns (bool bad) {
         uint256 n = t.length;
         assembly ("memory-safe") {
             let p := add(t, 0x20)
             bad := iszero(eq(byte(0, mload(p)), 0x22))
-            for { let e := add(p, n) } lt(p, e) { p := add(p, 1) } {
-                if eq(byte(0, mload(p)), 0x5c) {
+            // A word at a time: x has a zero byte exactly at each backslash, and
+            // ((x & 0x7f..) + 0x7f..) | x has the top bit set in every other byte.
+            let ones := div(not(0), 255)
+            for { let e := add(p, n) } lt(p, e) { p := add(p, 32) } {
+                let x := xor(mload(p), mul(ones, 0x5c))
+                let z :=
+                    and(not(or(add(and(x, mul(ones, 0x7f)), mul(ones, 0x7f)), x)), shl(7, ones))
+                // The bytes at and after `e` are not part of the name.
+                if lt(sub(e, p), 32) { z := and(z, not(shr(shl(3, sub(e, p)), not(0)))) }
+                if z {
                     bad := 1
                     break
                 }

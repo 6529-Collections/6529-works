@@ -19,8 +19,9 @@ library DataUri {
 
     /// @notice Replaces every `%` with `%25` and every `#` with `%23`. An input with neither is
     ///         returned as the same memory reference. An input with more than `maxHits` of them
-    ///         gives `ok` false (and the input itself), and the count stops there: a caller that
-    ///         takes untrusted text bounds its cost here (each hit costs under 1,000 gas).
+    ///         gives `ok` false (and the input itself) after a count that costs about 7 gas a
+    ///         byte, so a caller that takes untrusted text bounds the cost of the writes here
+    ///         (each hit costs about 470 gas).
     function escape(string memory value, uint256 maxHits)
         internal
         pure
@@ -65,12 +66,12 @@ library DataUri {
             let start := add(value, 0x20)
             let end := add(start, mload(value))
             out := value
-            // Count the hits, stopping soon after there are too many. A word's marks are 0x80
-            // bytes, so shifting them to 1 and taking the remainder by 255 adds the bytes (there
-            // are at most 32, and 256 is 1 modulo 255).
+            // Count the hits, about 7 gas a byte. A word's marks are 0x80 bytes, so shifting them
+            // to 1 and taking the remainder by 255 adds the bytes (there are at most 32, and 256
+            // is 1 modulo 255).
             let hits := 0
             let p := start
-            for { } and(iszero(gt(hits, maxHits)), lt(p, end)) { p := add(p, 32) } {
+            for { } lt(p, end) { p := add(p, 32) } {
                 hits := add(hits, mod(shr(7, marks(p, end)), 255))
             }
             ok := iszero(gt(hits, maxHits))

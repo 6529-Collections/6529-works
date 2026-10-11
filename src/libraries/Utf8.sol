@@ -113,6 +113,16 @@ library Utf8 {
                 if and(lt(sub(c, 0xc2), 0x1e), lt(add(p, 1), end)) {
                     if lt(sub(byte(1, w), 0x80), 0x40) {
                         p := add(p, 2)
+                        // A run of two-byte sequences (a Cyrillic or accented text) in a tight loop.
+                        for { } lt(add(p, 1), end) { p := add(p, 2) } {
+                            w := mload(p)
+                            if iszero(
+                                and(
+                                    lt(sub(byte(0, w), 0xc2), 0x1e),
+                                    lt(sub(byte(1, w), 0x80), 0x40)
+                                )
+                            ) { break }
+                        }
                         continue
                     }
                 }

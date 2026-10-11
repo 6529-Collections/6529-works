@@ -508,9 +508,9 @@ contract JsonScanTest is Test {
     function test_Hex_OnlyHexDigitsAreHexDigits() public view {
         string[10] memory notHex = ["@", "`", "g", "G", "/", ":", "[", "{", "x", " "];
         for (uint256 d; d < notHex.length; ++d) {
-            for (uint256 at; at < 4; ++at) {
+            for (uint256 pos; pos < 4; ++pos) {
                 bytes memory digits = "0041";
-                digits[at] = bytes(notHex[d])[0];
+                digits[pos] = bytes(notHex[d])[0];
                 assertFalse(h.accepts(bytes.concat('{"a":"\\u', digits, '"}')), notHex[d]);
             }
         }

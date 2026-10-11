@@ -225,6 +225,35 @@ contract TextHelpersTest is Test {
         emit log_named_uint("worst neutralize with the cap", worst);
     }
 
+    /// @dev The bytes after the end of the text, in the last word of its memory, are not part of
+    ///      it, whatever they are: a `<` or a `%` there is neither counted nor rewritten.
+    function test_BytesPastTheEndAreNotRead() public view {
+        for (uint256 length = 1; length < 70; ++length) {
+            bytes memory text = new bytes(length);
+            for (uint256 i; i < length; ++i) {
+                text[i] = "a";
+            }
+            // Fill the rest of the last word, and one word more, with what the scanners look for.
+            uint256 room = (32 - length % 32) % 32 + 32;
+            assembly ("memory-safe") {
+                for { let i := 0 } lt(i, room) { i := add(i, 1) } {
+                    mstore8(add(add(text, add(0x20, length)), i), 0x3c)
+                }
+            }
+            (bool ok, string memory out) = h.neutralizeUpTo(string(text), 0);
+            assertTrue(ok, "no `<` in the text");
+            assertEq(out, string(text));
+            assembly ("memory-safe") {
+                for { let i := 0 } lt(i, room) { i := add(i, 1) } {
+                    mstore8(add(add(text, add(0x20, length)), i), 0x25)
+                }
+            }
+            (ok, out) = h.percentUpTo(string(text), 0);
+            assertTrue(ok, "no `%` in the text");
+            assertEq(out, string(text));
+        }
+    }
+
     function test_Script_LargeInputIsLinearAndExact() public view {
         bytes memory js = new bytes(65_536);
         for (uint256 i; i < js.length; ++i) {
