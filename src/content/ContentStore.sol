@@ -71,7 +71,7 @@ contract ContentStore is IContentStore {
         _requireMime(mimeType);
 
         f.sha256Hash = sha256Hash;
-        // Safe: the checks above bound length by MAX_CHUNKS * CHUNK_SIZE (about 25 MB).
+        // Safe: the checks above bound length by MAX_CHUNKS * CHUNK_SIZE (about 12.6 MB).
         // forge-lint: disable-next-line(unsafe-typecast)
         f.length = uint64(length);
         f.encoding = encoding;
