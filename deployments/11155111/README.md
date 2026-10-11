@@ -17,6 +17,7 @@ here is a mainnet deployment.
 | Source | `main` at `60edd9b` ([#40](https://github.com/6529-Collections/6529-works/pull/40)), solc 0.8.37, `prague` |
 | Not included | The Editions gas changes ([#41](https://github.com/6529-Collections/6529-works/pull/41), merged after this run) and the contested-override recovery (ADR 0003, decision 1, in progress). A later rehearsal redeploys under a new namespace. |
 | Record | [`1791746472.json`](1791746472.json) (`"confirmed": false` until the live Verify) |
+| Live Verify | Run it from r1's source commit, because later policy changes (new governed selectors or wiring) make the current committed policy differ: `git worktree add ../works-r1 60edd9b`, copy this record and `config/sepolia-r1/` into it, then run the Verify command in the runbook (step 11) there. |
 | Genesis | [`config/sepolia-r1/genesis.json`](../../config/sepolia-r1/genesis.json): the committed policy with the holders below |
 | Epoch-0 manifest | [`config/sepolia-r1/manifest-epoch0.json`](../../config/sepolia-r1/manifest-epoch0.json), SHA-256 `cfb688aa…7c56` |
 | Namespace | `keccak256("6529-works/sepolia/r1")` = `0x5d0566b3…2454` |
