@@ -48,6 +48,11 @@ abstract contract RendererBase is ContentBase {
     IContentStore.Encoding internal constant GZIP_BASE64 = IContentStore.Encoding.GzipBase64;
     uint256 internal constant ID = 7;
     uint256 internal constant THRESHOLD = 262_144;
+    /// @dev The renderer's bounds on a record and a script (not getters of the renderer, to save
+    ///      bytecode): the boundary tests fail if the renderer's own differ.
+    uint256 internal constant MAX_ESCAPES = 2_048;
+    uint256 internal constant MAX_ATTRIBUTES = 128;
+    uint256 internal constant MAX_SCRIPT_LT = 1_024;
     string internal constant PREFIX = "data:application/json;utf8,";
 
     MockStream internal stream;

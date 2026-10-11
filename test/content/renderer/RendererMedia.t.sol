@@ -661,6 +661,30 @@ contract RendererMediaTest is RendererBase {
         assertTrue(_ends(_page(), TAIL));
     }
 
+    /// @dev Decision H2: a script with more than `MAX_SCRIPT_LT` `<` is served by locator, not
+    ///      wrapped, because neutralizing costs per `<`; with exactly that many it is wrapped.
+    function test_Script_MoreThanTheCapOfLtIsServedByLocator() public {
+        uint256 cap = MAX_SCRIPT_LT;
+        bytes memory js = new bytes(cap + 1);
+        for (uint256 i; i < js.length; ++i) {
+            js[i] = "<";
+        }
+        bytes32 atCap = _file(_slice(js, 0, cap), IDENTITY, "text/javascript");
+        _install(atCap);
+        assertTrue(_ends(_page(), TAIL), "wrapped at the cap");
+        // The neutralized text is the script as it is (a lone `<` is not a tag).
+        assertTrue(_contains(_page(), bytes.concat("<script>", _slice(js, 0, cap), "</script>")));
+
+        bytes32 over = _file(js, IDENTITY, "text/javascript");
+        _install(over);
+        records.addLocator(ID, over, Locator(LocatorKind.IPFS, IPFS));
+        assertEq(_str(_out(), ".animation_url"), IPFS);
+        vm.expectRevert(
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
+    }
+
     function _scriptOf(uint256 length) internal pure returns (bytes memory js) {
         js = new bytes(length);
         for (uint256 i; i < length; ++i) {

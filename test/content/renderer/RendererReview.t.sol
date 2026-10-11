@@ -172,7 +172,7 @@ contract RendererReviewTest is RendererBase {
     }
 
     function test_H2_AtMostTheCapOfPercentAndHashEscapes() public {
-        uint256 cap = renderer.MAX_ESCAPES();
+        uint256 cap = MAX_ESCAPES;
         bytes memory open = '{"name":"N","description":"';
         // `%` and `#` together make the count.
         _raw(bytes.concat(open, _fill("%#", cap), '"}'));
@@ -188,7 +188,7 @@ contract RendererReviewTest is RendererBase {
     }
 
     function test_H2_AtMostTheCapOfAttributes() public {
-        uint256 cap = renderer.MAX_ATTRIBUTES();
+        uint256 cap = MAX_ATTRIBUTES;
         bytes memory one = '{"trait_type":"k","value":1}';
         for (uint256 n = cap; n <= cap + 1; ++n) {
             bytes memory list;
@@ -212,6 +212,104 @@ contract RendererReviewTest is RendererBase {
         _raw(bytes.concat(open, _fill(",0", 2 * (cap - 3)), "]}"));
         assertEq(_str(_out(), ".name"), "N");
         _raw(bytes.concat(open, _fill(",0", 2 * (cap - 2)), "]}"));
+        _assertCoreOnly("invalid");
+    }
+
+    // ---------------------------------------------------------------- the second review
+
+    /// @dev N1: `@` and the backtick are not hex digits; a record with one in a `\u` escape is
+    ///      invalid, wherever the escape is (the name, a description, a trait name, a surrogate).
+    function test_N1_ARecordWithABadHexDigitIsInvalid() public {
+        string[6] memory bad = [
+            '{"name":"Title\\u004@"}',
+            '{"name":"N","description":"\\u`041"}',
+            '{"name":"N","description":"\\ud800\\udc0@"}',
+            '{"name":"N","attributes":[{"trait_type":"Seed\\u00@@","value":"x"}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":"\\u004g"}]}',
+            '{"name":"N","artists":["\\u00G1"]}'
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
+        }
+    }
+
+    /// @dev N2: a number that is out of the binary64 range is invalid (serde_json refuses the
+    ///      whole document and JavaScript reads Infinity), as an attribute value or anywhere.
+    function test_N2_ANumberOutOfRangeIsInvalid() public {
+        string[5] memory bad = [
+            '{"name":"N","attributes":[{"trait_type":"Size","value":1e400}]}',
+            '{"name":"N","attributes":[{"trait_type":"Size","value":-1e999}]}',
+            '{"name":"N","ignored":1e400}',
+            '{"name":"N","ignored":[1e100]}',
+            '{"name":"N","attributes":[{"trait_type":"Size","value":0.0000000000000000000000001}]}'
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
+        }
+        // The largest the scanner takes is finite everywhere.
+        _raw(bytes('{"name":"N","attributes":[{"trait_type":"Size","value":-9.99999999999e+99}]}'));
+        string memory j = _out();
+        assertFalse(_has(j, ".record_status"));
+        assertTrue(this.parses(j), "serde_json reads the output");
+    }
+
+    /// @dev N3: a member twice in an attribute (`display_type` here) is a record that parsers read
+    ///      differently (first wins, last wins, an error): it is invalid, and so is an attribute
+    ///      with more than eight members.
+    function test_N3_ADuplicatedAttributeMemberIsInvalid() public {
+        _raw(
+            bytes(
+                '{"name":"N","attributes":[{"trait_type":"When","value":1700000000,"display_type":"date","display_type":"number"}]}'
+            )
+        );
+        _assertCoreOnly("invalid");
+        _raw(
+            bytes(
+                '{"name":"N","attributes":[{"trait_type":"When","value":1,"trait_type":"Other"}]}'
+            )
+        );
+        _assertCoreOnly("invalid");
+        // One display type is what OpenSea documents, and is copied as it is.
+        _raw(
+            bytes(
+                '{"name":"N","attributes":[{"trait_type":"When","value":1700000000,"display_type":"date","max_value":5}]}'
+            )
+        );
+        string memory j = _out();
+        assertFalse(_has(j, ".record_status"));
+        assertEq(_str(j, _at(_attrIndex(j, "When"), ".display_type")), "date");
+        // Eight members are the most.
+        _raw(
+            bytes(
+                '{"name":"N","attributes":[{"trait_type":"k","value":1,"a":1,"b":2,"c":3,"d":4,"e":5,"f":6}]}'
+            )
+        );
+        assertFalse(_has(_out(), ".record_status"));
+        _raw(
+            bytes(
+                '{"name":"N","attributes":[{"trait_type":"k","value":1,"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7}]}'
+            )
+        );
+        _assertCoreOnly("invalid");
+    }
+
+    /// @dev H2: every backslash escape counts against the 1,024 of values: a description of
+    ///      escapes is accepted up to the budget, and refused beyond it.
+    function test_H2_EscapesCountAgainstTheValueBudget() public {
+        bytes memory open = '{"name":"N","description":"';
+        // `name`, `description` and 1,022 escapes make 1,024.
+        _raw(bytes.concat(open, _fill("\\n", 2 * 1_022), '"}'));
+        assertEq(bytes(_str(_out(), ".description")).length, 1_022);
+        _raw(bytes.concat(open, _fill("\\n", 2 * 1_023), '"}'));
+        _assertCoreOnly("invalid");
+        _raw(bytes.concat(open, _fill("\\u00e9", 6 * 1_022), '"}'));
+        assertEq(bytes(_str(_out(), ".description")).length, 2 * 1_022);
+        _raw(bytes.concat(open, _fill("\\ud83d\\ude00", 12 * 512), '"}'));
+        _assertCoreOnly("invalid");
+        // The record that is all escapes, as long as one can be.
+        _raw(bytes.concat(open, _fill("\\\\", 12_288 - open.length - 2), '"}'));
         _assertCoreOnly("invalid");
     }
 
@@ -285,16 +383,17 @@ contract RendererReviewTest is RendererBase {
     }
 
     function test_L2_OtherNamesAreFine() public {
-        string[9] memory fine = [
+        string[10] memory fine = [
             "artist",
             "Artists",
             "Year ",
             "Seed2",
             "Edition",
             "Dispute",
+            "Dispute statements",
             "Palette",
-            "Caf\\u00e9",
-            'A\\"B'
+            unicode"Caf\u00e9",
+            "A'B 100% #1"
         ];
         for (uint256 i; i < fine.length; ++i) {
             _raw(_traitRecord(fine[i]));
@@ -302,8 +401,40 @@ contract RendererReviewTest is RendererBase {
             assertFalse(_has(j, ".record_status"), fine[i]);
             assertEq(_str(j, ".attributes[0].value"), "v");
         }
-        // An escaped backslash then `u0041` is the text `A`, which is no reserved name.
-        _raw(_traitRecord("\\\\u0041"));
+    }
+
+    /// @dev Decision H2: a name with a backslash, as a key, is refused, so an escape cannot spell a
+    ///      reserved name and no name needs a read per byte. The refusal is for any backslash, of
+    ///      any name length, and the shortest names (19 bytes or fewer with their quotes) are the
+    ///      only ones compared with the reserved list.
+    function test_L2_ANameWithABackslashIsRefused() public {
+        string[6] memory bad = [
+            "Artis\\u0074",
+            "Caf\\u00e9",
+            'A\\"B',
+            "\\\\u0041",
+            "a\\nb",
+            "\\u0041rtist and then some more text that is far longer than any reserved name"
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(_traitRecord(bad[i]));
+            _assertCoreOnly("invalid");
+        }
+        // A long name with a backslash at the very end of a 132-byte name.
+        _raw(_traitRecord(string.concat(string(_fill("a", 130)), "\\n")));
+        _assertCoreOnly("invalid");
+        // The same long name without it is fine.
+        _raw(_traitRecord(string(_fill("a", 132))));
+        assertFalse(_has(_out(), ".record_status"));
+    }
+
+    /// @dev The names the renderer writes are all at most 19 bytes with their quotes; the one of
+    ///      19 ("Dispute statement") is still found, and a name one longer is not reserved.
+    function test_L2_TheLongestReservedNameIsFound() public {
+        assertEq(bytes('"Dispute statement"').length, 19);
+        _raw(_traitRecord("Dispute statement"));
+        _assertCoreOnly("invalid");
+        _raw(_traitRecord("Dispute statementt"));
         assertFalse(_has(_out(), ".record_status"));
     }
 

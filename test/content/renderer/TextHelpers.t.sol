@@ -6,8 +6,18 @@ import { DataUri } from "src/content/DataUri.sol";
 import { HtmlScript } from "src/content/HtmlScript.sol";
 
 contract TextHelpersHarness {
-    function neutralize(string calldata js) external pure returns (string memory) {
-        return HtmlScript.neutralize(js);
+    function neutralize(string calldata js) external pure returns (string memory out) {
+        bool ok;
+        (ok, out) = HtmlScript.neutralize(js, type(uint256).max);
+        require(ok, "cap");
+    }
+
+    function neutralizeUpTo(string calldata js, uint256 maxLt)
+        external
+        pure
+        returns (bool, string memory)
+    {
+        return HtmlScript.neutralize(js, maxLt);
     }
 
     function percent(string calldata text) external pure returns (string memory out) {
@@ -148,6 +158,71 @@ contract TextHelpersTest is Test {
             assertEq(out[i], input[j++]);
         }
         assertEq(j, input.length);
+    }
+
+    /// @dev A script with more `<` than the cap is refused, one with exactly the cap is not, at any
+    ///      offset in a word and with the `<` together or apart.
+    function test_Script_TheLtCapIsInclusive() public view {
+        for (uint256 gap = 0; gap < 70; gap += 9) {
+            bytes memory unit = new bytes(gap + 1);
+            for (uint256 i; i < gap; ++i) {
+                unit[i] = "a";
+            }
+            unit[gap] = "<";
+            bytes memory js;
+            for (uint256 k; k < 5; ++k) {
+                js = bytes.concat(js, unit);
+            }
+            (bool ok, string memory out) = h.neutralizeUpTo(string(js), 5);
+            assertTrue(ok, "at the cap");
+            assertEq(bytes(out), _oracleScript(js));
+            (ok,) = h.neutralizeUpTo(string(js), 4);
+            assertFalse(ok, "over the cap");
+        }
+        (bool fine, string memory same) = h.neutralizeUpTo("no angle", 0);
+        assertTrue(fine);
+        assertEq(same, "no angle");
+        (fine,) = h.neutralizeUpTo("<", 0);
+        assertFalse(fine);
+        (fine,) = h.neutralizeUpTo("", 0);
+        assertTrue(fine);
+    }
+
+    function testFuzz_Script_TheLtCapDecidesExactly(uint256 seed, uint8 length, uint8 cap)
+        public
+        view
+    {
+        bytes memory js = bytes(_text(seed, length, "</!-scriptSCRIPT> x"));
+        uint256 lts;
+        for (uint256 i; i < js.length; ++i) {
+            if (js[i] == "<") ++lts;
+        }
+        (bool ok, string memory out) = h.neutralizeUpTo(string(js), cap);
+        assertEq(ok, lts <= cap);
+        if (ok) assertEq(bytes(out), _oracleScript(js));
+    }
+
+    /// @dev The cap is what bounds the cost: whatever the shape of a script of 16 KiB, with as
+    ///      many `<` as the cap lets in, neutralizing stays within a budget, and a script over
+    ///      the cap is refused after the work of the cap.
+    function test_Script_TheLtCapBoundsTheCost() public {
+        bytes[6] memory units =
+            [bytes("<"), "</", "</s", "</scrip", "<!-", bytes("<aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")];
+        uint256 worst;
+        for (uint256 u; u < units.length; ++u) {
+            bytes memory js = new bytes(16_384);
+            for (uint256 i; i < js.length; ++i) {
+                js[i] = units[u][i % units[u].length];
+            }
+            uint256 before = gasleft();
+            (bool ok,) = h.neutralizeUpTo(string(js), 1_024);
+            uint256 used = before - gasleft();
+            if (used > worst) worst = used;
+            assertLt(used, 2_000_000);
+            // Whether or not it was refused, the cost is the same order.
+            ok;
+        }
+        emit log_named_uint("worst neutralize with the cap", worst);
     }
 
     function test_Script_LargeInputIsLinearAndExact() public view {

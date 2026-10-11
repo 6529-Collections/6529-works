@@ -473,6 +473,123 @@ contract JsonScanTest is Test {
         assertFalse(h.accepts('{"a":00}'));
     }
 
+    /// @dev Decision H2: a number is at most 24 bytes with an exponent of at most two digits, so
+    ///      every one is a finite binary64 (parsers disagree about 1e400) and its digits are bounded.
+    function test_Numbers_AreBoundedAndFinite() public view {
+        assertTrue(h.accepts('{"a":1e99}'));
+        assertTrue(h.accepts('{"a":1E+99}'));
+        assertTrue(h.accepts('{"a":-1.5e-99}'));
+        assertTrue(h.accepts('{"a":1e0}'));
+        assertFalse(h.accepts('{"a":1e100}'));
+        assertFalse(h.accepts('{"a":1e400}'));
+        assertFalse(h.accepts('{"a":1e-100}'));
+        assertFalse(h.accepts('{"a":1e001}'));
+        // 24 bytes are fine, 25 are not, whatever the shape.
+        bytes memory digits = _fill("7", 23);
+        assertTrue(h.accepts(bytes.concat('{"a":1', digits, "}")));
+        assertFalse(h.accepts(bytes.concat('{"a":1', digits, "7}")));
+        assertTrue(h.accepts(bytes.concat('{"a":-', _fill("7", 21), ".5}")));
+        assertFalse(h.accepts(bytes.concat('{"a":-', _fill("7", 22), ".5}")));
+        assertTrue(h.accepts(bytes.concat('{"a":', _fill("7", 20), "e-99}")));
+        assertFalse(h.accepts(bytes.concat('{"a":', _fill("7", 21), "e-99}")));
+        // A thousand digits are a number JSON allows, and no number here.
+        assertFalse(h.accepts(bytes.concat('{"a":1', _fill("0", 1_000), "}")));
+    }
+
+    function _fill(bytes memory unit, uint256 n) internal pure returns (bytes memory j) {
+        j = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            j[i] = unit[i % unit.length];
+        }
+    }
+
+    /// @dev `@` and the backtick are one below `A` and `a`, `g` one above `f`, `/` and `:` flank the
+    ///      digits: none is a hex digit.
+    function test_Hex_OnlyHexDigitsAreHexDigits() public view {
+        string[10] memory notHex = ["@", "`", "g", "G", "/", ":", "[", "{", "x", " "];
+        for (uint256 d; d < notHex.length; ++d) {
+            for (uint256 at; at < 4; ++at) {
+                bytes memory digits = "0041";
+                digits[at] = bytes(notHex[d])[0];
+                assertFalse(h.accepts(bytes.concat('{"a":"\\u', digits, '"}')), notHex[d]);
+            }
+        }
+        assertFalse(h.accepts('{"a":"\\ud800\\udc0@"}'));
+        assertFalse(h.accepts('{"a":"\\ud80`\\udc00"}'));
+        assertTrue(h.accepts('{"a":"\\u0aF9 \\uBEEF \\ud83d\\uDE00"}'));
+        // Every character is a hex digit exactly when it is 0-9, A-F or a-f.
+        for (uint256 c; c < 256; ++c) {
+            if (c < 0x20 || c == 0x22 || c == 0x5c || c >= 0x80) continue;
+            bytes memory digits = "0041";
+            digits[3] = bytes1(uint8(c));
+            bool hexDigit =
+                (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x46) || (c >= 0x61 && c <= 0x66);
+            assertEq(h.accepts(bytes.concat('{"a":"\\u', digits, '"}')), hexDigit, vm.toString(c));
+        }
+    }
+
+    /// @dev Decision H2: every escape counts against the 1,024 of values, so a string of escapes
+    ///      cannot cost more than a document of values (a surrogate pair is two escapes).
+    function test_Escapes_CountAgainstTheValueBudget() public view {
+        // The string is one value, each escape one more.
+        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("\\n", 2 * 1_023), '"}')));
+        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\n", 2 * 1_024), '"}')));
+        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("\\u00e9", 6 * 1_023), '"}')));
+        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\u00e9", 6 * 1_024), '"}')));
+        // 511 pairs are 1,022 escapes, and a string and one more escape make 1,024.
+        bytes memory pairs = _fill("\\ud83d\\ude00", 12 * 511);
+        assertTrue(h.accepts(bytes.concat('{"a":"', pairs, '"}')));
+        assertTrue(h.accepts(bytes.concat('{"a":"', pairs, '\\n"}')));
+        assertFalse(h.accepts(bytes.concat('{"a":"', pairs, '\\n\\n"}')));
+        assertFalse(h.accepts(bytes.concat('{"a":"', _fill("\\ud83d\\ude00", 12 * 512), '"}')));
+        // Escapes and values share the budget: 600 of each.
+        bytes memory zeros = _fill("0,", 2 * 599);
+        assertTrue(
+            h.accepts(bytes.concat('{"a":[', zeros, '0],"b":"', _fill("\\n", 2 * 422), '"}'))
+        );
+        assertFalse(
+            h.accepts(bytes.concat('{"a":[', zeros, '0],"b":"', _fill("\\n", 2 * 424), '"}'))
+        );
+        // Keys cannot have them at all, and text without escapes costs nothing of the budget.
+        assertTrue(h.accepts(bytes.concat('{"a":"', _fill("x", 20_000), '"}')));
+    }
+
+    /// @dev Decision H2 (duplicate members): an element of `records` has at most eight members,
+    ///      all with different keys, whether or not they are ones asked for, so a copied
+    ///      attribute cannot say `display_type` twice.
+    function test_Records_AtMostEightMembersAllDifferent() public view {
+        bytes32[] memory k = _two();
+        bytes memory top = '{"a":[{"trait_type":"x","value":1,"display_type":"date"}]}';
+        uint256[] memory s = _obj(top, _keys1("a"));
+        (bool ok,) = h.records(top, s[0] >> 128, k, 4);
+        assertTrue(ok);
+
+        bytes memory twice =
+            '{"a":[{"trait_type":"x","value":1,"display_type":"date","display_type":"number"}]}';
+        s = _obj(twice, _keys1("a"));
+        (ok,) = h.records(twice, s[0] >> 128, k, 4);
+        assertFalse(ok, "a duplicated key that nothing asked for");
+
+        bytes memory eight = '{"a":[{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8}]}';
+        s = _obj(eight, _keys1("a"));
+        (ok,) = h.records(eight, s[0] >> 128, k, 4);
+        assertTrue(ok, "eight members");
+        bytes memory nine = '{"a":[{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9}]}';
+        s = _obj(nine, _keys1("a"));
+        (ok,) = h.records(nine, s[0] >> 128, k, 4);
+        assertFalse(ok, "nine members");
+        // Duplicates are found among the first eight, and in the second element as well.
+        bytes memory late = '{"a":[{"t":1},{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"3":8}]}';
+        s = _obj(late, _keys1("a"));
+        (ok,) = h.records(late, s[0] >> 128, k, 4);
+        assertFalse(ok);
+        // The check is per element: the same keys in two elements are fine.
+        bytes memory same = '{"a":[{"x":1,"y":2},{"x":3,"y":4}]}';
+        s = _obj(same, _keys1("a"));
+        (ok,) = h.records(same, s[0] >> 128, k, 4);
+        assertTrue(ok);
+    }
+
     function test_NotJsonWhitespaceOrBytes() public view {
         assertFalse(h.accepts(hex"efbbbf7b7d")); // BOM + {}
         assertFalse(h.accepts(hex"0c7b7d")); // form feed
@@ -512,7 +629,9 @@ contract JsonScanTest is Test {
             '{"p":"\xc3\xa9\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80 \\ud83d\\ude00 end","q":[{"r":{"s":[[]]}}]}'
         ];
         bytes memory json = bytes(bases[seed % bases.length]);
-        bytes memory alphabet = '{}[]",:\\ 01-+.eEtrufalsnduD8cA\n\x00';
+        // `@` and the backtick sit just below `A` and `a`, `g` just above `f`, `/` and `:` around
+        // the digits: the places a hex digit test goes wrong.
+        bytes memory alphabet = '{}[]",:\\ 01-+.eEtrufalsnduD8cA@`gG/\n\x00';
         uint256 edits = 1 + (seed >> 8) % 3;
         for (uint256 k; k < edits; ++k) {
             seed = uint256(keccak256(abi.encode(seed, k)));
@@ -542,13 +661,30 @@ contract JsonScanTest is Test {
     }
 
     /// @dev For a text that is valid JSON: whether it has a backslash in a key, a `\u0000`
-    ///      escape, or more than eight levels of nesting, the three stricter rules.
+    ///      escape, more than eight levels of nesting, or a number of more than 24 bytes or with
+    ///      an exponent of more than two digits: the stricter rules a small document can break.
     function _stricter(bytes memory json) internal pure returns (bool) {
         uint256 depth;
         uint256 isObject; // bit per level: set for an object
         bool afterOpener = true; // the last significant byte was `{` or `,` (a key may follow)
+        uint256 run; // bytes of the number or literal being read
+        uint256 exponent; // digits after an `e` in it
+        bool inExponent;
         for (uint256 i; i < json.length; ++i) {
             bytes1 c = json[i];
+            if ((c >= "0" && c <= "9") || c == "-" || c == "+" || c == "." || c == "e" || c == "E")
+            {
+                if (++run > 24) return true;
+                if (c == "e" || c == "E") {
+                    inExponent = true;
+                    exponent = 0;
+                } else if (inExponent && c >= "0" && c <= "9" && ++exponent > 2) {
+                    return true;
+                }
+                afterOpener = false;
+                continue;
+            }
+            (run, inExponent) = (0, false);
             if (c == '"') {
                 bool key = afterOpener && depth != 0 && (isObject >> (depth - 1)) & 1 == 1;
                 for (++i; json[i] != '"'; ++i) {

@@ -523,14 +523,14 @@ contract RendererTest is RendererBase {
         );
         r.description = "</script><!-- % # %25 %23";
         r.attributes = new Trait[](1);
-        r.attributes[0] = Trait('A"B', "C\\D");
+        r.attributes[0] = Trait("A'B 100% #1", "C\\D");
         _install(file, r);
 
         string memory j = _out();
 
         assertEq(_str(j, ".name"), r.name);
         assertEq(_str(j, ".description"), r.description);
-        assertEq(_attr(j, 'A"B'), "C\\D");
+        assertEq(_attr(j, "A'B 100% #1"), "C\\D");
     }
 
     function testFuzz_Escaping_AnyValidText(uint256 seed, uint8 length) public {

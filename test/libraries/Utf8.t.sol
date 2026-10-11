@@ -67,6 +67,40 @@ contract Utf8Test is Test {
         }
     }
 
+    /// @dev The short paths for two- and three-byte sequences (C2-DF, E1-EC and EE-EF with plain
+    ///      continuations) sit next to the end of the text at every offset in a word: a sequence that
+    ///      ends exactly at the end, one cut short, one with a bad continuation, and the lead bytes
+    ///      the short path leaves to the general one (E0 and ED).
+    function test_ShortPathsAtTheEndAtEveryOffset() public pure {
+        for (uint256 pad; pad < 70; ++pad) {
+            bytes memory pre = new bytes(pad);
+            for (uint256 i; i < pad; ++i) {
+                pre[i] = "a";
+            }
+            _check(bytes.concat(pre, hex"c3a9"), true);
+            _check(bytes.concat(pre, hex"c3"), false);
+            _check(bytes.concat(pre, hex"c3a9c3a9c3a9"), true);
+            _check(bytes.concat(pre, hex"c341"), false);
+            _check(bytes.concat(pre, hex"c3c3"), false);
+            _check(bytes.concat(pre, hex"e282ac"), true);
+            _check(bytes.concat(pre, hex"e282"), false);
+            _check(bytes.concat(pre, hex"e2"), false);
+            _check(bytes.concat(pre, hex"e28241"), false);
+            _check(bytes.concat(pre, hex"e24182"), false);
+            _check(bytes.concat(pre, hex"e282acc3a9e282ac"), true);
+            _check(bytes.concat(pre, hex"e0a080"), true);
+            _check(bytes.concat(pre, hex"e09f80"), false);
+            _check(bytes.concat(pre, hex"ed9fbf"), true);
+            _check(bytes.concat(pre, hex"eda080"), false);
+            _check(bytes.concat(pre, hex"efbfbf"), true);
+            _check(bytes.concat(pre, hex"c0af"), false);
+            _check(bytes.concat(pre, hex"c2"), false);
+            _check(bytes.concat(pre, hex"dfbf"), true);
+            _check(bytes.concat(pre, hex"f09f9880"), true);
+            _check(bytes.concat(pre, hex"f09f98"), false);
+        }
+    }
+
     function test_InvalidVectors() public pure {
         bytes[22] memory invalid = [
             bytes(hex"80"), // lone continuation
