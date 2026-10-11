@@ -8,7 +8,98 @@ Deployment records for 6529 Works on Sepolia. Each record is written by
 These are testnet rehearsals with throwaway signers. The code is pre-audit and nothing
 here is a mainnet deployment.
 
-## sepolia-r1: 11 October 2026
+## sepolia-r2: 11 October 2026 (current)
+
+r2 is the full v1 scope on `main`, including the contested-override recovery and the Editions
+gas changes. It uses the same Safes and keys as r1 (see [r1's holders](#holders)), a new
+namespace and its own VRF subscription.
+
+| | |
+| --- | --- |
+| Status | Deployed and configured in blocks 11,894,139 to 11,894,163. Live Verify is due after the 5-day `minSetback`: from 16 October 2026, about 20:30 UTC. |
+| Verify so far | `Verify.s.sol` passes on a Sepolia fork advanced five days: 15 targets, 19 wiring calls and 17 holders. It also checked every address and code hash, the CC0 text and the manifest. |
+| Source | `main` at `400f96d` ([#44](https://github.com/6529-Collections/6529-works/pull/44)), solc 0.8.37, `prague` |
+| Not included | [#46](https://github.com/6529-Collections/6529-works/pull/46): a bounded read in `ArtistRegistry.bindStatementLog`. It is a one-shot genesis binding; r2's genesis already bound its own statement log, and Verify reads that back. |
+| Record | [`1791750816.json`](1791750816.json). Here `delegationMock` is `false`: since [#42](https://github.com/6529-Collections/6529-works/pull/42) the script compares the delegation's code hash with mainnet's and records it. |
+| Genesis | [`config/sepolia-r2/genesis.json`](../../config/sepolia-r2/genesis.json): the current committed policy with r1's holders |
+| Epoch-0 manifest | [`config/sepolia-r2/manifest-epoch0.json`](../../config/sepolia-r2/manifest-epoch0.json) |
+| Namespace | `keccak256("6529-works/sepolia/r2")` = `0xd4cf2286…f090` |
+| CC0 text | The committed fixture `test/fixtures/cc0-legalcode.txt` (the default since #42) |
+| Cost | 25 transactions, 447,912,784 gas (6.17x Foundry's Prague estimate of 72,554,849), 0.0224 Sepolia ETH |
+
+**VRF subscription.**
+- Subscription ID: `26755781173204397845410634685189131694841872990785294795546827480670579805631`.
+- Owner: the operator.
+- Funding: 0.2 Sepolia ETH, native payment.
+- Same key hash and limits as r1.
+- r2's entropy module is the only consumer.
+- Transactions: created [`0xf5ad50f7…`](https://sepolia.etherscan.io/tx/0xf5ad50f734eb5fc21583a318da02135be253fecd8ad6109e303d229d80f00e5d), funded [`0xee5835f5…`](https://sepolia.etherscan.io/tx/0xee5835f57c409458118c720db4aca2ed63d6da2b7eec98e94ab2a2421048db53), consumer added [`0xc2188e8c…`](https://sepolia.etherscan.io/tx/0xc2188e8cfd3efb3fae693e004298d43760f1c2cc323800bcf561f18744f0a288).
+
+### Contracts (r2)
+
+| Contract | Address |
+| --- | --- |
+| WorksAccessManager | [`0x7Aec16E5c5F9903a38cC8798838A336A9Ce4dB2B`](https://sepolia.etherscan.io/address/0x7Aec16E5c5F9903a38cC8798838A336A9Ce4dB2B) |
+| GovernanceConfigurator | [`0x7720Ba52FC54DF9C749B88010BC191dbb0FD0e3E`](https://sepolia.etherscan.io/address/0x7720Ba52FC54DF9C749B88010BC191dbb0FD0e3E) |
+| ContentStore | [`0x3E56048F2aaBEf5251f8e1469FB9979F324b3a11`](https://sepolia.etherscan.io/address/0x3E56048F2aaBEf5251f8e1469FB9979F324b3a11) |
+| DependencyRegistry | [`0x4a8ed20fe380e2BB5136cD76c3590571C52dc27D`](https://sepolia.etherscan.io/address/0x4a8ed20fe380e2BB5136cD76c3590571C52dc27D) |
+| ConsolidationAdapter | [`0x058E4c352410D3B0D791a691843755d1A34c3Bb9`](https://sepolia.etherscan.io/address/0x058E4c352410D3B0D791a691843755d1A34c3Bb9) |
+| ArtistRegistry | [`0xd97D8c7492CeD34686C945BE7520aeF537e29F0F`](https://sepolia.etherscan.io/address/0xd97D8c7492CeD34686C945BE7520aeF537e29F0F) |
+| ReleaseVerifier | [`0x83d98ad388f2FAb6CBA8cBe2BFCFe341cB763FD9`](https://sepolia.etherscan.io/address/0x83d98ad388f2FAb6CBA8cBe2BFCFe341cB763FD9) |
+| SplitFactory | [`0x848AD949280d99Cc5D26ff2ec1Ffc1764Fd751E3`](https://sepolia.etherscan.io/address/0x848AD949280d99Cc5D26ff2ec1Ffc1764Fd751E3) |
+| ClaimRouter | [`0x290E6A0643a169B59ECD246040062867eB479996`](https://sepolia.etherscan.io/address/0x290E6A0643a169B59ECD246040062867eB479996) |
+| AssetAllowlist | [`0xf620Ea96cC8f34F9ba21b18447BfC14FD08830ad`](https://sepolia.etherscan.io/address/0xf620Ea96cC8f34F9ba21b18447BfC14FD08830ad) |
+| EconomicsResolver | [`0xA86Dea795D01F49CcDe5c1Dba6541F849511cd45`](https://sepolia.etherscan.io/address/0xA86Dea795D01F49CcDe5c1Dba6541F849511cd45) |
+| RevenueEscrow | [`0xFF1Edec521E9F73956C4f58F7C3A3e4208597294`](https://sepolia.etherscan.io/address/0xFF1Edec521E9F73956C4f58F7C3A3e4208597294) |
+| CurationVerifier | [`0x3033958a90aFa377fCE4b61597F9ec0D8Af6EC9a`](https://sepolia.etherscan.io/address/0x3033958a90aFa377fCE4b61597F9ec0D8Af6EC9a) |
+| PackageRegistry | [`0x48232794Cb568e068770039d1c4Da69861B2e786`](https://sepolia.etherscan.io/address/0x48232794Cb568e068770039d1c4Da69861B2e786) |
+| StatementLog | [`0x054D783CC94b6c5Df06eDceB6910484D5423a3B5`](https://sepolia.etherscan.io/address/0x054D783CC94b6c5Df06eDceB6910484D5423a3B5) |
+| EntropyModule | [`0x97f20345E6B0A9769733E42a98C6bfDC059De457`](https://sepolia.etherscan.io/address/0x97f20345E6B0A9769733E42a98C6bfDC059De457) |
+| Renderer | [`0xA7e78e3825D407198790735BB95982679B03DeEF`](https://sepolia.etherscan.io/address/0xA7e78e3825D407198790735BB95982679B03DeEF) |
+| Stream | [`0x7Ae459CCC1e8410912743d5FD6f832d1cf1981B4`](https://sepolia.etherscan.io/address/0x7Ae459CCC1e8410912743d5FD6f832d1cf1981B4) |
+| WorkRecords | [`0xEEa4093106d5918Bc1D1Fa00369aE81c8EB7cAa2`](https://sepolia.etherscan.io/address/0xEEa4093106d5918Bc1D1Fa00369aE81c8EB7cAa2) |
+| Editions | [`0xA83ed940684B7B4D706415c4315AD63b6cdD5cfc`](https://sepolia.etherscan.io/address/0xA83ed940684B7B4D706415c4315AD63b6cdD5cfc) |
+| EnglishAuction | [`0xCa4FEFfA995210BcaDE279D74D7AadD824721813`](https://sepolia.etherscan.io/address/0xCa4FEFfA995210BcaDE279D74D7AadD824721813) |
+| FixedPriceSale | [`0xbc3ee6DDDb3c117C387049e347573fcFAdEbD6D5`](https://sepolia.etherscan.io/address/0xbc3ee6DDDb3c117C387049e347573fcFAdEbD6D5) |
+| DutchSale | [`0x47DCcCA6f5D09A6af747e02F432838091A17A501`](https://sepolia.etherscan.io/address/0x47DCcCA6f5D09A6af747e02F432838091A17A501) |
+
+<details>
+<summary>r2 gas per transaction</summary>
+
+| # | Transaction | Prague (forge) | Sepolia | Ratio |
+| ---: | --- | ---: | ---: | ---: |
+| 0 | [GovernanceConfigurator creation](https://sepolia.etherscan.io/tx/0x1a09dbf0af877f51087ed2071a06edb27fa2ed76cbdc9d4daf1a6736699675ac) | 5,361,897 | 33,602,795 | 6.27 |
+| 1 | [ContentStore creation](https://sepolia.etherscan.io/tx/0xe08a7c071327910e30440f3e7474d0b075ee8fdf180b59bd81b2f22b57e6dd35) | 1,822,350 | 11,392,063 | 6.25 |
+| 2 | [ContentStore `writeChunk`](https://sepolia.etherscan.io/tx/0x6dcc6877cee0a9107542d14e19b680692f2d2d49bdf809ad1b73ee0594ca18c5) | 1,716,351 | 11,238,006 | 6.55 |
+| 3 | [ContentStore `registerManifest`](https://sepolia.etherscan.io/tx/0x15eb1c0c5a56489886a318104f3c9439d55c5e95c0c4914b4587c8a978b1638b) | 152,825 | 577,737 | 3.78 |
+| 4 | [DependencyRegistry creation](https://sepolia.etherscan.io/tx/0x754e3f04b61fac26efdf6add82798339bb7d31b46fd6fd8c85a9ea378a9b609b) | 827,965 | 4,981,963 | 6.02 |
+| 5 | [ConsolidationAdapter creation](https://sepolia.etherscan.io/tx/0xd33a7f890b70ec2c50d56aacb5011ff518dec63fd8a8b56606be068f62df0378) | 748,405 | 4,825,117 | 6.45 |
+| 6 | [ArtistRegistry creation](https://sepolia.etherscan.io/tx/0xbd7eab17bac643d1c08859bb955366b2afda8e104dfa6261383d9493f8fb8bc6) | 4,729,492 | 29,578,918 | 6.25 |
+| 7 | [ReleaseVerifier creation](https://sepolia.etherscan.io/tx/0x3f8e10436f32bce1b2fc164cbb0d8f569f09970fde4e1ee25f9e9dfcc86d15ac) | 900,834 | 5,842,008 | 6.49 |
+| 8 | [SplitFactory creation](https://sepolia.etherscan.io/tx/0x71217cd27f7637f9d4a148e6f21781e157f24c820540ae191a1cd8cc0e776f9b) | 2,303,524 | 14,412,179 | 6.26 |
+| 9 | [ClaimRouter creation](https://sepolia.etherscan.io/tx/0x0f88360f1f1e7ad0c156ead7b01fd606fffa814ab5261d42e55f55417c8ca4ec) | 703,838 | 4,294,932 | 6.10 |
+| 10 | [AssetAllowlist creation](https://sepolia.etherscan.io/tx/0x951f36a1d27be107693e3bd8623a16042ae6fdfd24f83f16b92958a400bd72c1) | 1,140,474 | 6,802,727 | 5.96 |
+| 11 | [EconomicsResolver creation](https://sepolia.etherscan.io/tx/0x96340e5e420dc1cd2b06e1df7092979d116e42b456a6d42c1ccc57c78bf60a6e) | 2,115,962 | 12,947,427 | 6.12 |
+| 12 | [RevenueEscrow creation](https://sepolia.etherscan.io/tx/0xfa8159eaa5a31269a0ac916e43a17155a03bd58f6316bcfefd756af367373ce8) | 1,163,775 | 7,537,555 | 6.48 |
+| 13 | [Eip712CurationVerifier creation](https://sepolia.etherscan.io/tx/0xb5cef5e5362325ab9c3028b726173c180a645d8c68afa46bbfc9afd3cf6c9e03) | 1,334,017 | 8,179,457 | 6.13 |
+| 14 | [PackageRegistry creation](https://sepolia.etherscan.io/tx/0x6d75339e18fcb1c37571a2ad64c981d641ec49126d9c6c327745d58ba9afaa88) | 3,428,352 | 22,553,948 | 6.58 |
+| 15 | [StatementLog creation](https://sepolia.etherscan.io/tx/0x78fb7cb6c414bebfae1a58080222242539a2e6c9e9e6986fd31810ca3a979275) | 2,731,330 | 16,884,691 | 6.18 |
+| 16 | [VrfEntropyModule creation](https://sepolia.etherscan.io/tx/0x8fb138ceb1dee9b0754486a257742075bb8744ab89d355aa64fb04cf10a6f39b) | 1,968,827 | 12,511,926 | 6.36 |
+| 17 | [Renderer creation](https://sepolia.etherscan.io/tx/0xf417bda286a10f3d964909913da5f086c68e49dc85748c1973bb49b5876a4c76) | 6,035,598 | 38,118,823 | 6.32 |
+| 18 | [Stream creation](https://sepolia.etherscan.io/tx/0xf7c13d7cfc109578a85dc11c535287edbaf5dbd0dea9a4f34ac4f41d8dee90a5) | 4,963,231 | 30,693,665 | 6.18 |
+| 19 | [WorkRecords creation](https://sepolia.etherscan.io/tx/0x451e6a46e165310e73fcaeac71791ead1e3ef4e62458ac2dffa5e4a29c9a8573) | 5,162,194 | 34,046,474 | 6.60 |
+| 20 | [Editions creation](https://sepolia.etherscan.io/tx/0xe1d39e84bd19d3e4bd3bc211a8bbc4d2b75e1ff8bfd6c5f67b3ec92b275f6c02) | 4,400,771 | 29,065,991 | 6.60 |
+| 21 | [EnglishAuction creation](https://sepolia.etherscan.io/tx/0x1494c0823d975a5b35026d5f3b4785f4dbbcd3b61666401dc74265e401d2412e) | 5,476,835 | 36,234,008 | 6.62 |
+| 22 | [FixedPriceSale creation](https://sepolia.etherscan.io/tx/0x6136eae5bba2afb813643367439f4993773e96135829db2c3aaeb7aeef0a561b) | 5,170,105 | 32,342,893 | 6.26 |
+| 23 | [DutchSale creation](https://sepolia.etherscan.io/tx/0x34db0d154e1e5cd96719c22cf9b4f725e62a358e03c7b75dd0896bb6530041ec) | 3,593,727 | 23,719,102 | 6.60 |
+| 24 | [GovernanceConfigurator `configure`](https://sepolia.etherscan.io/tx/0x8e25b328bd6c5e971afb1ede00fc874e5cc101949662ec1d51b8d2efb277e26e) | 4,602,170 | 15,528,379 | 3.37 |
+| | **Total** | **72,554,849** | **447,912,784** | **6.17** |
+
+</details>
+
+## sepolia-r1: 11 October 2026 (superseded by r2)
+
+r1 stays deployed as a rehearsal record; new work targets r2.
 
 | | |
 | --- | --- |
