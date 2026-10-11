@@ -1,0 +1,312 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+
+/// @notice Sales-lane mocks: an edition-like mint target, the escrow and allowlist stand-ins, a
+///         Permit2 that reproduces the canonical hashing, nonces and checks, an EIP-2612 token,
+///         and hostile wallets and receivers.
+
+/// @dev An `IMintTarget` shaped like 6529 Editions: per-ID terms and size, a minter allowlist,
+///      the adapter's `saleKind()` check, and real ERC-1155 receiver checks on mint.
+contract MockEditionTarget is ERC1155, IMintTarget {
+    error NotMinter(address caller);
+    error KindMismatch(bytes32 adapterKind, bytes32 termsKind);
+    error EditionUnavailable(uint256 id);
+    error UnknownEdition(uint256 id);
+
+    mapping(uint256 id => PrimaryTerms) internal _terms;
+    mapping(uint256 id => uint256) public size;
+    mapping(uint256 id => uint256) public minted;
+    mapping(address adapter => bool) public minters;
+    /// @dev Added to the returned token ID, to simulate a token that mints something else.
+    uint256 public idOffset;
+
+    constructor() ERC1155("") { }
+
+    function setTerms(uint256 id, PrimaryTerms memory t, uint256 size_) external {
+        _terms[id] = t;
+        size[id] = size_;
+    }
+
+    function setCreator(uint256 id, address creator) external {
+        _terms[id].creator = creator;
+    }
+
+    function setCurrency(uint256 id, address currency) external {
+        _terms[id].currency = currency;
+    }
+
+    function setMinter(address adapter, bool allowed) external {
+        minters[adapter] = allowed;
+    }
+
+    function setIdOffset(uint256 offset) external {
+        idOffset = offset;
+    }
+
+    function mint(address to, uint256 id, uint256 amount, bytes calldata)
+        external
+        returns (uint256, PrimaryTerms memory t)
+    {
+        if (!minters[msg.sender]) revert NotMinter(msg.sender);
+        t = _terms[id];
+        if (t.saleKind == 0) revert UnknownEdition(id);
+        bytes32 kind = ISaleAdapter(msg.sender).saleKind();
+        if (kind != t.saleKind) revert KindMismatch(kind, t.saleKind);
+        if (minted[id] + amount > size[id]) revert EditionUnavailable(id);
+        minted[id] += amount;
+        _mint(to, id, amount, "");
+        return (id + idOffset, t);
+    }
+
+    function primaryTerms(uint256 id, bytes calldata)
+        external
+        view
+        returns (PrimaryTerms memory t)
+    {
+        t = _terms[id];
+        if (t.saleKind == 0) revert UnknownEdition(id);
+    }
+
+    function burn(uint256, uint256) external pure {
+        revert("no burn");
+    }
+}
+
+/// @dev The revenue escrow's crediting surface: pulls exactly and credits per wallet and asset.
+contract MockRevenueEscrow {
+    mapping(address wallet => mapping(address asset => uint256)) public owed;
+    mapping(address asset => uint256) public totalOwed;
+
+    function depositETH(address wallet) external payable {
+        owed[wallet][address(0)] += msg.value;
+        totalOwed[address(0)] += msg.value;
+    }
+
+    function depositERC20(address wallet, address asset, uint256 amount) external {
+        TokenTransfer.pullExact(asset, msg.sender, amount);
+        owed[wallet][asset] += amount;
+        totalOwed[asset] += amount;
+    }
+}
+
+/// @dev The allowlist's `isActive` and `defaultCurrency` reads, set by the test.
+contract MockAssetAllowlist {
+    error CurrencyNotConfigured(bytes32 product);
+    error AssetNotActive(address asset);
+
+    mapping(address asset => bool) public isActive;
+    mapping(bytes32 product => address) internal _defaults;
+    mapping(bytes32 product => bool) internal _configured;
+
+    function set(address asset, bool active) external {
+        isActive[asset] = active;
+    }
+
+    function setDefault(bytes32 product, address asset) external {
+        _defaults[product] = asset;
+        _configured[product] = true;
+    }
+
+    function defaultCurrency(bytes32 product) external view returns (address asset) {
+        if (!_configured[product]) revert CurrencyNotConfigured(product);
+        asset = _defaults[product];
+        if (!isActive[asset]) revert AssetNotActive(asset);
+    }
+}
+
+/// @dev A federation registry with test-set entries and status (`IFederationRegistry`).
+contract MockFederationRegistry is IFederationRegistry {
+    mapping(address token => Entry) internal _entries;
+
+    function setEntry(address token, uint32 feeShare, bool active) external {
+        _entries[token].feeShare = feeShare;
+        _entries[token].status = active ? Status.ACTIVE : Status.DELISTED;
+    }
+
+    function register(address token, Entry calldata e) external {
+        _entries[token] = e;
+    }
+
+    function setStatus(address token, Status status, bytes32) external {
+        _entries[token].status = status;
+    }
+
+    function setArtistDelisted(uint256, bool, bytes32) external { }
+
+    function entry(address token) external view returns (Entry memory) {
+        return _entries[token];
+    }
+
+    function isActive(address token) external view returns (bool) {
+        return _entries[token].status == Status.ACTIVE;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IFederationRegistry).interfaceId || interfaceId == 0x01ffc9a7;
+    }
+}
+
+/// @dev Permit2's `permitWitnessTransferFrom`, reproducing the canonical contract: the
+///      "Permit2" EIP-712 domain (name, chain ID, verifying contract), the witness type-hash
+///      stub, the spender (`msg.sender`) in the signed hash, the deadline and amount checks,
+///      the unordered nonce bitmap, ECDSA or ERC-1271 signers, and a solmate-style transfer.
+contract MockPermit2 is ISignatureTransfer {
+    bytes32 public constant TOKEN_PERMISSIONS_TYPEHASH =
+        keccak256("TokenPermissions(address token,uint256 amount)");
+    string public constant WITNESS_STUB =
+        "PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,";
+
+    bytes32 public immutable DOMAIN_SEPARATOR;
+    mapping(address owner => mapping(uint256 word => uint256)) public nonceBitmap;
+
+    error SignatureExpired(uint256 deadline);
+    error InvalidAmount(uint256 maxAmount);
+    error InvalidNonce();
+    error InvalidSignature();
+    error InvalidSigner();
+    error InvalidContractSignature();
+    error TransferFromFailed();
+
+    constructor() {
+        DOMAIN_SEPARATOR = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)"),
+                keccak256("Permit2"),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    function permitWitnessTransferFrom(
+        PermitTransferFrom calldata permit,
+        SignatureTransferDetails calldata details,
+        address owner,
+        bytes32 witness,
+        string calldata witnessTypeString,
+        bytes calldata signature
+    ) external {
+        if (block.timestamp > permit.deadline) {
+            revert SignatureExpired(permit.deadline);
+        }
+        if (details.requestedAmount > permit.permitted.amount) {
+            revert InvalidAmount(permit.permitted.amount);
+        }
+        uint256 bit = 1 << uint8(permit.nonce);
+        uint256 flipped = nonceBitmap[owner][permit.nonce >> 8] ^= bit;
+        if (flipped & bit == 0) revert InvalidNonce();
+        bytes32 digest = witnessDigest(msg.sender, permit, witness, witnessTypeString);
+        if (owner.code.length == 0) {
+            if (signature.length != 65) revert InvalidSignature();
+            address signer = ecrecover(
+                digest, uint8(signature[64]), bytes32(signature[0:32]), bytes32(signature[32:64])
+            );
+            if (signer == address(0)) revert InvalidSignature();
+            if (signer != owner) revert InvalidSigner();
+        } else if (IERC1271(owner).isValidSignature(digest, signature) != 0x1626ba7e) {
+            revert InvalidContractSignature();
+        }
+        (bool ok, bytes memory ret) = permit.permitted.token
+            .call(abi.encodeWithSelector(0x23b872dd, owner, details.to, details.requestedAmount));
+        if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) revert TransferFromFailed();
+    }
+
+    function witnessDigest(
+        address spender,
+        PermitTransferFrom memory permit,
+        bytes32 witness,
+        string memory witnessTypeString
+    ) public view returns (bytes32) {
+        bytes32 typeHash = keccak256(abi.encodePacked(WITNESS_STUB, witnessTypeString));
+        bytes32 permissions = keccak256(abi.encode(TOKEN_PERMISSIONS_TYPEHASH, permit.permitted));
+        bytes32 dataHash = keccak256(
+            abi.encode(typeHash, permissions, spender, permit.nonce, permit.deadline, witness)
+        );
+        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, dataHash));
+    }
+}
+
+/// @dev A standard ERC-20 with EIP-2612 permits (OpenZeppelin).
+contract PermitToken is ERC20, ERC20Permit {
+    constructor() ERC20("Permit USD", "PUSD") ERC20Permit("Permit USD") { }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
+/// @dev A payout wallet that burns every unit of gas it is given.
+contract GasBurnerWallet {
+    receive() external payable {
+        while (true) { }
+    }
+}
+
+/// @dev An ERC-1155 recipient that accepts, rejects, or calls back into `target` on receipt.
+///      `bubble` re-raises a failed callback; otherwise its outcome is recorded.
+contract HostileReceiver is IERC1155Receiver {
+    enum Mode {
+        Accept,
+        Reject,
+        Reenter
+    }
+
+    Mode public mode;
+    bool public bubble;
+    address public target;
+    bytes public data;
+    bool public lastOk;
+    bytes public lastResult;
+
+    function configure(Mode mode_, bool bubble_, address target_, bytes calldata data_) external {
+        mode = mode_;
+        bubble = bubble_;
+        target = target_;
+        data = data_;
+    }
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
+        external
+        returns (bytes4)
+    {
+        if (mode == Mode.Reject) revert("rejected");
+        if (mode == Mode.Reenter) {
+            (lastOk, lastResult) = target.call(data);
+            if (!lastOk && bubble) {
+                bytes memory result = lastResult;
+                assembly ("memory-safe") {
+                    revert(add(result, 0x20), mload(result))
+                }
+            }
+        }
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(
+        address,
+        address,
+        uint256[] calldata,
+        uint256[] calldata,
+        bytes calldata
+    ) external pure returns (bytes4) {
+        return this.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC1155Receiver).interfaceId || interfaceId == 0x01ffc9a7;
+    }
+
+    receive() external payable { }
+}
