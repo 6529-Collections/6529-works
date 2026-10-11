@@ -14,7 +14,8 @@ copies it, substitutes the deployed and Safe addresses, and passes the result to
 | `holders` | `cfg.grants`: hot and cold admin Safes, three guardian Safes (`GUARDIAN` and `PAUSER` only), two curation signers, and one key each for storage, platform and curator. |
 | `contracts` | `cfg.targets`: each v1 contract's governed selectors, each with its signature, role, delay class and delay. `genesisOnly` lists one-shot binds that stay unmapped (`ADMIN`) and run once in the wiring. |
 | `wiring` | The genesis calls `configure` executes as zero-delay admin before mapping any selector: the one-shot binds, the admitted minters and the sale adapters' targets. |
-| `pendingLanes` | Contracts whose implementation-only setters, or initial installs, are not yet on `main`. |
+| `pendingLanes` | Contracts whose implementations, and so any implementation-only setters, are not yet on `main`. |
+| `initialInstalls` | Which initial settings are constructor arguments and which are wiring (below). |
 | `unusedRoles` | Roles with no v1 selector: `MINTER` (adapters are admitted per token instead) and `KEEPER`. |
 
 ## Sources
@@ -24,9 +25,31 @@ The selector classes follow:
 - the governance map in [docs/architecture.md](../docs/architecture.md);
 - the NatSpec of the interfaces in [src/interfaces](../src/interfaces).
 
-Where those disagree, the accepted ADR wins. The architecture map lists
-`AssetAllowlist.admitAsset` and `setDefaultCurrency` under `PARAMETER_SETTER`, while ADR 0002
-and the economics lane put them in the 14-day funds class, as this file does.
+Where they disagree, the accepted ADR wins.
+
+## Initial installs: constructor or wiring
+
+The deploy script follows one rule:
+
+- **Constructor arguments:** anything immutable, or installed once with a pinned code hash:
+  - the curation verifier in the `PackageRegistry`;
+  - the resolver and escrow in each sale adapter;
+  - the consolidation source in the `ArtistRegistry`;
+  - the artist resolver in the `StatementLog`;
+  - the initial economics and default license in the `EconomicsResolver`.
+
+  Changing any of them later goes through its governed setter and delay class.
+- **Wiring (`wiring` in this file):** calls that connect contracts deployed independently:
+  - the one-shot `bind*` calls;
+  - the admitted-minter grants (`setAdmittedMinter`);
+  - the sale adapters' targets (`setTarget`).
+
+  `configure` executes them as zero-delay admin before mapping selectors.
+- **Grants:** curation signers become active when they are granted `CURATION_SIGNER` in
+  `holders`. The verifier keeps no signer list to wire.
+
+`ArtistRegistry.bindFederationRegistry` is deliberately not wired. The federation registry
+ships in v1.1, and binding it then is a 30-day `ADMIN` action.
 
 ## Checks
 

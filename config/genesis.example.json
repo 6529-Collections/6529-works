@@ -355,9 +355,9 @@
     },
     {
       "name": "PackageRegistry",
-      "interface": "IPackageRegistry",
+      "interface": "PackageRegistry",
       "address": "0x000000000000000000000000000000000000a004",
-      "status": "pending lane: curation (interface on main)",
+      "status": "implemented on main",
       "functions": [
         {
           "signature": "revokePackage(bytes32,bytes32)",
@@ -387,9 +387,9 @@
     },
     {
       "name": "CurationVerifier",
-      "interface": "ICurationSignerVerifier",
+      "interface": "Eip712CurationVerifier",
       "address": "0x000000000000000000000000000000000000a005",
-      "status": "pending lane: curation (interface on main)",
+      "status": "implemented on main",
       "functions": [
         {
           "signature": "disableSigner(address)",
@@ -668,23 +668,30 @@
     },
     {
       "name": "EconomicsResolver",
-      "interface": "IEconomicsResolver",
+      "interface": "EconomicsResolver",
       "address": "0x000000000000000000000000000000000000a00b",
-      "status": "pending lane: economics resolver (interface on main)",
+      "status": "implemented on main",
       "functions": [
         {
-          "signature": "setDefaultLicense(bytes32,(string,bytes32),(string,bytes32))",
-          "selector": "0xc4b69759",
+          "signature": "setFeeTerms(bytes32,uint64,address,uint32)",
+          "selector": "0x9a8fce26",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
+        },
+        {
+          "signature": "setRoyaltyRate(bytes32,uint64,uint32)",
+          "selector": "0x6e58f7af",
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800
         },
         {
-          "signature": "setEconomics(bytes32,(address,uint32,uint32),(address,uint32,uint32))",
-          "selector": "0xcac20223",
-          "role": "FUNDS_SETTER",
-          "class": "funds",
-          "delay": 1209600
+          "signature": "setDefaultLicense(bytes32,uint64,(string,bytes32))",
+          "selector": "0x387226d6",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
         }
       ],
       "genesisOnly": []
@@ -921,24 +928,14 @@
       "note": "As above."
     },
     {
-      "contract": "PackageRegistry, CurationVerifier",
-      "lane": "curation",
-      "note": "Initial verifier install: constructor argument or a genesis setVerifier call; enableSigner for the genesis signers if the verifier does not take them in its constructor."
-    },
-    {
       "contract": "ArtistRegistry",
       "lane": "identity",
-      "note": "Consolidation source install: constructor argument or a genesis setConsolidationSource call."
+      "note": "The consolidation source is a constructor argument (an immutable install), not wiring."
     },
     {
       "contract": "EnglishAuction, FixedPriceSale, DutchSale",
       "lane": "auction, sales",
-      "note": "Initial configuration (clock, opening bid, floors) is expected in constructors; any genesis-only setter joins the wiring list."
-    },
-    {
-      "contract": "EconomicsResolver",
-      "lane": "economics resolver",
-      "note": "Initial economics and default license per product, constructor or genesis wiring."
+      "note": "The resolver, escrow and initial configuration are constructor arguments; only the sale targets are wiring."
     },
     {
       "contract": "EntropyModule",
@@ -951,6 +948,11 @@
       "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry and the adapters' setFederationRegistry run when it ships (30-day class)."
     }
   ],
+  "initialInstalls": {
+    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics and default license in the EconomicsResolver.",
+    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter) and sale targets (setTarget).",
+    "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
+  },
   "unusedRoles": [
     {
       "role": "MINTER",
