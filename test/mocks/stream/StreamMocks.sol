@@ -5,12 +5,20 @@ import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Rec
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
+import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { CURRENCY_DEFAULT, Payee, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import {
+    CURRENCY_DEFAULT,
+    Payee,
+    SHARE_DENOMINATOR,
+    WorkTerms
+} from "src/interfaces/types/EconomicsTypes.sol";
 import { MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -131,9 +139,11 @@ contract MockEconomics is Supports165 {
 
     WorkTerms internal _terms;
     mapping(address => bool) public blocked;
+    address public immutable splitFactory;
 
-    constructor(WorkTerms memory terms) {
+    constructor(WorkTerms memory terms, address factory) {
         _terms = terms;
+        splitFactory = factory;
     }
 
     function _interface() internal pure override returns (bytes4) {
@@ -161,6 +171,12 @@ contract MockEconomics is Supports165 {
 
 /// @notice Economics that returns constants, for measuring Stream's own gas.
 contract ConstantEconomics is Supports165 {
+    address public immutable splitFactory;
+
+    constructor(address factory) {
+        splitFactory = factory;
+    }
+
     function _interface() internal pure override returns (bytes4) {
         return type(IEconomicsResolver).interfaceId;
     }
@@ -171,6 +187,32 @@ contract ConstantEconomics is Supports165 {
 
     function resolveCurrency(bytes32, address) external pure returns (address) {
         return address(0);
+    }
+}
+
+/// @notice Split factory mock: `walletFor` accepts only canonical lists (sorted strictly by
+///         `(artistId, account)`, nonzero shares summing to 100,000) and derives an address.
+contract MockSplitFactory {
+    error InvalidPayees();
+
+    function walletFor(Payee[] calldata payees, bytes32 salt) external pure returns (address) {
+        uint256 sum;
+        for (uint256 i; i < payees.length; ++i) {
+            Payee calldata p = payees[i];
+            if (p.share == 0 || (p.artistId == 0) == (p.account == address(0))) {
+                revert InvalidPayees();
+            }
+            if (i != 0) {
+                Payee calldata q = payees[i - 1];
+                if (q.artistId > p.artistId || (q.artistId == p.artistId && q.account >= p.account))
+                {
+                    revert InvalidPayees();
+                }
+            }
+            sum += p.share;
+        }
+        if (sum != SHARE_DENOMINATOR) revert InvalidPayees();
+        return address(uint160(uint256(keccak256(abi.encode("wallet", payees, salt)))));
     }
 }
 
@@ -223,15 +265,23 @@ contract MockRenderer is IRenderer {
 
 /// @notice A sale adapter mock holding the MINTER role: mints into its own custody, burns and
 ///         hands tokens out.
-contract MockSaleAdapter is IERC721Receiver {
+contract MockSaleAdapter is IERC721Receiver, Supports165 {
     bytes32 public saleKind;
 
     constructor(bytes32 kind) {
         saleKind = kind;
     }
 
+    function _interface() internal pure override returns (bytes4) {
+        return type(ISaleAdapter).interfaceId;
+    }
+
     function setSaleKind(bytes32 kind) external {
         saleKind = kind;
+    }
+
+    function settle(IStream stream, uint256 tokenId) external {
+        stream.markPrimarySettled(tokenId);
     }
 
     function start(IMintTarget token, bytes calldata data)
@@ -277,8 +327,12 @@ contract MockSaleAdapter is IERC721Receiver {
 
 /// @notice An auction stand-in whose `saleKind` is a constant, as a real adapter's is, so a gas
 ///         measurement does not include a mock's storage read.
-contract ConstantAuction is IERC721Receiver {
+contract ConstantAuction is IERC721Receiver, Supports165 {
     bytes32 public constant saleKind = keccak256("ENGLISH_AUCTION");
+
+    function _interface() internal pure override returns (bytes4) {
+        return type(ISaleAdapter).interfaceId;
+    }
 
     function startMeasured(IMintTarget token, bytes calldata data) external returns (uint256 used) {
         used = gasleft();
@@ -296,11 +350,17 @@ contract ConstantAuction is IERC721Receiver {
 }
 
 /// @notice A records-satellite mock: holds renderer pins and drives the core's hooks.
-contract MockWorkRecords {
+contract MockWorkRecords is Supports165 {
     mapping(uint256 => address) public pinnedRenderer;
+    mapping(uint256 => bool) public isOpen;
+
+    function _interface() internal pure override returns (bytes4) {
+        return type(IWorkRecords).interfaceId;
+    }
 
     function setPin(uint256 tokenId, address renderer) external {
         pinnedRenderer[tokenId] = renderer;
+        isOpen[tokenId] = true;
     }
 
     function setRoyaltyRate(IStream stream, uint256 tokenId, uint32 rate) external {
@@ -312,9 +372,23 @@ contract MockWorkRecords {
     }
 }
 
-/// @notice An Editions mock: links masters and counts master-update notifications.
-contract MockEditions {
+/// @notice An Editions mock: links masters and records the hooks Stream and WorkRecords call.
+contract MockEditions is Supports165 {
     mapping(uint256 => uint256) public notified;
+    mapping(uint256 => uint32) public rateOf;
+    uint256 public notifiedAll;
+
+    function _interface() internal pure override returns (bytes4) {
+        return type(IEditions).interfaceId;
+    }
+
+    function notifyAllUpdated() external {
+        ++notifiedAll;
+    }
+
+    function setRoyaltyRate(uint256 editionId, uint32 rate) external {
+        rateOf[editionId] = rate;
+    }
 
     function link(IStream stream, uint256 tokenId, uint256 editionId) external {
         stream.linkEdition(tokenId, editionId);

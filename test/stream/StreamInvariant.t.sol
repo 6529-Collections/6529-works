@@ -40,7 +40,7 @@ contract StreamInvariantTest is RecordsFixture {
         for (uint256 i; i < 4; ++i) {
             handler.addSpareRecord(_record(1000 + i));
         }
-        bytes4[] memory selectors = new bytes4[](13);
+        bytes4[] memory selectors = new bytes4[](15);
         selectors[0] = handler.mint.selector;
         selectors[1] = handler.burn.selector;
         selectors[2] = handler.deliver.selector;
@@ -54,6 +54,8 @@ contract StreamInvariantTest is RecordsFixture {
         selectors[10] = handler.swapRenderer.selector;
         selectors[11] = handler.addLocator.selector;
         selectors[12] = handler.warp.selector;
+        selectors[13] = handler.settle.selector;
+        selectors[14] = handler.forgeSettle.selector;
         targetContract(address(handler));
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
@@ -95,6 +97,15 @@ contract StreamInvariantTest is RecordsFixture {
             if (handler.burned(id)) continue;
             assertEq(stream.work(id).royaltyReceiver, handler.ghostReceiver(id));
             assertEq(stream.work(id).royaltyRate, handler.ghostRate(id));
+        }
+    }
+
+    /// @dev Only the minting adapter's mark settles a primary sale; transfers never do.
+    function invariant_primarySaleSettledOnlyByMintingAdapter() public view {
+        uint256 minted = stream.totalMinted();
+        for (uint256 id = 1; id <= minted; ++id) {
+            bool expected = !handler.burned(id) && handler.settled(id);
+            assertEq(stream.primarySaleSettled(id), expected);
         }
     }
 

@@ -8,6 +8,7 @@ import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC16
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IEditions } from "../interfaces/IEditions.sol";
 import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
@@ -17,6 +18,7 @@ import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import {
     PRODUCT_STREAM,
+    Payee,
     SHARE_DENOMINATOR,
     WorkTerms
 } from "../interfaces/types/EconomicsTypes.sol";
@@ -30,39 +32,51 @@ import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 
+/// @notice The one function 6529 Stream uses on the economics lane's split factory.
+/// @dev An exact subset of `ISplitFactory` (PR #11): `Payee` mirrors `ISplitWallet.Payee`, so
+///      the selector and encoding match. TODO(integration): import `ISplitFactory` once merged.
+interface ISplitWalletPredictor {
+    /// @notice The wallet address for canonical `payees` and `salt`, deployed or not; reverts
+    ///         for a payee list no wallet would accept.
+    function walletFor(Payee[] calldata payees, bytes32 salt) external view returns (address);
+}
+
 /// @title Stream
 /// @notice 6529 Stream core: the one shared, network-curated ERC-721 holding every curated 1/1
-///         (ADR 0001 sections 1, 4, 7 and 12; integrator decisions D1, D3, D4, D6 and D13).
+///         (ADR 0001 sections 1, 4, 7 and 12; integrator decisions D1, D3, D4, D6, D13 and
+///         E1-E11).
 /// @dev Holds ownership, the terms locked at mint, collections and serials, the edition link and
 ///      the marketplace metadata, and forwards `tokenURI` to the work's renderer. Records,
-///      licenses, finalize and locators live in the bound `IWorkRecords` satellite.
+///      licenses, seeds, finalize and locators live in the bound `IWorkRecords` satellite.
 ///
-///      Storage is shaped by the 300K auction-start budget. A mint writes the ERC-721 owner and
-///      balance, one shared counter word, the collection's counter word and four work words:
-///      the seller, serial, collection, kind, seed policy and flags; the royalty receiver, rate
-///      and fee-terms index; the lead artist ID; the item hash. An ARTIST seed adds one word.
-///      The fee recipient, fee share and currency a sale locks are stored once per distinct
-///      combination and referenced by index, so `primaryTerms` returns a minted token's locked
-///      terms (the auction reads them back at settlement) without a word per token.
-///      `royaltyInfo` reads one word and makes no external call: it can run out of gas and
-///      revert, but never return a zero royalty for lack of gas (RC1's Medium finding).
+///      Storage is shaped by the auction-start budget (350K per steady-state start, ADR 0003). A
+///      mint writes the ERC-721 owner and balance, one shared counter word, the collection's
+///      counter word and three work words: the seller, serial, collection, kind, seed policy and
+///      flags; the lead artist ID, royalty rate, fee share, fee-recipient index and minting
+///      adapter's index; the item hash. Fee recipients are stored once each and referenced by
+///      index. The ERC-2981 receiver is derived, not stored: the seller itself when the fee share
+///      is zero, otherwise the split factory's salt-zero wallet for the canonical payee list
+///      `(feeRecipient: feeShare, seller: rest)`. `royaltyInfo` makes that one plain view call
+///      and no other: it can run out of gas and revert, but never return a zero royalty for
+///      lack of gas (RC1's Medium finding).
 ///
-///      Trust: the package registry, artist registry, economics resolver and entropy module are
-///      immutable. Sale adapters are trusted through the MINTER role; the records satellite and
-///      6529 Editions through the one-shot `bind`.
+///      Trust: the package registry, artist registry, economics resolver, split factory and
+///      entropy module are immutable. Sale adapters are admitted one by one by a governed action
+///      (`setAdmittedMinter`); the records satellite and 6529 Editions are bound once each.
 contract Stream is ERC721, AccessManaged, IStream {
     /// @notice The longest accepted collection name, in bytes.
     uint256 public constant MAX_NAME_BYTES = 256;
 
-    /// @notice A dependency lacks code or the required ERC-165 support, or is an EIP-7702
-    ///         delegated account.
-    error InvalidDependency(address dependency);
+    bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
+    bytes32 private constant EDITIONS = "EDITIONS";
+
     /// @notice The collection name is empty, longer than `MAX_NAME_BYTES` or not UTF-8.
     error InvalidCollectionName();
     /// @notice The royalty rate exceeds 100,000.
     error InvalidRoyaltyRate(uint32 rate);
 
-    /// @dev A token's four words.
+    /// @dev A token's three words. `feeRecipientId` and `minterId` index `_feeRecipients` and
+    ///      the admitted minters, both from 1.
     struct TokenData {
         address seller;
         uint32 serial;
@@ -71,18 +85,19 @@ contract Stream is ERC721, AccessManaged, IStream {
         SeedPolicy seedPolicy;
         bool primarySaleSettled;
         bool editionLinked;
-        address royaltyReceiver;
-        uint32 royaltyRate;
-        uint32 feeTermsId;
         uint160 artistId;
+        uint32 royaltyRate;
+        uint32 feeShare;
+        uint16 feeRecipientId;
+        uint16 minterId;
         bytes32 itemHash;
     }
 
-    /// @dev Fee terms and currency locked at mint, shared by every token minted under them.
-    struct FeeTerms {
-        address feeRecipient;
-        uint32 feeShare;
-        address currency;
+    /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
+    ///      the sales it started.
+    struct Minter {
+        bool admitted;
+        uint16 id;
     }
 
     /// @dev `exists` keeps the counter word nonzero, so each mint pays a warm rewrite.
@@ -97,6 +112,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint64 minted;
         uint64 burned;
         uint32 collections;
+        uint16 minters;
     }
 
     /// @inheritdoc IStream
@@ -107,6 +123,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     address public immutable economics;
     /// @inheritdoc IStream
     address public immutable entropyModule;
+    /// @notice The split factory that derives royalty receivers (the economics resolver's).
+    address public immutable splitFactory;
 
     /// @inheritdoc IStream
     address public workRecords;
@@ -118,18 +136,20 @@ contract Stream is ERC721, AccessManaged, IStream {
     Counts private _counts;
     address private _owner;
     string private _contractURI;
-    FeeTerms[] private _feeTerms;
-    mapping(bytes32 key => uint32 id) private _feeTermsIds;
+    address[] private _feeRecipients;
+    mapping(address recipient => uint16 id) private _feeRecipientIds;
+    mapping(address adapter => Minter) private _minters;
     mapping(uint256 collectionId => CollectionData) private _collections;
     mapping(uint256 tokenId => TokenData) private _tokens;
-    mapping(uint256 tokenId => bytes32) private _seeds;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param packageRegistry_ The package registry `mint` consumes items from.
     /// @param artistRegistry_ The artist registry resolving each work's artist.
-    /// @param economics_ The economics resolver whose terms works lock at mint.
+    /// @param economics_ The economics resolver whose terms works lock at mint; its split
+    ///        factory derives royalty receivers.
     /// @param entropyModule_ The VRF entropy module, or zero if VRF works are not supported.
     /// @param renderer_ The initial default renderer.
+    /// @param rendererCodeHash The code hash `renderer_` must have.
     /// @param owner_ The initial marketplace owner.
     constructor(
         address authority_,
@@ -138,6 +158,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         address economics_,
         address entropyModule_,
         address renderer_,
+        bytes32 rendererCodeHash,
         address owner_
     ) ERC721("6529 Stream", "STREAM") AccessManaged(authority_) {
         _requireInterface(packageRegistry_, type(IPackageRegistry).interfaceId);
@@ -146,30 +167,34 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (entropyModule_ != address(0)) {
             _requireInterface(entropyModule_, type(IEntropyModule).interfaceId);
         }
-        _requireInterface(renderer_, type(IRenderer).interfaceId);
+        _requireRenderer(renderer_, rendererCodeHash);
+        address factory = IEconomicsResolver(economics_).splitFactory();
+        _requireContract(factory);
         packageRegistry = packageRegistry_;
         artistRegistry = artistRegistry_;
         economics = economics_;
         entropyModule = entropyModule_;
+        splitFactory = factory;
         defaultRenderer = renderer_;
         _owner = owner_;
-        emit DefaultRendererSet(address(0), renderer_);
+        emit DefaultRendererSet(address(0), renderer_, rendererCodeHash);
         emit OwnershipTransferred(address(0), owner_);
     }
 
     // ------------------------------------------------------------------------------- minting
 
     /// @inheritdoc IMintTarget
-    /// @dev MINTER role. The adapter mints into its own custody (`to == msg.sender`) and passes
-    ///      `id = 0`, `amount = 1` and `data = abi.encode(StreamMintRequest)`. The registry checks
-    ///      the approval, consents, move signature, single use and content uniqueness; this
-    ///      contract checks the Stream rules and the delivered VRF seed, and assigns the next
-    ///      token ID and collection serial.
+    /// @dev Admitted minters only. The adapter mints into its own custody (`to == msg.sender`)
+    ///      and passes `id = 0`, `amount = 1` and `data = abi.encode(StreamMintRequest)`. The
+    ///      registry checks the approval, consents, move signature, single use and content
+    ///      uniqueness; this contract checks the Stream rules and the delivered VRF seed, and
+    ///      assigns the next token ID and collection serial.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
-        restricted
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
+        Minter memory minter = _minters[msg.sender];
+        if (!minter.admitted) revert NotAdmittedMinter(msg.sender);
         if (to != msg.sender || id != 0 || amount != 1) revert InvalidMintRequest();
         bytes32 kind = ISaleAdapter(msg.sender).saleKind();
         if (kind != SaleKind.ENGLISH_AUCTION) {
@@ -186,14 +211,15 @@ contract Stream is ERC721, AccessManaged, IStream {
         ) revert SeedNotDelivered(itemHash);
         WorkTerms memory w;
         (terms, w) = _quote(item, artistId);
-        tokenId = _store(req, itemHash, artistId, w, _feeTermsId(terms));
+        tokenId = _store(req, itemHash, artistId, w, minter.id);
         _mint(to, tokenId);
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev For a minted token, the locked terms with the creator resolved now (the auction reads
-    ///      them at settlement). For `id` 0, a preview from `data`; it resolves the lead artist
-    ///      through `artistIdOf`, so it reverts while the lead artist has no identity.
+    /// @dev For a minted token, only the sale kind, seller, fee terms and the creator (resolved
+    ///      now): the auction reads them at settlement and owns the currency. For `id` 0, a
+    ///      preview from `data`; it resolves the lead artist through `artistIdOf`, so it reverts
+    ///      while the lead artist has no identity.
     function primaryTerms(uint256 id, bytes calldata data)
         external
         view
@@ -201,12 +227,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     {
         if (id != 0) {
             TokenData storage t = _live(id);
-            FeeTerms storage f = _feeTerms[t.feeTermsId - 1];
             terms.saleKind = SaleKind.ENGLISH_AUCTION;
-            terms.currency = f.currency;
             terms.seller = t.seller;
-            terms.feeRecipient = f.feeRecipient;
-            terms.feeShare = f.feeShare;
+            terms.feeRecipient = _feeRecipients[t.feeRecipientId - 1];
+            terms.feeShare = t.feeShare;
             terms.creator = IArtistRegistry(artistRegistry).authorityOf(t.artistId);
             return terms;
         }
@@ -218,14 +242,43 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev MINTER role, only for the caller's own token: the auction custody path after an
-    ///      upheld dispute (ADR 0001 section 12). The ID is never reused.
-    function burn(uint256 id, uint256 amount) external restricted {
+    /// @dev Admitted minters only, and only for the caller's own token: the auction custody
+    ///      path after an upheld dispute (ADR 0001 section 12). The ID is never reused.
+    function burn(uint256 id, uint256 amount) external {
+        if (!_minters[msg.sender].admitted) revert NotAdmittedMinter(msg.sender);
         address holder = _ownerOf(id);
         if (amount != 1) revert InvalidMintRequest();
         if (holder != msg.sender) revert ERC721IncorrectOwner(msg.sender, id, holder);
         ++_counts.burned;
         _burn(id);
+    }
+
+    /// @inheritdoc IMintTarget
+    function isAdmittedMinter(address adapter) external view returns (bool) {
+        return _minters[adapter].admitted;
+    }
+
+    /// @inheritdoc IMintTarget
+    /// @dev SUCCESSOR_SETTER role. Admission checks code, ERC-165 for `ISaleAdapter` and no
+    ///      EIP-7702 delegation; removal stops new mints and burns, not settlement.
+    function setAdmittedMinter(address adapter, bool admitted) external restricted {
+        Minter storage minter = _minters[adapter];
+        if (admitted) {
+            _requireInterface(adapter, type(ISaleAdapter).interfaceId);
+            if (minter.id == 0) minter.id = ++_counts.minters;
+        }
+        minter.admitted = admitted;
+        emit AdmittedMinterSet(adapter, admitted);
+    }
+
+    /// @inheritdoc IStream
+    /// @dev A repeat is a no-op.
+    function markPrimarySettled(uint256 tokenId) external {
+        TokenData storage t = _live(tokenId);
+        if (_minters[msg.sender].id != t.minterId) revert UnboundCaller(msg.sender);
+        if (t.primarySaleSettled) return;
+        t.primarySaleSettled = true;
+        emit PrimarySaleSettled(tokenId);
     }
 
     // ----------------------------------------------------------------- collections and works
@@ -281,7 +334,7 @@ contract Stream is ERC721, AccessManaged, IStream {
             t.kind,
             t.seedPolicy,
             t.seller,
-            t.royaltyReceiver,
+            _royaltyReceiver(t),
             t.royaltyRate
         );
     }
@@ -296,25 +349,17 @@ contract Stream is ERC721, AccessManaged, IStream {
         return _ownerOf(tokenId) != address(0) && _tokens[tokenId].primarySaleSettled;
     }
 
-    /// @inheritdoc IStream
-    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
-        TokenData storage t = _live(tokenId);
-        policy = t.seedPolicy;
-        if (policy == SeedPolicy.ARTIST) seed = _seeds[tokenId];
-        else if (policy == SeedPolicy.VRF) seed = IEntropyModule(entropyModule).seedOf(t.itemHash);
-    }
-
     /// @inheritdoc IERC2981
-    /// @dev One storage word and no external call. `rate <= 100,000` (checked when stored), so
-    ///      `(p / D) * rate + (p % D) * rate / D` is exactly `floor(p * rate / D)` and cannot
-    ///      overflow for any `salePrice` (RC1's overflow-free form).
+    /// @dev `rate <= 100,000` (checked when stored), so `(p / D) * rate + (p % D) * rate / D` is
+    ///      exactly `floor(p * rate / D)` and cannot overflow for any `salePrice` (RC1's
+    ///      overflow-free form).
     function royaltyInfo(uint256 tokenId, uint256 salePrice)
         external
         view
         returns (address receiver, uint256 royaltyAmount)
     {
         TokenData storage t = _live(tokenId);
-        receiver = t.royaltyReceiver;
+        receiver = _royaltyReceiver(t);
         uint256 rate = t.royaltyRate;
         unchecked {
             // Exact: the remainder term restores what the first division drops.
@@ -327,20 +372,27 @@ contract Stream is ERC721, AccessManaged, IStream {
     // ------------------------------------------------------------------------------- rendering
 
     /// @inheritdoc IStream
-    function setDefaultRenderer(address expected, address next) external restricted {
+    function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash)
+        external
+        restricted
+    {
         if (defaultRenderer != expected) revert ExpectedValueMismatch();
-        _requireInterface(next, type(IRenderer).interfaceId);
+        _requireRenderer(next, nextCodeHash);
         defaultRenderer = next;
-        emit DefaultRendererSet(expected, next);
+        emit DefaultRendererSet(expected, next, nextCodeHash);
         uint256 minted = _counts.minted;
         if (minted != 0) emit BatchMetadataUpdate(1, minted);
+        address bound = editions;
+        if (bound != address(0)) IEditions(bound).notifyAllUpdated();
     }
 
     /// @inheritdoc IStream
     function rendererOf(uint256 tokenId) public view returns (address renderer) {
         _live(tokenId);
-        address records = workRecords;
-        if (records != address(0)) renderer = IWorkRecords(records).pinnedRenderer(tokenId);
+        IWorkRecords records = IWorkRecords(workRecords);
+        if (address(records) != address(0) && records.isOpen(tokenId)) {
+            renderer = records.pinnedRenderer(tokenId);
+        }
         if (renderer == address(0)) renderer = defaultRenderer;
     }
 
@@ -353,17 +405,23 @@ contract Stream is ERC721, AccessManaged, IStream {
     // ------------------------------------------------------------------------ satellite hooks
 
     /// @inheritdoc IStream
-    function bind(address workRecords_, address editions_) external restricted {
-        if (workRecords != address(0)) revert AlreadyBound();
-        _requireContract(workRecords_);
-        _requireContract(editions_);
-        workRecords = workRecords_;
-        editions = editions_;
-        emit Bound(workRecords_, editions_);
+    function bindWorkRecords(address target) external restricted {
+        if (workRecords != address(0)) revert AlreadyBound(WORK_RECORDS);
+        _requireInterface(target, type(IWorkRecords).interfaceId);
+        workRecords = target;
+        emit Bound(WORK_RECORDS, target);
     }
 
     /// @inheritdoc IStream
-    /// @dev The receiver (the payees' split wallet) is fixed at mint (D19).
+    function bindEditions(address target) external restricted {
+        if (editions != address(0)) revert AlreadyBound(EDITIONS);
+        _requireInterface(target, type(IEditions).interfaceId);
+        editions = target;
+        emit Bound(EDITIONS, target);
+    }
+
+    /// @inheritdoc IStream
+    /// @dev The payees (and so the receiver) are fixed at mint; only the rate changes (D19).
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
         _onlyBound(workRecords);
         TokenData storage t = _live(tokenId);
@@ -440,21 +498,6 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     // -------------------------------------------------------------------------------- internal
 
-    /// @dev Sets the primary-sale flag on a token's first transfer: tokens are minted into the
-    ///      adapter's custody, so the first transfer that is neither a mint nor a burn is the
-    ///      settlement (to the winner or, with no bids, to the artist).
-    function _update(address to, uint256 tokenId, address auth)
-        internal
-        override
-        returns (address from)
-    {
-        from = super._update(to, tokenId, auth);
-        if (from != address(0) && to != address(0)) {
-            TokenData storage t = _tokens[tokenId];
-            if (!t.primarySaleSettled) t.primarySaleSettled = true;
-        }
-    }
-
     /// @dev Views `data` as `abi.encode(StreamMintRequest)` in place. Member offsets are
     ///      bounds-checked by the compiler on access.
     function _request(bytes calldata data) private pure returns (StreamMintRequest calldata req) {
@@ -492,6 +535,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev The terms a work of `item` locks now, and the primary terms the adapter applies.
+    ///      The fee terms must yield a valid royalty payee list: a fee share below 100,000 with
+    ///      a fee recipient other than the seller, or no fee at all.
     function _quote(PackageItem calldata item, uint256 artistId)
         private
         view
@@ -500,8 +545,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         IEconomicsResolver resolver = IEconomicsResolver(economics);
         w = resolver.newWorkTerms(PRODUCT_STREAM, item.payees);
         if (
-            w.seller == address(0) || w.royaltyReceiver == address(0)
-                || w.royaltyRate > SHARE_DENOMINATOR || w.feeShare > SHARE_DENOMINATOR
+            w.seller == address(0) || w.royaltyRate > SHARE_DENOMINATOR
+                || w.feeShare >= SHARE_DENOMINATOR
+                || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == w.seller))
         ) revert InvalidMintRequest();
         terms.saleKind = SaleKind.ENGLISH_AUCTION;
         terms.currency = resolver.resolveCurrency(PRODUCT_STREAM, item.sale.currency);
@@ -511,27 +557,13 @@ contract Stream is ERC721, AccessManaged, IStream {
         terms.creator = IArtistRegistry(artistRegistry).authorityOf(artistId);
     }
 
-    /// @dev The index (plus one) of the terms' fee recipient, fee share and currency,
-    ///      registered on first use.
-    function _feeTermsId(PrimaryTerms memory terms) private returns (uint32 id) {
-        bytes32 key = keccak256(abi.encode(terms.feeRecipient, terms.feeShare, terms.currency));
-        id = _feeTermsIds[key];
-        if (id == 0) {
-            _feeTerms.push(FeeTerms(terms.feeRecipient, terms.feeShare, terms.currency));
-            // Fewer than 2^32 combinations can ever be registered (one per mint at most).
-            // forge-lint: disable-next-line(unsafe-typecast)
-            id = uint32(_feeTerms.length);
-            _feeTermsIds[key] = id;
-        }
-    }
-
-    /// @dev Assigns the next token ID and collection serial and writes the work words.
+    /// @dev Assigns the next token ID and collection serial and writes the three work words.
     function _store(
         StreamMintRequest calldata req,
         bytes32 itemHash,
         uint256 artistId,
         WorkTerms memory w,
-        uint32 feeTermsId
+        uint16 minterId
     ) private returns (uint256 tokenId) {
         PackageItem calldata item = req.item;
         tokenId = ++_counts.minted;
@@ -544,14 +576,14 @@ contract Stream is ERC721, AccessManaged, IStream {
         t.collectionId = uint32(item.collectionId);
         t.kind = item.kind;
         t.seedPolicy = item.seedPolicy;
-        t.royaltyReceiver = w.royaltyReceiver;
-        t.royaltyRate = w.royaltyRate;
-        t.feeTermsId = feeTermsId;
         // `mint` reverted for an artist ID wider than 160 bits.
         // forge-lint: disable-next-line(unsafe-typecast)
         t.artistId = uint160(artistId);
+        t.royaltyRate = w.royaltyRate;
+        t.feeShare = w.feeShare;
+        t.feeRecipientId = _feeRecipientId(w.feeRecipient);
+        t.minterId = minterId;
         t.itemHash = itemHash;
-        if (item.seedPolicy == SeedPolicy.ARTIST) _seeds[tokenId] = item.seed;
         emit WorkMinted(
             tokenId,
             item.collectionId,
@@ -566,8 +598,35 @@ contract Stream is ERC721, AccessManaged, IStream {
         );
     }
 
+    /// @dev The index (from 1) of a fee recipient, registered on first use. A new network fee
+    ///      recipient needs a governed economics change, so there are few; the checked counter
+    ///      reverts past 65,535.
+    function _feeRecipientId(address recipient) private returns (uint16 id) {
+        id = _feeRecipientIds[recipient];
+        if (id == 0) {
+            _feeRecipients.push(recipient);
+            id = uint16(_feeRecipients.length);
+            if (id != _feeRecipients.length) revert InvalidMintRequest();
+            _feeRecipientIds[recipient] = id;
+        }
+    }
+
+    /// @dev The seller with no fee; otherwise the split factory's salt-zero wallet for the
+    ///      canonical list (fixed payees sorted by address) of fee recipient and seller.
+    function _royaltyReceiver(TokenData storage t) private view returns (address) {
+        address seller = t.seller;
+        uint32 feeShare = t.feeShare;
+        if (feeShare == 0) return seller;
+        address recipient = _feeRecipients[t.feeRecipientId - 1];
+        Payee[] memory payees = new Payee[](2);
+        Payee memory fee = Payee(0, recipient, feeShare);
+        Payee memory rest = Payee(0, seller, SHARE_DENOMINATOR - feeShare);
+        (payees[0], payees[1]) = recipient < seller ? (fee, rest) : (rest, fee);
+        return ISplitWalletPredictor(splitFactory).walletFor(payees, bytes32(0));
+    }
+
     function _onlyBound(address bound) private view {
-        if (msg.sender != bound || bound == address(0)) revert NotBound(msg.sender);
+        if (msg.sender != bound || bound == address(0)) revert UnboundCaller(msg.sender);
     }
 
     /// @dev A live token: minted and not burned.
@@ -577,17 +636,21 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev Installed dependencies are contracts, never EIP-7702 delegated accounts (D8).
-    function _requireContract(address dependency) private view {
-        if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
-            revert InvalidDependency(dependency);
+    function _requireContract(address target) private view {
+        if (target.code.length == 0 || DelegatedEOA.isDelegated(target)) {
+            revert InvalidBinding(target);
         }
     }
 
-    /// @dev `_requireContract` plus ERC-165 support for `interfaceId` (D8).
-    function _requireInterface(address dependency, bytes4 interfaceId) private view {
-        _requireContract(dependency);
-        if (!ERC165Checker.supportsInterface(dependency, interfaceId)) {
-            revert InvalidDependency(dependency);
-        }
+    /// @dev `_requireContract` plus ERC-165 support for `interfaceId` (D8, E7).
+    function _requireInterface(address target, bytes4 interfaceId) private view {
+        _requireContract(target);
+        if (!ERC165Checker.supportsInterface(target, interfaceId)) revert InvalidBinding(target);
+    }
+
+    /// @dev A renderer: `_requireInterface` for `IRenderer` plus the pinned code hash (E6).
+    function _requireRenderer(address renderer, bytes32 codeHash) private view {
+        _requireInterface(renderer, type(IRenderer).interfaceId);
+        if (renderer.codehash != codeHash) revert InvalidBinding(renderer);
     }
 }

@@ -3,54 +3,63 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
+import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IRenderer } from "../interfaces/IRenderer.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { License, PackageItem } from "../interfaces/types/PackageTypes.sol";
+import { License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
+/// @notice The 6529 Editions hook a master's royalty-rate change calls (integrator decision).
+/// @dev TODO(integration): requested for `IEditions`; the editions lane implements it.
+interface IEditionRoyalty {
+    /// @notice Sets the edition of master `editionId`'s royalty rate. Bound work records only.
+    function setRoyaltyRate(uint256 editionId, uint32 rate) external;
+}
+
 /// @title WorkRecords
-/// @notice The records satellite of 6529 Stream: descriptive records, media, licenses, the state
-///         hash, finalize, on-chain completeness, amendments, renderer repins, locators and
-///         preferred location (ADR 0001 sections 8 and 10; integrator decisions D1, D2, D9, D10,
-///         D11, D19, D20 and D24).
+/// @notice The records satellite of 6529 Stream: descriptive records, media, licenses, seeds,
+///         the state hash, finalize, on-chain completeness, amendments, renderer repins,
+///         locators and preferred location (ADR 0001 sections 8, 9 and 10; integrator decisions
+///         D1, D2, D9, D10, D11, D19, D20, D24, E5, E6, E9 and E11).
 /// @dev Nothing here is written at mint, so none of it costs the auction start: a work's record
 ///      opens with the permissionless `openRecord`, checked against the item hash the core
-///      stored. The descriptive record is a content-store file; only its ID is stored. Media is
-///      stored as one word per file (its file ID) plus one word of packed roles; each file's
-///      SHA-256 is the content store's declaration, checked equal to the committed one at open.
-///      A license is stored only when it is not the deployment's default CC0 license.
+///      stored, and every per-token function reverts with `RecordNotOpen` until then. The
+///      descriptive record is a content-store file; only its ID is stored. Media is stored as
+///      one word per file (its file ID) plus one word of packed roles; each file's SHA-256 is the
+///      content store's declaration, checked equal to the committed one at open. A license is
+///      stored only when it is not the deployment's default CC0 license, and an ARTIST seed only
+///      for ARTIST works.
 ///
 ///      Consents are EIP-712 signatures in this contract's domain (`Typehashes`), each by a
 ///      party's current authority and bound to the work's state hash. Every applied change bumps
 ///      the version, so a consent can never apply twice or to a state its signers did not see;
 ///      a governed action carrying consents is scheduled through AccessManager, so its deadline
-///      must cover the delay. Royalty-rate changes are applied in the core through its bound
-///      hook, and every visible change asks the core to emit ERC-4906 and, for a linked edition
-///      master, tells 6529 Editions.
-contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
+///      must cover the delay. Royalty-rate changes are applied in the core (and a linked edition)
+///      through their bound hooks, and every visible change asks the core to emit ERC-4906 and
+///      tells 6529 Editions.
+contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     uint256 private constant NONE = type(uint256).max;
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
 
     /// @notice A dependency lacks code or the required ERC-165 support, or is an EIP-7702
     ///         delegated account.
     error InvalidDependency(address dependency);
-    /// @notice The license identifier is empty or longer than `Limits.MAX_LICENSE_ID_BYTES`, or
-    ///         the deployment's default license is not CC0.
+    /// @notice The license identifier is not 1 to `Limits.MAX_LICENSE_ID_BYTES` bytes of
+    ///         lowercase `[a-z0-9.+-]`, or the deployment's default license is not CC0.
     error InvalidLicense();
     /// @notice Only a finalized work has a renderer pin to replace.
     error WorkNotFinalized(uint256 tokenId);
-    /// @notice The renderer is not a contract supporting `IRenderer`.
-    error InvalidRenderer(address renderer);
     /// @notice The file has no registered locator and is not on-chain complete.
     error NoLocator(uint256 tokenId, bytes32 fileId);
 
@@ -73,6 +82,8 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
     address public immutable stream;
     /// @notice The artist registry resolving every party's current authority (the core's).
     address public immutable artistRegistry;
+    /// @notice The VRF entropy module (the core's), or zero.
+    address public immutable entropyModule;
     /// @notice The content store holding records, media and license texts (immutable).
     address public immutable contentStore;
     /// @notice The text file of the default CC0 license (immutable).
@@ -85,6 +96,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
     mapping(uint256 tokenId => RecordData) private _records;
     mapping(uint256 tokenId => bytes32[32]) private _media;
     mapping(uint256 tokenId => License) private _licenses;
+    mapping(uint256 tokenId => bytes32) private _seeds;
     mapping(uint256 collectionId => LocatorKind) private _collectionKinds;
     mapping(uint256 tokenId => mapping(bytes32 fileId => Locator[])) private _locators;
     mapping(uint256 tokenId => mapping(bytes32 fileId => uint256 indexPlusOne)) private _filePrefs;
@@ -92,7 +104,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
     /// @param authority_ The AccessManager governing this contract.
     /// @param stream_ The core token, which must bind this contract.
     /// @param contentStore_ The content store.
-    /// @param cc0 The default license, which must be CC0 (`WorksHashing.CC0_LICENSE_KEY`).
+    /// @param cc0 The default license, which must be CC0 (`cc0-1.0`).
     constructor(address authority_, address stream_, address contentStore_, License memory cc0)
         AccessManaged(authority_)
         EIP712(Typehashes.WORK_RECORDS_NAME, Typehashes.DOMAIN_VERSION)
@@ -102,11 +114,15 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
             revert InvalidDependency(stream_);
         }
         _requireContract(contentStore_);
-        if (WorksHashing.licenseKey(cc0.spdxId) != WorksHashing.CC0_LICENSE_KEY) {
+        if (
+            !_validSpdx(cc0.spdxId)
+                || WorksHashing.licenseKey(cc0.spdxId) != WorksHashing.CC0_LICENSE_KEY
+        ) {
             revert InvalidLicense();
         }
         stream = stream_;
         artistRegistry = IStream(stream_).artistRegistry();
+        entropyModule = IStream(stream_).entropyModule();
         contentStore = contentStore_;
         cc0TextFileId = cc0.textFileId;
         _cc0SpdxId = cc0.spdxId;
@@ -121,13 +137,11 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         RecordData storage r = _records[tokenId];
         if (r.opened) revert RecordAlreadyOpen(tokenId);
         uint256 files = media.length;
-        uint256 spdx = bytes(item.license.spdxId).length;
         if (
             WorksHashing.itemHashCalldata(item) != IStream(stream).work(tokenId).itemHash
                 || files == 0 || files > Limits.MAX_MEDIA_FILES
                 || WorksHashing.mediaHash(media) != item.mediaHash
-                || media[0].sha256Hash != item.contentHash || spdx == 0
-                || spdx > Limits.MAX_LICENSE_ID_BYTES
+                || media[0].sha256Hash != item.contentHash || !_validSpdx(item.license.spdxId)
         ) revert InvalidRecordData(tokenId);
         _requireRecordFile(item.recordFileId);
         uint256 roles;
@@ -152,6 +166,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
             r.customLicense = true;
             _licenses[tokenId] = item.license;
         }
+        if (item.seedPolicy == SeedPolicy.ARTIST) _seeds[tokenId] = item.seed;
         emit RecordOpened(tokenId, item.recordFileId, item.mediaHash);
         _refresh(tokenId);
     }
@@ -201,6 +216,11 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
+    function isOpen(uint256 tokenId) external view returns (bool) {
+        return _records[tokenId].opened;
+    }
+
+    /// @inheritdoc IWorkRecords
     function record(uint256 tokenId) external view returns (RecordInfo memory) {
         RecordData storage r = _open(tokenId);
         return RecordInfo(
@@ -208,7 +228,6 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
             r.mediaHash,
             WorksHashing.licenseKey(licenseOf(tokenId).spdxId),
             r.version,
-            true,
             r.finalized,
             r.onChainComplete,
             r.renderer
@@ -258,7 +277,19 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     function pinnedRenderer(uint256 tokenId) external view returns (address) {
-        return _records[tokenId].renderer;
+        return _open(tokenId).renderer;
+    }
+
+    /// @inheritdoc IWorkRecords
+    function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
+        _open(tokenId);
+        IStream.WorkCore memory core = IStream(stream).work(tokenId);
+        policy = core.seedPolicy;
+        if (policy == SeedPolicy.ARTIST) {
+            seed = _seeds[tokenId];
+        } else if (policy == SeedPolicy.VRF) {
+            seed = IEntropyModule(entropyModule).seedOf(core.itemHash);
+        }
     }
 
     // ------------------------------------------------------------------------------ amendments
@@ -291,7 +322,8 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev An unchanged rate is a no-op. The core emits `RoyaltyRateChanged`.
+    /// @dev An unchanged rate is a no-op. The core emits `RoyaltyRateChanged`; a linked
+    ///      edition's rate follows its master's.
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -301,7 +333,8 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         bytes[] calldata partySignatures
     ) external restricted {
         RecordData storage r = _open(tokenId);
-        if (rate == IStream(stream).work(tokenId).royaltyRate) return;
+        IStream core = IStream(stream);
+        if (rate == core.work(tokenId).royaltyRate) return;
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.ROYALTY_RATE_CHANGE,
@@ -312,7 +345,9 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
             )
         );
         _checkConsents(tokenId, item, structHash, deadline, partySignatures);
-        IStream(stream).setRoyaltyRate(tokenId, rate);
+        core.setRoyaltyRate(tokenId, rate);
+        (address editions,) = core.editionOf(tokenId);
+        if (editions != address(0)) IEditionRoyalty(editions).setRoyaltyRate(tokenId, rate);
         ++r.version;
     }
 
@@ -321,6 +356,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
     function repinRenderer(
         uint256 tokenId,
         address renderer,
+        bytes32 rendererCodeHash,
         bytes32 expectedStateHash,
         uint64 deadline,
         bytes calldata artistSignature
@@ -330,7 +366,8 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         address previous = r.renderer;
         if (renderer == previous) return;
         if (
-            DelegatedEOA.isDelegated(renderer)
+            renderer.code.length == 0 || DelegatedEOA.isDelegated(renderer)
+                || renderer.codehash != rendererCodeHash
                 || !ERC165Checker.supportsInterface(renderer, type(IRenderer).interfaceId)
         ) revert InvalidRenderer(renderer);
         bytes32 digest = _hashTypedDataV4(
@@ -339,6 +376,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
                     Typehashes.RENDERER_REPIN,
                     tokenId,
                     renderer,
+                    rendererCodeHash,
                     _checkState(tokenId, expectedStateHash),
                     deadline
                 )
@@ -352,7 +390,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         }
         r.renderer = renderer;
         ++r.version;
-        emit RendererRepinned(tokenId, previous, renderer);
+        emit RendererRepinned(tokenId, previous, renderer, rendererCodeHash);
         _refresh(tokenId);
     }
 
@@ -374,6 +412,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory) {
+        _open(tokenId);
         return _locators[tokenId][fileId];
     }
 
@@ -440,8 +479,14 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     function filePreference(uint256 tokenId, bytes32 fileId) public view returns (uint256) {
+        _open(tokenId);
         uint256 stored = _filePrefs[tokenId][fileId];
         return stored == 0 ? NONE : stored - 1;
+    }
+
+    /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Editions check when binding.
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IWorkRecords).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // -------------------------------------------------------------------------------- internal
@@ -457,8 +502,7 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         nextKey = WorksHashing.licenseKey(next.spdxId);
         if (nextKey == previousKey && next.textFileId == previous.textFileId) return 0;
         if (previousKey == WorksHashing.CC0_LICENSE_KEY) revert LicenseIrrevocable(tokenId);
-        uint256 spdx = bytes(next.spdxId).length;
-        if (spdx == 0 || spdx > Limits.MAX_LICENSE_ID_BYTES) revert InvalidLicense();
+        if (!_validSpdx(next.spdxId)) revert InvalidLicense();
     }
 
     function _relicenseHash(
@@ -472,6 +516,18 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         return keccak256(
             abi.encode(Typehashes.RELICENSE, tokenId, licenseKey, textFileId, state, deadline)
         );
+    }
+
+    /// @dev 1 to `MAX_LICENSE_ID_BYTES` bytes of lowercase `[a-z0-9.+-]` (normalised SPDX).
+    function _validSpdx(string memory spdxId) private pure returns (bool) {
+        bytes memory id = bytes(spdxId);
+        if (id.length == 0 || id.length > Limits.MAX_LICENSE_ID_BYTES) return false;
+        for (uint256 i; i < id.length; ++i) {
+            bytes1 c = id[i];
+            if (!((c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "." || c == "+"
+                        || c == "-")) return false;
+        }
+        return true;
     }
 
     function _open(uint256 tokenId) private view returns (RecordData storage r) {
@@ -608,10 +664,14 @@ contract WorkRecords is AccessManaged, EIP712, IWorkRecords {
         if (editions != address(0)) IEditions(editions).notifyMasterUpdated(tokenId);
     }
 
-    /// @dev ERC-4906 for every token ever minted (burned IDs included, harmlessly).
+    /// @dev ERC-4906 for every token ever minted (burned IDs included, harmlessly) and every
+    ///      edition.
     function _refreshAll() private {
-        uint256 minted = IStream(stream).totalMinted();
-        if (minted != 0) IStream(stream).emitMetadataUpdate(1, minted);
+        IStream core = IStream(stream);
+        uint256 minted = core.totalMinted();
+        if (minted != 0) core.emitMetadataUpdate(1, minted);
+        address editions = core.editions();
+        if (editions != address(0)) IEditions(editions).notifyAllUpdated();
     }
 
     function _requireContract(address dependency) private view {

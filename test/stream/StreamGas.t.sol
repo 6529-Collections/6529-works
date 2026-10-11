@@ -19,7 +19,7 @@ import { StreamFixture } from "./StreamFixture.sol";
 ///         overhead are measured; the real registry and auction costs come on top.
 contract StreamGasTest is StreamFixture {
     /// @dev Regression guard for Stream's share of a typical start.
-    uint256 internal constant MINT_SHARE_BUDGET = 170_000;
+    uint256 internal constant MINT_SHARE_BUDGET = 145_000;
 
     Stream internal lean;
     ConstantAuction internal adapter;
@@ -30,16 +30,18 @@ contract StreamGasTest is StreamFixture {
             address(manager),
             address(new ConstantPackageRegistry(uint256(uint160(artist)))),
             address(new ConstantArtists()),
-            address(new ConstantEconomics()),
+            address(new ConstantEconomics(address(splitFactory))),
             address(entropy),
             address(renderer),
+            address(renderer).codehash,
             marketOwner
         );
         adapter = new ConstantAuction();
-        _map(address(lean), lean.mint.selector, Roles.MINTER);
-        _map(address(lean), lean.createCollection.selector, Roles.MINTER);
-        manager.grantRole(Roles.MINTER, address(this), 0);
-        manager.grantRole(Roles.MINTER, address(adapter), 0);
+        _map(address(lean), lean.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(lean), lean.createCollection.selector, Roles.PLATFORM);
+        vm.prank(governor);
+        lean.setAdmittedMinter(address(adapter), true);
+        vm.prank(platform);
         lean.createCollection("Genesis", bytes32(0));
     }
 

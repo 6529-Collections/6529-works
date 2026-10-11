@@ -52,6 +52,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 => address) public ghostReceiver;
     mapping(uint256 => uint32) public ghostRate;
     mapping(uint256 => bool) public finalized;
+    mapping(uint256 => bool) public settled;
     mapping(uint256 => Snapshot) internal _final;
 
     constructor(
@@ -115,6 +116,24 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         auction.burn(stream, tokenId, 1);
         burned[tokenId] = true;
         ++ghostBurned;
+    }
+
+    /// @dev The minting adapter marks the sale settled, before or after delivery.
+    function settle(uint256 seed) external {
+        (bool ok, uint256 tokenId) = _live(seed);
+        if (!ok) return;
+        auction.settle(stream, tokenId);
+        settled[tokenId] = true;
+    }
+
+    /// @dev Anyone else marking a sale settled must revert.
+    function forgeSettle(uint256 seed, uint256 actorSeed) external {
+        (bool ok, uint256 tokenId) = _live(seed);
+        if (!ok) return;
+        vm.prank(actors[actorSeed % actors.length]);
+        try stream.markPrimarySettled(tokenId) {
+            ++violations;
+        } catch { }
     }
 
     function deliver(uint256 seed, uint256 actorSeed) external {
@@ -215,7 +234,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         address current = stream.defaultRenderer();
         address next = current == address(rendererA) ? address(rendererB) : address(rendererA);
         vm.prank(governor);
-        stream.setDefaultRenderer(current, next);
+        stream.setDefaultRenderer(current, next, next.codehash);
     }
 
     function addLocator(uint256 seed) external {

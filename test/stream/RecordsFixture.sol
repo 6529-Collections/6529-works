@@ -32,8 +32,9 @@ abstract contract RecordsFixture is StreamFixture {
         artists.register(collaborator);
         store = new ContentStore();
         records =
-            new WorkRecords(address(manager), address(stream), address(store), _license("CC0-1.0"));
-        stream.bind(address(records), address(editionsMock));
+            new WorkRecords(address(manager), address(stream), address(store), _license("cc0-1.0"));
+        stream.bindWorkRecords(address(records));
+        stream.bindEditions(address(editionsMock));
         _map(address(records), records.addLocator.selector, Roles.PLATFORM);
         _map(address(records), records.relicense.selector, Roles.PARAMETER_SETTER);
         _map(address(records), records.setRoyaltyRate.selector, Roles.FUNDS_SETTER);

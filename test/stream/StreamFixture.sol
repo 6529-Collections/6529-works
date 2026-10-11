@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { Payee, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { Payee, SHARE_DENOMINATOR, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
@@ -28,6 +28,7 @@ import {
     MockPackageRegistry,
     MockRenderer,
     MockSaleAdapter,
+    MockSplitFactory,
     MockWorkRecords
 } from "../mocks/stream/StreamMocks.sol";
 
@@ -48,6 +49,7 @@ abstract contract StreamFixture is Test {
     AccessManager internal manager;
     MockPackageRegistry internal registry;
     MockArtistRegistry internal artists;
+    MockSplitFactory internal splitFactory;
     MockEconomics internal econ;
     MockEntropy internal entropy;
     MockRenderer internal renderer;
@@ -63,7 +65,8 @@ abstract contract StreamFixture is Test {
         manager = new AccessManager(address(this));
         registry = new MockPackageRegistry();
         artists = new MockArtistRegistry();
-        econ = new MockEconomics(_defaultTerms());
+        splitFactory = new MockSplitFactory();
+        econ = new MockEconomics(_defaultTerms(), address(splitFactory));
         entropy = new MockEntropy();
         renderer = new MockRenderer("default");
         auction = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
@@ -74,6 +77,7 @@ abstract contract StreamFixture is Test {
             address(econ),
             address(entropy),
             address(renderer),
+            address(renderer).codehash,
             marketOwner
         );
         editionsMock = new MockEditions();
@@ -88,17 +92,17 @@ abstract contract StreamFixture is Test {
     }
 
     function _configureRoles() internal {
-        _map(address(stream), stream.mint.selector, Roles.MINTER);
-        _map(address(stream), stream.burn.selector, Roles.MINTER);
+        _map(address(stream), stream.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER);
         _map(address(stream), stream.createCollection.selector, Roles.PLATFORM);
         _map(address(stream), stream.setContractURI.selector, Roles.PARAMETER_SETTER);
         _map(address(stream), stream.setOwner.selector, Roles.FUNDS_SETTER);
         _map(address(stream), stream.setDefaultRenderer.selector, Roles.SUCCESSOR_SETTER);
-        manager.grantRole(Roles.MINTER, address(auction), 0);
         manager.grantRole(Roles.PLATFORM, platform, 0);
         manager.grantRole(Roles.PARAMETER_SETTER, governor, 0);
         manager.grantRole(Roles.FUNDS_SETTER, governor, 0);
         manager.grantRole(Roles.SUCCESSOR_SETTER, governor, 0);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), true);
     }
 
     function _map(address target, bytes4 selector, uint64 role) internal {
@@ -110,7 +114,27 @@ abstract contract StreamFixture is Test {
     /// @dev Binds a mock records satellite and the mock Editions (the test is the admin).
     function _bindMocks() internal {
         recordsMock = new MockWorkRecords();
-        stream.bind(address(recordsMock), address(editionsMock));
+        stream.bindWorkRecords(address(recordsMock));
+        stream.bindEditions(address(editionsMock));
+    }
+
+    /// @dev The royalty receiver Stream derives: the seller with no fee, else the salt-zero
+    ///      wallet for the canonical `(feeRecipient, seller)` list.
+    function _royaltyWallet(address sellerWallet, address fee, uint32 feeShare)
+        internal
+        view
+        returns (address)
+    {
+        if (feeShare == 0) return sellerWallet;
+        Payee[] memory payees = new Payee[](2);
+        Payee memory a = Payee(0, fee, feeShare);
+        Payee memory b = Payee(0, sellerWallet, SHARE_DENOMINATOR - feeShare);
+        (payees[0], payees[1]) = fee < sellerWallet ? (a, b) : (b, a);
+        return splitFactory.walletFor(payees, bytes32(0));
+    }
+
+    function _defaultRoyaltyWallet() internal view returns (address) {
+        return _royaltyWallet(seller, feeRecipient, 25_000);
     }
 
     function _license(string memory spdx) internal pure returns (License memory) {
@@ -128,7 +152,7 @@ abstract contract StreamFixture is Test {
         item.parties[0] = Party(artist, PartyRole.ARTIST);
         item.payees = new Payee[](1);
         item.payees[0] = Payee(uint256(uint160(artist)), address(0), 100_000);
-        item.license = _license("CC0-1.0");
+        item.license = _license("cc0-1.0");
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, address(0), "");
         item.edition = EditionTerms(EditionFormat.FIXED, 0, 0, 0, address(0), bytes32(0), "");
