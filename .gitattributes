@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.sol linguist-language=Solidity
+# Test fixtures are byte-exact (the CC0 legal code is pinned by its SHA-256).
+test/fixtures/** -text

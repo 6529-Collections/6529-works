@@ -70,8 +70,10 @@ refresh it:
 - an executed change, which refreshes for the identity it installs;
 - `refreshStanding(artistId)`, which anyone may call and which is not activity.
 
-**Keeper.** A permissionless refresh keeper, or the 6529.io UI, calls
-`refreshStanding` after consolidation events. One refresh any time after
+**Who refreshes: artists pay (owner decision).** Right after an artist links a
+wallet, 6529.io prompts the artist to call `refreshStanding` from their own
+wallet, so the artist pays the gas. A permissionless network keeper is optional,
+a later safety net, not part of the launch. One refresh any time after
 consolidating is enough to record a wallet.
 
 A refresh does three things:

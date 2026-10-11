@@ -40,6 +40,13 @@
   lacks. Each product's first default currency is genesis wiring. `script/README.md` is the
   Sepolia runbook. The canonical CC0 legal code is pinned by digest. The deploy covers every
   v1 contract, the renderer and 6529 Editions included, with no stand-in.
+- Deployment, owner decisions: off anvil, at least two admin Safes (hot and cold) and three
+  guardian Safes, and no signer shared between admin Safes or between an admin and a
+  guardian Safe. The runbook adds an admin-recovery procedure and guardian practice. Sepolia
+  mirrors mainnet: throwaway signers, a real VRF subscription, and the official 6529
+  delegation deployment. That deployment is the default there, and the canonical code hash is
+  pinned. Artists refresh their own recovery standing; a network keeper is optional. The CC0
+  legal code is committed as a byte-exact test fixture and is the deploy's default text.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on

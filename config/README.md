@@ -21,7 +21,7 @@ A change to a role, a delay class or a wiring call is a change to this file, mad
 | Key | Contents |
 | --- | --- |
 | `roles` | Every role in `Roles.sol`, with its ID, execution delay and grant delay. |
-| `holders` | `cfg.grants`: hot and cold admin Safes, three guardian Safes (`GUARDIAN` and `PAUSER` only), two curation signers, and one key each for storage, platform and curator. |
+| `holders` | `cfg.grants`: hot and cold admin Safes (the cold one ADMIN only, 3-of-5 recommended, with signers distinct from the hot admin's and the guardians'), three guardian Safes (`GUARDIAN` and `PAUSER` only, 2-of-3 each), two curation signers, and one key each for storage, platform and curator. Off anvil the deploy script requires at least two admin Safes and three guardian Safes, and no signer shared between admin Safes or between an admin and a guardian Safe. |
 | `peers` | Ungoverned addresses that wiring passes as arguments, including the manager itself, the epoch-0 manifest's subject. |
 | `contracts` | `cfg.targets`, per contract. `artifact` is the compiled ABI the entries are checked against. `implementation` is the contract on `main`, or null while its lane is pending. `functions` lists the governed selectors, each with its role, delay class and delay. `genesisOnly` lists one-shot binds that stay unmapped (`ADMIN`) and are wired. `deferred` lists restricted functions that are neither mapped nor wired in v1. |
 | `wiring` | The genesis calls `configure` executes as zero-delay admin before mapping any selector: the one-shot binds, the admitted minters, the sale targets and the epoch-0 governance manifest. |

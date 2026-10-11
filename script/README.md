@@ -63,11 +63,11 @@ DEPLOYMENT=deployments/31337/<timestamp>.json \
   forge script script/Verify.s.sol --rpc-url http://127.0.0.1:8545
 ```
 
-- **Placeholders.** Anvil runs on placeholders: the example genesis, the CC0 text, the
-  manifest, the fee recipient and the marketplace owner. A `DelegationManagementMock` is
-  deployed first, because the canonical delegation address has no code. The record says
-  `"placeholders": true` and marks the mock (`"delegationMock": true`). Its `standIns` and
-  `pendingLanes` are empty.
+- **Placeholders.** Anvil runs on placeholders: the example genesis, the manifest, the fee
+  recipient and the marketplace owner. The CC0 text is the real one, the committed fixture.
+  A `DelegationManagementMock` is deployed first, because the canonical delegation address has
+  no code. The record says `"placeholders": true` and marks the mock (`"delegationMock": true`).
+  Its `standIns` and `pendingLanes` are empty.
 - **Use `--slow`.** Without it, anvil can pack a block until the next deploy transaction no
   longer fits. That transaction then waits for a block that automine never produces;
   `cast rpc evm_mine` frees it.
@@ -95,6 +95,12 @@ or stores a key:
   That gains them nothing, because the configurator still only obeys the operator, but the
   namespace is then spent. The next run stops with `ConfiguratorAddressTaken` and needs a new
   `DEPLOY_NAMESPACE`. A private transaction endpoint avoids the denial of service.
+- **Sepolia mirrors mainnet.** Use throwaway signers, but the mainnet structure and thresholds:
+  - the same Safes, roles and thresholds as below;
+  - the entropy module with a real VRF subscription (step 7), not `NO_VRF`;
+  - the official 6529 delegation contract (step 5).
+
+  A rehearsal then exercises the same flows, admin recovery included.
 
 ### 1. Accounts
 
@@ -102,8 +108,8 @@ or stores a key:
 | --- | --- | --- |
 | Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH |
 | Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER | Safe |
-| Cold recovery admin Safe | ADMIN only | Safe, with signers distinct from the hot Safe |
-| Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe |
+| Cold recovery admin Safe | ADMIN only. It acts only for [admin recovery](#admin-recovery) | Safe, 3-of-5 recommended. Its signers differ from the hot admin's and the guardians', on hardware wallets kept in separate places |
+| Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe, 2-of-3 each |
 | Curation signer keys 1 and 2 | CURATION_SIGNER (at least two off anvil). They sign approvals off-chain and never call a contract | EOA |
 | Storage operator | STORAGE_OPERATOR | EOA |
 | Platform | PLATFORM | EOA |
@@ -115,6 +121,17 @@ or stores a key:
 
 Delays and responsibilities are in the [role table](../src/governance/README.md).
 
+**Guardians.** They veto any scheduled operation and pause in an emergency, so they must be
+independent of the admins they check:
+- **Signers.** Use signers independent of the admin Safes; the script refuses a signer shared
+  with an admin Safe. Mix team and community members across the three Safes.
+- **Monitoring.** Alert every guardian on the manager's `OperationScheduled`, `RoleGranted`,
+  `RoleGrantDelayChanged` and `TargetAdminDelayUpdated` events. A hostile admin operation
+  waits at least its delay class (up to 30 days), and a guardian cancels it in that window.
+- **Separate pause and unpause.** The guardians hold PAUSER and the hot admin holds UNPAUSER;
+  the configuration refuses one account holding both. A pause by a guardian is undone only by
+  the admins.
+
 ### 2. Safe pre-flight
 
 The configurator renounces ADMIN in the genesis transaction. An admin or guardian that nobody
@@ -122,9 +139,13 @@ can operate is therefore permanent. Off anvil, the script refuses an ADMIN or GU
 in these cases:
 - it has no code;
 - it is an EIP-7702 delegated EOA;
-- it does not answer `getThreshold()` with a nonzero value.
+- it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list.
 
-The script cannot check who the owners are, so check every Safe before the run:
+It also requires at least two admin Safes, the hot and the cold, and refuses a signer that two
+admin Safes share, or that an admin Safe shares with a guardian Safe.
+
+The script cannot check that the owners are the right people, so check every Safe before the
+run:
 
 ```bash
 for SAFE in <hot> <cold> <guardian1> <guardian2> <guardian3>; do
@@ -176,10 +197,12 @@ Checked read-only on Sepolia on 11 October 2026. Check again before broadcasting
 | CREATE2 deployer | `0x4e59b44847b379578588920cA78FbF26c0B4956C` | present | Every deploy (Foundry's default factory) |
 | Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | present | The sale adapters' Permit2 payments; required off anvil, canonical on mainnet |
 | Chainlink VRF v2.5 coordinator | `0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B` | present | The entropy module (step 7) |
-| 6529 delegation contract | `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d` | **absent** | The artist registry's consolidation source (step 5) |
+| 6529 delegation contract, mainnet address | `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d` | absent | The artist registry's consolidation source on mainnet |
+| 6529 delegation contract, official Sepolia deployment | `0x8f86c644f845A077999939C69Bc787662377d915` | present, same runtime code as mainnet | The consolidation source on Sepolia (step 5) |
 
 ```bash
-cast code 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d --rpc-url "$SEPOLIA_RPC_URL"
+cast codehash 0x8f86c644f845A077999939C69Bc787662377d915 --rpc-url "$SEPOLIA_RPC_URL"
+# 0x28e32b740f699e25d2a1afac207a84e31197c0d4b87c1432c9c5c52c4c1e74e0, mainnet's
 ```
 
 ### 5. The delegation contract
@@ -187,26 +210,41 @@ cast code 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d --rpc-url "$SEPOLIA_RPC_URL
 `ConsolidationAdapter` reads consolidations from the 6529 delegation contract, and its
 constructor requires code at that address. The `ArtistRegistry` pins the adapter's code hash.
 
-The canonical contract is absent on Sepolia, so the rehearsal uses `DelegationManagementMock`
-(`test/mocks/identity/DelegationManagementMock.sol`). The mock is a faithful reduction of the
-6529 contract: the same storage, getters, and register and revoke semantics, and
-permissionless like the original.
+The contract is `DelegationManagementContract` (`smart_contracts/DelegationManagement.sol` in
+the public repository [6529-Collections/nftdelegation](https://github.com/6529-Collections/nftdelegation)).
+Its runtime code hash is pinned in `DeployGuards.CANONICAL_DELEGATION_CODEHASH`:
+`0x28e32b740f699e25d2a1afac207a84e31197c0d4b87c1432c9c5c52c4c1e74e0`, 20,766 bytes.
 
-1. If `cast code` above prints code, use the canonical address and skip step 2.
-2. Deploy the mock. The owner runs this command:
+- **Mainnet:** the script accepts only `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`.
+- **Sepolia:** use the official deployment `0x8f86c644f845A077999939C69Bc787662377d915`. It is
+  listed in that repository's README, and its runtime code is byte-identical to mainnet's. It
+  is the script's default on Sepolia, so `DELEGATION_CONTRACT` can stay unset.
+- **Another chain with neither:** prefer deploying the same verified source rather than a
+  mock. The owner does this, in a scratch directory outside the repository:
 
-   ```bash
-   forge create test/mocks/identity/DelegationManagementMock.sol:DelegationManagementMock \
-     --rpc-url "$SEPOLIA_RPC_URL" --account <deployer> --broadcast
-   ```
+  ```bash
+  forge clone 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d delegation-src \
+    --etherscan-api-key "$ETHERSCAN_API_KEY"     # the verified mainnet source and settings
+  cd delegation-src
+  forge create <src>:DelegationManagementContract --rpc-url "$RPC_URL" \
+    --account <deployer> --broadcast
+  cast codehash <new address> --rpc-url "$RPC_URL"  # must equal the pinned hash
+  ```
 
-3. Pass the address as `DELEGATION_CONTRACT`. Off anvil, the script refuses an address
-   without code. On mainnet it refuses anything but the canonical contract. The record marks
-   the mock (`"delegationMock": true`).
+  If the hash does not match (a different compiler build), fall back to the mock
+  (`test/mocks/identity/DelegationManagementMock.sol`). It is a faithful reduction of the same
+  contract: the same storage, getters, and register and revoke semantics, permissionless like
+  the original.
 
-To consolidate two wallets on the mock, each one calls
+Pass any address other than the default as `DELEGATION_CONTRACT`. Off anvil the script refuses
+an address without code. The record carries the contract's code hash (`delegationCodeHash`),
+and marks it `"delegationMock": true` when that hash is not the canonical one. The official
+Sepolia deployment is therefore not marked.
+
+To consolidate two wallets, each one calls
 `registerDelegationAddress(0x8888888888888888888888888888888888888888, <other wallet>, <expiry>, 999, true, 0)`:
-use case 999, all collections, in both directions. Then run the keeper (step 12).
+use case 999, all collections, in both directions. Then refresh the artist's standing
+(step 12).
 
 ### 6. The CC0 license text
 
@@ -229,9 +267,10 @@ Both sources served the same bytes with this digest when it was pinned on 11 Oct
 Off anvil both scripts refuse any other text.
 
 For a run:
-1. Save the file under `config/` (the script can read only `./config`; the file is not
-   committed), check it with `sha256sum` (the digest above) and `wc -c` (7048), and set
-   `CC0_TEXT_PATH=config/<file>`.
+1. Nothing to fetch. The file is committed, byte for byte, at
+   `test/fixtures/cc0-legalcode.txt`, which is the default `CC0_TEXT_PATH` on every chain.
+   `test_TheCc0FixtureIsTheCanonicalLegalCode` checks its length and digest. To use another
+   copy, put it under `config/` and set `CC0_TEXT_PATH`; it must have the same digest.
 2. After the broadcast, Verify checks the stored copy:
    - WorkRecords and every product's default license name the recorded file;
    - the file is complete;
@@ -248,6 +287,8 @@ For a run:
 6529 Stream pins its entropy module at construction, so leaving it out is permanent for that
 deployment. Off anvil, the script therefore requires `VRF_COORDINATOR`, unless `NO_VRF=1`
 declines the module explicitly. The record says which (`"entropy": "vrf"` or `"none"`).
+
+On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
 1. In the Chainlink VRF app on Sepolia, create a **dedicated** subscription. Fund it with LINK,
    or with Sepolia ETH if `VRF_NATIVE_PAYMENT=1`.
@@ -300,9 +341,9 @@ Genesis appends it to the statement log as the manager's first governance statem
 export SEPOLIA_RPC_URL=...                          # the operator's own endpoint
 export GENESIS_CONFIG=config/genesis.sepolia.json
 export NETWORK_FEE_RECIPIENT=0x... MARKETPLACE_OWNER=0x...
-export DELEGATION_CONTRACT=0x...                    # step 5: the mock on Sepolia
-export CC0_TEXT_PATH=config/<legalcode file>        # step 6
-export VRF_COORDINATOR=... VRF_SUBSCRIPTION_ID=... VRF_KEY_HASH=...   # step 7 (or NO_VRF=1)
+# DELEGATION_CONTRACT: unset on Sepolia (the official deployment, step 5)
+# CC0_TEXT_PATH: unset (the committed legal code, step 6)
+export VRF_COORDINATOR=... VRF_SUBSCRIPTION_ID=... VRF_KEY_HASH=...   # step 7
 export MANIFEST_PATH=config/<manifest file> MANIFEST_URI=ar://...     # step 9
 
 # Simulation: nothing leaves the machine. It runs every check and prints the addresses and
@@ -312,7 +353,30 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 # Owner only: broadcast, signing with the keystore or the Ledger.
 forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer> \
   --broadcast --slow --account <deployer>            # or --ledger
+
+# On a chain that reprices state creation (Glamsterdam: Sepolia since 6 October 2026), add
+# --skip-simulation, and optionally a lower priority fee:
+forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer> \
+  --broadcast --slow --skip-simulation --priority-gas-price 0.05gwei --account <deployer>
 ```
+
+- **Why `--skip-simulation` on Glamsterdam chains.** Sepolia activated Glamsterdam on
+  6 October 2026, which reprices state creation. These are Sepolia r1's measurements
+  (`eth_estimateGas`), with the Prague cost in brackets:
+  - code deposit: about 1,542 gas per byte (200);
+  - a new storage slot: about 111K gas (22.1K);
+  - an empty `CREATE`: about 210K gas (53K);
+  - a zero-value call to an empty account: 15,000 gas.
+
+  Foundry 1.7.1 has no `amsterdam` EVM, so forge's own simulation prices the transactions
+  with Prague costs. Its gas limits are then far too low: r1's first broadcast ran out of
+  gas creating the configurator, whose limit was 6.96M when the node needed 33.8M.
+
+  `--skip-simulation` skips only forge's replay of the collected transactions. The script
+  itself, with every check below, still runs before anything is sent. With `--slow`, forge
+  then takes each transaction's gas limit from the node's `eth_estimateGas` just before
+  sending it. The simulation command above stays as it is: it runs the checks and prints the
+  addresses.
 
 - **Everything is checked before anything is sent.** Forge simulates the whole run first, so
   any failed check aborts it with nothing broadcast. The checks:
@@ -328,9 +392,18 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
   a rehearsal from the same deployer, use a new `DEPLOY_NAMESPACE`.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
-- **Gas.** On anvil, the whole system is 25 transactions and about 63.2M gas, including the
-  delegation mock. The largest transaction is the renderer's creation, at about 5.4M, under
-  the 16.8M EIP-7825 cap. Use the simulation's estimate for the chain's gas price.
+- **Gas.**
+  - **On anvil, with Prague costs,** the whole system is 25 transactions and about 64.7M gas,
+    including the delegation mock. The largest transaction is the renderer's creation, at
+    about 5.4M, within the 16,777,216-gas EIP-7825 cap.
+  - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
+    6.19 times the Prague estimate. That cost about 0.022 ETH at a 0.05 gwei priority fee.
+    The per-transaction table is `deployments/11155111/README.md`, added in
+    [PR #43](https://github.com/6529-Collections/6529-works/pull/43).
+  - **The cap on Glamsterdam.** The cap applies to regular gas. Transactions whose
+    state-creation gas takes them above 16,777,216 were accepted: r1's largest used 38.1M.
+    That is an observation from r1, not a statement of the EIP rules; budget each chain from
+    its own estimates.
 - **The record.** The run writes `deployments/11155111/<timestamp>.json`. It holds:
   - every address and code hash;
   - every constructor parameter (`params`), including the CREATE2 deployer;
@@ -372,23 +445,52 @@ The record is only an index; each check is made against the chain or the committ
 - no other grant-delay or admin-delay change is pending;
 - no account outside the configuration was granted a role.
 
-### 12. Keeper: `refreshStanding`
+### 12. Standing refresh: `refreshStanding`
 
 `ArtistRegistry.refreshStanding(artistId)` is permissionless and does not count as artist
-activity.
-- **When.** Call it after consolidation events that involve an artist's wallets. One refresh
-  any time after a consolidation records the wallet. A consolidation younger than 30 days is
-  recorded as pending.
-- **Gas.** The worst case is about 6.8M gas, under the EIP-7825 cap.
-- **On Sepolia.** A manual call from any funded key is enough:
+activity. One refresh any time after a consolidation records the wallet; a consolidation
+younger than 30 days is recorded as pending. The worst case was measured at about 6.8M gas
+with Prague costs. A refresh writes new storage slots, which Glamsterdam reprices, so
+re-measure it on Sepolia before relying on that figure.
+
+- **Artists pay (owner decision).** Right after an artist links a wallet (a two-way
+  use-case-999 consolidation), 6529.io prompts the artist to call `refreshStanding` from their
+  own wallet. The artist pays the gas, and their recovery standing is current from then on.
+- **A network keeper is optional.** It is a later safety net, not part of the launch. Such a
+  keeper watches the delegation contract for use-case-999 registrations involving a
+  registered artist's wallets, and refreshes that artist.
+- **On Sepolia,** call it by hand, as the artist would:
 
   ```bash
   cast send <ArtistRegistry> "refreshStanding(uint256)" <artistId> \
-    --rpc-url "$SEPOLIA_RPC_URL" --account <keeper>
+    --rpc-url "$SEPOLIA_RPC_URL" --account <artist>
   ```
 
-- **A bot.** It watches the delegation contract for use-case-999 registrations involving a
-  registered artist's wallets, and refreshes that artist.
+## Admin recovery
+
+The cold recovery admin Safe holds ADMIN only and stays offline. It acts in one case: the hot
+admin Safe is lost or compromised (owner decision 2).
+
+1. **Pause if needed.** A guardian pauses the affected contracts while the recovery runs.
+2. **Schedule the removal.** The cold Safe schedules `revokeRole(role, hotSafe)` on the
+   manager for each of the hot Safe's roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
+   SUCCESSOR_SETTER. In the Safe transaction builder, each is
+   `manager.schedule(manager, revokeRole(role, hotSafe), 0)`. ADMIN's 30-day execution delay
+   applies to each.
+   - **The hot Safe cannot cancel its own removal.** `WorksAccessManager` lets no one but the
+     scheduler cancel the revocation of their own role.
+   - **The guardians can cancel any operation.** They must know of the recovery and let these
+     through, and keep cancelling anything the compromised hot Safe schedules.
+3. **Appoint the new hot Safe.** In the same batch, schedule
+   `grantRole(role, newHotSafe, Roles.executionDelay(role))` for the same five roles.
+4. **Execute after 30 days.** The cold Safe calls `manager.execute` for each operation. The old
+   hot Safe loses its roles at once. The new one holds each role after that role's grant
+   delay: 48 hours for UNPAUSER and PARAMETER_SETTER, 14 days for FUNDS_SETTER, and 30 days for
+   SUCCESSOR_SETTER and ADMIN.
+5. **Re-verify.** Run `Verify.s.sol` against a genesis file with the new holder, after the
+   setback. Publish the change as a governance manifest (`appendGovernanceManifest`).
+
+**Rehearse this once on Sepolia** with the throwaway Safes, end to end, before mainnet.
 
 ## Environment reference
 
@@ -400,8 +502,8 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Optional; changes every address |
 | `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required |
 | `MARKETPLACE_OWNER` | Placeholder `0xC002` | Required |
-| `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet |
-| `CC0_TEXT_PATH` | Placeholder text | Required, under `config/`; must hash to the pinned digest |
+| `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet. Default on Sepolia: the official deployment |
+| `CC0_TEXT_PATH` | `test/fixtures/cc0-legalcode.txt` | Same default; must hash to the pinned digest |
 | `MANIFEST_PATH` | Placeholder digest | Required, under `config/` |
 | `MANIFEST_URI` | `ar://placeholder-epoch-0` | Required |
 | `ETH_INCREMENT_FLOOR` | 0.001 ether, in wei | Optional: ETH's minimum bid increment |

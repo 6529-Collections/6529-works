@@ -62,7 +62,7 @@ contract DeployV1Test is Test {
         p.feeRecipient = makeAddr("feeRecipient");
         p.marketOwner = makeAddr("marketOwner");
         p.delegation = address(delegation);
-        p.cc0Text = bytes("CC0 1.0 Universal (test copy)");
+        p.cc0Text = vm.readFileBinary("test/fixtures/cc0-legalcode.txt");
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);

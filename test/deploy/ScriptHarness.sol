@@ -211,10 +211,18 @@ contract VerifyHarness is Verify, ScriptInputs {
     }
 }
 
-/// @notice A Safe as the guards see one: code and `getThreshold()`.
+/// @notice A Safe as the guards see one: code, `getThreshold()` and `getOwners()`. Its three
+///         owners derive from its own address, so every etched copy has its own signers.
 contract MockSafe {
     function getThreshold() external pure returns (uint256) {
         return 2;
+    }
+
+    function getOwners() external view returns (address[] memory owners) {
+        owners = new address[](3);
+        for (uint256 i; i < owners.length; ++i) {
+            owners[i] = address(uint160(uint256(keccak256(abi.encode(address(this), i)))));
+        }
     }
 }
 
@@ -222,5 +230,27 @@ contract MockSafe {
 contract MockZeroThresholdSafe {
     function getThreshold() external pure returns (uint256) {
         return 0;
+    }
+}
+
+/// @notice A Safe whose owners include one fixed signer, `SHARED`, wherever it is etched.
+contract MockSharedSignerSafe {
+    address public constant SHARED = address(0x5157);
+
+    function getThreshold() external pure returns (uint256) {
+        return 2;
+    }
+
+    function getOwners() external view returns (address[] memory owners) {
+        owners = new address[](2);
+        owners[0] = address(uint160(uint256(keccak256(abi.encode(address(this))))));
+        owners[1] = SHARED;
+    }
+}
+
+/// @notice A threshold but no `getOwners()`.
+contract MockSafeWithoutOwners {
+    function getThreshold() external pure returns (uint256) {
+        return 2;
     }
 }

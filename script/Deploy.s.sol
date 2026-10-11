@@ -34,9 +34,10 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      the simulation, before the transactions are confirmed, and says so; `Verify.s.sol`
 ///      confirms it against the chain.
 contract Deploy is ScriptIO {
+    /// @notice The committed copy of the CC0 1.0 legal code (`DeployV1.CC0_LEGALCODE_URL`,
+    ///         7,048 bytes), checked against the pinned digest: the default `CC0_TEXT_PATH`.
+    string internal constant CC0_FIXTURE = "test/fixtures/cc0-legalcode.txt";
     /// @notice Placeholders used only on anvil (chain 31337), each recorded in the deployment.
-    string internal constant PLACEHOLDER_CC0 =
-        "6529 Works local dry run: placeholder for the CC0 1.0 Universal legal code.";
     bytes32 internal constant PLACEHOLDER_MANIFEST = keccak256("placeholder: epoch-0 manifest");
     string internal constant PLACEHOLDER_MANIFEST_URI = "ar://placeholder-epoch-0";
     address internal constant PLACEHOLDER_FEE_RECIPIENT = address(0xC001);
@@ -157,10 +158,19 @@ contract Deploy is ScriptIO {
         p.marketOwner =
             _envAddress("MARKETPLACE_OWNER", local ? PLACEHOLDER_MARKET_OWNER : address(0));
         if (p.marketOwner == address(0)) revert MissingParameter("MARKETPLACE_OWNER");
-        p.delegation = _dependency("DELEGATION_CONTRACT", DeployGuards.CANONICAL_DELEGATION, local);
+        // The official deployment on Sepolia, the canonical one elsewhere.
+        p.delegation = _dependency(
+            "DELEGATION_CONTRACT",
+            block.chainid == DeployGuards.SEPOLIA_CHAIN_ID
+                ? DeployGuards.SEPOLIA_DELEGATION
+                : DeployGuards.CANONICAL_DELEGATION,
+            DeployGuards.CANONICAL_DELEGATION,
+            local
+        );
         p.cc0Text = cc0Text(local);
         p.ethIncrementFloor = _envUint("ETH_INCREMENT_FLOOR", 0.001 ether);
-        p.permit2 = _dependency("PERMIT2", DeployV1.CANONICAL_PERMIT2, local);
+        p.permit2 =
+            _dependency("PERMIT2", DeployV1.CANONICAL_PERMIT2, DeployV1.CANONICAL_PERMIT2, local);
         p.auction = IEnglishAuction.AuctionConfig(
             SafeCast.toUint32(_envUint("AUCTION_DURATION", 24 hours)),
             SafeCast.toUint32(_envUint("AUCTION_EXTENSION_WINDOW", 15 minutes)),
@@ -169,13 +179,14 @@ contract Deploy is ScriptIO {
         _vrf(p, local);
     }
 
-    /// @dev An external contract the deployment pins: canonical on mainnet, with code off anvil.
-    function _dependency(string memory name, address canonical, bool local)
+    /// @dev An external contract the deployment pins: `byDefault` unless set, canonical on
+    ///      mainnet, with code off anvil.
+    function _dependency(string memory name, address byDefault, address canonical, bool local)
         internal
         view
         returns (address account)
     {
-        account = _envAddress(name, canonical);
+        account = _envAddress(name, byDefault);
         if (block.chainid == DeployGuards.MAINNET_CHAIN_ID && account != canonical) {
             revert NonCanonicalOnMainnet(name, account);
         }
@@ -211,16 +222,12 @@ contract Deploy is ScriptIO {
         p.vrfRetryDelay = SafeCast.toUint64(_envUint("VRF_RETRY_DELAY", 3 days));
     }
 
-    /// @notice The CC0 legal code from `CC0_TEXT_PATH` (under ./config, the only readable
-    ///         directory). Off anvil it is required, and must hash to the pinned canonical
-    ///         digest; on anvil a placeholder stands in when no file is given.
+    /// @notice The CC0 legal code from `CC0_TEXT_PATH`, by default the committed fixture
+    ///         (`CC0_FIXTURE`), on every chain. It must hash to the pinned canonical digest; off
+    ///         anvil the digest must be pinned.
     function cc0Text(bool local) public view returns (bytes memory text) {
-        string memory path = _envString("CC0_TEXT_PATH", "");
+        string memory path = _envString("CC0_TEXT_PATH", CC0_FIXTURE);
         bytes32 pinned = cc0Digest();
-        if (bytes(path).length == 0) {
-            if (!local) revert MissingParameter("CC0_TEXT_PATH");
-            return bytes(PLACEHOLDER_CC0);
-        }
         if (!local && pinned == bytes32(0)) revert Cc0DigestNotPinned();
         text = _readBinary(path);
         if (pinned != bytes32(0) && sha256(text) != pinned) {
@@ -279,9 +286,13 @@ contract Deploy is ScriptIO {
         vm.serializeString(root, "pendingLanes", _pending());
         vm.serializeString(root, "standIns", _standIns(r.local));
         vm.serializeBool(root, "placeholders", r.local);
+        // A mock is anything without the canonical code: the official Sepolia deployment is not.
         vm.serializeBool(
-            root, "delegationMock", r.p.delegation != DeployGuards.CANONICAL_DELEGATION
+            root,
+            "delegationMock",
+            r.p.delegation.codehash != DeployGuards.CANONICAL_DELEGATION_CODEHASH
         );
+        vm.serializeBytes32(root, "delegationCodeHash", r.p.delegation.codehash);
         vm.serializeString(root, "entropy", r.p.vrfCoordinator == address(0) ? "none" : "vrf");
         vm.serializeString(root, "params", _recordParams(r.p));
         return vm.serializeString(root, "contracts", _recordContracts(d));
@@ -330,7 +341,8 @@ contract Deploy is ScriptIO {
 
     /// @dev Protocol contracts replaced by stand-ins: none since the renderer (#20) merged.
     ///      The field stays so Verify can refuse a record that has any. (The delegation mock is
-    ///      an external dependency, recorded as `delegationMock`.)
+    ///      an external dependency, recorded as `delegationMock` when its code is not the
+    ///      canonical contract's.)
     function _standIns(bool) internal pure returns (string[] memory list) {
         list = new string[](0);
     }
