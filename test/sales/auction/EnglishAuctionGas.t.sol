@@ -52,8 +52,12 @@ contract EnglishAuctionGasTest is Test {
     uint256 internal constant AUCTION_SHARE_BUDGET = 50_000;
     /// @dev The first `startWithBid` after governance changes the config, an opening bid or a
     ///      floor writes up to two new terms records (the start record and the one with the
-    ///      floor), once per change: a bound, not the steady-state gate (PR #33 review).
+    ///      floor), once per change: a ceiling with headroom (measured about 433K), not an
+    ///      expected value and not the steady-state gate (PR #33 review).
     uint256 internal constant FIRST_AFTER_CHANGE_BOUND = 450_000;
+    /// @dev A cold first bid (about 56K) plus one new terms record: its key, two words and the
+    ///      counter (about 70K). A ceiling with headroom (measured about 126K), not a target.
+    uint256 internal constant FIRST_BID_NEW_RECORD_BOUND = 140_000;
 
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
@@ -158,6 +162,16 @@ contract EnglishAuctionGasTest is Test {
         allowlist.setIncrementFloor(address(0), revision, 0.002 ether);
         uint256 total = _measureStartWithBid("startWithBid after a floor change, whole tx");
         assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after a floor change");
+    }
+
+    /// @dev The first `startWithBid` after a real opening-bid change writes both a new start
+    ///      record and a new floored record, like a config change.
+    function test_StartWithBidGas_FirstAfterAnOpeningBidChange() public {
+        _startItem(0, 1, artistPk);
+        _priorBid(_startItem(1, 2, otherArtistPk));
+        auction.setOpeningBid(address(0), 0, 0.01 ether);
+        uint256 total = _measureStartWithBid("startWithBid after an opening-bid change, whole tx");
+        assertLe(total, FIRST_AFTER_CHANGE_BOUND, "one-off cost after an opening-bid change");
     }
 
     /// @dev The steady state, but with no other token in custody (the adapter's ERC-721 balance
@@ -285,7 +299,9 @@ contract EnglishAuctionGasTest is Test {
         auction.bid{ value: 1 ether }(
             saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
         );
-        console2.log("first bid creating its terms record, execution (cold)", before - gasleft());
+        uint256 used = before - gasleft();
+        console2.log("first bid creating its terms record, execution (cold)", used);
+        assertLe(used, FIRST_BID_NEW_RECORD_BOUND, "one-off cost of a new floored record");
     }
 
     /// @dev Whole-transaction gas of a `startWithBid` of item 2 by a fresh bidder, everything
