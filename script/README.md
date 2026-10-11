@@ -10,12 +10,11 @@ Not built yet: a deployed-bytecode verifier that matches the chain against a rep
 build. Verify recomputes every address from the recorded constructor parameters and compares
 code hashes with the record, but it does not rebuild the bytecode.
 
-6529 Works is pre-audit and not deployed. A Sepolia run is a testnet rehearsal, not a launch,
-and it is **not runnable yet**. Off anvil, the deploy refuses to proceed until:
-- the Renderer (#20) merges (`RendererPending`);
-- Editions (#14) merges (`EditionsPending`).
-
-The library already deploys identity (#16), Stream and WorkRecords (#22).
+6529 Works is pre-audit and not deployed. A Sepolia run is a testnet rehearsal, not a launch.
+The library deploys every v1 contract: identity, curation, economics, content and the
+renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
+Editions, and the three sale adapters. No stand-in remains. A Sepolia run needs the owner's
+accounts and keys (steps 1 and 2), and the inputs below.
 
 | File | Purpose |
 | --- | --- |
@@ -25,7 +24,6 @@ The library already deploys identity (#16), Stream and WorkRecords (#22).
 | [`Deploy.s.sol`](Deploy.s.sol) | Checks every input, deploys, configures, and records `deployments/<chainId>/<timestamp>.json`. |
 | [`Verify.s.sol`](Verify.s.sol) | Confirms a recorded deployment against the chain: addresses, code, CC0 text, manifest, governance and events. |
 | [`ScriptIO.sol`](ScriptIO.sol) | What the scripts read from outside the EVM (environment, files, the RPC's chain ID), one virtual function each, so the tests run the scripts with their own inputs. |
-| [`standins/RendererStandIn.sol`](standins/RendererStandIn.sol) | Anvil-only stand-in for the renderer until #20 merges. 6529 Stream pins its default renderer at construction. |
 
 ## Using the library from tests
 
@@ -50,7 +48,7 @@ VerifyV1.check(d, cfg, calls);
 Worked examples:
 - [`test/deploy/DeployV1.t.sol`](../test/deploy/DeployV1.t.sol): the library;
 - [`test/deploy/GenesisFlows.t.sol`](../test/deploy/GenesisFlows.t.sol): a curated 6529 Stream
-  work auctioned on the deployed system;
+  work auctioned, and a 6529 Editions gift opened, on the deployed system;
 - [`test/deploy/DeployScript.t.sol`](../test/deploy/DeployScript.t.sol): the scripts.
 
 ## Local dry run (anvil)
@@ -65,14 +63,11 @@ DEPLOYMENT=deployments/31337/<timestamp>.json \
   forge script script/Verify.s.sol --rpc-url http://127.0.0.1:8545
 ```
 
-- **Placeholders.** Anvil runs on placeholders and stand-ins:
-  - the placeholders are the example genesis, the CC0 text, the manifest, the fee recipient and
-    the marketplace owner;
-  - the stand-ins are the renderer, and a `DelegationManagementMock` deployed first because the
-    canonical delegation address has no code.
-
-  The record says `"placeholders": true`, lists the renderer under `standIns`, and marks the
-  delegation mock (`"delegationMock": true`).
+- **Placeholders.** Anvil runs on placeholders: the example genesis, the CC0 text, the
+  manifest, the fee recipient and the marketplace owner. A `DelegationManagementMock` is
+  deployed first, because the canonical delegation address has no code. The record says
+  `"placeholders": true` and marks the mock (`"delegationMock": true`). Its `standIns` and
+  `pendingLanes` are empty.
 - **Use `--slow`.** Without it, anvil can pack a block until the next deploy transaction no
   longer fits. That transaction then waits for a block that automine never produces;
   `cast rpc evm_mine` frees it.
@@ -333,9 +328,9 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
   a rehearsal from the same deployer, use a new `DEPLOY_NAMESPACE`.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
-- **Gas.** On anvil, today's set is 24 transactions and about 53M gas, including the
-  delegation mock and the renderer stand-in. The largest transaction is about 5.2M, under the
-  16.8M EIP-7825 cap. The renderer and Editions add more, so use the simulation's estimate.
+- **Gas.** On anvil, the whole system is 25 transactions and about 63.2M gas, including the
+  delegation mock. The largest transaction is the renderer's creation, at about 5.4M, under
+  the 16.8M EIP-7825 cap. Use the simulation's estimate for the chain's gas price.
 - **The record.** The run writes `deployments/11155111/<timestamp>.json`. It holds:
   - every address and code hash;
   - every constructor parameter (`params`), including the CREATE2 deployer;

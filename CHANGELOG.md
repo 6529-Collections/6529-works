@@ -38,8 +38,8 @@
   policy, a CC0 text other than the pinned canonical one, a missing entropy-module choice,
   non-canonical dependencies on mainnet, and anything the genesis names but the deployment
   lacks. Each product's first default currency is genesis wiring. `script/README.md` is the
-  Sepolia runbook. The canonical CC0 legal code is pinned by digest. A Sepolia run waits
-  for the renderer and Editions.
+  Sepolia runbook. The canonical CC0 legal code is pinned by digest. The deploy covers every
+  v1 contract, the renderer and 6529 Editions included, with no stand-in.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
