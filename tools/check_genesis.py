@@ -4,14 +4,19 @@
 Checks `config/genesis.example.json`:
   1. every listed signature (mapped, genesis-only or deferred) is a method of its contract's
      compiled ABI, with the listed selector (`forge inspect <path:Contract> methodIdentifiers`);
-  2. every `restricted` function of an implemented contract is mapped, genesis-only or
-     deferred, so nothing silently falls back to ADMIN;
-  3. every contract under src/ that has a `restricted` function is in the configuration;
+  2. every `restricted` function of an implemented contract, including those it inherits from
+     abstract bases under src/, is mapped, genesis-only or deferred, so nothing silently falls
+     back to ADMIN;
+  3. every concrete contract under src/ that has, or inherits, a `restricted` function is in
+     the configuration (abstract bases are covered through their concrete children);
   4. every wiring call targets a listed contract with a genesis function, and its calldata
      starts with that function's selector; every genesis-only entry is wired, and no deferred
      entry is;
   5. every mapped function's role exists and its delay matches the role's execution delay and
      its class.
+
+A configured contract whose artifact source is not in the repository yet (a lane that has
+not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
 
 Run from anywhere: `python tools/check_genesis.py`. Standard library only. Method IDs come from
 `forge inspect` by default, or from a build's artifact directory with `--artifacts out`.
@@ -24,6 +29,7 @@ import json
 import re
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -36,7 +42,9 @@ GENESIS_FUNCTIONS = frozenset({
     "bindFederationRegistry", "setAdmittedMinter", "setTarget", "appendGovernanceManifest",
 })
 
-CONTRACT = re.compile(r"\b(?:abstract\s+)?contract\s+([A-Za-z_$][\w$]*)")
+DECLARATION = re.compile(
+    r"\b(abstract\s+)?(contract|interface|library)\s+([A-Za-z_$][\w$]*)"
+)
 ARTIFACT_REF = re.compile(r"^[^:\s]+\.sol:[A-Za-z_$][\w$]*$")
 HEX = re.compile(r"^0x(?:[0-9a-fA-F]{2})*$")
 STATIC_TYPE = re.compile(r"^(?:address|bool|u?int\d{0,3}|bytes(?:[1-9]|[12]\d|3[0-2]))$")
@@ -44,6 +52,7 @@ FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(")
 WORD = re.compile(r"[A-Za-z_$][\w$]*")
 
 MethodIds = Callable[[str], dict]
+Present = Callable[[str], bool]
 
 
 def strip_comments(text: str) -> str:
@@ -98,27 +107,101 @@ def _modifiers(code: str, paren: int) -> list[str]:
     return words
 
 
-def restricted_functions(text: str) -> dict[str, set[str]]:
-    """Names of `restricted` functions, per contract declared in `text`."""
+@dataclass
+class Declared:
+    """A contract declared under src/: its bases and its own `restricted` functions."""
+
+    abstract: bool
+    bases: list[str] = field(default_factory=list)
+    restricted: set[str] = field(default_factory=set)
+
+
+def _matching_brace(code: str, open_index: int) -> int:
+    depth = 0
+    for i in range(open_index, len(code)):
+        if code[i] == "{":
+            depth += 1
+        elif code[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+    return len(code)
+
+
+def _bases(header: str) -> list[str]:
+    """Base contract names from the text between a contract's name and its `{`."""
+    match = re.match(r"\s*is\b(.*)", header, re.S)
+    if not match:
+        return []
+    bases, depth, current = [], 0, ""
+    for c in match.group(1):
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+        elif c == "," and depth == 0:
+            bases.append(current)
+            current = ""
+            continue
+        if depth == 0 and c != ")":
+            current += c
+    bases.append(current)
+    names = [WORD.match(b.strip().split(".")[-1]) for b in bases if b.strip()]
+    return [m.group(0) for m in names if m]
+
+
+def declarations(text: str) -> dict[str, Declared]:
+    """Every contract declared in `text` (interfaces and libraries skipped), by name."""
     code = strip_comments(text)
-    contracts = [(m.start(), m.group(1)) for m in CONTRACT.finditer(code)]
-    found: dict[str, set[str]] = {}
-    for m in FUNCTION.finditer(code):
-        owner = None
-        for start, name in contracts:
-            if start < m.start():
-                owner = name
-        if owner and "restricted" in _modifiers(code, m.end() - 1):
-            found.setdefault(owner, set()).add(m.group(1))
+    found: dict[str, Declared] = {}
+    for m in DECLARATION.finditer(code):
+        brace = code.find("{", m.end())
+        if brace < 0:
+            continue
+        if m.group(2) != "contract":
+            continue
+        end = _matching_brace(code, brace)
+        decl = Declared(abstract=bool(m.group(1)), bases=_bases(code[m.end():brace]))
+        body = code[brace:end]
+        for f in FUNCTION.finditer(body):
+            if "restricted" in _modifiers(body, f.end() - 1):
+                decl.restricted.add(f.group(1))
+        found[m.group(3)] = decl
     return found
 
 
+def restricted_functions(text: str) -> dict[str, set[str]]:
+    """Names of the `restricted` functions each contract in `text` declares itself."""
+    return {name: d.restricted for name, d in declarations(text).items() if d.restricted}
+
+
 def scan_sources(src: Path) -> dict[str, set[str]]:
-    """`path:Contract` (relative to the repository root) to its `restricted` function names."""
-    result: dict[str, set[str]] = {}
+    """`path:Contract` (relative to the repository root) to the `restricted` function names of
+    every concrete contract under `src` that declares or inherits one. Restricted functions of
+    abstract bases count for each concrete descendant; abstract contracts are not listed."""
+    declared: dict[str, tuple[str, Declared]] = {}
     for path in sorted(src.rglob("*.sol")):
-        for contract, names in restricted_functions(path.read_text(encoding="utf-8")).items():
-            result[f"{path.relative_to(src.parent).as_posix()}:{contract}"] = names
+        rel = path.relative_to(src.parent).as_posix()
+        for name, decl in declarations(path.read_text(encoding="utf-8")).items():
+            declared[name] = (rel, decl)
+
+    def inherited(name: str, seen: set[str]) -> set[str]:
+        if name in seen or name not in declared:
+            return set()
+        seen.add(name)
+        decl = declared[name][1]
+        names = set(decl.restricted)
+        for base in decl.bases:
+            names |= inherited(base, seen)
+        return names
+
+    result: dict[str, set[str]] = {}
+    for name, (rel, decl) in declared.items():
+        if decl.abstract:
+            continue
+        names = inherited(name, set())
+        if names:
+            result[f"{rel}:{name}"] = names
     return result
 
 
@@ -203,8 +286,24 @@ def _check_calldata(where: str, sig: str, data: str, args: list, addresses: dict
     return problems
 
 
-def check(config: dict, ids: MethodIds, restricted: dict[str, set[str]]) -> list[str]:
-    """Every problem found, as one line each."""
+def source_present(root: Path) -> Present:
+    """Whether an artifact reference's source file exists under `root`."""
+    return lambda ref: isinstance(ref, str) and (root / ref.split(":")[0]).is_file()
+
+
+def pending(config: dict, present: Present) -> list[str]:
+    """Configured contracts whose artifact source is not in the repository yet."""
+    return [c["name"] for c in config.get("contracts", []) if not present(c["artifact"])]
+
+
+def check(
+    config: dict,
+    ids: MethodIds,
+    restricted: dict[str, set[str]],
+    present: Present = lambda ref: True,
+) -> list[str]:
+    """Every problem found, as one line each. Contracts whose artifact source is not present
+    (unmerged lanes) skip the ABI and `restricted` coverage checks."""
     problems: list[str] = []
     roles = {r["name"]: r for r in config.get("roles", [])}
     by_name = {c["name"]: c for c in config.get("contracts", [])}
@@ -214,13 +313,16 @@ def check(config: dict, ids: MethodIds, restricted: dict[str, set[str]]) -> list
     implemented = {c["implementation"] for c in by_name.values() if c.get("implementation")}
 
     for name, c in by_name.items():
-        methods = ids(c["artifact"])
+        here = present(c["artifact"])
+        methods = ids(c["artifact"]) if here else {}
         groups = {g: c.get(g, []) for g in ("functions", "genesisOnly", "deferred")}
         listed = set()
         for group, entries in groups.items():
             for e in entries:
                 sig = e["signature"]
                 listed.add(sig)
+                if not here:
+                    continue
                 if sig not in methods:
                     problems.append(f"{name}: {group} {sig} is not a method of {c['artifact']}")
                 elif methods[sig] != _selector(e):
@@ -239,7 +341,7 @@ def check(config: dict, ids: MethodIds, restricted: dict[str, set[str]]) -> list
                     f"match {e['role']} ({role['executionDelay']})"
                 )
         impl = c.get("implementation")
-        if impl:
+        if impl and present(impl):
             impl_methods = ids(impl)
             for fn in sorted(restricted.get(impl, set())):
                 for sig in sorted(s for s in impl_methods if s.split("(")[0] == fn):
@@ -262,11 +364,12 @@ def check(config: dict, ids: MethodIds, restricted: dict[str, set[str]]) -> list
             continue
         if sig.split("(")[0] not in GENESIS_FUNCTIONS:
             problems.append(f"{where}: not a genesis function")
-        methods = ids(by_name[name]["artifact"])
+        artifact = by_name[name]["artifact"]
+        methods = ids(artifact) if present(artifact) else {sig: None}
         data = w.get("calldata", "").lower().removeprefix("0x")
         if sig not in methods:
             problems.append(f"{where}: not a method of {by_name[name]['artifact']}")
-        elif data[:8] != methods[sig]:
+        elif methods[sig] is not None and data[:8] != methods[sig]:
             problems.append(f"{where}: calldata selector 0x{data[:8]} != 0x{methods[sig]}")
         problems += _check_calldata(
             where, sig, w.get("calldata"), w.get("args", []), addresses
@@ -308,8 +411,10 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(config, dict):
         raise SystemExit(f"{path}: the configuration must be a JSON object")
     ids = artifact_ids(args.artifacts) if args.artifacts else forge_inspect(root)
+    present = source_present(root)
     try:
-        problems = check(config, ids, scan_sources(root / "src"))
+        problems = check(config, ids, scan_sources(root / "src"), present)
+        waiting = pending(config, present)
     except (KeyError, TypeError, AttributeError, ValueError) as error:
         raise SystemExit(f"{path}: malformed configuration ({type(error).__name__}: {error})") from None
     for line in problems:
@@ -319,7 +424,11 @@ def main(argv: list[str] | None = None) -> int:
     if problems:
         print(f"genesis configuration: {len(problems)} problem(s)")
         return 1
-    print(f"genesis configuration: {contracts} contracts and {wiring} wiring calls match the build")
+    note = f"; pending (not merged yet): {', '.join(waiting)}" if waiting else ""
+    print(
+        f"genesis configuration: {contracts} contracts and {wiring} wiring calls match the build"
+        f"{note}"
+    )
     return 0
 
 

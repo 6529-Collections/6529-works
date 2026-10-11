@@ -80,8 +80,15 @@ this file (Foundry has read-only access to `./config`) and checks:
 only; unit tests in `tools/test_check_genesis.py`). It compares every entry with
 `forge inspect <path:Contract> methodIdentifiers`, including overloads such as the
 auction's two `pause` functions. It also requires every `restricted` function of every
-contract under `src/` to be mapped, genesis-only or deferred, so nothing silently falls
-back to `ADMIN`.
+concrete contract under `src/` to be mapped, genesis-only or deferred, so nothing silently
+falls back to `ADMIN`.
+- **Inherited functions:** a `restricted` function declared in an abstract base, such as
+  `MintSaleBase`, counts for each concrete contract that inherits it. The abstract base is
+  never required in the configuration itself.
+- **Pending contracts:** a configured contract whose artifact source is not in the
+  repository yet is reported as pending and passes. It is mapped ahead from its lane's
+  branch, so its merge never turns `main` red, and it is checked in full once its source
+  lands. Today these are Stream, WorkRecords, Editions and ArtistRegistry.
 
 Selectors and wiring calldata are generated from the build artifacts and `cast calldata`,
 not typed by hand. When a lane merges, add its contract's `implementation` and its
