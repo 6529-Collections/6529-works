@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {
+    ReentrancyGuardTransient
+} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
+import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
-import { ReleaseAuthorization } from "./ReleaseAuthorization.sol";
 import { Splits } from "./Splits.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
 
@@ -19,11 +22,18 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      returns nothing or returns `false` fails closed for its own releases only. A recorded
 ///      high-water mark of `observed` makes a balance that shrinks (a negative rebase) fail closed
 ///      too. All state-changing entry points share one transient reentrancy guard.
-contract SplitWallet is ReleaseAuthorization {
+///      Fixed payees are push: anyone may pay them at their own account. Artist-resolved payees
+///      are pull-only (only the current payout address, directly or by a signature checked by the
+///      pinned verifier), so nobody can push an accrued balance to a lost key before recovery.
+contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
     /// @inheritdoc ISplitWallet
     address public immutable factory;
     /// @inheritdoc ISplitWallet
     IArtistPayoutResolver public immutable resolver;
+    /// @inheritdoc ISplitWallet
+    bytes32 public immutable resolverCodeHash;
+    /// @inheritdoc ISplitWallet
+    IReleaseVerifier public immutable verifier;
 
     Payee[] private _payees;
 
@@ -34,12 +44,19 @@ contract SplitWallet is ReleaseAuthorization {
     /// @inheritdoc ISplitWallet
     mapping(address asset => uint256) public recordedObserved;
 
-    /// @param resolver_ The resolver for artist-resolved payees.
+    /// @param resolver_ The resolver for artist-resolved payees; its code hash is pinned.
+    /// @param verifier_ The verifier for signed releases.
     /// @param payees_ A canonical payee list (see {Splits.validate}).
-    constructor(IArtistPayoutResolver resolver_, Payee[] memory payees_) {
+    constructor(
+        IArtistPayoutResolver resolver_,
+        IReleaseVerifier verifier_,
+        Payee[] memory payees_
+    ) {
         Splits.validate(payees_);
         factory = msg.sender;
         resolver = resolver_;
+        resolverCodeHash = address(resolver_).codehash;
+        verifier = verifier_;
         for (uint256 i; i < payees_.length; ++i) {
             _payees.push(payees_[i]);
         }
@@ -50,7 +67,8 @@ contract SplitWallet is ReleaseAuthorization {
 
     /// @inheritdoc ISplitWallet
     function release(address asset, uint256 index) external nonReentrant returns (uint256) {
-        address account = payoutAddress(index);
+        (address account, bool artist) = _payout(index);
+        if (artist && msg.sender != account) revert NotPayoutAddress(msg.sender, account);
         return _release(asset, index, account, account, type(uint256).max);
     }
 
@@ -67,14 +85,15 @@ contract SplitWallet is ReleaseAuthorization {
 
     /// @inheritdoc ISplitWallet
     function releaseWithAuthorization(
-        Authorization calldata authorization,
+        IReleaseVerifier.Authorization calldata authorization,
         bytes calldata signature
     ) external nonReentrant returns (uint256) {
         address account = payoutAddress(authorization.payee);
         if (authorization.account != account) {
             revert NotPayoutAddress(authorization.account, account);
         }
-        _useAuthorization(authorization, signature);
+        // The verifier only lets the wallet an authorization names consume it.
+        verifier.consume(authorization, signature);
         return _release(
             authorization.asset,
             authorization.payee,
@@ -101,10 +120,7 @@ contract SplitWallet is ReleaseAuthorization {
 
     /// @inheritdoc ISplitWallet
     function payoutAddress(uint256 index) public view returns (address account) {
-        Payee storage p = _payee(index);
-        if (p.artistId == 0) return p.account;
-        account = resolver.payoutAddress(p.artistId);
-        if (account == address(0)) revert PayoutUnresolved(p.artistId);
+        (account,) = _payout(index);
     }
 
     /// @inheritdoc ISplitWallet
@@ -171,6 +187,17 @@ contract SplitWallet is ReleaseAuthorization {
             ? address(this).balance
             : TokenTransfer.balanceOf(asset, address(this));
         return balance + totalReleased[asset];
+    }
+
+    /// @dev A fixed payee's account, or an artist-resolved payee's current payout address from the
+    ///      pinned resolver; `artist` says which.
+    function _payout(uint256 index) private view returns (address account, bool artist) {
+        Payee storage p = _payee(index);
+        if (p.artistId == 0) return (p.account, false);
+        if (address(resolver).codehash != resolverCodeHash) revert ResolverCodeChanged();
+        account = resolver.payoutAddress(p.artistId);
+        if (account == address(0)) revert PayoutUnresolved(p.artistId);
+        return (account, true);
     }
 
     function _payee(uint256 index) private view returns (Payee storage) {

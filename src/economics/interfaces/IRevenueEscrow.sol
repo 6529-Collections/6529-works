@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ISplitFactory } from "./ISplitFactory.sol";
+
 /// @title IRevenueEscrow
 /// @notice Holds payments a payer could not deliver to a wallet (ADR 0001 sections 5 and 7), keyed
-///         by `(wallet, asset)`. Anyone may flush a credit, and it only ever goes to the wallet
-///         captured when it was credited. There is no recovery or redirection route.
+///         by `(wallet, asset)`. Anyone may flush a credit to its wallet. Governance may move a
+///         credit only to an equivalent replacement wallet (same factory, identical payees).
 interface IRevenueEscrow {
     /// @notice `payer` credited `amount` of `asset` to `wallet`, which is now owed `owed`.
     event Credited(
@@ -18,7 +20,18 @@ interface IRevenueEscrow {
     event Flushed(
         address indexed wallet, address indexed asset, address indexed caller, uint256 amount
     );
+    /// @notice `amount` of `asset` owed to `wallet` moved to the equivalent `replacement`, which is
+    ///         now owed `owed`.
+    event Recovered(
+        address indexed wallet,
+        address indexed replacement,
+        address indexed asset,
+        uint256 amount,
+        uint256 owed
+    );
 
+    /// @notice The factory has no code or is an EIP-7702 delegated account.
+    error InvalidFactory(address factory);
     /// @notice `wallet` is zero or the escrow itself.
     error InvalidWallet(address wallet);
     /// @notice An ERC-20 deposit named `address(0)`, which is ETH.
@@ -29,6 +42,12 @@ interface IRevenueEscrow {
     error NothingOwed(address wallet, address asset);
     /// @notice Sending `amount` wei to `wallet` failed; the credit is kept.
     error ETHTransferFailed(address wallet, uint256 amount);
+    /// @notice `wallet` and `replacement` are not two distinct factory wallets with identical
+    ///         payee configurations.
+    error NotEquivalentWallet(address wallet, address replacement);
+
+    /// @notice The split factory whose wallet configurations {recover} compares.
+    function factory() external view returns (ISplitFactory);
 
     /// @notice The amount of `asset` owed to `wallet`.
     function owed(address wallet, address asset) external view returns (uint256);
@@ -47,4 +66,11 @@ interface IRevenueEscrow {
     /// @notice Pays everything owed to `wallet` in `asset` to `wallet`. Anyone may call.
     /// @return amount The amount paid.
     function flush(address wallet, address asset) external returns (uint256 amount);
+
+    /// @notice Moves everything owed to `wallet` in `asset` to `replacement`, a distinct wallet of
+    ///         the same factory with an identical payee configuration (another salt).
+    /// @dev Governed: the funds-and-recipients class (14 days). It rescues credits for a wallet a
+    ///      token has blocked; the blocked wallet's own balance stays where it is. No share changes,
+    ///      so no account's consent is needed. Both wallets must be deployed.
+    function recover(address wallet, address replacement, address asset) external;
 }

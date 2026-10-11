@@ -2,54 +2,94 @@
 pragma solidity ^0.8.24;
 
 import { IClaimRouter } from "./interfaces/IClaimRouter.sol";
+import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 
 /// @title ClaimRouter
-/// @notice Permissionless, stateless batch claims across split wallets (ADR 0001 section 7). Each
-///         item calls `release(asset, payee)`, which pays only the payee's own payout address.
+/// @notice Permissionless, stateless batch claims across split wallets (ADR 0001 section 7). Plain
+///         items call `release(asset, payee)`, which pays only a fixed payee's own account; signed
+///         items call `releaseWithAuthorization`, which pays only where the payee signed.
 /// @dev No storage, owner, approvals, `receive` or `fallback`, so it never holds funds and reentry
-///      gains nothing; the wallets enforce entitlement and accounting. Hostile targets are
-///      contained: at most one word of return data is copied on success and at most 256 bytes of
-///      revert data on failure, and in continue mode each call gets only its share of the gas left.
+///      gains nothing; the wallets enforce entitlement, accounting and who may pull. Hostile
+///      targets are contained: at most one word of return data is copied on success and at most
+///      256 bytes of revert data on failure, and in continue mode each call gets only its share of
+///      the gas left, but never less than its minimum.
 contract ClaimRouter is IClaimRouter {
     /// @inheritdoc IClaimRouter
-    /// @dev A worst-case standard item costs about 130,000 gas, so a full atomic batch stays
-    ///      under 7M, and continue mode needs at most `(MAX_CLAIMS + 1) * MIN_ITEM_GAS` (10.2M).
+    /// @dev A worst-case plain item costs about 130,000 gas, so a full atomic batch stays under
+    ///      7M, and continue mode needs at most `(MAX_CLAIMS + 1) * MIN_ITEM_GAS` (10.2M).
     uint256 public constant MAX_CLAIMS = 50;
     /// @inheritdoc IClaimRouter
-    /// @dev Without a floor, a batch that never reverts lets gas estimation settle on a limit at
-    ///      which every item runs out of gas and nothing is claimed.
     uint256 public constant MIN_ITEM_GAS = 200_000;
+    /// @inheritdoc IClaimRouter
+    /// @dev A worst-case signed item (a 200,000-gas ERC-1271 check, a 4 KiB signature in
+    ///      calldata, a cold release) costs under 400,000 gas, so a full batch stays under the
+    ///      cap in both modes; see `test/economics/GasCap.t.sol`.
+    uint256 public constant MAX_SIGNED_CLAIMS = 20;
+    /// @inheritdoc IClaimRouter
+    uint256 public constant MIN_SIGNED_ITEM_GAS = 450_000;
 
     uint256 private constant _MAX_REASON_BYTES = 256;
+
+    struct Item {
+        address wallet;
+        address asset;
+        uint256 payee;
+        uint256 index;
+        uint256 remaining;
+        uint256 minGas;
+        bool keepGoing;
+    }
 
     /// @inheritdoc IClaimRouter
     function claim(Claim[] calldata claims, bool continueOnFailure)
         external
         returns (uint256[] memory amounts)
     {
-        if (claims.length > MAX_CLAIMS) revert TooManyClaims(claims.length);
-        amounts = new uint256[](claims.length);
-        for (uint256 i; i < claims.length; ++i) {
-            amounts[i] = _claim(claims[i], i, continueOnFailure, claims.length - i);
+        uint256 count = claims.length;
+        if (count > MAX_CLAIMS) revert TooManyClaims(count);
+        amounts = new uint256[](count);
+        for (uint256 i; i < count; ++i) {
+            Claim calldata c = claims[i];
+            amounts[i] = _call(
+                Item(c.wallet, c.asset, c.payee, i, count - i, MIN_ITEM_GAS, continueOnFailure),
+                abi.encodeCall(ISplitWallet.release, (c.asset, c.payee))
+            );
         }
     }
 
-    function _claim(Claim calldata item, uint256 index, bool keepGoing, uint256 remaining)
-        private
-        returns (uint256 amount)
+    /// @inheritdoc IClaimRouter
+    function claimSigned(SignedClaim[] calldata claims, bool continueOnFailure)
+        external
+        returns (uint256[] memory amounts)
     {
+        uint256 count = claims.length;
+        if (count > MAX_SIGNED_CLAIMS) revert TooManyClaims(count);
+        amounts = new uint256[](count);
+        for (uint256 i; i < count; ++i) {
+            IReleaseVerifier.Authorization calldata a = claims[i].authorization;
+            amounts[i] = _call(
+                Item(
+                    a.wallet, a.asset, a.payee, i, count - i, MIN_SIGNED_ITEM_GAS, continueOnFailure
+                ),
+                abi.encodeCall(ISplitWallet.releaseWithAuthorization, (a, claims[i].signature))
+            );
+        }
+    }
+
+    function _call(Item memory item, bytes memory input) private returns (uint256 amount) {
         address wallet = item.wallet;
         uint256 size;
         bytes memory reason;
         if (wallet.code.length == 0) {
             reason = abi.encodeWithSelector(ClaimTargetHasNoCode.selector, wallet);
         } else {
-            bytes memory input = abi.encodeCall(ISplitWallet.release, (item.asset, item.payee));
             // Continue mode splits the gas left between this call, the later items and the router,
-            // recomputed per item so a failed item's share passes on. There is no fixed stipend.
-            uint256 callGas = keepGoing ? gasleft() / (remaining + 1) : gasleft();
-            if (keepGoing && callGas < MIN_ITEM_GAS) revert ClaimInsufficientGas(index, callGas);
+            // recomputed per item so a failed item's share passes on.
+            uint256 callGas = item.keepGoing ? gasleft() / (item.remaining + 1) : gasleft();
+            if (item.keepGoing && callGas < item.minGas) {
+                revert ClaimInsufficientGas(item.index, callGas);
+            }
             bool ok;
             assembly ("memory-safe") {
                 ok := call(callGas, wallet, 0, add(input, 0x20), mload(input), 0x00, 0x20)
@@ -68,7 +108,7 @@ contract ClaimRouter is IClaimRouter {
                 }
             }
         }
-        if (!keepGoing) revert ClaimCallFailed(index, wallet, size, reason);
-        emit ClaimFailed(wallet, item.asset, item.payee, index, size, reason);
+        if (!item.keepGoing) revert ClaimCallFailed(item.index, wallet, size, reason);
+        emit ClaimFailed(wallet, item.asset, item.payee, item.index, size, reason);
     }
 }
