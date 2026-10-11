@@ -24,13 +24,22 @@ contract Deploy is Script {
         "6529 Works local dry run: placeholder for the CC0 1.0 Universal legal code.";
     bytes32 internal constant PLACEHOLDER_MANIFEST = keccak256("placeholder: epoch-0 manifest");
     address internal constant PLACEHOLDER_FEE_RECIPIENT = address(0xC001);
+    /// @notice The committed example genesis; every holder in it is a placeholder.
+    string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
+    /// @notice Holder addresses at or below this are placeholders (the example's `0x…b0xx`) or
+    ///         precompiles, never a Safe or a key.
+    uint160 internal constant MAX_PLACEHOLDER = 0xFFFF;
 
     error MissingParameter(string name);
+    error ExampleGenesisOffAnvil();
+    error PlaceholderHolder(string role, address account);
 
     function run() external returns (DeployV1.Deployment memory d) {
-        string memory path = vm.envOr("GENESIS_CONFIG", string("config/genesis.example.json"));
-        string memory json = vm.readFile(path);
         bool local = block.chainid == DeployV1.LOCAL_CHAIN_ID;
+        string memory path = vm.envOr("GENESIS_CONFIG", local ? EXAMPLE_GENESIS : string(""));
+        if (bytes(path).length == 0) revert MissingParameter("GENESIS_CONFIG");
+        string memory json = vm.readFile(path);
+        checkGenesis(path, json, local);
         DeployV1.Params memory p = params(local);
         p.deployer = msg.sender;
         DeployV1.Manifest memory manifest = DeployV1.Manifest(
@@ -54,6 +63,26 @@ contract Deploy is Script {
         if (vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)) {
             _record(d, p, path, manifest, startBlock, keccak256(abi.encode(cfg)), calls, local);
         }
+    }
+
+    /// @notice Off anvil, refuses the example genesis and any holder that is a placeholder:
+    ///         the configurator renounces ADMIN in the same transaction, so a placeholder
+    ///         admin would leave the system with no reachable governance.
+    function checkGenesis(string memory path, string memory json, bool local) public view {
+        if (local) return;
+        if (keccak256(bytes(path)) == keccak256(bytes(EXAMPLE_GENESIS))) {
+            revert ExampleGenesisOffAnvil();
+        }
+        for (uint256 i; vm.keyExistsJson(json, _holder(i, "")); ++i) {
+            address account = vm.parseJsonAddress(json, _holder(i, ".account"));
+            if (uint160(account) <= MAX_PLACEHOLDER) {
+                revert PlaceholderHolder(vm.parseJsonString(json, _holder(i, ".role")), account);
+            }
+        }
+    }
+
+    function _holder(uint256 i, string memory field) private pure returns (string memory) {
+        return string.concat(".holders[", vm.toString(i), "]", field);
     }
 
     /// @notice Deployment parameters from the environment, with anvil defaults.
