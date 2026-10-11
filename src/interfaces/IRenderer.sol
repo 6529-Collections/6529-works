@@ -13,21 +13,25 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      the content store, and dispute status from the statement log's `latestDisputeOutcome`; it
 ///      adds the collection, artist, license and edition traits. `tokenURI` stays small: it inlines
 ///      the media only when the work is on-chain complete and the primary file is at most
-///      `inlineThreshold()` bytes; otherwise it gives the preferred locator plus, up to 1 MB, a
-///      small on-chain preview. Above 1 MB the media is reachable only through the content store's
-///      chunked reads. Reads are bounded and fail closed: a renderer never returns plausible
-///      metadata for a token it cannot read.
+///      `inlineThreshold()` cost-weighted bytes; otherwise it gives the preferred locator plus a
+///      small on-chain preview. Above 1 MiB the media is reachable only through the content
+///      store's chunked reads. Reads are bounded and fail closed: a renderer never returns
+///      plausible metadata for a token it cannot read. A work whose record is not open yet, not
+///      completely uploaded or not acceptable is not an unreadable token: it gets core-only
+///      metadata from 6529 Stream with a `record_status` field, and never a revert.
 interface IRenderer is IERC165 {
     /// @notice The compact metadata URI (`data:application/json;...`) for `tokenId` of
     ///         `token`, which is 6529 Stream or 6529 Editions.
     function tokenURI(address token, uint256 tokenId) external view returns (string memory);
 
-    /// @notice The full metadata URI with the media inlined, for an on-chain complete work whose
-    ///         primary file is at most 1 MB. Reverts otherwise.
+    /// @notice The full metadata URI with the media inlined, for a work with a usable record that
+    ///         is on-chain complete and whose primary file is at most 1 MiB (cost-weighted). Reverts
+    ///         otherwise, including for a work that `tokenURI` shows as core-only.
     function fullTokenURI(address token, uint256 tokenId) external view returns (string memory);
 
-    /// @notice The largest primary file `tokenURI` inlines, measured in cost-weighted bytes (an
-    ///         `Identity`-encoded byte counts 8x), 256 KiB until the Sepolia matrix sets the
-    ///         final value.
+    /// @notice The largest primary file `tokenURI` inlines, measured in cost-weighted stored bytes
+    ///         (the renderer has to base64-encode an `Identity` file, which costs about eight times
+    ///         what copying `Base64` text does, so an `Identity` byte counts eight times and a
+    ///         `Base64` byte once), 256 KiB until the Sepolia matrix sets the final value.
     function inlineThreshold() external view returns (uint256);
 }

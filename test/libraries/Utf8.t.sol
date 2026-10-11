@@ -67,6 +67,74 @@ contract Utf8Test is Test {
         }
     }
 
+    /// @dev The short paths for two- and three-byte sequences (C2-DF, E1-EC and EE-EF with plain
+    ///      continuations) sit next to the end of the text at every offset in a word: a sequence that
+    ///      ends exactly at the end, one cut short, one with a bad continuation, and the lead bytes
+    ///      the short path leaves to the general one (E0 and ED).
+    function test_ShortPathsAtTheEndAtEveryOffset() public pure {
+        for (uint256 pad; pad < 70; ++pad) {
+            bytes memory pre = new bytes(pad);
+            for (uint256 i; i < pad; ++i) {
+                pre[i] = "a";
+            }
+            _check(bytes.concat(pre, hex"c3a9"), true);
+            _check(bytes.concat(pre, hex"c3"), false);
+            _check(bytes.concat(pre, hex"c3a9c3a9c3a9"), true);
+            _check(bytes.concat(pre, hex"c341"), false);
+            _check(bytes.concat(pre, hex"c3c3"), false);
+            _check(bytes.concat(pre, hex"e282ac"), true);
+            _check(bytes.concat(pre, hex"e282"), false);
+            _check(bytes.concat(pre, hex"e2"), false);
+            _check(bytes.concat(pre, hex"e28241"), false);
+            _check(bytes.concat(pre, hex"e24182"), false);
+            _check(bytes.concat(pre, hex"e282acc3a9e282ac"), true);
+            _check(bytes.concat(pre, hex"e0a080"), true);
+            _check(bytes.concat(pre, hex"e09f80"), false);
+            _check(bytes.concat(pre, hex"ed9fbf"), true);
+            _check(bytes.concat(pre, hex"eda080"), false);
+            _check(bytes.concat(pre, hex"efbfbf"), true);
+            _check(bytes.concat(pre, hex"c0af"), false);
+            _check(bytes.concat(pre, hex"c2"), false);
+            _check(bytes.concat(pre, hex"dfbf"), true);
+            _check(bytes.concat(pre, hex"f09f9880"), true);
+            _check(bytes.concat(pre, hex"f09f98"), false);
+        }
+    }
+
+    /// @dev The short paths read the bytes of a sequence from one word, and must not take a byte
+    ///      after the end of the text for one of its continuations, whatever the memory holds
+    ///      there (here 0xa9, a good continuation).
+    function test_ShortPathsDoNotReadPastTheEnd() public pure {
+        bytes[11] memory cut = [
+            bytes(hex"c3"),
+            hex"e2",
+            hex"e282",
+            hex"e0a0", // a valid third byte after it would make U+0800
+            hex"ed9f", // ... and U+D7E9
+            hex"f0",
+            hex"f09f",
+            hex"f09f98", // ... and U+1F629
+            hex"c3a9c3",
+            hex"e282ace2",
+            hex"e282ace282"
+        ];
+        for (uint256 pad; pad < 34; ++pad) {
+            for (uint256 c; c < cut.length; ++c) {
+                bytes memory text = bytes.concat(new bytes(pad), cut[c]);
+                for (uint256 i; i < pad; ++i) {
+                    text[i] = "a";
+                }
+                uint256 length = text.length;
+                assembly ("memory-safe") {
+                    for { let i := 0 } lt(i, 40) { i := add(i, 1) } {
+                        mstore8(add(add(text, add(0x20, length)), i), 0xa9)
+                    }
+                }
+                assertFalse(Utf8.isValid(text), "a sequence cut short");
+            }
+        }
+    }
+
     function test_InvalidVectors() public pure {
         bytes[22] memory invalid = [
             bytes(hex"80"), // lone continuation
@@ -120,6 +188,21 @@ contract Utf8Test is Test {
                 bytes memory four = bytes.concat(three, hex"80");
                 _parity(three);
                 _parity(four);
+            }
+        }
+    }
+
+    /// @dev Each byte of a three- and four-byte sequence is checked on its own: every value of the
+    ///      third byte with a valid fourth, and every value of the fourth with a valid third.
+    function test_EveryThirdAndFourthByte() public pure {
+        for (uint256 lead = 0xe0; lead < 0xf5; ++lead) {
+            uint256 second = lead == 0xe0 ? 0xa0 : lead == 0xf0 ? 0x90 : 0x80;
+            for (uint256 b; b < 256; ++b) {
+                bytes memory head = abi.encodePacked(uint8(lead), uint8(second));
+                _parity(bytes.concat(head, abi.encodePacked(uint8(b))));
+                _parity(bytes.concat(head, abi.encodePacked(uint8(b), uint8(0x80))));
+                _parity(bytes.concat(head, hex"80", abi.encodePacked(uint8(b))));
+                _parity(bytes.concat(head, abi.encodePacked(uint8(b), uint8(0xa9)), "a"));
             }
         }
     }
