@@ -15,6 +15,7 @@ from .address import parse_address
 from .encoding import Encoding
 from .errors import ToolError
 from .plan import (
+    ATTEST_CHUNKS_PER_CALL,
     CHUNK_SIZE,
     MAX_CHUNKS,
     hex0x,
@@ -143,6 +144,7 @@ def cmd_calls(args: argparse.Namespace) -> int:
     stored = _read_file(stored_path, "stored stream")
 
     skip_register = False
+    skip_attest = False
     present: set[bytes] = set()
     if args.only_missing:
         if not (args.rpc or os.environ.get("ETH_RPC_URL")):
@@ -153,14 +155,26 @@ def cmd_calls(args: argparse.Namespace) -> int:
         for digest in dict.fromkeys(manifest.chunk_hashes):
             if client.chunk_pointer(digest) is not None:
                 present.add(digest)
+        if manifest.encoding.uses_base64 and not args.no_attest:
+            per_call = client.attest_chunks_per_call()
+            if per_call is None:
+                skip_attest = True
+                _eprint("warning: this store has no attestBase64; no attest calls are emitted")
+            elif per_call != ATTEST_CHUNKS_PER_CALL:
+                raise ToolError(
+                    f"the store's ATTEST_CHUNKS_PER_CALL is {per_call}, not "
+                    f"{ATTEST_CHUNKS_PER_CALL}; this tool cannot size the attest calls for it"
+                )
+            else:
+                skip_attest = client.is_base64_attested(manifest.file_id) is True
 
     plan = calls_module.build_calls(
         manifest, stored, register=args.register, skip_register=skip_register,
-        present_chunk_hashes=present,
+        present_chunk_hashes=present, attest=not args.no_attest, skip_attest=skip_attest,
     )
     document = calls_module.calls_document(
         plan, manifest.file_id, store, skipped_register=skip_register,
-        skipped_chunks=len(present),
+        skipped_chunks=len(present), skipped_attest=skip_attest,
     )
     out_dir = Path(args.out_dir) if args.out_dir else manifest_path.with_suffix(".calls")
     if out_dir.exists() and any(out_dir.iterdir()):
@@ -180,10 +194,17 @@ def cmd_calls(args: argparse.Namespace) -> int:
     largest = max((c.estimate for c in plan), key=lambda e: e.transaction, default=None)
     _eprint(f"{len(plan)} transaction(s) written to {out_dir}; nothing was sent")
     _eprint(f"estimated total {total:,} gas")
-    if skip_register or present:
+    attests = sum(c.name == "attestBase64" for c in plan)
+    if attests:
+        _eprint(
+            f"{attests} attestBase64 call(s) come last: a renderer inlines a base64 file only "
+            "once it is attested"
+        )
+    if skip_register or present or skip_attest:
         _eprint(
             f"skipped: manifest {'already registered' if skip_register else 'not yet registered'}"
             f", {len(present)} chunk(s) already stored"
+            + (", already attested" if skip_attest else "")
         )
     if largest is not None:
         _eprint(
@@ -205,11 +226,18 @@ def cmd_calls(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     client = _client(args)
     result = verify_file(client, _file_id(args.file_id), _progress(args.quiet or args.json))
+    report = result.report
     if args.json:
-        print(json.dumps(result.report.to_dict(), indent=2))
+        print(json.dumps(report.to_dict(), indent=2))
     else:
-        print(result.report.render())
-    return 0 if result.report.ok else EXIT_NOT_OK
+        print(report.render())
+    if not report.ok:
+        return EXIT_NOT_OK
+    if args.require_attested and report.encoding in ("base64", "gzipbase64"):
+        if report.base64_attested is not True:
+            _eprint("not attested: --require-attested was given")
+            return EXIT_NOT_OK
+    return 0
 
 
 def cmd_rebuild(args: argparse.Namespace) -> int:
@@ -288,6 +316,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="ask the chain (needs --rpc) and skip what is already stored or registered",
     )
     p.add_argument("--rpc", help="JSON-RPC URL (default: $ETH_RPC_URL); only for --only-missing")
+    p.add_argument(
+        "--no-attest", action="store_true",
+        help="omit the attestBase64 calls a Base64 or GzipBase64 file otherwise gets",
+    )
     p.add_argument("--json", action="store_true", help="print calls.json instead of the script")
     p.add_argument("--force", action="store_true", help="write into a non-empty out-dir")
     p.set_defaults(func=cmd_calls)
@@ -303,6 +335,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("-q", "--quiet", action="store_true", help="no progress on stderr")
         if name == "verify":
             p.add_argument("--json", action="store_true", help="machine-readable report")
+            p.add_argument(
+                "--require-attested", action="store_true",
+                help="exit 1 unless a Base64 or GzipBase64 file is attested (renderers need it)",
+            )
         else:
             p.add_argument("-o", "--output", required=True, help="where to write the media")
             p.add_argument(

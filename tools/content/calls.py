@@ -8,6 +8,11 @@ anyone can see what is missing with `missingChunks` and finish the upload, then 
 per DISTINCT chunk (a file that repeats a chunk needs it stored once). `--register last` puts the
 registration after the chunks instead. The store is permissionless and idempotent, so any order,
 any repetition and any split between senders is safe.
+
+A `Base64` or `GzipBase64` file then needs `attestBase64(fileId)` before a renderer will inline
+it. Attestation reads every chunk, so it comes LAST, after the manifest is registered and all
+chunks are stored; one call validates at most 48 chunks, so a file needs `ceil(chunks / 48)`
+calls (a repeat call on an attested file is a cheap no-op). Anyone may send them.
 """
 
 from __future__ import annotations
@@ -20,8 +25,10 @@ from . import abi, gas
 from .address import checksum_address
 from .errors import ToolError
 from .plan import (
+    ATTEST_CHUNKS_PER_CALL,
     CHUNK_SIZE,
     Manifest,
+    attest_call_count,
     check_stored,
     hex0x,
     split_chunks,
@@ -54,11 +61,15 @@ def build_calls(
     register: str = "first",
     skip_register: bool = False,
     present_chunk_hashes: Iterable[bytes] = (),
+    attest: bool = True,
+    skip_attest: bool = False,
 ) -> list[CallPlan]:
     """The transactions for `manifest`, after proving `stored` is the stream it commits to.
 
-    `skip_register` and `present_chunk_hashes` drop work the chain already has (used with
-    `--only-missing`). Raises `ToolError` if any transaction would not fit the Fusaka gas cap.
+    `skip_register`, `present_chunk_hashes` and `skip_attest` drop work the chain already has
+    (used with `--only-missing`). A `Base64` or `GzipBase64` file gets its `attestBase64` calls
+    after everything else unless `attest` is false. Raises `ToolError` if any transaction would
+    not fit the Fusaka gas cap, or if a base64 file would fail attestation on chain.
     """
     if register not in ("first", "last"):
         raise ToolError("register must be 'first' or 'last'")
@@ -98,6 +109,14 @@ def build_calls(
             drafts.insert(0, item)
         else:
             drafts.append(item)
+    if attest and manifest.encoding.uses_base64 and not skip_attest:
+        data = abi.encode_call(abi.ATTEST_BASE64, manifest.file_id)
+        total = len(manifest.chunk_hashes)
+        for start in range(0, total, ATTEST_CHUNKS_PER_CALL):
+            stop = min(start + ATTEST_CHUNKS_PER_CALL, total)
+            estimate = gas.estimate_attest(stop - start, data)
+            drafts.append(("attestBase64", tuple(range(start, stop)), data, estimate))
+        assert sum(d[0] == "attestBase64" for d in drafts) == attest_call_count(total)
 
     width = max(3, len(str(len(drafts))))
     calls: list[CallPlan] = []
@@ -107,7 +126,7 @@ def build_calls(
                 f"{name} would use about {estimate.transaction:,} gas, over the EIP-7825 "
                 f"transaction cap of {gas.TX_GAS_CAP:,}"
             )
-        suffix = f"-{indexes[0]:03d}" if name == "writeChunk" else ""
+        suffix = f"-{indexes[0]:03d}" if indexes else ""
         calls.append(
             CallPlan(n, name, indexes, data, estimate, f"{n:0{width}d}-{name}{suffix}.calldata")
         )
@@ -116,7 +135,7 @@ def build_calls(
 
 def calls_document(
     calls: list[CallPlan], file_id: bytes, store: bytes, *, skipped_register: bool,
-    skipped_chunks: int,
+    skipped_chunks: int, skipped_attest: bool = False,
 ) -> dict[str, Any]:
     """The machine-readable `calls.json`. Calldata lives in the named files, not inline."""
     return {
@@ -139,7 +158,11 @@ def calls_document(
             }
             for c in calls
         ],
-        "skipped": {"registerManifest": skipped_register, "chunksAlreadyStored": skipped_chunks},
+        "skipped": {
+            "registerManifest": skipped_register,
+            "chunksAlreadyStored": skipped_chunks,
+            "attestBase64": skipped_attest,
+        },
         "totalGasEstimate": sum(c.estimate.transaction for c in calls),
     }
 
@@ -183,11 +206,12 @@ def render_script(calls: list[CallPlan], file_id: bytes, store: bytes) -> str:
     ]
     total = len(calls)
     for c in calls:
-        what = (
-            f"registerManifest ({c.estimate.execution:,} gas of execution)"
-            if c.name == "registerManifest"
-            else f"writeChunk, chunk {', '.join(map(str, c.chunk_indexes))}"
-        )
+        if c.name == "registerManifest":
+            what = f"registerManifest ({c.estimate.execution:,} gas of execution)"
+        elif c.name == "attestBase64":
+            what = f"attestBase64, chunks {c.chunk_indexes[0]} to {c.chunk_indexes[-1]}"
+        else:
+            what = f"writeChunk, chunk {', '.join(map(str, c.chunk_indexes))}"
         lines.append(f"# {c.index + 1}/{total} {what}; estimate {c.estimate.transaction:,} gas")
         lines.append(
             f'cast send "$STORE" --data "$(cat {c.filename})" --gas-limit {c.gas_limit}'

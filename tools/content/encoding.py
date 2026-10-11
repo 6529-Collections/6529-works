@@ -23,8 +23,10 @@ from __future__ import annotations
 import base64
 import binascii
 import enum
+import re
 import struct
 import zlib
+from dataclasses import dataclass
 
 from .errors import EncodingError, ToolError
 
@@ -133,6 +135,39 @@ def base64_decode(text: bytes) -> bytes:
     if base64.b64encode(raw) != text:
         raise EncodingError("base64 is not canonical (padding or trailing bits)")
     return raw
+
+
+_NOT_ALPHABET = re.compile(rb"[^A-Za-z0-9+/]")
+
+
+@dataclass(frozen=True)
+class Base64Problem:
+    """Why `ContentStore.attestBase64` would revert for a stored text. `kind` is `length`
+    (`ContentBase64LengthInvalid`) or `alphabet` (`ContentBase64Invalid`, with the byte `offset`
+    of the first offending byte; the chunk index is `offset // CHUNK_SIZE`)."""
+
+    kind: str
+    offset: int | None = None
+    value: int | None = None
+
+
+def base64_attestation_problem(text: bytes) -> Base64Problem | None:
+    """The same rule as `ContentStore.attestBase64`, or `None` if the store would attest `text`.
+
+    The text must be a whole number of 4-byte groups, every byte in `[A-Za-z0-9+/]`, except that
+    `=` may be the last one or two bytes of the whole text. This is the alphabet and placement
+    rule only: canonical padding bits are not checked (see `base64_decode` for the stricter
+    decoder). The checks run in the contract's order: length first, then the first bad byte.
+    """
+    if len(text) % 4 != 0 or not text:
+        return Base64Problem("length")
+    pad = 0
+    if text.endswith(b"="):
+        pad = 2 if text[-2:-1] == b"=" else 1
+    bad = _NOT_ALPHABET.search(text, 0, len(text) - pad)
+    if bad is not None:
+        return Base64Problem("alphabet", bad.start(), text[bad.start()])
+    return None
 
 
 def encode(media: bytes, encoding: Encoding) -> bytes:

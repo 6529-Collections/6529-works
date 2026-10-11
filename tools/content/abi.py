@@ -32,6 +32,9 @@ READ_CHUNK = selector("readChunk(bytes32,uint256)")
 MISSING_CHUNKS = selector("missingChunks(bytes32)")
 CHUNK_SIZE = selector("CHUNK_SIZE()")
 MAX_CHUNKS = selector("MAX_CHUNKS()")
+ATTEST_BASE64 = selector("attestBase64(bytes32)")
+IS_BASE64_ATTESTED = selector("isBase64Attested(bytes32)")
+ATTEST_CHUNKS_PER_CALL = selector("ATTEST_CHUNKS_PER_CALL()")
 
 # --- Encoding ---
 
@@ -203,6 +206,9 @@ for _name, _types in (
     ("ContentRangeOutOfBounds", ("uint256", "uint256", "uint256")),
     ("ContentChunkMissing", ("bytes32", "uint256", "bytes32")),
     ("ContentChunkLengthMismatch", ("bytes32", "uint256", "uint256", "uint256")),
+    ("ContentNotBase64", ("bytes32", "uint8")),
+    ("ContentBase64LengthInvalid", ("bytes32", "uint256")),
+    ("ContentBase64Invalid", ("bytes32", "uint256")),
     ("SSTORE2ChunkTooLarge", ("uint256",)),
     ("SSTORE2WriteFailed", ()),
     ("SSTORE2InvalidPointer", ("address",)),
@@ -239,7 +245,7 @@ def describe_revert(data: bytes) -> str:
         chunk = args[i * WORD : (i + 1) * WORD]
         if len(chunk) != WORD:
             return f"{name}(malformed arguments)"
-        if kind == "uint256":
+        if kind in ("uint256", "uint8"):
             parts.append(str(int.from_bytes(chunk, "big")))
         elif kind == "address":
             parts.append("0x" + chunk[12:].hex())

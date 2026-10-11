@@ -153,6 +153,25 @@ class StoreClient:
     def read_chunk(self, file_id: bytes, index: int) -> bytes:
         return abi.decode_bytes(self._call(abi.encode_call(abi.READ_CHUNK, file_id, index)))
 
+    def is_base64_attested(self, file_id: bytes) -> bool | None:
+        """Whether `attestBase64` has validated the whole file, or `None` if this store has no
+        attestation (a deployment from before it existed reverts on the unknown selector)."""
+        try:
+            return abi.decode_bool(self._call(abi.encode_call(abi.IS_BASE64_ATTESTED, file_id)))
+        except RevertError as exc:
+            if not exc.data:
+                return None
+            raise
+
+    def attest_chunks_per_call(self) -> int | None:
+        """The store's `ATTEST_CHUNKS_PER_CALL`, or `None` if it has no attestation."""
+        try:
+            return abi.decode_uint(self._call(abi.encode_call(abi.ATTEST_CHUNKS_PER_CALL)))
+        except RevertError as exc:
+            if not exc.data:
+                return None
+            raise
+
     def chunk_pointer(self, digest: bytes) -> bytes | None:
         """The contract holding the chunk with this hash, or `None` if it is not stored."""
         return abi.decode_address(self._call(abi.encode_call(abi.CHUNK_POINTER, digest)))

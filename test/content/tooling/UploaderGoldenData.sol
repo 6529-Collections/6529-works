@@ -38,6 +38,8 @@ library UploaderGoldenData {
     uint256 internal constant GAS_REGISTER_PER_CHUNK = 22400;
     uint256 internal constant GAS_REGISTER_PER_MIME_BYTE = 400;
     uint256 internal constant GAS_REGISTER_LONG_MIME = 45000;
+    uint256 internal constant GAS_ATTEST_BASE = 150000;
+    uint256 internal constant GAS_ATTEST_PER_CHUNK = 180000;
     uint256 internal constant TX_GAS_CAP = 16777216;
 
     /// @dev One small sample per encoding, with its bytes.
@@ -64,6 +66,470 @@ library UploaderGoldenData {
         out = new Vector[](2);
         out[0] = _v8();
         out[1] = _v10();
+    }
+
+    /// @dev One piece of a text: `unit` repeated `count` times.
+    struct Part {
+        bytes unit;
+        uint256 count;
+    }
+
+    /// @param expect 0 accepted, 1 `ContentBase64Invalid` at `chunk`, 2 `ContentBase64LengthInvalid`.
+    struct Base64Case {
+        string name;
+        Part[] parts;
+        uint8 expect;
+        uint256 chunk;
+    }
+
+    /// @dev Bit v set: byte value v is accepted as the first (resp. last) byte of a text.
+    uint256 internal constant BASE64_ACCEPTED_AS_FIRST = 0x0000000000000000000000000000000007fffffe07fffffe03ff880000000000;
+    uint256 internal constant BASE64_ACCEPTED_AS_LAST = 0x0000000000000000000000000000000007fffffe07fffffe23ff880000000000;
+
+    /// @dev Texts for `attestBase64`: accepted, refused by alphabet, refused by length.
+    function base64Cases() internal pure returns (Base64Case[] memory out) {
+        out = new Base64Case[](48);
+        out[0] = _a0();
+        out[1] = _a1();
+        out[2] = _a2();
+        out[3] = _a3();
+        out[4] = _a4();
+        out[5] = _a5();
+        out[6] = _a6();
+        out[7] = _a7();
+        out[8] = _a8();
+        out[9] = _a9();
+        out[10] = _a10();
+        out[11] = _a11();
+        out[12] = _a12();
+        out[13] = _a13();
+        out[14] = _a14();
+        out[15] = _a15();
+        out[16] = _a16();
+        out[17] = _a17();
+        out[18] = _a18();
+        out[19] = _a19();
+        out[20] = _a20();
+        out[21] = _a21();
+        out[22] = _a22();
+        out[23] = _a23();
+        out[24] = _a24();
+        out[25] = _a25();
+        out[26] = _a26();
+        out[27] = _a27();
+        out[28] = _a28();
+        out[29] = _a29();
+        out[30] = _a30();
+        out[31] = _a31();
+        out[32] = _a32();
+        out[33] = _a33();
+        out[34] = _a34();
+        out[35] = _a35();
+        out[36] = _a36();
+        out[37] = _a37();
+        out[38] = _a38();
+        out[39] = _a39();
+        out[40] = _a40();
+        out[41] = _a41();
+        out[42] = _a42();
+        out[43] = _a43();
+        out[44] = _a44();
+        out[45] = _a45();
+        out[46] = _a46();
+        out[47] = _a47();
+    }
+
+    function _a0() private pure returns (Base64Case memory c) {
+        c.name = "no-padding";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51554a44", 1);
+    }
+
+    function _a1() private pure returns (Base64Case memory c) {
+        c.name = "one-pad";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155493d", 1);
+    }
+
+    function _a2() private pure returns (Base64Case memory c) {
+        c.name = "two-pads";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51513d3d", 1);
+    }
+
+    function _a3() private pure returns (Base64Case memory c) {
+        c.name = "full-alphabet";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"4142434445464748494a4b4c4d4e4f505152535455565758595a6162636465666768696a6b6c6d6e6f707172737475767778797a303132333435363738392b2f", 1);
+    }
+
+    function _a4() private pure returns (Base64Case memory c) {
+        c.name = "plus-and-slash";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"2b2f2b2f", 1);
+    }
+
+    function _a5() private pure returns (Base64Case memory c) {
+        c.name = "alphabet-extremes";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"2b2f3039415a617a", 1);
+    }
+
+    function _a6() private pure returns (Base64Case memory c) {
+        c.name = "three-full-chunks";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"41424344", 12288);
+    }
+
+    function _a7() private pure returns (Base64Case memory c) {
+        c.name = "pad-in-the-last-of-three";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41424344", 12287);
+        c.parts[1] = Part(hex"41423d3d", 1);
+    }
+
+    function _a8() private pure returns (Base64Case memory c) {
+        c.name = "two-pads-straddle-chunks";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41", 24574);
+        c.parts[1] = Part(hex"3d", 2);
+    }
+
+    function _a9() private pure returns (Base64Case memory c) {
+        c.name = "one-pad-alone-in-the-last-chunk";
+        c.expect = 0;
+        c.chunk = 0;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41", 24575);
+        c.parts[1] = Part(hex"3d", 1);
+    }
+
+    function _a10() private pure returns (Base64Case memory c) {
+        c.name = "equals-in-the-middle";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51513d41", 1);
+    }
+
+    function _a11() private pure returns (Base64Case memory c) {
+        c.name = "only-equals";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"3d3d3d3d", 1);
+    }
+
+    function _a12() private pure returns (Base64Case memory c) {
+        c.name = "leading-equals";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"3d51554a", 1);
+    }
+
+    function _a13() private pure returns (Base64Case memory c) {
+        c.name = "three-equals";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"513d3d3d", 1);
+    }
+
+    function _a14() private pure returns (Base64Case memory c) {
+        c.name = "equals-before-the-final-equals";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"413d413d", 1);
+    }
+
+    function _a15() private pure returns (Base64Case memory c) {
+        c.name = "url-safe-minus";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51552d4a", 1);
+    }
+
+    function _a16() private pure returns (Base64Case memory c) {
+        c.name = "url-safe-underscore";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51555f4a", 1);
+    }
+
+    function _a17() private pure returns (Base64Case memory c) {
+        c.name = "newline";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51550a4a", 1);
+    }
+
+    function _a18() private pure returns (Base64Case memory c) {
+        c.name = "space";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155204a", 1);
+    }
+
+    function _a19() private pure returns (Base64Case memory c) {
+        c.name = "double-quote";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155224a", 1);
+    }
+
+    function _a20() private pure returns (Base64Case memory c) {
+        c.name = "backslash";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51555c4a", 1);
+    }
+
+    function _a21() private pure returns (Base64Case memory c) {
+        c.name = "percent";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155254a", 1);
+    }
+
+    function _a22() private pure returns (Base64Case memory c) {
+        c.name = "hash";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155234a", 1);
+    }
+
+    function _a23() private pure returns (Base64Case memory c) {
+        c.name = "less-than";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51553c4a", 1);
+    }
+
+    function _a24() private pure returns (Base64Case memory c) {
+        c.name = "nul";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155004a", 1);
+    }
+
+    function _a25() private pure returns (Base64Case memory c) {
+        c.name = "delete";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51557f4a", 1);
+    }
+
+    function _a26() private pure returns (Base64Case memory c) {
+        c.name = "high-bit";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155804a", 1);
+    }
+
+    function _a27() private pure returns (Base64Case memory c) {
+        c.name = "utf-8-letter";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155c3a9", 1);
+    }
+
+    function _a28() private pure returns (Base64Case memory c) {
+        c.name = "below-plus";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51552a4a", 1);
+    }
+
+    function _a29() private pure returns (Base64Case memory c) {
+        c.name = "comma";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51552c4a", 1);
+    }
+
+    function _a30() private pure returns (Base64Case memory c) {
+        c.name = "period";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51552e4a", 1);
+    }
+
+    function _a31() private pure returns (Base64Case memory c) {
+        c.name = "colon";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51553a4a", 1);
+    }
+
+    function _a32() private pure returns (Base64Case memory c) {
+        c.name = "at-sign";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155404a", 1);
+    }
+
+    function _a33() private pure returns (Base64Case memory c) {
+        c.name = "open-bracket";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51555b4a", 1);
+    }
+
+    function _a34() private pure returns (Base64Case memory c) {
+        c.name = "backtick";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5155604a", 1);
+    }
+
+    function _a35() private pure returns (Base64Case memory c) {
+        c.name = "open-brace";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51557b4a", 1);
+    }
+
+    function _a36() private pure returns (Base64Case memory c) {
+        c.name = "three-pads-straddle-chunks";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41", 24573);
+        c.parts[1] = Part(hex"3d", 3);
+    }
+
+    function _a37() private pure returns (Base64Case memory c) {
+        c.name = "equals-then-letter-at-the-boundary";
+        c.expect = 1;
+        c.chunk = 0;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41", 24574);
+        c.parts[1] = Part(hex"3d41", 1);
+    }
+
+    function _a38() private pure returns (Base64Case memory c) {
+        c.name = "bad-byte-in-the-second-chunk";
+        c.expect = 1;
+        c.chunk = 1;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41", 24575);
+        c.parts[1] = Part(hex"24", 1);
+    }
+
+    function _a39() private pure returns (Base64Case memory c) {
+        c.name = "bad-byte-then-more-text";
+        c.expect = 1;
+        c.chunk = 1;
+        c.parts = new Part[](3);
+        c.parts[0] = Part(hex"41", 24575);
+        c.parts[1] = Part(hex"25", 1);
+        c.parts[2] = Part(hex"41414141", 5);
+    }
+
+    function _a40() private pure returns (Base64Case memory c) {
+        c.name = "bad-byte-in-the-third-chunk";
+        c.expect = 1;
+        c.chunk = 2;
+        c.parts = new Part[](2);
+        c.parts[0] = Part(hex"41", 49151);
+        c.parts[1] = Part(hex"22", 1);
+    }
+
+    function _a41() private pure returns (Base64Case memory c) {
+        c.name = "length-1";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51", 1);
+    }
+
+    function _a42() private pure returns (Base64Case memory c) {
+        c.name = "length-2";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"5151", 1);
+    }
+
+    function _a43() private pure returns (Base64Case memory c) {
+        c.name = "length-3-padded";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51513d", 1);
+    }
+
+    function _a44() private pure returns (Base64Case memory c) {
+        c.name = "length-5";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51554a4451", 1);
+    }
+
+    function _a45() private pure returns (Base64Case memory c) {
+        c.name = "length-5-padded";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51554a443d", 1);
+    }
+
+    function _a46() private pure returns (Base64Case memory c) {
+        c.name = "length-one-full-chunk";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"41", 24575);
+    }
+
+    function _a47() private pure returns (Base64Case memory c) {
+        c.name = "length-is-checked-before-the-alphabet";
+        c.expect = 2;
+        c.chunk = 0;
+        c.parts = new Part[](1);
+        c.parts[0] = Part(hex"51552d4a51", 1);
     }
 
     function _v0() private pure returns (Vector memory v) {

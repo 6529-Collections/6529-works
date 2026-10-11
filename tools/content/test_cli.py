@@ -237,7 +237,10 @@ class CallsCommandTest(TempDirCase):
             )
             document = json.loads(out)
             self.assertEqual([t["name"] for t in document["transactions"]], ["writeChunk"])
-            self.assertEqual(document["skipped"], {"registerManifest": True, "chunksAlreadyStored": 1})
+            self.assertEqual(
+                document["skipped"],
+                {"registerManifest": True, "chunksAlreadyStored": 1, "attestBase64": False},
+            )
 
             chain.store.upload(plan)
             code, out, err = run(

@@ -17,6 +17,7 @@ from typing import Any
 from . import abi
 from .abi import uint_word
 from .address import checksum_address
+from .encoding import base64_attestation_problem
 from .keccak import keccak256
 from .plan import CHUNK_SIZE, MAX_CHUNKS, Plan
 
@@ -42,6 +43,8 @@ class FakeStore:
         self.chunks: dict[bytes, bytes] = {}
         self.calls: list[bytes] = []  # every eth_call's calldata, for assertions
         self.tamper: dict[bytes, bytes] = {}  # chunk hash -> bytes served instead of the real ones
+        self.attested: set[bytes] = set()
+        self.supports_attest = True  # False models a store deployed before attestBase64
 
     # --- writes, as plain methods (the real contract takes calldata; see test_anvil.py) ---
 
@@ -66,6 +69,16 @@ class FakeStore:
         for index, chunk in enumerate(plan.chunks()):
             if only is None or index in only:
                 self.write_chunk(chunk)
+
+    def attest(self, file_id: bytes) -> None:
+        """Model of a completed `attestBase64` series: marks the file attested if its whole text
+        passes the rule (here, this tool's own reading of it; the real contract is exercised in
+        `test_anvil.py`)."""
+        f = self.files[file_id]
+        text = b"".join(self.chunks[digest] for digest in f["chunks"])
+        if base64_attestation_problem(text) is not None:
+            raise ValueError("would revert")
+        self.attested.add(file_id)
 
     # --- reads ---
 
@@ -127,6 +140,14 @@ class FakeStore:
             if keccak256(body) != digest:
                 raise _error("SSTORE2HashMismatch(address)", bytes(12) + STORE_ADDRESS)
             return uint_word(32) + uint_word(len(body)) + body + bytes(-len(body) % 32)
+        if sel == abi.IS_BASE64_ATTESTED:
+            if not self.supports_attest:
+                raise Revert(b"")
+            return uint_word(1 if word(0) in self.attested else 0)
+        if sel == abi.ATTEST_CHUNKS_PER_CALL:
+            if not self.supports_attest:
+                raise Revert(b"")
+            return uint_word(48)
         if sel == abi.CHUNK_POINTER:
             digest = word(0)
             return bytes(12) + STORE_ADDRESS if digest in self.chunks else bytes(32)

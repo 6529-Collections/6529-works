@@ -35,6 +35,11 @@ REGISTER_CHUNK_GAS = 22_400
 REGISTER_MIME_BYTE_GAS = 400
 REGISTER_LONG_MIME_GAS = 45_000
 SHORT_STRING_MAX = 31
+# `attestBase64` execution validating k chunks: base + per-chunk * k. A call reads and checks
+# each chunk, plus the file's last chunk to find the padding (about 20,000 more when it is not
+# one of the k).
+ATTEST_BASE_GAS = 150_000
+ATTEST_CHUNK_GAS = 180_000
 
 # A transaction above this share of the cap is flagged: the repository keeps a quarter of the
 # cap in reserve for repricing.
@@ -59,6 +64,13 @@ def register_execution(chunk_count: int, mime_length: int) -> int:
         + REGISTER_MIME_BYTE_GAS * mime_length
         + long_mime
     )
+
+
+def attest_execution(chunks_in_call: int) -> int:
+    """Model of the gas one `attestBase64` call uses to validate this many chunks (at most 48)."""
+    if not 1 <= chunks_in_call <= 48:
+        raise ValueError("one attestBase64 call validates 1 to 48 chunks")
+    return ATTEST_BASE_GAS + ATTEST_CHUNK_GAS * chunks_in_call
 
 
 def calldata_gas(data: bytes) -> int:
@@ -108,6 +120,11 @@ class GasEstimate:
 
 def estimate_write_chunk(chunk_length: int, calldata: bytes) -> GasEstimate:
     execution = write_chunk_execution(chunk_length)
+    return GasEstimate(execution, transaction_gas(execution, calldata))
+
+
+def estimate_attest(chunks_in_call: int, calldata: bytes) -> GasEstimate:
+    execution = attest_execution(chunks_in_call)
     return GasEstimate(execution, transaction_gas(execution, calldata))
 
 

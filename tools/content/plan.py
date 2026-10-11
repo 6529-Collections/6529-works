@@ -30,7 +30,9 @@ from .encoding import (
     GZIP_LEVEL,
     GZIP_MEM_LEVEL,
     GZIP_WINDOW_BITS,
+    Base64Problem,
     Encoding,
+    base64_attestation_problem,
     decode,
     encode,
 )
@@ -40,6 +42,7 @@ from .keccak import keccak256
 CHUNK_SIZE = 24_575  # SSTORE2.MAX_CHUNK_LENGTH: EIP-170's 24,576 minus the STOP byte
 MAX_CHUNKS = 512  # IContentStore.MAX_CHUNKS
 MAX_MIME_LENGTH = 64  # ContentStore.MAX_MIME_LENGTH
+ATTEST_CHUNKS_PER_CALL = 48  # ContentStore.ATTEST_CHUNKS_PER_CALL
 MAX_STORED_BYTES = CHUNK_SIZE * MAX_CHUNKS  # 12,582,400
 
 SCHEMA = "6529-works/content-plan/v1"
@@ -96,6 +99,36 @@ def max_input_bytes(encoding: Encoding, already_encoded: bool) -> int:
     if encoding == Encoding.BASE64:
         return MAX_STORED_BYTES // 4 * 3
     return MAX_DECODED_BYTES
+
+
+def attest_call_count(chunks: int) -> int:
+    """How many `attestBase64` calls a file of this many chunks needs: `ceil(chunks / 48)`."""
+    return -(-chunks // ATTEST_CHUNKS_PER_CALL)
+
+
+def describe_base64_problem(problem: Base64Problem, text_length: int) -> str:
+    """What `attestBase64` would do with this text, naming the error and chunk the contract
+    reports."""
+    if problem.kind == "length":
+        return (
+            f"the stored base64 text is {text_length:,} bytes, not a multiple of 4: "
+            "attestBase64 would revert with ContentBase64LengthInvalid"
+        )
+    assert problem.offset is not None and problem.value is not None
+    return (
+        f"byte {problem.offset} (0x{problem.value:02x}) of the stored base64 text is not in "
+        "[A-Za-z0-9+/] and is not the final '=' padding: attestBase64 would revert with "
+        f"ContentBase64Invalid at chunk {problem.offset // CHUNK_SIZE}, and a renderer would "
+        "never inline the file"
+    )
+
+
+def check_base64_attestable(stored: bytes) -> None:
+    """Refuse a `Base64` or `GzipBase64` stream that `attestBase64` would revert on, before any
+    transaction pays for it. Mirrors the contract's rule (see `base64_attestation_problem`)."""
+    problem = base64_attestation_problem(stored)
+    if problem is not None:
+        raise ToolError(describe_base64_problem(problem, len(stored)))
 
 
 def split_chunks(stored: bytes) -> list[bytes]:
@@ -191,6 +224,8 @@ def plan_from_media(media: bytes, mime_type: str, encoding: Encoding) -> Plan:
     decoded = decode(stored, encoding)
     if decoded != media or encode(decoded, encoding) != stored:
         raise ToolError("the encoding does not reproduce: re-encoding the decoded media differs")
+    if encoding.uses_base64:
+        check_base64_attestable(stored)  # this tool's own output always passes; a safety net
     return _build(stored, hashlib.sha256(media).digest(), len(media), mime_type, encoding, True)
 
 
@@ -202,6 +237,8 @@ def plan_from_stored(stored: bytes, mime_type: str, encoding: Encoding) -> Plan:
     """
     validate_mime(mime_type)
     check_stored_length(len(stored))
+    if encoding.uses_base64:
+        check_base64_attestable(stored)
     media = decode(stored, encoding)
     reproducible = encode(media, encoding) == stored
     digest = hashlib.sha256(media).digest()
@@ -360,6 +397,8 @@ def check_stored(manifest: Manifest, stored: bytes) -> None:
     for index, chunk in enumerate(split_chunks(stored)):
         if chunk_hash(chunk) != manifest.chunk_hashes[index]:
             raise ToolError(f"chunk {index} of the stored stream does not match the manifest")
+    if manifest.encoding.uses_base64:
+        check_base64_attestable(stored)
     media = decode(stored, manifest.encoding)
     if hashlib.sha256(media).digest() != manifest.media_sha256:
         raise ToolError("the decoded media does not match the manifest's mediaSha256")
