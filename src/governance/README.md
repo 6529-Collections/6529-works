@@ -94,10 +94,15 @@ Why both rules, from what OZ 5.7.0's source does:
 
 A deploy script must:
 
-1. **Deploy `GovernanceConfigurator`.** Its constructor deploys
+1. **Deploy `GovernanceConfigurator(deployer)`.** Its constructor deploys
    `WorksAccessManager(address(this))` as `worksManager()`, so the manager's code is
-   the hardened one and its only initial admin is the configurator. The deployer is
-   the only account allowed to call `configure`.
+   the hardened one and its only initial admin is the configurator. `deployer`, the
+   operator broadcasting the genesis, is the only account allowed to call
+   `configure`. Because it is an argument, not `msg.sender`, the configurator can be
+   deployed through a CREATE2 factory: its address is predictable, and so is the
+   manager's (`CREATE` nonce 1 of the configurator). A configurator deployed by anyone
+   else, naming any deployer, only ever governs the new manager it creates, never the
+   real one.
 2. **Deploy every target with `authority = configurator.worksManager()`.**
 3. **Call `configurator.configure(cfg, manifestHash, wiring)`.**
    - `cfg.grants` lists `(role, account)` pairs.

@@ -37,7 +37,7 @@ abstract contract GovernanceFixture is Test {
 
     /// @dev Deploys the configurator (which deploys the manager) and the sample target.
     function _deployUnconfigured() internal {
-        configurator = new GovernanceConfigurator();
+        configurator = new GovernanceConfigurator(address(this));
         manager = configurator.worksManager();
         target = new GovernedTargetMock(address(manager), recipient0, verifier0);
     }

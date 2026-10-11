@@ -145,6 +145,55 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         assertEq(deployerAdmin, 0, "the deployer never administers the manager");
     }
 
+    function test_DeployerIsTheConstructorArgumentNotTheSender() public {
+        // Deployed through a CREATE2 factory, as the deploy script does: the factory is the
+        // sender, the operator is the deployer.
+        address operator = makeAddr("operator");
+        Create2Factory factory = new Create2Factory();
+        bytes memory initcode =
+            abi.encodePacked(type(GovernanceConfigurator).creationCode, abi.encode(operator));
+        bytes32 salt = keccak256("6529-works/genesis/configurator");
+        address predicted = vm.computeCreate2Address(salt, keccak256(initcode), address(factory));
+        GovernanceConfigurator c = GovernanceConfigurator(factory.deploy(salt, initcode));
+        assertEq(address(c), predicted);
+        assertEq(c.deployer(), operator);
+        assertEq(address(c.worksManager()), vm.computeCreateAddress(address(c), 1));
+
+        target = new GovernedTargetMock(address(c.worksManager()), recipient0, verifier0);
+        GovernanceConfig.Config memory cfg = _config();
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfigurator.NotDeployer.selector, address(factory))
+        );
+        vm.prank(address(factory));
+        c.configure(cfg, MANIFEST, _noWiring());
+        vm.prank(operator);
+        c.configure(cfg, MANIFEST, _noWiring());
+        (bool stillAdmin,) = c.worksManager().hasRole(Roles.ADMIN, address(c));
+        assertFalse(stillAdmin);
+    }
+
+    function test_ZeroDeployerIsRejected() public {
+        vm.expectRevert(GovernanceConfigurator.InvalidDeployer.selector);
+        new GovernanceConfigurator(address(0));
+    }
+
+    function test_AForeignConfiguratorOnlyGovernsItsOwnManager() public {
+        // Anyone may deploy a configurator naming themselves; it creates and governs a new
+        // manager and can never reach the real one.
+        _configured();
+        vm.prank(attacker);
+        GovernanceConfigurator rogue = new GovernanceConfigurator(attacker);
+        assertTrue(address(rogue.worksManager()) != address(manager));
+        GovernanceConfig.Config memory cfg = _config();
+        // The real target answers to the real manager, so the rogue configuration is refused.
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.InvalidTarget.selector, address(target))
+        );
+        vm.prank(attacker);
+        rogue.configure(cfg, MANIFEST, _noWiring());
+        configurator.verify(_config()); // the real manager is untouched
+    }
+
     function test_TargetGovernedByAStockManagerIsRejected() public {
         AccessManager stock = new AccessManager(address(this));
         GovernanceConfig.Config memory cfg = _config();
@@ -482,5 +531,15 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         vm.warp(block.timestamp + 1);
         vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.ADMIN));
         configurator.verify(_config());
+    }
+}
+
+/// @dev A minimal CREATE2 factory, like the deterministic deployer Foundry scripts use.
+contract Create2Factory {
+    function deploy(bytes32 salt, bytes memory initcode) external returns (address deployed) {
+        assembly ("memory-safe") {
+            deployed := create2(0, add(initcode, 0x20), mload(initcode), salt)
+        }
+        require(deployed != address(0), "create2 failed");
     }
 }

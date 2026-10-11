@@ -49,7 +49,7 @@ contract GenesisConfigTest is Test {
 
     function setUp() public {
         json = vm.readFile(PATH);
-        configurator = new GovernanceConfigurator();
+        configurator = new GovernanceConfigurator(address(this));
         manager = configurator.worksManager();
     }
 
