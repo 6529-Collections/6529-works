@@ -61,6 +61,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @notice The phases are empty, too many, or one is malformed (start not before end, or an
     ///         allowlist-only flag without a root).
     error InvalidPhases();
+    /// @notice A zero-price sale prices its leaves without the artist's approval.
+    error PricedLeavesNeedApproval(address token, uint256 id);
 
     /// @param authority_ The AccessManager.
     /// @param escrow_ The revenue escrow.
@@ -87,11 +89,13 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         bool approved = msg.sender == t.creator;
         if (!approved && !_isPlatform()) revert NotSaleManager(msg.sender);
         if (_openSales[token][id] != 0) revert SaleAlreadyOpen(token, id);
-        (uint64 start, uint64 end) = _checkPhases(phases_);
+        (uint64 start, uint64 end, bool priced) = _checkPhases(phases_);
         if (consent.signature.length != 0) {
             _consume(token, id, t, phases_, consent);
             approved = true;
         }
+        // In a zero-price sale every leaf price is a premium, so only the artist may price leaves.
+        if (priced && t.price == 0 && !approved) revert PricedLeavesNeedApproval(token, id);
         saleId = _store(token, id, t, approved, federated);
         for (uint256 i; i < phases_.length; ++i) {
             _phases[saleId].push(phases_[i]);
@@ -325,7 +329,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     function _checkPhases(Phase[] calldata phases_)
         private
         pure
-        returns (uint64 start, uint64 end)
+        returns (uint64 start, uint64 end, bool priced)
     {
         if (phases_.length == 0 || phases_.length > Limits.MAX_PHASES) revert InvalidPhases();
         start = type(uint64).max;
@@ -337,6 +341,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
             ) revert InvalidPhases();
             if (phase.start < start) start = phase.start;
             if (phase.end > end) end = phase.end;
+            priced = priced || phase.leafPriced;
         }
     }
 }

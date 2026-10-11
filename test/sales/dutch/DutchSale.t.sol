@@ -95,6 +95,7 @@ contract DutchSaleTest is DutchBase {
             abi.encodeWithSelector(ISaleAdapter.SaleAlreadyOpen.selector, address(editions), LINEAR)
         );
         _openNow(LINEAR);
+        assertEq(dutch.openSaleOf(address(editions), LINEAR), saleId);
     }
 
     function test_OpenSale_RevertsOnInvalidCurve() public {

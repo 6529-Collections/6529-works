@@ -30,7 +30,9 @@ adapter reads the token's `primaryTerms(id, "")` and fails closed unless:
 - the sale kind matches the adapter;
 - a priced sale names its currency (`CURRENCY_DEFAULT` is only for zero-price
   gifts);
-- the economics resolver accepts the currency (`resolveCurrency`);
+- the economics resolver accepts the currency (`resolveCurrency`), returning
+  exactly the currency the token named unless it named `CURRENCY_DEFAULT`
+  (`CurrencyMismatch`);
 - a seller and a fee recipient are set and the fee share is at most 100,000.
 
 The terms are then locked as `LockedTerms`:
@@ -55,8 +57,14 @@ token:
   `isActive`.
 
 The resolver is fixed at construction. It must support `IEconomicsResolver`
-through ERC-165, EIP-7702 delegated accounts are rejected, and its asset
-allowlist is read once.
+through ERC-165, and EIP-7702 delegated accounts are rejected. Its asset
+allowlist is read once, and it must:
+- have code;
+- not be EIP-7702 delegated;
+- support `IAssetAllowlist`, if it answers ERC-165 at all.
+
+The economics lane's `AssetAllowlist` implements no ERC-165, so it passes on
+the first two checks; it is trusted as the resolver's own dependency.
 
 The registry is installed by compare-and-set (`setFederationRegistry`).
 Installation:
@@ -100,7 +108,11 @@ allowance by buying it for them.
 **Caps** count per `(token, id, phase index, keyed wallet)` across sales, read
 with `purchased(token, id, phase, account)`. Public phases share counts by
 phase index too. Reopening a token with the same tree never resets them; a
-deliberately fresh drop uses new phase indices. An allowlist phase enforces the
+deliberately fresh drop uses new phase indices. That means padding: the new
+sale keeps placeholder phases (for example, already-ended windows) at the old
+indices and puts the new phases after them, within `Limits.MAX_PHASES` (16)
+per sale. Placeholders count toward `SaleStarted.startTime`, the earliest phase
+start. An allowlist phase enforces the
 leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
 enforces `walletCap` per recipient.
 
@@ -118,7 +130,10 @@ to another currency or price.
 
 The nonce is single-use and revocable (`revokeConsentNonce`), and contract
 creators sign through ERC-1271. `phaseConfigurationDigest` returns the digest
-to sign. Leaf prices at or above the package price need no approval.
+to sign. Leaf prices at or above the package price need no approval, except in a
+zero-price sale: there every priced leaf needs the artist's approval
+(`PricedLeavesNeedApproval`), because only the approval binds the currency a
+default-currency gift resolves to.
 
 **Gifts** are zero-price sales: a package price of zero, or an approved leaf
 price of zero. A gift pays no network fee, by design.

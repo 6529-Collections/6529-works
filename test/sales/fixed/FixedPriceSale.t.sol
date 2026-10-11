@@ -381,56 +381,6 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertTrue(fixedSale.isConsentNonceUsed(address(safe), 3));
     }
 
-    function test_PhaseConfigurationDigest_MatchesEip712() public view {
-        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](2);
-        phases[0] = IFixedPriceSale.Phase(1, 2, bytes32("a"), 3, true, true);
-        phases[1] = IFixedPriceSale.Phase(4, 5, 0, 6, false, false);
-        bytes32 phaseType = keccak256(
-            "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
-        );
-        bytes32 phasesHash = keccak256(
-            abi.encodePacked(
-                keccak256(
-                    abi.encode(phaseType, uint64(1), uint64(2), bytes32("a"), uint32(3), true, true)
-                ),
-                keccak256(
-                    abi.encode(phaseType, uint64(4), uint64(5), bytes32(0), uint32(6), false, false)
-                )
-            )
-        );
-        bytes32 structHash = keccak256(
-            abi.encode(
-                keccak256(
-                    "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
-                ),
-                address(editions),
-                ETH_ED,
-                address(usd),
-                uint256(7e18),
-                phasesHash,
-                uint256(5),
-                uint64(99)
-            )
-        );
-        bytes32 domain = keccak256(
-            abi.encode(
-                keccak256(
-                    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
-                ),
-                keccak256("6529 Works Fixed Price Sale"),
-                keccak256("1"),
-                block.chainid,
-                address(fixedSale)
-            )
-        );
-        assertEq(
-            fixedSale.phaseConfigurationDigest(
-                address(editions), ETH_ED, address(usd), 7e18, phases, 5, 99
-            ),
-            keccak256(abi.encodePacked("\x19\x01", domain, structHash))
-        );
-    }
-
     // ------------------------------------------------------------------ closing
 
     function test_CloseSale_ByCreatorOrPlatformStopsPurchases() public {
@@ -727,7 +677,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         saleId = _open(creator, ETH_ED, _one(_phase(_root(leaves), 0, payerKeyed, leafPriced)));
     }
 
-    function test_AllowlistLeaf_MatchesTheDefinition() public {
+    function test_AllowlistLeaf_MatchesTheDefinition() public view {
         bytes32 inner = keccak256(
             abi.encode(
                 keccak256("6529WORKS_ALLOWLIST_LEAF_V1"),

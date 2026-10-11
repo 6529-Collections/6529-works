@@ -138,6 +138,8 @@ contract MockAssetAllowlist {
 ///      allowlist, `networkFeeRecipient`, `economics` and `assetAllowlist`; the rest is unused.
 contract MockEconomicsResolver is IEconomicsResolver {
     MockAssetAllowlist public immutable allowlist;
+    /// @dev When set, `assetAllowlist()` reports this address instead (install-check tests).
+    address public allowlistOverride;
     mapping(bytes32 product => ProductEconomics) internal _economics;
 
     constructor(MockAssetAllowlist allowlist_) {
@@ -166,8 +168,16 @@ contract MockEconomicsResolver is IEconomicsResolver {
         return economics(product).feeRecipient;
     }
 
+    function setAllowlistOverride(address allowlist_) external {
+        allowlistOverride = allowlist_;
+    }
+
     function assetAllowlist() external view returns (address) {
-        return address(allowlist);
+        return allowlistOverride == address(0) ? address(allowlist) : allowlistOverride;
+    }
+
+    function revisions(bytes32) external pure returns (uint64, uint64, uint64) {
+        return (0, 0, 0);
     }
 
     function newWorkTerms(bytes32, ISplitWallet.Payee[] calldata)
@@ -186,14 +196,15 @@ contract MockEconomicsResolver is IEconomicsResolver {
         return address(0);
     }
 
-    function setEconomics(bytes32, ProductEconomics calldata, ProductEconomics calldata)
-        external
-        pure
-    {
+    function setFeeTerms(bytes32, uint64, address, uint32) external pure {
         revert("unused");
     }
 
-    function setDefaultLicense(bytes32, License calldata, License calldata) external pure {
+    function setRoyaltyRate(bytes32, uint64, uint32) external pure {
+        revert("unused");
+    }
+
+    function setDefaultLicense(bytes32, uint64, License calldata) external pure {
         revert("unused");
     }
 

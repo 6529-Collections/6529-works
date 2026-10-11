@@ -407,8 +407,6 @@ contract FixedPriceInvariantTest is StdInvariant, FixedPriceBase {
     }
 
     function invariant_PerWalletCapsHold() public view {
-        uint256 ethSale = handler.ethSale();
-        uint256 tokenSale = handler.tokenSale();
         for (uint256 i; i < 4; ++i) {
             address a = handler.actors(i);
             assertLe(

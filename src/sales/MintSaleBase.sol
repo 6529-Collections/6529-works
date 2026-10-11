@@ -109,6 +109,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     error InvalidSaleTerms(address token, uint256 id);
     /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
     error PricedDefaultCurrency(address token, uint256 id);
+    /// @notice The resolver returned another currency than the one the token named.
+    error CurrencyMismatch(address named, address resolved);
     /// @notice The locked currency is no longer active on the asset allowlist.
     error CurrencyNotActive(address currency);
     /// @notice A purchase must buy at least one copy.
@@ -147,8 +149,17 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         if (!_fits(address(economicsResolver_), type(IEconomicsResolver).interfaceId)) {
             revert InvalidDependency(address(economicsResolver_));
         }
+        // The economics lane's AssetAllowlist implements no ERC-165, so it is checked for code
+        // and EIP-7702 delegation, and for IAssetAllowlist only if it does answer ERC-165. It
+        // comes from the resolver, which passed the full check above.
         address allowlist = economicsResolver_.assetAllowlist();
-        if (allowlist.code.length == 0) revert InvalidDependency(allowlist);
+        if (
+            allowlist.code.length == 0 || DelegatedEOA.isDelegated(allowlist)
+                || (ERC165Checker.supportsERC165(allowlist)
+                    && !ERC165Checker.supportsInterface(
+                        allowlist, type(IAssetAllowlist).interfaceId
+                    ))
+        ) revert InvalidDependency(allowlist);
         escrow = escrow_;
         permit2 = permit2_;
         economicsResolver = economicsResolver_;
@@ -231,7 +242,11 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             revert PricedDefaultCurrency(token, id);
         }
         bytes32 product = federated ? PRODUCT_FEDERATED : PRODUCT_EDITIONS;
-        t.currency = economicsResolver.resolveCurrency(product, t.currency);
+        address resolved = economicsResolver.resolveCurrency(product, t.currency);
+        if (t.currency != CURRENCY_DEFAULT && resolved != t.currency) {
+            revert CurrencyMismatch(t.currency, resolved);
+        }
+        t.currency = resolved;
         if (federated) {
             IFederationRegistry.Entry memory e =
                 IFederationRegistry(federationRegistry).entry(token);

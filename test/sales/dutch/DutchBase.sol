@@ -83,7 +83,7 @@ abstract contract DutchBase is SaleFixture {
         uint256 quantity,
         uint256 maxUnit,
         uint256 deadline
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return keccak256(
             abi.encode(
                 Typehashes.DUTCH_PURCHASE_WITNESS, saleId, recipient, quantity, maxUnit, deadline
