@@ -3,6 +3,7 @@
 - **Scope:** [ADR 0001](../docs/adr/0001-v1-scope.md).
 - **Delivery owner:** Claude Code, acting for the repository owner.
 - **State:** this file is the single source of delivery state.
+- **Launch checklist:** [#1](https://github.com/6529-Collections/6529-works/issues/1).
 
 ## Principles
 
