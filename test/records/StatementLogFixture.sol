@@ -15,6 +15,8 @@ import { ArtistResolverMock, ERC721OwnerMock, ERC1155BalanceMock } from "../mock
 abstract contract StatementLogFixture is Test {
     uint64 internal constant CURATOR_ROLE = 1;
     uint64 internal constant PLATFORM_ROLE = 2;
+    uint64 internal constant GOVERNANCE_ROLE = 3;
+    uint32 internal constant GOVERNANCE_DELAY = 30 days;
 
     AccessManager internal manager;
     StatementLog internal stmtLog;
@@ -25,6 +27,7 @@ abstract contract StatementLogFixture is Test {
     address internal admin = makeAddr("admin");
     address internal curator = makeAddr("curator");
     address internal platform = makeAddr("platform");
+    address internal governor = makeAddr("governor");
     address internal stranger = makeAddr("stranger");
     uint256 internal artistKey = 0xA471;
     uint256 internal ownerKey = 0x0412;
@@ -47,9 +50,14 @@ abstract contract StatementLogFixture is Test {
         curatorSelectors[0] = stmtLog.appendCurator.selector;
         bytes4[] memory platformSelectors = new bytes4[](1);
         platformSelectors[0] = stmtLog.appendPlatform.selector;
+        bytes4[] memory governanceSelectors = new bytes4[](1);
+        governanceSelectors[0] = stmtLog.appendGovernanceManifest.selector;
         vm.startPrank(admin);
         manager.setTargetFunctionRole(address(stmtLog), curatorSelectors, CURATOR_ROLE);
         manager.setTargetFunctionRole(address(stmtLog), platformSelectors, PLATFORM_ROLE);
+        // The integrator maps the governance manifest to the 30-day class; the log cannot.
+        manager.setTargetFunctionRole(address(stmtLog), governanceSelectors, GOVERNANCE_ROLE);
+        manager.grantRole(GOVERNANCE_ROLE, governor, GOVERNANCE_DELAY);
         manager.grantRole(CURATOR_ROLE, curator, 0);
         manager.grantRole(CURATOR_ROLE, curatorSigner, 0);
         manager.grantRole(PLATFORM_ROLE, platform, 0);
@@ -62,6 +70,25 @@ abstract contract StatementLogFixture is Test {
     /// @dev A valid statement about token 1 of the test ERC-721.
     function _statement() internal view returns (Statement memory) {
         return _statement(address(nft), 1);
+    }
+
+    /// @dev A valid governance manifest: subject `(authority, 0)`, kind GOVERNANCE_MANIFEST.
+    function _governanceStatement() internal view returns (Statement memory s) {
+        s = _statement(address(manager), 0);
+        s.kind = StatementKinds.GOVERNANCE_MANIFEST;
+        s.schema = keccak256("schema/governance-manifest/v1");
+        s.uri = "ar://manifest";
+    }
+
+    /// @dev Schedules a governance manifest as the governor, waits out the 30-day delay and executes
+    ///      it through the AccessManager.
+    function _scheduleAndExecuteManifest(Statement memory s) internal {
+        bytes memory data = abi.encodeCall(StatementLog.appendGovernanceManifest, (s));
+        vm.prank(governor);
+        manager.schedule(address(stmtLog), data, 0);
+        vm.warp(block.timestamp + GOVERNANCE_DELAY);
+        vm.prank(governor);
+        manager.execute(address(stmtLog), data);
     }
 
     function _statement(address token, uint256 id) internal pure returns (Statement memory) {

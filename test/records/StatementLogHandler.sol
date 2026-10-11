@@ -7,6 +7,7 @@ import { StatementKinds } from "src/records/StatementKinds.sol";
 import { HashRef, HASH_SHA256 } from "src/records/HashRef.sol";
 import { Role, Statement } from "src/records/IStatementLog.sol";
 import { StatementModel } from "./StatementModel.sol";
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { ArtistResolverMock } from "../mocks/RecordsMocks.sol";
 import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
 
@@ -23,6 +24,7 @@ struct Actors {
     address platform;
     address admin;
     address manager;
+    address governor;
     address stranger;
     uint256 artistKey;
     uint256 ownerKey;
@@ -281,6 +283,83 @@ contract StatementLogHandler is Test {
         _record();
     }
 
+    /// @dev A governance manifest through the real flow: the governor (30-day delay) schedules it
+    ///      on the AccessManager and, once the delay has passed, either the manager executes it or
+    ///      the governor calls the log, which consumes the scheduled operation. Either way it is
+    ///      recorded with the manager as signer and role PLATFORM, under the subject
+    ///      `(manager, 0)`.
+    function appendGovernanceManifest(uint256 seed) external {
+        _begin(seed);
+        Statement memory s = _manifest(seed);
+        bytes memory data = abi.encodeCall(StatementLog.appendGovernanceManifest, (s));
+        vm.prank(a.governor);
+        AccessManager(a.manager).schedule(address(book), data, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(a.governor);
+        if ((seed >> 20) % 2 == 0) {
+            AccessManager(a.manager).execute(address(book), data); // the manager is the caller
+        } else {
+            book.appendGovernanceManifest(s); // the governor calls, consuming the scheduled operation
+        }
+        _expectDirect();
+    }
+
+    /// @dev The governance kind and the manager's signature, from everywhere they must not work.
+    function governanceMisuse(uint256 seed) external {
+        _begin(seed);
+        Statement memory manifest = _manifest(seed);
+        Statement memory onToken = _statement(seed, 3);
+        onToken.kind = StatementKinds.GOVERNANCE_MANIFEST;
+
+        // Direct calls to the governance path without a scheduled operation, by anyone.
+        address[4] memory callers = [a.stranger, a.curator, a.platform, a.governor];
+        vm.prank(callers[(seed >> 5) % callers.length]);
+        try book.appendGovernanceManifest(manifest) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        // Every other path refuses the kind.
+        vm.prank(a.artist);
+        try book.append(Role.ARTIST, manifest) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        vm.prank(a.tokenOwner);
+        try book.append(Role.OWNER, onToken) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        vm.prank(a.curator);
+        try book.appendCurator(manifest) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        vm.prank(a.platform);
+        try book.appendPlatform(manifest) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        Authorization memory auth =
+            _sign(Role.ARTIST, manifest, a.artistKey, a.artist, type(uint64).max, _freshNonce());
+        _mustFail(auth.role, manifest, auth.signer, auth.nonce, auth.deadline, auth.signature);
+        // The manager, which passes the OWNER check on edition 7, may not sign anywhere else.
+        Statement memory edition = _statement(seed, 3);
+        edition.token = a.editions;
+        edition.id = 7;
+        vm.prank(a.manager);
+        try book.append(Role.OWNER, edition) {
+            ++violations;
+        } catch {
+            ++refusedAttempts;
+        }
+        _record();
+    }
+
     // ---------------------------------------------------------------- bookkeeping
 
     function keysLength() external view returns (uint256) {
@@ -391,6 +470,16 @@ contract StatementLogHandler is Test {
         if ((seed >> 40) % 2 == 0) s.supersedes = lastEntry[StatementModel.subjectKey(token, id)];
     }
 
+    /// @dev A valid governance manifest: subject `(manager, 0)`, exactly one locator.
+    function _manifest(uint256 seed) internal view returns (Statement memory s) {
+        s = _statement(seed, 3);
+        s.token = a.manager;
+        s.id = 0;
+        s.kind = StatementKinds.GOVERNANCE_MANIFEST;
+        s.supersedes =
+            (seed >> 40) % 2 == 0 ? lastEntry[StatementModel.subjectKey(a.manager, 0)] : bytes32(0);
+    }
+
     function _expectDirect() internal {
         if (_record() != 1) ++violations;
         if (relayedSeen != 0) ++relayViolations; // a direct entry spends no nonce
@@ -447,7 +536,14 @@ contract StatementLogHandler is Test {
             lastEntry[key] = entry;
             lastAppended = entry;
             if (e.statement.kind == StatementKinds.DISPUTE_OUTCOME) ghostDispute[key] = entry;
-            if (!_signerFitsRole(e.role, e.signer) || _reservedElsewhere(e)) ++roleViolations;
+            if (e.statement.kind == StatementKinds.GOVERNANCE_MANIFEST) {
+                // Only the governance path writes this kind: the manager, as PLATFORM, about itself.
+                bool fits = e.signer == a.manager && e.role == Role.PLATFORM
+                    && e.statement.token == a.manager && e.statement.id == 0;
+                if (!fits) ++roleViolations;
+            } else if (!_signerFitsRole(e.role, e.signer) || _reservedElsewhere(e)) {
+                ++roleViolations; // the manager fits no role here, so it may sign nothing else
+            }
             address expected = e.role == Role.ARTIST ? currentResolver : address(0);
             if (e.resolver != expected) ++resolverViolations;
         }

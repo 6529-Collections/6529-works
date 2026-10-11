@@ -32,6 +32,7 @@ contract StatementLogInvariantTest is StatementLogFixture {
                 platform: platform,
                 admin: admin,
                 manager: address(manager),
+                governor: governor,
                 stranger: stranger,
                 artistKey: artistKey,
                 ownerKey: ownerKey,
@@ -74,7 +75,8 @@ contract StatementLogInvariantTest is StatementLogFixture {
 
     /// @dev ARTIST events are signed by the artist (or the artist's wallet) and OWNER events by
     ///      the owner, never by an admin, curator, platform or stranger; the reserved kinds appear
-    ///      only under PLATFORM (DISPUTE_OUTCOME) and CURATOR (CURATION_EVIDENCE).
+    ///      only under PLATFORM (DISPUTE_OUTCOME) and CURATOR (CURATION_EVIDENCE); and the
+    ///      AccessManager signs only GOVERNANCE_MANIFEST entries, as PLATFORM, about itself.
     function invariant_RolesAreSpokenOnlyByTheirHoldersAndReservedKindsStayReserved() public view {
         assertEq(handler.roleViolations(), 0);
     }

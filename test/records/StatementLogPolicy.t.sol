@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { StatementKinds } from "src/records/StatementKinds.sol";
 import { IStatementLog, Role, Statement } from "src/records/IStatementLog.sol";
@@ -12,7 +14,7 @@ import { EvilResolverMock, ForwardingResolverMock } from "../mocks/RecordsResolv
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
 ///         attribution to the AccessManager, reserved kinds, the dispute pointer, the relayed-nonce
-///         event and the nonce bitmap boundaries.
+///         event, the nonce bitmap boundaries and the governance manifest exception.
 contract StatementLogPolicyTest is StatementLogFixture {
     // ------------------------------------------------ ARTIST trust boundary
 
@@ -312,5 +314,235 @@ contract StatementLogPolicyTest is StatementLogFixture {
         }
         assertFalse(stmtLog.nonceUsed(artist, 0));
         assertFalse(stmtLog.nonceUsed(artist, 129));
+    }
+
+    // ------------------------------------------------- governance manifest
+
+    function test_GovernanceManifest_ScheduledExecutionRecordsTheManagerAsPlatform() public {
+        Statement memory s = _governanceStatement();
+        bytes memory data = abi.encodeCall(StatementLog.appendGovernanceManifest, (s));
+        vm.prank(governor);
+        manager.schedule(address(stmtLog), data, 0);
+        vm.warp(block.timestamp + GOVERNANCE_DELAY);
+
+        vm.recordLogs();
+        (bytes32 entry, bytes32 head) = _expectAppend(Role.PLATFORM, address(manager), s);
+        vm.prank(governor);
+        manager.execute(address(stmtLog), data);
+
+        (uint64 count, bytes32 stored) = stmtLog.chainOf(address(manager), 0);
+        assertEq(count, 1, "the governance chain lives under the manager's address");
+        assertEq(stored, head);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool seen;
+        for (uint256 i; i < logs.length; ++i) {
+            if (!StatementModel.isAppended(logs[i], address(stmtLog))) continue;
+            StatementModel.Appended memory e = StatementModel.decode(logs[i]);
+            assertEq(e.signer, address(manager));
+            assertEq(uint8(e.role), uint8(Role.PLATFORM));
+            assertEq(e.resolver, address(0));
+            assertEq(e.kind, StatementKinds.GOVERNANCE_MANIFEST);
+            assertEq(e.entryHash, entry);
+            seen = true;
+        }
+        assertTrue(seen);
+        assertEq(stmtLog.latestDisputeOutcome(address(manager), 0), bytes32(0));
+
+        // The next epoch supersedes it: a new entry, the first one stays.
+        Statement memory next = _governanceStatement();
+        next.uri = "ar://manifest-2";
+        next.supersedes = entry;
+        _scheduleAndExecuteManifest(next);
+        (count,) = stmtLog.chainOf(address(manager), 0);
+        assertEq(count, 2);
+    }
+
+    function test_GovernanceManifest_CannotBeWrittenWithoutTheRoleOrTheSchedule() public {
+        Statement memory s = _governanceStatement();
+        bytes memory data = abi.encodeCall(StatementLog.appendGovernanceManifest, (s));
+
+        // No role: strangers, the other operational roles and the admin.
+        address[4] memory outsiders = [stranger, curator, platform, admin];
+        for (uint256 i; i < outsiders.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManaged.AccessManagedUnauthorized.selector, outsiders[i]
+                )
+            );
+            vm.prank(outsiders[i]);
+            stmtLog.appendGovernanceManifest(s);
+        }
+
+        // The role holder has a 30-day delay: unscheduled, early and late calls all fail.
+        vm.expectPartialRevert(IAccessManager.AccessManagerNotScheduled.selector);
+        vm.prank(governor);
+        stmtLog.appendGovernanceManifest(s);
+
+        vm.prank(governor);
+        manager.schedule(address(stmtLog), data, 0);
+        vm.expectPartialRevert(IAccessManager.AccessManagerNotReady.selector);
+        vm.prank(governor);
+        manager.execute(address(stmtLog), data);
+
+        vm.warp(block.timestamp + GOVERNANCE_DELAY + manager.expiration() + 1);
+        vm.expectPartialRevert(IAccessManager.AccessManagerExpired.selector);
+        vm.prank(governor);
+        manager.execute(address(stmtLog), data);
+
+        (uint64 count,) = stmtLog.chainOf(address(manager), 0);
+        assertEq(count, 0);
+    }
+
+    /// @dev The log checks what it records, not how it was reached. These calls go through a log
+    ///      whose selector is mapped to a zero-delay role, so the log's own checks are what fail.
+    function test_GovernanceManifest_MustBeAboutTheManagerWithTheGovernanceKind() public {
+        StatementLog direct =
+            new StatementLog(address(manager), address(resolver), address(resolver).codehash);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = direct.appendGovernanceManifest.selector;
+        vm.prank(admin);
+        manager.setTargetFunctionRole(address(direct), selectors, CURATOR_ROLE);
+
+        Statement memory s = _governanceStatement();
+        s.token = address(nft);
+        vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
+
+        s = _governanceStatement();
+        s.id = 1;
+        vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
+
+        s = _governanceStatement();
+        s.kind = StatementKinds.ARTIST_STATEMENT; // an ordinary kind may not use this path
+        vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
+
+        // The statement itself is still validated like any other.
+        s = _governanceStatement();
+        s.uri = "";
+        vm.expectRevert(IStatementLog.MissingLocator.selector);
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
+
+        // And the delay class belongs to the mapping: a zero-delay role holder writes at once, as
+        // the manager, so the deploy configuration must map this selector to the 30-day class.
+        s = _governanceStatement();
+        vm.recordLogs();
+        vm.prank(curator);
+        direct.appendGovernanceManifest(s);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        StatementModel.Appended memory e = StatementModel.decode(logs[0]);
+        assertEq(e.signer, address(manager), "recorded as the manager, not as the caller");
+        assertEq(uint8(e.role), uint8(Role.PLATFORM));
+    }
+
+    /// @dev Every other path rejects the kind, whoever signs and whatever the subject.
+    function test_GovernanceManifest_EveryOtherPathRejectsTheKind() public {
+        resolver.grantEverywhere(artist);
+        Statement memory onManager = _governanceStatement();
+        Statement memory onToken = _governanceStatement();
+        onToken.token = address(nft);
+        onToken.id = 1;
+        bytes32 kind = StatementKinds.GOVERNANCE_MANIFEST;
+
+        Statement[2] memory subjects = [onManager, onToken];
+        for (uint256 i; i < subjects.length; ++i) {
+            Statement memory s = subjects[i];
+            vm.expectRevert(
+                abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.ARTIST)
+            );
+            _append(Role.ARTIST, artist, s);
+
+            vm.expectRevert(
+                abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.CURATOR)
+            );
+            vm.prank(curator);
+            stmtLog.appendCurator(s);
+
+            // PLATFORM is the role the governance path records, and still may not write it.
+            vm.expectRevert(
+                abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.PLATFORM)
+            );
+            vm.prank(platform);
+            stmtLog.appendPlatform(s);
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.OWNER)
+        );
+        _append(Role.OWNER, tokenOwner, onToken);
+
+        // Relayed, under every role that can be relayed.
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.ARTIST)
+        );
+        _relay(
+            Role.ARTIST,
+            onManager,
+            artist,
+            0,
+            deadline,
+            _sign(artistKey, Role.ARTIST, onManager, 0, deadline)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.OWNER)
+        );
+        _relay(
+            Role.OWNER,
+            onToken,
+            tokenOwner,
+            0,
+            deadline,
+            _sign(ownerKey, Role.OWNER, onToken, 0, deadline)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.ReservedKind.selector, kind, Role.CURATOR)
+        );
+        _relay(
+            Role.CURATOR,
+            onManager,
+            curatorSigner,
+            0,
+            deadline,
+            _sign(curatorKey, Role.CURATOR, onManager, 0, deadline)
+        );
+
+        (uint64 count,) = stmtLog.chainOf(address(manager), 0);
+        assertEq(count, 0, "nothing reached the governance chain");
+    }
+
+    /// @dev The manager still may not sign anywhere else, the governance kind included.
+    function test_GovernanceManifest_ManagerStillCannotSignOnOtherPaths() public {
+        editions.setBalance(7, address(manager), 1);
+        resolver.grantEverywhere(address(manager));
+        Statement memory s = _governanceStatement();
+        s.token = address(editions);
+        s.id = 7;
+
+        vm.expectRevert(IStatementLog.AuthorityCannotSign.selector);
+        _append(Role.OWNER, address(manager), s);
+        vm.expectRevert(IStatementLog.AuthorityCannotSign.selector);
+        _append(Role.ARTIST, address(manager), s);
+
+        // Through AccessManager.execute as well: the manager is the caller of the ordinary paths.
+        bytes memory data = abi.encodeCall(StatementLog.append, (Role.OWNER, s));
+        vm.expectRevert(IStatementLog.AuthorityCannotSign.selector);
+        vm.prank(admin);
+        manager.execute(address(stmtLog), data);
+
+        // An ordinary kind through the governance path is not a way around it either.
+        Statement memory ordinary = _statement(address(manager), 0);
+        bytes memory viaGovernance =
+            abi.encodeCall(StatementLog.appendGovernanceManifest, (ordinary));
+        vm.prank(governor);
+        manager.schedule(address(stmtLog), viaGovernance, 0);
+        vm.warp(block.timestamp + GOVERNANCE_DELAY);
+        vm.expectRevert(IStatementLog.InvalidGovernanceManifest.selector);
+        vm.prank(governor);
+        manager.execute(address(stmtLog), viaGovernance);
     }
 }

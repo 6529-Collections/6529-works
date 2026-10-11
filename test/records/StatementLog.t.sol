@@ -693,6 +693,7 @@ contract StatementLogTest is StatementLogFixture {
         assertEq(StatementKinds.ACCESSION, keccak256("ACCESSION"));
         assertEq(StatementKinds.DISPUTE_OUTCOME, keccak256("DISPUTE_OUTCOME"));
         assertEq(StatementKinds.CURATION_EVIDENCE, keccak256("CURATION_EVIDENCE"));
+        assertEq(StatementKinds.GOVERNANCE_MANIFEST, keccak256("GOVERNANCE_MANIFEST"));
     }
 
     function test_ExtensibleKindIsAccepted() public {
@@ -989,8 +990,10 @@ contract StatementLogTest is StatementLogFixture {
         bytes32 supersedes
     ) public {
         vm.assume(kind != 0 && schema != 0 && digest != 0 && fileId != 0);
+        // The fuzzer picks keccak constants out of the bytecode, so exclude every reserved kind.
         vm.assume(
             kind != StatementKinds.DISPUTE_OUTCOME && kind != StatementKinds.CURATION_EVIDENCE
+                && kind != StatementKinds.GOVERNANCE_MANIFEST
         );
         vm.assume(token != address(0) || id != 0);
         resolver.grantEverywhere(artist);
