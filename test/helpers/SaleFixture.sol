@@ -9,7 +9,7 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import {
     MockAssetAllowlist,

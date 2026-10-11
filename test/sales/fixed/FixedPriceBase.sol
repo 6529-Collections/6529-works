@@ -12,7 +12,7 @@ import {
 import { LockedTerms, Payment, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { SaleFixture } from "../../helpers/SaleFixture.sol";
 
 /// @notice Fixed-price setup: the adapter wired to an ETH edition and a USD edition, with phase,
@@ -150,6 +150,16 @@ abstract contract FixedPriceBase is SaleFixture {
 
     function _locked(uint256 saleId) internal view returns (LockedTerms memory terms) {
         (terms,,) = fixedSale.sale(saleId);
+    }
+
+    /// @dev Copies `account` bought at `phase` of the sale's `(token, id)`.
+    function _bought(uint256 saleId, uint256 phase, address account)
+        internal
+        view
+        returns (uint256)
+    {
+        LockedTerms memory t = _locked(saleId);
+        return fixedSale.purchased(t.token, t.id, phase, account);
     }
 
     function _approved(uint256 saleId) internal view returns (bool approved) {

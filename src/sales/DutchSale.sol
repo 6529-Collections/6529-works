@@ -16,7 +16,7 @@ import {
 } from "../interfaces/types/SaleTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { DutchPricing } from "./DutchPricing.sol";
-import { ISignatureTransfer } from "./ISignatureTransfer.sol";
+import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "./MintSaleBase.sol";
 
 /// @title DutchSale

@@ -8,7 +8,7 @@ import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { BlocklistToken, ToggleRecipient } from "../../mocks/EconomicsMocks.sol";
 import { MockEditionTarget, MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { SaleMerkle } from "../../helpers/SaleFixture.sol";
@@ -88,7 +88,7 @@ contract FixedPriceHandler is Test {
 
     function buyAllowlisted(uint256 leafSeed, uint256 payerSeed, uint256 quantitySeed) external {
         uint256 i = leafSeed % 4;
-        uint256 left = caps0[i] - sale.purchased(ethSale, 0, actors[i]);
+        uint256 left = caps0[i] - sale.purchased(address(editions), ETH_ID, 0, actors[i]);
         uint256 quantity = _quantity(ETH_ID, quantitySeed, left);
         if (quantity == 0) return;
         _payEth(
@@ -103,7 +103,7 @@ contract FixedPriceHandler is Test {
         external
     {
         uint256 i = payerSeed % 4;
-        uint256 left = caps1[i] - sale.purchased(ethSale, 1, actors[i]);
+        uint256 left = caps1[i] - sale.purchased(address(editions), ETH_ID, 1, actors[i]);
         uint256 quantity = _quantity(ETH_ID, quantitySeed, left);
         if (quantity == 0) return;
         _payEth(
@@ -116,7 +116,7 @@ contract FixedPriceHandler is Test {
 
     function buyPublic(uint256 payerSeed, uint256 recipientSeed, uint256 quantitySeed) external {
         address recipient = actors[recipientSeed % 4];
-        uint256 left = PUBLIC_CAP - sale.purchased(ethSale, 2, recipient);
+        uint256 left = PUBLIC_CAP - sale.purchased(address(editions), ETH_ID, 2, recipient);
         uint256 quantity = _quantity(ETH_ID, quantitySeed, left);
         if (quantity == 0) return;
         _payEth(
@@ -134,7 +134,7 @@ contract FixedPriceHandler is Test {
         bool viaPermit2
     ) external {
         address recipient = actors[recipientSeed % 4];
-        uint256 left = TOKEN_CAP - sale.purchased(tokenSale, 0, recipient);
+        uint256 left = TOKEN_CAP - sale.purchased(address(editions), TOKEN_ID, 0, recipient);
         uint256 quantity = _quantity(TOKEN_ID, quantitySeed, left);
         if (quantity == 0) return;
         uint256 p = payerSeed % 4;
@@ -163,7 +163,7 @@ contract FixedPriceHandler is Test {
     /// @dev Tries to buy one copy more than a leaf's remaining allowance.
     function attackOverCap(uint256 leafSeed, uint256 payerSeed) external {
         uint256 i = leafSeed % 4;
-        uint256 quantity = caps0[i] - sale.purchased(ethSale, 0, actors[i]) + 1;
+        uint256 quantity = caps0[i] - sale.purchased(address(editions), ETH_ID, 0, actors[i]) + 1;
         _attack(
             actors[payerSeed % 4],
             IFixedPriceSale.Purchase(ethSale, 0, actors[i], quantity, caps0[i], prices0[i]),
@@ -350,8 +350,8 @@ contract FixedPriceInvariantTest is StdInvariant, FixedPriceBase {
         assertGt(escrow.owed(address(wallet), CURRENCY_ETH), 0);
         assertGt(escrow.owed(address(wallet), address(token)), 0);
         assertEq(editions.minted(handler.ETH_ID()), handler.SIZE());
-        assertGt(fixedSale.purchased(handler.ethSale(), 0, handler.actors(0)), 0);
-        assertGt(fixedSale.purchased(handler.ethSale(), 1, handler.actors(0)), 0);
+        assertGt(_bought(handler.ethSale(), 0, handler.actors(0)), 0);
+        assertGt(_bought(handler.ethSale(), 1, handler.actors(0)), 0);
         assertGt(handler.tokenPaid(), 0);
         invariant_EthIsPaidOrEscrowedNeverKept();
         invariant_TokenIsPaidOrEscrowedNeverKept();
@@ -411,10 +411,19 @@ contract FixedPriceInvariantTest is StdInvariant, FixedPriceBase {
         uint256 tokenSale = handler.tokenSale();
         for (uint256 i; i < 4; ++i) {
             address a = handler.actors(i);
-            assertLe(fixedSale.purchased(ethSale, 0, a), handler.caps0(i));
-            assertLe(fixedSale.purchased(ethSale, 1, a), handler.caps1(i));
-            assertLe(fixedSale.purchased(ethSale, 2, a), handler.PUBLIC_CAP());
-            assertLe(fixedSale.purchased(tokenSale, 0, a), handler.TOKEN_CAP());
+            assertLe(
+                fixedSale.purchased(address(editions), handler.ETH_ID(), 0, a), handler.caps0(i)
+            );
+            assertLe(
+                fixedSale.purchased(address(editions), handler.ETH_ID(), 1, a), handler.caps1(i)
+            );
+            assertLe(
+                fixedSale.purchased(address(editions), handler.ETH_ID(), 2, a), handler.PUBLIC_CAP()
+            );
+            assertLe(
+                fixedSale.purchased(address(editions), handler.TOKEN_ID(), 0, a),
+                handler.TOKEN_CAP()
+            );
         }
     }
 }

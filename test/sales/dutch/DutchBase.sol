@@ -8,7 +8,7 @@ import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { DutchParams, Payment, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { SaleFixture } from "../../helpers/SaleFixture.sol";
 
 /// @notice Dutch setup: the adapter wired to a linear ETH edition, a stepped ETH edition and a

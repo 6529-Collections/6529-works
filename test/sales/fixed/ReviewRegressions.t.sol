@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
@@ -449,7 +448,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         vm.expectRevert(MockPermit2.InvalidSigner.selector);
         _purchase(relayer, _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), pay);
         _purchase(relayer, p, new bytes32[](0), pay);
-        assertEq(fixedSale.purchased(saleId, 1, alice), 1);
+        assertEq(_bought(saleId, 1, alice), 1);
     }
 
     // ------------------------------------------------------------------ pause
@@ -457,14 +456,14 @@ contract ReviewRegressionsTest is FixedPriceBase {
     function test_Pause_StopsOpeningAndBuyingButNotClosingOrClaiming() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         vm.expectEmit(address(fixedSale));
-        emit Pausable.Paused(pauser);
+        emit ISaleAdapter.Paused(pauser);
         vm.prank(pauser);
         fixedSale.pause();
         assertTrue(fixedSale.paused());
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         _openPublic(USD_ED, 0);
         vm.deal(alice, PRICE);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         vm.prank(alice);
         fixedSale.purchase{ value: PRICE }(
             _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
@@ -478,7 +477,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         vm.prank(creator);
         fixedSale.closeSale(saleId);
         vm.expectEmit(address(fixedSale));
-        emit Pausable.Unpaused(unpauser);
+        emit ISaleAdapter.Unpaused(unpauser);
         vm.prank(unpauser);
         fixedSale.unpause();
         _openPublic(ETH_ED, 0);
@@ -508,7 +507,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         phases[1] = IFixedPriceSale.Phase(t, t + 200, 0, 0, false, false);
         uint256 saleId = _open(creator, ETH_ED, phases);
         vm.warp(t + 150);
-        vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
         vm.warp(t + 200);

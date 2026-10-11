@@ -19,7 +19,7 @@ import {
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 
 /// @notice Sales-lane mocks: an edition-like mint target, the escrow and allowlist stand-ins, a
 ///         Permit2 that reproduces the canonical hashing, nonces and checks, an EIP-2612 token,

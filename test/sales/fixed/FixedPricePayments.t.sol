@@ -9,7 +9,7 @@ import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import {
@@ -283,7 +283,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         // The relayer gifts to Bob on Alice's allowance, with Alice's signature.
         _purchase(relayer, p, _proof(leaves, 0), pay);
         assertEq(editions.balanceOf(bob, USD_ED), 1);
-        assertEq(fixedSale.purchased(keyed, 0, alice), 1);
+        assertEq(_bought(keyed, 0, alice), 1);
         // Another signer does not borrow Alice's leaf.
         (address mallory, uint256 malloryKey) = makeAddrAndKey("mallory");
         usd.mint(mallory, 100e18);
@@ -470,7 +470,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
             _p(id, 0, address(receiver), 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
         );
         assertEq(alice.balance, PRICE);
-        assertEq(fixedSale.purchased(id, 0, address(receiver)), 0);
+        assertEq(_bought(id, 0, address(receiver)), 0);
     }
 
     function test_HostileReceiver_ReentryIsBlocked() public {

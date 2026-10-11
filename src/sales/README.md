@@ -18,7 +18,9 @@ minter-role grant. Governed by
 | `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of discounts. |
 | `DutchSale.sol` | `IDutchSale`: a descending price from the token's `DutchParams`. |
 | `DutchPricing.sol` | The price curve (internal library, ported from PR #744's `StreamDutchPricing`). |
-| `ISignatureTransfer.sol` | The one Permit2 entry point the adapters call. |
+
+Permit2 is called through the shared
+[`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
 
 ### Opening a sale
 
@@ -66,9 +68,9 @@ Installation:
 on the allowlist, so deprecating an asset halts running sales in it as an
 emergency tightening. Claims are never blocked.
 
-**Emergency pause.** `pause` (PAUSER, immediate) stops `openSale` and
-`purchase` on an adapter, and `unpause` (UNPAUSER) resumes them. `closeSale`
-and `claim` always work.
+**Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
+`purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
+resumes them. `closeSale` and `claim` always work.
 
 ### Allowlists
 

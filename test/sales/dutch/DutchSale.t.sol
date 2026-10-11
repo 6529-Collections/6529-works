@@ -5,7 +5,6 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
@@ -15,7 +14,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { LockedTerms, Payment, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { RejectingRecipient, ReentrantRecipient } from "../../mocks/EconomicsMocks.sol";
 import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
@@ -85,7 +84,7 @@ contract DutchSaleTest is DutchBase {
     }
 
     function test_OpenSale_RevertsForStrangerPastStartOrSecondSale() public {
-        vm.expectRevert(abi.encodeWithSelector(IDutchSale.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         dutch.openSale(address(editions), LINEAR, uint64(block.timestamp));
         vm.expectRevert(DutchSale.InvalidSchedule.selector);
@@ -93,7 +92,7 @@ contract DutchSaleTest is DutchBase {
         dutch.openSale(address(editions), LINEAR, uint64(block.timestamp - 1));
         uint256 saleId = _openNow(LINEAR);
         vm.expectRevert(
-            abi.encodeWithSelector(IDutchSale.SaleAlreadyOpen.selector, address(editions), LINEAR)
+            abi.encodeWithSelector(ISaleAdapter.SaleAlreadyOpen.selector, address(editions), LINEAR)
         );
         _openNow(LINEAR);
     }
@@ -160,9 +159,9 @@ contract DutchSaleTest is DutchBase {
     }
 
     function test_Views_RevertOnUnknownSale() public {
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 5));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 5));
         dutch.currentPrice(5);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 5));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 5));
         dutch.sale(5);
     }
 
@@ -271,7 +270,7 @@ contract DutchSaleTest is DutchBase {
 
     function test_CloseSale_ByCreatorOrPlatformOnly() public {
         uint256 saleId = _openNow(LINEAR);
-        vm.expectRevert(abi.encodeWithSelector(IDutchSale.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         dutch.closeSale(saleId);
         vm.expectEmit(address(dutch));
@@ -340,10 +339,10 @@ contract DutchSaleTest is DutchBase {
         _buy(alice, saleId, alice, 1, START, 2 ether);
         vm.prank(pauser);
         dutch.pause();
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         _openNow(STEPPED);
         vm.deal(bob, START);
-        vm.expectRevert(Pausable.EnforcedPause.selector);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
         vm.prank(bob);
         dutch.purchase{ value: START }(saleId, bob, 1, START, _eth(bob, START));
         vm.prank(alice);

@@ -9,7 +9,6 @@ import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
@@ -35,7 +34,7 @@ import {
     PrimaryTerms
 } from "../interfaces/types/SaleTypes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
-import { ISignatureTransfer } from "./ISignatureTransfer.sol";
+import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 
 /// @title MintSaleBase
 /// @notice What the fixed-price and Dutch adapters share (ADR 0001 sections 5, 6 and 16): the
@@ -57,13 +56,7 @@ import { ISignatureTransfer } from "./ISignatureTransfer.sol";
 ///      `(token, id)` is open at a time. Every ERC-20 movement is checked by exact balance
 ///      delta, and every entry point that moves value is non-reentrant. While paused, sales
 ///      neither open nor sell; closing and claiming always work.
-abstract contract MintSaleBase is
-    ISaleAdapter,
-    ERC165,
-    AccessManaged,
-    Pausable,
-    ReentrancyGuardTransient
-{
+abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, ReentrancyGuardTransient {
     /// @notice A sale's locked terms and state, packed so the flags share the first slot.
     /// @dev `approved` is the artist's approval of a fixed-price phase configuration;
     ///      `federated` marks a token served through the federation registry.
@@ -102,14 +95,14 @@ abstract contract MintSaleBase is
     address public federationRegistry;
     /// @notice The code hash pinned when the federation registry was installed.
     bytes32 public federationRegistryCodeHash;
+    /// @inheritdoc ISaleAdapter
+    bool public paused;
 
     mapping(uint256 saleId => Listing) internal _listings;
     mapping(address token => mapping(uint256 id => uint256 saleId)) internal _openSales;
 
     /// @notice A required address is zero.
     error InvalidAddress();
-    /// @notice No sale has this ID.
-    error UnknownSale(uint256 saleId);
     /// @notice The token's terms are unusable: no seller or fee recipient, a fee share above the
     ///         denominator, federated code that differs from its registry entry, or a mint that
     ///         returned another token ID.
@@ -129,6 +122,12 @@ abstract contract MintSaleBase is
     error InvalidDependency(address dependency);
     /// @notice The sale is already closed.
     error SaleAlreadyClosed(uint256 saleId);
+
+    /// @dev Reverts while the adapter is paused.
+    modifier whenNotPaused() {
+        if (paused) revert SalePaused();
+        _;
+    }
 
     /// @param authority_ The AccessManager governing the setters, the pause and the PLATFORM
     ///        role.
@@ -176,14 +175,16 @@ abstract contract MintSaleBase is
         emit FederationRegistrySet(expected, next);
     }
 
-    /// @notice Stops new sales and purchases. PAUSER role (immediate).
+    /// @inheritdoc ISaleAdapter
     function pause() external restricted {
-        _pause();
+        paused = true;
+        emit Paused(msg.sender);
     }
 
-    /// @notice Resumes sales and purchases. UNPAUSER role.
+    /// @inheritdoc ISaleAdapter
     function unpause() external restricted {
-        _unpause();
+        paused = false;
+        emit Unpaused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter

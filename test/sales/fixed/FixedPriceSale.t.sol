@@ -21,7 +21,7 @@ import {
 } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { Mock1271Account } from "../../mocks/EconomicsMocks.sol";
 import { MockAssetAllowlist, MockEditionTarget } from "../../mocks/sales/SaleMocks.sol";
@@ -56,13 +56,13 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(fixedSale.saleKind(), keccak256("FIXED_PRICE"));
         assertEq(fixedSale.ALLOWLIST_LEAF_DOMAIN(), keccak256("6529WORKS_ALLOWLIST_LEAF_V1"));
         assertEq(
-            fixedSale.PHASE_TYPEHASH(),
+            Typehashes.PHASE,
             keccak256(
                 "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
             )
         );
         assertEq(
-            fixedSale.PHASE_CONFIGURATION_TYPEHASH(),
+            Typehashes.PHASE_CONFIGURATION,
             keccak256(
                 "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)"
             )
@@ -83,7 +83,6 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(version, "1");
         assertEq(chainId, block.chainid);
         assertEq(verifying, address(fixedSale));
-        assertEq(fixedSale.MAX_PROOF_DEPTH(), 32);
         assertEq(fixedSale.ETH_PAYOUT_GAS(), 100_000);
         assertEq(address(fixedSale.escrow()), address(escrow));
         assertEq(address(fixedSale.assets()), address(allowlist));
@@ -164,23 +163,21 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     function test_OpenSale_RevertsForStrangerAndDelayedPlatform() public {
         IFixedPriceSale.Phase[] memory phases = _one(_phase(0, 0, false, false));
-        vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         _open(stranger, ETH_ED, phases);
 
         // A PLATFORM member with an execution delay may not act immediately.
         address slow = makeAddr("slowPlatform");
         vm.prank(admin);
         manager.grantRole(PLATFORM_ROLE, slow, 1 days);
-        vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.NotSaleManager.selector, slow));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, slow));
         _open(slow, ETH_ED, phases);
     }
 
     function test_OpenSale_OneOpenSalePerEdition() public {
         uint256 first = _openPublic(ETH_ED, 0);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IFixedPriceSale.SaleAlreadyOpen.selector, address(editions), ETH_ED
-            )
+            abi.encodeWithSelector(ISaleAdapter.SaleAlreadyOpen.selector, address(editions), ETH_ED)
         );
         _openPublic(ETH_ED, 0);
         // Another edition is independent; closing frees the edition.
@@ -458,7 +455,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
     function test_CloseSale_FollowsTheCurrentCreator() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         editions.setCreator(ETH_ED, bob);
-        vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.NotSaleManager.selector, creator));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, creator));
         vm.prank(creator);
         fixedSale.closeSale(saleId);
         vm.prank(bob);
@@ -477,21 +474,21 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     function test_CloseSale_RevertsForStrangerOrUnknown() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
-        vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 99));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 99));
         vm.prank(platform);
         fixedSale.closeSale(99);
     }
 
     function test_Views_RevertOnUnknownSale() public {
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 1));
         fixedSale.sale(1);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 1));
         fixedSale.phases(1);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 1));
-        fixedSale.purchased(1, 0, alice);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 1));
+        _bought(1, 0, alice);
     }
 
     // ------------------------------------------------------------------ purchases
@@ -523,14 +520,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(seller.balance, total - _fee(total));
         assertEq(network.balance, _fee(total));
         assertEq(address(fixedSale).balance, 0);
-        assertEq(fixedSale.purchased(saleId, 0, bob), 3);
+        assertEq(_bought(saleId, 0, bob), 3);
     }
 
     function test_Purchase_RecipientDefaultsToPayer() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         _buyEth(alice, saleId, 0, address(0), 2, PRICE);
         assertEq(editions.balanceOf(alice, ETH_ED), 2);
-        assertEq(fixedSale.purchased(saleId, 0, alice), 2);
+        assertEq(_bought(saleId, 0, alice), 2);
     }
 
     function test_Purchase_PhaseWindowIsHalfOpen() public {
@@ -757,7 +754,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         _purchaseEth(alice, _p(saleId, 0, alice, 2, 2, A_PRICE), _proof(leaves, 0), total);
         assertEq(editions.balanceOf(alice, ETH_ED), 2);
         assertEq(seller.balance + network.balance, total);
-        assertEq(fixedSale.purchased(saleId, 0, alice), 2);
+        assertEq(_bought(saleId, 0, alice), 2);
     }
 
     /// @notice Regression for PR #744's verified High finding: a recipient-keyed leaf was
@@ -784,8 +781,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         _purchaseEth(stranger, _p(saleId, 0, alice, 2, 2, A_PRICE), aliceProof, total);
         assertEq(editions.balanceOf(alice, ETH_ED), 2);
         assertEq(editions.balanceOf(stranger, ETH_ED), 0);
-        assertEq(fixedSale.purchased(saleId, 0, alice), 2);
-        assertEq(fixedSale.purchased(saleId, 0, stranger), 0);
+        assertEq(_bought(saleId, 0, alice), 2);
+        assertEq(_bought(saleId, 0, stranger), 0);
     }
 
     function test_Allowlist_PayerKeyedBindsThePayer() public {
@@ -796,8 +793,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         // Alice's allowance pays for a gift to Bob.
         _purchaseEth(alice, _p(saleId, 0, bob, 1, 2, A_PRICE), aliceProof, total);
         assertEq(editions.balanceOf(bob, ETH_ED), 1);
-        assertEq(fixedSale.purchased(saleId, 0, alice), 1);
-        assertEq(fixedSale.purchased(saleId, 0, bob), 0);
+        assertEq(_bought(saleId, 0, alice), 1);
+        assertEq(_bought(saleId, 0, bob), 0);
 
         // Nobody else can pay as Alice, or use her leaf as themselves.
         vm.deal(stranger, 1 ether);
@@ -884,7 +881,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         // Rerunning the same tree in a new sale does not reset Bob's cap.
         IFixedPriceSale.Phase[] memory again = fixedSale.phases(saleId);
         uint256 next = _open(creator, ETH_ED, again);
-        assertEq(fixedSale.purchased(next, 0, bob), 1);
+        assertEq(_bought(next, 0, bob), 1);
         assertEq(fixedSale.purchased(address(editions), ETH_ED, 0, bob), 1);
         vm.expectRevert(
             abi.encodeWithSelector(IFixedPriceSale.WalletCapExceeded.selector, next, 0, bob)
@@ -946,10 +943,10 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
         _purchaseEth(alice, _p(saleId, 3, alice, 2, 2, A_PRICE), _proof(l3, 0), 2 * A_PRICE);
 
-        assertEq(fixedSale.purchased(saleId, 0, alice), 2);
-        assertEq(fixedSale.purchased(saleId, 1, alice), 1);
-        assertEq(fixedSale.purchased(saleId, 2, alice), 1);
-        assertEq(fixedSale.purchased(saleId, 3, alice), 0);
+        assertEq(_bought(saleId, 0, alice), 2);
+        assertEq(_bought(saleId, 1, alice), 1);
+        assertEq(_bought(saleId, 2, alice), 1);
+        assertEq(_bought(saleId, 3, alice), 0);
         assertEq(editions.balanceOf(alice, ETH_ED), 4);
     }
 
@@ -958,7 +955,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         uint256 saleId = _openPublic(ETH_ED, cap);
         for (uint256 i; i < buys.length; ++i) {
             uint256 quantity = bound(buys[i], 1, 8);
-            uint256 before = fixedSale.purchased(saleId, 0, bob);
+            uint256 before = _bought(saleId, 0, bob);
             uint256 total = quantity * PRICE;
             vm.deal(alice, total);
             if (before + quantity > cap) {
@@ -972,9 +969,9 @@ contract FixedPriceSaleTest is FixedPriceBase {
             fixedSale.purchase{ value: total }(
                 _p(saleId, 0, bob, quantity, 0, 0), new bytes32[](0), _eth(alice, total)
             );
-            assertLe(fixedSale.purchased(saleId, 0, bob), cap);
+            assertLe(_bought(saleId, 0, bob), cap);
         }
-        assertEq(editions.balanceOf(bob, ETH_ED), fixedSale.purchased(saleId, 0, bob));
+        assertEq(editions.balanceOf(bob, ETH_ED), _bought(saleId, 0, bob));
     }
 
     function test_Gift_ZeroLeafPriceIsPushedToTheRecipient() public {

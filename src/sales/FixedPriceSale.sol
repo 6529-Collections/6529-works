@@ -12,7 +12,7 @@ import { Limits } from "../interfaces/types/Limits.sol";
 import { LockedTerms, Payment, PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
-import { ISignatureTransfer } from "./ISignatureTransfer.sol";
+import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "./MintSaleBase.sol";
 
 /// @title FixedPriceSale
@@ -29,7 +29,7 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      `(token, id, phase index, keyed wallet)` across sales, so reopening a token with the
 ///      same tree never resets them; a fresh drop uses new phase indices. A leaf price below the
 ///      package price needs the artist's approval: the creator opens the sale, or signs the
-///      typed {PHASE_CONFIGURATION_TYPEHASH} (token, currency, package price and every phase),
+///      typed `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase),
 ///      with a single-use, revocable nonce. Anyone may close a sale whose phases have all
 ///      ended. Governance: map `openSale` and `closeSale` to PLATFORM (the creator needs no
 ///      role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to PAUSER
@@ -48,20 +48,6 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     /// @notice Domain label of allowlist leaves.
     bytes32 public constant ALLOWLIST_LEAF_DOMAIN = keccak256("6529WORKS_ALLOWLIST_LEAF_V1");
-    /// @notice The longest accepted Merkle proof (trees of up to 2**32 leaves).
-    uint256 public constant MAX_PROOF_DEPTH = 32;
-    /// @notice EIP-712 type of one phase.
-    bytes32 public constant PHASE_TYPEHASH = keccak256(
-        "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,"
-        "bool leafPriced)"
-    );
-    /// @notice EIP-712 type of the creator's approval: the token, its resolved currency and
-    ///         package price, and every phase, typed so wallets display them.
-    bytes32 public constant PHASE_CONFIGURATION_TYPEHASH = keccak256(
-        "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,"
-        "Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,"
-        "uint32 walletCap,bool payerKeyed,bool leafPriced)"
-    );
 
     mapping(uint256 saleId => Phase[]) private _phases;
     mapping(
@@ -175,18 +161,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @inheritdoc IFixedPriceSale
-    /// @dev The count of the sale's `(token, id)` at that phase index, shared by every sale of
-    ///      the token (see the four-argument overload).
-    function purchased(uint256 saleId, uint256 phase, address account)
-        external
-        view
-        returns (uint256)
-    {
-        Listing storage l = _listing(saleId);
-        return _purchased[l.token][l.id][phase][account];
-    }
-
-    /// @notice Copies `account` bought at phase index `phase` of any sale of `(token, id)`.
+    /// @dev Shared by every sale of `(token, id)` at that phase index.
     function purchased(address token, uint256 id, uint256 phase, address account)
         external
         view
@@ -248,7 +223,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         Configuration memory c = Configuration(
             token, id, currency, packagePrice, _hashPhases(phases_), nonce, deadline
         );
-        return _hashTypedDataV4(keccak256(abi.encode(PHASE_CONFIGURATION_TYPEHASH, c)));
+        return _hashTypedDataV4(keccak256(abi.encode(Typehashes.PHASE_CONFIGURATION, c)));
     }
 
     /// @inheritdoc MintSaleBase
@@ -323,7 +298,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         Listing storage l
     ) private view {
         bytes32 leaf = allowlistLeaf(l.token, l.id, p.phase, account, p.leafCap, p.leafPrice);
-        if (proof.length > MAX_PROOF_DEPTH || !MerkleProof.verifyCalldata(proof, root, leaf)) {
+        if (proof.length > Limits.MAX_PROOF_DEPTH || !MerkleProof.verifyCalldata(proof, root, leaf))
+        {
             revert NotAllowlisted(p.saleId, p.phase, account);
         }
     }
@@ -341,7 +317,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     function _hashPhases(Phase[] calldata phases_) private pure returns (bytes32) {
         bytes32[] memory hashes = new bytes32[](phases_.length);
         for (uint256 i; i < phases_.length; ++i) {
-            hashes[i] = keccak256(abi.encode(PHASE_TYPEHASH, phases_[i]));
+            hashes[i] = keccak256(abi.encode(Typehashes.PHASE, phases_[i]));
         }
         return keccak256(abi.encodePacked(hashes));
     }
