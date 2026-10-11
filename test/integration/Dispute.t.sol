@@ -1,0 +1,219 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { IntegrationBase } from "./IntegrationBase.sol";
+
+/// @notice Flow 5 (integration brief, lane B): a dispute on the real contracts. A copier's
+///         package reaches auction; a guardian pauses it; PLATFORM appends the
+///         `DISPUTE_OUTCOME` statement, which the renderer shows; PARAMETER_SETTER's governed
+///         `cancel` runs after its 48-hour delay, refunding the bid and burning the token; anyone
+///         calls `releaseContent`; and the rightful artist's item with the same content then
+///         consumes. A rejected dispute resumes the auction, and a dispute after a sale only adds
+///         a statement.
+contract DisputeFlowTest is IntegrationBase {
+    address internal rightful;
+    address internal copier;
+    address internal bidder = makeAddr("disputeBidder");
+    bytes32 internal copierRoot;
+    bytes32 internal rightfulRoot;
+    bytes32 internal contentHash;
+
+    function setUp() public override {
+        super.setUp();
+        rightful = _actor("rightfulArtist");
+        copier = _actor("copier");
+        Work memory original = _work(rightful, collectionId);
+        Work memory copy = _work(copier, collectionId);
+        // The copier claims the rightful artist's media: same content hash and media list.
+        copy.media = original.media;
+        copy.item.contentHash = original.item.contentHash;
+        copy.item.mediaHash = original.item.mediaHash;
+        contentHash = original.item.contentHash;
+        Work[] memory copies = new Work[](2);
+        copies[0] = copy;
+        copies[1] = _work(copier, collectionId); // the copier's other work, sold normally
+        copierRoot = _publish(copies);
+        _keep(copierRoot, copies);
+        rightfulRoot = _publish(_one(original));
+        _keep(rightfulRoot, _one(original));
+    }
+
+    function _pauseCopy() internal returns (uint256 saleId, uint256 tokenId) {
+        (saleId, tokenId) = _start(copierRoot, _package(copierRoot), 0);
+        _ethBid(saleId, bidder, 1 ether);
+        vm.warp(block.timestamp + 2 hours);
+        vm.prank(guardian1);
+        auction.pause(saleId, keccak256("disputes wave: copied media"));
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.PAUSED));
+    }
+
+    function test_UpheldDisputeCancelsBurnsReleasesAndTheRightfulArtistMints() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+
+        // No bids while paused.
+        vm.deal(bidder, 2 ether);
+        vm.prank(bidder);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.PAUSED
+            )
+        );
+        auction.bid{ value: 2 ether }(saleId, address(0), _payment(2 ether));
+
+        // The TDH vote upholds the dispute: PLATFORM records the outcome; metadata shows it.
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://dispute-outcome-upheld"
+        );
+        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), outcome);
+        assertTrue(
+            _contains(
+                stream.tokenURI(tokenId),
+                string.concat(
+                    '{"trait_type":"Dispute statement","value":"',
+                    Strings.toHexString(uint256(outcome), 32),
+                    '"}'
+                )
+            ),
+            "the renderer shows the dispute statement"
+        );
+
+        // A cancel citing anything but the recorded outcome fails.
+        bytes memory wrong = abi.encodeCall(auction.cancel, (saleId, keccak256("not the outcome")));
+        vm.warp(block.timestamp + 1 days);
+        _schedule(hotAdmin, address(auction), wrong);
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.OutcomeNotRecorded.selector, saleId, keccak256("not the outcome")
+            )
+        );
+        manager.execute(address(auction), wrong);
+
+        // The governed cancel (PARAMETER_SETTER, 48 hours), scheduled by day 5 of the pause.
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
+        assertEq(
+            uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.CANCELLED)
+        );
+        assertEq(auction.claimable(bidder, CURRENCY_ETH), 1 ether, "the bid is refunded");
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId)
+        );
+        stream.ownerOf(tokenId);
+        assertEq(stream.totalSupply(), stream.totalMinted() - 1, "a gap: the ID is never reused");
+        uint256 before = bidder.balance;
+        vm.prank(bidder);
+        auction.claim(CURRENCY_ETH, bidder);
+        assertEq(bidder.balance - before, 1 ether);
+
+        // Anyone releases the content hash; the copier's item is tombstoned.
+        bytes32 copierItem = WorksHashing.itemHash(_package(copierRoot)[0].item);
+        vm.prank(makeAddr("anyone"));
+        stream.releaseContent(tokenId, contentHash);
+        assertEq(registry.consumedItemOf(contentHash), bytes32(0));
+        assertTrue(registry.isReleased(copierItem));
+
+        // The rightful artist's item with the same content now consumes.
+        (, uint256 rightfulToken) = _start(rightfulRoot, _package(rightfulRoot), 0);
+        assertEq(stream.ownerOf(rightfulToken), address(auction));
+        assertEq(
+            registry.consumedItemOf(contentHash),
+            WorksHashing.itemHash(_package(rightfulRoot)[0].item)
+        );
+        assertEq(rightfulToken, tokenId + 1);
+
+        // The copier's item can never be consumed again, through any root.
+        bytes memory again = _mintData(copierRoot, _package(copierRoot), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentUsed.selector,
+                PRODUCT_STREAM,
+                contentHash,
+                WorksHashing.itemHash(_package(rightfulRoot)[0].item)
+            )
+        );
+        auction.start(address(stream), again);
+    }
+
+    /// @dev The cancel must execute while the pause is live (ADR 0003): one scheduled on day 6
+    ///      executes after the 7-day allowance, when the auction has resumed and run out.
+    function test_CancelIsRefusedOnceThePauseHasLapsed() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://late-outcome"
+        );
+        vm.warp(block.timestamp + 6 days);
+        bytes memory late = abi.encodeCall(auction.cancel, (saleId, outcome));
+        _schedule(hotAdmin, address(auction), late);
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.ENDED
+            )
+        );
+        manager.execute(address(auction), late);
+    }
+
+    /// @dev A rejected dispute (or none within 7 days): the high bidder may withdraw while
+    ///      paused, and the auction resumes with its remaining time.
+    function test_RejectedDisputeResumesTheAuction() public {
+        (uint256 saleId, uint256 tokenId) = _pauseCopy();
+        IEnglishAuction.Auction memory paused = auction.auction(saleId);
+        uint256 remaining = paused.endTime - paused.pausedAt;
+        vm.prank(bidder);
+        auction.withdrawBid(saleId);
+        assertEq(auction.claimable(bidder, CURRENCY_ETH), 1 ether);
+
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.resume, (saleId)));
+        IEnglishAuction.Auction memory resumed = auction.auction(saleId);
+        assertEq(uint8(resumed.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
+        assertEq(resumed.endTime, block.timestamp + remaining, "the remaining time");
+        _ethBid(saleId, makeAddr("lateBidder"), 2 ether);
+        _settleAtEnd(saleId);
+        assertEq(stream.ownerOf(tokenId), makeAddr("lateBidder"));
+    }
+
+    /// @dev After a sale a dispute only produces a statement: nothing is confiscated.
+    function test_DisputeAfterASaleIsAStatementOnly() public {
+        uint256 tokenId = _sell(copierRoot, _package(copierRoot), 1, bidder, 1 ether);
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://after-sale-outcome"
+        );
+        assertEq(stream.ownerOf(tokenId), bidder, "nothing is confiscated");
+        assertTrue(_contains(stream.tokenURI(tokenId), Strings.toHexString(uint256(outcome), 32)));
+        (, uint256 royalty) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(royalty, 0.06529 ether, "royalties unchanged");
+    }
+
+    /// @dev The emergency pause (PAUSER, held by the guardians) blocks new starts only; bids on
+    ///      live auctions continue. Unpausing is UNPAUSER's, in the 48-hour class.
+    function test_EmergencyPauseBlocksStartsNotBids() public {
+        (uint256 saleId,) = _start(copierRoot, _package(copierRoot), 1);
+        vm.prank(guardian3);
+        auction.pause();
+        bytes memory data = _mintData(copierRoot, _package(copierRoot), 0);
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
+        auction.start(address(stream), data);
+        _ethBid(saleId, bidder, 1 ether);
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.unpause, ()));
+        auction.start(address(stream), data);
+    }
+
+    function _payment(uint256 amount) internal view returns (Payment memory) {
+        return Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, "");
+    }
+}
