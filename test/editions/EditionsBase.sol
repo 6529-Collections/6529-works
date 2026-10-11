@@ -26,7 +26,8 @@ import {
     EditionsEconomicsMock,
     EditionsRegistryMock,
     EditionsRendererMock,
-    EditionsStreamMock
+    EditionsStreamMock,
+    EditionsWorkRecordsMock
 } from "../mocks/editions/EditionsMocks.sol";
 
 /// @dev Deploys 6529 Editions against mocks of Stream, the package registry, the economics
@@ -37,6 +38,7 @@ abstract contract EditionsBase is Test {
     uint64 internal constant MINTER = 6;
     uint64 internal constant PARAMETER_SETTER = 9;
     uint64 internal constant FUNDS_SETTER = 10;
+    uint64 internal constant SUCCESSOR_SETTER = 11;
     uint256 internal constant PRICE = 0.01 ether;
     /// @dev Stream's auction custody, which holds a master until its auction settles.
     address internal constant CUSTODY = address(0xA0C7);
@@ -52,6 +54,7 @@ abstract contract EditionsBase is Test {
     Editions internal editions;
     EditionsAdapterMock internal fixedAdapter;
     EditionsAdapterMock internal dutchAdapter;
+    EditionsWorkRecordsMock internal workRecordsMock;
 
     address internal admin = makeAddr("admin");
     address internal governor = makeAddr("governor");
@@ -81,6 +84,7 @@ abstract contract EditionsBase is Test {
         registry.setSystem(address(editions));
         fixedAdapter = new EditionsAdapterMock(SaleKind.FIXED_PRICE);
         dutchAdapter = new EditionsAdapterMock(SaleKind.DUTCH);
+        workRecordsMock = new EditionsWorkRecordsMock();
 
         vm.startPrank(admin);
         bytes4[] memory minting = new bytes4[](2);
@@ -93,6 +97,10 @@ abstract contract EditionsBase is Test {
         manager.setTargetFunctionRole(
             address(editions), _one(IEditions.setOwner.selector), FUNDS_SETTER
         );
+        manager.setTargetFunctionRole(
+            address(editions), _one(Editions.bindWorkRecords.selector), SUCCESSOR_SETTER
+        );
+        manager.grantRole(SUCCESSOR_SETTER, governor, 0);
         manager.grantRole(MINTER, address(fixedAdapter), 0);
         manager.grantRole(MINTER, address(dutchAdapter), 0);
         manager.grantRole(PARAMETER_SETTER, governor, 0);
@@ -156,6 +164,11 @@ abstract contract EditionsBase is Test {
     function _create(PackageItem memory item) internal returns (uint256 id) {
         id = _master(item);
         editions.createEdition(id, item);
+    }
+
+    function _bindWorkRecords() internal {
+        vm.prank(governor);
+        editions.bindWorkRecords(address(workRecordsMock), address(workRecordsMock).codehash);
     }
 
     function _one(bytes4 selector) internal pure returns (bytes4[] memory s) {

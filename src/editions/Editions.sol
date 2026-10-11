@@ -50,24 +50,30 @@ interface IMasterSale {
 ///      one Stream recorded), only while the package is approved and the item consumed, and only
 ///      after the master's auction has settled, so a disputed or burned master never gets an
 ///      edition (a VRF master's seed is delivered before its auction starts). It locks the
-///      edition's economics and currency, claims
-///      the master's content hash under `PRODUCT_EDITIONS` (so editions never share media, while
-///      an edition reuses its own master's hash, which Stream claimed under `PRODUCT_STREAM`),
-///      and writes both directions of the link in one transaction, verifying Stream's side
-///      afterwards. Nothing ever changes or removes a link.
+///      edition's economics (seller, network fee, royalty), claims the master's content hash
+///      under `PRODUCT_EDITIONS` (so editions never share media, while an edition reuses its own
+///      master's hash, which Stream claimed under `PRODUCT_STREAM`), and writes both directions
+///      of the link in one transaction, verifying Stream's side afterwards. Nothing ever changes
+///      or removes a link.
 ///
 ///      Copies are minted only by MINTER adapters whose sale kind matches the package's, at
 ///      most `size` copies ever (burns do not free supply), and for OPEN editions only during
-///      `window` seconds from the first mint. Royalties are the terms locked at creation, read
-///      from this contract's storage with no external call. The license and `uri` come from the
-///      master: `uri` is served by the master's renderer, which reads the master's content-store
-///      bytes. ERC-4906 `MetadataUpdate` is emitted when an edition is created.
+///      `window` seconds from the first mint. The package's currency is resolved whenever the
+///      terms are read (`CURRENCY_DEFAULT` to the product default, and every currency checked
+///      active), so a sale adapter locks the currency when it opens a sale, from `primaryTerms`
+///      (ADR 0001 section 5: each sale locks its currency when it starts). Royalties are the terms
+///      locked at creation, read from this contract's storage with no external call. The license
+///      and `uri` come from the master: `uri` is served by the master's renderer, which reads the
+///      master's content-store bytes. ERC-4906 `MetadataUpdate` is emitted when an edition is
+///      created and whenever the bound work-records contract reports that its master's record,
+///      license or renderer changed.
 ///
 ///      Wiring is immutable. Stream is checked at deployment (code, no EIP-7702 delegation,
 ///      ERC-165 for ERC-721, pinned code hash), and the package registry, economics resolver and
 ///      artist registry are taken from it, so Editions always talks to the same contracts as its
 ///      masters. The package registry must bind Editions as its Editions caller (`claimContent`)
-///      and Stream must name it as `editions()` (`linkEdition`).
+///      and Stream must name it as `editions()` (`linkEdition`). Genesis wiring binds the
+///      work-records satellite once (`bindWorkRecords`).
 contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev `abi.encode(DutchParams)`: three static words.
     uint256 private constant DUTCH_PARAMS_LENGTH = 96;
@@ -92,17 +98,27 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     mapping(uint256 editionId => Record) private _records;
     mapping(uint256 editionId => bytes32) private _contentHashes;
 
+    /// @notice The work-records satellite allowed to report master metadata changes, bound once.
+    address public workRecords;
+
     /// @notice An OPEN edition's window started with its first mint; minting ends at `end`.
     event EditionWindowOpened(uint256 indexed editionId, uint64 start, uint256 end);
     /// @notice ERC-4906: the metadata of edition `_tokenId` changed.
     event MetadataUpdate(uint256 _tokenId);
+    /// @notice The work-records satellite was bound, permanently, with its reviewed code hash.
+    event WorkRecordsBound(address indexed workRecords, bytes32 codeHash);
 
     /// @notice A required address is zero.
     error ZeroAddress();
-    /// @notice `stream_` has no code, is an EIP-7702 delegated account, or is not an ERC-721.
-    error InvalidStream(address stream_);
-    /// @notice Stream's code hash is not the reviewed one.
-    error StreamCodeHashMismatch(bytes32 expected, bytes32 actual);
+    /// @notice A dependency has no code, is an EIP-7702 delegated account, or lacks the expected
+    ///         ERC-165 interface.
+    error InvalidDependency(address dependency);
+    /// @notice A dependency's code hash is not the reviewed one.
+    error CodeHashMismatch(bytes32 expected, bytes32 actual);
+    /// @notice The work-records satellite is already bound.
+    error AlreadyBound();
+    /// @notice The caller is not the bound work-records satellite.
+    error NotWorkRecords(address caller);
     /// @notice The master's auction has not settled.
     error MasterNotSettled(uint256 workId);
     /// @notice The master's package is revoked or its item is not consumed.
@@ -124,13 +140,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ERC1155("")
         AccessManaged(authority_)
     {
-        if (
-            stream_.code.length == 0 || DelegatedEOA.isDelegated(stream_)
-                || !ERC165Checker.supportsInterface(stream_, type(IERC721).interfaceId)
-        ) revert InvalidStream(stream_);
-        if (stream_.codehash != streamCodeHash) {
-            revert StreamCodeHashMismatch(streamCodeHash, stream_.codehash);
-        }
+        _checkInstall(stream_, streamCodeHash, type(IERC721).interfaceId);
         IStream s = IStream(stream_);
         (address registry, address resolver, address artists) =
             (s.packageRegistry(), s.economics(), s.artistRegistry());
@@ -172,7 +182,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
         EditionTerms memory terms = item.edition;
         _checkTerms(workId, terms);
-        terms.currency = economics.resolveCurrency(PRODUCT_EDITIONS, terms.currency);
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
 
         Edition storage e = r.edition;
@@ -193,6 +202,28 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         (address linked, uint256 linkedId) = IStream(stream).editionOf(workId);
         if (linked != address(this) || linkedId != workId) revert LinkFailed(workId);
         return workId;
+    }
+
+    /// @notice Binds the work-records satellite, once and permanently (PR #10 review decision
+    ///         D6). Governed: genesis wiring. Checks code, EIP-7702 delegation and the reviewed
+    ///         code hash.
+    /// @param workRecords_ The work-records satellite of `stream`.
+    /// @param codeHash The reviewed code hash of `workRecords_`.
+    function bindWorkRecords(address workRecords_, bytes32 codeHash) external restricted {
+        if (workRecords != address(0)) revert AlreadyBound();
+        _checkInstall(workRecords_, codeHash, 0);
+        workRecords = workRecords_;
+        emit WorkRecordsBound(workRecords_, codeHash);
+    }
+
+    /// @notice Reports that master `workId`'s record, license or renderer changed. Only the bound
+    ///         work-records satellite may call; emits ERC-4906 `MetadataUpdate` when the master
+    ///         has an edition and does nothing otherwise, so a master without an edition never
+    ///         blocks its own update.
+    /// @param workId The master's Stream token ID, which is also its edition ID.
+    function notifyMasterUpdated(uint256 workId) external {
+        if (msg.sender != workRecords) revert NotWorkRecords(msg.sender);
+        if (exists(workId)) emit MetadataUpdate(workId);
     }
 
     /// @inheritdoc IEditions
@@ -341,6 +372,15 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     // ----------------------------------------------------------------------- internals
 
+    /// @dev ADR 0001 section 13.6 install checks. `interfaceId` zero skips the ERC-165 check.
+    function _checkInstall(address target, bytes32 codeHash, bytes4 interfaceId) private view {
+        if (
+            target.code.length == 0 || DelegatedEOA.isDelegated(target)
+                || (interfaceId != 0 && !ERC165Checker.supportsInterface(target, interfaceId))
+        ) revert InvalidDependency(target);
+        if (target.codehash != codeHash) revert CodeHashMismatch(codeHash, target.codehash);
+    }
+
     function _edition(uint256 editionId) private view returns (Edition storage e) {
         e = _records[editionId].edition;
         if (e.contentId == 0) revert UnknownEdition(editionId);
@@ -367,7 +407,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     {
         return PrimaryTerms({
             saleKind: e.terms.saleKind,
-            currency: e.terms.currency,
+            currency: economics.resolveCurrency(PRODUCT_EDITIONS, e.terms.currency),
             price: e.terms.price,
             params: e.terms.params,
             seller: e.seller,

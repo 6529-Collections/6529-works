@@ -112,14 +112,14 @@ contract EditionsTest is EditionsBase {
         bytes32 wrong = keccak256("not the reviewed stream");
         vm.expectRevert(
             abi.encodeWithSelector(
-                Editions.StreamCodeHashMismatch.selector, wrong, address(stream).codehash
+                Editions.CodeHashMismatch.selector, wrong, address(stream).codehash
             )
         );
         new Editions(address(manager), address(stream), wrong, marketOwner);
     }
 
     function _expectInvalidStream(address s) internal {
-        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidStream.selector, s));
+        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, s));
         new Editions(address(manager), s, s.codehash, marketOwner);
     }
 
@@ -308,30 +308,41 @@ contract EditionsTest is EditionsBase {
         editions.createEdition(id, item);
     }
 
-    function test_CreateEdition_ResolvesAndLocksDefaultCurrency() public {
+    /// @dev ADR 0001 section 5: each sale locks its currency when it starts. The edition keeps
+    ///      the package's `CURRENCY_DEFAULT`; the terms resolve it when read, so a sale opened
+    ///      after a default change locks the new default.
+    function test_PrimaryTerms_ResolveDefaultCurrencyWhenRead() public {
         address usdc = makeAddr("usdc");
         economics.setAllowed(usdc, true);
         economics.setDefaultCurrency(usdc);
         PackageItem memory item = _fixedItem(10);
         item.edition.currency = CURRENCY_DEFAULT;
         uint256 id = _create(item);
-        assertEq(editions.edition(id).terms.currency, usdc);
-        // A later default change applies to editions created afterwards only.
-        economics.setDefaultCurrency(CURRENCY_ETH);
+        assertEq(editions.edition(id).terms.currency, CURRENCY_DEFAULT, "stored as approved");
         assertEq(editions.primaryTerms(id, "").currency, usdc);
         (, PrimaryTerms memory terms) = fixedAdapter.buy(editions, id, buyer, 1);
         assertEq(terms.currency, usdc);
+        economics.setDefaultCurrency(CURRENCY_ETH);
+        assertEq(editions.primaryTerms(id, "").currency, CURRENCY_ETH);
     }
 
-    function test_CreateEdition_RefusesDisallowedCurrency() public {
+    /// @dev A currency that is not active cannot open a sale (or mint), but does not block
+    ///      creating the edition: it can be admitted later.
+    function test_PrimaryTerms_RefuseInactiveCurrency() public {
         address token = makeAddr("unlisted");
         PackageItem memory item = _fixedItem(10);
         item.edition.currency = token;
-        uint256 id = _master(item);
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, token)
-        );
-        editions.createEdition(id, item);
+        uint256 id = _create(item);
+        bytes memory notAllowed =
+            abi.encodeWithSelector(IEconomicsResolver.CurrencyNotAllowed.selector, token);
+        vm.expectRevert(notAllowed);
+        editions.primaryTerms(id, "");
+        vm.expectRevert(notAllowed);
+        fixedAdapter.buy(editions, id, buyer, 1);
+        economics.setAllowed(token, true);
+        assertEq(editions.primaryTerms(id, "").currency, token);
+        (, PrimaryTerms memory terms) = fixedAdapter.buy(editions, id, buyer, 1);
+        assertEq(terms.currency, token);
     }
 
     /// @dev The one permitted reuse: the edition carries its master's hash, which Stream claimed
@@ -790,6 +801,68 @@ contract EditionsTest is EditionsBase {
         r.setItem(item);
         fixedAdapter.buy(editions, id, address(r), 1);
         assertEq(r.reentryError(), abi.encodeWithSelector(IEditions.EditionExists.selector, id));
+    }
+
+    // ------------------------------------------------------------------ metadata propagation
+
+    function test_BindWorkRecords_OnceGovernedAndChecked() public {
+        address records = address(workRecordsMock);
+        bytes32 codeHash = records.codehash;
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        editions.bindWorkRecords(records, codeHash);
+
+        vm.startPrank(governor);
+        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, outsider));
+        editions.bindWorkRecords(outsider, outsider.codehash); // an EOA
+        address delegated = makeAddr("delegatedRecords");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", records));
+        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidDependency.selector, delegated));
+        editions.bindWorkRecords(delegated, delegated.codehash);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Editions.CodeHashMismatch.selector, bytes32(uint256(1)), codeHash
+            )
+        );
+        editions.bindWorkRecords(records, bytes32(uint256(1)));
+
+        vm.expectEmit(true, false, false, true, address(editions));
+        emit Editions.WorkRecordsBound(records, codeHash);
+        editions.bindWorkRecords(records, codeHash);
+        assertEq(editions.workRecords(), records);
+        vm.expectRevert(Editions.AlreadyBound.selector);
+        editions.bindWorkRecords(address(renderer), address(renderer).codehash);
+        vm.stopPrank();
+        assertEq(editions.workRecords(), records, "the binding is permanent");
+    }
+
+    function test_NotifyMasterUpdated_EmitsForEditionsOnly() public {
+        uint256 id = _create(_fixedItem(5));
+        // Before the binding nobody may report, not even the future satellite.
+        vm.expectRevert(
+            abi.encodeWithSelector(Editions.NotWorkRecords.selector, address(workRecordsMock))
+        );
+        workRecordsMock.notify(editions, id);
+
+        _bindWorkRecords();
+        vm.expectEmit(false, false, false, true, address(editions));
+        emit Editions.MetadataUpdate(id);
+        workRecordsMock.notify(editions, id);
+
+        // A master without an edition (or an ORIGINAL) is a silent no-op, never a revert.
+        uint256 bare = _master(_fixedItem(5));
+        vm.recordLogs();
+        workRecordsMock.notify(editions, bare);
+        assertEq(vm.getRecordedLogs().length, 0);
+
+        vm.prank(outsider);
+        vm.expectRevert(abi.encodeWithSelector(Editions.NotWorkRecords.selector, outsider));
+        editions.notifyMasterUpdated(id);
+        vm.prank(address(stream));
+        vm.expectRevert(abi.encodeWithSelector(Editions.NotWorkRecords.selector, address(stream)));
+        editions.notifyMasterUpdated(id);
     }
 
     // ------------------------------------------------------------------ governed setters

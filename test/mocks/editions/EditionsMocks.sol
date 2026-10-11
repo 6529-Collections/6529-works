@@ -5,6 +5,7 @@ import { ERC1155Holder } from "@openzeppelin/contracts/token/ERC1155/utils/ERC11
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
+import { Editions } from "src/editions/Editions.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
@@ -324,6 +325,13 @@ contract EditionsStreamMock {
         }
         _linked[tokenId] = linkMode == LinkMode.WRONG_ID ? editionId + 1 : editionId;
         emit EditionLinked(tokenId, editions, editionId);
+    }
+}
+
+/// @dev The work-records satellite, reduced to reporting a master's metadata change.
+contract EditionsWorkRecordsMock {
+    function notify(Editions editions, uint256 workId) external {
+        editions.notifyMasterUpdated(workId);
     }
 }
 
