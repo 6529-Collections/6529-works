@@ -7,8 +7,8 @@ pragma solidity ^0.8.24;
 ///      starts an escape (a stray one makes percent-decoding fail). Escaping just those two
 ///      bytes keeps every other byte, including multi-byte UTF-8 and the quotes and braces of
 ///      JSON, as it is. The renderer applies this to every string it takes from a record. The
-///      text is scanned a 32-byte word at a time: a word with neither byte costs about 5 gas a
-///      byte to count, a hit about 600 gas more to write, wherever the hits are.
+///      text is scanned a 32-byte word at a time: counting costs about 7 gas a byte, and each
+///      hit about 470 gas more to write, wherever the hits are.
 library DataUri {
     uint256 private constant ONES =
         0x0101010101010101010101010101010101010101010101010101010101010101;

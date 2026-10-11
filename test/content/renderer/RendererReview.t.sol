@@ -428,6 +428,23 @@ contract RendererReviewTest is RendererBase {
         assertFalse(_has(_out(), ".record_status"));
     }
 
+    /// @dev The backslash check reads a name a word at a time: it finds a backslash (here the first
+    ///      byte of an escaped backslash) at every offset of names of every length up to two words
+    ///      and a bit, and takes the same names without one, whatever follows them in memory.
+    function test_L2_ABackslashIsFoundAtEveryOffset() public {
+        for (uint256 length = 2; length < 71; ++length) {
+            for (uint256 at; at + 2 <= length; at += (length < 40 ? 1 : 7)) {
+                bytes memory name = _fill("a", length);
+                name[at] = "\\";
+                name[at + 1] = "\\";
+                _raw(_traitRecord(string(name)));
+                _assertCoreOnly("invalid");
+            }
+            _raw(_traitRecord(string(_fill("a", length))));
+            assertFalse(_has(_out(), ".record_status"), "no backslash");
+        }
+    }
+
     /// @dev The names the renderer writes are all at most 19 bytes with their quotes; the one of
     ///      19 ("Dispute statement") is still found, and a name one longer is not reserved.
     function test_L2_TheLongestReservedNameIsFound() public {

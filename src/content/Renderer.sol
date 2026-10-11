@@ -427,9 +427,10 @@ contract Renderer is IRenderer {
     /// @dev Whether the quoted trait name `t` (a span, so never empty) is not a string, holds a
     ///      backslash (as a key may not: an escape could spell a reserved name), or is one of the
     ///      names the renderer uses itself, by the first four bytes of its hash. Those are all at
-    ///      most 19 bytes with their quotes, so only a name that short is hashed: the cost is
-    ///      one pass over the bytes a word at a time (about 3 gas a byte), not a read per byte. A clash with another name only
-    ///      makes that record render core-only, so four bytes are enough.
+    ///      most 19 bytes with their quotes, so only a name that short is hashed: the cost is one
+    ///      pass over the bytes a word at a time (about 3 gas a byte), not a read per byte. A
+    ///      clash with another name only makes that record render core-only, so four bytes are
+    ///      enough.
     function _reserved(bytes memory t) private pure returns (bool bad) {
         uint256 n = t.length;
         assembly ("memory-safe") {
