@@ -827,15 +827,15 @@ contract RendererTest is RendererBase {
     }
 
     function test_TheMostExpensiveRecordStaysWithinTheBudget() public {
-        // 16 artists and 64 attributes, with a description filling the record limit.
+        // 16 artists and the most attributes, with a description filling the record limit.
         bytes32 file = _file(png, IDENTITY, "image/png");
         Rec memory r = _rec();
         r.artists = new string[](16);
         for (uint256 i; i < 16; ++i) {
             r.artists[i] = _text(64);
         }
-        r.attributes = new Trait[](64);
-        for (uint256 i; i < 64; ++i) {
+        r.attributes = new Trait[](MAX_ATTRIBUTES);
+        for (uint256 i; i < MAX_ATTRIBUTES; ++i) {
             r.attributes[i] = Trait(_text(24), _text(64));
         }
         r.description = "";

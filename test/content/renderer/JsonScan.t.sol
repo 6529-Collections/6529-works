@@ -178,7 +178,7 @@ contract JsonScanTest is Test {
 
     function test_Records_SpansOfEachElementAndItsMembers() public view {
         bytes memory json =
-            '{"attributes":[{"trait_type":"a","value":1},{"value":[2,{"x":"}"}],"trait_type":"b\\\\"},{}, { "trait_type" : "c" , "value" : null , "other" : "]" }]}';
+            '{"attributes":[{"trait_type":"a","value":1},{"value":[2,{"x":"}"}],"trait_type":"b\\\\"},{}, { "trait_type" : "c" , "value" : "]" }]}';
         uint256[] memory s = _obj(json, _keys1("attributes"));
         (bool ok, uint256[] memory r) = h.records(json, s[0] >> 128, _two(), 8);
 
@@ -194,7 +194,7 @@ contract JsonScanTest is Test {
         assertEq(r[7], 0);
         assertEq(r[8], 0);
         assertEq(_text(json, r[10]), '"c"');
-        assertEq(_text(json, r[11]), "null");
+        assertEq(_text(json, r[11]), '"]"');
     }
 
     function test_Records_LimitsAndWhatIsNotAnObject() public view {
@@ -574,40 +574,102 @@ contract JsonScanTest is Test {
         assertTrue(h.accepts(bytes.concat('{"a":"', _fill("x", 20_000), '"}')));
     }
 
-    /// @dev Decision H2 (duplicate members): an element of `records` has at most eight members,
-    ///      all with different keys, whether or not they are ones asked for, so a copied
-    ///      attribute cannot say `display_type` twice.
-    function test_Records_AtMostEightMembersAllDifferent() public view {
-        bytes32[] memory k = _two();
-        bytes memory top = '{"a":[{"trait_type":"x","value":1,"display_type":"date"}]}';
-        uint256[] memory s = _obj(top, _keys1("a"));
-        (bool ok,) = h.records(top, s[0] >> 128, k, 4);
-        assertTrue(ok);
+    function _four() internal pure returns (bytes32[] memory k) {
+        k = new bytes32[](4);
+        k[0] = keccak256("trait_type");
+        k[1] = keccak256("value");
+        k[2] = keccak256("display_type");
+        k[3] = keccak256("max_value");
+    }
 
-        bytes memory twice =
-            '{"a":[{"trait_type":"x","value":1,"display_type":"date","display_type":"number"}]}';
-        s = _obj(twice, _keys1("a"));
-        (ok,) = h.records(twice, s[0] >> 128, k, 4);
-        assertFalse(ok, "a duplicated key that nothing asked for");
+    function _records(bytes memory json, bytes32[] memory k)
+        internal
+        view
+        returns (bool ok, uint256[] memory r)
+    {
+        uint256[] memory s = _obj(json, _keys1("a"));
+        (ok, r) = h.records(json, s[0] >> 128, k, 4);
+    }
 
-        bytes memory eight = '{"a":[{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8}]}';
-        s = _obj(eight, _keys1("a"));
-        (ok,) = h.records(eight, s[0] >> 128, k, 4);
-        assertTrue(ok, "eight members");
-        bytes memory nine = '{"a":[{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8,"9":9}]}';
-        s = _obj(nine, _keys1("a"));
-        (ok,) = h.records(nine, s[0] >> 128, k, 4);
-        assertFalse(ok, "nine members");
-        // Duplicates are found among the first eight, and in the second element as well.
-        bytes memory late = '{"a":[{"t":1},{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"3":8}]}';
-        s = _obj(late, _keys1("a"));
-        (ok,) = h.records(late, s[0] >> 128, k, 4);
-        assertFalse(ok);
-        // The check is per element: the same keys in two elements are fine.
-        bytes memory same = '{"a":[{"x":1,"y":2},{"x":3,"y":4}]}';
-        s = _obj(same, _keys1("a"));
-        (ok,) = h.records(same, s[0] >> 128, k, 4);
-        assertTrue(ok);
+    /// @dev An element of `records` has only the requested keys, each at most once: so it has at
+    ///      most as many members as keys, a copied attribute cannot say `display_type` twice or
+    ///      carry a key of its own, and a key is matched exactly.
+    function test_Records_OnlyTheRequestedKeysEachOnce() public view {
+        bytes32[] memory k = _four();
+        bool ok;
+        uint256[] memory r;
+        (ok, r) = _records(
+            '{"a":[{"trait_type":"x","value":1,"display_type":"date","max_value":5}]}', k
+        );
+        assertTrue(ok, "all four");
+        assertEq(r.length, 5);
+        (ok,) = _records('{"a":[{"value":1},{},{"max_value":2,"trait_type":"y"}]}', k);
+        assertTrue(ok, "any of them may be missing");
+        (ok,) = _records('{"a":[{"x":1},{"x":3}]}', _keys1("x"));
+        assertTrue(ok, "the same keys in two elements");
+
+        string[8] memory refused = [
+            '{"a":[{"trait_type":"x","value":1,"display_type":"date","display_type":"number"}]}',
+            '{"a":[{"trait_type":"x","trait_type":"y"}]}',
+            '{"a":[{"trait_type":"x","value":1,"rarity":2}]}',
+            '{"a":[{"trait_type":"x","value":1,"display_type":"date","max_value":5,"a":1}]}',
+            '{"a":[{"Value":1}]}',
+            '{"a":[{"value ":1}]}',
+            '{"a":[{"value":1},{"trait_type":"y","value":1,"extra":0}]}',
+            '{"a":[{"1":1,"2":2,"3":3,"4":4,"5":5,"6":6,"7":7,"8":8}]}'
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            (ok,) = _records(bytes(refused[i]), k);
+            assertFalse(ok, refused[i]);
+        }
+        // A key nobody asked for is fine for {members} (only {records} is strict).
+        bytes memory json = '{"a":{"trait_type":"x","rarity":2}}';
+        uint256[] memory s = _obj(json, _keys1("a"));
+        (ok,) = h.members(json, s[0] >> 128, k);
+        assertTrue(ok, "members is not strict");
+    }
+
+    /// @dev Fills the padding after the text (the rest of its last word) with `d`.
+    function _dirty(bytes memory json, bytes1 d) internal pure returns (bytes memory) {
+        uint256 n = json.length;
+        assembly ("memory-safe") {
+            let at := add(add(json, 0x20), n)
+            for { let i := 0 } lt(i, sub(0x20, and(n, 0x1f))) { i := add(i, 1) } {
+                mstore8(add(at, i), shr(248, d))
+            }
+        }
+        return json;
+    }
+
+    /// @dev The scanner reads nothing past the end of the text: white space or a closing
+    ///      character in the memory after it neither ends a value nor completes one.
+    function test_DirtyMemoryPastTheEndIsNotRead() public pure {
+        bytes1[6] memory dirt = [bytes1(0x20), 0x09, 0x0a, 0x7d, 0x5d, 0x22];
+        bytes32[] memory a = new bytes32[](1);
+        a[0] = keccak256("a");
+        for (uint256 i; i < dirt.length; ++i) {
+            bytes memory whole = _dirty('{"a":[1,2],"b":{"c":3}}', dirt[i]);
+            (bool ok, uint256[] memory s) = JsonScan.object(whole, a);
+            assertTrue(ok, "a whole document");
+            (ok,) = JsonScan.elements(whole, s[0] >> 128, 4);
+            assertTrue(ok);
+            (ok,) = JsonScan.records(_dirty('{"a":[{"a":1}]}', dirt[i]), 5, a, 4);
+            assertTrue(ok);
+            (ok,) = JsonScan.members(_dirty('{"a":1}', dirt[i]), 0, a);
+            assertTrue(ok);
+            // Texts that stop short are not completed by what follows them.
+            string[6] memory cut = ['{"a":1', '{"a":[1', '{"a":"x', '{"a":', '{"a', '{"a":tru'];
+            for (uint256 j; j < cut.length; ++j) {
+                (ok,) = JsonScan.object(_dirty(bytes(cut[j]), dirt[i]), a);
+                assertFalse(ok, cut[j]);
+            }
+            (ok,) = JsonScan.elements(_dirty('{"a":[1', dirt[i]), 5, 4);
+            assertFalse(ok);
+            (ok,) = JsonScan.records(_dirty('{"a":[{"a":1', dirt[i]), 5, a, 4);
+            assertFalse(ok);
+            (ok,) = JsonScan.members(_dirty('{"a":1', dirt[i]), 0, a);
+            assertFalse(ok);
+        }
     }
 
     function test_NotJsonWhitespaceOrBytes() public view {

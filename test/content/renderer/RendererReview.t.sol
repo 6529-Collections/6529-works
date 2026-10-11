@@ -263,7 +263,7 @@ contract RendererReviewTest is RendererBase {
 
     /// @dev N3: a member twice in an attribute (`display_type` here) is a record that parsers read
     ///      differently (first wins, last wins, an error): it is invalid, and so is an attribute
-    ///      with more than eight members.
+    ///      with a member that is not one of the four OpenSea keys.
     function test_N3_ADuplicatedAttributeMemberIsInvalid() public {
         _raw(
             bytes(
@@ -286,19 +286,24 @@ contract RendererReviewTest is RendererBase {
         string memory j = _out();
         assertFalse(_has(j, ".record_status"));
         assertEq(_str(j, _at(_attrIndex(j, "When"), ".display_type")), "date");
-        // Eight members are the most.
+        // The four keys are all there is: any other member, or a fifth, is invalid.
+        string[4] memory other = [
+            '{"trait_type":"k","value":1,"rarity":2}',
+            '{"trait_type":"k","value":1,"display_type":"date","max_value":5,"a":1}',
+            '{"trait_type":"k","value":1,"Max_Value":5}',
+            '{"trait_type":"k","value":1,"max_value ":5}'
+        ];
+        for (uint256 i; i < other.length; ++i) {
+            _raw(bytes.concat('{"name":"N","attributes":[', bytes(other[i]), "]}"));
+            _assertCoreOnly("invalid");
+        }
+        // Each of the four may be missing (the two required ones are checked as before).
         _raw(
             bytes(
-                '{"name":"N","attributes":[{"trait_type":"k","value":1,"a":1,"b":2,"c":3,"d":4,"e":5,"f":6}]}'
+                '{"name":"N","attributes":[{"max_value":5,"value":2,"trait_type":"k"},{"trait_type":"m","value":"x","display_type":"number"}]}'
             )
         );
         assertFalse(_has(_out(), ".record_status"));
-        _raw(
-            bytes(
-                '{"name":"N","attributes":[{"trait_type":"k","value":1,"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7}]}'
-            )
-        );
-        _assertCoreOnly("invalid");
     }
 
     /// @dev H2: every backslash escape counts against the 1,024 of values: a description of

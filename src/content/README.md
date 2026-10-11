@@ -337,7 +337,7 @@ and copies validated JSON text, never decoded text:
 | `artists` (non-empty strings, at most 16) | one `Artist` trait each |
 | `year` (an integer, at most six digits) | the `Year` trait |
 | `medium`, `dimensions` (strings) | the `Medium` and `Dimensions` traits |
-| `attributes` (at most 64 objects, each of at most eight different members, with a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
+| `attributes` (at most 32 objects, each with only the keys `trait_type`, `value`, `display_type` and `max_value`, each at most once, a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
 | `dependencies` | validated; a script whose record declares any is not wrapped in the page. Anything but exactly `[]` counts as declaring one (so `[ ]` with a space is read as having dependencies): that fails safe, the script is served by locator |
 | any other member (`files`, ...) | validated and ignored |
 
@@ -361,15 +361,17 @@ nothing is guessed):
     number, literal, array or object below the top level), a key (two at the top
     level, where it is also hashed and matched) or a backslash escape (a surrogate
     pair is two). A top-level member is three units, a member of a nested object
-    two, an element of an array one, an attribute five;
+    two, an element of an array one, an attribute with its four members nine;
   - nesting deeper than 8 levels, or a duplicate of a member the renderer reads;
 - a missing or empty `name`, a member of the wrong type, an empty artist, more than
   16 artists, a `year` that is not an integer of at most six digits (so no `1e400`
   and no `2026.5`);
-- more than 64 attributes, an attribute that is not an object with a string
-  `trait_type` and a string or number `value`, an attribute with more than eight
-  members or two with the same key (so `display_type` cannot be said twice and
-  read two ways), or a `trait_type` with a backslash or that is one of the names the
+- more than 32 attributes, an attribute that is not an object with a string
+  `trait_type` and a string or number `value`, an attribute with a key other than
+  `trait_type`, `value`, `display_type` and `max_value` (the keys OpenSea documents,
+  so an attribute has at most four members) or with the same key twice (so
+  `display_type` cannot be said twice and read two ways), or a `trait_type` with a
+  backslash or that is one of the names the
   renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`, `Dimensions`,
   `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`): those traits
   are the only ones the renderer vouches for, and a name with a backslash could be
@@ -385,23 +387,23 @@ Measured on a record of 12 KiB of one kind of byte (the bytes, not the media):
 | What the record is full of | Gas (about) | Bounded by |
 | --- | --- | --- |
 | plain ASCII inside strings | 3 a byte | the size |
-| white space | 40 a byte | the size |
+| white space | 80 a byte (170 inside the attributes, which are walked twice), 12 KiB of it in the attributes 2.1M | the size |
 | 2-byte UTF-8 (Cyrillic, accents) | 190 per character, 1.1M | the size |
 | 3-byte UTF-8 (CJK) | 330 per character, 1.4M | the size |
 | 4-byte UTF-8 (emoji) | 410 per character, 1.3M | the size |
 | ASCII and multi-byte text alternating (the validator changes path at each step) | at most 140 a byte, 1.7M | the size |
 | a unit (value, key or escape), top-level members dearest | 1,000 to 1,500 | 1,024 together |
 | a `%` or `#` | 470 | 512 |
-| an attribute (also five units) | 15,000 to 19,000 | 64 |
+| an attribute (its nine units, and a second walk over it) | 27,000 | 32 |
 | a byte of an attribute name (read once, for a backslash) | 3 | the size |
 
 A record is validated once, and the pieces the renderer needs are found by walking
 it again without checking. The caps are chosen together, not one at a time: a
-record at every cap at once (64 attributes, 512 `%`, the rest of the units as
-top-level members, an array or a nested object, and the rest of its 12 KiB the
-costliest mix of UTF-8) costs at most 7.5M gas with 256 KiB of attested `Base64`
-next to it and 6.3M with the dearest script; those are the rows of
-`RendererGasBudgetTest`, the budget proof (see Gas). Because the whole file is
+record at every cap at once (32 attributes of four members, 512 `%`, the rest of
+the units as top-level members, an array or a nested object, and the rest of its
+12 KiB the costliest mix of UTF-8, or white space in the attributes) costs at most
+7.8M gas with 256 KiB of attested `Base64` next to it and 6.4M with the dearest
+script; those are the rows of `RendererGasBudgetTest`, the budget proof (see Gas). Because the whole file is
 percent-escaped first, `%` and `#` inside it survive the URI.
 
 ### Output
@@ -553,24 +555,34 @@ wraps a script up to 128 KiB (its limit is the size check of the full form).
 non-image primary of 256 KiB attested `Base64`, the script of `</script` with the most
 `<`, or a script of ASCII and U+0800, an 8 KiB `Identity` preview, a collection whose
 name is all `%`, a seed, a dispute and a `LicenseRef` license with a text file and a
-locator. The record is 12 KiB with 64 attributes, 512 `%` and the rest of the 1,024
-units as top-level members, an array of zeros or members of a nested object, and the
-rest of its bytes one fill. All are accepted, cold, and asserted under 8M by
-`RendererGasBudgetTest`:
+locator. The record is 12 KiB with 32 attributes of four members (the most each may
+have), 512 `%` and the rest of the 1,024 units as top-level members, an array of zeros
+or members of a nested object, and the rest of its bytes one fill. All are accepted,
+cold, and asserted under 8M by `RendererGasBudgetTest`:
 
 | The fill of the rest of the record (top-level members) | 256 KiB `Base64` | script of `a` and U+0800 |
 | --- | --- | --- |
 | ASCII | 6.4M | - |
 | 2-byte UTF-8 | 7.1M | - |
 | 4-byte UTF-8 | 7.2M | - |
-| U+0800 (E0) | 7.3M | - |
+| U+0800 (E0), U+D000 (ED) | 7.3M | - |
 | `a` and U+0800 alternating | 7.3M | 6.1M |
-| `a` and a 4-byte sequence alternating | 7.3M | 6.1M |
-| `aa` and a 2-byte sequence alternating (the dearest) | 7.4M | 6.3M |
+| `a` and a 4-byte sequence alternating | 7.2M | 6.0M |
+| `aa` and a 2-byte sequence alternating (the dearest) | 7.4M | 6.2M |
 
 With an array of zeros or nested members instead of top-level members the numbers
-are the same within 0.1M (7.5M the dearest, with `aa` and a 2-byte sequence), and
+are the same within 0.1M (7.4M the dearest, with `aa` and a 2-byte sequence), and
 with the script of `</script` 5.7M to 5.8M.
+
+White space in the attributes is the dearest byte there is, because the attributes
+are walked twice (the check, and the walk that finds their members): 170 gas a byte
+against 130 for the dearest UTF-8. The rows put it before every attribute, or after
+every one of the 17 tokens of each, in half of the room the attributes leave or in
+all of it (nothing else but the minimum of fill), with the other caps all at their
+limit: 7.6M for half, **7.8M for all of it, the worst row** (7.7M after every
+token), and 6.4M with the script of `a` and U+0800. The cost rises with the number
+of attributes (measured with all the room as white space for 1, 2, 4, 8, 12, 16, 24
+and 32), so the most is the worst case.
 
 **Each class of byte and each limit on its own**, at the full 12 KiB, each with 256
 KiB of `Base64` or the script of `</script` (asserted at most 8M by
@@ -580,22 +592,24 @@ KiB of `Base64` or the script of `</script` (asserted at most 8M by
 | --- | --- | --- |
 | 1,024 units, in an array of zeros | 4.8M | 3.5M |
 | 340 top-level members | 4.7M | 3.5M |
-| 64 attributes and 695 more units | 5.6M | 4.3M |
-| 64 attributes with 132-byte names | 5.5M | 4.0M |
-| the same, 8 `%` in each name | 5.9M | 4.4M |
-| the same, names of 2-byte UTF-8 | 6.3M | 4.8M |
-| the same, 2-byte UTF-8 and 8 `%` in each name | 6.7M | 5.2M |
+| 32 attributes of four members and 727 more units | 5.6M | 4.3M |
+| 32 attributes with 132-byte names | 4.6M | 3.3M |
+| the same, 16 `%` in each name | 4.9M | 3.5M |
+| the same, names of 2-byte UTF-8 | 5.0M | 3.7M |
+| the same, 2-byte UTF-8 and 16 `%` in each name | 5.3M | 3.9M |
 | 512 `%`, one every sixth byte | 4.7M | 3.2M |
 | 1,018 `\\` escapes in 12 KiB of text | 4.8M | 3.3M |
 | 1,018 `\u00e9` escapes in 12 KiB of text | 5.6M | 4.1M |
 | 509 surrogate pairs in 12 KiB of text | 5.4M | 4.0M |
 | 12 KiB of 2-byte, 3-byte, 4-byte UTF-8 | 5.5M, 5.6M, 5.5M | 4.0M, 4.1M, 4.1M |
-| 12 KiB of white space / pretty-printed values | 5.1M / 5.5M | 3.8M / 4.2M |
+| 12 KiB of white space / pretty-printed values | 5.0M / 5.5M | 3.8M / 4.2M |
 
 and refused records stay cheap, since the scan stops at the first fault: 12 KiB of
 escapes (over the budget) 1.2M to 2.0M, of `\u0000` 0.6M, of `%` past the cap 0.6M,
-arrays of zeros or `[]` 1.5M to 1.7M, empty or tiny members 1.5M to 1.6M, 65
-attributes 1.4M, and attribute names with a backslash 1.2M. Every figure includes
+arrays of zeros or `[]` 1.5M to 1.7M, empty or tiny members 1.5M to 1.6M, 33
+attributes 0.9M, attribute names with a backslash 1.1M, and an attribute with a
+fifth key found only at the last of 32 (the check, then the walk to the end, with the
+record full of white space) 2.6M. Every figure includes
 the mocks' own reads.
 
 ### Known gaps in v1
@@ -611,7 +625,7 @@ the mocks' own reads.
   should be stored as `Base64` (or, for an HTML artwork, as `text/html`).
 - **Core-only metadata** (a record that is not usable) has no ARTIST seed, because
   that seed is stored when the record opens.
-- **Records are bounded**: 12 KiB, 1,024 units (values, keys and escapes), 64
-  attributes of at most eight members, 512 `%` or `#`, numbers of 24 bytes. A work
+- **Records are bounded**: 12 KiB, 1,024 units (values, keys and escapes), 32
+  attributes with only the four OpenSea keys, 512 `%` or `#`, numbers of 24 bytes. A work
   whose record needs more should keep the rest in the files the record points to,
   and write non-ASCII text as UTF-8 rather than `\uXXXX` escapes.

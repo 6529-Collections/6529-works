@@ -51,7 +51,7 @@ abstract contract RendererBase is ContentBase {
     /// @dev The renderer's bounds on a record and a script (not getters of the renderer, to save
     ///      bytecode): the boundary tests fail if the renderer's own differ.
     uint256 internal constant MAX_ESCAPES = 512;
-    uint256 internal constant MAX_ATTRIBUTES = 64;
+    uint256 internal constant MAX_ATTRIBUTES = 32;
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
     uint256 internal constant SCRIPT_LIMIT = 8_192;
     uint256 internal constant PREVIEW_LIMIT = 65_536;

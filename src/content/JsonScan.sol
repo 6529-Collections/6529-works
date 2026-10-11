@@ -20,7 +20,8 @@ pragma solidity ^0.8.24;
 ///        nesting deeper than `MAX_DEPTH`. A unit costs 1,000 to 1,500 gas whatever it is, so
 ///        this bounds the cost of a document, whatever its bytes;
 ///      - a duplicate key of a requested top-level member, and more elements than a caller's `max`;
-///      - in {records}, an element that has more than eight members or two with the same key.
+///      - in {records}, an element with a key that is not one of the requested keys, or with two
+///        members of the same key (so an element has at most as many members as there are keys).
 ///      The caller checks UTF-8 separately (`Utf8`), and bounds the size of the text.
 ///
 ///      {object} is the only function that validates. {members}, {elements} and {records}
@@ -30,7 +31,8 @@ pragma solidity ^0.8.24;
 ///      when the text is not what they look for. Strings are scanned a word at a time where
 ///      they hold no quote, backslash or control byte, so a long plain string costs about 5 gas
 ///      a byte; a unit costs 1,000 to 1,500 gas, which `MAX_VALUES` bounds. White space costs
-///      about 40 gas a byte, which the caller's bound on the size of the text bounds.
+///      about 80 gas a byte for the check, and as much again for each walk of {records} over
+///      it, which the caller's bound on the size of the text bounds.
 library JsonScan {
     uint256 internal constant MAX_DEPTH = 8;
     uint256 internal constant MAX_VALUES = 1_024;
@@ -83,8 +85,9 @@ library JsonScan {
     /// @notice The elements of the array whose value starts at `start` inside `json`, each of which
     ///         has to be an object (a document {object} accepted), with the spans of the members
     ///         `keys` of each: for element `i`, `spans[i * (keys.length + 1)]` is its own span and
-    ///         the next `keys.length` entries are those of its members, as in {members}. At most
-    ///         `max` elements; more give `ok` false.
+    ///         the next `keys.length` entries are those of its members, as in {members}. Every
+    ///         member of an element has to be one of `keys`, each at most once; at most `max`
+    ///         elements. Anything else gives `ok` false.
     function records(bytes memory json, uint256 start, bytes32[] memory keys, uint256 max)
         internal
         pure
@@ -127,9 +130,8 @@ library JsonScan {
             function ws(p, e) -> q {
                 q := p
                 for { } lt(q, e) { q := add(q, 1) } {
-                    if iszero(and(lt(byte(0, mload(q)), 33), shr(byte(0, mload(q)), 0x100002600))) {
-                        break
-                    }
+                    let c := byte(0, mload(q))
+                    if iszero(and(lt(c, 33), shr(c, 0x100002600))) { break }
                 }
             }
 
@@ -321,12 +323,14 @@ library JsonScan {
             }
 
             // Records the value [vs, ve) under the key whose hash is h, if it is a requested
-            // one: returns zero for a second value of the same key.
+            // one: returns 1, or 2 for a key that is not requested, or zero for a second value
+            // of a requested key.
             function capture(ctx, sp, h, vs, ve) -> ok {
-                ok := 1
+                ok := 2
                 let ks := mload(add(ctx, 0x20))
                 for { let k := 0 } lt(k, mload(ks)) { k := add(k, 1) } {
                     if eq(mload(add(add(ks, 0x20), shl(5, k))), h) {
+                        ok := 1
                         let slot := add(add(sp, 0x20), shl(5, k))
                         if mload(slot) {
                             ok := 0
@@ -461,8 +465,9 @@ library JsonScan {
 
             // The pointer after the object at p of a validated document, or zero, with the
             // members the caller asked for captured in `sp`.
-            // With `distinct`, at most 8 members, all with different keys.
-            function navObj(p, e, ctx, sp, distinct) -> q {
+            // With `strict`, every key is one of those requested, each at most once (so there are
+            // at most as many members as keys).
+            function navObj(p, e, ctx, sp, strict) -> q {
                 if iszero(and(lt(p, e), eq(byte(0, mload(p)), 0x7b))) { leave }
                 p := ws(add(p, 1), e)
                 if iszero(lt(p, e)) { leave }
@@ -470,25 +475,18 @@ library JsonScan {
                     q := add(p, 1)
                     leave
                 }
-                for { let m := 0 } 1 { } {
+                for { } 1 { } {
                     let at := p
                     p := str(p, e, 2, ctx)
                     if iszero(p) { leave }
                     let h := keccak256(add(at, 1), sub(sub(p, at), 2))
-                    if distinct {
-                        if gt(m, 7) { leave }
-                        for { let k := 0 } lt(k, m) { k := add(k, 1) } {
-                            if eq(mload(add(add(ctx, 0x80), shl(5, k))), h) { leave }
-                        }
-                        mstore(add(add(ctx, 0x80), shl(5, m)), h)
-                        m := add(m, 1)
-                    }
                     p := ws(p, e)
                     if iszero(and(lt(p, e), eq(byte(0, mload(p)), 0x3a))) { leave }
                     at := ws(add(p, 1), e)
                     p := skip(at, e, ctx)
                     if iszero(p) { leave }
-                    if iszero(capture(ctx, sp, h, at, p)) { leave }
+                    at := capture(ctx, sp, h, at, p)
+                    if or(iszero(at), and(strict, eq(at, 2))) { leave }
                     p := ws(p, e)
                     if iszero(lt(p, e)) { leave }
                     let c := byte(0, mload(p))
@@ -545,10 +543,9 @@ library JsonScan {
                 }
             }
 
-            // ctx: the value count, the keys, the spans, the start of the text, and room for the
-            // key hashes of the members of one element (eight).
+            // ctx: the value count, the keys, the spans and the start of the text.
             let ctx := mload(0x40)
-            mstore(0x40, add(ctx, 0x180))
+            mstore(0x40, add(ctx, 0x80))
             let base := add(json, 0x20)
             let e := add(base, mload(json))
             mstore(ctx, 0)

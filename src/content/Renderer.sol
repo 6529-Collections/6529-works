@@ -48,8 +48,9 @@ import { JsonScan } from "./JsonScan.sol";
 ///      units (values, keys and escapes), eight levels), has no name or a wrong type, lists
 ///      more than `MAX_ARTISTS` artists or `MAX_ATTRIBUTES` attributes, holds more than
 ///      `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an integer of at most six digits,
-///      or has an attribute that is not an object of at most eight different members with a string `trait_type` and
-///      a string or number `value`, or whose name has a backslash or is one the renderer writes
+///      or has an attribute that is not an object whose members are only `trait_type`, `value`,
+///      `display_type` and `max_value`, each at most once, with a string `trait_type` and a
+///      string or number `value`, or whose name has a backslash or is one the renderer writes
 ///      itself. These bounds are chosen together, so that a record at every one of them at once
 ///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class
 ///      of byte, and the budget proof, every cap at once).
@@ -98,8 +99,9 @@ contract Renderer is IRenderer {
     uint256 internal constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
     uint256 internal constant MAX_ARTISTS = Limits.MAX_ARTISTS;
-    /// @notice The most attributes a record may list (each costs about 15,000 to 19,000 gas).
-    uint256 internal constant MAX_ATTRIBUTES = 64;
+    /// @notice The most attributes a record may list (each costs about 27,000 gas: its nine
+    ///         units, and a second walk over it).
+    uint256 internal constant MAX_ATTRIBUTES = 32;
     /// @notice The most `<` a script may hold and still be wrapped in the HTML page (each costs up
     ///         to about 2,800 gas to neutralize).
     uint256 internal constant MAX_SCRIPT_LT = 1_024;
@@ -406,16 +408,25 @@ contract Renderer is IRenderer {
         return (false, "", 0, "");
     }
 
-    /// @dev The inside of the record's `attributes` array, if every element is an object with a
-    ///      string `trait_type` that is not one of the renderer's own and a string or number
-    ///      `value`. The renderer's traits are the only ones it vouches for.
+    /// @dev The inside of the record's `attributes` array, if every element is an object of the
+    ///      OpenSea attribute keys only (`trait_type`, `value`, `display_type`, `max_value`, each
+    ///      at most once), with a string `trait_type` that is not one of the renderer's own and a
+    ///      string or number `value`. The renderer's traits are the only ones it vouches for.
     function _attributes(bytes memory j, uint256 span) private pure returns (bool, bytes memory) {
-        bytes32[] memory keys = new bytes32[](2);
-        keys[0] = keccak256("trait_type");
-        keys[1] = keccak256("value");
+        bytes32[] memory keys = new bytes32[](4);
+        bytes32 k0 = keccak256("trait_type");
+        bytes32 k1 = keccak256("value");
+        bytes32 k2 = keccak256("display_type");
+        bytes32 k3 = keccak256("max_value");
+        assembly ("memory-safe") {
+            mstore(add(keys, 0x20), k0)
+            mstore(add(keys, 0x40), k1)
+            mstore(add(keys, 0x60), k2)
+            mstore(add(keys, 0x80), k3)
+        }
         (bool ok, uint256[] memory a) = JsonScan.records(j, span >> 128, keys, MAX_ATTRIBUTES);
-        // Each element: its span, then those of `trait_type` and `value` (zero if absent).
-        for (uint256 i; ok && i < a.length; i += 3) {
+        // Each element: its span, then those of its four members (zero if absent).
+        for (uint256 i; ok && i < a.length; i += 5) {
             if (
                 a[i + 1] == 0 || a[i + 2] == 0 || _reserved(JsonScan.slice(j, a[i + 1]))
                     || !_scalar(j[a[i + 2] >> 128])
