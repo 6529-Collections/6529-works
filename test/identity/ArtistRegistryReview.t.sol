@@ -170,7 +170,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(c[1], thiefWallet);
         vm.prank(thiefWallet);
         registry.cancelChange(artistId);
-        assertEq(registry.authorityOf(artistId), thief, "the override was killed");
+        assertEq(registry.pendingChange(artistId).contestedBy, thiefWallet, "contested, not killed");
+        assertEq(registry.authorityOf(artistId), thief);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
 
         // After the grace, only the thief's wallet is captured.
         vm.warp(block.timestamp + 30 days);
@@ -192,6 +195,9 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(thief, thief), thiefKey);
         vm.prank(artist);
         registry.cancelChange(artistId);
+        assertEq(registry.pendingChange(artistId).contestedBy, artist, "the old key contests");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
 
         _revoke(newAuthority, artist);
         registry.refreshStanding(artistId);
@@ -436,6 +442,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         vm.prank(wallet);
         registry.cancelChange(artistId);
         _assertActivityNow();
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
 
         vm.warp(block.timestamp + 1 days);
         vm.prank(governor);

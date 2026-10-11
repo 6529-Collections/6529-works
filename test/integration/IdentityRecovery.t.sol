@@ -7,6 +7,7 @@ import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import {
     ArtistIdentity,
     ChangeKind,
@@ -220,6 +221,54 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
 
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
+        vm.prank(newKey);
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        assertEq(newKey.balance, 0.75 ether);
+    }
+
+    /// @dev Owner decision C: a thief who held the key for a month and recorded a wallet of
+    ///      their own contests the recovery override; the payout stays frozen; the TDH vote is
+    ///      recorded as a PLATFORM DISPUTE_OUTCOME statement on (registry, artistId), and the
+    ///      governed 30-day `resolveContested` cites it to uphold the override.
+    function test_ContestedOverrideUpheldByARecordedVote() public {
+        address thiefWallet = _actor("thiefWallet");
+        _consolidate(artist, thiefWallet); // with the stolen key
+        vm.warp(block.timestamp + 31 days);
+        artists.refreshStanding(artistId);
+        ArtistIdentity memory next = _identity(newKey);
+        bytes32 evidence = keccak256("contested recovery evidence");
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes memory acceptance = _sign(
+            newKey, artists.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(
+                artists.stageOverride,
+                (artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance)
+            )
+        );
+        vm.prank(thiefWallet);
+        artists.cancelChange(artistId);
+        PendingChange memory p = artists.pendingChange(artistId);
+        assertEq(p.contestedBy, thiefWallet, "contested, not killed");
+        assertEq(artists.payoutAddress(artistId), address(0), "frozen during the dispute");
+        vm.prank(artist); // the thief cannot pull with the payout key
+        vm.expectRevert();
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+
+        bytes32 vote = _platformStatement(
+            address(artists), artistId, StatementKinds.DISPUTE_OUTCOME, "ar://identity-vote"
+        );
+        assertEq(statements.latestDisputeOutcome(address(artists), artistId), vote);
+        vm.warp(p.executableAt);
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(artists.resolveContested, (artistId, true, vote))
+        );
+        assertEq(artists.authorityOf(artistId), newKey, "recovered by the vote");
         vm.prank(newKey);
         ISplitWallet(seller).release(CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether);

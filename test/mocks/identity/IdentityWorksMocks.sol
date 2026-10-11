@@ -127,3 +127,12 @@ contract PullOnlyPayeeMock {
         require(ok, "transfer failed");
     }
 }
+
+/// @notice The statement log's `latestDisputeOutcome`, settable by tests.
+contract DisputeOutcomeLogMock {
+    mapping(address => mapping(uint256 => bytes32)) public latestDisputeOutcome;
+
+    function setOutcome(address token, uint256 id, bytes32 outcome) external {
+        latestDisputeOutcome[token][id] = outcome;
+    }
+}
