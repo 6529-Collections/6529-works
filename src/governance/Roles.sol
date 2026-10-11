@@ -33,7 +33,8 @@ library Roles {
     uint64 internal constant PAUSER = 2;
     /// @notice `unpause` selectors, standard class so a guardian can cancel a hostile unpause.
     uint64 internal constant UNPAUSER = 3;
-    /// @notice Curation signer keys whose EIP-712 attestations the v1 verifier accepts.
+    /// @notice Curation signer keys whose EIP-712 attestations the v1 verifier accepts. A
+    ///         signer registry, never an on-chain caller: no function maps to it.
     uint64 internal constant CURATION_SIGNER = 4;
     /// @notice Switches preferred locations among registered, hash-equal locators.
     uint64 internal constant STORAGE_OPERATOR = 5;
@@ -41,7 +42,8 @@ library Roles {
     uint64 internal constant MINTER = 6;
     /// @notice Maintenance bots for permissionless-equivalent upkeep.
     uint64 internal constant KEEPER = 7;
-    /// @notice Platform operations: registering locators and posting platform statements.
+    /// @notice Platform operations: registering locators and posting platform statements
+    ///         (`StatementLog.appendPlatform`). Zero delay: the log refuses delayed writers.
     uint64 internal constant PLATFORM = 8;
     /// @notice Standard-class governed setters (48 hours).
     uint64 internal constant PARAMETER_SETTER = 9;
@@ -49,15 +51,11 @@ library Roles {
     uint64 internal constant FUNDS_SETTER = 10;
     /// @notice Verifier, renderer, successor, freeze and manifest setters (30 days).
     uint64 internal constant SUCCESSOR_SETTER = 11;
-    /// @notice Protocol contracts calling other protocol contracts, such as the package
-    ///         registry's `consume` and `claimContent` and the artist registry's `register` and
-    ///         `heartbeat`. Contracts only: never an EOA, an admin or a guardian.
-    uint64 internal constant SYSTEM = 12;
-    /// @notice Curator statements in the statement log (`appendCurator`, including
-    ///         `CURATION_EVIDENCE`). Zero delay: the log refuses delayed writers.
-    uint64 internal constant CURATOR = 13;
-    /// @notice Number of role IDs defined here (0 through 13).
-    uint64 internal constant COUNT = 14;
+    /// @notice Appends curator statements, including `CURATION_EVIDENCE`
+    ///         (`StatementLog.appendCurator`). Zero delay: the log refuses delayed writers.
+    uint64 internal constant CURATOR = 12;
+    /// @notice Number of role IDs defined here (0 through 12).
+    uint64 internal constant COUNT = 13;
     /// @notice `AccessManager.PUBLIC_ROLE`. Never map a governed selector to it.
     uint64 internal constant PUBLIC = type(uint64).max;
 
@@ -84,7 +82,7 @@ library Roles {
         requireKnown(role);
         if (
             role == ADMIN || role == GUARDIAN || role == CURATION_SIGNER || role == MINTER
-                || role == SUCCESSOR_SETTER || role == SYSTEM
+                || role == SUCCESSOR_SETTER || role == CURATOR
         ) return SUCCESSOR;
         if (role == FUNDS_SETTER) return FUNDS;
         return STANDARD;
@@ -103,7 +101,6 @@ library Roles {
         if (role == PARAMETER_SETTER) return "PARAMETER_SETTER";
         if (role == FUNDS_SETTER) return "FUNDS_SETTER";
         if (role == SUCCESSOR_SETTER) return "SUCCESSOR_SETTER";
-        if (role == SYSTEM) return "SYSTEM";
         if (role == CURATOR) return "CURATOR";
         revert UnknownRole(role);
     }

@@ -205,16 +205,18 @@ contract HardeningTest is GovernanceFixture {
         assertFalse(target.paused());
     }
 
-    function test_SystemCallsAreImmediateForProtocolContractsOnly() public {
-        systemCaller.callConsume();
-        assertEq(target.consumed(), 1);
-        address[3] memory people = [adminSafe, guardianA, keeper];
+    function test_CuratorStatementsAreImmediateAndCuratorOnly() public {
+        vm.prank(curator);
+        target.curate();
+        assertEq(target.curated(), 1);
+        // The curation signer is never an on-chain caller, and nobody else may curate.
+        address[4] memory people = [adminSafe, guardianA, keeper, curationSigner];
         for (uint256 i; i < people.length; ++i) {
             vm.expectRevert(
                 abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, people[i])
             );
             vm.prank(people[i]);
-            target.consume();
+            target.curate();
         }
     }
 
@@ -336,7 +338,7 @@ contract HardeningTest is GovernanceFixture {
             abi.encodeCall(GovernedTargetMock.setVerifier, (verifier0, attacker)),
             abi.encodeCall(GovernedTargetMock.veto, (bytes32(0))),
             abi.encodeCall(GovernedTargetMock.keep, ()),
-            abi.encodeCall(GovernedTargetMock.consume, ()),
+            abi.encodeCall(GovernedTargetMock.curate, ()),
             abi.encodeCall(GovernedTargetMock.adminOnly, ())
         ];
         for (uint256 i; i < calls.length; ++i) {

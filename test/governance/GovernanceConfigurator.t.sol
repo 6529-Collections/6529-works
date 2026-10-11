@@ -274,28 +274,6 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         );
     }
 
-    function test_RejectsSystemHolderThatIsNotAContract() public {
-        _expectConfigureRevert(
-            _withGrant(Roles.SYSTEM, outsider),
-            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, outsider)
-        );
-        // An EIP-7702 delegated EOA has code, but is still an EOA.
-        address delegated = makeAddr("delegated");
-        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(target)));
-        _expectConfigureRevert(
-            _withGrant(Roles.SYSTEM, delegated),
-            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, delegated)
-        );
-    }
-
-    function test_RejectsAdminHoldingSystem() public {
-        vm.etch(coldAdmin, hex"00"); // a Safe is a contract; being an admin still disqualifies
-        _expectConfigureRevert(
-            _withGrant(Roles.SYSTEM, coldAdmin),
-            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, coldAdmin)
-        );
-    }
-
     function test_RejectsSharedPauseAndUnpauseHolder() public {
         _expectConfigureRevert(
             _append(_withGrant(Roles.PAUSER, keeper), Roles.UNPAUSER, keeper),
@@ -348,6 +326,18 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
                 GovernedTargetMock.setFee.selector
             )
         );
+    }
+
+    function test_CuratorAndPlatformMapToZeroDelayWriters() public {
+        // The statement log refuses delayed writers, so both roles are immediate.
+        _configured();
+        (bool curatorImmediate,) =
+            manager.canCall(curator, address(target), GovernedTargetMock.curate.selector);
+        assertTrue(curatorImmediate);
+        assertEq(Roles.executionDelay(Roles.PLATFORM), 0);
+        (bool active, uint32 delay) = manager.hasRole(Roles.PLATFORM, platform);
+        assertTrue(active);
+        assertEq(delay, 0);
     }
 
     function test_RejectsFunctionRolesThatMustNotCall() public {
@@ -428,15 +418,6 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
             abi.encodeWithSelector(
                 GovernanceConfig.GuardianHoldsRole.selector, guardianA, Roles.MINTER
             )
-        );
-        configurator.verify(_config());
-    }
-
-    function test_ReadbackDetectsAdminGainingSystem() public {
-        _configured();
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.SYSTEM, adminSafe, 0)));
-        vm.expectRevert(
-            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, adminSafe)
         );
         configurator.verify(_config());
     }

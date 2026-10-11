@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { Roles } from "./Roles.sol";
 
 /// @title GovernanceConfig
@@ -60,8 +59,6 @@ library GovernanceConfig {
     error GuardianHoldsRole(address account, uint64 role);
     /// @notice One account holds both pause and unpause.
     error PauserIsUnpauser(address account);
-    /// @notice A `SYSTEM` holder has no code, is an EIP-7702 delegated EOA, or is an admin.
-    error InvalidSystemHolder(address account);
     /// @notice A target is the manager, has no code, repeats, or is governed by another
     ///         authority.
     error InvalidTarget(address target);
@@ -82,13 +79,6 @@ library GovernanceConfig {
     /// @notice Reverts unless `cfg` satisfies the guardian, holder and selector rules.
     function validate(IAccessManager manager, Config memory cfg) internal view {
         _validateGrants(cfg.grants);
-        for (uint256 i = 0; i < cfg.grants.length; ++i) {
-            address account = cfg.grants[i].account;
-            if (
-                cfg.grants[i].role == Roles.SYSTEM
-                    && (account.code.length == 0 || DelegatedEOA.isDelegated(account))
-            ) revert InvalidSystemHolder(account);
-        }
         Target[] memory targets = cfg.targets;
         for (uint256 i = 0; i < targets.length; ++i) {
             address target = targets[i].target;
@@ -176,9 +166,6 @@ library GovernanceConfig {
             if (grant.role == Roles.PAUSER && hasRecord(manager, Roles.UNPAUSER, grant.account)) {
                 revert PauserIsUnpauser(grant.account);
             }
-            if (grant.role == Roles.ADMIN && hasRecord(manager, Roles.SYSTEM, grant.account)) {
-                revert InvalidSystemHolder(grant.account);
-            }
         }
     }
 
@@ -223,9 +210,6 @@ library GovernanceConfig {
             (a == Roles.PAUSER && b == Roles.UNPAUSER) || (a == Roles.UNPAUSER && b == Roles.PAUSER)
         ) {
             revert PauserIsUnpauser(account);
-        }
-        if ((a == Roles.ADMIN && b == Roles.SYSTEM) || (a == Roles.SYSTEM && b == Roles.ADMIN)) {
-            revert InvalidSystemHolder(account);
         }
     }
 

@@ -7,7 +7,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
-import { GovernedTargetMock, SystemCallerMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
 
 /// @notice Deploys and configures a `WorksAccessManager` the way a deploy script must, with
 ///         the default holder layout, and offers schedule/execute helpers. Other lanes can
@@ -25,6 +25,7 @@ abstract contract GovernanceFixture is Test {
     address internal storageOperator = makeAddr("storageOperator");
     address internal keeper = makeAddr("keeper");
     address internal platform = makeAddr("platform");
+    address internal curator = makeAddr("curator");
     address internal outsider = makeAddr("outsider");
     address internal attacker = makeAddr("attacker");
     address internal recipient0 = makeAddr("recipient0");
@@ -33,14 +34,12 @@ abstract contract GovernanceFixture is Test {
     GovernanceConfigurator internal configurator;
     WorksAccessManager internal manager;
     GovernedTargetMock internal target;
-    SystemCallerMock internal systemCaller;
 
     /// @dev Deploys the configurator (which deploys the manager) and the sample target.
     function _deployUnconfigured() internal {
         configurator = new GovernanceConfigurator();
         manager = configurator.worksManager();
         target = new GovernedTargetMock(address(manager), recipient0, verifier0);
-        systemCaller = new SystemCallerMock(target);
     }
 
     /// @dev Deploys, configures with the default layout and waits out `minSetback`.
@@ -58,7 +57,7 @@ abstract contract GovernanceFixture is Test {
     /// @dev The default layout: a hot admin Safe holding ADMIN, UNPAUSER and the three
     ///      setters; a cold recovery admin Safe holding ADMIN only; three guardian Safes
     ///      holding GUARDIAN and PAUSER only; two curation signers; one key per operational
-    ///      role; one protocol contract holding SYSTEM.
+    ///      role, the statement-log curator included.
     function _grants() internal view virtual returns (GovernanceConfig.Grant[] memory g) {
         g = new GovernanceConfig.Grant[](18);
         g[0] = GovernanceConfig.Grant(Roles.ADMIN, adminSafe);
@@ -78,7 +77,7 @@ abstract contract GovernanceFixture is Test {
         g[14] = GovernanceConfig.Grant(Roles.STORAGE_OPERATOR, storageOperator);
         g[15] = GovernanceConfig.Grant(Roles.KEEPER, keeper);
         g[16] = GovernanceConfig.Grant(Roles.PLATFORM, platform);
-        g[17] = GovernanceConfig.Grant(Roles.SYSTEM, address(systemCaller));
+        g[17] = GovernanceConfig.Grant(Roles.CURATOR, curator);
     }
 
     /// @dev The sample target's selector-to-class mapping. `adminOnly` stays unmapped.
@@ -100,7 +99,7 @@ abstract contract GovernanceFixture is Test {
         );
         f[6] = GovernanceConfig.FunctionRole(GovernedTargetMock.veto.selector, Roles.GUARDIAN);
         f[7] = GovernanceConfig.FunctionRole(GovernedTargetMock.keep.selector, Roles.KEEPER);
-        f[8] = GovernanceConfig.FunctionRole(GovernedTargetMock.consume.selector, Roles.SYSTEM);
+        f[8] = GovernanceConfig.FunctionRole(GovernedTargetMock.curate.selector, Roles.CURATOR);
     }
 
     function _config() internal view returns (GovernanceConfig.Config memory cfg) {

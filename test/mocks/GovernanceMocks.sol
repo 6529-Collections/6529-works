@@ -22,7 +22,7 @@ contract GovernedTargetMock is AccessManaged {
     uint256 public vetoes;
     uint256 public keeps;
     uint256 public adminCalls;
-    uint256 public consumed;
+    uint256 public curated;
 
     event PausedSet(bool paused);
     event FeeUpdated(uint256 oldFee, uint256 newFee);
@@ -92,27 +92,14 @@ contract GovernedTargetMock is AccessManaged {
         ++keeps;
     }
 
-    /// Contract-to-contract call between protocol contracts (SYSTEM), immediate.
-    function consume() external restricted {
-        ++consumed;
+    /// Immediate curator statement (CURATOR), like `StatementLog.appendCurator`.
+    function curate() external restricted {
+        ++curated;
     }
 
     /// Deliberately unmapped: falls back to ADMIN and its 30-day execution delay.
     function adminOnly() external restricted {
         ++adminCalls;
-    }
-}
-
-/// @notice A protocol contract holding `SYSTEM` that calls another protocol contract.
-contract SystemCallerMock {
-    GovernedTargetMock public immutable target;
-
-    constructor(GovernedTargetMock target_) {
-        target = target_;
-    }
-
-    function callConsume() external {
-        target.consume();
     }
 }
 

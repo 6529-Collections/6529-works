@@ -54,7 +54,6 @@ contract RolesTest is Test {
         assertEq(Roles.executionDelay(Roles.PARAMETER_SETTER), 48 hours);
         assertEq(Roles.executionDelay(Roles.FUNDS_SETTER), 14 days);
         assertEq(Roles.executionDelay(Roles.SUCCESSOR_SETTER), 30 days);
-        assertEq(Roles.executionDelay(Roles.SYSTEM), 0);
         assertEq(Roles.executionDelay(Roles.CURATOR), 0);
     }
 
@@ -71,8 +70,7 @@ contract RolesTest is Test {
         assertEq(Roles.grantDelay(Roles.PARAMETER_SETTER), 48 hours);
         assertEq(Roles.grantDelay(Roles.FUNDS_SETTER), 14 days);
         assertEq(Roles.grantDelay(Roles.SUCCESSOR_SETTER), 30 days);
-        assertEq(Roles.grantDelay(Roles.SYSTEM), 30 days);
-        assertEq(Roles.grantDelay(Roles.CURATOR), 48 hours);
+        assertEq(Roles.grantDelay(Roles.CURATOR), 30 days);
     }
 
     /// ADR 0001 §13.1: each class role's grant delay is at least its class delay, and
@@ -96,16 +94,16 @@ contract RolesTest is Test {
     }
 
     function test_CodeLevelGrantsTakeThirtyDays() public pure {
-        // Owner decisions: a new sale adapter, curation signer or protocol contract is
-        // successor-level, though each then acts immediately.
-        uint64[3] memory roles = [Roles.MINTER, Roles.CURATION_SIGNER, Roles.SYSTEM];
+        // Owner decisions: a new sale adapter, curation signer or curator is successor-level,
+        // though each then acts immediately.
+        uint64[3] memory roles = [Roles.MINTER, Roles.CURATION_SIGNER, Roles.CURATOR];
         for (uint256 i; i < roles.length; ++i) {
             assertEq(Roles.grantDelay(roles[i]), Roles.SUCCESSOR);
             assertEq(Roles.executionDelay(roles[i]), Roles.IMMEDIATE);
         }
-        assertEq(Roles.COUNT, 14);
-        assertEq(Roles.SYSTEM, 12);
-        assertEq(Roles.CURATOR, 13);
+        assertEq(Roles.COUNT, 13);
+        assertEq(Roles.CURATOR, 12);
+        assertEq(Roles.executionDelay(Roles.PLATFORM), Roles.IMMEDIATE);
     }
 
     function test_LabelsAreDistinct() public pure {

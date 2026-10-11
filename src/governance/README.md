@@ -32,18 +32,21 @@ a wrong delay.
 | `STORAGE_OPERATOR` | 5 | Storage operator key | immediate | 48 hours | Preferred-location switches (§8) |
 | `MINTER` | 6 | Sale adapter contracts | immediate | 30 days | Mint entry points (§5) |
 | `KEEPER` | 7 | Keeper bots | immediate | 48 hours | Upkeep |
-| `PLATFORM` | 8 | Platform key | immediate | 48 hours | Locator registration, statement log `appendPlatform` (§8, §12) |
+| `PLATFORM` | 8 | Platform key | immediate | 48 hours | Locator registration, statement log `appendPlatform` (§8, §12). The log refuses delayed writers. |
 | `PARAMETER_SETTER` | 9 | Hot admin Safe | 48 hours | 48 hours | Sale parameters, defaults for new works, raise-only gas parameters, dispute outcomes ("upheld" scheduled by day 5 of the pause) |
 | `FUNDS_SETTER` | 10 | Hot admin Safe | 14 days | 14 days | Network recipients, royalty and split defaults, currency allowlist and default currency |
 | `SUCCESSOR_SETTER` | 11 | Hot admin Safe | 30 days | 30 days | Verifier, renderer and errata pins, identity source, VRF coordinator, one-way freezes, curation signer re-enable, statement log `appendGovernanceManifest` and `setArtistResolver` |
-| `SYSTEM` | 12 | Protocol contracts only | immediate | 30 days | Contract-to-contract calls: package registry `consume` and `claimContent`, artist registry `register` and `heartbeat` |
-| `CURATOR` | 13 | Curation team key | immediate | 48 hours | Statement log `appendCurator` (curation evidence). The log refuses delayed writers. |
+| `CURATOR` | 12 | Curation team key | immediate | 30 days | Statement log `appendCurator`, which writes `CURATION_EVIDENCE` statements. The log refuses delayed writers. |
 
 - **Role admins:** every role's admin is `ADMIN`.
 - **Role guardians:** every role except `ADMIN` has `GUARDIAN` as its guardian.
 - **Target admin delays:** every target, the manager included, has a 30-day admin delay.
 - **Guardians hold `GUARDIAN` and `PAUSER` only.** This keeps the veto separate from any action.
-- **`SYSTEM` holders must be contracts:** never an EOA, an EIP-7702-delegated EOA, an admin or a guardian.
+- **The curation signer key is never an on-chain caller.** No function maps to
+  `CURATION_SIGNER`; curator statements go through `CURATOR`.
+- **Contract-to-contract calls use no role.** They go through per-pair, one-shot
+  caller bindings inside the target contracts, set once at genesis and locked forever.
+  A shared contract role would let any holder call every hook.
 
 **Delay classes:**
 - immediate: tightening actions and pauses;
@@ -121,8 +124,7 @@ A deploy script must:
   - a guardian holding or pending any role other than `PAUSER`.
 - **Required holders:** a missing `ADMIN`, `PAUSER` or `UNPAUSER`.
 - **Separation of roles:**
-  - one account holding both `PAUSER` and `UNPAUSER`;
-  - a `SYSTEM` holder that has no code, is an EIP-7702-delegated EOA, or is an admin.
+  - one account holding both `PAUSER` and `UNPAUSER`.
 - **Malformed grants:** duplicates, zero addresses and unknown roles.
 - **Targets:** a target that is the manager, has no code, repeats, or answers
   `authority()` with any other manager (stock or pre-seeded).
@@ -133,8 +135,8 @@ A deploy script must:
 **Rules for target contracts (every lane):**
 
 - **Map every `restricted` selector to exactly one class role.** Unmapped
-  selectors fall back to `ADMIN` (30 days). Contract-to-contract entry points map
-  to `SYSTEM`.
+  selectors fall back to `ADMIN` (30 days). Contract-to-contract entry points are
+  not `restricted`: they check a caller binding the target sets once at genesis.
 - **Keep governed functions non-payable.** `AccessManager.execute` forwards
   `msg.value`. `GovernanceFixture._acceptsValue` probes this.
 - **Compare-and-set:** setters for funds, recipients, the verifier and the
@@ -146,8 +148,9 @@ A deploy script must:
     scheduled together can reach the ceiling inside one window, which matches
     ADR §13.9. A target that needs a rate limit enforces it itself.
 - **Integration tests:** inherit `test/helpers/GovernanceFixture.sol`. It deploys
-  the default layout: hot and cold admins, three guardians, two curation signers
-  and a `SYSTEM` contract. `test/mocks/GovernanceMocks.sol` holds a sample target.
+  the default layout: hot and cold admins, three guardians, two curation signers,
+  a curator and one key per operational role. `test/mocks/GovernanceMocks.sol`
+  holds a sample target.
 
 ## Operating procedures
 
@@ -254,9 +257,11 @@ A deploy script must:
   entries in the 30-day class.
 - **Dispute outcomes:** "upheld" stays in the 48-hour class, scheduled by day 5 of
   the pause. The dispute lane enforces this.
-- **`SYSTEM`:** gates contract-to-contract calls between protocol contracts.
-  - It has immediate execution and a 30-day grant delay.
-  - Holders are contracts only.
+- **`CURATOR`:** appends `CURATION_EVIDENCE` statements (`StatementLog.appendCurator`),
+  with zero execution delay and a 30-day grant delay. `PLATFORM` (zero delay) serves
+  `appendPlatform`, and `appendGovernanceManifest` is in the 30-day class.
+- **Contract-to-contract calls:** no shared role. Targets use per-pair, one-shot
+  caller bindings, set at genesis and locked forever.
 
 ## Residual risks
 
@@ -265,6 +270,3 @@ A deploy script must:
   (`test_Residual_ColludingGuardiansCanShieldEachOther`). The mitigation is
   guardian independence.
 - **Guardian liveness**, as described under Operating procedures.
-- **A `SYSTEM` holder is checked to be a contract, not that it is a protocol
-  contract.** A Safe that is not an admin or a guardian would pass. Only grant
-  `SYSTEM` to audited protocol contracts.
