@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { DutchParams, Payment, SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -28,8 +29,8 @@ abstract contract DutchBase is SaleFixture {
 
     function setUp() public virtual {
         _setUpBase();
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p) = _deps();
-        dutch = new DutchSale(address(manager), e, a, p);
+        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p, IEconomicsResolver r) = _deps();
+        dutch = new DutchSale(address(manager), e, a, p, r);
         bytes4[] memory selectors = new bytes4[](2);
         selectors[0] = IDutchSale.openSale.selector;
         selectors[1] = IDutchSale.closeSale.selector;

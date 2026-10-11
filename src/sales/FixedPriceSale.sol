@@ -5,6 +5,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IFixedPriceSale } from "../interfaces/IFixedPriceSale.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -25,7 +26,9 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      authenticated (`msg.sender`, or the Permit2 signer): nobody can spend another wallet's
 ///      leaf for themselves (PR #744's High finding). Anyone may still pay for an allowlisted
 ///      recipient; the tokens go to that recipient and count against its cap. Caps count per
-///      sale, phase and keyed wallet. A leaf price below the package price needs the artist's
+///      `(token, id, phase, account)`, across sales, so reopening a token with the same tree
+///      never resets them; a fresh drop uses new phase indices. A leaf price below the package
+///      price needs the artist's
 ///      approval: the creator opens the sale, or signs the `PhaseConfiguration` with a
 ///      single-use, revocable nonce. Governance: map `openSale` and `closeSale` to PLATFORM (the
 ///      creator needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER.
@@ -37,9 +40,11 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     mapping(uint256 saleId => Phase[]) private _phases;
 
-    /// @inheritdoc IFixedPriceSale
-    mapping(uint256 saleId => mapping(uint256 phase => mapping(address account => uint256))) public
-        purchased;
+    /// @notice Copies each keyed wallet bought, per token, ID and phase index, across sales.
+    mapping(
+        address token
+            => mapping(uint256 id => mapping(uint256 phase => mapping(address account => uint256)))
+    ) public purchasedOf;
 
     /// @inheritdoc IFixedPriceSale
     mapping(address creator => mapping(uint256 nonce => bool)) public isConsentNonceUsed;
@@ -52,13 +57,15 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @param escrow_ The revenue escrow.
     /// @param assets_ The currency allowlist.
     /// @param permit2_ The Permit2 deployment.
+    /// @param economicsResolver_ The economics resolver.
     constructor(
         address authority_,
         IRevenueEscrow escrow_,
         IAssetAllowlist assets_,
-        ISignatureTransfer permit2_
+        ISignatureTransfer permit2_,
+        IEconomicsResolver economicsResolver_
     )
-        MintSaleBase(authority_, escrow_, assets_, permit2_)
+        MintSaleBase(authority_, escrow_, assets_, permit2_, economicsResolver_)
         EIP712(Typehashes.FIXED_PRICE_SALE_NAME, Typehashes.DOMAIN_VERSION)
     { }
 
@@ -148,6 +155,18 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @inheritdoc IFixedPriceSale
     function openSaleOf(address token, uint256 id) external view returns (uint256) {
         return _openSales[token][id];
+    }
+
+    /// @inheritdoc IFixedPriceSale
+    /// @dev The count of the sale's `(token, id)` at that phase index, shared by every sale of
+    ///      the token.
+    function purchased(uint256 saleId, uint256 phase, address account)
+        external
+        view
+        returns (uint256)
+    {
+        LockedTerms storage terms = _listing(saleId).terms;
+        return purchasedOf[terms.token][terms.id][phase][account];
     }
 
     /// @inheritdoc IFixedPriceSale
@@ -257,12 +276,14 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
                 unit = p.leafPrice;
             }
         }
-        uint256 bought = purchased[p.saleId][p.phase][account] + p.quantity;
+        address token = l.terms.token;
+        uint256 id = l.terms.id;
+        uint256 bought = purchasedOf[token][id][p.phase][account] + p.quantity;
         if (
             (phase.root != 0 && bought > p.leafCap)
                 || (phase.walletCap != 0 && bought > phase.walletCap)
         ) revert WalletCapExceeded(p.saleId, p.phase, account);
-        purchased[p.saleId][p.phase][account] = bought;
+        purchasedOf[token][id][p.phase][account] = bought;
     }
 
     function _verifyLeaf(

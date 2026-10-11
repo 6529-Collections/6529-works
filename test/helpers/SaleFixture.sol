@@ -6,12 +6,14 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
 import {
     MockAssetAllowlist,
+    MockEconomicsResolver,
     MockEditionTarget,
     MockPermit2,
     MockRevenueEscrow,
@@ -34,6 +36,7 @@ abstract contract SaleFixture is Test {
     MockAssetAllowlist internal allowlist;
     MockPermit2 internal permit2;
     PermitToken internal usd;
+    MockEconomicsResolver internal resolver;
 
     address internal admin = makeAddr("admin");
     address internal platform = makeAddr("platform");
@@ -41,6 +44,7 @@ abstract contract SaleFixture is Test {
     address internal relayer = makeAddr("relayer");
     address internal seller = makeAddr("predictedSplitWallet");
     address internal network = makeAddr("network");
+    address internal federatedNetwork = makeAddr("federatedNetwork");
     address internal creator;
     uint256 internal creatorKey;
     address internal alice;
@@ -59,15 +63,22 @@ abstract contract SaleFixture is Test {
         allowlist = new MockAssetAllowlist();
         permit2 = new MockPermit2();
         usd = new PermitToken();
+        resolver = new MockEconomicsResolver();
+        resolver.set(PRODUCT_FEDERATED, federatedNetwork, 10_000);
         allowlist.set(CURRENCY_ETH, true);
         allowlist.set(address(usd), true);
     }
 
-    function _deps() internal view returns (IRevenueEscrow, IAssetAllowlist, ISignatureTransfer) {
+    function _deps()
+        internal
+        view
+        returns (IRevenueEscrow, IAssetAllowlist, ISignatureTransfer, IEconomicsResolver)
+    {
         return (
             IRevenueEscrow(address(escrow)),
             IAssetAllowlist(address(allowlist)),
-            ISignatureTransfer(address(permit2))
+            ISignatureTransfer(address(permit2)),
+            IEconomicsResolver(address(resolver))
         );
     }
 

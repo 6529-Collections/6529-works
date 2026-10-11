@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
     CURRENCY_DEFAULT,
@@ -66,7 +67,9 @@ contract FederationRegistryTest is FixedPriceBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(registry)));
         address[3] memory unfit = [makeAddr("eoa"), address(new MockERC20("X", "X")), delegated];
         for (uint256 i; i < unfit.length; ++i) {
-            vm.expectRevert(abi.encodeWithSelector(MintSaleBase.InvalidRegistry.selector, unfit[i]));
+            vm.expectRevert(
+                abi.encodeWithSelector(MintSaleBase.InvalidDependency.selector, unfit[i])
+            );
             vm.prank(admin);
             fixedSale.setFederationRegistry(address(0), unfit[i]);
         }
@@ -111,7 +114,10 @@ contract FederationRegistryTest is FixedPriceBase {
         fixedSale.purchase{ value: PRICE }(
             _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
         );
-        assertEq(network.balance, PRICE * FED_FEE / 100_000);
+        // The registry sets the share; the economics resolver names the network recipient.
+        assertEq(_locked(saleId).feeRecipient, federatedNetwork);
+        assertEq(federatedNetwork.balance, PRICE * FED_FEE / 100_000);
+        assertEq(network.balance, 0);
         assertEq(seller.balance, PRICE - PRICE * FED_FEE / 100_000);
         assertEq(fed.balanceOf(alice, FED_ID), 1);
     }
@@ -128,10 +134,22 @@ contract FederationRegistryTest is FixedPriceBase {
         assertEq(_locked(saleId).currency, address(usd));
     }
 
+    function test_FederatedSale_FailsClosedWithoutResolverEconomics() public {
+        registry.setEntry(address(fed), FED_FEE, true);
+        _install();
+        resolver.set(PRODUCT_FEDERATED, address(0), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEconomicsResolver.UnknownProduct.selector, PRODUCT_FEDERATED)
+        );
+        vm.prank(creator);
+        fixedSale.openSale(address(fed), FED_ID, _one(_phase(0, 0, false, false)), _noConsent());
+    }
+
     function test_ListedTokenKeepsItsOwnFee() public {
         registry.setEntry(address(editions), FED_FEE, true);
         _install();
         uint256 saleId = _openPublic(ETH_ED, 0);
         assertEq(_locked(saleId).feeShare, FEE_SHARE);
+        assertEq(_locked(saleId).feeRecipient, network);
     }
 }

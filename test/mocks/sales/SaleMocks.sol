@@ -7,9 +7,12 @@ import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { Payee, ProductEconomics, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { License } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
 
@@ -123,6 +126,55 @@ contract MockAssetAllowlist {
         if (!_configured[product]) revert CurrencyNotConfigured(product);
         asset = _defaults[product];
         if (!isActive[asset]) revert AssetNotActive(asset);
+    }
+}
+
+/// @dev The economics resolver's `economics(product)` read, set by the test; the rest is unused.
+contract MockEconomicsResolver is IEconomicsResolver {
+    mapping(bytes32 product => ProductEconomics) internal _economics;
+
+    function set(bytes32 product, address feeRecipient, uint32 feeShare) external {
+        _economics[product] = ProductEconomics(feeRecipient, feeShare, 6529);
+    }
+
+    function economics(bytes32 product) external view returns (ProductEconomics memory e) {
+        e = _economics[product];
+        if (e.feeRecipient == address(0)) revert UnknownProduct(product);
+    }
+
+    function newWorkTerms(bytes32, Payee[] calldata) external pure returns (WorkTerms memory) {
+        revert("unused");
+    }
+
+    function resolveCurrency(bytes32, address) external pure returns (address) {
+        revert("unused");
+    }
+
+    function defaultLicense(bytes32) external pure returns (License memory) {
+        revert("unused");
+    }
+
+    function assetAllowlist() external pure returns (address) {
+        return address(0);
+    }
+
+    function splitFactory() external pure returns (address) {
+        return address(0);
+    }
+
+    function setEconomics(bytes32, ProductEconomics calldata, ProductEconomics calldata)
+        external
+        pure
+    {
+        revert("unused");
+    }
+
+    function setDefaultLicense(bytes32, License calldata, License calldata) external pure {
+        revert("unused");
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IEconomicsResolver).interfaceId || interfaceId == 0x01ffc9a7;
     }
 }
 

@@ -7,6 +7,7 @@ import {
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
@@ -26,9 +27,9 @@ contract DutchSaleTest is DutchBase {
     // ------------------------------------------------------------------ configuration
 
     function test_Constructor_RevertsOnZeroDependency() public {
-        (IRevenueEscrow e, IAssetAllowlist a,) = _deps();
+        (IRevenueEscrow e, IAssetAllowlist a,, IEconomicsResolver r) = _deps();
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new DutchSale(address(manager), e, a, ISignatureTransfer(address(0)));
+        new DutchSale(address(manager), e, a, ISignatureTransfer(address(0)), r);
     }
 
     function test_ConstantsAndTypehashes() public view {
@@ -272,6 +273,9 @@ contract DutchSaleTest is DutchBase {
         dutch.closeSale(saleId);
         assertTrue(_closed(saleId));
         assertEq(dutch.openSaleOf(address(editions), LINEAR), 0);
+        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
+        vm.prank(creator);
+        dutch.closeSale(saleId);
     }
 
     // ------------------------------------------------------------------ claims

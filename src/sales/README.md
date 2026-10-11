@@ -36,13 +36,16 @@ The terms are then locked as `LockedTerms`:
 - A later change to a product default affects only sales opened afterwards.
 
 Only one sale per `(token, id)` may be open at a time, and closing it frees the
-token. Price and supply always come from the token, which enforces size,
+token. Closing a sale that is already closed reverts with `SaleAlreadyClosed`. Price and supply always come from the token, which enforces size,
 window and the admitted adapters on every mint.
 
 **Targets.** Governance lists tokens (`setTarget`). From v1.1 a token is also a
-target while the federation registry reports it active (`isTarget`). The
-network fee share of such a token comes from its registry entry, not from the
-token.
+target while the federation registry reports it active (`isTarget`). For such
+a token, the network fee share comes from its registry entry, and the fee
+recipient from the economics resolver's 6529 Stream Federated economics. The
+token's own fee terms are ignored. The resolver is fixed at construction and
+must support `IEconomicsResolver` through ERC-165; EIP-7702 delegated accounts
+are rejected.
 
 The registry is installed by compare-and-set (`setFederationRegistry`).
 Installation:
@@ -78,11 +81,11 @@ recipient: the tokens go to that recipient and count against its cap. That is
 how gifts are pushed, and it means a third party can spend a recipient's
 allowance by buying it for them.
 
-**Caps** count per sale, phase and keyed wallet. An allowlist phase enforces
-the leaf's cap, and the phase's `walletCap` too when it is nonzero. A public
-phase enforces `walletCap` per recipient. Because leaves bind the token and not
-the sale, reopening a token with the same tree starts the counts again;
-reopening is a deliberate act of the creator or the PLATFORM role.
+**Caps** count per `(token, id, phase index, keyed wallet)` across sales
+(`purchasedOf`). Reopening a token with the same tree never resets them; a
+deliberately fresh drop uses new phase indices. An allowlist phase enforces the
+leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
+enforces `walletCap` per recipient.
 
 **Discounts need the artist** (integrator decision 4). A leaf price below the
 package price is accepted only in an approved sale. A sale is approved when:

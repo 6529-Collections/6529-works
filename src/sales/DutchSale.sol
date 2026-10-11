@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "../interfaces/IDutchSale.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -42,12 +43,14 @@ contract DutchSale is IDutchSale, MintSaleBase {
     /// @param escrow_ The revenue escrow.
     /// @param assets_ The currency allowlist.
     /// @param permit2_ The Permit2 deployment.
+    /// @param economicsResolver_ The economics resolver.
     constructor(
         address authority_,
         IRevenueEscrow escrow_,
         IAssetAllowlist assets_,
-        ISignatureTransfer permit2_
-    ) MintSaleBase(authority_, escrow_, assets_, permit2_) { }
+        ISignatureTransfer permit2_,
+        IEconomicsResolver economicsResolver_
+    ) MintSaleBase(authority_, escrow_, assets_, permit2_, economicsResolver_) { }
 
     /// @inheritdoc IDutchSale
     function openSale(address token, uint256 id, uint64 startTime)

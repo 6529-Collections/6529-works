@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
@@ -36,14 +37,22 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     // ------------------------------------------------------------------ configuration
 
-    function test_Constructor_RevertsOnZeroDependency() public {
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p) = _deps();
+    function test_Constructor_RevertsOnMissingOrUnfitDependency() public {
+        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p, IEconomicsResolver r) = _deps();
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new FixedPriceSale(address(manager), IRevenueEscrow(address(0)), a, p);
+        new FixedPriceSale(address(manager), IRevenueEscrow(address(0)), a, p, r);
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new FixedPriceSale(address(manager), e, IAssetAllowlist(address(0)), p);
+        new FixedPriceSale(address(manager), e, IAssetAllowlist(address(0)), p, r);
         vm.expectRevert(MintSaleBase.InvalidAddress.selector);
-        new FixedPriceSale(address(manager), e, a, ISignatureTransfer(address(0)));
+        new FixedPriceSale(address(manager), e, a, ISignatureTransfer(address(0)), r);
+        // The resolver must be a contract supporting IEconomicsResolver through ERC-165.
+        address[3] memory unfit = [address(0), makeAddr("eoa"), address(usd)];
+        for (uint256 i; i < unfit.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(MintSaleBase.InvalidDependency.selector, unfit[i])
+            );
+            new FixedPriceSale(address(manager), e, a, p, IEconomicsResolver(unfit[i]));
+        }
     }
 
     function test_ConstantsAndTypehashes() public view {
@@ -76,6 +85,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(address(fixedSale.escrow()), address(escrow));
         assertEq(address(fixedSale.assets()), address(allowlist));
         assertEq(address(fixedSale.permit2()), address(permit2));
+        assertEq(address(fixedSale.economicsResolver()), address(resolver));
         assertEq(fixedSale.nextSaleId(), 1);
         assertEq(fixedSale.federationRegistry(), address(0));
         assertTrue(fixedSale.isTarget(address(editions)));
@@ -433,6 +443,15 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertTrue(_closed(saleId));
     }
 
+    function test_CloseSale_RevertsWhenAlreadyClosed() public {
+        uint256 saleId = _openPublic(ETH_ED, 0);
+        vm.prank(creator);
+        fixedSale.closeSale(saleId);
+        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
+        vm.prank(platform);
+        fixedSale.closeSale(saleId);
+    }
+
     function test_CloseSale_RevertsForStrangerOrUnknown() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.NotSaleManager.selector, stranger));
@@ -448,6 +467,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         fixedSale.sale(1);
         vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 1));
         fixedSale.phases(1);
+        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.UnknownSale.selector, 1));
+        fixedSale.purchased(1, 0, alice);
     }
 
     // ------------------------------------------------------------------ purchases
@@ -812,8 +833,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         _purchaseEth(alice, _p(saleId, 0, alice, 1, 2, 0), proof, PRICE);
         vm.chainId(chain);
         // Another adapter computes other leaves.
-        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p2) = _deps();
-        FixedPriceSale twin = new FixedPriceSale(address(manager), e, a, p2);
+        (IRevenueEscrow e, IAssetAllowlist a, ISignatureTransfer p2, IEconomicsResolver r) = _deps();
+        FixedPriceSale twin = new FixedPriceSale(address(manager), e, a, p2, r);
         assertNotEq(
             twin.allowlistLeaf(address(editions), ETH_ED, 0, alice, 2, 0),
             fixedSale.allowlistLeaf(address(editions), ETH_ED, 0, alice, 2, 0)
@@ -823,17 +844,33 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(seller.balance + network.balance, PRICE);
     }
 
-    function test_Allowlist_CapsRestartInANewSale() public {
+    function test_Allowlist_CapsPersistAcrossReopenedSales() public {
         (uint256 saleId, bytes32[] memory leaves) = _openAllowlist(false, true);
         vm.deal(bob, 1 ether);
         _purchaseEth(bob, _p(saleId, 0, bob, 1, 1, B_PRICE), _proof(leaves, 1), B_PRICE);
         vm.prank(creator);
         fixedSale.closeSale(saleId);
-        // The tree binds the edition, so the creator can rerun it; counts start again.
-        uint256 next = _open(creator, ETH_ED, fixedSale.phases(saleId));
-        _purchaseEth(bob, _p(next, 0, bob, 1, 1, B_PRICE), _proof(leaves, 1), B_PRICE);
-        assertEq(fixedSale.purchased(saleId, 0, bob), 1);
+        // Rerunning the same tree in a new sale does not reset Bob's cap.
+        IFixedPriceSale.Phase[] memory again = fixedSale.phases(saleId);
+        uint256 next = _open(creator, ETH_ED, again);
         assertEq(fixedSale.purchased(next, 0, bob), 1);
+        assertEq(fixedSale.purchasedOf(address(editions), ETH_ED, 0, bob), 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IFixedPriceSale.WalletCapExceeded.selector, next, 0, bob)
+        );
+        _purchaseEth(bob, _p(next, 0, bob, 1, 1, B_PRICE), _proof(leaves, 1), B_PRICE);
+        // A deliberately fresh drop uses a new phase index.
+        vm.prank(creator);
+        fixedSale.closeSale(next);
+        bytes32[] memory fresh = _leaves(
+            ETH_ED, 1, _list3(alice, bob, creator), _nums3(2, 1, 5), _nums3(A_PRICE, B_PRICE, PRICE)
+        );
+        IFixedPriceSale.Phase[] memory drop = new IFixedPriceSale.Phase[](2);
+        drop[0] = again[0];
+        drop[1] = _phase(_root(fresh), 0, false, true);
+        uint256 third = _open(creator, ETH_ED, drop);
+        _purchaseEth(bob, _p(third, 1, bob, 1, 1, B_PRICE), _proof(fresh, 1), B_PRICE);
+        assertEq(editions.balanceOf(bob, ETH_ED), 2);
     }
 
     function test_Caps_PerWalletAcrossPhases() public {

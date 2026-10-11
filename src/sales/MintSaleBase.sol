@@ -16,6 +16,7 @@ import { RevenuePayment } from "../economics/RevenuePayment.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -47,7 +48,8 @@ import { ISignatureTransfer } from "./ISignatureTransfer.sol";
 ///      6529 Stream Federated for registry tokens). A purchase still requires its locked
 ///      currency to be active, so deprecating an asset halts running sales in it as an
 ///      emergency tightening; claims are never blocked. A token served through the federation
-///      registry pays the network fee share of its registry entry, not its own. The token
+///      registry pays the network fee share of its registry entry to the network fee recipient
+///      of the economics resolver (6529 Stream Federated product), not the token's. The token
 ///      decides what may be minted (size, window, admitted adapters). At most one sale per
 ///      `(token, id)` is open at a time. Every ERC-20 movement is checked by exact balance
 ///      delta, and every entry point that moves value is non-reentrant.
@@ -69,6 +71,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     IAssetAllowlist public immutable assets;
     /// @notice The Permit2 contract that executes signed payment intents.
     ISignatureTransfer public immutable permit2;
+    /// @notice The economics resolver: the network fee recipient of federated sales.
+    IEconomicsResolver public immutable economicsResolver;
 
     /// @notice The ID the next sale gets; sale IDs start at 1.
     uint256 public nextSaleId = 1;
@@ -99,28 +103,36 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     error PaymentExpired(uint256 deadline);
     /// @notice An ETH claim could not be delivered; the credit is kept.
     error ClaimFailed(address to);
-    /// @notice The registry has no code, is an EIP-7702 delegated account, or does not support
-    ///         `IFederationRegistry` through ERC-165.
-    error InvalidRegistry(address registry);
+    /// @notice A dependency has no code, is an EIP-7702 delegated account, or does not support
+    ///         its interface through ERC-165.
+    error InvalidDependency(address dependency);
+    /// @notice The sale is already closed.
+    error SaleAlreadyClosed(uint256 saleId);
 
     /// @param authority_ The AccessManager governing `setTarget`, `setFederationRegistry` and
     ///        the PLATFORM role.
     /// @param escrow_ The revenue escrow for refused payouts.
     /// @param assets_ The currency allowlist.
     /// @param permit2_ The Permit2 deployment.
+    /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated).
     constructor(
         address authority_,
         IRevenueEscrow escrow_,
         IAssetAllowlist assets_,
-        ISignatureTransfer permit2_
+        ISignatureTransfer permit2_,
+        IEconomicsResolver economicsResolver_
     ) AccessManaged(authority_) {
         if (
             address(escrow_) == address(0) || address(assets_) == address(0)
                 || address(permit2_) == address(0)
         ) revert InvalidAddress();
+        if (!_fits(address(economicsResolver_), type(IEconomicsResolver).interfaceId)) {
+            revert InvalidDependency(address(economicsResolver_));
+        }
         escrow = escrow_;
         assets = assets_;
         permit2 = permit2_;
+        economicsResolver = economicsResolver_;
     }
 
     /// @inheritdoc ISaleAdapter
@@ -135,14 +147,9 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     ///      delegated accounts and pins the code hash; a registry whose code changes is ignored.
     function setFederationRegistry(address expected, address next) external restricted {
         if (federationRegistry != expected) revert ExpectedValueMismatch();
-        if (
-            next != address(0)
-                && (next.code.length == 0
-                    || DelegatedEOA.isDelegated(next)
-                    || !ERC165Checker.supportsInterface(
-                        next, type(IFederationRegistry).interfaceId
-                    ))
-        ) revert InvalidRegistry(next);
+        if (next != address(0) && !_fits(next, type(IFederationRegistry).interfaceId)) {
+            revert InvalidDependency(next);
+        }
         federationRegistry = next;
         federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
         emit FederationRegistrySet(expected, next);
@@ -188,7 +195,10 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         if (!listed && !_federated(token)) revert TargetNotAllowed(token);
         t = IMintTarget(token).primaryTerms(id, "");
         if (t.saleKind != kind) revert IMintTarget.SaleKindMismatch(kind, t.saleKind);
-        if (!listed) t.feeShare = IFederationRegistry(federationRegistry).entry(token).feeShare;
+        if (!listed) {
+            t.feeShare = IFederationRegistry(federationRegistry).entry(token).feeShare;
+            t.feeRecipient = economicsResolver.economics(PRODUCT_FEDERATED).feeRecipient;
+        }
         if (t.currency == CURRENCY_DEFAULT) {
             t.currency = assets.defaultCurrency(listed ? PRODUCT_EDITIONS : PRODUCT_FEDERATED);
         }
@@ -214,18 +224,17 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         return immediate && delay == 0;
     }
 
-    /// @dev Closes a sale if the caller is PLATFORM or the token's current creator.
+    /// @dev Closes an open sale if the caller is PLATFORM or the token's current creator.
     function _close(uint256 saleId) internal returns (bool authorized) {
         Listing storage l = _listing(saleId);
+        if (l.closed) revert SaleAlreadyClosed(saleId);
         LockedTerms storage terms = l.terms;
         if (
             !_isPlatform()
                 && msg.sender != IMintTarget(terms.token).primaryTerms(terms.id, "").creator
         ) return false;
-        if (!l.closed) {
-            l.closed = true;
-            delete _openSales[terms.token][terms.id];
-        }
+        l.closed = true;
+        delete _openSales[terms.token][terms.id];
         return true;
     }
 
@@ -329,6 +338,12 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         address registry = federationRegistry;
         return registry != address(0) && registry.codehash == federationRegistryCodeHash
             && IFederationRegistry(registry).isActive(token);
+    }
+
+    /// @dev Whether `dependency` has code, is not EIP-7702 delegated, and supports `interfaceId`.
+    function _fits(address dependency, bytes4 interfaceId) private view returns (bool) {
+        return dependency.code.length != 0 && !DelegatedEOA.isDelegated(dependency)
+            && ERC165Checker.supportsInterface(dependency, interfaceId);
     }
 
     function _pay(address currency, address to, uint256 amount) private {
