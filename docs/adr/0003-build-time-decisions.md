@@ -257,6 +257,34 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 | Entropy `setConfig` | Standard (48 hours) |
 | Stream and Editions `setAdmittedMinter` | Verifier and successor (30 days) |
 
+### Decisions from integration (11 October 2026, later)
+
+- **Records are at most 12 KiB.** `Limits.MAX_RECORD_BYTES` drops from 24,575 to
+  12,288 bytes. At 24 KiB, ordinary multi-byte or escape-heavy text cost the
+  renderer more than the 8M `tokenURI` budget, because validating UTF-8 and
+  escapes costs per byte. Every escape also counts against the scanner's budget.
+- **Opening a record never fails.** `openRecord` stores the approved record and
+  licence as committed. The structural checks (complete, one `Identity` chunk,
+  within the bound, licence text registered) run at `setRecord`, `finalize` and
+  `relicense`. An invalid record renders as core-only metadata until the artist
+  fixes it.
+- **Finalize requires the licence text on-chain.** Deployment therefore uploads
+  the default CC0 text before any work can finalize. A CC0 work may be
+  relicensed to CC0 with a corrected text file; leaving CC0 is still refused.
+- **The start-gas gate is for a single artist.** The 350K steady-state gate
+  applies to `start` and `startWithBid` for a work with one artist. Each extra
+  party adds a few thousand gas, which is measured and reported but not gated.
+  Measured on the integrated stack:
+  - steady-state `start` costs about 287K;
+  - the first work ever costs about 449K (a one-time cost).
+- **Default currencies are set at genesis.** Genesis wiring may call
+  `AssetAllowlist.setDefaultCurrency`, so each product's default (ETH) exists
+  from the first block. Without it, default-currency works could not start for
+  14 days.
+- **Settlement hook.** `markPrimarySettled` belongs to `IMintTarget`, so every
+  token a shared adapter serves implements it. Editions implements it as a
+  no-op.
+
 ## Security impact
 
 - **Closed:**
@@ -276,16 +304,22 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - A hostile approved package can spend one randomness draw per VRF item until
     a guardian revokes it.
   - Zero-price artist-approved allowlist entries pay no network fee.
-  - After a successful hijack, the thief's prepared wallets can cancel recovery
-    overrides. See [Open items](#open-items).
+  - Anyone who holds an artist's key for 30 days or more can establish their
+    own consolidated wallets, before or after a hijack. Those wallets then
+    cancel recovery overrides, and can fill the standing snapshot's free
+    slots. Recorded wallets keep their standing, but recovery can be blocked.
+    See [Open items](#open-items).
+  - Standing protects only wallets that a refresh has recorded. A permissionless
+    keeper, or the 6529.io UI, calls `refreshStanding` after consolidation
+    events.
 
 ## Open items
 
-- **Owner decision pending:** mitigation for override cancels after a hijack.
-  Either cap override cancels, after which only the guardian can stop an
-  override, or escalate contested overrides to a TDH vote.
+- **Owner decision pending:** mitigation for override cancels by wallets that a
+  key holder has established. Either cap override cancels, after which only the
+  guardian can stop an override, or escalate contested overrides to a TDH vote.
 - **Owner decision pending:** a cold recovery admin Safe, as recommended in
   ADR 0002.
 - **Owner decision pending:** three or more guardian Safes at deployment.
-- **Re-measure on the integrated stack:** start gas against the real contracts,
-  and the `tokenURI` and inline-threshold matrix on Sepolia.
+- **Re-measure on Sepolia:** start gas and the `tokenURI` and inline-threshold
+  matrix, with the real Chainlink coordinator and the 6529 delegation contract.

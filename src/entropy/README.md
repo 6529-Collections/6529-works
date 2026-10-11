@@ -208,7 +208,7 @@ Measured by `test/entropy/VrfEntropyModule.t.sol` (see the test logs):
 - **`requestSeed`:** about 153,000 gas including the two registry reads, hashing
   the item, a two-hash proof, three new storage slots and a mock coordinator
   that stores one slot. A real coordinator costs more. The request is off the
-  auction's start path (D4), so the 300,000-gas start budget (ADR 0001 §5) does
+  auction's start path (D4), so the 350,000-gas start budget (ADR 0003) does
   not apply to it; `start` pays only for reading `isDelivered`.
 
 ## Out of scope
