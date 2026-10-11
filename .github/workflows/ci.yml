@@ -14,6 +14,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12.13"
+
+      - name: Link checker unit tests
+        run: python -m tools.test_check_markdown_links
+
+      - name: Markdown links
+        # Every relative link and #anchor in tracked *.md files (lib/ excluded) must resolve.
+        run: python tools/check_markdown_links.py
+
   contracts:
     name: Contracts
     runs-on: ubuntu-latest
