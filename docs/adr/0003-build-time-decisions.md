@@ -289,7 +289,18 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Default currencies are set at genesis.** Genesis wiring may call
   `AssetAllowlist.setDefaultCurrency`, so each product's default (ETH) exists
   from the first block. Without it, default-currency works could not start for
-  14 days.
+  14 days. This is a scoped exception to the 14-day funds class in ADR 0002: at
+  genesis only an already active asset (ETH) can be set, and later changes keep
+  the 14-day class.
+- **Deployment guards.** Outside a local test chain, the deploy refuses:
+  - holders without code (Safes must exist first);
+  - fewer than three guardians or two curation signers;
+  - a selector map or wiring that differs from the committed genesis policy;
+  - an unpinned CC0 text;
+  - silently dropped modules.
+
+  The readback verifies every address and constructor parameter against the
+  chain, not against the deployment record.
 - **Settlement hook.** `markPrimarySettled` belongs to `IMintTarget`, so every
   token a shared adapter serves implements it. Editions implements it as a
   no-op.
