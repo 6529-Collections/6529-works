@@ -1,8 +1,10 @@
 # economics
 
 Money routing for 6529 Works, governed by
-[ADR 0001](../../docs/adr/0001-v1-scope.md) §7 (economics), with the
-payment-currency rules in §5 and the artist-resolved payout recipient in §11.
+[ADR 0001 §7 (economics)](../../docs/adr/0001-v1-scope.md#7-economics), with the
+payment-currency rules in [§5](../../docs/adr/0001-v1-scope.md#5-sales-and-auctions)
+and the artist-resolved payout recipient in
+[§11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery).
 Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 
 | Contract | Role |
@@ -13,7 +15,7 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 | `AssetAllowlist` | Governed currency allowlist: status per asset (`Active`, `Deprecated`), a per-currency increment floor, a default currency per product. ETH is admitted at deployment. |
 | `RevenueEscrow` | Credits a wallet when a payment to it fails; anyone flushes, only to the captured wallet. No recovery route. |
 | `RevenuePayment` | Internal library for payers: pay the wallet, else credit the escrow. |
-| `ClaimRouter` | Stateless batch claims; each item calls `release`, which pays only the payee. |
+| `ClaimRouter` | Stateless batch claims of up to 50 items; each item calls `release`, which pays only the payee. Continue mode needs at least 200,000 gas per item. |
 | `TokenTransfer`, `Splits` | Internal libraries: strict ERC-20 moves with exact balance deltas; payee-list rules and share maths. |
 
 ## For sale adapters
@@ -28,9 +30,17 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 - Read `AssetAllowlist.defaultCurrency(product)` and `incrementFloor(asset)` when
   a sale starts, and lock both for that sale.
 
+## Gas bounds
+
+Every loop is bounded so each transaction fits the EIP-7825 cap of 16,777,216
+gas (`test/economics/GasCap.t.sol` measures the worst cases, cold): a 64-payee
+wallet deployment is about 4.7M, a full atomic claim batch about 6.4M, and a
+full continue-mode batch at its minimum gas about 10.8M.
+
 ## Governance (proposed; the governance lane owns the final mapping)
 
-Only `AssetAllowlist` is governed, through AccessManager `restricted`:
+Only `AssetAllowlist` is governed, through AccessManager `restricted` (delay
+classes in [ADR 0001 §13](../../docs/adr/0001-v1-scope.md#13-governance)):
 
 | Selector | Proposed class |
 | --- | --- |
