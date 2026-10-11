@@ -16,6 +16,11 @@ import { Roles } from "./Roles.sol";
 ///      exposes no getter for a pending grant-delay or target-admin-delay change, so `verify`
 ///      cannot see one; deployment CI scans `RoleGrantDelayChanged` and
 ///      `TargetAdminDelayUpdated` events for future effect times instead.
+///
+///      Genesis wiring: `install` also executes the one-shot `bind*` calls and admitted-minter
+///      grants as the zero-delay installer, after the roles and target admin delays are set
+///      and before any selector is mapped. Every wired selector therefore still resolves to
+///      `ADMIN`; without this phase those calls would wait the admins' 30-day delay.
 library GovernanceConfig {
     /// @notice One holder of one role. Its execution delay is always `Roles.executionDelay`.
     struct Grant {
@@ -41,11 +46,22 @@ library GovernanceConfig {
         Target[] targets;
     }
 
+    /// @notice One genesis wiring call, executed by the installer as zero-delay `ADMIN`.
+    struct Call {
+        address target;
+        bytes data;
+    }
+
     /// @notice Minimum number of distinct veto guardians (ADR 0001 §13.3). Deployments use
     ///         at least three, because safety needs two honest guardians online at all times.
     uint256 internal constant MIN_GUARDIANS = 2;
     /// @notice Admin delay of every target, the manager included (ADR 0001 §13.1).
     uint32 internal constant TARGET_ADMIN_DELAY = Roles.SUCCESSOR;
+    /// @notice Maximum genesis wiring calls. The whole configuration is one transaction under
+    ///         the EIP-7825 cap of 2^24 gas: the example genesis configuration plus this many
+    ///         ERC-165-checking binds measures about 6.5M gas, 39% of the cap, including
+    ///         worst-case calldata (`GenesisConfig.t.sol` gates it at 60%).
+    uint256 internal constant MAX_WIRING_CALLS = 64;
 
     /// @notice Fewer than {MIN_GUARDIANS} guardian grants.
     error TooFewGuardians(uint256 count);
@@ -75,6 +91,13 @@ library GovernanceConfig {
     error TargetMismatch(address target);
     /// @notice Readback: a selector maps to a different role.
     error FunctionRoleMismatch(address target, bytes4 selector, uint64 actual);
+    /// @notice More than {MAX_WIRING_CALLS} wiring calls.
+    error TooManyWiringCalls(uint256 count);
+    /// @notice A wiring call targets an address outside the configured targets (the manager
+    ///         included), carries no selector, or uses an access-management selector.
+    error InvalidWiringCall(address target, bytes4 selector);
+    /// @notice Wiring call `index` reverted without a reason.
+    error WiringCallFailed(uint256 index);
 
     /// @notice Reverts unless `cfg` satisfies the guardian, holder and selector rules.
     function validate(IAccessManager manager, Config memory cfg) internal view {
@@ -97,10 +120,30 @@ library GovernanceConfig {
         }
     }
 
-    /// @notice Applies `cfg` to a freshly deployed manager whose sole admin is the caller.
-    /// @dev The caller still holds `ADMIN` afterwards and must renounce it.
-    function install(IAccessManager manager, Config memory cfg) internal {
+    /// @notice Reverts unless every wiring call targets a configured target with a selector
+    ///         that is not an access-management function, and there are at most
+    ///         {MAX_WIRING_CALLS} of them.
+    function validateWiring(Config memory cfg, Call[] memory wiring) internal pure {
+        if (wiring.length > MAX_WIRING_CALLS) revert TooManyWiringCalls(wiring.length);
+        for (uint256 i = 0; i < wiring.length; ++i) {
+            address target = wiring[i].target;
+            bytes memory data = wiring[i].data;
+            // Casting to bytes4 is safe: it keeps the selector, the first four bytes.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            bytes4 selector = data.length < 4 ? bytes4(0) : bytes4(data);
+            if (data.length < 4 || !_isTarget(cfg, target) || _isAuthoritySelector(selector)) {
+                revert InvalidWiringCall(target, selector);
+            }
+        }
+    }
+
+    /// @notice Applies `cfg` to a freshly deployed manager whose sole admin is the caller, and
+    ///         executes `wiring` as that zero-delay admin before mapping any selector.
+    /// @dev The caller still holds `ADMIN` afterwards and must renounce it. A reverting wiring
+    ///      call reverts the whole installation with the callee's error.
+    function install(IAccessManager manager, Config memory cfg, Call[] memory wiring) internal {
         validate(manager, cfg);
+        validateWiring(cfg, wiring);
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
             manager.labelRole(role, Roles.label(role));
             manager.setRoleGuardian(role, Roles.GUARDIAN);
@@ -112,6 +155,20 @@ library GovernanceConfig {
         for (uint256 i = 0; i < cfg.targets.length; ++i) {
             Target memory target = cfg.targets[i];
             manager.setTargetAdminDelay(target.target, TARGET_ADMIN_DELAY);
+        }
+
+        for (uint256 i = 0; i < wiring.length; ++i) {
+            (bool ok, bytes memory reason) = wiring[i].target.call(wiring[i].data);
+            if (!ok) {
+                if (reason.length == 0) revert WiringCallFailed(i);
+                assembly ("memory-safe") {
+                    revert(add(reason, 0x20), mload(reason))
+                }
+            }
+        }
+
+        for (uint256 i = 0; i < cfg.targets.length; ++i) {
+            Target memory target = cfg.targets[i];
             bytes4[] memory one = new bytes4[](1);
             for (uint256 j = 0; j < target.functions.length; ++j) {
                 one[0] = target.functions[j].selector;
@@ -179,6 +236,28 @@ library GovernanceConfig {
         (uint48 since, uint32 current, uint32 pending, uint48 effect) =
             manager.getAccess(role, account);
         return since != 0 || current != 0 || pending != 0 || effect != 0;
+    }
+
+    function _isTarget(Config memory cfg, address account) private pure returns (bool) {
+        for (uint256 i = 0; i < cfg.targets.length; ++i) {
+            if (cfg.targets[i].target == account) return true;
+        }
+        return false;
+    }
+
+    /// @dev The manager's admin, scheduling and batching functions, and `setAuthority`.
+    function _isAuthoritySelector(bytes4 s) private pure returns (bool) {
+        return s == IAccessManager.labelRole.selector || s == IAccessManager.grantRole.selector
+            || s == IAccessManager.revokeRole.selector || s == IAccessManager.renounceRole.selector
+            || s == IAccessManager.setRoleAdmin.selector
+            || s == IAccessManager.setRoleGuardian.selector
+            || s == IAccessManager.setGrantDelay.selector
+            || s == IAccessManager.setTargetFunctionRole.selector
+            || s == IAccessManager.setTargetAdminDelay.selector
+            || s == IAccessManager.setTargetClosed.selector
+            || s == IAccessManager.updateAuthority.selector || s == IAccessManager.schedule.selector
+            || s == IAccessManager.execute.selector || s == IAccessManager.cancel.selector
+            || s == IAccessManaged.setAuthority.selector;
     }
 
     function _validateGrants(Grant[] memory grants) private pure {

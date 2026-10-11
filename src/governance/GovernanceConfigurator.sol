@@ -9,8 +9,9 @@ import { WorksAccessManager } from "./WorksAccessManager.sol";
 /// @notice One-shot installer that owns its manager: the constructor deploys
 ///         `WorksAccessManager(address(this))`, so the manager's code is the hardened one and
 ///         its only initial admin is this contract. Deploy it, deploy every target with
-///         `authority = worksManager()`, then call {configure}. The whole configuration lands
-///         in one transaction and this contract renounces the admin role at the end.
+///         `authority = worksManager()`, then call {configure}. The whole configuration,
+///         including the genesis wiring calls (one-shot binds, admitted minters), lands in one
+///         transaction and this contract renounces the admin role at the end.
 /// @dev Only the deployer may call {configure}, so a front-runner cannot install its own
 ///      holders. No other manager can be configured or verified through this contract.
 contract GovernanceConfigurator {
@@ -23,8 +24,12 @@ contract GovernanceConfigurator {
     /// @param manager The configured `WorksAccessManager`.
     /// @param configHash `keccak256(abi.encode(cfg))` of the installed configuration.
     /// @param manifestHash Hash of the signed JSON governance manifest for this epoch.
+    /// @param wiringHash `keccak256(abi.encode(wiring))` of the genesis wiring calls.
     event GovernanceConfigured(
-        address indexed manager, bytes32 indexed configHash, bytes32 indexed manifestHash
+        address indexed manager,
+        bytes32 indexed configHash,
+        bytes32 indexed manifestHash,
+        bytes32 wiringHash
     );
 
     /// @notice The caller is not the deployer.
@@ -37,15 +42,26 @@ contract GovernanceConfigurator {
         worksManager = new WorksAccessManager(address(this));
     }
 
-    /// @notice Installs `cfg` on {worksManager}, renounces this contract's admin role and
-    ///         emits the epoch's configuration and manifest hashes.
+    /// @notice Installs `cfg` on {worksManager}, executes the genesis `wiring` as zero-delay
+    ///         admin, renounces this contract's admin role and emits the epoch's hashes.
     /// @param cfg Holders and target selector mappings; delays come from {Roles}.
     /// @param manifestHash Hash of the signed governance manifest describing `cfg`.
-    function configure(GovernanceConfig.Config calldata cfg, bytes32 manifestHash) external {
+    /// @param wiring One-shot genesis calls on configured targets, at most
+    ///        `GovernanceConfig.MAX_WIRING_CALLS`; any revert aborts the whole configuration.
+    function configure(
+        GovernanceConfig.Config calldata cfg,
+        bytes32 manifestHash,
+        GovernanceConfig.Call[] calldata wiring
+    ) external {
         if (msg.sender != deployer) revert NotDeployer(msg.sender);
-        GovernanceConfig.install(worksManager, cfg);
+        GovernanceConfig.install(worksManager, cfg, wiring);
         worksManager.renounceRole(Roles.ADMIN, address(this));
-        emit GovernanceConfigured(address(worksManager), keccak256(abi.encode(cfg)), manifestHash);
+        emit GovernanceConfigured(
+            address(worksManager),
+            keccak256(abi.encode(cfg)),
+            manifestHash,
+            keccak256(abi.encode(wiring))
+        );
     }
 
     /// @notice Reverts unless {worksManager} matches `cfg`: this contract holds no admin role,

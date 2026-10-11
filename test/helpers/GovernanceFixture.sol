@@ -45,8 +45,13 @@ abstract contract GovernanceFixture is Test {
     /// @dev Deploys, configures with the default layout and waits out `minSetback`.
     function _deployGovernance() internal {
         _deployUnconfigured();
-        configurator.configure(_config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST, _noWiring());
         _settle();
+    }
+
+    /// @dev An empty genesis wiring list.
+    function _noWiring() internal pure returns (GovernanceConfig.Call[] memory) {
+        return new GovernanceConfig.Call[](0);
     }
 
     /// @dev Waits out `minSetback`, after which grant and target-admin delays are effective.

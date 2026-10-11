@@ -136,7 +136,7 @@ contract UnmanagedMock {
 ///         Production goes through `GovernanceConfigurator`, which owns its manager.
 contract StockInstallHarness {
     function install(IAccessManager manager, GovernanceConfig.Config calldata cfg) external {
-        GovernanceConfig.install(manager, cfg);
+        GovernanceConfig.install(manager, cfg, new GovernanceConfig.Call[](0));
         manager.renounceRole(Roles.ADMIN, address(this));
     }
 }
