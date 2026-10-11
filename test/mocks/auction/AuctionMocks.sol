@@ -306,3 +306,13 @@ contract HostileActor is IERC721Receiver {
         }
     }
 }
+
+/// @dev An ERC-20 whose `transfer` burns all the gas it is given (its `transferFrom` is normal),
+///      so every direct payout costs the payer the full transfer allowance before the escrow
+///      fallback: the most expensive settlement route.
+contract GasBurnerToken is PermitToken {
+    function transfer(address, uint256) public pure override returns (bool) {
+        while (true) { }
+        return false;
+    }
+}

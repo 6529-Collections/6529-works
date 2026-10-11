@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { console2 } from "forge-std/console2.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
@@ -17,7 +18,7 @@ import {
     RebasingToken,
     ReturnsFalseToken
 } from "../../mocks/EconomicsMocks.sol";
-import { HostileActor } from "../../mocks/auction/AuctionMocks.sol";
+import { GasBurnerToken, HostileActor } from "../../mocks/auction/AuctionMocks.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
@@ -231,6 +232,39 @@ contract EnglishAuctionHostileTest is AuctionBase {
         assertEq(escrow.owed(seller, address(token)), 750);
         assertEq(escrow.owed(network, address(token)), 250);
         assertEq(token.balanceOf(address(auction)), 0);
+    }
+
+    /// @dev The most expensive settlement: both payouts exhaust the token's transfer allowance and
+    ///      fall back to the escrow, and the winner burns the whole delivery allowance. The whole
+    ///      transaction (21,000 intrinsic, calldata, execution) stays far below the EIP-7825 cap
+    ///      of 16,777,216 gas, which Foundry's Prague setting does not enforce by itself.
+    function test_SettleWorstCaseFitsTheFusakaCap() public {
+        GasBurnerToken token = new GasBurnerToken();
+        allowlist.admitAsset(address(token), 0, 1);
+        uint256 saleId = _startIn(address(token));
+        HostileActor winner = new HostileActor();
+        winner.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.BURN_GAS);
+        token.mint(alice, 1_000);
+        vm.startPrank(alice);
+        token.approve(address(auction), 1_000);
+        auction.bid(saleId, address(winner), _direct(alice, 1_000));
+        vm.stopPrank();
+        _end(saleId);
+        bytes memory data = abi.encodeCall(auction.settle, (saleId));
+        uint256 before = gasleft();
+        (bool ok,) = address(auction).call(data);
+        uint256 used = before - gasleft();
+        assertTrue(ok);
+        uint256 calldataCost;
+        for (uint256 i; i < data.length; ++i) {
+            calldataCost += data[i] == 0 ? 4 : 16;
+        }
+        uint256 total = 21_000 + calldataCost + used;
+        console2.log("worst-case settle, whole transaction", total);
+        assertLt(total, 2_000_000, "bounded by the payout and delivery caps");
+        assertLt(total, 16_777_216);
+        assertEq(escrow.owed(seller, address(token)), 750);
+        assertEq(auction.pendingDelivery(saleId), address(winner));
     }
 
     function test_CallbackTokenCannotReenter() public {
