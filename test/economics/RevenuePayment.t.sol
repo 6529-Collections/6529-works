@@ -97,9 +97,22 @@ contract RevenuePaymentTest is EconomicsBase {
 
     function test_GasHungryTokenIsEscrowedNotBlocking() public {
         GasHungryToken hungry = new GasHungryToken();
+        hungry.mint(address(this), 2);
+        // With the direct route's allowance the transfer runs out of gas (no revert data, unlike
+        // a Panic), and with more gas it succeeds: the refusal is genuinely about gas.
+        (bool ok, bytes memory ret) = address(hungry)
+        .call{ gas: RevenuePayment.ERC20_TRANSFER_GAS }(
+            abi.encodeCall(hungry.transfer, (alice, 1))
+        );
+        assertFalse(ok);
+        assertEq(ret.length, 0, "out of gas, not an arithmetic panic");
+        (ok,) = address(hungry).call{ gas: 1_000_000 }(abi.encodeCall(hungry.transfer, (alice, 1)));
+        assertTrue(ok);
+
         hungry.mint(address(payer), 100);
         assertTrue(payer.payERC20(address(wallet), address(hungry), 100));
         assertEq(escrow.owed(address(wallet), address(hungry)), 100);
+        assertEq(hungry.allowance(address(payer), address(escrow)), 0);
     }
 
     function test_PayERC20GoesStraightToTheWallet() public {
