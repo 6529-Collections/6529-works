@@ -86,8 +86,8 @@ contract EnglishAuctionGasTest is Test {
             IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
             targets
         );
-        stream.admit(address(auction));
-        allowlist.setDefaultCurrency(PRODUCT_STREAM, false, address(0), address(0));
+        stream.setAdmittedMinter(address(auction), true);
+        allowlist.setDefaultCurrency(PRODUCT_STREAM, 0, address(0));
 
         address artist = vm.addr(artistPk);
         address other = vm.addr(otherArtistPk);

@@ -18,7 +18,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MockArtistResolver } from "../../mocks/EconomicsMocks.sol";
 import { MockMintTarget, MockPermit2, PermitToken } from "../../mocks/auction/AuctionMocks.sol";
 
@@ -79,7 +79,7 @@ abstract contract AuctionBase is Test {
         permit2 = new MockPermit2();
         stream = new MockMintTarget();
         usd = new PermitToken();
-        allowlist.admitAsset(address(usd), IAssetAllowlist.Status.None, 0, USD_FLOOR);
+        allowlist.admitAsset(address(usd), 0, USD_FLOOR);
         auction = _deploy(address(permit2));
         stream.setTerms(_terms(ETH));
         _grant(GUARDIAN, guardian);
@@ -108,7 +108,7 @@ abstract contract AuctionBase is Test {
             _config(),
             targets
         );
-        stream.setMinter(address(a), true);
+        stream.setAdmittedMinter(address(a), true);
         _map(address(a), IEnglishAuction.pause.selector, GUARDIAN);
         _map(address(a), IEnglishAuction.resume.selector, UNPAUSER);
         _map(address(a), IEnglishAuction.cancel.selector, PARAMETER_SETTER);
@@ -266,6 +266,16 @@ abstract contract AuctionBase is Test {
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", usd.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         return Payment(PaymentMethod.PERMIT, owner, amount, deadline, 0, abi.encodePacked(r, s, v));
+    }
+
+    function _setFloor(address asset, uint256 floor) internal {
+        (,, uint64 revision) = allowlist.assetConfig(asset);
+        allowlist.setIncrementFloor(asset, revision, floor);
+    }
+
+    function _setDefault(bytes32 product, address asset) internal {
+        (,, uint64 revision) = allowlist.defaultCurrencyConfig(product);
+        allowlist.setDefaultCurrency(product, revision, asset);
     }
 
     function _saleIdOf(uint256 tokenId) internal view returns (uint256) {

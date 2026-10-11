@@ -214,7 +214,7 @@ contract EnglishAuctionTest is AuctionBase {
         vm.stopPrank();
         assertEq(auction.minimumBid(saleId), 0.01 ether, "opening bid locked");
         _bidEth(saleId, alice, 1 ether);
-        allowlist.setIncrementFloor(ETH, ETH_FLOOR, 1 ether);
+        _setFloor(ETH, 1 ether);
         assertEq(auction.minimumBid(saleId), _minimumAfter(1 ether, ETH_FLOOR), "share, floor");
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(a.endTime - started, DURATION, "duration locked");
@@ -226,11 +226,11 @@ contract EnglishAuctionTest is AuctionBase {
     /// @dev E2: the increment floor is read when the first bid arrives and locked from then on.
     function test_IncrementFloorLocksAtTheFirstBid() public {
         uint256 saleId = _start();
-        allowlist.setIncrementFloor(ETH, ETH_FLOOR, 0.5 ether);
+        _setFloor(ETH, 0.5 ether);
         _bidEth(saleId, alice, 1 ether);
         assertEq(auction.auction(saleId).incrementFloor, 0.5 ether);
         assertEq(auction.minimumBid(saleId), 1.5 ether);
-        allowlist.setIncrementFloor(ETH, 0.5 ether, 0.1 ether);
+        _setFloor(ETH, 0.1 ether);
         assertEq(auction.minimumBid(saleId), 1.5 ether, "locked");
         vm.prank(guardian);
         auction.pause(saleId, bytes32(0));
@@ -275,11 +275,11 @@ contract EnglishAuctionTest is AuctionBase {
 
     /// @dev Terms naming `CURRENCY_DEFAULT` lock the product's default once, at start.
     function test_Start_ResolvesTheDefaultCurrencyOnce() public {
-        allowlist.setDefaultCurrency(PRODUCT_STREAM, false, ETH, address(usd));
+        _setDefault(PRODUCT_STREAM, address(usd));
         stream.setTerms(_terms(CURRENCY_DEFAULT));
         uint256 saleId = _start();
         assertEq(auction.auction(saleId).currency, address(usd));
-        allowlist.setDefaultCurrency(PRODUCT_STREAM, true, address(usd), ETH);
+        _setDefault(PRODUCT_STREAM, ETH);
         assertEq(auction.auction(saleId).currency, address(usd), "running sale unaffected");
         _bidUsd(saleId, alice, 5e18);
         assertEq(auction.auction(_start()).currency, ETH, "new sales use the new default");
@@ -313,7 +313,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     function test_OnERC721Received_RejectsUnexpectedTransfers() public {
-        stream.setMinter(address(this), true);
+        stream.setAdmittedMinter(address(this), true);
         stream.setTerms(_terms(ETH));
         stream.setCheckKind(false);
         (uint256 id,) = stream.mint(alice, 0, 1, "");
@@ -330,8 +330,10 @@ contract EnglishAuctionTest is AuctionBase {
     /// @dev D4: a VRF item's seed is checked by the token's `mint`; whatever the token refuses,
     ///      the start refuses too, and nothing enters custody.
     function test_Start_RevertsWhenTheTokenRefusesTheMint() public {
-        stream.setMinter(address(auction), false);
-        vm.expectRevert(bytes("not minter"));
+        stream.setAdmittedMinter(address(auction), false);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(auction))
+        );
         _start();
         assertEq(stream.balanceOf(address(auction)), 0);
     }

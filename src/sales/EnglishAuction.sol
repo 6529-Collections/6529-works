@@ -22,6 +22,8 @@ import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
+import { IStream } from "../interfaces/IStream.sol";
+import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -39,15 +41,6 @@ import {
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
-import { ISignatureTransfer } from "./ISignatureTransfer.sol";
-
-/// @notice The settlement hook 6529 Stream exposes to the adapter that minted a token (PR #10
-///         re-review, E11). TODO(interfaces): replace with `IStream.markPrimarySettled` when the
-///         follow-up to PR #10 lands.
-interface IPrimarySettlement {
-    /// @notice Records that `tokenId`'s primary sale settled. Only the minting adapter may call.
-    function markPrimarySettled(uint256 tokenId) external;
-}
 
 /// @title EnglishAuction
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
@@ -273,8 +266,9 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     /// @dev Reads the seller, the fee terms and the artist's current authority back from the
     ///      token. With no bids the artist is recorded as the recipient. Marks the token's primary
-    ///      sale settled (E11) whether or not the delivery then succeeds, so a winner who never
-    ///      claims cannot hold up the edition.
+    ///      sale settled (`IStream.markPrimarySettled`, E11) while the token is still in custody,
+    ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold
+    ///      up the edition.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         s.status = AuctionState.SETTLED;
@@ -286,7 +280,7 @@ contract EnglishAuction is
         uint256 fee = Math.mulDiv(s.bid, lt.feeShare, SHARE_DENOMINATOR);
         _pay(lt.currency, lt.seller, s.bid - fee);
         _pay(lt.currency, lt.feeRecipient, fee);
-        IPrimarySettlement(lt.token).markPrimarySettled(lt.id);
+        IStream(lt.token).markPrimarySettled(lt.id);
         _deliver(saleId, s);
         _emitSettled(saleId, s, lt);
     }

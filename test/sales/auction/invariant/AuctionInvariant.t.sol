@@ -133,7 +133,7 @@ contract AuctionInvariantEth is AuctionInvariantBase {
 contract AuctionInvariantErc20 is AuctionInvariantBase {
     function _currency() internal override returns (address) {
         coin = new MockERC20("Coin", "COIN");
-        allowlist.admitAsset(address(coin), IAssetAllowlist.Status.None, 0, 1e15);
+        allowlist.admitAsset(address(coin), 0, 1e15);
         return address(coin);
     }
 }

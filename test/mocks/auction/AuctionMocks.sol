@@ -13,7 +13,7 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
-import { ISignatureTransfer } from "src/sales/ISignatureTransfer.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 
 /// @notice Auction-lane mocks: a configurable 6529 Stream stand-in, a federation registry, a
 ///         faithful Permit2 signature-transfer, an EIP-2612 token and a hostile actor.
@@ -32,7 +32,7 @@ contract MockMintTarget is ERC721, IMintTarget {
     PrimaryTerms internal _terms;
     mapping(uint256 => PrimaryTerms) internal _locked;
     address public creatorNow;
-    mapping(address => bool) public minters;
+    mapping(address => bool) public isAdmittedMinter;
     mapping(uint256 => address) public mintedBy;
     mapping(uint256 => bool) public primarySettled;
     uint256 public nextId;
@@ -43,8 +43,9 @@ contract MockMintTarget is ERC721, IMintTarget {
 
     constructor() ERC721("Mock Stream", "MSTR") { }
 
-    function setMinter(address minter, bool ok) external {
-        minters[minter] = ok;
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+        emit AdmittedMinterSet(adapter, admitted);
     }
 
     function setTerms(PrimaryTerms calldata terms) external {
@@ -76,7 +77,7 @@ contract MockMintTarget is ERC721, IMintTarget {
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
-        require(minters[msg.sender], "not minter");
+        if (!isAdmittedMinter[msg.sender]) revert NotAdmittedMinter(msg.sender);
         require(id == 0 && amount == 1, "bad mint");
         terms = _terms;
         if (checkKind) require(ISaleAdapter(msg.sender).saleKind() == terms.saleKind, "kind");
@@ -114,7 +115,8 @@ contract MockMintTarget is ERC721, IMintTarget {
     }
 
     function burn(uint256 id, uint256 amount) external {
-        require(minters[msg.sender] && amount == 1 && ownerOf(id) == msg.sender, "burn");
+        if (!isAdmittedMinter[msg.sender]) revert NotAdmittedMinter(msg.sender);
+        require(amount == 1 && ownerOf(id) == msg.sender, "burn");
         _burn(id);
         ++burned;
     }

@@ -144,7 +144,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
 
     function test_FeeOnTransferBidsFailClosed() public {
         FeeOnTransferToken token = new FeeOnTransferToken();
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         uint256 saleId = _startIn(address(token));
         token.mint(alice, 100);
         vm.startPrank(alice);
@@ -159,7 +159,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
     function test_RebasingBidsFailClosed() public {
         RebasingToken token = new RebasingToken();
         token.setIndex(3e18);
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         uint256 saleId = _startIn(address(token));
         token.mint(alice, 100);
         vm.startPrank(alice);
@@ -174,8 +174,8 @@ contract EnglishAuctionHostileTest is AuctionBase {
     function test_NoReturnAndFalseReturningTokensFailClosed() public {
         NoReturnToken silent = new NoReturnToken();
         ReturnsFalseToken liar = new ReturnsFalseToken();
-        allowlist.admitAsset(address(silent), IAssetAllowlist.Status.None, 0, 1);
-        allowlist.admitAsset(address(liar), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(silent), 0, 1);
+        allowlist.admitAsset(address(liar), 0, 1);
         uint256 a = _startIn(address(silent));
         uint256 b = _startIn(address(liar));
         silent.mint(alice, 100);
@@ -202,7 +202,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
 
     function test_BlocklistedSellerIsEscrowedAndBlocklistedBidderClaimsElsewhere() public {
         BlocklistToken token = new BlocklistToken();
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         uint256 saleId = _startIn(address(token));
         _bidToken(token, saleId, alice, 100);
         _bidToken(token, saleId, bob, 200);
@@ -223,7 +223,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
 
     function test_GasHungryTokenPayoutIsEscrowed() public {
         GasHungryToken token = new GasHungryToken();
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         uint256 saleId = _startIn(address(token));
         _bidToken(token, saleId, alice, 1_000);
         _end(saleId);
@@ -235,7 +235,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
 
     function test_CallbackTokenCannotReenter() public {
         CallbackToken token = new CallbackToken();
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         uint256 saleId = _startIn(address(token));
         _bidToken(token, saleId, alice, 100);
         token.setHook(address(auction), abi.encodeCall(auction.settle, (saleId)));

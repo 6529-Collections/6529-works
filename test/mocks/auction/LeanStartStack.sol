@@ -196,8 +196,9 @@ contract LeanStream is ERC721, IMintTarget {
     }
 
     /// @dev In Stream, a `restricted` setter mapped to the 30-day class (E4).
-    function admit(address adapter) external {
-        isAdmittedMinter[adapter] = true;
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+        emit AdmittedMinterSet(adapter, admitted);
     }
 
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)

@@ -387,7 +387,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     function test_SetTarget_AdmitsAndRemoves() public {
         MockMintTarget other = new MockMintTarget();
-        other.setMinter(address(auction), true);
+        other.setAdmittedMinter(address(auction), true);
         other.setTerms(_terms(ETH));
         vm.expectEmit(address(auction));
         emit ISaleAdapter.TargetSet(address(other), true);
@@ -446,7 +446,7 @@ contract EnglishAuctionFederationTest is AuctionBase {
     function test_Federation_ActiveContractsSellWithTheRegistryFee() public {
         MockFederationRegistry registry = new MockFederationRegistry();
         MockMintTarget federated = new MockMintTarget();
-        federated.setMinter(address(auction), true);
+        federated.setAdmittedMinter(address(auction), true);
         federated.setTerms(_terms(ETH));
         assertFalse(auction.isTarget(address(federated)));
 
@@ -507,7 +507,7 @@ contract EnglishAuctionFederationTest is AuctionBase {
     function test_Federation_DefaultCurrencyIsTheFederatedProducts() public {
         MockFederationRegistry registry = new MockFederationRegistry();
         MockMintTarget federated = new MockMintTarget();
-        federated.setMinter(address(auction), true);
+        federated.setAdmittedMinter(address(auction), true);
         federated.setTerms(_terms(CURRENCY_DEFAULT));
         vm.prank(successor);
         auction.setFederationRegistry(address(0), address(registry));
@@ -515,8 +515,8 @@ contract EnglishAuctionFederationTest is AuctionBase {
         e.status = IFederationRegistry.Status.ACTIVE;
         e.feeShare = 10_000;
         registry.register(address(federated), e);
-        allowlist.setDefaultCurrency(PRODUCT_STREAM, false, ETH, ETH);
-        allowlist.setDefaultCurrency(PRODUCT_FEDERATED, false, ETH, address(usd));
+        _setDefault(PRODUCT_STREAM, ETH);
+        _setDefault(PRODUCT_FEDERATED, address(usd));
         uint256 saleId = auction.start(address(federated), "");
         assertEq(auction.auction(saleId).currency, address(usd));
     }
