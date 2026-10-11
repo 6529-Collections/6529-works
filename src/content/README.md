@@ -15,6 +15,7 @@ the renderer; delivery routing stays operable).
 | File | Role |
 | --- | --- |
 | `ContentStore.sol` (interface: [`IContentStore`](../interfaces/IContentStore.sol)) | Permissionless, content-addressed file storage: chunks, manifests, completeness, verified range reads. No owner, no governance, no payable function. |
+| `Base64Validator.sol` | Internal library behind base64 attestation: the strict RFC 4648 alphabet check, 32 bytes at a time. Nothing is linked. |
 | `DependencyRegistry.sol` (interface: [`IDependencyRegistry`](../interfaces/IDependencyRegistry.sol)) | Governed `(name, version)` to store-file map for shared libraries (p5.js, three.js). Immutable versions, deprecation as a flag. |
 
 Other contracts should depend on the interfaces. Tests are in
@@ -158,6 +159,55 @@ chunk touched.
   `fileInfo(fileId).sha256Hash`. A manifest whose declared digest is wrong yields
   a different file ID from the honest one, so it cannot displace it.
 
+### Base64 attestation
+
+The store never looks at bytes while chunks are uploaded, so a file declared
+`Base64` or `GzipBase64` is only a claim. A renderer that copies the stored text
+verbatim into token JSON or a `data:` URI would let an artist inject JSON keys
+with a quote or backslash. **Renderers must embed such a file only when
+`isBase64Attested(fileId)` is true.** The view never reverts: it is false for an
+unknown file and for any file not yet attested.
+
+`attestBase64(fileId)` reads the chunks, checks them, and records the result for
+good:
+
+- **Who and when.** Anyone. A call reads the chunks it checks, so each must
+  exist at its required length. A call that reaches the end of the file also
+  reads the file's last one or two chunks to find the `=` padding, so the last
+  call cannot succeed until the file is complete; earlier calls on a big file do
+  not need the end, and can run while it is still being uploaded. A call on an
+  attested file is a no-op that returns true, emits nothing and reads no chunk.
+- **What is checked.** Every byte is in `[A-Za-z0-9+/]`, except that `=` may be
+  the last one or two bytes of the whole file (a final `=` or `==`, which can
+  straddle the last chunk boundary), and the file's length is a multiple of 4.
+  `=` anywhere else, a byte of `0x80` or more, a control byte, a quote, a
+  backslash, `%`, `#`, the URL-safe `-` and `_`, and whitespace are all rejected.
+  Canonical padding bits are not checked: the point is that the text is inert,
+  not that it is the one encoding of its bytes.
+- **Failure is specific.** The first bad chunk reverts with
+  `ContentBase64Invalid(fileId, index)`; a missing or wrong-length chunk with
+  `ContentChunkMissing` or `ContentChunkLengthMismatch`; a file with another
+  encoding with `ContentNotBase64`; a length that is not a multiple of 4 with
+  `ContentBase64LengthInvalid`. Nothing is recorded on a revert.
+- **Big files take several calls.** One call checks at most
+  `ATTEST_CHUNKS_PER_CALL` (48) chunks and continues where the last call
+  stopped, so a file of any size is attested by repeating the call until it
+  returns true (`Base64Progress` is emitted in between, `Base64Attested` once at
+  the end). A file of up to 48 chunks (about 1.18 MB, so a full 1 MiB) is one
+  call, and the largest file the store accepts (512 chunks) is eleven. The limit
+  keeps the worst call (48 cold chunks plus the last one, read for the padding) at about half of EIP-7825's
+  16,777,216 gas cap.
+
+The check is a word-at-a-time SWAR scan (`Base64Validator`): once every byte of a
+32-byte word is below `0x80`, range tests on all 32 bytes run as a few additions
+and subtractions with no carry between bytes. The tests cover every byte value in
+every lane and every adjacent pair of bytes against a scalar oracle.
+
+The attestation is about the stored text, so it is per file ID; the same bytes
+under another MIME type are another file and are attested separately. Uploader
+tooling should call `attestBase64` once a `Base64` or `GzipBase64` file is
+complete, since the cost falls on whoever calls it.
+
 ### Gas
 
 Measured by `forge test --match-contract Gas -vv` (Foundry 1.7.1, Solidity
@@ -180,6 +230,9 @@ its storage and the chunk contracts are all first touches, as in a fresh
 | `read`, 100 KB (5 chunks) | 221,000 |
 | `read`, 256 KB (11 chunks, the inline threshold) | 855,000 |
 | `read`, 1 MB (43 chunks) | 9,678,000 |
+| `attestBase64`, 256 KiB (11 chunks), as a transaction | 1,943,000 |
+| `attestBase64`, 1 MiB (43 chunks), as a transaction | 7,565,000 |
+| `attestBase64`, the worst call (48 distinct cold chunks, then the last chunk for the padding), as a transaction | 8,502,000 (limit 16,777,216) |
 
 The figures are as measured on the toolchain above and drift with compiler and
 optimizer changes, while the tests assert only loose ceilings, so re-measure with

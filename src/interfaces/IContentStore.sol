@@ -17,6 +17,11 @@ pragma solidity ^0.8.24;
 ///      content-uniqueness key: the same media stored as `Identity` and as `Gzip`, or with a
 ///      different MIME type, has different file IDs. Uniqueness checks belong on the decoded
 ///      media's SHA-256.
+///
+///      Stored base64 text is copied verbatim into token JSON and `data:` URIs by renderers, and
+///      the store does not look at bytes while chunks are uploaded, so a file declared `Base64`
+///      or `GzipBase64` is only known to be base64 after {attestBase64}. Renderers must embed
+///      such a file only when {isBase64Attested} is true.
 interface IContentStore {
     /// @notice How the stored bytes relate to the original media. The values are part of the file
     ///         ID, so they are permanent.
@@ -64,6 +69,14 @@ interface IContentStore {
         string mimeType
     );
 
+    /// @notice The stored base64 text of `fileId` is valid so far: `chunksValidated` chunks of it
+    ///         are checked, and more calls to {attestBase64} are needed. Emitted instead of
+    ///         {Base64Attested} while the file has more chunks than one call may check.
+    event Base64Progress(bytes32 indexed fileId, uint256 chunksValidated);
+
+    /// @notice Every chunk of `fileId` is valid base64 text, once and for all. Emitted once.
+    event Base64Attested(bytes32 indexed fileId);
+
     /// @notice No manifest is registered under `fileId`.
     error ContentFileUnknown(bytes32 fileId);
     /// @notice A manifest needs between 1 and `MAX_CHUNKS` chunks.
@@ -86,6 +99,13 @@ interface IContentStore {
     error ContentChunkLengthMismatch(
         bytes32 fileId, uint256 index, uint256 expected, uint256 actual
     );
+    /// @notice Only `Base64` and `GzipBase64` files can be attested as base64.
+    error ContentNotBase64(bytes32 fileId, Encoding encoding);
+    /// @notice A base64 text is a whole number of 4-byte groups, so its length is a multiple of 4.
+    error ContentBase64LengthInvalid(bytes32 fileId, uint256 length);
+    /// @notice Chunk `index` holds a byte outside `[A-Za-z0-9+/]`, or `=` anywhere but as the
+    ///         last one or two bytes of the file.
+    error ContentBase64Invalid(bytes32 fileId, uint256 index);
 
     /// @notice Stores `data` (at most 24,575 bytes) and returns its hash and pointer. Anyone
     ///         may call this at any time. Writing bytes that are already stored is a no-op that
@@ -131,6 +151,10 @@ interface IContentStore {
     ///         the limit fits the EIP-7825 transaction gas cap of 16,777,216 with margin.
     function MAX_CHUNKS() external view returns (uint256);
 
+    /// @notice Chunks {attestBase64} checks in one call. Sized so that a call fits the EIP-7825
+    ///         transaction gas cap of 16,777,216 with margin, at the worst case of all chunks cold.
+    function ATTEST_CHUNKS_PER_CALL() external view returns (uint256);
+
     /// @notice Whether every chunk of the file is stored with the length the manifest requires,
     ///         which means {read} succeeds for the whole file. Reverts for an unknown file.
     function isComplete(bytes32 fileId) external view returns (bool);
@@ -155,6 +179,28 @@ interface IContentStore {
 
     /// @notice Chunk `index` of `fileId`, verified against its hash. Reverts if missing.
     function readChunk(bytes32 fileId, uint256 index) external view returns (bytes memory);
+
+    /// @notice Checks that the stored bytes of a `Base64` or `GzipBase64` file are strict RFC 4648
+    ///         base64 text: every byte in `[A-Za-z0-9+/]`, except that `=` may be the last one or
+    ///         two bytes of the whole file, and the length is a multiple of 4. Anyone may call
+    ///         this, and it is one-time: once a file is attested the call is a no-op that returns
+    ///         true. It checks at most {ATTEST_CHUNKS_PER_CALL} chunks per call, continuing where
+    ///         the last call stopped, so a file of any size is attested by repeating the call
+    ///         until it returns true.
+    ///
+    ///         Reverts with `ContentBase64Invalid(fileId, index)` for the first chunk with a bad
+    ///         byte, and with `ContentNotBase64` or `ContentBase64LengthInvalid` for a file that
+    ///         cannot qualify. Every chunk a call checks must exist at its required length, or it
+    ///         reverts with `ContentChunkMissing` or `ContentChunkLengthMismatch`. A call that
+    ///         reaches the end of the file (the last call, or the only one) also reads the file's
+    ///         last one or two chunks to find the `=` padding, so those must exist before it can
+    ///         succeed: the last call cannot succeed until the file is complete.
+    /// @return done True when the whole file is attested.
+    function attestBase64(bytes32 fileId) external returns (bool done);
+
+    /// @notice Whether {attestBase64} has validated the whole stored text of `fileId`. False for
+    ///         an unknown file or one that was never attested. Never reverts.
+    function isBase64Attested(bytes32 fileId) external view returns (bool);
 
     /// @notice The stored bytes `[offset, offset + length)` of `fileId`. Every chunk the range
     ///         touches is fully read and verified, so the cost is one chunk read per touched
