@@ -52,9 +52,30 @@ replaced.
   consumes it once by digest (a replay reverts);
 - for ESTATE and LOST_KEY, need a year without signed activity.
 
-Only captured wallets and the guardian can stop an override, never the old
-key. An override replaces a pending STANDARD change, so a key holder cannot
-block one by keeping a change staged.
+The old key can never stop an override. An override replaces a pending
+STANDARD change, so a key holder cannot block one by keeping a change staged.
+
+**Contested overrides (owner decision C).** A captured wallet's cancel does not
+kill an override. It contests it:
+- `ChangeContested` records the wallet, and the pending change keeps
+  `contestedBy` and `contestedAt`.
+- Further cancels do nothing, and `executeChange` refuses the override.
+- A TDH vote decides it. The PLATFORM role records the vote as a
+  DISPUTE_OUTCOME statement on the subject `(registry, artistId)`. Governance
+  then calls `resolveContested(artistId, uphold, outcomeRef)` (SUCCESSOR_SETTER,
+  30 days), citing that statement's entry hash, which must equal
+  `latestDisputeOutcome(registry, artistId)`.
+  - Upholding executes the override, but not before its 180-day notice ends,
+    and with the same re-checks as `executeChange`.
+  - Voiding deletes it.
+  - Both emit `ContestResolved`.
+- The guardian can still veto a contested override, which voids it.
+- A contest nobody resolves within 365 days lapses. `payoutAddress` stops
+  freezing at once, and anyone may then call `expireContest` to delete it
+  (`ContestExpired`). Until then a new change waits behind it.
+
+A STANDARD 7-day change still dies on a cancel by its previous authority or a
+captured wallet.
 
 **Preventive revocation.** The authority's `revokeNonce` burns the current
 nonce, voiding every unused STANDARD payload signed for it. Override
@@ -162,15 +183,17 @@ Limitations:
 | `register` | the bound package registry only |
 | `stageChange` | anyone, relaying the authority's or an established wallet's signature |
 | `stageOverride` | PARAMETER_SETTER (48 hours) |
-| `cancelChange` | a captured wallet, or the previous authority for a STANDARD change |
-| `vetoChange` | GUARDIAN (immediate); it can only delete a pending change |
+| `cancelChange` | a captured wallet, or the previous authority for a STANDARD change; a captured wallet's cancel contests an override |
+| `vetoChange` | GUARDIAN (immediate); it can only delete a pending change, contested or not |
+| `resolveContested` | SUCCESSOR_SETTER (30 days), citing the vote's recorded DISPUTE_OUTCOME |
+| `expireContest` | anyone, once a contest is 365 days old |
 | `executeChange` | anyone, once due |
 | `heartbeat` | the authority or an established wallet |
 | `revokeNonce` | the authority |
 | `refreshStanding` | anyone |
 | `setConsolidationSource` | SUCCESSOR_SETTER (30 days), compare-and-set; requires the reviewed code hash, ERC-165 and no EIP-7702 delegation |
 | `bindPackageRegistry`, `bindStream`, `bindFederationRegistry` | the admin, once each (genesis wiring), then locked; each target must answer ERC-165 for its interface (`IPackageRegistry`, `IStream`, `IFederationRegistry`) |
-| `bindSplitFactory` | the admin, once (genesis wiring), then locked; requires code (the factory has no ERC-165) |
+| `bindSplitFactory`, `bindStatementLog` | the admin, once each (genesis wiring), then locked; requires code (neither has ERC-165) |
 | `listFederatedContract` | the bound v1.1 federation registry only; at most 64 per artist |
 
 **Signed activity** is what resets the one-year dormancy clock:
@@ -258,17 +281,12 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
 
 ## Residual risk: wallets of anyone who holds the key for 30 days
 
-This is an owner decision, escalated by the integrator.
-
-**The attack.** Captured wallets can cancel any override, and the snapshot
-records every wallet consolidated with the current authority. Anyone who holds
-the authority key for at least 30 days can consolidate wallets of their own
-with it. Once those consolidations are 30 days old and a refresh has recorded
-them, those wallets gain standing.
-- **Before a hijack.** A thief who quietly holds the artist's key for 30 days
-  gains wallets that are captured with the artist's genuine wallets. When the
-  network stages the 180-day CONTESTED override, the thief's wallet cancels it,
-  and every re-staged override the same way.
+**The exposure.** The snapshot records every wallet consolidated with the
+current authority, so anyone who holds the authority key for at least 30 days
+can give wallets of their own standing. Once a refresh has recorded them and
+their consolidations are 30 days old, they are captured as cancellers.
+- **Before a hijack.** A thief who quietly holds the artist's key gains wallets
+  captured alongside the artist's genuine wallets.
 - **Filling free slots.** A key holder can fill the snapshot's free slots with
   pending entries of their own. A genuine wallet consolidated afterwards is
   then not recorded while those slots are held
@@ -276,20 +294,24 @@ them, those wallets gain standing.
 - **After a hijack executes.** The thief's own prepared wallets, consolidated
   with the thief's new authority, are recorded at the execution. The artist's
   genuine wallets keep standing for 30 days after the hijack's refresh records
-  them missing.
+  them missing (`test_PoC3_ResidualRiskThiefWalletsCancelOverridesAfterAHijack`).
 
-`test_PoC3_ResidualRiskThiefWalletsCancelOverridesAfterAHijack` demonstrates
-the post-hijack case. The guardian can veto changes but cannot undo a cancel.
+**The stalemate is resolved by a vote (owner decision C).** Such a wallet's
+cancel no longer kills the network's recovery override. It only contests it:
+- the payout stays frozen while the override would move it, so the key holder
+  cannot collect;
+- a TDH vote decides the contest, applied by the governed `resolveContested`;
+- the guardian can still veto.
 
-**Owner options, not implemented:**
-- **(b) Cap override cancels.** After a set number of cancels, only the
-  guardian can stop the override.
-- **TDH-vote escalation.** A cancel moves the 180-day override into a contested
-  state that a governed, TDH-vote-backed action resolves, instead of killing
-  it.
-- **(L4) Dormancy at execution.** Re-check dormancy when an ESTATE or LOST_KEY
-  override executes, so activity during the notice voids it. Today, as the ADR
-  states, only a captured wallet or the guardian can stop one.
+`test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`,
+`test_Contest_VoteUpholdsAndTheArtistRecovers` and the integration test
+`test_ContestedOverrideUpheldByARecordedVote` cover this. What remains is the
+time the dispute takes: the 180-day notice, the vote, and the 30-day governed
+resolution. A contest left unresolved for a year lapses.
+
+**Owner option, not implemented:** (L4) re-check dormancy when an ESTATE or
+LOST_KEY override executes, so activity during the notice voids it. Today, as
+the ADR states, only a captured wallet's contest or the guardian can stop one.
 
 ## Gas
 

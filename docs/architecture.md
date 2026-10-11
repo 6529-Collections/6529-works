@@ -258,7 +258,12 @@ default when the sale starts".
      registration, a staged change, a heartbeat, a cancellation by the old key
      or a captured wallet, a nonce revocation, or an executed change. Overrides
      and guardian vetoes do not count.
-   - Only captured wallets, never the old key, can cancel an override.
+   - Only captured wallets, never the old key, can stop an override, and a
+     captured wallet's cancel only contests it. A TDH vote, recorded as a
+     DISPUTE_OUTCOME statement on `(registry, artistId)`, decides the contest
+     through the governed 30-day `resolveContested` (uphold executes, void
+     deletes). The guardian can veto, and an unresolved contest lapses after a
+     year.
 
 ### Dispute pause
 
