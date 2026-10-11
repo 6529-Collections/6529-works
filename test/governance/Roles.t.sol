@@ -17,6 +17,10 @@ contract RolesHarness {
     function label(uint64 role) external pure returns (string memory) {
         return Roles.label(role);
     }
+
+    function requireKnown(uint64 role) external pure {
+        Roles.requireKnown(role);
+    }
 }
 
 /// @notice The role and delay-class table every lane imports (ADR 0001 §13).
@@ -50,7 +54,8 @@ contract RolesTest is Test {
         assertEq(Roles.executionDelay(Roles.PARAMETER_SETTER), 48 hours);
         assertEq(Roles.executionDelay(Roles.FUNDS_SETTER), 14 days);
         assertEq(Roles.executionDelay(Roles.SUCCESSOR_SETTER), 30 days);
-        assertEq(Roles.executionDelay(Roles.META), 30 days);
+        assertEq(Roles.executionDelay(Roles.SYSTEM), 0);
+        assertEq(Roles.executionDelay(Roles.CURATOR), 0);
     }
 
     function test_GrantDelayTable() public pure {
@@ -66,29 +71,41 @@ contract RolesTest is Test {
         assertEq(Roles.grantDelay(Roles.PARAMETER_SETTER), 48 hours);
         assertEq(Roles.grantDelay(Roles.FUNDS_SETTER), 14 days);
         assertEq(Roles.grantDelay(Roles.SUCCESSOR_SETTER), 30 days);
-        assertEq(Roles.grantDelay(Roles.META), 30 days);
+        assertEq(Roles.grantDelay(Roles.SYSTEM), 30 days);
+        assertEq(Roles.grantDelay(Roles.CURATOR), 48 hours);
     }
 
     /// ADR 0001 §13.1: each class role's grant delay is at least its class delay, and
-    /// meta-governance (ADMIN, META) is at least as slow as the slowest class.
+    /// meta-governance (ADMIN) is at least as slow as the slowest class.
     function test_GrantDelayNeverShorterThanExecutionDelay() public pure {
         for (uint64 role; role < Roles.COUNT; ++role) {
             assertGe(Roles.grantDelay(role), Roles.executionDelay(role));
             assertLe(Roles.executionDelay(role), Roles.executionDelay(Roles.ADMIN));
         }
-        assertEq(Roles.executionDelay(Roles.META), Roles.SUCCESSOR);
+        assertEq(Roles.executionDelay(Roles.ADMIN), Roles.SUCCESSOR);
     }
 
-    function test_ProposerRolesAreExactlyTheDelayedOnes() public pure {
-        uint256 proposers;
+    function test_DelayedRolesAreTheAdminSafeClasses() public pure {
+        uint256 delayed;
         for (uint64 role; role < Roles.COUNT; ++role) {
-            if (Roles.isProposer(role)) ++proposers;
+            if (Roles.executionDelay(role) != Roles.IMMEDIATE) ++delayed;
         }
-        assertEq(proposers, 6);
-        assertFalse(Roles.isProposer(Roles.GUARDIAN));
-        assertFalse(Roles.isProposer(Roles.PAUSER));
-        assertTrue(Roles.isProposer(Roles.UNPAUSER));
-        assertTrue(Roles.isProposer(Roles.META));
+        assertEq(delayed, 5, "ADMIN, UNPAUSER and the three setters");
+        assertEq(Roles.executionDelay(Roles.GUARDIAN), Roles.IMMEDIATE);
+        assertEq(Roles.executionDelay(Roles.PAUSER), Roles.IMMEDIATE);
+    }
+
+    function test_CodeLevelGrantsTakeThirtyDays() public pure {
+        // Owner decisions: a new sale adapter, curation signer or protocol contract is
+        // successor-level, though each then acts immediately.
+        uint64[3] memory roles = [Roles.MINTER, Roles.CURATION_SIGNER, Roles.SYSTEM];
+        for (uint256 i; i < roles.length; ++i) {
+            assertEq(Roles.grantDelay(roles[i]), Roles.SUCCESSOR);
+            assertEq(Roles.executionDelay(roles[i]), Roles.IMMEDIATE);
+        }
+        assertEq(Roles.COUNT, 14);
+        assertEq(Roles.SYSTEM, 12);
+        assertEq(Roles.CURATOR, 13);
     }
 
     function test_LabelsAreDistinct() public pure {
@@ -114,5 +131,7 @@ contract RolesTest is Test {
         harness.grantDelay(role);
         vm.expectRevert(err);
         harness.label(role);
+        vm.expectRevert(err);
+        harness.requireKnown(role);
     }
 }

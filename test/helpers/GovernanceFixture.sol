@@ -7,18 +7,21 @@ import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
-import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock, SystemCallerMock } from "../mocks/GovernanceMocks.sol";
 
 /// @notice Deploys and configures a `WorksAccessManager` the way a deploy script must, with
-///         the standard holder layout, and offers schedule/execute helpers. Other lanes can
+///         the default holder layout, and offers schedule/execute helpers. Other lanes can
 ///         inherit it to put their own targets under governance in integration tests.
 abstract contract GovernanceFixture is Test {
     bytes32 internal constant MANIFEST = keccak256("6529 Works governance manifest, test epoch");
 
     address internal adminSafe = makeAddr("adminSafe");
+    address internal coldAdmin = makeAddr("coldAdmin");
     address internal guardianA = makeAddr("guardianA");
     address internal guardianB = makeAddr("guardianB");
+    address internal guardianC = makeAddr("guardianC");
     address internal curationSigner = makeAddr("curationSigner");
+    address internal curationSigner2 = makeAddr("curationSigner2");
     address internal storageOperator = makeAddr("storageOperator");
     address internal keeper = makeAddr("keeper");
     address internal platform = makeAddr("platform");
@@ -30,13 +33,20 @@ abstract contract GovernanceFixture is Test {
     GovernanceConfigurator internal configurator;
     WorksAccessManager internal manager;
     GovernedTargetMock internal target;
+    SystemCallerMock internal systemCaller;
 
-    /// @dev Deploys configurator, manager and sample target, then configures and settles.
-    function _deployGovernance() internal {
+    /// @dev Deploys the configurator (which deploys the manager) and the sample target.
+    function _deployUnconfigured() internal {
         configurator = new GovernanceConfigurator();
-        manager = new WorksAccessManager(address(configurator));
+        manager = configurator.worksManager();
         target = new GovernedTargetMock(address(manager), recipient0, verifier0);
-        configurator.configure(manager, _config(), MANIFEST);
+        systemCaller = new SystemCallerMock(target);
+    }
+
+    /// @dev Deploys, configures with the default layout and waits out `minSetback`.
+    function _deployGovernance() internal {
+        _deployUnconfigured();
+        configurator.configure(_config(), MANIFEST);
         _settle();
     }
 
@@ -45,28 +55,35 @@ abstract contract GovernanceFixture is Test {
         vm.warp(block.timestamp + manager.minSetback());
     }
 
-    /// @dev The standard holder layout: one admin Safe holding every proposer role, two
-    ///      guardian Safes holding GUARDIAN and PAUSER, and one key per operational role.
+    /// @dev The default layout: a hot admin Safe holding ADMIN, UNPAUSER and the three
+    ///      setters; a cold recovery admin Safe holding ADMIN only; three guardian Safes
+    ///      holding GUARDIAN and PAUSER only; two curation signers; one key per operational
+    ///      role; one protocol contract holding SYSTEM.
     function _grants() internal view virtual returns (GovernanceConfig.Grant[] memory g) {
-        g = new GovernanceConfig.Grant[](13);
+        g = new GovernanceConfig.Grant[](18);
         g[0] = GovernanceConfig.Grant(Roles.ADMIN, adminSafe);
-        g[1] = GovernanceConfig.Grant(Roles.GUARDIAN, guardianA);
-        g[2] = GovernanceConfig.Grant(Roles.GUARDIAN, guardianB);
-        g[3] = GovernanceConfig.Grant(Roles.PAUSER, guardianA);
-        g[4] = GovernanceConfig.Grant(Roles.PAUSER, guardianB);
-        g[5] = GovernanceConfig.Grant(Roles.UNPAUSER, adminSafe);
-        g[6] = GovernanceConfig.Grant(Roles.PARAMETER_SETTER, adminSafe);
-        g[7] = GovernanceConfig.Grant(Roles.FUNDS_SETTER, adminSafe);
-        g[8] = GovernanceConfig.Grant(Roles.SUCCESSOR_SETTER, adminSafe);
-        g[9] = GovernanceConfig.Grant(Roles.CURATION_SIGNER, curationSigner);
-        g[10] = GovernanceConfig.Grant(Roles.STORAGE_OPERATOR, storageOperator);
-        g[11] = GovernanceConfig.Grant(Roles.KEEPER, keeper);
-        g[12] = GovernanceConfig.Grant(Roles.PLATFORM, platform);
+        g[1] = GovernanceConfig.Grant(Roles.ADMIN, coldAdmin);
+        g[2] = GovernanceConfig.Grant(Roles.GUARDIAN, guardianA);
+        g[3] = GovernanceConfig.Grant(Roles.GUARDIAN, guardianB);
+        g[4] = GovernanceConfig.Grant(Roles.GUARDIAN, guardianC);
+        g[5] = GovernanceConfig.Grant(Roles.PAUSER, guardianA);
+        g[6] = GovernanceConfig.Grant(Roles.PAUSER, guardianB);
+        g[7] = GovernanceConfig.Grant(Roles.PAUSER, guardianC);
+        g[8] = GovernanceConfig.Grant(Roles.UNPAUSER, adminSafe);
+        g[9] = GovernanceConfig.Grant(Roles.PARAMETER_SETTER, adminSafe);
+        g[10] = GovernanceConfig.Grant(Roles.FUNDS_SETTER, adminSafe);
+        g[11] = GovernanceConfig.Grant(Roles.SUCCESSOR_SETTER, adminSafe);
+        g[12] = GovernanceConfig.Grant(Roles.CURATION_SIGNER, curationSigner);
+        g[13] = GovernanceConfig.Grant(Roles.CURATION_SIGNER, curationSigner2);
+        g[14] = GovernanceConfig.Grant(Roles.STORAGE_OPERATOR, storageOperator);
+        g[15] = GovernanceConfig.Grant(Roles.KEEPER, keeper);
+        g[16] = GovernanceConfig.Grant(Roles.PLATFORM, platform);
+        g[17] = GovernanceConfig.Grant(Roles.SYSTEM, address(systemCaller));
     }
 
     /// @dev The sample target's selector-to-class mapping. `adminOnly` stays unmapped.
     function _targetFunctions() internal pure returns (GovernanceConfig.FunctionRole[] memory f) {
-        f = new GovernanceConfig.FunctionRole[](8);
+        f = new GovernanceConfig.FunctionRole[](9);
         f[0] = GovernanceConfig.FunctionRole(GovernedTargetMock.pause.selector, Roles.PAUSER);
         f[1] = GovernanceConfig.FunctionRole(GovernedTargetMock.unpause.selector, Roles.UNPAUSER);
         f[2] = GovernanceConfig.FunctionRole(
@@ -83,6 +100,7 @@ abstract contract GovernanceFixture is Test {
         );
         f[6] = GovernanceConfig.FunctionRole(GovernedTargetMock.veto.selector, Roles.GUARDIAN);
         f[7] = GovernanceConfig.FunctionRole(GovernedTargetMock.keep.selector, Roles.KEEPER);
+        f[8] = GovernanceConfig.FunctionRole(GovernedTargetMock.consume.selector, Roles.SYSTEM);
     }
 
     function _config() internal view returns (GovernanceConfig.Config memory cfg) {

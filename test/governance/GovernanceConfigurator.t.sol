@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
@@ -12,14 +13,12 @@ import { GovernedTargetMock, UnmanagedMock } from "../mocks/GovernanceMocks.sol"
 /// @notice The one-shot configurator, the configuration validator and the CI readback.
 contract GovernanceConfiguratorTest is GovernanceFixture {
     function setUp() public {
-        configurator = new GovernanceConfigurator();
-        manager = new WorksAccessManager(address(configurator));
-        target = new GovernedTargetMock(address(manager), recipient0, verifier0);
+        _deployUnconfigured();
     }
 
     function _expectConfigureRevert(GovernanceConfig.Config memory cfg, bytes memory err) internal {
         vm.expectRevert(err);
-        configurator.configure(manager, cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST);
     }
 
     function _withGrant(uint64 role, address account)
@@ -44,17 +43,29 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         return cfg;
     }
 
-    function _withoutGrant(uint256 index)
+    /// @dev Drops every grant of `role`, or only `account`'s when it is nonzero.
+    function _without(GovernanceConfig.Config memory cfg, uint64 role, address account)
         internal
-        view
-        returns (GovernanceConfig.Config memory cfg)
+        pure
+        returns (GovernanceConfig.Config memory)
     {
-        cfg = _config();
-        GovernanceConfig.Grant[] memory grants = new GovernanceConfig.Grant[](cfg.grants.length - 1);
-        for (uint256 i; i < grants.length; ++i) {
-            grants[i] = cfg.grants[i < index ? i : i + 1];
+        uint256 kept;
+        GovernanceConfig.Grant[] memory grants = new GovernanceConfig.Grant[](cfg.grants.length);
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            GovernanceConfig.Grant memory g = cfg.grants[i];
+            if (g.role == role && (account == address(0) || g.account == account)) continue;
+            grants[kept++] = g;
+        }
+        assembly ("memory-safe") {
+            mstore(grants, kept)
         }
         cfg.grants = grants;
+        return cfg;
+    }
+
+    function _configured() internal {
+        configurator.configure(_config(), MANIFEST);
+        _settle();
     }
 
     // ---------------------------------------------------------------- happy path
@@ -67,25 +78,24 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         emit GovernanceConfigurator.GovernanceConfigured(
             address(manager), keccak256(abi.encode(cfg)), MANIFEST
         );
-        configurator.configure(manager, cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST);
 
         (bool stillAdmin,) = manager.hasRole(Roles.ADMIN, address(configurator));
         assertFalse(stillAdmin, "configurator renounced");
-        (bool isAdmin, uint32 delay) = manager.hasRole(Roles.ADMIN, adminSafe);
-        assertTrue(isAdmin);
-        assertEq(delay, 30 days);
-        (bool isMeta, uint32 metaDelay) = manager.hasRole(Roles.META, adminSafe);
-        assertTrue(isMeta);
-        assertEq(metaDelay, 30 days);
+        address[2] memory admins = [adminSafe, coldAdmin];
+        for (uint256 i; i < admins.length; ++i) {
+            (bool isAdmin, uint32 delay) = manager.hasRole(Roles.ADMIN, admins[i]);
+            assertTrue(isAdmin);
+            assertEq(delay, 30 days);
+        }
 
         // Grant and target-admin delays take effect after minSetback; readback then passes.
         _settle();
-        configurator.verify(manager, cfg);
+        configurator.verify(cfg);
     }
 
     function test_EveryRoleIsLabelledGuardedAndDelayed() public {
-        configurator.configure(manager, _config(), MANIFEST);
-        _settle();
+        _configured();
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
             assertEq(manager.getRoleAdmin(role), Roles.ADMIN);
             assertEq(manager.getRoleGuardian(role), Roles.GUARDIAN);
@@ -97,16 +107,68 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function test_ReadbackFailsBeforeDelaysSettle() public {
-        configurator.configure(manager, _config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST);
         vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.ADMIN));
-        configurator.verify(manager, _config());
+        configurator.verify(_config());
     }
 
     function test_InitialGrantsAreActiveImmediately() public {
-        configurator.configure(manager, _config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST);
         vm.prank(guardianA);
         target.pause();
         assertTrue(target.paused());
+    }
+
+    function test_SupportsHotAndColdAdmins() public {
+        _configured();
+        (bool hot,) = manager.hasRole(Roles.ADMIN, adminSafe);
+        (bool cold,) = manager.hasRole(Roles.ADMIN, coldAdmin);
+        assertTrue(hot && cold);
+        (uint48 coldSetter,,,) = manager.getAccess(Roles.PARAMETER_SETTER, coldAdmin);
+        assertEq(coldSetter, 0, "the cold admin holds ADMIN only");
+    }
+
+    // ------------------------------------------------- manager provenance (review M-1)
+
+    function test_ConfiguratorDeploysAndOwnsAWorksAccessManager() public {
+        assertEq(address(configurator.worksManager()), address(manager));
+        assertEq(configurator.deployer(), address(this));
+        assertEq(address(manager).codehash, address(new WorksAccessManager(outsider)).codehash);
+        assertNotEq(address(manager).codehash, address(new AccessManager(outsider)).codehash);
+        (bool configuratorAdmin, uint32 delay) = manager.hasRole(Roles.ADMIN, address(configurator));
+        assertTrue(configuratorAdmin);
+        assertEq(delay, 0);
+        (uint48 deployerAdmin,,,) = manager.getAccess(Roles.ADMIN, address(this));
+        assertEq(deployerAdmin, 0, "the deployer never administers the manager");
+    }
+
+    function test_TargetGovernedByAStockManagerIsRejected() public {
+        AccessManager stock = new AccessManager(address(this));
+        GovernanceConfig.Config memory cfg = _config();
+        cfg.targets[0].target =
+            address(new GovernedTargetMock(address(stock), recipient0, verifier0));
+        _expectConfigureRevert(
+            cfg,
+            abi.encodeWithSelector(GovernanceConfig.InvalidTarget.selector, cfg.targets[0].target)
+        );
+    }
+
+    function test_PreSeededManagerIsRejected() public {
+        // A manager with another zero-delay admin cannot be configured or verified: the
+        // configurator only ever touches the manager it deployed, and refuses targets wired
+        // to any other manager.
+        vm.prank(attacker);
+        WorksAccessManager seeded = new WorksAccessManager(attacker);
+        vm.prank(attacker);
+        seeded.grantRole(Roles.ADMIN, address(configurator), 0);
+        GovernanceConfig.Config memory cfg = _config();
+        cfg.targets[0].target =
+            address(new GovernedTargetMock(address(seeded), recipient0, verifier0));
+        _expectConfigureRevert(
+            cfg,
+            abi.encodeWithSelector(GovernanceConfig.InvalidTarget.selector, cfg.targets[0].target)
+        );
+        assertNotEq(address(configurator.worksManager()), address(seeded));
     }
 
     // ------------------------------------------------------------- access control
@@ -117,11 +179,11 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
             abi.encodeWithSelector(GovernanceConfigurator.NotDeployer.selector, attacker)
         );
         vm.prank(attacker);
-        configurator.configure(manager, cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST);
     }
 
     function test_ConfigureIsOneShot() public {
-        configurator.configure(manager, _config(), MANIFEST);
+        configurator.configure(_config(), MANIFEST);
         _expectConfigureRevert(
             _config(),
             abi.encodeWithSelector(
@@ -133,34 +195,38 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function test_VerifyRejectsAManagerTheConfiguratorStillAdministers() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                GovernanceConfigurator.ConfiguratorStillAdmin.selector, address(manager)
-            )
-        );
-        configurator.verify(manager, _config());
+        vm.expectRevert(GovernanceConfigurator.ConfiguratorStillAdmin.selector);
+        configurator.verify(_config());
     }
 
     // ------------------------------------------------------------- grant validation
 
     function test_RejectsFewerThanTwoGuardians() public {
+        GovernanceConfig.Config memory cfg = _without(_config(), Roles.GUARDIAN, guardianB);
+        cfg = _without(cfg, Roles.GUARDIAN, guardianC);
         _expectConfigureRevert(
-            _withoutGrant(2), abi.encodeWithSelector(GovernanceConfig.TooFewGuardians.selector, 1)
+            cfg, abi.encodeWithSelector(GovernanceConfig.TooFewGuardians.selector, 1)
         );
+    }
+
+    function test_AcceptsTheTwoGuardianFloor() public {
+        GovernanceConfig.Config memory cfg = _without(_config(), Roles.GUARDIAN, guardianC);
+        configurator.configure(cfg, MANIFEST);
+        _settle();
+        configurator.verify(cfg);
     }
 
     function test_RejectsMissingAdminPauserOrUnpauser() public {
         _expectConfigureRevert(
-            _withoutGrant(0),
+            _without(_config(), Roles.ADMIN, address(0)),
             abi.encodeWithSelector(GovernanceConfig.MissingHolder.selector, Roles.ADMIN)
         );
-        GovernanceConfig.Config memory cfg = _withoutGrant(4);
-        cfg.grants[3] = GovernanceConfig.Grant(Roles.KEEPER, guardianA); // drop both pausers
         _expectConfigureRevert(
-            cfg, abi.encodeWithSelector(GovernanceConfig.MissingHolder.selector, Roles.PAUSER)
+            _without(_config(), Roles.PAUSER, address(0)),
+            abi.encodeWithSelector(GovernanceConfig.MissingHolder.selector, Roles.PAUSER)
         );
         _expectConfigureRevert(
-            _withoutGrant(5),
+            _without(_config(), Roles.UNPAUSER, address(0)),
             abi.encodeWithSelector(GovernanceConfig.MissingHolder.selector, Roles.UNPAUSER)
         );
     }
@@ -171,14 +237,14 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
             abi.encodeWithSelector(GovernanceConfig.InvalidGrant.selector, Roles.KEEPER, address(0))
         );
         _expectConfigureRevert(
-            _withGrant(Roles.META, outsider),
-            abi.encodeWithSelector(GovernanceConfig.InvalidGrant.selector, Roles.META, outsider)
-        );
-        _expectConfigureRevert(
             _withGrant(Roles.KEEPER, address(configurator)),
             abi.encodeWithSelector(
                 GovernanceConfig.InvalidGrant.selector, Roles.KEEPER, address(configurator)
             )
+        );
+        _expectConfigureRevert(
+            _withGrant(Roles.COUNT, outsider),
+            abi.encodeWithSelector(Roles.UnknownRole.selector, Roles.COUNT)
         );
         _expectConfigureRevert(
             _withGrant(Roles.PUBLIC, outsider),
@@ -190,28 +256,43 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         );
     }
 
-    function test_RejectsGuardianHoldingAProposerRole() public {
-        uint64[5] memory proposers = [
-            Roles.ADMIN,
-            Roles.UNPAUSER,
-            Roles.PARAMETER_SETTER,
-            Roles.FUNDS_SETTER,
-            Roles.SUCCESSOR_SETTER
-        ];
-        for (uint256 i; i < proposers.length; ++i) {
+    function test_RejectsGuardianHoldingAnyOtherRole() public {
+        // Veto stays separate from action: GUARDIAN pairs with PAUSER and nothing else.
+        for (uint64 role; role < Roles.COUNT; ++role) {
+            if (role == Roles.GUARDIAN || role == Roles.PAUSER) continue;
             _expectConfigureRevert(
-                _withGrant(proposers[i], guardianB),
-                abi.encodeWithSelector(
-                    GovernanceConfig.GuardianIsProposer.selector, guardianB, proposers[i]
-                )
+                _withGrant(role, guardianB),
+                abi.encodeWithSelector(GovernanceConfig.GuardianHoldsRole.selector, guardianB, role)
             );
         }
-        // The reverse order: a proposer later granted GUARDIAN.
+        // The reverse order: an operational holder later granted GUARDIAN.
         _expectConfigureRevert(
-            _withGrant(Roles.GUARDIAN, adminSafe),
+            _withGrant(Roles.GUARDIAN, keeper),
             abi.encodeWithSelector(
-                GovernanceConfig.GuardianIsProposer.selector, adminSafe, Roles.ADMIN
+                GovernanceConfig.GuardianHoldsRole.selector, keeper, Roles.KEEPER
             )
+        );
+    }
+
+    function test_RejectsSystemHolderThatIsNotAContract() public {
+        _expectConfigureRevert(
+            _withGrant(Roles.SYSTEM, outsider),
+            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, outsider)
+        );
+        // An EIP-7702 delegated EOA has code, but is still an EOA.
+        address delegated = makeAddr("delegated");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(target)));
+        _expectConfigureRevert(
+            _withGrant(Roles.SYSTEM, delegated),
+            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, delegated)
+        );
+    }
+
+    function test_RejectsAdminHoldingSystem() public {
+        vm.etch(coldAdmin, hex"00"); // a Safe is a contract; being an admin still disqualifies
+        _expectConfigureRevert(
+            _withGrant(Roles.SYSTEM, coldAdmin),
+            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, coldAdmin)
         );
     }
 
@@ -270,7 +351,7 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
     }
 
     function test_RejectsFunctionRolesThatMustNotCall() public {
-        uint64[3] memory forbidden = [Roles.ADMIN, Roles.META, Roles.CURATION_SIGNER];
+        uint64[2] memory forbidden = [Roles.ADMIN, Roles.CURATION_SIGNER];
         for (uint256 i; i < forbidden.length; ++i) {
             GovernanceConfig.Config memory cfg = _config();
             cfg.targets[0].functions[7].role = forbidden[i];
@@ -293,11 +374,6 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
 
     // ------------------------------------------------------------- readback drift
 
-    function _configured() internal {
-        configurator.configure(manager, _config(), MANIFEST);
-        _settle();
-    }
-
     function test_ReadbackDetectsRemappedSelector() public {
         _configured();
         _adminExecute(
@@ -314,10 +390,10 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
                 Roles.FUNDS_SETTER
             )
         );
-        configurator.verify(manager, _config());
+        configurator.verify(_config());
     }
 
-    function test_ReadbackDetectsPendingDelayReduction() public {
+    function test_ReadbackDetectsPendingExecutionDelayReduction() public {
         _configured();
         _adminExecute(
             abi.encodeCall(IAccessManager.grantRole, (Roles.PARAMETER_SETTER, adminSafe, 0))
@@ -327,43 +403,67 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
                 GovernanceConfig.HolderMismatch.selector, Roles.PARAMETER_SETTER, adminSafe
             )
         );
-        configurator.verify(manager, _config());
+        configurator.verify(_config());
     }
 
-    function test_ReadbackDetectsGuardianPendingForAProposerRole() public {
+    function test_ReadbackDetectsAdminDelayReduction() public {
+        // An admin whose execution delay is being lowered is an unexpected fast admin.
         _configured();
-        _adminExecute(
-            abi.encodeCall(IAccessManager.grantRole, (Roles.PARAMETER_SETTER, guardianA, 48 hours))
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, 0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, coldAdmin)
         );
+        configurator.verify(_config());
+        vm.warp(block.timestamp + 30 days); // the reduction has landed: still rejected
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, coldAdmin)
+        );
+        configurator.verify(_config());
+    }
+
+    function test_ReadbackDetectsGuardianGainingAnyOtherRole() public {
+        _configured();
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.MINTER, guardianA, 0)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                GovernanceConfig.GuardianIsProposer.selector, guardianA, Roles.PARAMETER_SETTER
+                GovernanceConfig.GuardianHoldsRole.selector, guardianA, Roles.MINTER
             )
         );
-        configurator.verify(manager, _config());
+        configurator.verify(_config());
+    }
+
+    function test_ReadbackDetectsAdminGainingSystem() public {
+        _configured();
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.SYSTEM, adminSafe, 0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.InvalidSystemHolder.selector, adminSafe)
+        );
+        configurator.verify(_config());
     }
 
     function test_ReadbackDetectsPauserGrantedUnpause() public {
         GovernanceConfig.Config memory cfg = _withGrant(Roles.PAUSER, keeper);
-        configurator.configure(manager, cfg, MANIFEST);
+        configurator.configure(cfg, MANIFEST);
         _settle();
-        configurator.verify(manager, cfg);
+        configurator.verify(cfg);
         _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.UNPAUSER, keeper, 48 hours)));
         vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.PauserIsUnpauser.selector, keeper));
-        configurator.verify(manager, cfg);
+        configurator.verify(cfg);
     }
 
-    function test_ReadbackDetectsClosedTargetAndStrippedGuardian() public {
+    function test_ReadbackDetectsClosedTargetAndChangedGuardian() public {
         _configured();
         _adminExecute(abi.encodeCall(IAccessManager.setTargetClosed, (address(target), true)));
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfig.TargetMismatch.selector, address(target))
         );
-        configurator.verify(manager, _config());
+        configurator.verify(_config());
 
-        _adminExecute(abi.encodeCall(IAccessManager.setRoleGuardian, (Roles.META, Roles.ADMIN)));
-        vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.META));
-        configurator.verify(manager, _config());
+        _adminExecute(abi.encodeCall(IAccessManager.setRoleGuardian, (Roles.PAUSER, Roles.ADMIN)));
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.PAUSER)
+        );
+        configurator.verify(_config());
     }
 
     function test_ReadbackDetectsMissingHolder() public {
@@ -371,6 +471,32 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         vm.expectRevert(
             abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.MINTER, outsider)
         );
-        configurator.verify(manager, _withGrant(Roles.MINTER, outsider));
+        configurator.verify(_withGrant(Roles.MINTER, outsider));
+    }
+
+    /// @dev Documented limitation (review L-3): OpenZeppelin exposes no getter for a pending
+    ///      grant-delay or target-admin-delay change, so readback passes until the reduction
+    ///      lands. Deployment CI scans `RoleGrantDelayChanged` and `TargetAdminDelayUpdated`
+    ///      events for future effect times instead.
+    function test_Limitation_ReadbackCannotSeePendingDelayReductions() public {
+        _configured();
+        bytes memory a = abi.encodeCall(IAccessManager.setGrantDelay, (Roles.ADMIN, 0));
+        bytes memory b = abi.encodeCall(IAccessManager.setTargetAdminDelay, (address(target), 0));
+        _schedule(adminSafe, address(manager), a);
+        _schedule(adminSafe, address(manager), b);
+        vm.warp(block.timestamp + 30 days);
+        vm.recordLogs();
+        vm.startPrank(adminSafe);
+        manager.execute(address(manager), a);
+        manager.execute(address(manager), b);
+        vm.stopPrank();
+        // The events carry the future effect time that CI must flag.
+        assertGt(vm.getRecordedLogs().length, 0);
+        configurator.verify(_config());
+        vm.warp(block.timestamp + 30 days - 1);
+        configurator.verify(_config());
+        vm.warp(block.timestamp + 1);
+        vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.RoleMismatch.selector, Roles.ADMIN));
+        configurator.verify(_config());
     }
 }

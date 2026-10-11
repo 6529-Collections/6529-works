@@ -22,11 +22,12 @@ library Roles {
 
     // --------------------------------------------------------------------- role IDs
 
-    /// @notice `AccessManager.ADMIN_ROLE`: the admin Safe, 30-day execution delay.
+    /// @notice `AccessManager.ADMIN_ROLE`: the hot admin Safe and a cold recovery admin Safe,
+    ///         30-day execution delay. Also the manager's own admin functions.
     uint64 internal constant ADMIN = 0;
-    /// @notice Guardian Safes (at least two): guardian of every other role, so they can cancel
-    ///         any scheduled operation; also mapped to immediate veto functions (dispute pause,
-    ///         identity veto). Never a proposer.
+    /// @notice Guardian Safes (at least two; three by default): `WorksAccessManager` lets them
+    ///         cancel any scheduled operation. Mapped to immediate vetoes: dispute pause,
+    ///         identity-change veto, curation `disableSigner`. Holds nothing but `PAUSER`.
     uint64 internal constant GUARDIAN = 1;
     /// @notice Immediate `pause` selectors. Held by the guardian Safes, never by an unpauser.
     uint64 internal constant PAUSER = 2;
@@ -46,44 +47,47 @@ library Roles {
     uint64 internal constant PARAMETER_SETTER = 9;
     /// @notice Funds-and-recipients-class governed setters (14 days).
     uint64 internal constant FUNDS_SETTER = 10;
-    /// @notice Verifier, renderer, successor and freeze setters (30 days).
+    /// @notice Verifier, renderer, successor, freeze and manifest setters (30 days).
     uint64 internal constant SUCCESSOR_SETTER = 11;
-    /// @notice The manager's own admin selectors, held by the admin Safe. Authorization for
-    ///         those selectors stays with `ADMIN`; the mapping makes `GUARDIAN` their canceller
-    ///         under stock OpenZeppelin rules and makes `canCall` report the 30-day delay.
-    uint64 internal constant META = 12;
-    /// @notice Number of role IDs defined here (0 through 12).
-    uint64 internal constant COUNT = 13;
+    /// @notice Protocol contracts calling other protocol contracts, such as the package
+    ///         registry's `consume` and `claimContent` and the artist registry's `register` and
+    ///         `heartbeat`. Contracts only: never an EOA, an admin or a guardian.
+    uint64 internal constant SYSTEM = 12;
+    /// @notice Curator statements in the statement log (`appendCurator`, including
+    ///         `CURATION_EVIDENCE`). Zero delay: the log refuses delayed writers.
+    uint64 internal constant CURATOR = 13;
+    /// @notice Number of role IDs defined here (0 through 13).
+    uint64 internal constant COUNT = 14;
     /// @notice `AccessManager.PUBLIC_ROLE`. Never map a governed selector to it.
     uint64 internal constant PUBLIC = type(uint64).max;
 
     /// @notice `role` is not one of the IDs defined here.
     error UnknownRole(uint64 role);
 
+    /// @notice Reverts with {UnknownRole} unless `role` is defined here.
+    function requireKnown(uint64 role) internal pure {
+        if (role >= COUNT) revert UnknownRole(role);
+    }
+
     /// @notice The execution delay every holder of `role` must carry.
     function executionDelay(uint64 role) internal pure returns (uint32) {
-        if (role == ADMIN || role == SUCCESSOR_SETTER || role == META) return SUCCESSOR;
+        requireKnown(role);
+        if (role == ADMIN || role == SUCCESSOR_SETTER) return SUCCESSOR;
         if (role == FUNDS_SETTER) return FUNDS;
         if (role == PARAMETER_SETTER || role == UNPAUSER) return STANDARD;
-        if (role < COUNT) return IMMEDIATE;
-        revert UnknownRole(role);
+        return IMMEDIATE;
     }
 
     /// @notice The delay before a newly granted holder of `role` becomes active. Never shorter
     ///         than the role's execution delay (ADR 0001 §13.1).
     function grantDelay(uint64 role) internal pure returns (uint32) {
+        requireKnown(role);
         if (
             role == ADMIN || role == GUARDIAN || role == CURATION_SIGNER || role == MINTER
-                || role == SUCCESSOR_SETTER || role == META
+                || role == SUCCESSOR_SETTER || role == SYSTEM
         ) return SUCCESSOR;
         if (role == FUNDS_SETTER) return FUNDS;
-        if (role < COUNT) return STANDARD;
-        revert UnknownRole(role);
-    }
-
-    /// @notice Whether holders of `role` schedule delayed operations. Guardians hold none.
-    function isProposer(uint64 role) internal pure returns (bool) {
-        return executionDelay(role) != IMMEDIATE;
+        return STANDARD;
     }
 
     /// @notice The label emitted for `role` at configuration. `ADMIN` cannot be labelled.
@@ -99,7 +103,8 @@ library Roles {
         if (role == PARAMETER_SETTER) return "PARAMETER_SETTER";
         if (role == FUNDS_SETTER) return "FUNDS_SETTER";
         if (role == SUCCESSOR_SETTER) return "SUCCESSOR_SETTER";
-        if (role == META) return "META";
+        if (role == SYSTEM) return "SYSTEM";
+        if (role == CURATOR) return "CURATOR";
         revert UnknownRole(role);
     }
 }

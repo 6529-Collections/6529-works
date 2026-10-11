@@ -12,12 +12,13 @@ import { Roles } from "./Roles.sol";
 ///         2. nobody but its scheduler can cancel an operation that revokes one of the
 ///            canceller's own roles, so no guardian or admin can veto its own removal.
 /// @dev Stock cancellation is selector-scoped: the scheduler, an admin, or the guardian of the
-///      target function's role. `GovernanceConfig` maps the manager's own admin selectors to
-///      `Roles.META` (guardian `GUARDIAN`), but stock OpenZeppelin still leaves guardians unable
-///      to cancel two admin paths: scheduling `setAuthority` directly on a target (its role
-///      mapping is locked, so its guardian is fixed to `ADMIN`), and any target selector left
-///      unmapped (it falls back to `ADMIN_ROLE`, whose guardian cannot be changed). Rule 1
-///      closes both. Rule 2 cannot be expressed per selector, because it depends on arguments.
+///      target function's role. That leaves guardians unable to cancel the admin's operations
+///      on this manager (its admin selectors resolve to `ADMIN_ROLE`, whose guardian is locked
+///      to `ADMIN`), a `setAuthority` scheduled directly on a target (its role mapping is
+///      locked), and any target selector left unmapped. Rule 1 closes all three. Rule 2 cannot
+///      be expressed per selector, because it depends on arguments. The inherited OpenZeppelin
+///      `Multicall` self-delegatecall only batches calls into this contract; it is the one
+///      sanctioned exemption to the no-delegatecall rule.
 contract WorksAccessManager is AccessManager {
     /// @param initialAdmin The one-shot configurator, which renounces the admin role once done.
     constructor(address initialAdmin) AccessManager(initialAdmin) { }

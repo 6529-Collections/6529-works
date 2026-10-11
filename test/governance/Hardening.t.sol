@@ -17,10 +17,10 @@ contract HardeningTest is GovernanceFixture {
         _deployGovernance();
     }
 
-    function _proposerRoles() internal pure returns (uint64[6] memory) {
+    /// @dev The hot admin Safe's roles in the default layout.
+    function _hotAdminRoles() internal pure returns (uint64[5] memory) {
         return [
             Roles.ADMIN,
-            Roles.META,
             Roles.UNPAUSER,
             Roles.PARAMETER_SETTER,
             Roles.FUNDS_SETTER,
@@ -109,6 +109,21 @@ contract HardeningTest is GovernanceFixture {
         manager.execute(address(manager), remap);
     }
 
+    function test_CanCallReportsTheAdminDelayForManagerSelectors() public view {
+        // With no mapping on the manager, `canCall` reports ADMIN membership for every admin.
+        address[2] memory admins = [adminSafe, coldAdmin];
+        for (uint256 i; i < admins.length; ++i) {
+            (bool immediate, uint32 delay) =
+                manager.canCall(admins[i], address(manager), IAccessManager.grantRole.selector);
+            assertFalse(immediate);
+            assertEq(delay, 30 days);
+        }
+        (bool guardianImmediate, uint32 guardianDelay) =
+            manager.canCall(guardianA, address(manager), IAccessManager.grantRole.selector);
+        assertFalse(guardianImmediate);
+        assertEq(guardianDelay, 0);
+    }
+
     function test_UnmappedSelectorFallsBackToAdminDelay() public {
         (bool immediate, uint32 delay) =
             manager.canCall(adminSafe, address(target), GovernedTargetMock.adminOnly.selector);
@@ -122,21 +137,18 @@ contract HardeningTest is GovernanceFixture {
 
     // --------------------------------------------------------------- §13.3 guardian rules
 
-    function test_GuardiansAreNeverProposers() public view {
-        address[2] memory guardians = [guardianA, guardianB];
-        uint64[6] memory proposers = _proposerRoles();
-        for (uint256 g; g < 2; ++g) {
+    function test_GuardiansHoldOnlyGuardianAndPauser() public view {
+        address[3] memory guardians = [guardianA, guardianB, guardianC];
+        for (uint256 g; g < guardians.length; ++g) {
             (bool isGuardian, uint32 delay) = manager.hasRole(Roles.GUARDIAN, guardians[g]);
-            assertTrue(isGuardian);
+            (bool isPauser,) = manager.hasRole(Roles.PAUSER, guardians[g]);
+            assertTrue(isGuardian && isPauser);
             assertEq(delay, 0);
-            for (uint256 p; p < proposers.length; ++p) {
-                (uint48 since,,,) = manager.getAccess(proposers[p], guardians[g]);
-                assertEq(since, 0, "guardian holds a proposer role");
+            for (uint64 role; role < Roles.COUNT; ++role) {
+                if (role == Roles.GUARDIAN || role == Roles.PAUSER) continue;
+                (uint48 since,,,) = manager.getAccess(role, guardians[g]);
+                assertEq(since, 0, "guardian holds another role");
             }
-            (bool immediate, uint32 setback) =
-                manager.canCall(guardians[g], address(manager), IAccessManager.grantRole.selector);
-            assertFalse(immediate);
-            assertEq(setback, 0, "guardian could schedule a meta operation");
         }
     }
 
@@ -154,10 +166,11 @@ contract HardeningTest is GovernanceFixture {
         manager.schedule(address(manager), data, 0);
     }
 
-    function test_AtLeastTwoVetoGuardians() public view {
+    function test_DefaultLayoutHasThreeVetoGuardians() public view {
         (bool a,) = manager.hasRole(Roles.GUARDIAN, guardianA);
         (bool b,) = manager.hasRole(Roles.GUARDIAN, guardianB);
-        assertTrue(a && b && guardianA != guardianB);
+        (bool c,) = manager.hasRole(Roles.GUARDIAN, guardianC);
+        assertTrue(a && b && c);
         for (uint64 role = 1; role < Roles.COUNT; ++role) {
             assertEq(manager.getRoleGuardian(role), Roles.GUARDIAN, "every role guarded");
         }
@@ -192,6 +205,19 @@ contract HardeningTest is GovernanceFixture {
         assertFalse(target.paused());
     }
 
+    function test_SystemCallsAreImmediateForProtocolContractsOnly() public {
+        systemCaller.callConsume();
+        assertEq(target.consumed(), 1);
+        address[3] memory people = [adminSafe, guardianA, keeper];
+        for (uint256 i; i < people.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, people[i])
+            );
+            vm.prank(people[i]);
+            target.consume();
+        }
+    }
+
     function test_GuardianVetoIsImmediate() public {
         vm.expectEmit(address(target));
         emit GovernedTargetMock.Vetoed(bytes32("dispute"));
@@ -207,7 +233,7 @@ contract HardeningTest is GovernanceFixture {
         for (uint256 i; i < fns.length; ++i) {
             uint64 role = manager.getTargetFunctionRole(address(target), fns[i].selector);
             assertEq(role, fns[i].role);
-            if (!Roles.isProposer(role)) continue;
+            if (Roles.executionDelay(role) == 0) continue;
             (bool immediate, uint32 delay) =
                 manager.canCall(adminSafe, address(target), fns[i].selector);
             assertFalse(immediate);
@@ -233,6 +259,30 @@ contract HardeningTest is GovernanceFixture {
         vm.prank(adminSafe);
         manager.execute(address(target), raise);
         assertEq(target.callbackGas(), 200_000);
+    }
+
+    /// @dev Documented behaviour: "2x per step" bounds each operation, not each period, so a
+    ///      chain of raises scheduled together reaches the ceiling inside one 48-hour window
+    ///      (ADR 0001 §13.9). A target that needs a rate limit enforces it itself.
+    function test_RaiseChainCanReachTheCeilingInOneWindow() public {
+        uint256[4] memory steps = [uint256(200_000), 400_000, 800_000, 1_600_000];
+        for (uint256 i; i < steps.length; ++i) {
+            _schedule(
+                adminSafe,
+                address(target),
+                abi.encodeCall(GovernedTargetMock.raiseCallbackGas, (steps[i]))
+            );
+        }
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.startPrank(adminSafe);
+        for (uint256 i; i < steps.length; ++i) {
+            manager.execute(
+                address(target), abi.encodeCall(GovernedTargetMock.raiseCallbackGas, (steps[i]))
+            );
+        }
+        vm.stopPrank();
+        assertEq(target.callbackGas(), 1_600_000);
+        assertLe(target.callbackGas(), target.GAS_CEILING());
     }
 
     // -------------------------------------------------------- §13.5 compare-and-set
@@ -277,7 +327,7 @@ contract HardeningTest is GovernanceFixture {
     }
 
     function test_EveryGovernedSelectorIsNonPayable() public {
-        bytes[9] memory calls = [
+        bytes[10] memory calls = [
             abi.encodeCall(GovernedTargetMock.pause, ()),
             abi.encodeCall(GovernedTargetMock.unpause, ()),
             abi.encodeCall(GovernedTargetMock.setFee, (1)),
@@ -286,6 +336,7 @@ contract HardeningTest is GovernanceFixture {
             abi.encodeCall(GovernedTargetMock.setVerifier, (verifier0, attacker)),
             abi.encodeCall(GovernedTargetMock.veto, (bytes32(0))),
             abi.encodeCall(GovernedTargetMock.keep, ()),
+            abi.encodeCall(GovernedTargetMock.consume, ()),
             abi.encodeCall(GovernedTargetMock.adminOnly, ())
         ];
         for (uint256 i; i < calls.length; ++i) {
@@ -335,7 +386,7 @@ contract HardeningTest is GovernanceFixture {
     ///      new admin revokes it; (5) anything of the old admin's that slipped through is dead.
     function test_RotatedAdminPendingOperationsAreCancelled() public {
         address newAdmin = makeAddr("newAdmin");
-        uint64[6] memory roles = _proposerRoles();
+        uint64[5] memory roles = _hotAdminRoles();
 
         // Pending operations of the old admin, one per kind.
         bytes memory pendingTarget =
@@ -405,5 +456,139 @@ contract HardeningTest is GovernanceFixture {
         assertEq(target.recipient(), recipient0);
         (bool keeperAttacker,) = manager.hasRole(Roles.KEEPER, attacker);
         assertFalse(keeperAttacker);
+    }
+
+    // ------------------------------------------------------ cold-admin recovery
+
+    /// @dev The hot admin Safe is compromised. The cold recovery admin removes it; Rule 2
+    ///      stops the hot admin from cancelling its own removal, and the guardians veto the
+    ///      hot admin's counter-move against the cold admin. Revocations go first: a still
+    ///      active hot admin could cancel grants to its replacement.
+    function test_ColdAdminRecoversFromACompromisedHotAdmin() public {
+        uint64[5] memory roles = _hotAdminRoles();
+        bytes[] memory revokes = new bytes[](roles.length);
+        for (uint256 i; i < roles.length; ++i) {
+            revokes[i] = abi.encodeCall(IAccessManager.revokeRole, (roles[i], adminSafe));
+            _schedule(coldAdmin, address(manager), revokes[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManager.AccessManagerUnauthorizedCancel.selector,
+                    adminSafe,
+                    coldAdmin,
+                    address(manager),
+                    IAccessManager.revokeRole.selector
+                )
+            );
+            vm.prank(adminSafe);
+            manager.cancel(coldAdmin, address(manager), revokes[i]);
+        }
+
+        // The hot admin's counter-move is vetoed; the cold admin cannot veto it itself.
+        bytes memory counter = abi.encodeCall(IAccessManager.revokeRole, (Roles.ADMIN, coldAdmin));
+        _schedule(adminSafe, address(manager), counter);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerUnauthorizedCancel.selector,
+                coldAdmin,
+                adminSafe,
+                address(manager),
+                IAccessManager.revokeRole.selector
+            )
+        );
+        vm.prank(coldAdmin);
+        manager.cancel(adminSafe, address(manager), counter);
+        vm.prank(guardianC);
+        manager.cancel(adminSafe, address(manager), counter);
+
+        vm.warp(block.timestamp + 30 days);
+        vm.startPrank(coldAdmin);
+        for (uint256 i; i < revokes.length; ++i) {
+            manager.execute(address(manager), revokes[i]);
+        }
+        vm.stopPrank();
+        for (uint256 i; i < roles.length; ++i) {
+            (uint48 since,,,) = manager.getAccess(roles[i], adminSafe);
+            assertEq(since, 0, "hot admin keeps a role");
+        }
+        (bool coldStillAdmin,) = manager.hasRole(Roles.ADMIN, coldAdmin);
+        assertTrue(coldStillAdmin);
+    }
+
+    // ------------------------------------------------------ guardian rotation
+
+    /// @dev Cooperative rotation grants the replacement first, so the guardian count never
+    ///      drops below the configured three; the departing guardian cannot block its removal.
+    function test_CooperativeGuardianRotationGrantsTheReplacementFirst() public {
+        address guardianD = makeAddr("guardianD");
+        bytes[2] memory grants = [
+            abi.encodeCall(IAccessManager.grantRole, (Roles.GUARDIAN, guardianD, 0)),
+            abi.encodeCall(IAccessManager.grantRole, (Roles.PAUSER, guardianD, 0))
+        ];
+        for (uint256 i; i < 2; ++i) {
+            _adminExecute(grants[i]);
+        }
+        vm.warp(block.timestamp + Roles.grantDelay(Roles.GUARDIAN));
+        (bool active,) = manager.hasRole(Roles.GUARDIAN, guardianD);
+        assertTrue(active, "replacement active before the old guardian leaves");
+
+        bytes[2] memory revokes = [
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardianA)),
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.PAUSER, guardianA))
+        ];
+        for (uint256 i; i < 2; ++i) {
+            _schedule(adminSafe, address(manager), revokes[i]);
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerUnauthorizedCancel.selector,
+                guardianA,
+                adminSafe,
+                address(manager),
+                IAccessManager.revokeRole.selector
+            )
+        );
+        vm.prank(guardianA);
+        manager.cancel(adminSafe, address(manager), revokes[0]);
+        vm.warp(block.timestamp + 30 days);
+        vm.startPrank(adminSafe);
+        for (uint256 i; i < 2; ++i) {
+            manager.execute(address(manager), revokes[i]);
+        }
+        vm.stopPrank();
+        (bool replacementGuards,) = manager.hasRole(Roles.GUARDIAN, guardianD);
+        (bool oldGuards,) = manager.hasRole(Roles.GUARDIAN, guardianA);
+        assertTrue(replacementGuards);
+        assertFalse(oldGuards);
+    }
+
+    // ------------------------------------------------------ onboarding a target
+
+    /// @dev A target added after genesis: set its 30-day admin delay, map its selectors (both
+    ///      30-day admin operations, vetoable), then re-run readback with the new config.
+    function test_OnboardATargetAfterGenesis() public {
+        GovernedTargetMock late = new GovernedTargetMock(address(manager), recipient0, verifier0);
+        GovernanceConfig.FunctionRole[] memory fns = _targetFunctions();
+        bytes[] memory ops = new bytes[](fns.length + 1);
+        ops[0] = abi.encodeCall(IAccessManager.setTargetAdminDelay, (address(late), 30 days));
+        for (uint256 i; i < fns.length; ++i) {
+            ops[i + 1] = abi.encodeCall(
+                IAccessManager.setTargetFunctionRole,
+                (address(late), _one(fns[i].selector), fns[i].role)
+            );
+        }
+        for (uint256 i; i < ops.length; ++i) {
+            _schedule(adminSafe, address(manager), ops[i]);
+        }
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(adminSafe);
+        manager.multicall(ops); // each call consumes its own schedule
+        _settle();
+
+        GovernanceConfig.Config memory cfg = _config();
+        GovernanceConfig.Target[] memory targets = new GovernanceConfig.Target[](2);
+        targets[0] = cfg.targets[0];
+        targets[1] = GovernanceConfig.Target(address(late), fns);
+        cfg.targets = targets;
+        configurator.verify(cfg);
     }
 }

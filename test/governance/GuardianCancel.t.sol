@@ -4,15 +4,18 @@ pragma solidity ^0.8.24;
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
-import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
-import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
+import {
+    GovernedTargetMock,
+    SelectorCollisionMock,
+    StockInstallHarness
+} from "../mocks/GovernanceMocks.sol";
 
 /// @notice ADR 0001 §13.2: the guardian Safes can cancel the admin's operations on the
-///         AccessManager itself, and no guardian can cancel its own replacement.
+///         AccessManager itself, and nobody can cancel their own replacement.
 contract GuardianCancelTest is GovernanceFixture {
     uint32 internal constant META_DELAY = 30 days;
 
@@ -34,17 +37,26 @@ contract GuardianCancelTest is GovernanceFixture {
     function _expectUnauthorizedCancel(address canceller, address caller, bytes memory data)
         internal
     {
+        _expectUnauthorizedCancelOn(canceller, caller, address(manager), data);
+    }
+
+    function _expectUnauthorizedCancelOn(
+        address canceller,
+        address caller,
+        address to,
+        bytes memory data
+    ) internal {
         vm.expectRevert(
             abi.encodeWithSelector(
                 IAccessManager.AccessManagerUnauthorizedCancel.selector,
                 canceller,
                 caller,
-                address(manager),
+                to,
                 bytes4(data)
             )
         );
         vm.prank(canceller);
-        manager.cancel(caller, address(manager), data);
+        manager.cancel(caller, to, data);
     }
 
     /// @dev One sample call for each of the manager's ten admin selectors, all hostile.
@@ -55,7 +67,7 @@ contract GuardianCancelTest is GovernanceFixture {
         calls[1] = abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, attacker, 0));
         calls[2] = _revoke(Roles.GUARDIAN, guardianA);
         calls[3] = abi.encodeCall(IAccessManager.setRoleAdmin, (Roles.GUARDIAN, Roles.KEEPER));
-        calls[4] = abi.encodeCall(IAccessManager.setRoleGuardian, (Roles.META, Roles.ADMIN));
+        calls[4] = abi.encodeCall(IAccessManager.setRoleGuardian, (Roles.PAUSER, Roles.ADMIN));
         calls[5] = abi.encodeCall(IAccessManager.setGrantDelay, (Roles.FUNDS_SETTER, 0));
         calls[6] = abi.encodeCall(
             IAccessManager.setTargetFunctionRole,
@@ -143,26 +155,27 @@ contract GuardianCancelTest is GovernanceFixture {
 
     function test_GuardianCancelsEveryManagerAdminSelector() public {
         bytes[] memory calls = _hostileAdminCalls();
-        bytes4[] memory selectors = GovernanceConfig.managerAdminSelectors();
-        assertEq(calls.length, selectors.length);
         for (uint256 i; i < calls.length; ++i) {
-            assertEq(bytes4(calls[i]), selectors[i], "one call per admin selector");
-            assertEq(manager.getTargetFunctionRole(address(manager), selectors[i]), Roles.META);
+            // Unmapped: stock OpenZeppelin would leave only admins able to cancel these.
+            assertEq(manager.getTargetFunctionRole(address(manager), bytes4(calls[i])), 0);
             bytes32 id = _schedule(adminSafe, address(manager), calls[i]);
             assertEq(manager.getSchedule(id), block.timestamp + META_DELAY, "30 days");
             _cancelAs(guardianB, adminSafe, address(manager), calls[i]);
             assertEq(manager.getSchedule(id), 0);
         }
         vm.warp(block.timestamp + META_DELAY);
-        configurator.verify(manager, _config()); // nothing changed
+        configurator.verify(_config()); // nothing changed
     }
 
-    function test_EitherGuardianCancelsMetaOperations() public {
+    function test_EveryGuardianCancelsManagerOperations() public {
         bytes[] memory calls = _hostileAdminCalls();
-        for (uint256 i; i < calls.length; ++i) {
-            if (i == 2) continue; // revokes guardianA; covered by the anti-entrenchment tests
-            _schedule(adminSafe, address(manager), calls[i]);
-            _cancelAs(guardianA, adminSafe, address(manager), calls[i]);
+        address[3] memory guardians = [guardianA, guardianB, guardianC];
+        for (uint256 g; g < guardians.length; ++g) {
+            for (uint256 i; i < calls.length; ++i) {
+                if (i == 2 && guardians[g] == guardianA) continue; // its own revocation
+                _schedule(coldAdmin, address(manager), calls[i]);
+                _cancelAs(guardians[g], coldAdmin, address(manager), calls[i]);
+            }
         }
     }
 
@@ -176,7 +189,7 @@ contract GuardianCancelTest is GovernanceFixture {
         assertEq(manager.getSchedule(r), block.timestamp + Roles.FUNDS);
         assertEq(manager.getSchedule(v), block.timestamp + Roles.SUCCESSOR);
         _cancelAs(guardianA, adminSafe, address(target), recipientCall);
-        _cancelAs(guardianB, adminSafe, address(target), verifierCall);
+        _cancelAs(guardianC, adminSafe, address(target), verifierCall);
         vm.warp(block.timestamp + Roles.SUCCESSOR);
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, r)
@@ -221,6 +234,18 @@ contract GuardianCancelTest is GovernanceFixture {
         _expectUnauthorizedCancel(keeper, adminSafe, data);
     }
 
+    function test_PauserOnlyAccountCannotCancel() public {
+        // Cancelling is the GUARDIAN role's power, not PAUSER's.
+        address pauserOnly = makeAddr("pauserOnly");
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.PAUSER, pauserOnly, 0)));
+        vm.warp(block.timestamp + Roles.grantDelay(Roles.PAUSER));
+        (bool isPauser,) = manager.hasRole(Roles.PAUSER, pauserOnly);
+        assertTrue(isPauser);
+        bytes memory data = abi.encodeCall(GovernedTargetMock.setFee, (1));
+        _schedule(adminSafe, address(target), data);
+        _expectUnauthorizedCancelOn(pauserOnly, adminSafe, address(target), data);
+    }
+
     // ------------------------------------------------------------ anti-entrenchment
 
     function test_GuardianCannotCancelItsOwnReplacement() public {
@@ -232,7 +257,7 @@ contract GuardianCancelTest is GovernanceFixture {
         _expectUnauthorizedCancel(guardianA, adminSafe, revokeGuardian);
         _expectUnauthorizedCancel(guardianA, adminSafe, revokePauser);
 
-        // The other guardian chooses not to veto, so the replacement goes through.
+        // The other guardians choose not to veto, so the replacement goes through.
         vm.warp(block.timestamp + META_DELAY);
         vm.startPrank(adminSafe);
         manager.execute(address(manager), revokeGuardian);
@@ -245,14 +270,14 @@ contract GuardianCancelTest is GovernanceFixture {
     }
 
     function test_GuardiansProtectEachOther() public {
-        bytes memory revokeA = _revoke(Roles.GUARDIAN, guardianA);
-        bytes memory revokeB = _revoke(Roles.GUARDIAN, guardianB);
-        _schedule(adminSafe, address(manager), revokeA);
-        _schedule(adminSafe, address(manager), revokeB);
-        _cancelAs(guardianB, adminSafe, address(manager), revokeA);
-        _cancelAs(guardianA, adminSafe, address(manager), revokeB);
+        address[3] memory guardians = [guardianA, guardianB, guardianC];
+        for (uint256 g; g < guardians.length; ++g) {
+            bytes memory data = _revoke(Roles.GUARDIAN, guardians[g]);
+            _schedule(adminSafe, address(manager), data);
+            _cancelAs(guardians[(g + 1) % 3], adminSafe, address(manager), data);
+        }
         vm.warp(block.timestamp + META_DELAY);
-        configurator.verify(manager, _config());
+        configurator.verify(_config());
     }
 
     function test_GuardianCanCancelGrantOfAReplacement() public {
@@ -264,6 +289,14 @@ contract GuardianCancelTest is GovernanceFixture {
 
     function test_SchedulerCanWithdrawARevocation() public {
         bytes memory data = _revoke(Roles.GUARDIAN, guardianA);
+        bytes32 id = _schedule(adminSafe, address(manager), data);
+        _cancelAs(adminSafe, adminSafe, address(manager), data);
+        assertEq(manager.getSchedule(id), 0);
+    }
+
+    function test_SchedulerCanWithdrawItsOwnSelfRevocation() public {
+        // Rule 2 exempts the scheduler: an admin may withdraw its own proposal to leave.
+        bytes memory data = _revoke(Roles.ADMIN, adminSafe);
         bytes32 id = _schedule(adminSafe, address(manager), data);
         _cancelAs(adminSafe, adminSafe, address(manager), data);
         assertEq(manager.getSchedule(id), 0);
@@ -293,19 +326,39 @@ contract GuardianCancelTest is GovernanceFixture {
         assertEq(manager.getSchedule(id), 0);
     }
 
-    function test_CompromisedAdminCannotCancelItsOwnRevocation() public {
-        address newAdmin = makeAddr("newAdmin");
-        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, newAdmin, 30 days)));
-        vm.warp(block.timestamp + Roles.grantDelay(Roles.ADMIN));
+    function test_Rule2OnlyProtectsRolesOnTheManager() public {
+        // A target function with revokeRole's selector is not a role revocation: the account
+        // named in it, a guardian, may cancel it like any other scheduled call.
+        SelectorCollisionMock other = new SelectorCollisionMock(address(manager));
+        bytes memory data =
+            abi.encodeCall(SelectorCollisionMock.revokeRole, (Roles.GUARDIAN, guardianA));
+        assertEq(bytes4(data), IAccessManager.revokeRole.selector);
+        bytes32 id = _schedule(adminSafe, address(other), data);
+        _cancelAs(guardianA, adminSafe, address(other), data);
+        assertEq(manager.getSchedule(id), 0);
+    }
 
+    function test_DirtyRoleIdRevocationCannotBeScheduled() public {
+        bytes memory data = abi.encodePacked(
+            IAccessManager.revokeRole.selector,
+            uint256(Roles.GUARDIAN) | (uint256(1) << 100),
+            uint256(uint160(guardianA))
+        );
+        vm.expectRevert();
+        vm.prank(adminSafe);
+        manager.schedule(address(manager), data, 0);
+    }
+
+    function test_CompromisedAdminCannotCancelItsOwnRevocation() public {
+        // The cold recovery admin removes a compromised hot admin.
         bytes memory data = _revoke(Roles.ADMIN, adminSafe);
-        _schedule(newAdmin, address(manager), data);
+        _schedule(coldAdmin, address(manager), data);
 
         // Stock OpenZeppelin lets any admin cancel any operation; not its own removal here.
-        _expectUnauthorizedCancel(adminSafe, newAdmin, data);
+        _expectUnauthorizedCancel(adminSafe, coldAdmin, data);
 
         vm.warp(block.timestamp + META_DELAY);
-        vm.prank(newAdmin);
+        vm.prank(coldAdmin);
         manager.execute(address(manager), data);
         (bool isAdmin,) = manager.hasRole(Roles.ADMIN, adminSafe);
         assertFalse(isAdmin);
@@ -313,8 +366,8 @@ contract GuardianCancelTest is GovernanceFixture {
 
     function testFuzz_NobodyCancelsTheirOwnRevocation(uint64 role, uint8 pick) public {
         role = uint64(bound(role, 0, Roles.COUNT - 1));
-        address[4] memory victims = [guardianA, guardianB, keeper, storageOperator];
-        address victim = victims[pick % 4];
+        address[5] memory victims = [guardianA, guardianB, guardianC, keeper, coldAdmin];
+        address victim = victims[pick % 5];
         address other = victim == guardianA ? guardianB : guardianA;
 
         bytes memory data = _revoke(role, victim);
@@ -323,73 +376,105 @@ contract GuardianCancelTest is GovernanceFixture {
         _cancelAs(other, adminSafe, address(manager), data);
     }
 
-    // --------------------------------------- why the design needs both of its parts
+    // ------------------------------------------- wrappers cannot smuggle a revocation
 
-    function _stockManager(bool mapMeta)
-        internal
-        returns (AccessManager stock, GovernedTargetMock stockTarget)
-    {
-        if (!mapMeta) {
-            stock = new AccessManager(address(this));
-            stock.grantRole(Roles.GUARDIAN, guardianA, 0);
-            stock.grantRole(Roles.ADMIN, adminSafe, META_DELAY);
-            stock.renounceRole(Roles.ADMIN, address(this));
-            return (stock, stockTarget);
-        }
-        GovernanceConfigurator stockConfigurator = new GovernanceConfigurator();
-        stock = new AccessManager(address(stockConfigurator));
-        stockTarget = new GovernedTargetMock(address(stock), recipient0, verifier0);
-        GovernanceConfig.Config memory cfg = _config();
-        cfg.targets[0].target = address(stockTarget);
-        stockConfigurator.configure(stock, cfg, MANIFEST);
-    }
-
-    function test_StockManagerWithoutMetaMappingLeavesGuardianPowerless() public {
-        (AccessManager stock,) = _stockManager(false);
-        bytes memory data = _revoke(Roles.GUARDIAN, guardianA);
-        vm.prank(adminSafe);
-        stock.schedule(address(stock), data, 0);
+    function test_MulticallWrappedRevocationNeverExecutes() public {
+        bytes[] memory inner = new bytes[](2);
+        inner[0] = _revoke(Roles.GUARDIAN, guardianA);
+        inner[1] = _revoke(Roles.GUARDIAN, guardianB);
+        bytes memory data = abi.encodeCall(Multicall.multicall, (inner));
+        bytes32 id = _schedule(adminSafe, address(manager), data);
+        assertEq(manager.getSchedule(id), block.timestamp + META_DELAY, "schedulable as ADMIN");
+        vm.warp(block.timestamp + META_DELAY);
+        // Inside execute, the manager is the caller and only `multicall` is authorised.
         vm.expectRevert(
             abi.encodeWithSelector(
-                IAccessManager.AccessManagerUnauthorizedCancel.selector,
-                guardianA,
-                adminSafe,
-                address(stock),
+                IAccessManager.AccessManagerUnauthorizedAccount.selector,
+                address(manager),
+                Roles.ADMIN
+            )
+        );
+        vm.prank(adminSafe);
+        manager.execute(address(manager), data);
+        (bool a,) = manager.hasRole(Roles.GUARDIAN, guardianA);
+        (bool b,) = manager.hasRole(Roles.GUARDIAN, guardianB);
+        assertTrue(a && b);
+    }
+
+    function test_NestedExecuteRevocationNeverExecutes() public {
+        bytes memory data = abi.encodeCall(
+            IAccessManager.execute, (address(manager), _revoke(Roles.GUARDIAN, guardianA))
+        );
+        bytes32 id = _schedule(adminSafe, address(manager), data);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerUnauthorizedCall.selector,
+                address(manager),
+                address(manager),
                 IAccessManager.revokeRole.selector
             )
         );
-        vm.prank(guardianA);
-        stock.cancel(adminSafe, address(stock), data);
+        vm.prank(adminSafe);
+        manager.execute(address(manager), data);
     }
 
-    function test_StockManagerWithMetaMappingLetsGuardianEntrench() public {
-        (AccessManager stock,) = _stockManager(true);
+    function test_ScheduledRenounceCannotRemoveGuardian() public {
+        bytes memory data = abi.encodeCall(IAccessManager.renounceRole, (Roles.GUARDIAN, guardianA));
+        bytes32 id = _schedule(adminSafe, address(manager), data);
+        vm.warp(manager.getSchedule(id));
+        vm.expectRevert(IAccessManager.AccessManagerBadConfirmation.selector);
+        vm.prank(adminSafe);
+        manager.execute(address(manager), data);
+    }
+
+    // --------------------------------------- why stock OpenZeppelin is not enough
+
+    /// @dev The same configuration installed on a stock `AccessManager` through the library.
+    function _stockManager() internal returns (AccessManager stock, GovernedTargetMock t) {
+        StockInstallHarness harness = new StockInstallHarness();
+        stock = new AccessManager(address(harness));
+        t = new GovernedTargetMock(address(stock), recipient0, verifier0);
+        GovernanceConfig.Config memory cfg = _config();
+        cfg.targets[0].target = address(t);
+        harness.install(stock, cfg);
+    }
+
+    function _expectStockUnauthorizedCancel(
+        AccessManager stock,
+        address canceller,
+        address caller,
+        address to,
+        bytes memory data
+    ) internal {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerUnauthorizedCancel.selector,
+                canceller,
+                caller,
+                to,
+                bytes4(data)
+            )
+        );
+        vm.prank(canceller);
+        stock.cancel(caller, to, data);
+    }
+
+    function test_StockManagerLeavesGuardiansPowerlessOverManagerOperations() public {
+        (AccessManager stock,) = _stockManager();
         bytes memory data = _revoke(Roles.GUARDIAN, guardianA);
         vm.prank(adminSafe);
-        bytes32 id;
-        (id,) = stock.schedule(address(stock), data, 0);
-        vm.prank(guardianA); // succeeds on stock OpenZeppelin, hence WorksAccessManager
-        stock.cancel(adminSafe, address(stock), data);
-        assertEq(stock.getSchedule(id), 0);
+        stock.schedule(address(stock), data, 0);
+        _expectStockUnauthorizedCancel(stock, guardianB, adminSafe, address(stock), data);
     }
 
     function test_StockManagerCannotStopDirectSetAuthority() public {
-        (AccessManager stock, GovernedTargetMock stockTarget) = _stockManager(true);
+        (AccessManager stock, GovernedTargetMock stockTarget) = _stockManager();
         AccessManager rogue = new AccessManager(attacker);
         bytes memory data = abi.encodeCall(IAccessManaged.setAuthority, (address(rogue)));
         vm.prank(adminSafe);
         stock.schedule(address(stockTarget), data, 0);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IAccessManager.AccessManagerUnauthorizedCancel.selector,
-                guardianA,
-                adminSafe,
-                address(stockTarget),
-                IAccessManaged.setAuthority.selector
-            )
-        );
-        vm.prank(guardianA);
-        stock.cancel(adminSafe, address(stockTarget), data);
+        _expectStockUnauthorizedCancel(stock, guardianA, adminSafe, address(stockTarget), data);
         // Thirty days later the compromised admin owns the target through the rogue manager.
         vm.warp(block.timestamp + META_DELAY);
         vm.prank(adminSafe);
@@ -397,11 +482,33 @@ contract GuardianCancelTest is GovernanceFixture {
         assertEq(stockTarget.authority(), address(rogue));
     }
 
+    function test_StockManagerCannotStopUnmappedTargetSelector() public {
+        (AccessManager stock, GovernedTargetMock stockTarget) = _stockManager();
+        bytes memory data = abi.encodeCall(GovernedTargetMock.adminOnly, ());
+        vm.prank(adminSafe);
+        stock.schedule(address(stockTarget), data, 0);
+        _expectStockUnauthorizedCancel(stock, guardianA, adminSafe, address(stockTarget), data);
+        vm.warp(block.timestamp + META_DELAY);
+        vm.prank(adminSafe);
+        stock.execute(address(stockTarget), data);
+        assertEq(stockTarget.adminCalls(), 1);
+    }
+
+    function test_StockManagerLetsAdminCancelItsOwnRevocation() public {
+        (AccessManager stock,) = _stockManager();
+        bytes memory data = _revoke(Roles.ADMIN, adminSafe);
+        vm.prank(coldAdmin);
+        (bytes32 id,) = stock.schedule(address(stock), data, 0);
+        vm.prank(adminSafe); // succeeds on stock OpenZeppelin, hence Rule 2
+        stock.cancel(coldAdmin, address(stock), data);
+        assertEq(stock.getSchedule(id), 0);
+    }
+
     // ------------------------------------------------------------- residual risk
 
-    /// @dev Documented residual risk: if every guardian colludes, each can cancel the other's
-    ///      removal. Per-account protection cannot distinguish that from defending a guardian
-    ///      against a compromised admin. Mitigation is guardian independence, not code.
+    /// @dev Documented residual risk: colluding guardians can cancel each other's removal.
+    ///      Per-account protection cannot distinguish that from defending a guardian against a
+    ///      compromised admin. Mitigation is guardian independence, not code.
     function test_Residual_ColludingGuardiansCanShieldEachOther() public {
         bytes memory revokeA = _revoke(Roles.GUARDIAN, guardianA);
         bytes memory revokeB = _revoke(Roles.GUARDIAN, guardianB);
@@ -412,5 +519,29 @@ contract GuardianCancelTest is GovernanceFixture {
         (bool a,) = manager.hasRole(Roles.GUARDIAN, guardianA);
         (bool b,) = manager.hasRole(Roles.GUARDIAN, guardianB);
         assertTrue(a && b);
+    }
+
+    /// @dev Documented liveness assumption: safety needs two honest guardians online. With
+    ///      only one online, a compromised admin removes it (it cannot veto its own removal)
+    ///      and then nothing stops a target takeover.
+    function test_Residual_LivenessNeedsTwoHonestGuardiansOnline() public {
+        // guardianA and guardianC are offline; only guardianB watches.
+        bytes memory rg = _revoke(Roles.GUARDIAN, guardianB);
+        bytes memory rp = _revoke(Roles.PAUSER, guardianB);
+        _schedule(adminSafe, address(manager), rg);
+        _schedule(adminSafe, address(manager), rp);
+        _expectUnauthorizedCancel(guardianB, adminSafe, rg);
+        vm.warp(block.timestamp + META_DELAY);
+        vm.startPrank(adminSafe);
+        manager.execute(address(manager), rg);
+        manager.execute(address(manager), rp);
+        vm.stopPrank();
+        AccessManager rogue = new AccessManager(attacker);
+        _scheduleAndExecute(
+            adminSafe,
+            address(target),
+            abi.encodeCall(IAccessManaged.setAuthority, (address(rogue)))
+        );
+        assertEq(target.authority(), address(rogue));
     }
 }

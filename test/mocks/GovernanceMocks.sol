@@ -2,7 +2,10 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
+import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
+import { Roles } from "src/governance/Roles.sol";
 
 /// @notice Sample governed target showing the patterns every 6529 Works target follows:
 ///         `restricted` non-payable setters, one selector per delay class, separate pause and
@@ -19,6 +22,7 @@ contract GovernedTargetMock is AccessManaged {
     uint256 public vetoes;
     uint256 public keeps;
     uint256 public adminCalls;
+    uint256 public consumed;
 
     event PausedSet(bool paused);
     event FeeUpdated(uint256 oldFee, uint256 newFee);
@@ -88,9 +92,27 @@ contract GovernedTargetMock is AccessManaged {
         ++keeps;
     }
 
+    /// Contract-to-contract call between protocol contracts (SYSTEM), immediate.
+    function consume() external restricted {
+        ++consumed;
+    }
+
     /// Deliberately unmapped: falls back to ADMIN and its 30-day execution delay.
     function adminOnly() external restricted {
         ++adminCalls;
+    }
+}
+
+/// @notice A protocol contract holding `SYSTEM` that calls another protocol contract.
+contract SystemCallerMock {
+    GovernedTargetMock public immutable target;
+
+    constructor(GovernedTargetMock target_) {
+        target = target_;
+    }
+
+    function callConsume() external {
+        target.consume();
     }
 }
 
@@ -103,9 +125,31 @@ contract PayableGovernedMock is AccessManaged {
     }
 }
 
+/// @notice A target whose own function shares `AccessManager.revokeRole`'s selector. Rule 2
+///         protects roles on the manager only, so guardians may cancel this like any call.
+contract SelectorCollisionMock is AccessManaged {
+    uint256 public calls;
+
+    constructor(address manager) AccessManaged(manager) { }
+
+    function revokeRole(uint64, address) external restricted {
+        ++calls;
+    }
+}
+
 /// @notice A contract with no `authority()`; the configurator must reject it as a target.
 contract UnmanagedMock {
     function ping() external pure returns (uint256) {
         return 1;
+    }
+}
+
+/// @notice Test-only: installs a configuration on any manager by calling the library directly,
+///         so tests can contrast a stock OpenZeppelin `AccessManager` with `WorksAccessManager`.
+///         Production goes through `GovernanceConfigurator`, which owns its manager.
+contract StockInstallHarness {
+    function install(IAccessManager manager, GovernanceConfig.Config calldata cfg) external {
+        GovernanceConfig.install(manager, cfg);
+        manager.renounceRole(Roles.ADMIN, address(this));
     }
 }
