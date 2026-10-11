@@ -17,20 +17,24 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days), {setIncrementFloor} to
 ///      `Roles.PARAMETER_SETTER` (`Roles.STANDARD`, 48 hours), and {deprecateAsset}, which only
 ///      tightens, to `Roles.GUARDIAN` (`Roles.IMMEDIATE`). Direction rules and compare-and-set
-///      live here because AccessManager only sees selectors. Nothing in the withdrawal paths reads
-///      this contract, so admission can never block a withdrawal.
+///      live here because AccessManager only sees selectors. Every setter compares a revision
+///      counter that every change bumps, so a queued operation never applies to a later state
+///      that merely looks the same. Nothing in the withdrawal paths reads this contract, so
+///      admission can never block a withdrawal.
 contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);
 
     struct AssetConfig {
         Status status;
+        uint64 revision;
         uint256 incrementFloor;
     }
 
     struct Currency {
         bool configured;
         address asset;
+        uint64 revision;
     }
 
     mapping(address asset => AssetConfig) private _assets;
@@ -38,22 +42,18 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
 
     /// @param authority The AccessManager governing this contract.
     /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is admitted
-    ///        at deployment because 6529 Stream launches with it.
+    ///        at deployment because 6529 Stream launches with it, at revision 1.
     constructor(address authority, uint256 ethIncrementFloor) AccessManaged(authority) {
         _admit(ETH, ethIncrementFloor);
     }
 
     /// @inheritdoc IAssetAllowlist
-    /// @dev Compare-and-set on status and floor: an admission queued before an emergency
-    ///      deprecation, or before a floor change, reverts instead of silently re-activating.
-    function admitAsset(address asset, Status expectedStatus, uint256 expectedFloor, uint256 floor)
-        external
-        restricted
-    {
-        AssetConfig storage config = _assets[asset];
-        if (config.status != expectedStatus || config.incrementFloor != expectedFloor) {
-            revert AdmissionMismatch(config.status, config.incrementFloor);
-        }
+    /// @dev Compare-and-set on the asset's revision. Any admission, deprecation or floor change
+    ///      after the operation was written bumps the revision, so the operation reverts; this
+    ///      includes an emergency deprecation that returns the asset to the status and floor the
+    ///      operation saw.
+    function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external restricted {
+        _checkRevision(expectedRevision, _assets[asset].revision);
         if (asset != ETH) {
             if (asset.code.length == 0 || DelegatedEOA.isDelegated(asset)) {
                 revert AssetNotAdmissible(asset);
@@ -72,35 +72,35 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
         AssetConfig storage config = _assets[asset];
         if (config.status != Status.Active) revert InvalidStatusTransition(asset, config.status);
         config.status = Status.Deprecated;
-        emit AssetStatusChanged(asset, Status.Active, Status.Deprecated);
+        emit AssetStatusChanged(asset, Status.Active, Status.Deprecated, ++config.revision);
     }
 
     /// @inheritdoc IAssetAllowlist
-    function setIncrementFloor(address asset, uint256 expected, uint256 floor) external restricted {
+    function setIncrementFloor(address asset, uint64 expectedRevision, uint256 floor)
+        external
+        restricted
+    {
         AssetConfig storage config = _activeConfig(asset);
-        if (config.incrementFloor != expected) {
-            revert IncrementFloorMismatch(expected, config.incrementFloor);
-        }
+        _checkRevision(expectedRevision, config.revision);
         if (floor == 0) revert InvalidIncrementFloor();
+        uint256 previous = config.incrementFloor;
         config.incrementFloor = floor;
-        emit IncrementFloorChanged(asset, expected, floor);
+        emit IncrementFloorChanged(asset, previous, floor, ++config.revision);
     }
 
     /// @inheritdoc IAssetAllowlist
-    function setDefaultCurrency(
-        bytes32 product,
-        bool expectedConfigured,
-        address expected,
-        address asset
-    ) external restricted {
+    function setDefaultCurrency(bytes32 product, uint64 expectedRevision, address asset)
+        external
+        restricted
+    {
         if (product == bytes32(0)) revert InvalidProduct();
         Currency storage current = _defaults[product];
-        if (current.configured != expectedConfigured || current.asset != expected) {
-            revert DefaultCurrencyMismatch(current.configured, current.asset);
-        }
+        _checkRevision(expectedRevision, current.revision);
         _activeConfig(asset);
-        _defaults[product] = Currency(true, asset);
-        emit DefaultCurrencyChanged(product, expectedConfigured, expected, asset);
+        address previous = current.asset;
+        current.configured = true;
+        current.asset = asset;
+        emit DefaultCurrencyChanged(product, previous, asset, ++current.revision);
     }
 
     /// @inheritdoc IAssetAllowlist
@@ -119,9 +119,9 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     }
 
     /// @inheritdoc IAssetAllowlist
-    function assetConfig(address asset) external view returns (Status, uint256) {
+    function assetConfig(address asset) external view returns (Status, uint256, uint64) {
         AssetConfig storage config = _assets[asset];
-        return (config.status, config.incrementFloor);
+        return (config.status, config.incrementFloor, config.revision);
     }
 
     /// @inheritdoc IAssetAllowlist
@@ -133,11 +133,12 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     }
 
     /// @inheritdoc IAssetAllowlist
-    function defaultCurrencyConfig(bytes32 product) external view returns (bool, address) {
+    function defaultCurrencyConfig(bytes32 product) external view returns (bool, address, uint64) {
         Currency storage currency = _defaults[product];
-        return (currency.configured, currency.asset);
+        return (currency.configured, currency.asset, currency.revision);
     }
 
+    /// @dev Activates `asset` with `floor` as one change (one revision bump, two events).
     function _admit(address asset, uint256 floor) private {
         AssetConfig storage config = _assets[asset];
         Status previous = config.status;
@@ -146,8 +147,13 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
         uint256 previousFloor = config.incrementFloor;
         config.status = Status.Active;
         config.incrementFloor = floor;
-        emit AssetStatusChanged(asset, previous, Status.Active);
-        emit IncrementFloorChanged(asset, previousFloor, floor);
+        uint64 revision = ++config.revision;
+        emit AssetStatusChanged(asset, previous, Status.Active, revision);
+        emit IncrementFloorChanged(asset, previousFloor, floor, revision);
+    }
+
+    function _checkRevision(uint64 expected, uint64 actual) private pure {
+        if (expected != actual) revert RevisionMismatch(expected, actual);
     }
 
     function _activeConfig(address asset) private view returns (AssetConfig storage config) {

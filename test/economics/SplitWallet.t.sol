@@ -6,7 +6,6 @@ import {
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -299,7 +298,7 @@ contract SplitWalletTest is EconomicsBase {
     }
 
     function test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable() public {
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         token.mint(address(wallet), 100);
         allowlist.deprecateAsset(address(token));
         assertEq(wallet.release(address(token), iAlice), 50);

@@ -10,7 +10,6 @@ import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
-import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -199,7 +198,7 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_DeprecatedAssetCreditsStillFlush() public {
-        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
+        allowlist.admitAsset(address(token), 0, 1);
         vm.prank(depositor);
         escrow.depositERC20(address(wallet), address(token), 10);
         allowlist.deprecateAsset(address(token));
@@ -293,6 +292,44 @@ contract RevenueEscrowTest is EconomicsBase {
         );
         escrow.recover(alice, address(wallet), ETH);
         assertEq(escrow.owed(address(wallet), ETH), 1 ether);
+    }
+
+    /// @dev A replacement with no factory configuration (a contract or an address the factory
+    ///      never deployed a wallet to) is never equivalent.
+    function test_RecoverRejectsAZeroConfigReplacement() public {
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(wallet));
+        address[3] memory zeroConfig = [
+            address(new ToggleRecipient()),
+            factory.walletFor(wallet.payees(), bytes32(uint256(5))),
+            address(0)
+        ];
+        for (uint256 i; i < zeroConfig.length; ++i) {
+            assertEq(factory.configOf(zeroConfig[i]), bytes32(0));
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IRevenueEscrow.NotEquivalentWallet.selector, address(wallet), zeroConfig[i]
+                )
+            );
+            escrow.recover(address(wallet), zeroConfig[i], ETH);
+        }
+        assertEq(escrow.owed(address(wallet), ETH), 1 ether);
+    }
+
+    function test_RecoverAddsToTheReplacementsExistingCredit() public {
+        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        vm.startPrank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(wallet));
+        escrow.depositETH{ value: 2 ether }(replacement);
+        vm.stopPrank();
+        vm.expectEmit(true, true, true, true, address(escrow));
+        emit IRevenueEscrow.Recovered(address(wallet), replacement, ETH, 1 ether, 3 ether);
+        escrow.recover(address(wallet), replacement, ETH);
+        assertEq(escrow.owed(replacement, ETH), 3 ether);
+        assertEq(escrow.owed(address(wallet), ETH), 0);
+        assertEq(escrow.totalOwed(ETH), 3 ether);
+        escrow.flush(replacement, ETH);
+        assertEq(replacement.balance, 3 ether);
     }
 
     function test_RecoverWithNothingOwedReverts() public {
