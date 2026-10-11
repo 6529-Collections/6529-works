@@ -14,18 +14,18 @@ the exclusivity rule in §3 and the license rule in §8.
 exact item the master was minted from (Stream's stored item hash), and only
 after the master's sale has settled (`IStream.primarySaleSettled`, marked by
 the minting adapter at settle), so a disputed or burned master never gets an
-edition. It locks the
-`PRODUCT_EDITIONS` economics (seller, fee, royalty), claims the content hash in
-the package registry (which accepts only the item Stream consumed for that
-hash, once), calls `IStream.linkEdition`, and verifies Stream's side before
-returning. The edition ID is the master's token ID, and nothing changes or
-removes a link.
+edition. It locks the `PRODUCT_EDITIONS` economics (seller, fee, royalty),
+claims the content hash in the package registry (which accepts only the item
+Stream consumed for that hash, once), calls `IStream.linkEdition`, and
+verifies Stream's side before returning. The edition ID is the master's token
+ID, and nothing changes or removes a link.
 
 **Minting.** Only admitted adapters (`isAdmittedMinter`, written by the
 governed `setAdmittedMinter` in the 30-day class, with ERC-165 and EIP-7702
-checks) whose `saleKind()` matches the package's may mint or burn. FIXED editions stop at `size` copies; OPEN editions sell for `window`
-seconds from the first mint, capped at `size` when it is nonzero; minting stops
-if the master is burned. Burned copies still count toward the size. The sale
+checks) whose `saleKind()` matches the package's may mint or burn. FIXED
+editions stop at `size` copies; OPEN editions sell for `window` seconds from
+the first mint, capped at `size` when it is nonzero; minting stops if the
+master is burned. Burned copies still count toward the size. The sale
 adapter owns the currency: `primaryTerms` and `mint` return the package's
 stored currency (possibly `CURRENCY_DEFAULT`), and the adapter resolves and
 locks it when it opens a sale.
@@ -35,16 +35,15 @@ rate (out of 100,000), from local storage. Only the bound work-records
 satellite may change the rate (`setRoyaltyRate`, after every party's consent
 and a governed action); the receiver never changes. `licenseOf` reads the
 master's license from the work-records satellite (`RecordNotOpen` until the
-record is opened), and `uri` is served by
-`IStream.rendererOf(id)`. ERC-4906 `MetadataUpdate` is emitted at creation, on
-a rate change and whenever the work-records satellite calls
-`notifyMasterUpdated`; `notifyAllUpdated`, from Stream (a default-renderer
-change) or the satellite (a global or collection preferred location), emits
-one `BatchMetadataUpdate` over every ID.
+record is opened), and `uri` is served by `IStream.rendererOf(id)`. ERC-4906
+`MetadataUpdate` is emitted at creation, on a rate change and whenever the
+work-records satellite calls `notifyMasterUpdated`; `notifyAllUpdated`, from
+Stream (a default-renderer change) or the satellite (a global or collection
+preferred location), emits one `BatchMetadataUpdate` over every ID.
 
 **Wiring.** Stream is checked at deployment (code, no EIP-7702 delegation,
 ERC-165 for ERC-721, the reviewed code hash), and the package registry,
 economics resolver and artist registry are read from it. Genesis binds Editions
-in Stream (`bind`) and the package registry (`bindCallers`), and then binds
-Stream's work-records satellite here once (`bindWorkRecords`, ADMIN, with
+in Stream and in the package registry (their one-shot Editions binds), and then
+binds Stream's work-records satellite here once (`bindWorkRecords`, ADMIN, with
 ERC-165 and EIP-7702 checks).
