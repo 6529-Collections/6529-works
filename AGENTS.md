@@ -20,6 +20,7 @@ Instructions for automated coding agents working in this repository.
 - At most 5 linked libraries.
 - No delegatecall and no proxies.
 - EIP-170 respected, measured on the explicit `--profile default` build.
+- No unreviewed High or Medium Slither finding (`docs/security/slither-triage.md`).
 - CI under 15 minutes.
 - Starting an auction costs 300K gas or less; `tokenURI` costs 8M gas or less.
 
@@ -52,6 +53,9 @@ forge test
 
 - One focused change per PR, branched from `origin/main`. Describe the summary,
   the validation you ran, and the security impact.
+- Keep the **Static analysis** job green. Fix a new High or Medium Slither finding; only
+  disposition a real false positive or an accepted risk, with a reason, in
+  [docs/security/slither-triage.md](docs/security/slither-triage.md).
 - Request CodeRabbit review (`@coderabbitai review`). Verify bot findings, fix
   the valid ones, and explain any you decline.
 - Merge with green required checks and resolved threads.
