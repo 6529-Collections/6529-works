@@ -14,7 +14,8 @@
   - no delegatecall or proxies;
   - EIP-170 respected;
   - CI under 15 minutes;
-  - starting an auction costs 300K gas or less;
+  - starting an auction costs 350K gas or less at steady state (ADR 0003);
+  - every transaction fits the 16,777,216-gas cap (EIP-7825);
   - `tokenURI` costs 8M gas or less.
 - **Port, don't merge.** Reuse comes from the ADR 0001 §17 keep list, rewritten
   to the budgets. The RC1 reference
@@ -60,11 +61,27 @@ script/          deployment and verification
 ## Current status
 
 - 11 October 2026: repository created and ADR 0001 recorded.
-- Phase 1 (skeleton) complete:
-  - layout in place;
-  - OpenZeppelin v5.7.0 and forge-std v1.17.0 pinned;
-  - Solidity 0.8.37 with EVM target Prague;
-  - CI with budget gates.
-- Phase 2 (foundations) in progress. Done so far: `SignatureVerifier`,
-  `DelegatedEOA`, `BoundedCall`, `JsonEscape`, `Utf8` and `SSTORE2`, with 91
-  tests. Next: AccessManager configuration with hardening tests.
+- **Phases 1 and 2 complete:** skeleton, CI budget gates, Slither and link
+  checks, shared libraries, and AccessManager hardening (ADR 0002).
+- **Merged modules:**
+  - content store;
+  - statement log;
+  - governance;
+  - economics: split wallets, allowlist, escrow, claims;
+  - interfaces and architecture;
+  - uploader tooling.
+- **In review or fixing:**
+  - Stream core and records;
+  - curation;
+  - auction;
+  - fixed-price and Dutch sales;
+  - Editions;
+  - identity;
+  - renderer;
+  - entropy;
+  - economics resolver;
+  - genesis wiring.
+- **Build-time decisions:** recorded in
+  [ADR 0003](../docs/adr/0003-build-time-decisions.md).
+- **Next:** integration (end-to-end flows on the real contracts, the deploy
+  script, start-gas and `tokenURI` measurement), then the Sepolia dry run.
