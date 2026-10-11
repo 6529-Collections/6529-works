@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
+import { TokenTransfer } from "./TokenTransfer.sol";
+
+/// @title RevenuePayment
+/// @notice How sale adapters pay a wallet (ADR 0001 section 5, "wallet payments fall back to
+///         escrow"): pay the wallet directly, and if the wallet or the token refuses, credit the
+///         revenue escrow for that wallet instead. A refusal therefore cannot block a settlement,
+///         and the funds still reach only that wallet.
+/// @dev Internal functions only, compiled into each payer. Only a clean refusal routes to escrow:
+///      an ETH call that fails, or a token transfer that reverts or returns `false` without moving
+///      anything. Any other token misbehaviour (fees, rounding, no return value, a `true` with the
+///      wrong balance change) reverts the whole payment, so nothing is left behind.
+library RevenuePayment {
+    /// @notice Gas kept for the value transfer and a possible new account on top of the
+    ///         wallet's gas limit.
+    uint256 internal constant ETH_CALL_RESERVE = 40_000;
+
+    /// @notice The caller cannot forward `gasLimit` to the wallet in full.
+    error PaymentInsufficientGas(uint256 gasLimit);
+    /// @notice The escrow left an allowance behind after crediting `asset`.
+    error EscrowAllowanceLeft(address asset);
+
+    /// @notice Pays `amount` wei to `wallet`, forwarding exactly `gasLimit` gas, or credits the
+    ///         escrow if the wallet refuses.
+    /// @dev Reverts unless the wallet gets its full `gasLimit`, so a caller cannot force the
+    ///      escrow route by starving the call.
+    /// @return escrowed Whether the payment went to the escrow.
+    function payETH(IRevenueEscrow escrow, address wallet, uint256 amount, uint256 gasLimit)
+        internal
+        returns (bool escrowed)
+    {
+        if (wallet == address(0)) revert IRevenueEscrow.InvalidWallet(wallet);
+        if (!BoundedCall.hasSufficientGas(gasleft(), gasLimit, ETH_CALL_RESERVE)) {
+            revert PaymentInsufficientGas(gasLimit);
+        }
+        bool ok;
+        assembly ("memory-safe") {
+            ok := call(gasLimit, wallet, amount, 0, 0, 0, 0)
+        }
+        if (ok) return false;
+        escrow.depositETH{ value: amount }(wallet);
+        return true;
+    }
+
+    /// @notice Transfers exactly `amount` of `asset` to `wallet`, or credits the escrow if the
+    ///         token refuses the transfer.
+    /// @return escrowed Whether the payment went to the escrow.
+    function payERC20(IRevenueEscrow escrow, address wallet, address asset, uint256 amount)
+        internal
+        returns (bool escrowed)
+    {
+        if (TokenTransfer.tryTransferExact(asset, wallet, amount)) return false;
+        TokenTransfer.approveExact(asset, address(escrow), amount);
+        escrow.depositERC20(wallet, asset, amount);
+        if (TokenTransfer.allowance(asset, address(this), address(escrow)) != 0) {
+            revert EscrowAllowanceLeft(asset);
+        }
+        return true;
+    }
+}
