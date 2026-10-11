@@ -429,7 +429,7 @@
       "artifact": "src/identity/ArtistRegistry.sol:ArtistRegistry",
       "implementation": "src/identity/ArtistRegistry.sol:ArtistRegistry",
       "address": "0x000000000000000000000000000000000000a006",
-      "status": "implemented (identity lane); pending until it merges",
+      "status": "implemented on main",
       "functions": [
         {
           "signature": "vetoChange(uint256)",
@@ -980,11 +980,6 @@
       "contract": "Editions",
       "lane": "editions",
       "note": "Mapped from the lane's Editions implementation; tools/check_genesis.py reports it pending until it merges, then checks it in full."
-    },
-    {
-      "contract": "ArtistRegistry",
-      "lane": "identity",
-      "note": "Mapped from the lane's ArtistRegistry implementation (pending until it merges). The consolidation source is a constructor argument; the binds are wiring."
     },
     {
       "contract": "FederationRegistry",
