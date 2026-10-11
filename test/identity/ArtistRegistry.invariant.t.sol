@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { ArtistRegistryHandler, IdentityActors } from "./ArtistRegistryHandler.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 
 /// @notice Stateful invariants for the artist registry (ADR 0001 section 11). The handler stages,
-///         overrides, cancels, vetoes, replays, executes and moves time and consolidations; run
-///         with the foundry.toml campaign (256 runs x depth 128, `fail_on_revert`).
+///         overrides, cancels, vetoes, replays, executes, refreshes standing and moves time and
+///         consolidations, asserting every call's predicted outcome (a wrong prediction reverts the
+///         handler, which `fail_on_revert` reports). Run with the foundry.toml campaign (256 runs x
+///         depth 128).
 contract ArtistRegistryInvariantTest is IdentityFixture {
     ArtistRegistryHandler internal handler;
 
@@ -22,7 +25,6 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
                 artistId: artistId,
                 guardian: guardian,
                 governor: governor,
-                packageRegistry: packageRegistry,
                 keys: [artistKey, walletKey, newKey, thiefKey],
                 payouts: [artist, payout, makeAddr("estatePayout")]
             })
@@ -30,27 +32,27 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         targetContract(address(handler));
     }
 
-    /// @dev The payout address and the authority change only through executed changes: they
-    ///      always equal the ghosts, which only a successful `executeChange` updates. The payout
-    ///      resolves to zero exactly while an override, or a change that moves it, is pending.
+    /// @dev The payout and the authority change only through executed changes: they always equal
+    ///      the ghosts, which only a successful `executeChange` updates. The payout resolves to
+    ///      zero exactly while a pending change would move it.
     function invariant_PayoutChangesOnlyThroughExecutedChanges() public view {
         (ArtistIdentity memory identity,) = registry.artist(artistId);
         assertEq(identity.payout, handler.ghostPayout());
         assertEq(registry.authorityOf(artistId), handler.ghostAuthority());
         PendingChange memory p = registry.pendingChange(artistId);
-        bool frozen = p.kind != ChangeKind.NONE
-            && (p.kind != ChangeKind.STANDARD || p.next.payout != identity.payout);
+        bool frozen = p.kind != ChangeKind.NONE && p.next.payout != identity.payout;
         assertEq(registry.payoutAddress(artistId), frozen ? address(0) : handler.ghostPayout());
     }
 
-    /// @dev Every executed change waited its full delay (7 days, or 180 for overrides); no
-    ///      unauthorised stage, cancel or guardian redirect succeeded; no used payload replayed;
-    ///      no ESTATE or LOST_KEY override was staged within a year of signed activity.
-    function invariant_DelaysAndAuthorizationsHold() public view {
-        assertEq(handler.violations(), 0);
+    /// @dev Dormancy counts only the artist's own activity and executions (never overrides,
+    ///      vetoes or refreshes), and the nonce moves only with stagings and revocations.
+    function invariant_ActivityAndNonceMatchTheModel() public view {
+        (, uint64 lastActivity) = registry.artist(artistId);
+        assertEq(lastActivity, handler.ghostLastActivity());
+        assertEq(registry.changeNonce(artistId), handler.ghostNonce());
     }
 
-    /// @dev A pending change is well formed and its captured cancellers never change.
+    /// @dev A pending change is well formed, and its captured cancellers never change.
     function invariant_PendingChangeIsWellFormed() public view {
         PendingChange memory p = registry.pendingChange(artistId);
         if (p.kind == ChangeKind.NONE) return;
@@ -63,8 +65,16 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertTrue(p.next.authority != address(0) && p.next.payout != address(0));
     }
 
-    /// @dev The current authority always resolves to the artist ID.
-    function invariant_AuthorityResolvesToTheArtist() public view {
+    /// @dev The authority resolves to the artist, and the standing snapshot stays bounded and
+    ///      free of duplicates.
+    function invariant_AuthorityAndStandingAreConsistent() public view {
         assertEq(registry.artistIdOf(registry.authorityOf(artistId)), artistId);
+        ArtistRegistry.Standing[] memory s = registry.standingOf(artistId);
+        assertLe(s.length, Limits.MAX_CANCELLERS);
+        for (uint256 i; i < s.length; ++i) {
+            for (uint256 j = i + 1; j < s.length; ++j) {
+                assertTrue(s[i].wallet != s[j].wallet);
+            }
+        }
     }
 }

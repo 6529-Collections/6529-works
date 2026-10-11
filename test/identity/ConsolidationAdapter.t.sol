@@ -186,17 +186,44 @@ contract ConsolidationAdapterTest is IdentityFixture {
         assertEq(wallets[15], address(uint160(0x1000 + 15)));
     }
 
-    /// @dev Wallets consolidated before a key compromise sit at the front of the delegate list;
-    ///      entries a key holder appends later cannot push them out of the scan.
-    function test_EstablishedWallets_FrontEntriesSurviveBloat() public {
+    /// @dev Appended entries stay behind earlier ones until a revocation reorders the list
+    ///      (swap-and-pop, PoC-2); the registry's standing snapshot, not this order, protects
+    ///      the artist's wallets.
+    function test_EstablishedWallets_AppendsStayBehindUntilARevocation() public {
+        address tail = makeAddr("tail");
         _consolidate(a, b);
-        vm.warp(block.timestamp + 30 days);
         for (uint256 i; i < 40; ++i) {
             _delegate(a, address(uint160(0x2000 + i)), FAR);
         }
+        _consolidate(a, tail);
+        vm.warp(block.timestamp + 30 days);
         address[] memory wallets = adapter.establishedWallets(a);
         assertEq(wallets.length, 1);
         assertEq(wallets[0], b);
+        _revoke(a, b);
+        wallets = adapter.establishedWallets(a);
+        assertEq(wallets.length, 1);
+        assertEq(wallets[0], tail, "the tail moved into the revoked slot");
+    }
+
+    /// @dev L1: a use-case-998 sub-delegate of `a` can write `a`'s consolidation registrations, so
+    ///      it can make a wallet established for `a` without `a`'s key.
+    function test_IsEstablished_SubDelegateCanEstablishAWallet() public {
+        address subDelegate = makeAddr("subDelegate");
+        vm.prank(a);
+        delegation.registerDelegationAddress(ALL, subDelegate, FAR, 998, true, 0);
+        vm.prank(subDelegate);
+        delegation.registerDelegationAddressUsingSubDelegation(
+            a, ALL, b, FAR, CONSOLIDATION, true, 0
+        );
+        _delegate(b, a, FAR);
+        vm.warp(block.timestamp + 30 days);
+        assertTrue(adapter.isEstablished(a, b));
+        vm.prank(stranger);
+        vm.expectRevert();
+        delegation.registerDelegationAddressUsingSubDelegation(
+            a, ALL, stranger, FAR, CONSOLIDATION, true, 0
+        );
     }
 
     function test_EstablishedWallets_ScansAtMostMaxDelegates() public {
@@ -225,15 +252,14 @@ contract ConsolidationAdapterTest is IdentityFixture {
         );
     }
 
-    /// @dev Worst case for `establishedWallets`: 32 scanned delegates that each need the maximum
-    ///      number of registration reads in both directions (the last forward one is live, every
-    ///      reverse one expired), measured with cold storage.
+    /// @dev Worst case for `establishedWallets` (PoC-6): 32 distinct cold delegates, each with one
+    ///      aged forward registration and four expired reverse ones, so every entry costs six
+    ///      cold reads and none is established.
     function test_EstablishedWallets_WorstCaseGas() public {
-        uint256 reads = adapter.MAX_REGISTRATIONS_READ();
         for (uint256 i; i < adapter.MAX_DELEGATES_SCANNED(); ++i) {
-            address w = address(uint160(0x3000 + i));
-            for (uint256 j; j < reads; ++j) {
-                _delegate(a, w, j + 1 == reads ? FAR : block.timestamp + 1);
+            address w = address(uint160(0x7000 + i));
+            _delegate(a, w, FAR);
+            for (uint256 j; j < adapter.MAX_REGISTRATIONS_READ(); ++j) {
                 _delegate(w, a, block.timestamp + 1);
             }
         }
@@ -242,7 +268,7 @@ contract ConsolidationAdapterTest is IdentityFixture {
         uint256 before = gasleft();
         assertEq(adapter.establishedWallets(a).length, 0);
         uint256 used = before - gasleft();
-        emit log_named_uint("establishedWallets worst-case gas", used);
-        assertLt(used, 2_500_000);
+        emit log_named_uint("establishedWallets all-cold worst-case gas", used);
+        assertLt(used, 3_500_000);
     }
 }

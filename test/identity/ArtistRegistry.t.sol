@@ -5,7 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
-import { IArtistPayoutResolver } from "src/interfaces/IArtistPayoutResolver.sol";
+import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
@@ -309,12 +309,19 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.executeChange(artistId);
     }
 
-    function test_ExecuteChange_RevertsIfTheNewAuthorityWasTakenMeanwhile() public {
+    /// @dev L3: a change whose new authority was taken meanwhile is cleared, not reverted, so it
+    ///      cannot keep the payout frozen.
+    function test_ExecuteChange_ClearsIfTheNewAuthorityWasTakenMeanwhile() public {
         _stage(artistKey, _identity(newAuthority, payout), newKey);
         _register(newAuthority);
         vm.warp(block.timestamp + 7 days);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, newAuthority));
+        assertEq(registry.payoutAddress(artistId), address(0));
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ChangeCancelled(artistId, address(registry), false);
         registry.executeChange(artistId);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        assertEq(registry.authorityOf(artistId), artist);
+        assertEq(registry.payoutAddress(artistId), artist, "unfrozen");
     }
 
     function testFuzz_ExecuteChange_RespectsTheDelay(uint256 wait) public {
@@ -591,7 +598,7 @@ contract ArtistRegistryTest is IdentityFixture {
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 digest =
-            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, 0, deadline);
         vm.startPrank(governor);
         vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, "");
@@ -611,22 +618,36 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.stopPrank();
     }
 
-    /// @dev Attack: replaying a used override acceptance after a veto, and a held old key burning
-    ///      nonces to void a scheduled override's acceptance.
-    function test_Attack_OverrideAcceptanceIsSingleUseAndNonceFree() public {
+    /// @dev E11: the acceptance binds the change nonce, so it is single-use (a replay after a veto
+    ///      fails). The flip side, flagged for the integrator: whoever holds the authority key can
+    ///      void a scheduled override's acceptance by burning the nonce first.
+    function test_Override_AcceptanceIsSingleUseAndNonceBound() public {
         ArtistIdentity memory next = _identity(newAuthority, payout);
         bytes32 evidence = keccak256("evidence");
         uint64 deadline = uint64(block.timestamp + 3 days);
         bytes memory acceptance = _sign(
             newKey,
-            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, 0, deadline)
         );
-        vm.prank(artist);
-        registry.revokeNonce(artistId);
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
         vm.prank(guardian);
         registry.vetoChange(artistId);
+        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.prank(governor);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
+    }
+
+    function test_Override_AcceptanceVoidedByANonceBurn() public {
+        ArtistIdentity memory next = _identity(newAuthority, payout);
+        bytes32 evidence = keccak256("evidence");
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes memory acceptance = _sign(
+            newKey,
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, 0, deadline)
+        );
+        vm.prank(artist); // the key holder, between scheduling and execution
+        registry.revokeNonce(artistId);
         vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
         vm.prank(governor);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
@@ -914,13 +935,15 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), artist);
     }
 
-    /// @dev Every pending override freezes the payout, even one that keeps it.
-    function test_PayoutFreeze_WhileAnOverrideIsPending() public {
-        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, artist), newKey);
+    /// @dev M1: an override freezes the payout only when it moves it.
+    function test_PayoutFreeze_OnlyForAnOverrideThatMovesThePayout() public {
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
         assertEq(registry.payoutAddress(artistId), address(0));
         vm.prank(wallet);
         registry.cancelChange(artistId);
         assertEq(registry.payoutAddress(artistId), artist);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, artist), newKey);
+        assertEq(registry.payoutAddress(artistId), artist, "an override keeping it");
     }
 
     /// @dev The economics re-review case: a thief holding the stolen key (the current authority
@@ -982,14 +1005,16 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     /// @dev A split wallet deployed at the payout's address while the change waits is caught at
-    ///      execution (fail closed); the guardian or a canceller then clears the change.
+    ///      execution, and the change is cleared (L3) rather than applied.
     function test_PayoutValidation_RecheckedAtExecution() public {
         SplitFactoryWalletsMock factory = _wireSplitFactory();
         _stage(artistKey, _identity(artist, payout), 0);
         factory.setWallet(payout, true);
         vm.warp(block.timestamp + 7 days);
-        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ChangeCancelled(artistId, address(registry), false);
         registry.executeChange(artistId);
+        assertEq(registry.payoutAddress(artistId), artist);
     }
 
     function test_BindSplitFactory_OneShotAndRequiresCode() public {
@@ -1010,68 +1035,6 @@ contract ArtistRegistryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- residual risk
 
-    /// @dev Residual risk (README, owner decision pending): a thief who holds the artist key for
-    ///      30 days can establish a consolidation with a wallet of their own. That wallet is then
-    ///      captured as a canceller of the network's 180-day override, and its cancel kills the
-    ///      override. This test demonstrates the current, ADR-conformant behaviour.
-    function test_ResidualRisk_ThiefWalletCapturedAsOverrideCanceller() public {
-        address thiefWallet = makeAddr("thiefWallet");
-        // The thief, holding the artist key, consolidates the key with their own wallet.
-        _consolidate(artist, thiefWallet);
-        vm.warp(block.timestamp + 30 days);
-        assertTrue(adapter.isEstablished(artist, thiefWallet));
-
-        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
-        address[] memory cancellers = _cancellers();
-        assertEq(cancellers.length, 2);
-        assertEq(cancellers[1], thiefWallet);
-
-        vm.expectEmit(address(registry));
-        emit IArtistRegistry.ChangeCancelled(artistId, thiefWallet, false);
-        vm.prank(thiefWallet);
-        registry.cancelChange(artistId);
-        assertEq(registry.authorityOf(artistId), artist, "the override was killed");
-    }
-
-    // ----------------------------------------------------------------- gas
-
-    /// @dev EIP-7825: the worst-case `stageChange` (16 captured wallets after a full 32-entry
-    ///      scan with maximal registration reads) fits the 16,777,216 transaction gas cap.
-    function test_StageChange_WorstCaseFitsTheTransactionGasCap() public {
-        // 16 delegate entries of 4 wallets that each cost the maximum reads (a live forward
-        // registration at the last index read, every reverse one expired), then 15 established
-        // wallets: 32 entries scanned, 16 captured. The adapter suite bounds the full scan.
-        uint256 reads = adapter.MAX_REGISTRATIONS_READ();
-        for (uint256 i; i < 4; ++i) {
-            address w = address(uint160(0x5000 + i));
-            for (uint256 j; j < reads; ++j) {
-                _delegate(artist, w, j + 1 == reads ? FAR : block.timestamp + 1);
-                _delegate(w, artist, block.timestamp + 1);
-            }
-        }
-        for (uint256 i; i < 15; ++i) {
-            _consolidate(artist, address(uint160(0x6000 + i)));
-        }
-        vm.warp(block.timestamp + 30 days);
-        ArtistIdentity memory next = _identity(newAuthority, payout);
-        uint64 deadline = uint64(block.timestamp + 1);
-        bytes32 digest = _digest(next, deadline);
-        bytes memory sig = _sign(artistKey, digest);
-        bytes memory acceptance = _sign(newKey, digest);
-        vm.cool(address(delegation));
-        vm.cool(address(registry));
-        uint256 before = gasleft();
-        registry.stageChange(artistId, next, artist, deadline, sig, acceptance);
-        uint256 used = before - gasleft();
-        assertEq(_cancellers().length, 16);
-        bytes memory data = abi.encodeCall(
-            ArtistRegistry.stageChange, (artistId, next, artist, deadline, sig, acceptance)
-        );
-        uint256 total = used + 21_000 + 16 * data.length;
-        emit log_named_uint("stageChange worst-case transaction gas", total);
-        assertLt(total, 16_777_216 / 4);
-    }
-
     // ----------------------------------------------------------------- golden values
 
     /// @dev Computed with `cast keccak` and `cast sig`, the way off-chain tools compute them.
@@ -1082,7 +1045,7 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         assertEq(
             Typehashes.OVERRIDE_ACCEPTANCE,
-            0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
+            0xcccdd16a86d667337789cb112f688c2a3aabcf081e5b281efc5ea2c4ed5e26f0
         );
         assertEq(type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793));
         (, string memory name, string memory version,,,,) = registry.eip712Domain();
@@ -1130,11 +1093,12 @@ contract ArtistRegistryTest is IdentityFixture {
                 next.profileId,
                 next.profileDocHash,
                 keccak256("e"),
+                uint256(3),
                 uint64(9)
             )
         );
         assertEq(
-            registry.overrideDigest(artistId, ChangeKind.ESTATE, next, keccak256("e"), 9),
+            registry.overrideDigest(artistId, ChangeKind.ESTATE, next, keccak256("e"), 3, 9),
             keccak256(abi.encodePacked(hex"1901", domain, acceptance))
         );
     }

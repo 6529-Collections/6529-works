@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IArtistPayoutResolver } from "src/interfaces/IArtistPayoutResolver.sol";
+import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutResolver.sol";
 import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
@@ -40,7 +39,7 @@ contract StreamWorksMock is InterfaceStub {
     address public editions;
     mapping(uint256 => uint256) internal _artistOf;
 
-    constructor() InterfaceStub(type(IERC721).interfaceId) { }
+    constructor() InterfaceStub(type(IStream).interfaceId) { }
 
     function setEditions(address editions_) external {
         editions = editions_;

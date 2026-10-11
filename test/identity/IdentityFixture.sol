@@ -162,8 +162,10 @@ abstract contract IdentityFixture is Test {
         bytes memory acceptance;
         uint64 deadline = uint64(block.timestamp + 3 days);
         if (acceptKey != 0) {
-            acceptance =
-                _sign(acceptKey, registry.overrideDigest(artistId, kind, next, evidence, deadline));
+            uint256 nonce = registry.changeNonce(artistId);
+            acceptance = _sign(
+                acceptKey, registry.overrideDigest(artistId, kind, next, evidence, nonce, deadline)
+            );
         }
         if (armedRevert.length != 0) {
             vm.expectRevert(armedRevert);

@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 
@@ -16,17 +18,18 @@ struct IdentityActors {
     uint256 artistId;
     address guardian;
     address governor;
-    address packageRegistry;
     uint256[4] keys;
     address[3] payouts;
 }
 
-/// @notice Drives one artist identity through every path: signed STANDARD changes by the
-///         authority, a consolidated wallet and a thief; network overrides; cancellations by
-///         every kind of caller; guardian vetoes and redirect attempts; replays of used payloads;
-///         heartbeats; nonce revocations; consolidation revocations and renewals; and time.
-///         It keeps ghost copies of the identity, changed only when its own `executeChange`
-///         succeeds, and counts every outcome the rules forbid in {violations}.
+/// @notice Drives one artist identity through every path and asserts each outcome: before every
+///         call it predicts, from the registry's current state, whether the call succeeds or which
+///         error it reverts with, then makes the call and checks it. Covered: signed STANDARD
+///         changes by the authority, a consolidated wallet and a thief; nonce-bound overrides;
+///         cancels by every kind of caller; guardian vetoes and redirect attempts; replays of used
+///         payloads and acceptances; heartbeats; nonce burns; standing refreshes; consolidation
+///         revocations and renewals; and time. Ghosts of the identity, nonce and last activity
+///         change only with the calls that may change them.
 contract ArtistRegistryHandler is Test {
     bytes32 internal constant PROFILE = keccak256("profile/punk6529");
 
@@ -36,16 +39,15 @@ contract ArtistRegistryHandler is Test {
     uint256 internal immutable artistId;
     address internal immutable guardian;
     address internal immutable governor;
-    address internal immutable packageRegistry;
     uint256[4] internal keys;
     address[3] internal payouts;
 
     address public ghostPayout;
     address public ghostAuthority;
+    uint64 public ghostLastActivity;
+    uint256 public ghostNonce;
     bytes32 public ghostCancellers;
-    uint256 public violations;
     uint256 public executed;
-    uint256 public stagedCount;
     bool internal walletConsolidated = true;
 
     struct Used {
@@ -56,16 +58,16 @@ contract ArtistRegistryHandler is Test {
         bytes acceptance;
     }
 
-    Used internal lastUsed;
-
     struct Accepted {
         ChangeKind kind;
         ArtistIdentity next;
         bytes32 evidence;
+        uint256 nonce;
         uint64 deadline;
         bytes acceptance;
     }
 
+    Used internal lastUsed;
     Accepted internal lastAcceptance;
 
     constructor(IdentityActors memory a) {
@@ -75,11 +77,12 @@ contract ArtistRegistryHandler is Test {
         artistId = a.artistId;
         guardian = a.guardian;
         governor = a.governor;
-        packageRegistry = a.packageRegistry;
         keys = a.keys;
         payouts = a.payouts;
-        ghostPayout = registry.payoutAddress(artistId);
-        ghostAuthority = registry.authorityOf(artistId);
+        (ArtistIdentity memory identity, uint64 last) = registry.artist(artistId);
+        ghostPayout = identity.payout;
+        ghostAuthority = identity.authority;
+        ghostLastActivity = last;
     }
 
     // ----------------------------------------------------------------- actions
@@ -90,119 +93,125 @@ contract ArtistRegistryHandler is Test {
         ArtistIdentity memory next =
             ArtistIdentity(vm.addr(nextKey), payouts[payoutSeed % 3], PROFILE, bytes32(payoutSeed));
         uint64 deadline = uint64(block.timestamp + 1 hours);
-        bytes32 digest =
-            registry.changeDigest(artistId, next, registry.changeNonce(artistId), deadline);
+        bytes32 digest = registry.changeDigest(artistId, next, ghostNonce, deadline);
         Used memory u = Used(next, vm.addr(signerKey), deadline, _sign(signerKey, digest), "");
         u.acceptance = _sign(nextKey, digest);
-        try registry.stageChange(artistId, next, u.signer, deadline, u.signature, u.acceptance) {
-            if (u.signer != ghostAuthority && !adapter.isEstablished(ghostAuthority, u.signer)) {
-                ++violations;
-            }
-            lastUsed = u;
-            _onStaged();
-        } catch { }
+        bytes memory err = _stageError(u.signer);
+        if (err.length != 0) vm.expectRevert(err);
+        registry.stageChange(artistId, next, u.signer, deadline, u.signature, u.acceptance);
+        if (err.length != 0) return;
+        lastUsed = u;
+        ghostLastActivity = uint64(block.timestamp);
+        _onStaged(ChangeKind.STANDARD);
     }
 
-    /// @dev A used payload must never stage again (nonces, not signature bytes).
+    /// @dev A used payload never stages again: the nonce it signed is consumed.
     function replayLast() external {
         Used memory u = lastUsed;
         if (u.signer == address(0)) return;
-        try registry.stageChange(
-            artistId, u.next, u.signer, u.deadline, u.signature, u.acceptance
-        ) {
-            ++violations;
-        } catch { }
+        bytes memory err = _stageError(u.signer);
+        vm.expectRevert(err.length != 0 ? err : _sel(IArtistRegistry.InvalidSignature.selector));
+        registry.stageChange(artistId, u.next, u.signer, u.deadline, u.signature, u.acceptance);
     }
 
-    /// @dev Overrides carry the new authority's acceptance (two-sided).
     function stageOverride(uint256 kindSeed, uint256 authoritySeed, uint256 payoutSeed) external {
-        ChangeKind kind = ChangeKind(2 + kindSeed % 3);
+        Accepted memory u;
+        u.kind = ChangeKind(2 + kindSeed % 3);
         uint256 nextKey = keys[authoritySeed % 4];
-        ArtistIdentity memory next =
-            ArtistIdentity(vm.addr(nextKey), payouts[payoutSeed % 3], PROFILE, bytes32(0));
-        bytes32 evidence = keccak256(abi.encode(kindSeed));
-        uint64 deadline = uint64(block.timestamp + 3 days);
-        bytes memory acceptance =
-            _sign(nextKey, registry.overrideDigest(artistId, kind, next, evidence, deadline));
-        (, uint64 lastActivity) = registry.artist(artistId);
-        vm.prank(governor);
-        try registry.stageOverride(artistId, kind, next, evidence, deadline, acceptance) {
-            if (kind != ChangeKind.CONTESTED && block.timestamp < lastActivity + 365 days) {
-                ++violations;
-            }
-            if (next.authority != ghostAuthority) {
-                lastAcceptance = Accepted(kind, next, evidence, deadline, acceptance);
-            }
-            _onStaged();
-        } catch { }
+        u.next = ArtistIdentity(vm.addr(nextKey), payouts[payoutSeed % 3], PROFILE, bytes32(0));
+        u.evidence = keccak256(abi.encode(kindSeed));
+        u.nonce = ghostNonce;
+        u.deadline = uint64(block.timestamp + 3 days);
+        u.acceptance = _sign(
+            nextKey,
+            registry.overrideDigest(artistId, u.kind, u.next, u.evidence, u.nonce, u.deadline)
+        );
+        if (_tryOverride(u)) lastAcceptance = u;
     }
 
-    /// @dev A used override acceptance must never stage again. (Once its override executed, the
-    ///      same call is a payout-only override that needs no acceptance and may stage.)
+    /// @dev A used acceptance never stages again (its nonce is consumed), unless the override no
+    ///      longer changes the authority and so needs none.
     function replayAcceptance() external {
         Accepted memory u = lastAcceptance;
-        if (u.next.authority == address(0)) return;
-        bool needsAcceptance = u.next.authority != registry.authorityOf(artistId);
-        vm.prank(governor);
-        try registry.stageOverride(artistId, u.kind, u.next, u.evidence, u.deadline, u.acceptance) {
-            if (needsAcceptance) ++violations;
-            _onStaged();
-        } catch { }
+        if (u.next.authority != address(0)) _tryOverride(u);
     }
 
     function cancel(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
         PendingChange memory p = registry.pendingChange(artistId);
+        bool allowed = p.kind == ChangeKind.STANDARD && caller == p.previousAuthority;
+        for (uint256 i; i < p.cancellers.length; ++i) {
+            allowed = allowed || p.cancellers[i] == caller;
+        }
+        if (p.kind == ChangeKind.NONE) _expect(_noPending());
+        else if (!allowed) _expect(_notAuthorized(caller));
         vm.prank(caller);
-        try registry.cancelChange(artistId) {
-            bool allowed = p.kind == ChangeKind.STANDARD && caller == p.previousAuthority;
-            for (uint256 i; i < p.cancellers.length; ++i) {
-                allowed = allowed || p.cancellers[i] == caller;
-            }
-            if (!allowed) ++violations;
-        } catch { }
+        registry.cancelChange(artistId);
+        if (p.kind != ChangeKind.NONE && allowed) ghostLastActivity = uint64(block.timestamp);
     }
 
     function veto() external {
+        if (registry.pendingChange(artistId).kind == ChangeKind.NONE) _expect(_noPending());
         vm.prank(guardian);
-        try registry.vetoChange(artistId) { } catch { }
+        registry.vetoChange(artistId);
     }
 
-    /// @dev The guardian is veto-only: every write path must refuse it.
+    /// @dev The guardian is veto-only: every write path refuses it.
     function guardianRedirect(uint256 payoutSeed) external {
         ArtistIdentity memory next =
             ArtistIdentity(guardian, payouts[payoutSeed % 3], PROFILE, bytes32(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
+        );
         vm.prank(guardian);
-        try registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e"), 0, "") {
-            ++violations;
-        } catch { }
-        try registry.stageChange(artistId, next, guardian, type(uint64).max, "", "") {
-            ++violations;
-        } catch { }
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e"), 0, "");
+        _expect(_stageError(guardian));
+        registry.stageChange(artistId, next, guardian, type(uint64).max, "", "");
     }
 
     function execute() external {
         PendingChange memory p = registry.pendingChange(artistId);
-        try registry.executeChange(artistId) {
-            uint64 delay = p.kind == ChangeKind.STANDARD ? 7 days : 180 days;
-            if (p.executableAt != p.stagedAt + delay || block.timestamp < p.stagedAt + delay) {
-                ++violations;
-            }
-            ghostPayout = p.next.payout;
-            ghostAuthority = p.next.authority;
-            ++executed;
-        } catch { }
+        if (p.kind == ChangeKind.NONE) {
+            _expect(_noPending());
+        } else if (block.timestamp < p.executableAt) {
+            _expect(
+                abi.encodeWithSelector(
+                    IArtistRegistry.ChangeNotDue.selector, artistId, p.executableAt
+                )
+            );
+        }
+        registry.executeChange(artistId);
+        if (p.kind == ChangeKind.NONE || block.timestamp < p.executableAt) return;
+        uint64 delay = p.kind == ChangeKind.STANDARD ? 7 days : 180 days;
+        assertEq(p.executableAt, p.stagedAt + delay);
+        assertGe(block.timestamp, p.stagedAt + delay);
+        ghostPayout = p.next.payout;
+        ghostAuthority = p.next.authority;
+        ghostLastActivity = uint64(block.timestamp);
+        ++executed;
     }
 
     function heartbeat(uint256 callerSeed) external {
         address caller = _caller(callerSeed);
+        bool ok = caller == ghostAuthority || adapter.isEstablished(ghostAuthority, caller);
+        if (!ok) _expect(_notAuthorized(caller));
         vm.prank(caller);
-        try registry.heartbeat(artistId) { } catch { }
+        registry.heartbeat(artistId);
+        if (ok) ghostLastActivity = uint64(block.timestamp);
     }
 
     function revokeNonce(uint256 callerSeed) external {
-        vm.prank(_caller(callerSeed));
-        try registry.revokeNonce(artistId) { } catch { }
+        address caller = _caller(callerSeed);
+        if (caller != ghostAuthority) _expect(_notAuthorized(caller));
+        vm.prank(caller);
+        registry.revokeNonce(artistId);
+        if (caller != ghostAuthority) return;
+        ++ghostNonce;
+        ghostLastActivity = uint64(block.timestamp);
+    }
+
+    function refreshStanding() external {
+        registry.refreshStanding(artistId);
     }
 
     /// @dev Revokes or renews the consolidation of the original artist key and its wallet, as a
@@ -227,11 +236,67 @@ contract ArtistRegistryHandler is Test {
         vm.warp(block.timestamp + bound(seconds_, 1 hours, 200 days));
     }
 
-    // ----------------------------------------------------------------- helpers
+    // ----------------------------------------------------------------- model
 
-    function _onStaged() private {
-        ghostCancellers = keccak256(abi.encode(registry.pendingChange(artistId).cancellers));
-        ++stagedCount;
+    /// @dev Predicts and checks one override staging; returns whether it succeeded.
+    function _tryOverride(Accepted memory u) private returns (bool ok) {
+        bytes memory err = _overrideError(u);
+        if (err.length != 0) vm.expectRevert(err);
+        vm.prank(governor);
+        registry.stageOverride(artistId, u.kind, u.next, u.evidence, u.deadline, u.acceptance);
+        ok = err.length == 0;
+        if (ok) _onStaged(u.kind);
+    }
+
+    /// @dev The registry's check order for `stageChange` up to the signature.
+    function _stageError(address signer) private view returns (bytes memory) {
+        if (registry.pendingChange(artistId).kind != ChangeKind.NONE) {
+            return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
+        }
+        if (signer != ghostAuthority && !adapter.isEstablished(ghostAuthority, signer)) {
+            return _notAuthorized(signer);
+        }
+        return "";
+    }
+
+    /// @dev The registry's check order for `stageOverride` (identities here are always valid).
+    function _overrideError(Accepted memory u) private view returns (bytes memory) {
+        if (u.kind != ChangeKind.CONTESTED && block.timestamp < ghostLastActivity + 365 days) {
+            return abi.encodeWithSelector(
+                IArtistRegistry.NotDormant.selector, artistId, ghostLastActivity
+            );
+        }
+        if (
+            u.next.authority != ghostAuthority
+                && (block.timestamp > u.deadline || u.nonce != ghostNonce)
+        ) return _sel(IArtistRegistry.InvalidSignature.selector);
+        if (registry.pendingChange(artistId).kind > ChangeKind.STANDARD) {
+            return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
+        }
+        return "";
+    }
+
+    function _onStaged(ChangeKind kind) private {
+        PendingChange memory p = registry.pendingChange(artistId);
+        assertEq(uint8(p.kind), uint8(kind));
+        ghostCancellers = keccak256(abi.encode(p.cancellers));
+        ++ghostNonce;
+    }
+
+    function _expect(bytes memory err) private {
+        vm.expectRevert(err);
+    }
+
+    function _noPending() private view returns (bytes memory) {
+        return abi.encodeWithSelector(IArtistRegistry.NoPendingChange.selector, artistId);
+    }
+
+    function _notAuthorized(address account) private view returns (bytes memory) {
+        return abi.encodeWithSelector(IArtistRegistry.NotAuthorized.selector, artistId, account);
+    }
+
+    function _sel(bytes4 selector) private pure returns (bytes memory) {
+        return abi.encodeWithSelector(selector);
     }
 
     function _caller(uint256 seed) private view returns (address) {
