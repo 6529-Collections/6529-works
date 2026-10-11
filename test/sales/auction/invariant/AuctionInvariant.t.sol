@@ -74,6 +74,24 @@ abstract contract AuctionHandlerFixture is AuctionBase {
 
 /// @dev The auction's money and custody invariants, for one currency.
 abstract contract AuctionInvariantBase is AuctionHandlerFixture {
+    /// @dev Storage slots of `EnglishAuction._terms` and `_sales`, from
+    ///      `forge inspect EnglishAuction storageLayout`. No view exposes a sale's opening bid,
+    ///      increment share or window, so the invariant reads its terms record directly, and
+    ///      cross-checks the decoded token, token ID, currency and floor against the public
+    ///      view so that a layout change fails loudly.
+    uint256 internal constant TERMS_SLOT = 7;
+    uint256 internal constant SALES_SLOT = 8;
+
+    struct StoredTerms {
+        address token;
+        uint256 tokenId;
+        address currency;
+        uint256 incrementFloor;
+        uint256 openingBid;
+        uint256 incrementShare;
+        uint256 extensionWindow;
+    }
+
     /// @dev Held funds equal the live high bids plus every credit: bids escrowed equal the
     ///      balance, and owed refunds equal the claimable balance.
     function invariant_HeldEqualsLiveBidsPlusCredits() public view {
@@ -155,6 +173,26 @@ abstract contract AuctionInvariantBase is AuctionHandlerFixture {
         }
     }
 
+    /// @dev Every sale, settled and cancelled ones included, keeps in storage the opening bid,
+    ///      increment share and anti-snipe window it locked at start, whatever governance
+    ///      changed since, and the floor its first bid locked.
+    function invariant_StoredTermsMatchWhatEachSaleLocked() public view {
+        for (uint256 i; i < handler.salesCount(); ++i) {
+            uint256 saleId = handler.sales(i);
+            IEnglishAuction.Auction memory a = auction.auction(saleId);
+            AuctionHandler.Locked memory l = handler.locked(saleId);
+            StoredTerms memory t = _storedTerms(saleId);
+            assertEq(t.token, a.token, "layout: token");
+            assertEq(t.tokenId, a.tokenId, "layout: token ID");
+            assertEq(t.currency, a.currency, "layout: currency");
+            assertEq(t.incrementFloor, a.incrementFloor, "layout: floor");
+            assertEq(t.incrementFloor, l.incrementFloor, "floor locked by the first bid");
+            assertEq(t.openingBid, l.openingBid, "opening bid locked at start");
+            assertEq(t.incrementShare, l.incrementShare, "increment share locked at start");
+            assertEq(t.extensionWindow, l.extensionWindow, "window locked at start");
+        }
+    }
+
     /// @dev After every auction is driven to an end and every account claims, nothing is stuck:
     ///      the auction holds no funds and no token.
     function afterInvariant() public {
@@ -169,6 +207,23 @@ abstract contract AuctionInvariantBase is AuctionHandlerFixture {
         assertEq(_balance(address(auction)), 0, "no stuck funds");
         assertEq(stream.balanceOf(address(auction)), 0, "no stuck tokens");
         assertEq(handler.ghostDeposited(), _out());
+    }
+
+    /// @dev Decodes the sale's slot 0 and its terms record (see `EnglishAuction.Sale` and
+    ///      `EnglishAuction.Terms` for the packing).
+    function _storedTerms(uint256 saleId) internal view returns (StoredTerms memory t) {
+        uint256 sale = uint256(vm.load(address(auction), keccak256(abi.encode(saleId, SALES_SLOT))));
+        t.token = address(uint160(sale));
+        t.tokenId = uint32(sale >> 160);
+        uint256 termsId = uint16(sale >> 224);
+        bytes32 record = keccak256(abi.encode(termsId, TERMS_SLOT));
+        uint256 w0 = uint256(vm.load(address(auction), record));
+        uint256 w1 = uint256(vm.load(address(auction), bytes32(uint256(record) + 1)));
+        t.currency = address(uint160(w0));
+        t.incrementFloor = w0 >> 160;
+        t.openingBid = uint96(w1);
+        t.incrementShare = uint24(w1 >> 96);
+        t.extensionWindow = uint24(w1 >> 120);
     }
 }
 
