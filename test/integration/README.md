@@ -56,3 +56,12 @@ then promoted to a regular test.
 | ID | Where | Finding |
 | --- | --- | --- |
 | G-1 | Genesis configuration, `AssetAllowlist` | No default currency is configured at genesis. An item naming `CURRENCY_DEFAULT` cannot start for 14 days, and a free edition in the default currency cannot open. |
+
+Resolved findings are regular tests now:
+- E-1, an edition did not take its master's royalty rate: fixed by #14.
+- G-2, a two-party `startWithBid` cost more than 350K: fixed by #34 and #33.
+- L-1, zero-fee terms blocked edition sales: fixed by #35.
+
+`GasReport.t.sol` also tracks one observation, G-3, as its own row. The first bid
+under a new set of sale terms pays once to record the terms with their increment
+floor. That bid costs about 387K, against about 317K at steady state.
