@@ -215,10 +215,10 @@
   "contracts": [
     {
       "name": "Stream",
-      "artifact": "src/interfaces/IStream.sol:IStream",
-      "implementation": null,
+      "artifact": "src/stream/Stream.sol:Stream",
+      "implementation": "src/stream/Stream.sol:Stream",
       "address": "0x000000000000000000000000000000000000a001",
-      "status": "interface on main; implementation pending (stream lane)",
+      "status": "implemented (stream lane)",
       "functions": [
         {
           "signature": "createCollection(string,bytes32)",
@@ -270,10 +270,10 @@
     },
     {
       "name": "WorkRecords",
-      "artifact": "src/interfaces/IWorkRecords.sol:IWorkRecords",
-      "implementation": null,
+      "artifact": "src/stream/WorkRecords.sol:WorkRecords",
+      "implementation": "src/stream/WorkRecords.sol:WorkRecords",
       "address": "0x000000000000000000000000000000000000a002",
-      "status": "interface on main; implementation pending (stream lane)",
+      "status": "implemented (stream lane)",
       "functions": [
         {
           "signature": "setPreferredKind(uint8)",
@@ -330,10 +330,10 @@
     },
     {
       "name": "Editions",
-      "artifact": "src/interfaces/IEditions.sol:IEditions",
-      "implementation": null,
+      "artifact": "src/editions/Editions.sol:Editions",
+      "implementation": "src/editions/Editions.sol:Editions",
       "address": "0x000000000000000000000000000000000000a003",
-      "status": "interface on main; implementation pending (editions lane)",
+      "status": "implemented (editions lane); pending until it merges",
       "functions": [
         {
           "signature": "setContractURI(string)",
@@ -426,10 +426,10 @@
     },
     {
       "name": "ArtistRegistry",
-      "artifact": "src/interfaces/IArtistRegistry.sol:IArtistRegistry",
-      "implementation": null,
+      "artifact": "src/identity/ArtistRegistry.sol:ArtistRegistry",
+      "implementation": "src/identity/ArtistRegistry.sol:ArtistRegistry",
       "address": "0x000000000000000000000000000000000000a006",
-      "status": "interface on main; implementation pending (identity lane)",
+      "status": "implemented (identity lane); pending until it merges",
       "functions": [
         {
           "signature": "vetoChange(uint256)",
@@ -590,10 +590,10 @@
     },
     {
       "name": "FixedPriceSale",
-      "artifact": "src/interfaces/IFixedPriceSale.sol:IFixedPriceSale",
-      "implementation": null,
+      "artifact": "src/sales/FixedPriceSale.sol:FixedPriceSale",
+      "implementation": "src/sales/FixedPriceSale.sol:FixedPriceSale",
       "address": "0x000000000000000000000000000000000000a009",
-      "status": "interface on main; implementation pending (sales lane)",
+      "status": "implemented on main",
       "functions": [
         {
           "signature": "pause()",
@@ -643,10 +643,10 @@
     },
     {
       "name": "DutchSale",
-      "artifact": "src/interfaces/IDutchSale.sol:IDutchSale",
-      "implementation": null,
+      "artifact": "src/sales/DutchSale.sol:DutchSale",
+      "implementation": "src/sales/DutchSale.sol:DutchSale",
       "address": "0x000000000000000000000000000000000000a00a",
-      "status": "interface on main; implementation pending (sales lane)",
+      "status": "implemented on main",
       "functions": [
         {
           "signature": "pause()",
@@ -977,24 +977,14 @@
   },
   "pendingLanes": [
     {
-      "contract": "Stream, WorkRecords",
-      "lane": "stream",
-      "note": "Implementation-only restricted setters join `functions` when the lane merges; tools/check_genesis.py then requires them."
-    },
-    {
       "contract": "Editions",
       "lane": "editions",
-      "note": "As above."
+      "note": "Mapped from the lane's Editions implementation; tools/check_genesis.py reports it pending until it merges, then checks it in full."
     },
     {
       "contract": "ArtistRegistry",
       "lane": "identity",
-      "note": "The consolidation source is a constructor argument; the binds are wiring."
-    },
-    {
-      "contract": "FixedPriceSale, DutchSale",
-      "lane": "sales",
-      "note": "The resolver, escrow and initial configuration are constructor arguments; only the sale targets are wiring (as for the English auction)."
+      "note": "Mapped from the lane's ArtistRegistry implementation (pending until it merges). The consolidation source is a constructor argument; the binds are wiring."
     },
     {
       "contract": "FederationRegistry",
