@@ -5,7 +5,7 @@ import { RendererBase } from "./RendererBase.sol";
 import { HostileStore } from "../../mocks/RendererHostile.sol";
 import { MockStream } from "../../mocks/RendererMocks.sol";
 import { GasBurnerMock, ReturnBombMock, ReturnDataMock } from "../../mocks/AdversarialTargets.sol";
-import { IBase64Attested, Renderer } from "src/content/Renderer.sol";
+import { Renderer } from "src/content/Renderer.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -132,7 +132,7 @@ contract RendererHostileTest is RendererBase {
             abi.encodeWithSelector(
                 Renderer.RendererReadFailed.selector,
                 address(hostile),
-                IBase64Attested.isBase64Attested.selector
+                IContentStore.isBase64Attested.selector
             )
         );
         _uriOnHostile();

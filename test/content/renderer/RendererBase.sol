@@ -9,7 +9,7 @@ import {
     MockStream,
     MockWorkRecords
 } from "../../mocks/RendererMocks.sol";
-import { AttestingStore } from "../../mocks/AttestingStore.sol";
+import { ContentStore } from "src/content/ContentStore.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
@@ -56,7 +56,7 @@ abstract contract RendererBase is ContentBase {
     Renderer internal renderer;
 
     function setUp() public virtual {
-        store = new AttestingStore();
+        store = new ContentStore();
         stream = new MockStream();
         records = new MockWorkRecords();
         stream.setWorkRecords(address(records));
@@ -89,11 +89,14 @@ abstract contract RendererBase is ContentBase {
     /// @dev The one-time strict check of a `Base64` file (decision H1). A file that is not strict
     ///      base64 stays unattested, which is what a renderer must find out.
     function _attest(bytes32 fileId) internal {
-        try AttestingStore(address(store)).attestBase64(fileId) { } catch { }
+        // A file of many chunks takes several calls; a file that is not strict base64 reverts.
+        try store.attestBase64(fileId) returns (bool done) {
+            while (!done) done = store.attestBase64(fileId);
+        } catch { }
     }
 
     function _attested(bytes32 fileId) internal view returns (bool) {
-        return AttestingStore(address(store)).isBase64Attested(fileId);
+        return store.isBase64Attested(fileId);
     }
 
     /// @dev Like `_file`, but the last chunk is never uploaded.

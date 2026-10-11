@@ -417,8 +417,7 @@ name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
   by attesting its file. **Curation tooling must decode base64 strictly** (reject
   whitespace, `-_`, bad padding, trailing bytes): a lenient decoder drops what the
   attestation refuses, and the SHA-256 check would pass a file that can never be
-  attested. The renderer declares `isBase64Attested` itself (`IBase64Attested`)
-  until the content store has it.
+  attested. An attested `GzipBase64` file is still never inlined.
 - **`Gzip` and `GzipBase64` are never inlined.** Their stored bytes are a
   compressed stream, not the media, so a `data:` URI of them would carry the wrong
   bytes under the media's MIME type. They are served by locator.

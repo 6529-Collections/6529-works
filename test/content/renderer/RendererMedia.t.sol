@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { RendererBase } from "./RendererBase.sol";
-import { IBase64Attested, Renderer } from "src/content/Renderer.sol";
+import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -760,7 +760,7 @@ contract RendererMediaTest is RendererBase {
             abi.encodeWithSelector(
                 Renderer.RendererReadFailed.selector,
                 address(noAttest.contentStore()),
-                IBase64Attested.isBase64Attested.selector
+                IContentStore.isBase64Attested.selector
             )
         );
         noAttest.tokenURI(address(stream), ID);
@@ -802,7 +802,7 @@ contract PlainStore {
 
     fallback(bytes calldata data) external returns (bytes memory) {
         (bool ok, bytes memory ret) = address(inner).staticcall(data);
-        if (!ok || bytes4(data) == IBase64Attested.isBase64Attested.selector) {
+        if (!ok || bytes4(data) == IContentStore.isBase64Attested.selector) {
             assembly {
                 revert(0, 0)
             }

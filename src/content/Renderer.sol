@@ -23,16 +23,6 @@ import { DataUri } from "./DataUri.sol";
 import { HtmlScript } from "./HtmlScript.sol";
 import { JsonScan } from "./JsonScan.sol";
 
-/// @dev `IContentStore.isBase64Attested` (decision H1; PR #26 adds it, with `attestBase64`, to
-///      `IContentStore`): a stored `Base64` file is concatenated into a data URI as it is, so it
-///      must have passed the store's one-time strict alphabet check first. Until that PR is on
-///      `main` the renderer declares the one function it reads; then this interface goes and the
-///      renderer calls `IContentStore.isBase64Attested`. Only `Base64` is gated: `GzipBase64`
-///      is never inlined.
-interface IBase64Attested {
-    function isBase64Attested(bytes32 fileId) external view returns (bool);
-}
-
 /// @title Renderer
 /// @notice Builds the metadata of 6529 Stream works and 6529 Editions editions (ADR 0001
 ///         section 8 "`tokenURI` size"). Immutable and stateless: it only reads.
@@ -917,7 +907,7 @@ contract Renderer is IRenderer {
         return abi.decode(
             _word(
                 address(contentStore),
-                IBase64Attested.isBase64Attested.selector,
+                IContentStore.isBase64Attested.selector,
                 uint256(id),
                 SMALL_GAS,
                 32
