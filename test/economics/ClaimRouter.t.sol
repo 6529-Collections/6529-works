@@ -5,12 +5,14 @@ import { Vm } from "forge-std/Vm.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
+import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
     ClaimReentrantRecipient,
-    ClaimWalletAdversary
+    ClaimWalletAdversary,
+    Mock1271Account
 } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
@@ -377,18 +379,117 @@ contract ClaimRouterTest is EconomicsBase {
         assertEq(address(router).balance, 0);
     }
 
-    function test_ArtistPayeeClaimPaysTheCurrentResolvedAddress() public {
+    function test_PlainArtistItemsFailAndContinueModeSkipsThem() public {
         SplitWallet w = _trio();
         uint256 iArtist = _artistIndex(w, ARTIST);
         vm.deal(address(w), 10 ether);
-        address recovered = makeAddr("recovered");
-        resolver.set(ARTIST, recovered);
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](2);
+        claims[0] = IClaimRouter.Claim(address(w), ETH, iArtist);
+        claims[1] = IClaimRouter.Claim(address(w), ETH, _indexOf(w, bob));
+        bytes memory reason = abi.encodeWithSelector(
+            ISplitWallet.NotPayoutAddress.selector, address(router), artistPayout
+        );
+        vm.expectEmit(true, true, true, true, address(router));
+        emit IClaimRouter.ClaimFailed(address(w), ETH, iArtist, 0, reason.length, reason);
         vm.prank(caller);
-        uint256[] memory amounts = router.claim(_one(address(w), ETH, iArtist), false);
-        assertEq(amounts[0], 2 ether);
-        assertEq(recovered.balance, 2 ether);
+        uint256[] memory amounts = router.claim(claims, true);
+        assertEq(amounts[0], 0);
+        assertEq(amounts[1], 3 ether);
         assertEq(artistPayout.balance, 0);
+    }
+
+    function test_SignedClaimsPayTheCurrentResolvedArtistAcrossWallets() public {
+        address recovered = vm.addr(0xBEEF);
+        resolver.set(ARTIST, recovered);
+        IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](3);
+        for (uint256 i; i < 3; ++i) {
+            SplitWallet w = _wallet(
+                _list(_fixed(address(uint160(0xD00 + i)), 50_000), _artist(ARTIST, 50_000))
+            );
+            vm.deal(address(w), 2 ether);
+            IReleaseVerifier.Authorization memory a = _auth(
+                w, ETH, _artistIndex(w, ARTIST), recovered, recovered, type(uint256).max, i
+            );
+            claims[i] = IClaimRouter.SignedClaim(a, _sign(0xBEEF, a));
+        }
+        vm.prank(caller);
+        uint256[] memory amounts = router.claimSigned(claims, false);
+        assertEq(amounts[0] + amounts[1] + amounts[2], 3 ether);
+        assertEq(recovered.balance, 3 ether);
         assertEq(caller.balance, 0);
+        assertEq(address(router).balance, 0);
+    }
+
+    function test_SignedClaimFailuresFollowTheMode() public {
+        SplitWallet w = _trio();
+        vm.deal(address(w), 10 ether);
+        IReleaseVerifier.Authorization memory a =
+            _auth(w, ETH, _artistIndex(w, ARTIST), artistPayout, artistPayout, 1 ether, 1);
+        IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](2);
+        claims[0] = IClaimRouter.SignedClaim(a, _sign(bobPk, a));
+        claims[1] = IClaimRouter.SignedClaim(a, _sign(artistPk, a));
+        bytes memory reason =
+            abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, artistPayout);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IClaimRouter.ClaimCallFailed.selector, 0, address(w), reason.length, reason
+            )
+        );
+        router.claimSigned(claims, false);
+        vm.expectEmit(true, true, true, true, address(router));
+        emit IClaimRouter.ClaimFailed(address(w), ETH, a.payee, 0, reason.length, reason);
+        uint256[] memory amounts = router.claimSigned(claims, true);
+        assertEq(amounts[0], 0);
+        assertEq(amounts[1], 1 ether);
+    }
+
+    function test_SignedBatchesAreCappedAndNeedTheirMinimumGas() public {
+        uint256 max = router.MAX_SIGNED_CLAIMS();
+        assertEq(max, 20);
+        IClaimRouter.SignedClaim[] memory tooMany = new IClaimRouter.SignedClaim[](max + 1);
+        vm.expectRevert(abi.encodeWithSelector(IClaimRouter.TooManyClaims.selector, max + 1));
+        router.claimSigned(tooMany, true);
+
+        SplitWallet w = _solo(alice);
+        vm.deal(address(w), 1 ether);
+        IReleaseVerifier.Authorization memory a = _auth(w, ETH, 0, alice, alice, 1 ether, 1);
+        IClaimRouter.SignedClaim[] memory one = new IClaimRouter.SignedClaim[](1);
+        one[0] = IClaimRouter.SignedClaim(a, _sign(alicePk, a));
+        (bool ok, bytes memory data) = address(router).call{ gas: 600_000 }(
+            abi.encodeCall(IClaimRouter.claimSigned, (one, true))
+        );
+        assertFalse(ok);
+        bytes4 selector;
+        assembly ("memory-safe") {
+            selector := mload(add(data, 32))
+        }
+        assertEq(selector, IClaimRouter.ClaimInsufficientGas.selector);
+        assertEq(router.claimSigned{ gas: 1_200_000 }(one, true)[0], 1 ether);
+    }
+
+    /// @dev Ported from the review: a resolver answer only ever steers the artist's own index. A
+    ///      gas-burning artist payout cannot block fixed payees in the same batch.
+    function test_ResolverOnlyReachesTheArtistIndex() public {
+        SplitWallet w = _trio();
+        uint256 iArtist = _artistIndex(w, ARTIST);
+        vm.deal(address(w), 10 ether);
+        // Point the artist at alice: alice pulls the artist's 20% on top, never more.
+        resolver.set(ARTIST, alice);
+        vm.prank(alice);
+        assertEq(w.release(ETH, iArtist), 2 ether);
+        assertEq(w.release(ETH, _indexOf(w, alice)), 5 ether);
+        assertEq(alice.balance, 7 ether);
+
+        Mock1271Account burner = new Mock1271Account();
+        burner.setBurn(10_000_000);
+        resolver.set(ARTIST, address(burner));
+        vm.deal(address(w), address(w).balance + 10 ether);
+        IReleaseVerifier.Authorization memory a =
+            _auth(w, ETH, iArtist, address(burner), address(burner), 1 ether, 1);
+        IClaimRouter.SignedClaim[] memory signed = new IClaimRouter.SignedClaim[](1);
+        signed[0] = IClaimRouter.SignedClaim(a, "");
+        assertEq(router.claimSigned{ gas: 2_000_000 }(signed, true)[0], 0);
+        assertEq(router.claim(_one(address(w), ETH, _indexOf(w, bob)), true)[0], 6 ether);
     }
 
     function test_UnknownPayeeFailsOnlyItsItem() public {
@@ -410,13 +511,13 @@ contract ClaimRouterTest is EconomicsBase {
         claims[0] = IClaimRouter.Claim(address(w), ETH, _indexOf(w, alice));
         claims[1] = IClaimRouter.Claim(address(w), address(token), _indexOf(w, alice));
         claims[2] = IClaimRouter.Claim(address(w), ETH, _indexOf(w, bob));
-        claims[3] = IClaimRouter.Claim(address(w), address(token), _artistIndex(w, ARTIST));
+        claims[3] = IClaimRouter.Claim(address(w), address(token), _indexOf(w, bob));
         uint256[] memory amounts = router.claim(claims, false);
         assertEq(amounts[0], 5 ether);
         assertEq(amounts[1], 500);
         assertEq(amounts[2], 3 ether);
-        assertEq(amounts[3], 200);
-        assertEq(token.balanceOf(artistPayout), 200);
+        assertEq(amounts[3], 300);
+        assertEq(token.balanceOf(bob), 300);
     }
 
     function _hostileThenReal(uint8 mode) internal {
@@ -472,7 +573,8 @@ contract ClaimRouterTest is EconomicsBase {
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter != address(factory) || logs[i].topics[0] != created) continue;
             address wallet = address(uint160(uint256(logs[i].topics[1])));
-            ISplitWallet.Payee[] memory payees = abi.decode(logs[i].data, (ISplitWallet.Payee[]));
+            (, ISplitWallet.Payee[] memory payees) =
+                abi.decode(logs[i].data, (bytes32, ISplitWallet.Payee[]));
             uint256 index = type(uint256).max;
             for (uint256 j; j < payees.length; ++j) {
                 if (payees[j].account == account) index = j;

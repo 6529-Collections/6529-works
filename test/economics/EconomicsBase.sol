@@ -6,9 +6,11 @@ import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessMana
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ClaimRouter } from "src/economics/ClaimRouter.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
+import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { MockArtistResolver, MockERC20 } from "../mocks/EconomicsMocks.sol";
@@ -42,6 +44,7 @@ abstract contract EconomicsBase is Test {
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
     MockArtistResolver internal resolver;
+    ReleaseVerifier internal verifier;
     SplitFactory internal factory;
     RevenueEscrow internal escrow;
     ClaimRouter internal router;
@@ -63,8 +66,9 @@ abstract contract EconomicsBase is Test {
         allowlist = new AssetAllowlist(address(manager), ETH_FLOOR);
         resolver = new MockArtistResolver();
         resolver.set(ARTIST, artistPayout);
-        factory = new SplitFactory(resolver);
-        escrow = new RevenueEscrow();
+        verifier = new ReleaseVerifier();
+        factory = new SplitFactory(resolver, verifier);
+        escrow = new RevenueEscrow(address(manager), factory);
         router = new ClaimRouter();
         payer = new PaymentHarness(escrow);
         token = new MockERC20("Token", "TKN");
@@ -142,7 +146,7 @@ abstract contract EconomicsBase is Test {
     }
 
     function _wallet(ISplitWallet.Payee[] memory payees) internal returns (SplitWallet) {
-        return SplitWallet(payable(factory.createWallet(payees)));
+        return SplitWallet(payable(factory.createWallet(payees, bytes32(0))));
     }
 
     /// @dev A one-payee wallet paying `account` everything.
@@ -172,12 +176,34 @@ abstract contract EconomicsBase is Test {
         revert("no such artist");
     }
 
-    function _sign(uint256 pk, SplitWallet wallet, ISplitWallet.Authorization memory a)
+    /// @dev An authorization for payee `index` of `wallet`, valid for an hour.
+    function _auth(
+        SplitWallet wallet,
+        address asset,
+        uint256 index,
+        address account,
+        address recipient,
+        uint256 amount,
+        uint256 nonce
+    ) internal view returns (IReleaseVerifier.Authorization memory) {
+        return IReleaseVerifier.Authorization(
+            address(wallet),
+            asset,
+            index,
+            account,
+            recipient,
+            amount,
+            nonce,
+            block.timestamp + 1 hours
+        );
+    }
+
+    function _sign(uint256 pk, IReleaseVerifier.Authorization memory a)
         internal
         view
         returns (bytes memory)
     {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, wallet.releaseDigest(a));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, verifier.releaseDigest(a));
         return abi.encodePacked(r, s, v);
     }
 }

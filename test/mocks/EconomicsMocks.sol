@@ -87,6 +87,57 @@ contract FeeOnTransferToken is MockERC20("Fee", "FEE") {
     }
 }
 
+/// @dev Charges the fee to the sender on top of `amount`; the recipient gets exactly `amount`, so
+///      only a sender-side delta check catches it.
+contract SenderFeeToken is MockERC20("SFee", "SFEE") {
+    function _transfer(address from, address to, uint256 amount) internal override {
+        uint256 fee = amount / 100;
+        require(_balances[from] >= amount + fee, "balance");
+        _balances[from] -= amount + fee;
+        _balances[to] += amount;
+        totalSupply -= fee;
+        emit Transfer(from, to, amount);
+    }
+}
+
+/// @dev Moves funds and returns the non-canonical word 2 instead of `true`.
+contract NonCanonicalTrueToken is MockERC20("Two", "TWO") {
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _transfer(msg.sender, to, amount);
+        assembly ("memory-safe") {
+            mstore(0, 2)
+            return(0, 32)
+        }
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _spendAllowance(from, amount);
+        _transfer(from, to, amount);
+        assembly ("memory-safe") {
+            mstore(0, 2)
+            return(0, 32)
+        }
+    }
+}
+
+/// @dev `transfer` records the gas it was given and reverts unless that is at least `need`, so a
+///      test can calibrate `need` to the full allowance and then detect any starvation.
+contract GasCheckingToken is MockERC20("Gas", "GAS") {
+    uint256 public need;
+    uint256 public seen;
+
+    function setNeed(uint256 need_) external {
+        need = need_;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        uint256 g = gasleft();
+        seen = g;
+        require(g >= need, "starved");
+        return super.transfer(to, amount);
+    }
+}
+
 /// @dev USDT-style: `transfer` and `transferFrom` move funds but return no data while `silent`.
 contract NoReturnToken is MockERC20("NoReturn", "NRT") {
     bool public silent = true;
@@ -153,6 +204,10 @@ contract RebasingToken is MockERC20("Rebase", "RBT") {
         return _balances[account] * index / 1e18;
     }
 
+    function sharesOf(address account) external view returns (uint256) {
+        return _balances[account];
+    }
+
     function mint(address to, uint256 amount) public override {
         _balances[to] += amount * 1e18 / index;
         emit Transfer(address(0), to, amount);
@@ -167,17 +222,28 @@ contract RebasingToken is MockERC20("Rebase", "RBT") {
     }
 }
 
-/// @dev USDC-style: transfers from or to a blocked address revert.
-contract BlocklistToken is MockERC20("Blocklist", "USDB") {
+/// @dev USDC-style blocklist logic, shared by the tokens that need it.
+abstract contract BlocklistTokenBase is MockERC20("Blocklist", "USDB") {
     mapping(address => bool) public blocked;
 
     function setBlocked(address account, bool isBlocked) external {
         blocked[account] = isBlocked;
     }
 
-    function _transfer(address from, address to, uint256 amount) internal override {
+    function _transfer(address from, address to, uint256 amount) internal virtual override {
         require(!blocked[from] && !blocked[to], "Blacklistable: account is blacklisted");
         super._transfer(from, to, amount);
+    }
+}
+
+/// @dev USDC-style: transfers from or to a blocked address revert.
+contract BlocklistToken is BlocklistTokenBase { }
+
+/// @dev `transferFrom` never spends the allowance, so an approval survives the pull.
+contract StickyAllowanceToken is BlocklistTokenBase {
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _transfer(from, to, amount);
+        return true;
     }
 }
 
@@ -227,6 +293,39 @@ contract MockArtistResolver is IArtistPayoutResolver {
     function payoutAddress(uint256 artistId) external view returns (address) {
         require(!down, "resolver down");
         return payout[artistId];
+    }
+}
+
+/// @dev Accepts ETH only if it was given at least `need` gas, so it detects starvation.
+contract GasCheckingWallet {
+    uint256 public immutable need;
+
+    constructor(uint256 need_) {
+        need = need_;
+    }
+
+    receive() external payable {
+        require(gasleft() >= need, "starved");
+    }
+}
+
+/// @dev Force-sends ETH with SELFDESTRUCT, so no receive hook runs on the target.
+contract ForceSender {
+    constructor(address payable to) payable {
+        selfdestruct(to);
+    }
+}
+
+/// @dev Reverts on any zero-amount transfer or approval (BNB/LEND-style).
+contract RevertOnZeroToken is MockERC20("Zero", "ZRO") {
+    function approve(address spender, uint256 amount) public override returns (bool) {
+        require(amount != 0, "zero approve");
+        return super.approve(spender, amount);
+    }
+
+    function _transfer(address from, address to, uint256 amount) internal override {
+        require(amount != 0, "zero transfer");
+        super._transfer(from, to, amount);
     }
 }
 
@@ -282,14 +381,25 @@ contract ReentrantRecipient {
 }
 
 /// @dev An ERC-1271 account that accepts exactly one digest, and can call out as a payout address.
+///      With `burn` set, the check first burns up to that much gas (an expensive smart account).
 contract Mock1271Account {
     bytes32 public accepted;
+    uint256 public burn;
 
     function accept(bytes32 digest) external {
         accepted = digest;
     }
 
+    function setBurn(uint256 burn_) external {
+        burn = burn_;
+    }
+
     function isValidSignature(bytes32 digest, bytes calldata) external view returns (bytes4) {
+        uint256 b = burn;
+        if (b != 0) {
+            uint256 stop = gasleft() > b ? gasleft() - b : 0;
+            while (gasleft() > stop) { }
+        }
         return digest == accepted ? bytes4(0x1626ba7e) : bytes4(0xffffffff);
     }
 

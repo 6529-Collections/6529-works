@@ -6,7 +6,14 @@ import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { GasBurnerMock } from "../mocks/AdversarialTargets.sol";
-import { BlocklistToken, GasHungryToken, RejectingRecipient } from "../mocks/EconomicsMocks.sol";
+import {
+    BlocklistToken,
+    GasCheckingToken,
+    GasCheckingWallet,
+    GasHungryToken,
+    RejectingRecipient,
+    StickyAllowanceToken
+} from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract RevenuePaymentTest is EconomicsBase {
@@ -29,7 +36,7 @@ contract RevenuePaymentTest is EconomicsBase {
     }
 
     function test_PayETHToUndeployedWalletIsKeptForIt() public {
-        address future = factory.walletFor(_list(_fixed(bob, D)));
+        address future = factory.walletFor(_list(_fixed(bob, D)), bytes32(0));
         assertFalse(payer.payETH(future, 1 ether, GAS));
         SplitWallet w = _solo(bob);
         assertEq(address(w), future);
@@ -121,7 +128,9 @@ contract RevenuePaymentTest is EconomicsBase {
         usdc.setBlocked(address(wallet), false);
         escrow.flush(address(wallet), address(usdc));
         assertEq(usdc.balanceOf(address(wallet)), 400);
-        wallet.release(address(usdc), _artistIndex(wallet, ARTIST));
+        uint256 iArtist = _artistIndex(wallet, ARTIST);
+        vm.prank(artistPayout);
+        wallet.release(address(usdc), iArtist);
         assertEq(usdc.balanceOf(artistPayout), 100);
     }
 
@@ -136,6 +145,76 @@ contract RevenuePaymentTest is EconomicsBase {
         assertEq(usdc.balanceOf(address(payer)), 1_000_000);
         assertEq(usdc.allowance(address(payer), address(escrow)), 0);
         assertEq(escrow.totalOwed(address(usdc)), 0);
+    }
+
+    /// @dev Review nit, ported inverted from `test_PoC_PaymentToTheEscrowAddressIsStranded`: a
+    ///      payment aimed at the escrow's own address would sit there with no credit.
+    function test_PaymentsRejectTheEscrowAsAWallet() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(escrow))
+        );
+        payer.payERC20(address(escrow), address(usdc), 1000);
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(escrow))
+        );
+        payer.payETH(address(escrow), 1 ether, GAS);
+        assertEq(usdc.balanceOf(address(escrow)), 0);
+    }
+
+    /// @dev Review L-3: kills a mutant that drops the allowance check after the escrow route.
+    function test_EscrowRouteRevertsIfAnAllowanceSurvives() public {
+        StickyAllowanceToken sticky = new StickyAllowanceToken();
+        sticky.mint(address(payer), 1000);
+        sticky.setBlocked(address(wallet), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(RevenuePayment.EscrowAllowanceLeft.selector, address(sticky))
+        );
+        payer.payERC20(address(wallet), address(sticky), 1000);
+        assertEq(sticky.balanceOf(address(payer)), 1000);
+        assertEq(escrow.totalOwed(address(sticky)), 0);
+    }
+
+    /// @dev Review L-3, ported from `test_PoC_CallerCannotStarveETHPaymentIntoEscrow` (kills an
+    ///      `ETH_CALL_RESERVE` mutant): at every caller gas level the payment either reverts or
+    ///      reaches the wallet with its full allowance; it is never escrowed by starvation.
+    function test_CallerCannotStarveETHPaymentIntoEscrow() public {
+        uint256 gasLimit = 100_000;
+        GasCheckingWallet w = new GasCheckingWallet(gasLimit - 5_000);
+        uint256 escrowedCount;
+        uint256 okCount;
+        for (uint256 g = 100_000; g < 200_000; g += 250) {
+            uint256 snap = vm.snapshotState();
+            vm.cool(address(w));
+            try payer.payETH{ gas: g }(address(w), 1, gasLimit) returns (bool escrowed) {
+                ++okCount;
+                if (escrowed) ++escrowedCount;
+            } catch { }
+            vm.revertToState(snap);
+        }
+        assertGt(okCount, 0);
+        assertEq(escrowedCount, 0, "caller forced the escrow route");
+    }
+
+    /// @dev Review L-3, ported from `test_PoC_CallerCannotStarveTokenPaymentIntoEscrow` and
+    ///      sharpened to kill the token gas-guard buffer mutant: the token is calibrated to need
+    ///      exactly the gas it sees with its full allowance, so any shortfall would escrow.
+    function test_CallerCannotStarveTokenPaymentIntoEscrow() public {
+        GasCheckingToken t = new GasCheckingToken();
+        t.mint(address(payer), 1e24);
+        assertFalse(payer.payERC20(address(wallet), address(t), 1));
+        t.setNeed(t.seen());
+        uint256 escrowedCount;
+        uint256 okCount;
+        for (uint256 g = 290_000; g < 340_000; g += 37) {
+            uint256 snap = vm.snapshotState();
+            try payer.payERC20{ gas: g }(address(wallet), address(t), 1) returns (bool escrowed) {
+                ++okCount;
+                if (escrowed) ++escrowedCount;
+            } catch { }
+            vm.revertToState(snap);
+        }
+        assertGt(okCount, 0);
+        assertEq(escrowedCount, 0, "caller forced the escrow route");
     }
 
     function test_PayERC20RevertsWithoutFunds() public {

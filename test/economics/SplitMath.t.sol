@@ -97,12 +97,12 @@ contract SplitMathTest is EconomicsBase {
                 : _fixed(address(uint160(uint256(keccak256(abi.encode(seed, "a", i))))), shares[i]);
         }
         _sorted(payees);
-        address wallet = factory.createWallet(payees);
+        address wallet = factory.createWallet(payees, bytes32(0));
         assertEq(SplitWallet(payable(wallet)).payeeCount(), n);
         if (n > 1) {
             (payees[0], payees[n - 1]) = (payees[n - 1], payees[0]);
             vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayeesNotCanonical.selector, 1));
-            factory.walletFor(payees);
+            factory.walletFor(payees, bytes32(0));
         }
     }
 }

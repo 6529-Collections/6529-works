@@ -6,10 +6,15 @@ import {
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
+import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
     CallbackToken,
+    ForceSender,
+    Mock1271Account,
     RebasingToken,
     RejectingRecipient,
     ReentrantRecipient
@@ -48,6 +53,7 @@ contract SplitWalletTest is EconomicsBase {
         emit ISplitWallet.Released(ETH, iAlice, alice, alice, 5 ether, 10 ether);
         assertEq(wallet.release(ETH, iAlice), 5 ether);
         assertEq(wallet.release(ETH, iBob), 3 ether);
+        vm.prank(artistPayout);
         assertEq(wallet.release(ETH, iArtist), 2 ether);
 
         assertEq(alice.balance, 5 ether);
@@ -58,6 +64,19 @@ contract SplitWalletTest is EconomicsBase {
         assertEq(wallet.released(ETH, iArtist), 2 ether);
         assertEq(wallet.recordedObserved(ETH), 10 ether);
         assertEq(wallet.observed(ETH), 10 ether);
+    }
+
+    /// @dev Ported from the review: force-sent ETH (no receive hook) is split like any receipt
+    ///      and never freezes the asset.
+    function test_ForceSentETHIsSplitAndNeverFreezes() public {
+        vm.deal(address(wallet), 1 ether);
+        assertEq(wallet.release(ETH, iAlice), 0.5 ether);
+        new ForceSender{ value: 1 ether }(payable(address(wallet)));
+        assertEq(wallet.release(ETH, iAlice), 0.5 ether);
+        assertEq(wallet.release(ETH, iBob), 0.6 ether);
+        vm.prank(artistPayout);
+        assertEq(wallet.release(ETH, iArtist), 0.4 ether);
+        assertEq(address(wallet).balance, 0);
     }
 
     function test_ReleaseIsCumulativeAcrossReceiptRounds() public {
@@ -76,6 +95,7 @@ contract SplitWalletTest is EconomicsBase {
         vm.expectEmit(true, true, true, true, address(wallet));
         emit ISplitWallet.Released(address(token), iBob, bob, bob, 300, 1000);
         assertEq(wallet.release(address(token), iBob), 300);
+        vm.prank(artistPayout);
         assertEq(wallet.release(address(token), iArtist), 200);
         assertEq(token.balanceOf(bob), 300);
         assertEq(token.balanceOf(artistPayout), 200);
@@ -83,7 +103,7 @@ contract SplitWalletTest is EconomicsBase {
         assertEq(wallet.observed(address(token)), 1000);
     }
 
-    function test_AnyoneMayReleaseButOnlyToThePayee() public {
+    function test_AnyoneMayReleaseAFixedPayeeButOnlyToItsAccount() public {
         vm.deal(address(wallet), 1 ether);
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
@@ -99,9 +119,112 @@ contract SplitWalletTest is EconomicsBase {
         assertEq(wallet.payoutAddress(iArtist), recovered);
         vm.expectEmit(true, true, true, true, address(wallet));
         emit ISplitWallet.Released(ETH, iArtist, recovered, recovered, 2 ether, 10 ether);
+        vm.prank(recovered);
         wallet.release(ETH, iArtist);
         assertEq(recovered.balance, 2 ether);
         assertEq(artistPayout.balance, 0);
+    }
+
+    function test_ArtistPayeeIsPullOnly() public {
+        vm.deal(address(wallet), 10 ether);
+        address stranger = makeAddr("stranger");
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, stranger, artistPayout)
+        );
+        vm.prank(stranger);
+        wallet.release(ETH, iArtist);
+        vm.prank(artistPayout);
+        assertEq(wallet.release(ETH, iArtist), 2 ether);
+    }
+
+    /// @dev Regression for review H-1, ported from `test_PoC_F1_AnyonePushesAccruedArtistBalance
+    ///      ToLostKey` and inverted: before the fix, anyone (a griefer or a keeper batch) could
+    ///      push an artist's accrued balance to a lost payout key ahead of recovery.
+    function test_LostArtistKeyCannotBePushedBeforeRecovery() public {
+        vm.deal(address(wallet), 10 ether);
+        token.mint(address(wallet), 1000);
+        address griefer = makeAddr("griefer");
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](2);
+        claims[0] = IClaimRouter.Claim(address(wallet), ETH, iArtist);
+        claims[1] = IClaimRouter.Claim(address(wallet), address(token), iArtist);
+
+        bytes memory reason = abi.encodeWithSelector(
+            ISplitWallet.NotPayoutAddress.selector, address(router), artistPayout
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IClaimRouter.ClaimCallFailed.selector, 0, address(wallet), reason.length, reason
+            )
+        );
+        vm.prank(griefer);
+        router.claim(claims, false);
+        vm.prank(griefer);
+        uint256[] memory amounts = router.claim(claims, true);
+        assertEq(amounts[0] + amounts[1], 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, griefer, artistPayout)
+        );
+        vm.prank(griefer);
+        wallet.release(ETH, iArtist);
+        assertEq(artistPayout.balance, 0, "nothing pushed to the lost key");
+        assertEq(token.balanceOf(artistPayout), 0, "no tokens pushed to the lost key");
+
+        // Recovery completes in the registry: the recovered address pulls everything accrued.
+        address recovered = makeAddr("recovered");
+        resolver.set(ARTIST, recovered);
+        vm.startPrank(recovered);
+        assertEq(wallet.release(ETH, iArtist), 2 ether);
+        assertEq(wallet.release(address(token), iArtist), 200);
+        vm.stopPrank();
+        assertEq(recovered.balance, 2 ether);
+        assertEq(token.balanceOf(recovered), 200);
+    }
+
+    function test_ArtistSmartAccountPullsDirectlyOrBySignature() public {
+        Mock1271Account safe = new Mock1271Account();
+        resolver.set(ARTIST, address(safe));
+        vm.deal(address(wallet), 10 ether);
+        safe.execute(address(wallet), abi.encodeCall(ISplitWallet.release, (ETH, iArtist)));
+        assertEq(address(safe).balance, 2 ether);
+
+        vm.deal(address(wallet), address(wallet).balance + 10 ether);
+        address relayer = makeAddr("relayer");
+        IReleaseVerifier.Authorization memory a =
+            _auth(wallet, ETH, iArtist, address(safe), relayer, 1 ether, 1);
+        safe.accept(verifier.releaseDigest(a));
+        vm.prank(relayer);
+        assertEq(wallet.releaseWithAuthorization(a, ""), 1 ether);
+        assertEq(relayer.balance, 1 ether);
+    }
+
+    /// @dev Documents the H-1 consequence: a split wallet cannot pull, so it cannot serve as an
+    ///      artist's payout address. Nest it as a fixed payee instead, which anyone may push to.
+    function test_NestedWalletCannotBeAnArtistPayoutAddress() public {
+        SplitWallet nested = _solo(bob);
+        resolver.set(ARTIST, address(nested));
+        vm.deal(address(wallet), 10 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, bob, address(nested))
+        );
+        vm.prank(bob);
+        wallet.release(ETH, iArtist);
+
+        SplitWallet outer = _wallet(_list(_fixed(address(nested), 40_000), _fixed(alice, 60_000)));
+        vm.deal(address(outer), 1 ether);
+        outer.release(ETH, _indexOf(outer, address(nested)));
+        nested.release(ETH, 0);
+        assertEq(bob.balance, 0.4 ether);
+    }
+
+    function test_ResolverCodeChangeFailsClosedForArtistPayeesOnly() public {
+        vm.deal(address(wallet), 10 ether);
+        vm.etch(address(resolver), address(router).code);
+        vm.expectRevert(ISplitWallet.ResolverCodeChanged.selector);
+        wallet.payoutAddress(iArtist);
+        vm.expectRevert(ISplitWallet.ResolverCodeChanged.selector);
+        vm.prank(artistPayout);
+        wallet.release(ETH, iArtist);
+        assertEq(wallet.release(ETH, iAlice), 5 ether);
     }
 
     function test_UnresolvedOrFailingResolverBlocksOnlyTheArtistPayee() public {
@@ -156,6 +279,7 @@ contract SplitWalletTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(ISplitWallet.InvalidRecipient.selector, address(wallet))
         );
+        vm.prank(address(wallet));
         wallet.release(ETH, iArtist);
     }
 
@@ -175,7 +299,7 @@ contract SplitWalletTest is EconomicsBase {
     }
 
     function test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable() public {
-        allowlist.admitAsset(address(token), 1);
+        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
         token.mint(address(wallet), 100);
         allowlist.deprecateAsset(address(token));
         assertEq(wallet.release(address(token), iAlice), 50);
@@ -299,7 +423,9 @@ contract SplitWalletTest is EconomicsBase {
         assertFalse(cb.lastHookOk());
         assertEq(cb.balanceOf(alice), 500);
         assertEq(cb.balanceOf(bob), 0);
-        cb.setHook(address(wallet), abi.encodeCall(ISplitWallet.revokeNonce, (1)));
+        cb.setHook(
+            address(wallet), abi.encodeCall(ISplitWallet.releaseTo, (address(cb), iAlice, alice))
+        );
         wallet.release(address(cb), iBob);
         assertFalse(cb.lastHookOk());
     }

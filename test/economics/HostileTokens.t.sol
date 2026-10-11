@@ -10,7 +10,10 @@ import {
     FeeOnTransferToken,
     MockERC20,
     NoReturnToken,
+    NonCanonicalTrueToken,
     RebasingToken,
+    RevertOnZeroToken,
+    SenderFeeToken,
     ReturnsFalseToken
 } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
@@ -119,6 +122,59 @@ contract HostileTokenMatrixTest is EconomicsBase {
         escrow.flush(address(wallet), address(t));
         _assertNoResidue(address(t), before);
         assertEq(before.owed, AMOUNT);
+    }
+
+    /// @dev Review L-3, ported from `test_PoC_SenderSideFeeFailsClosedEverywhere`: a fee charged
+    ///      to the sender leaves the recipient whole, so only the sender-side check catches it.
+    function test_SenderFee_FailsClosedOnEveryPath() public {
+        SenderFeeToken t = new SenderFeeToken();
+        _fund(t);
+        t.mint(address(wallet), AMOUNT);
+        Snapshot memory before = _snap(address(t));
+        vm.expectRevert(_mismatch(address(t)));
+        wallet.release(address(t), 0);
+        vm.expectRevert(_mismatch(address(t)));
+        payer.payERC20(address(wallet), address(t), AMOUNT);
+        vm.prank(depositor);
+        vm.expectRevert(_mismatch(address(t)));
+        escrow.depositERC20(address(wallet), address(t), AMOUNT);
+        _assertNoResidue(address(t), before);
+    }
+
+    // ---------------------------------------------------------------- non-canonical true
+
+    /// @dev Review L-3: a token that returns the word 2 is not returning `true`.
+    function test_NonCanonicalTrue_FailsClosedOnEveryPath() public {
+        NonCanonicalTrueToken t = new NonCanonicalTrueToken();
+        _fund(t);
+        t.mint(address(wallet), AMOUNT);
+        Snapshot memory before = _snap(address(t));
+        vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
+        wallet.release(address(t), 0);
+        vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
+        payer.payERC20(address(wallet), address(t), AMOUNT);
+        vm.prank(depositor);
+        vm.expectRevert(_failed(address(t), IERC20.transferFrom.selector));
+        escrow.depositERC20(address(wallet), address(t), AMOUNT);
+        _assertNoResidue(address(t), before);
+    }
+
+    // ---------------------------------------------------------------- reverts on zero
+
+    /// @dev Ported from the review: a token that reverts on zero-value moves never sees one.
+    function test_RevertOnZero_NeverSeesAZeroMove() public {
+        RevertOnZeroToken t = new RevertOnZeroToken();
+        // A 1-in-100,000 payee: 99 units round its entitlement to zero.
+        SplitWallet w = _wallet(_list(_fixed(alice, 1), _fixed(bob, D - 1)));
+        uint256 iAlice = _indexOf(w, alice);
+        t.mint(address(payer), 1000);
+        assertFalse(payer.payERC20(address(w), address(t), 0));
+        assertFalse(payer.payERC20(address(w), address(t), 99));
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NothingToRelease.selector, address(t), iAlice)
+        );
+        w.release(address(t), iAlice);
+        assertEq(w.release(address(t), _indexOf(w, bob)), 98);
     }
 
     // ---------------------------------------------------------------- no return value

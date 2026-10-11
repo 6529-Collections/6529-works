@@ -4,10 +4,21 @@ pragma solidity ^0.8.24;
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
-import { ReentrantRecipient, ToggleRecipient } from "../mocks/EconomicsMocks.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import {
+    BlocklistToken,
+    ForceSender,
+    ReentrantRecipient,
+    ToggleRecipient
+} from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract RevenueEscrowTest is EconomicsBase {
@@ -187,7 +198,7 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     function test_DeprecatedAssetCreditsStillFlush() public {
-        allowlist.admitAsset(address(token), 1);
+        allowlist.admitAsset(address(token), IAssetAllowlist.Status.None, 0, 1);
         vm.prank(depositor);
         escrow.depositERC20(address(wallet), address(token), 10);
         allowlist.deprecateAsset(address(token));
@@ -210,5 +221,137 @@ contract RevenueEscrowTest is EconomicsBase {
             escrow.totalOwed(ETH)
         );
         assertEq(address(escrow).balance, escrow.totalOwed(ETH));
+    }
+
+    // ------------------------------------------------------------------ recovery (review M-1)
+
+    function test_ConstructorRejectsFactoryWithoutCodeOrDelegated() public {
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidFactory.selector, alice));
+        new RevenueEscrow(address(manager), ISplitFactory(alice));
+        address eoa = makeAddr("delegated");
+        vm.etch(eoa, abi.encodePacked(hex"ef0100", address(factory)));
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidFactory.selector, eoa));
+        new RevenueEscrow(address(manager), ISplitFactory(eoa));
+        assertEq(address(escrow.factory()), address(factory));
+        assertEq(escrow.authority(), address(manager));
+    }
+
+    /// @dev A token blocklists the original wallet: its sales land in escrow and cannot flush.
+    ///      Governance moves those credits to a replacement wallet with identical payees; the
+    ///      original wallet's own balance stays stuck.
+    function test_RecoverMovesCreditsToAnEquivalentReplacement() public {
+        BlocklistToken usdc = new BlocklistToken();
+        ISplitWallet.Payee[] memory payees = wallet.payees();
+        usdc.mint(address(wallet), 100);
+        usdc.setBlocked(address(wallet), true);
+        usdc.mint(address(payer), 1000);
+        assertTrue(payer.payERC20(address(wallet), address(usdc), 1000));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TokenTransfer.TokenCallFailed.selector, address(usdc), usdc.transfer.selector
+            )
+        );
+        escrow.flush(address(wallet), address(usdc));
+
+        address replacement = factory.createWallet(payees, bytes32(uint256(1)));
+        vm.expectEmit(true, true, true, true, address(escrow));
+        emit IRevenueEscrow.Recovered(address(wallet), replacement, address(usdc), 1000, 1000);
+        escrow.recover(address(wallet), replacement, address(usdc));
+        assertEq(escrow.owed(address(wallet), address(usdc)), 0);
+        assertEq(escrow.owed(replacement, address(usdc)), 1000);
+        assertEq(escrow.totalOwed(address(usdc)), 1000);
+
+        vm.prank(keeper);
+        escrow.flush(replacement, address(usdc));
+        SplitWallet r = SplitWallet(payable(replacement));
+        r.release(address(usdc), _indexOf(r, alice));
+        assertEq(usdc.balanceOf(alice), 600);
+        assertEq(usdc.balanceOf(address(wallet)), 100, "the blocked wallet's own balance stays");
+    }
+
+    function test_RecoverRejectsWalletsThatAreNotEquivalent() public {
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(wallet));
+        SplitWallet different = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
+        address undeployed = factory.walletFor(wallet.payees(), bytes32(uint256(2)));
+        address[4] memory bad = [address(different), address(wallet), undeployed, alice];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IRevenueEscrow.NotEquivalentWallet.selector, address(wallet), bad[i]
+                )
+            );
+            escrow.recover(address(wallet), bad[i], ETH);
+        }
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.NotEquivalentWallet.selector, alice, address(wallet)
+            )
+        );
+        escrow.recover(alice, address(wallet), ETH);
+        assertEq(escrow.owed(address(wallet), ETH), 1 ether);
+    }
+
+    function test_RecoverWithNothingOwedReverts() public {
+        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, address(wallet), ETH)
+        );
+        escrow.recover(address(wallet), replacement, ETH);
+    }
+
+    function test_RecoverIsGovernedInTheFundsClass() public {
+        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(wallet));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, keeper)
+        );
+        vm.prank(keeper);
+        escrow.recover(address(wallet), replacement, ETH);
+
+        uint64 funds = 3;
+        uint32 delay = 14 days;
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = IRevenueEscrow.recover.selector;
+        manager.setTargetFunctionRole(address(escrow), selectors, funds);
+        manager.grantRole(funds, keeper, delay);
+        bytes memory call =
+            abi.encodeCall(IRevenueEscrow.recover, (address(wallet), replacement, ETH));
+        vm.startPrank(keeper);
+        manager.schedule(address(escrow), call, 0);
+        vm.warp(block.timestamp + delay - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerNotReady.selector,
+                manager.hashOperation(keeper, address(escrow), call)
+            )
+        );
+        manager.execute(address(escrow), call);
+        vm.warp(block.timestamp + 1);
+        manager.execute(address(escrow), call);
+        vm.stopPrank();
+        assertEq(escrow.owed(replacement, ETH), 1 ether);
+    }
+
+    function test_RecoverIsNonPayable() public {
+        (bool ok,) = address(escrow).call{ value: 1 }(
+            abi.encodeCall(IRevenueEscrow.recover, (address(wallet), address(wallet), ETH))
+        );
+        assertFalse(ok);
+    }
+
+    /// @dev Ported from the review: force-sent ETH (or tokens sent without a deposit) is never
+    ///      owed to anyone, so no flush or recovery can reach it.
+    function test_ForceSentETHIsNeverOwed() public {
+        new ForceSender{ value: 1 ether }(payable(address(escrow)));
+        assertEq(address(escrow).balance, 1 ether);
+        assertEq(escrow.totalOwed(ETH), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, address(this), ETH)
+        );
+        escrow.flush(address(this), ETH);
     }
 }
