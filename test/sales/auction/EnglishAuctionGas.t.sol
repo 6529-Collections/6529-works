@@ -8,7 +8,8 @@ import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { CURRENCY_DEFAULT, PRODUCT_STREAM, Payee } from "src/interfaces/types/EconomicsTypes.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { CURRENCY_DEFAULT, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
@@ -231,7 +232,7 @@ contract EnglishAuctionGasTest is Test {
         item.mediaHash = keccak256(abi.encode("media list", i));
         item.recordFileId = keccak256(abi.encode("record", i));
         item.parties.push(Party(artist, PartyRole.ARTIST));
-        item.payees.push(Payee(uint160(artist), address(0), 100_000));
+        item.payees.push(ISplitWallet.Payee(uint160(artist), address(0), 100_000));
         item.license = License("CC0-1.0", keccak256("CC0 text"));
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");

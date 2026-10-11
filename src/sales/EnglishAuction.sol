@@ -15,6 +15,7 @@ import {
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
+import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { BoundedParameter } from "../governance/BoundedParameter.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
@@ -28,8 +29,7 @@ import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
     PRODUCT_FEDERATED,
-    PRODUCT_STREAM,
-    SHARE_DENOMINATOR
+    PRODUCT_STREAM
 } from "../interfaces/types/EconomicsTypes.sol";
 import {
     LockedTerms,
@@ -277,7 +277,7 @@ contract EnglishAuction is
             if (creator == address(0)) revert InvalidRecipient(creator);
             s.recipient = creator;
         }
-        uint256 fee = Math.mulDiv(s.bid, lt.feeShare, SHARE_DENOMINATOR);
+        uint256 fee = Math.mulDiv(s.bid, lt.feeShare, Splits.DENOMINATOR);
         _pay(lt.currency, lt.seller, s.bid - fee);
         _pay(lt.currency, lt.feeRecipient, fee);
         IStream(lt.token).markPrimarySettled(lt.id);
@@ -511,7 +511,7 @@ contract EnglishAuction is
         Terms memory t = _lockTerms(token, listed, terms.currency);
         if (
             tokenId >> 32 != 0 || terms.seller == address(0) || terms.feeRecipient == address(0)
-                || terms.creator == address(0) || terms.feeShare > SHARE_DENOMINATOR
+                || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
         ) revert InvalidTerms(token, tokenId);
@@ -564,7 +564,7 @@ contract EnglishAuction is
         if (!listed) {
             t.federated = true;
             t.registryFee = IFederationRegistry(federationRegistry).entry(token).feeShare;
-            if (t.registryFee > SHARE_DENOMINATOR) revert InvalidTerms(token, 0);
+            if (t.registryFee > Splits.DENOMINATOR) revert InvalidTerms(token, 0);
         }
     }
 
@@ -597,7 +597,7 @@ contract EnglishAuction is
             p.feeRecipient,
             t.federated ? t.registryFee : p.feeShare
         );
-        if (lt.feeShare > SHARE_DENOMINATOR) revert InvalidTerms(s.token, s.tokenId);
+        if (lt.feeShare > Splits.DENOMINATOR) revert InvalidTerms(s.token, s.tokenId);
         creator = p.creator;
     }
 
@@ -700,7 +700,7 @@ contract EnglishAuction is
     function _minimumBid(Sale storage s, Terms storage t) private view returns (uint256) {
         if (s.bidder == address(0)) return Math.max(t.openingBid, 1);
         uint256 high = s.bid;
-        uint256 step = Math.mulDiv(high, t.incrementShare, SHARE_DENOMINATOR, Math.Rounding.Ceil);
+        uint256 step = Math.mulDiv(high, t.incrementShare, Splits.DENOMINATOR, Math.Rounding.Ceil);
         return high + Math.max(step, s.incrementFloor);
     }
 
@@ -735,7 +735,7 @@ contract EnglishAuction is
     /// @dev Emitted from its own frame to stay within the legacy code generator's stack. The
     ///      high bid is zero when the auction drew no bids, so the price and fee are too.
     function _emitSettled(uint256 saleId, Sale storage s, LockedTerms memory lt) private {
-        uint256 fee = Math.mulDiv(s.bid, lt.feeShare, SHARE_DENOMINATOR);
+        uint256 fee = Math.mulDiv(s.bid, lt.feeShare, Splits.DENOMINATOR);
         emit SaleSettled(
             saleId,
             lt.token,
@@ -819,7 +819,7 @@ contract EnglishAuction is
                 || next.extensionWindow < MIN_EXTENSION_WINDOW
                 || next.extensionWindow > MAX_EXTENSION_WINDOW
                 || next.extensionWindow > next.duration || next.incrementShare < MIN_INCREMENT_SHARE
-                || next.incrementShare > SHARE_DENOMINATOR
+                || next.incrementShare > Splits.DENOMINATOR
         ) revert InvalidConfig();
         emit ConfigSet(_config, next);
         _config = next;

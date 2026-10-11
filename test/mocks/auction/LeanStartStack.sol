@@ -8,7 +8,7 @@ import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { Payee, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     MoveAuthorization,
     PackageItem,
@@ -111,7 +111,7 @@ contract LeanPackageRegistry is EIP712 {
             if (i == 0) artistId = id;
         }
         for (uint256 i; i < item.payees.length; ++i) {
-            Payee calldata p = item.payees[i];
+            ISplitWallet.Payee calldata p = item.payees[i];
             bool covered;
             for (uint256 j; j < parties && !covered; ++j) {
                 address account = item.parties[j].account;
@@ -152,13 +152,13 @@ contract LeanEconomicsResolver {
         royaltyRate = 6_529;
     }
 
-    function newWorkTerms(Payee[] calldata payees) external view returns (WorkTerms memory t) {
+    function newWorkTerms(ISplitWallet.Payee[] calldata payees)
+        external
+        view
+        returns (WorkTerms memory t)
+    {
         (t.feeRecipient, t.feeShare, t.royaltyRate) = (feeRecipient, feeShare, royaltyRate);
-        ISplitWallet.Payee[] memory list = new ISplitWallet.Payee[](payees.length);
-        for (uint256 i; i < payees.length; ++i) {
-            list[i] = ISplitWallet.Payee(payees[i].artistId, payees[i].account, payees[i].share);
-        }
-        t.seller = factory.walletFor(list, bytes32(0));
+        t.seller = factory.walletFor(payees, bytes32(0));
     }
 }
 
