@@ -5,10 +5,10 @@ Status: Accepted by the owner, 11 October 2026. §13 is amended by
 are recorded in [ADR 0003](0003-build-time-decisions.md).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
-([6529Stream PR #745](https://github.com/6529-Collections/6529Stream/pull/745)),
+(6529Stream PR #745),
 and it is the founding decision of this repository. Unless qualified otherwise,
 references below to ADR numbers, pull requests and issues refer to the
-[6529Stream repository](https://github.com/6529-Collections/6529Stream), which
+6529Stream repository (private since 11 October 2026), which
 holds the RC1 reference implementation and its history. "This ADR" means this
 document.
 

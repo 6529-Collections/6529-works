@@ -6,5 +6,5 @@
 | [0002](0002-access-manager-hardening.md) | AccessManager hardening as implemented | Accepted (11 October 2026); extended by 0003 |
 | [0003](0003-build-time-decisions.md) | Build-time decisions for v1 | Accepted (11 October 2026) |
 
-Earlier decisions for the RC1 reference implementation are in the
-[6529Stream ADR index](https://github.com/6529-Collections/6529Stream/tree/main/docs/adr).
+Earlier decisions for the RC1 reference implementation are in the ADR index of the
+private 6529Stream repository.

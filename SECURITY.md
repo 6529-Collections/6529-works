@@ -27,5 +27,6 @@ In scope:
 - deployment scripts under `script/`;
 - CI workflows.
 
-The RC1 reference implementation has its own policy in the
-[6529Stream repository](https://github.com/6529-Collections/6529Stream/blob/main/SECURITY.md).
+The RC1 reference implementation is kept in the private 6529Stream repository.
+Report anything that affects it through this repository's private vulnerability
+reporting as well.
