@@ -90,6 +90,9 @@ contract MockEditionTarget is ERC1155, IMintTarget {
     function burn(uint256, uint256) external pure {
         revert("no burn");
     }
+
+    /// @dev Editions record nothing at settlement: a no-op, as `IMintTarget` allows.
+    function markPrimarySettled(uint256) external { }
 }
 
 /// @dev The revenue escrow's crediting surface: pulls exactly and credits per wallet and asset.
