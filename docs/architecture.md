@@ -80,6 +80,11 @@ on Sepolia and mainnet. `WorksHashing` is the reference implementation; its
 golden vectors in `test/interfaces/WorksHashing.t.sol` were computed with
 `cast`, the same way off-chain tools compute them.
 
+Two kinds of hash are deliberately bound to one chain and one contract. EIP-712
+signatures that authorize actions use their verifying contract's domain, and
+fixed-price allowlist leaves include `block.chainid` and the adapter's address
+(see `IFixedPriceSale`), because an allowlist belongs to one sale.
+
 | Identifier | Definition |
 | --- | --- |
 | item hash | `keccak256(abi.encode(PACKAGE_ITEM_DOMAIN, item))` |

@@ -65,6 +65,9 @@ library WorksHashing {
 
     /// @notice The ID of the artist-portion split an item must name: every party, in item
     ///         order, artist-resolved, with its share.
+    /// @dev Derives only; it does not validate. Callers check the parties (count, distinct
+    ///      nonzero accounts, nonzero shares summing to 100,000) before relying on the ID,
+    ///      because malformed parties still yield a deterministic ID.
     function partySplitId(Party[] memory parties) internal pure returns (bytes32) {
         SplitRecipient[] memory recipients = new SplitRecipient[](parties.length);
         for (uint256 i; i < parties.length; ++i) {

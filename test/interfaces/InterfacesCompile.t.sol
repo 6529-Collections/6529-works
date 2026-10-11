@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
 import { ICurationVerifier } from "../../src/interfaces/ICurationVerifier.sol";
@@ -60,9 +61,11 @@ contract InterfacesCompileTest is Test {
     /// @dev The artist registry answers the statement log's artist question.
     function test_artistRegistryIsArtistRoleResolver() public pure {
         assertEq(type(IArtistRoleResolver).interfaceId, IArtistRoleResolver.isArtist.selector);
-        // Compiles only while IArtistRegistry extends IArtistRoleResolver.
+        // Compiles only while IArtistRegistry extends IArtistRoleResolver, which extends
+        // IERC165: an implementation reports both interface IDs.
         IArtistRoleResolver resolver = IArtistRegistry(address(0x6529));
-        assertEq(address(resolver), address(0x6529));
+        IERC165 introspection = resolver;
+        assertEq(address(introspection), address(0x6529));
     }
 
     function test_limits() public pure {
