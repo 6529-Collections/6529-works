@@ -258,6 +258,7 @@ contract RendererGasAdversarialTest is RendererBase {
     uint256 internal constant W_BOMB_PERCENT = 207;
     uint256 internal constant W_TOO_MANY_ATTRS = 208;
     uint256 internal constant W_BOMB_ESCAPES = 209;
+    uint256 internal constant W_BAD_LAST_ATTR = 210;
 
     TokenURIRelay internal relay;
     bytes32 internal html;
@@ -407,16 +408,18 @@ contract RendererGasAdversarialTest is RendererBase {
             K_MEMBERS,
             bytes.concat('{"name":"N"', _fill(',"a":0', 6 * ((JsonScan.MAX_VALUES - 3) / 3)), "}")
         );
-        // The most attributes (each is an object, two keys and two values: 5 units), and the rest
-        // of the units in an ignored array.
+        // The most attributes (each is an object of its four keys and values: 9 units), and the
+        // rest of the units in an ignored array.
         uint256 attrs = MAX_ATTRIBUTES;
         _both(
             K_ATTRS,
             bytes.concat(
                 '{"name":"N","a":[0',
-                _fill(",0", 2 * (JsonScan.MAX_VALUES - 3 - 3 - (3 + 5 * attrs) - 1)),
+                _fill(",0", 2 * (JsonScan.MAX_VALUES - 3 - 3 - (3 + 9 * attrs) - 1)),
                 '],"attributes":[',
-                _attrList('{"trait_type":"k","value":1}', attrs),
+                _attrList(
+                    '{"trait_type":"k","value":1,"display_type":"number","max_value":9}', attrs
+                ),
                 "]}"
             )
         );
@@ -481,6 +484,23 @@ contract RendererGasAdversarialTest is RendererBase {
             preview
         );
         _members(W_BOMB_ESCAPES, _padded(open, hex"5c6e", close), html, preview);
+        _members(W_BAD_LAST_ATTR, _badLastAttribute(), html, preview);
+    }
+
+    /// @dev The refused record that costs the most: the units all used, white space to fill the
+    ///      record before the attributes, `MAX_ATTRIBUTES - 1` good ones, and the last with a
+    ///      fifth key, so the second walk goes all the way before it finds it.
+    function _badLastAttribute() internal view returns (bytes memory) {
+        bytes memory good = '{"trait_type":"k","value":1,"display_type":"number","max_value":9}';
+        uint256 n = MAX_ATTRIBUTES - 1;
+        uint256 zeros = JsonScan.MAX_VALUES - 3 - 3 - (3 + 9 * n + 10) - 1;
+        bytes memory head =
+            bytes.concat('{"name":"N","a":[0', _fill(",0", 2 * zeros), '],"attributes":[');
+        bytes memory tail = bytes.concat(
+            _attrList(good, n),
+            ',{"trait_type":"k","value":1,"display_type":"number","max_value":9,"x":1}]}'
+        );
+        return bytes.concat(head, _fill(" ", limit - head.length - tail.length), tail);
     }
 
     function _cold(uint256 id) internal view returns (uint256 used, bool ok) {
@@ -524,15 +544,16 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_Attributes_Html() public {
-        string memory j =
-            _row("64 attributes + 695 zeros + 256 KiB b64 + preview", 10 * K_ATTRS + 1);
+        string memory j = _row(
+            "32 attributes of 4 members + 727 zeros + 256 KiB b64 + preview", 10 * K_ATTRS + 1
+        );
         uint256 first = _attrIndex(j, "k");
         assertEq(_str(j, _at(first + MAX_ATTRIBUTES - 1, ".trait_type")), "k");
         assertFalse(_has(j, _at(first + MAX_ATTRIBUTES, "")));
     }
 
     function test_Gas_Attributes_Script() public {
-        _row("64 attributes + 695 zeros + script + preview", 10 * K_ATTRS + 2);
+        _row("32 attributes of 4 members + 727 zeros + script + preview", 10 * K_ATTRS + 2);
     }
 
     function test_Gas_Percent_Html() public {
@@ -656,11 +677,11 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_LongNamesWithPercent_Html() public {
-        _row("132-byte attribute names, 8 % each + 256 KiB b64 + preview", 10 * K_NAMES_PCT + 1);
+        _row("132-byte attribute names, 16 % each + 256 KiB b64 + preview", 10 * K_NAMES_PCT + 1);
     }
 
     function test_Gas_LongNamesWithPercent_Script() public {
-        _row("132-byte attribute names, 8 % each + script + preview", 10 * K_NAMES_PCT + 2);
+        _row("132-byte attribute names, 16 % each + script + preview", 10 * K_NAMES_PCT + 2);
     }
 
     function test_Gas_LongNamesOfUtf8_Html() public {
@@ -676,12 +697,13 @@ contract RendererGasAdversarialTest is RendererBase {
 
     function test_Gas_LongNamesOfUtf8WithPercent_Html() public {
         _row(
-            "130-byte names of 2-byte UTF-8, 8 % each + 256 KiB b64 + preview", 10 * K_NAMES_MIX + 1
+            "130-byte names of 2-byte UTF-8, 16 % each + 256 KiB b64 + preview",
+            10 * K_NAMES_MIX + 1
         );
     }
 
     function test_Gas_LongNamesOfUtf8WithPercent_Script() public {
-        _row("130-byte names of 2-byte UTF-8, 8 % each + script + preview", 10 * K_NAMES_MIX + 2);
+        _row("130-byte names of 2-byte UTF-8, 16 % each + script + preview", 10 * K_NAMES_MIX + 2);
     }
 
     // ---------------------------------------------------------------- refused records
@@ -697,7 +719,7 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_RefusedRecordsAreCheap() public {
-        uint256[9] memory ids = [
+        uint256[10] memory ids = [
             W_BOMB_ARRAY,
             W_BOMB_ATTRS,
             W_BOMB_EMPTY,
@@ -706,9 +728,10 @@ contract RendererGasAdversarialTest is RendererBase {
             W_BOMB_NUL,
             W_BOMB_PERCENT,
             W_TOO_MANY_ATTRS,
-            W_BOMB_ESCAPES
+            W_BOMB_ESCAPES,
+            W_BAD_LAST_ATTR
         ];
-        string[9] memory labels = [
+        string[10] memory labels = [
             "refused: array of 0",
             "refused: attributes array of 0",
             "refused: array of []",
@@ -716,8 +739,9 @@ contract RendererGasAdversarialTest is RendererBase {
             "refused: members \"\":0",
             "refused: \\u0000 escapes",
             "refused: 12 KiB of %",
-            "refused: 65 attributes",
-            "refused: 6,000 \\n escapes"
+            "refused: 33 attributes",
+            "refused: 6,000 \\n escapes",
+            "refused: the last attribute has a fifth key, white space"
         ];
         for (uint256 i; i < labels.length; ++i) {
             (uint256 used, bool ok) = _cold(ids[i]);
@@ -733,16 +757,20 @@ contract RendererGasAdversarialTest is RendererBase {
 
 /// @dev The budget proof (decision H2, round 3): every cap at once. Each class of byte and each
 ///      limit is bounded on its own, but a record can sit at all of them, and its cost is their
-///      sum. The record here has the most attributes, the most `%`, the most units in members,
-///      an array or a nested object, and its remaining bytes (up to 12 KiB) filled with the
-///      costliest mix of UTF-8 (a short run of ASCII and a multi-byte sequence, alternating, so
+///      sum. The record here has the most attributes (each with all four members it may have), the
+///      most `%`, the most units in members, an array or a nested object, white space (before
+///      every attribute, or after every token of every attribute, up to all the room there is),
+///      and its remaining bytes (up to 12 KiB) filled with the costliest mix of UTF-8 (a short run of ASCII and a multi-byte sequence, alternating, so
 ///      the validator changes path at every step), against the primaries that cost the most: 256
 ///      KiB of attested `Base64`, the script of `</script` with the most `<`, and a script of
 ///      `a` and U+0800 (the costliest to validate). Each is cold, one work per test, and at most
 ///      8M. The media are the same as in `RendererGasAdversarialTest`.
 contract RendererGasBudgetTest is RendererBase {
     uint256 internal constant GAS_BUDGET = 8_000_000;
-    bytes internal constant ATTR = '{"trait_type":"k","value":1}';
+    /// @dev An attribute at the member cap: the four OpenSea keys, 1 + 4 + 4 units.
+    bytes internal constant ATTR =
+        '{"trait_type":"k","value":1,"display_type":"number","max_value":9}';
+    uint256 internal constant ATTR_UNITS = 9;
 
     // Primaries.
     uint256 internal constant P_HTML = 1;
@@ -804,10 +832,20 @@ contract RendererGasBudgetTest is RendererBase {
     }
 
     /// @dev A record at every cap: `name` (3 units), a description of `MAX_ESCAPES` `%` and then
-    ///      `fill` up to the size limit (3 units), `MAX_ATTRIBUTES` attributes (2 + 1 + 5 each),
-    ///      and the rest of the 1,024 units as `shape`.
+    ///      `fill` up to the size limit (3 units), `MAX_ATTRIBUTES` attributes (the key and the
+    ///      array 3 units, `ATTR_UNITS` each), and the rest of the 1,024 units as `shape`.
     function _everyCap(bytes memory fill, uint256 shape) internal view returns (bytes memory) {
-        uint256 rest = JsonScan.MAX_VALUES - 3 - 3 - 3 - 5 * MAX_ATTRIBUTES;
+        return _record(fill, shape, _list(ATTR, MAX_ATTRIBUTES), ATTR_UNITS * MAX_ATTRIBUTES);
+    }
+
+    /// @dev The same record with `attributes` (the inside of the array, taking `units`) in place
+    ///      of the plain ones; `fill` may be empty, and the record is then as short as it can be.
+    function _record(bytes memory fill, uint256 shape, bytes memory attributes, uint256 units)
+        internal
+        view
+        returns (bytes memory)
+    {
+        uint256 rest = JsonScan.MAX_VALUES - 3 - 3 - 3 - units;
         bytes memory tail;
         if (shape == MEMBERS) {
             tail = _rep(',"a":0', rest / 3);
@@ -816,10 +854,45 @@ contract RendererGasBudgetTest is RendererBase {
         } else {
             tail = bytes.concat(',"a":{"b":0', _rep(',"b":0', (rest - 3) / 2 - 1), "}");
         }
-        tail = bytes.concat('","attributes":[', _list(ATTR, MAX_ATTRIBUTES), "]", tail, "}");
+        tail = bytes.concat('","attributes":[', attributes, "]", tail, "}");
         bytes memory open = bytes.concat('{"name":"N","description":"', _fill("%", MAX_ESCAPES));
+        if (fill.length == 0) return bytes.concat(open, tail);
         uint256 room = limit - open.length - tail.length;
         return bytes.concat(open, _fill(fill, room / fill.length * fill.length), tail);
+    }
+
+    /// @dev `n` attributes with `sp` before each (white space between the elements of the array).
+    function _spacedBefore(uint256 n, uint256 sp) internal pure returns (bytes memory all) {
+        all = _list(bytes.concat(_fill(" ", sp), ATTR), n);
+    }
+
+    /// @dev `n` attributes with `sp` after every token: 17 places in each.
+    function _spacedInside(uint256 n, uint256 sp) internal pure returns (bytes memory) {
+        bytes memory s = _fill(" ", sp);
+        bytes[17] memory tokens = [
+            bytes("{"),
+            '"trait_type"',
+            ":",
+            '"k"',
+            ",",
+            '"value"',
+            ":",
+            "1",
+            ",",
+            '"display_type"',
+            ":",
+            '"number"',
+            ",",
+            '"max_value"',
+            ":",
+            "9",
+            "}"
+        ];
+        bytes memory one;
+        for (uint256 i; i < tokens.length; ++i) {
+            one = bytes.concat(one, tokens[i], s);
+        }
+        return _list(one, n);
     }
 
     function _primary(uint256 which) internal view returns (bytes32) {
@@ -846,6 +919,11 @@ contract RendererGasBudgetTest is RendererBase {
     uint256 internal constant F_4B = 6;
     uint256 internal constant F_2B = 7;
     uint256 internal constant F_ED = 8; // ED, the other lead with its own second-byte range
+
+    // The works with white space in the attributes (see `_addSpaced`): where it goes.
+    uint256 internal constant BEFORE = 0; // before each attribute
+    uint256 internal constant INSIDE = 1; // after every token of each attribute
+    uint256 internal constant W_SPACED = 9_000;
 
     function setUp() public override {
         super.setUp();
@@ -893,6 +971,29 @@ contract RendererGasBudgetTest is RendererBase {
             _add(F_AA_2B, fills[2], s, P_SCRIPT_U8);
             _add(F_A_4B, fills[3], s, P_SCRIPT_U8);
         }
+        // White space in the attributes: half of the room there is, and all of it.
+        _addSpaced(W_SPACED + 1, BEFORE, 50, MEMBERS, P_HTML);
+        _addSpaced(W_SPACED + 2, BEFORE, 100, MEMBERS, P_HTML);
+        _addSpaced(W_SPACED + 3, INSIDE, 50, MEMBERS, P_HTML);
+        _addSpaced(W_SPACED + 4, INSIDE, 100, MEMBERS, P_HTML);
+        _addSpaced(W_SPACED + 5, BEFORE, 100, ZEROS, P_HTML);
+        _addSpaced(W_SPACED + 6, INSIDE, 100, ZEROS, P_HTML);
+        _addSpaced(W_SPACED + 7, INSIDE, 50, MEMBERS, P_SCRIPT_U8);
+        _addSpaced(W_SPACED + 8, BEFORE, 50, MEMBERS, P_SCRIPT_U8);
+    }
+
+    /// @dev Work `id`: `MAX_ATTRIBUTES` attributes at the member cap with white space (`where`),
+    ///      `pct` percent of the room the plain record leaves free, and the rest of the room the
+    ///      costliest fill (`aa` and a 2-byte sequence, alternating).
+    function _addSpaced(uint256 id, uint256 where, uint256 pct, uint256 shape, uint256 primary)
+        internal
+    {
+        uint256 n = MAX_ATTRIBUTES;
+        uint256 free = limit - _record("", shape, _list(ATTR, n), ATTR_UNITS * n).length - 8; // the fill's
+        free = free * pct / 100;
+        bytes memory attributes =
+            where == BEFORE ? _spacedBefore(n, free / n) : _spacedInside(n, free / (17 * n));
+        _work(id, _record(hex"6161c3a9", shape, attributes, ATTR_UNITS * n), _primary(primary));
     }
 
     function _cold(uint256 id) internal view returns (uint256 used, bool ok) {
@@ -1008,6 +1109,52 @@ contract RendererGasBudgetTest is RendererBase {
 
     function test_Budget_ScriptU8_Nested_AsciiAndE0() public {
         _row("every cap, nested, a+U+0800, script a+U+0800", _id(F_A_E0, NESTED, P_SCRIPT_U8));
+    }
+
+    // ---------------------------------------------------------------- white space in the attributes
+
+    /// @dev Attributes at the member cap, each of the four keys, with the costliest UTF-8 fill
+    ///      (what the first of the reviewer's shapes asks for): the record is accepted, and the
+    ///      members are copied.
+    function test_Budget_Attributes_MemberCap_WorstFill() public {
+        uint256 id = _id(F_AA_2B, ZEROS, P_HTML);
+        _row("max attributes of 4 members, zeros, aa+e, 256 KiB b64", id);
+        string memory j = _decode(renderer.tokenURI(address(stream), id));
+        uint256 i = _attrIndex(j, "k");
+        assertEq(_str(j, _at(i, ".display_type")), "number");
+        assertEq(vm.parseJsonUint(j, _at(i, ".max_value")), 9);
+    }
+
+    function test_Budget_Spaced_Before_Half() public {
+        _row("max attributes, white space before each, half the room", W_SPACED + 1);
+    }
+
+    function test_Budget_Spaced_Before_All() public {
+        _row("max attributes, white space before each, all the room", W_SPACED + 2);
+    }
+
+    function test_Budget_Spaced_Inside_Half() public {
+        _row("max attributes, white space after every token, half the room", W_SPACED + 3);
+    }
+
+    function test_Budget_Spaced_Inside_All() public {
+        _row("max attributes, white space after every token, all the room", W_SPACED + 4);
+    }
+
+    function test_Budget_Spaced_Before_All_Zeros() public {
+        _row("max attributes, white space before each, all the room, zeros", W_SPACED + 5);
+    }
+
+    function test_Budget_Spaced_Inside_All_Zeros() public {
+        _row("max attributes, white space after every token, all the room, zeros", W_SPACED + 6);
+    }
+
+    function test_Budget_Spaced_Inside_Half_ScriptU8() public {
+        _row("max attributes, white space after every token, half, script a+U+0800", W_SPACED + 7);
+    }
+
+    function test_Budget_Spaced_Before_Half_ScriptU8() public {
+        _row("max attributes, white space before each, half, script a+U+0800", W_SPACED + 8);
     }
 
     // ---------------------------------------------------------------- the media alone
