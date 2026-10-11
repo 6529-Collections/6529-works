@@ -30,8 +30,9 @@ library Limits {
     uint256 internal constant MAX_PHASES = 16;
     /// @notice Consolidated wallets captured as cancellers of one identity change.
     uint256 internal constant MAX_CANCELLERS = 16;
-    /// @notice Bytes of a descriptive record file: one content-store chunk.
-    uint256 internal constant MAX_RECORD_BYTES = 24_575;
+    /// @notice Bytes of a descriptive record file (12 KiB, half of a content-store chunk, so one
+    ///         chunk always holds it): the renderer's cost per byte of a record is bounded by it.
+    uint256 internal constant MAX_RECORD_BYTES = 12_288;
     /// @notice Artists listed in a descriptive record.
     uint256 internal constant MAX_ARTISTS = 16;
     /// @notice Nodes in a Merkle proof (package items and allowlists): enough for 2^32 leaves.

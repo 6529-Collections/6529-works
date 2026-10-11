@@ -118,7 +118,7 @@ contract InterfacesCompileTest is Test {
         assertEq(Limits.MAX_LICENSE_ID_BYTES, 64);
         assertEq(Limits.MAX_URI_BYTES, 2_048);
         assertEq(Limits.MAX_PROOF_DEPTH, 32);
-        assertEq(Limits.MAX_RECORD_BYTES, 24_575);
+        assertEq(Limits.MAX_RECORD_BYTES, 12_288);
         assertEq(Limits.MAX_ARTISTS, 16);
     }
 }

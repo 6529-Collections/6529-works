@@ -213,14 +213,14 @@ contract RendererGasAdversarialTest is RendererBase {
         }
     }
 
-    /// @dev `open`, then `unit` as many times as fit in a chunk (without its last comma), then
+    /// @dev `open`, then `unit` as many times as fit in a record (without its last comma), then
     ///      `close`.
     function _bomb(bytes memory open, bytes memory unit, bytes memory close)
         internal
-        pure
+        view
         returns (bytes memory j)
     {
-        uint256 n = (CHUNK - open.length - close.length) / unit.length;
+        uint256 n = (renderer.MAX_RECORD_BYTES() - open.length - close.length) / unit.length;
         j = new bytes(open.length + n * unit.length - 1 + close.length);
         uint256 p;
         for (uint256 i; i < open.length; ++i) {
@@ -305,7 +305,7 @@ contract RendererGasAdversarialTest is RendererBase {
             bytes.concat(
                 open,
                 _fill("%", renderer.MAX_ESCAPES()),
-                _fill("a", CHUNK - open.length - 2 - renderer.MAX_ESCAPES()),
+                _fill("a", renderer.MAX_RECORD_BYTES() - open.length - 2 - renderer.MAX_ESCAPES()),
                 '"}'
             ),
             html,
@@ -340,7 +340,7 @@ contract RendererGasAdversarialTest is RendererBase {
         );
         _members(
             W_BOMB_PERCENT,
-            bytes.concat(open, _fill("%", CHUNK - open.length - 2), '"}'),
+            bytes.concat(open, _fill("%", renderer.MAX_RECORD_BYTES() - open.length - 2), '"}'),
             html,
             preview
         );

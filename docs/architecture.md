@@ -97,7 +97,7 @@ signatures (each in its contract's domain) and fixed-price allowlist leaves.
 | package root | OpenZeppelin `MerkleProof` root (sorted pairs) over leaves `keccak256(bytes.concat(itemHash))`; equal to `StandardMerkleTree` with leaf values `[PACKAGE_ITEM_DOMAIN, item]` |
 | media hash | `keccak256(abi.encode(MEDIA_DOMAIN, media))` over every media file (file ID, decoded SHA-256, role), primary first; fixed by approval |
 | content hash | the decoded SHA-256 of the primary media, carried by the item; the per-product uniqueness key |
-| record file ID | the content-store file ID of a work's JSON descriptive record: one chunk of at most 24,575 bytes, `Identity` encoding, at most 16 artists; editable until finalize |
+| record file ID | the content-store file ID of a work's JSON descriptive record: one chunk of at most 12,288 bytes, `Identity` encoding, at most 16 artists; editable until finalize |
 | license key | keccak256 of the ASCII-lowercased SPDX ID (the ID itself keeps its case, from `[A-Za-z0-9.+-]`); CC0 is `keccak256("cc0-1.0")` |
 | file ID | `keccak256(abi.encode(chunkHashes, length, encoding, mimeType, sha256Hash))` (`IContentStore.manifestId`) |
 | split wallet | the economics split factory's CREATE2 address over a canonical payee list (fixed payees by address, then artist-resolved payees by artist ID); predicted before deployment |

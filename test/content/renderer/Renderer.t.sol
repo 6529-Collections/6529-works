@@ -28,7 +28,7 @@ contract RendererTest is RendererBase {
         assertEq(address(renderer.contentStore()), address(store));
         assertEq(renderer.MAX_INLINE_BYTES(), 1_048_576);
         assertEq(renderer.DEFAULT_INLINE_THRESHOLD(), 262_144);
-        assertEq(renderer.MAX_RECORD_BYTES(), 24_575);
+        assertEq(renderer.MAX_RECORD_BYTES(), 12_288);
     }
 
     function test_SupportsInterface() public view {
@@ -463,25 +463,27 @@ contract RendererTest is RendererBase {
         _setRecordInfo(info);
         _assertCoreOnly("invalid");
 
-        // One byte over a chunk.
-        info.recordFileId = _file(_data(CHUNK + 1, 2), IDENTITY, "application/json");
+        // One byte over the limit.
+        info.recordFileId =
+            _file(_data(renderer.MAX_RECORD_BYTES() + 1, 2), IDENTITY, "application/json");
         _setRecordInfo(info);
         _assertCoreOnly("invalid");
     }
 
-    /// @dev `Limits.MAX_RECORD_BYTES` is one store chunk, so a record is read with a single
-    ///      `readChunk` and the renderer's limit cannot drift from the store's.
-    function test_Record_TheLimitIsOneStoreChunk() public view {
-        assertEq(Limits.MAX_RECORD_BYTES, SSTORE2.MAX_CHUNK_LENGTH);
-        assertEq(renderer.MAX_RECORD_BYTES(), SSTORE2.MAX_CHUNK_LENGTH);
+    /// @dev A record of at most `Limits.MAX_RECORD_BYTES` is a single store chunk, so it is read
+    ///      with one `readChunk`, and the renderer's limit is the shared one.
+    function test_Record_TheLimitFitsOneStoreChunk() public view {
+        assertLe(Limits.MAX_RECORD_BYTES, SSTORE2.MAX_CHUNK_LENGTH);
+        assertEq(renderer.MAX_RECORD_BYTES(), Limits.MAX_RECORD_BYTES);
         assertEq(renderer.MAX_ARTISTS(), Limits.MAX_ARTISTS);
     }
 
-    function test_Record_ARecordOfExactlyOneChunkIsRead() public {
-        // A record padded with whitespace to exactly 24,575 bytes.
+    function test_Record_ARecordOfExactlyTheLimitIsRead() public {
+        // A record padded with whitespace to exactly the limit.
         bytes memory json = '{"name":"N"}';
-        bytes memory padded = new bytes(CHUNK);
-        for (uint256 i; i < CHUNK; ++i) {
+        uint256 limit = renderer.MAX_RECORD_BYTES();
+        bytes memory padded = new bytes(limit);
+        for (uint256 i; i < limit; ++i) {
             padded[i] = i < json.length ? json[i] : bytes1(" ");
         }
         _raw(padded);
@@ -808,7 +810,7 @@ contract RendererTest is RendererBase {
     }
 
     function test_TheMostExpensiveRecordStaysWithinTheBudget() public {
-        // 16 artists and 64 attributes, with a description filling the one-chunk record limit.
+        // 16 artists and 64 attributes, with a description filling the record limit.
         bytes32 file = _file(png, IDENTITY, "image/png");
         Rec memory r = _rec();
         r.artists = new string[](16);
@@ -820,15 +822,15 @@ contract RendererTest is RendererBase {
             r.attributes[i] = Trait(_text(24), _text(64));
         }
         r.description = "";
-        r.description = _text(CHUNK - _json(r).length);
-        assertEq(_json(r).length, CHUNK);
+        r.description = _text(renderer.MAX_RECORD_BYTES() - _json(r).length);
+        assertEq(_json(r).length, renderer.MAX_RECORD_BYTES());
         _install(file, r);
         uint256 before = gasleft();
         string memory uri = renderer.tokenURI(address(stream), ID);
         uint256 used = before - gasleft();
         emit log_named_uint("tokenURI gas, maximal record", used);
         assertLt(used, 8_000_000);
-        assertGt(bytes(uri).length, CHUNK);
+        assertGt(bytes(uri).length, renderer.MAX_RECORD_BYTES());
     }
 
     function _text(uint256 n) internal pure returns (string memory) {
