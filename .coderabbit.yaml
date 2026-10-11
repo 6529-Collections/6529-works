@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# Review configuration for 6529 Works. The rules mirrored here come from ADR 0001
+# (docs/adr/0001-v1-scope.md) and AGENTS.md; when they disagree, the ADR wins.
+language: en-US
+
+reviews:
+  # CodeRabbit's profile is repository-wide, not per path. Assertive suits src/**, so the
+  # instructions for every other path ask for substantive findings only.
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+
+  path_filters:
+    # Vendored dependencies (git submodules) and build output are not ours to review.
+    - "!lib/**"
+    - "!out/**"
+    - "!cache/**"
+
+  path_instructions:
+    - path: "src/**/*.sol"
+      instructions: |
+        Review as pre-audit protocol code. ADR 0001 is the scope and the law; flag anything
+        outside it. Report concrete defects, with the failing scenario, before style.
+
+        Hard rules (a violation is a finding):
+        - Custom errors only: no string reverts or bare `require(cond)` without an error.
+        - An event for every important state change; setters emit old and new values.
+        - Structured hashing uses `abi.encode`, never `abi.encodePacked`, and signed
+          payloads bind chain id, verifying contract, signer, nonce or deadline.
+        - Replay protection is storage-backed; never key it on signature bytes (65-byte and
+          ERC-2098 forms are both valid).
+        - Pull payments: no push refunds or payouts that a recipient can block. Token
+          transfers are checked by exact balance delta; assets are standard ERC-20 only.
+        - Governed functions use AccessManaged `restricted` and are non-payable.
+        - Compare-and-set: setters for funds, recipients, verifiers and renderers take an
+          expected current value and revert when it is stale.
+        - No `delegatecall`, `callcode`, proxies or upgradeability; no `tx.origin`; no
+          unbounded loops over user-controlled data; fail closed rather than return a
+          plausible default from a failed read.
+        - EIP-170: runtime size at most 24,576 bytes and initcode at most 49,152 (EIP-3860)
+          for every contract. At most 5 linked libraries repo-wide; prefer internal
+          libraries. The whole repository budget is 8-12K non-comment Solidity lines.
+        - External calls to untrusted code are gas-capped with bounded return data, and
+          state is updated before the call (checks, effects, interactions).
+        - NatSpec on every external function and every event.
+        Also check Solidity 0.8.37 (EVM `prague`) assumptions, storage layout and packing,
+        integer rounding direction in money math, and that reuse goes through the existing
+        libraries in `src/libraries/` rather than a copy.
+
+    - path: "test/**"
+      instructions: |
+        Tests must prove behaviour, not just execute it. Expect: `vm.expectRevert` with a
+        specific selector (not a bare expectRevert), `vm.expectEmit` event assertions, fuzz
+        tests where inputs vary, and handler-based stateful invariants (at least 256 runs x
+        depth 128) for every contract that holds or moves value. Adversarial mocks belong in
+        `test/mocks/`. Flag tests that cannot fail, missing negative cases and untested
+        governed setters. Do not nitpick style or naming here.
+
+    - path: "script/**"
+      instructions: |
+        Deployment and verification scripts. Flag any hard-coded key, seed phrase, RPC
+        credential or token, unredacted broadcast output, non-deterministic addresses,
+        missing post-deploy checks of roles and delays, and anything that could deploy a
+        proxy or a non-EIP-170 contract. Substantive findings only.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        Workflow security and the CI budget. Actions must be pinned to full commit SHAs,
+        permissions least-privilege (`contents: read` by default), `persist-credentials:
+        false` on checkout, no secrets in logs or untrusted-input interpolation into
+        `run:`, a `timeout-minutes` on every job, and total CI under 15 minutes.
+
+    - path: "tools/**"
+      instructions: |
+        Standard-library-only Python that enforces the CI gates. These checkers must fail
+        closed: malformed or missing input is a failure with a clear message, never an
+        exception or a silent pass. New behaviour needs unit tests beside it.
+        Substantive findings only.
+
+    - path: "docs/adr/**"
+      instructions: |
+        ADRs are the scope. Flag a change that alters or widens ADR 0001 without an explicit
+        decision recorded, internal contradictions, and requirements that the budgets make
+        unachievable.
+
+    - path: "**/*.md"
+      instructions: |
+        Keep maturity language honest: pre-audit, not production-ready, no audit claim
+        without merged evidence. Check links and commands for accuracy against the repo.
+        Substantive findings only; skip wording preferences.
