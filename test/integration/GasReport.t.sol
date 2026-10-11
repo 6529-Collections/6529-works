@@ -206,12 +206,11 @@ contract IntegrationGasReport is IntegrationBase {
         _row("startWithBid, steady state, two-party work", total, execution);
     }
 
-    /// @dev FINDING G-2: a steady-state `startWithBid` of a two-party work (artist plus one
-    ///      collaborator, the smallest collaboration) costs more than the 350K ADR 0003 sets for
-    ///      starting an auction. The single-artist case passes by about 500 gas.
-    function test_Finding_G2_StartWithBidOfATwoPartyWorkExceeds350K() public {
+    /// @dev The smallest collaboration (the artist plus one collaborator, paid as a fixed payee)
+    ///      is held to the same steady-state budget (formerly finding G-2, resolved by #34).
+    function test_Gas_StartWithBid_TwoPartyWork() public {
         (uint256 total,) = _startWithBidTwoParty();
-        assertGt(total, START_BUDGET, "G-2 fixed: assert the budget in a regular test");
+        assertLe(total, START_BUDGET, "ADR 0003: a two-party startWithBid <= 350K");
     }
 
     /// @dev `royaltyInfo` derives the receiver through the split factory (ADR 0003): one cold

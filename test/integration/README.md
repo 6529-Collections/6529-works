@@ -55,5 +55,4 @@ then promoted to a regular test.
 | ID | Where | Finding |
 | --- | --- | --- |
 | G-1 | Genesis configuration, `AssetAllowlist` | No default currency is configured at genesis. An item naming `CURRENCY_DEFAULT` cannot start for 14 days, and a free edition in the default currency cannot open. |
-| G-2 | Start path | A steady-state `startWithBid` of a two-party work costs 358K, above the 350K budget. The single-artist case has about 500 gas of headroom. |
 | L-1 | `MintSaleBase._terms` | Fee terms of zero share with no recipient pass `EconomicsResolver` validation, and Stream accepts them, but every edition sale refuses to open. |
