@@ -497,6 +497,26 @@ contract ContentStoreTest is ContentBase {
         assertEq(store.readChunk(fileId, 0), chunks[0]);
     }
 
+    function test_ZeroChunkHashIsAcceptedButNeverCompletes() public {
+        // A zero hash is keccak256 of nothing that exists, so no chunk can ever satisfy it:
+        // the manifest is inert, fails closed, and the registry would refuse it.
+        bytes32[] memory hashes = new bytes32[](2);
+        hashes[0] = keccak256(_data(CHUNK, 41));
+        bytes32 fileId = store.registerManifest(hashes, CHUNK + 5, IDENTITY, HTML, DIGEST);
+        store.writeChunk(_data(CHUNK, 41));
+
+        assertFalse(store.isComplete(fileId));
+        _assertMissing(fileId, 1, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IContentStore.ContentChunkMissing.selector, fileId, 1, bytes32(0)
+            )
+        );
+        store.readChunk(fileId, 1);
+        // The satisfiable chunk still reads.
+        assertEq(store.readChunk(fileId, 0), _data(CHUNK, 41));
+    }
+
     function test_ReadsDetectTamperedChunkCode() public {
         bytes memory file = _data(500, 14);
         bytes32 fileId = _publish(file, IDENTITY, HTML);

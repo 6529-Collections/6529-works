@@ -95,7 +95,9 @@ interface IContentStore {
     function writeChunk(bytes calldata data) external returns (bytes32 hash, address pointer);
 
     /// @notice Registers a file manifest, before, during or after its chunks are uploaded.
-    ///         Anyone may call this. Registering a manifest again is a no-op.
+    ///         Anyone may call this. Registering a manifest again is a no-op. A manifest whose
+    ///         chunks cannot exist, such as a zero chunk hash, or whose chunk lengths break the
+    ///         layout rule, is accepted but never completes and never reads.
     /// @param chunkHashes Ordered keccak256 hashes of the file's chunks.
     /// @param length Total stored length in bytes.
     /// @param encoding How the stored bytes encode the media.

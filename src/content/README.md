@@ -32,6 +32,10 @@ Other contracts should depend on the interfaces. Tests are in
 - **Layout rule.** Every chunk except the last is exactly 24,575 bytes. An
   offset maps to a chunk by division, one canonical chunking exists for any
   bytes, and a manifest that breaks the rule never completes and never reads.
+  The same holds for a manifest that lists a chunk that cannot exist, such as a
+  zero hash: registration does not check chunks (they may not be uploaded yet), so
+  such a manifest is accepted but inert, and the dependency registry refuses it
+  because it is not complete.
 - **Limits** (`CHUNK_SIZE` and `MAX_CHUNKS` are on `IContentStore`). 1 to 512
   chunks per file, which is 12,582,400 bytes (about 12.58 MB). The cap exists
   because Fusaka's EIP-7825 limits every transaction to 16,777,216 gas:
@@ -176,7 +180,10 @@ its storage and the chunk contracts are all first touches, as in a fresh
 | `read`, 256 KB (11 chunks, the inline threshold) | 855,000 |
 | `read`, 1 MB (43 chunks) | 9,678,000 |
 
-Cold access costs dominate small operations: each chunk touched adds a cold
+The figures are as measured on the toolchain above and drift with compiler and
+optimizer changes, while the tests assert only loose ceilings, so re-measure with
+the command above after changing either. Cold access costs dominate small
+operations: each chunk touched adds a cold
 `SLOAD` for its hash, one for its pointer, and a cold code access (about 6,800
 gas); the same calls run warm cost much less (for example `isComplete` on 1 MB
 is 67,000 warm).
