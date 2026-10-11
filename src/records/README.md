@@ -11,7 +11,7 @@ with §3 (curation evidence hash) and §15 (museum source data).
 
 | File | Role |
 | --- | --- |
-| `StatementLog.sol` | The log: append paths, EIP-712 relay, nonces, chain heads. |
+| `StatementLog.sol` | The log: append paths, EIP-712 relay, nonces, chain heads, dispute pointer. |
 | `IStatementLog.sol` | `Role`, `Statement`, events, errors and the external surface. |
 | `HashRef.sol` | `HashRef{algorithm, digest}` and the recognised algorithm IDs. |
 | `IArtistRoleResolver.sol` | The one question the log asks the artist registry. |
@@ -20,26 +20,35 @@ with §3 (curation evidence hash) and §15 (museum source data).
 ## What is stored, what is emitted
 
 Per subject the contract stores two words: the entry `count` and the chain
-`head`, where `head' = keccak256(abi.encode(head, entryHash))` and the first
-head is zero. Everything else is emitted in `StatementAppended`, in full, so an
-indexer rebuilds a subject's history from logs and proves it complete by
-matching `chainOf(token, id)`. Nothing is edited or deleted; there is no
-pause, no admin write path and no value held.
+`head`, where `head' = keccak256(abi.encode(HEAD_DOMAIN, head, entryHash))` and
+the first head is zero. Everything else is emitted in `StatementAppended`, in
+full, so an indexer rebuilds a subject's history from logs and proves it
+complete by matching `chainOf(token, id)`. Nothing is edited or deleted; there
+is no pause, no admin write path and no value held.
 
 **Subject.** `(token, id)`: a token contract and token ID, or `token ==
 address(0)` and `id` a work ID that has no token yet (an approved package item).
-`subjectKey = keccak256(abi.encode(token, id))`.
+`subjectKey = keccak256(abi.encode(token, id))`. The log does not link a
+work-ID subject to the token-ID subject the work later becomes; the Stream or
+the package registry holds that link, and a reader joins the two chains.
 
 **Statement** (what is signed):
 
 | Field | Rule |
 | --- | --- |
-| `kind` | Any non-zero `bytes32`. `StatementKinds` lists the well-known ones; new kinds need no deployment. |
+| `kind` | Any non-zero `bytes32`. `StatementKinds` lists the well-known ones; new kinds need no deployment. Two are reserved, below. |
 | `schema` | Non-zero hash of the schema the content follows. |
-| `content` | `HashRef`: algorithm 1 keccak256, 2 SHA-256, 3 BLAKE3 or 6 Arweave tx ID, and a non-zero 32-byte digest. IDs 4 and 5 (RC1's variable-length multihash and CID) are unused; put those identifiers in `uri`. |
-| `uri` | At most 2,048 bytes of well-formed UTF-8; may be empty. |
-| `fileId` | A `ContentStore` file ID, or zero. Only one of `uri` and `fileId` may be set; neither is a bare hash commitment. |
+| `content` | `HashRef`: algorithm 1 keccak256, 2 SHA-256 or 3 BLAKE3, and a non-zero 32-byte digest. IDs 4 and 5 (RC1's variable-length multihash and CID) and 6 (an Arweave transaction ID, which is a locator, not a digest) are not accepted; put those identifiers in `uri`. |
+| `uri` | At most 2,048 bytes of well-formed UTF-8. |
+| `fileId` | A `ContentStore` file ID. **Exactly one** of a non-empty `uri` and a non-zero `fileId` is required (ADR 0001 §12: "a content hash plus URI, or a `ContentStore` file"). |
 | `supersedes` | Entry hash of an earlier entry this one corrects or replaces, or zero. |
+
+**Reserved kinds.** `DISPUTE_OUTCOME` may be written only under PLATFORM, and
+`CURATION_EVIDENCE` only under CURATOR (`ReservedKind` otherwise). Every other
+kind may be written under any role, so consumers read `kind` together with
+`role`. The log keeps the latest `DISPUTE_OUTCOME` entry hash per subject
+(`latestDisputeOutcome(token, id)`, one slot, written only for that kind), so a
+renderer can show dispute status (ADR 0001 §12) without scanning events.
 
 **Entry hash** (the identity other entries cite), all words ABI-encoded:
 
@@ -48,48 +57,76 @@ statementHash = EIP-712 hashStruct(Statement)          // type string in Stateme
 entryHash = keccak256(abi.encode(
     keccak256("6529.works.StatementLog.entry.v1"),
     block.chainid, address(log), subjectKey, index, uint8(role), signer,
-    uint64(recordedAt), statementHash))
+    resolver, uint64(recordedAt), statementHash))
+head' = keccak256(abi.encode(keccak256("6529.works.StatementLog.head.v1"), head, entryHash))
 ```
 
 `index` is the entry's zero-based position in the subject's chain, so identical
-statements appended twice get different hashes. The event carries every input
-(`role`, `index`, `recordedAt`, `signer`, the whole `Statement`) plus the
-resulting `entryHash` and `head`. Tests rebuild both from events with an
-independent model (`test/records/StatementModel.sol`) and compare to storage.
+statements appended twice get different hashes. `resolver` is the artist
+resolver that vouched for the signer on an ARTIST entry, and zero on every other
+role. The event carries every input (`role`, `resolver`, `index`, `recordedAt`,
+`signer`, the whole `Statement`) plus the resulting `entryHash` and `head`. A
+relayed entry is followed by `StatementRelayed(entryHash, signer, nonce)`.
+`test/records/StatementLogGolden.t.sol` pins every type hash, the digest, an
+entry hash and a head as fixed hex values, produced by a pure-Python
+implementation and checked against forge's own typed-data encoder; the model in
+`test/records/StatementModel.sol` rebuilds hashes and heads from events.
 
 **Supersession.** A correction is a new entry whose `supersedes` is the earlier
 entry's hash. The log does not check that the hash exists in the same subject:
 that would cost one more storage write per entry. Readers verify it against the
-rebuilt chain, and decide whose corrections to honour. A kind is likewise not
-tied to a role, so consumers must read `kind` together with `role`.
+rebuilt chain, and decide whose corrections to honour.
 
 ## Who may write
 
 | Role | Entry point | Rule |
 | --- | --- | --- |
 | ARTIST | `append(Role.ARTIST, s)` | `IArtistRoleResolver(artistResolver).isArtist(token, id, signer)`. Unset resolver means no artist statements. |
-| OWNER | `append(Role.OWNER, s)` | `ownerOf(id) == signer` (ERC-721) or `balanceOf(signer, id) > 0` (ERC-1155), each read gas- and size-capped; any failure means "not the owner". A work-ID subject has no owner. |
+| OWNER | `append(Role.OWNER, s)` | `ownerOf(id) == signer` (ERC-721) or `balanceOf(signer, id) > 0` (ERC-1155), each read capped at `OWNER_READ_GAS` and 32 bytes of return data. Only a full 32-byte `ownerOf` answer is an ERC-721 answer; anything else falls through to `balanceOf`. Any failure means "not the owner". Any holder of an edition may speak as its owner. A work-ID subject has no owner. |
 | CURATOR | `appendCurator(s)`, `restricted` | The AccessManager role mapped to that selector. |
 | PLATFORM | `appendPlatform(s)`, `restricted` | The AccessManager role mapped to that selector. |
 | any | `appendSigned(role, s, signer, nonce, deadline, sig)` | EIP-712 signature by `signer`, who must hold `role` by the rules above. Anyone may submit. |
 
-**Admins can never write ARTIST or OWNER statements.** Those two roles never
-consult the AccessManager, and the restricted functions cannot write them, so no
-governance role, the admin role included, is a path to either. Tests cover a
-direct and a relayed admin attempt, an admin holding every governed role, and an
-invariant campaign that has the admin, curator and platform try on every run.
-The one governed lever is `setArtistResolver(expected, next, codeHash)`: it is
-`restricted`, compare-and-set, pinned to a reviewed code hash and checked for
-ERC-165, code and EIP-7702 delegation. Give it the 30-day verifier class. Zero
-switches ARTIST statements off.
+**No statement is attributed to the AccessManager.** If the caller is the
+`authority()` (a scheduled `AccessManager.execute`, or the manager holding an
+edition), the append reverts with `AuthorityCannotSign`. So CURATOR and PLATFORM
+roles must have zero execution delay: a delayed role cannot write at all, and a
+relayed statement from a delayed signer is refused.
 
-**Wiring (governance lane).** The AccessManager maps `appendCurator` and
-`appendPlatform` to the curator and platform roles. Until it does, the manager's
-default applies and only ADMIN_ROLE can call them. TODO: use the role IDs from
-`src/governance/Roles.sol` once it exists. Both roles should have zero execution
-delay: a relayed CURATOR or PLATFORM statement is accepted only for a signer
-with no delay, and a call run through `AccessManager.execute` records the
-manager as the signer.
+### Trust boundary for ARTIST statements
+
+No governance role has a *direct* path to an ARTIST or OWNER statement: those
+roles never consult the AccessManager, and the restricted functions cannot write
+them. That is the whole of the guarantee. ARTIST authority is **exactly as
+strong as**:
+
+1. the resolver's code, and whatever governs the resolver's answers (a resolver
+   that forwards to a mutable backend is only as trustworthy as that backend);
+2. `setArtistResolver(expected, next, codeHash)`, which can install a resolver
+   that vouches for anyone; and
+3. the AccessManager that can call it, including its power to replace this
+   contract's authority (`AccessManager.updateAuthority`, which ends in
+   `setAuthority`).
+
+The install checks (compare-and-set, ERC-165, code present, not an EIP-7702
+account, reviewed code hash) bind bytecode, not behaviour. What the log adds is
+visibility: every ARTIST entry records the resolver that vouched for it, in its
+entry hash and its event, and every swap emits `ArtistResolverSet`. A reader can
+therefore discard or flag the entries of any resolver it does not trust. OWNER
+authority is likewise only as strong as the token contract; subjects are keyed
+by `(token, id)`, so consumers key on the official contract addresses.
+
+Requirements that this places on other lanes:
+
+- `setArtistResolver` **must map to the 30-day class** (verifier and
+  successor-level swaps, ADR 0001 §13). The integrator enforces this in the
+  deploy configuration; the log cannot.
+- A resolver must be **immutable, or governed no faster than the 30-day class**,
+  with every change public (see `IArtistRoleResolver`).
+- Wire `appendCurator` and `appendPlatform` to the curator and platform roles
+  with zero execution delay. Until the manager maps them, its default applies
+  and only ADMIN_ROLE can call them. TODO: use the role IDs from
+  `src/governance/Roles.sol` once it exists.
 
 ## Relay
 
@@ -114,19 +151,22 @@ calldata), from `test_Gas_PerAppend`:
 
 | Call | Gas |
 | --- | --- |
-| `append` ARTIST, first entry of a subject | ~73K |
-| `append` ARTIST, later entry | ~34K |
-| `append` OWNER (ERC-721) | ~33K |
-| `appendCurator` | ~39K |
-| `appendSigned`, same / new nonce word | ~46K / ~63K |
+| `append` ARTIST, first entry of a subject | ~76K |
+| `append` ARTIST, later entry | ~37K |
+| `append` OWNER (ERC-721) | ~36K |
+| `appendCurator` | ~40K |
+| `appendSigned`, same / new nonce word | ~52K / ~69K |
+
+An unmodified OpenZeppelin ERC-721 or ERC-1155 read costs about 2.6K gas cold,
+against the 50K `OWNER_READ_GAS` cap (`StatementLogOwnerRead.t.sol` pins the
+margin from both sides).
 
 ## Limits and decisions
 
 - Subjects are open: any `token` address is accepted, because only the signer's
-  role is checked. Consumers key on the official Stream, Editions and (later)
-  registered federated contract addresses.
+  role is checked.
 - `fileId` is opaque here; the content lane owns the `ContentStore` ID format.
-- Not here: removal, editing, pausing, kind-to-role rules, or an on-chain check
-  that a `supersedes` target exists.
+- Not here: removal, editing, pausing, or an on-chain check that a `supersedes`
+  target exists.
 
-Tests: `test/records/` (unit, fuzz, handler-based invariants).
+Tests: `test/records/` (unit, fuzz, golden vectors, handler-based invariants).
