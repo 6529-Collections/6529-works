@@ -5,7 +5,7 @@ On 11 October 2026 the v1 flows were run on two Sepolia rehearsal deployments
 
 | Instance | Source | Record | Role here |
 | --- | --- | --- | --- |
-| **r2** | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | `1791750816.json` ([#47](https://github.com/6529-Collections/6529-works/pull/47)) | **Reference** |
+| **r2** | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | [`1791750816.json`](1791750816.json) | **Reference** |
 | r1 | `main` at `60edd9b`, before #41 and #44 | [`1791746472.json`](1791746472.json) | Measured first; kept for comparison |
 
 Every gas figure below names its instance. Where a table has an r1 column, r1 ran the
