@@ -121,24 +121,45 @@ A deploy script must:
    - a configured admin lacks the full 30-day delay, or has a reduction pending;
    - any role, holder or selector differs from `cfg`.
 
-**Genesis wiring.** The one-shot `bind*` calls (`IStream.bindWorkRecords`,
-`IPackageRegistry.bindStream`, `IArtistRegistry.bindPackageRegistry` and the rest)
-and the admitted-minter and sale-target grants are `restricted`. After genesis they
-resolve to a 30-day role, or to `ADMIN` if unmapped, so the system could not operate
-for 30 days. `configure` therefore executes them itself:
+**Genesis wiring.** The one-shot `bind*` calls, the admitted-minter grants and the
+sale targets are `restricted`. After genesis they resolve to a 30-day role, or to
+`ADMIN` if unmapped, so the system could not operate for 30 days. `configure`
+therefore executes them itself:
 
 - **Timing:** they run after the roles and target admin delays are installed, but
   before any selector is mapped. Every wired selector still resolves to the
   configurator's zero-delay `ADMIN`, even one that `cfg` then maps to a 30-day role,
   such as `setAdmittedMinter`.
-- **Allowed calls:** at most `MAX_WIRING_CALLS` (64), each to a configured target and
-  never with an access-management selector (the manager's role-admin, scheduling and
-  cancel functions, or `setAuthority`). A call to the manager is rejected, because the
-  manager is never a configured target.
+- **Allowed calls:** an allow-list, `GovernanceConfig.isGenesisSelector`, built from
+  the compiled interface selectors:
+  - `bindWorkRecords`, `bindEditions`, `bindStream`, `bindPackageRegistry`,
+    `bindSplitFactory`, and `bindFederationRegistry` (listed for completeness, though
+    v1 defers it);
+  - `setAdmittedMinter(address,bool)`;
+  - `setTarget(address,bool)`;
+  - `appendGovernanceManifest`, so the epoch-0 manifest is written at genesis and the
+    manifest history starts there.
+
+  Anything else, such as a verifier swap or a recipient change, is rejected with
+  `WiringSelectorNotAllowed`. A call to an unconfigured target, or to the manager
+  (never a configured target), is rejected with `InvalidWiringCall`. There are at
+  most `MAX_WIRING_CALLS` (64) calls.
 - **Failure:** a reverting call reverts the whole configuration with the callee's
-  error, and the configurator keeps no role either way.
-- **Gas:** the example genesis configuration with 64 binds costs about 6.5M gas, 39%
-  of the EIP-7825 cap of 2^24, including worst-case calldata.
+  error, or with `WiringCallFailed(index)` if it gave none. Nothing is applied, and the
+  configurator still holds `ADMIN`, so the deployer can fix the wiring and call
+  `configure` again.
+- **Gas:** the example genesis configuration with 64 wiring calls costs about 6.6M gas,
+  39% of the EIP-7825 cap of 2^24, including worst-case calldata. Every account is
+  cooled first, so nothing is cheaper than in a real transaction.
+- **Deployment readback.** `verify` reads roles and selectors, not what the wiring did.
+  Deployment CI therefore:
+  - recomputes `wiringHash` from the committed JSON and compares it with the
+    `GovernanceConfigured` event;
+  - reads back each wired getter: `workRecords()`, `editions()`, `stream()`, the
+    package registry and split factory on the artist registry, `isAdmittedMinter`,
+    and the adapters' target lists.
+
+  The integration lane implements this in `script/Verify.s.sol`.
 
 **What `validate` rejects** (and readback re-checks where `AccessManager` exposes it):
 

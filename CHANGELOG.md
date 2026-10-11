@@ -15,10 +15,12 @@
   nobody cancels their own revocation), the canonical role and delay-class table
   (`Roles.sol`), a one-shot configurator that owns its manager and reads it back,
   and `BoundedParameter` for raise-only parameters.
-- Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes the
-  one-shot binds and admitted-minter grants as zero-delay admin before renouncing, and
-  `config/genesis.example.json` commits the selector, role and delay map for every v1
-  contract, checked by `test/governance/GenesisConfig.t.sol`.
+- Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
+  allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
+  epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`
+  commits the selector, role and delay map for every v1 contract, checked against the
+  compiled selectors by `test/governance/GenesisConfig.t.sol` and against `forge inspect`
+  and every `restricted` function in `src/` by `tools/check_genesis.py` in CI.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
