@@ -21,13 +21,18 @@ import {
 } from "../../../mocks/auction/AuctionMocks.sol";
 
 /// @dev Drives one currency's auctions through every lifecycle path: starts and start-with-bids,
-///      bids from honest and hostile bidders (direct, EIP-2612 permits and relayed Permit2
-///      intents for ERC-20), time, dispute pauses with and without withdrawals, upheld
-///      cancellations, resumptions, settlements (with the ERC-20 escrow route: the token blocks
-///      the seller wallet), credit claims, delivery claims by the recipient or the winner, the
-///      emergency start pause, and governance changes to the config, the opening bid and the
-///      increment floor. Every action is guarded so it never reverts (`fail_on_revert`), and
-///      ghost totals record what entered and left the auction.
+///      bids from honest and hostile bidders for themselves, for each other or for the hostile
+///      actor (direct, EIP-2612 permits and relayed Permit2 intents for ERC-20), time, dispute
+///      pauses with and without withdrawals, upheld cancellations, resumptions, settlements
+///      (with the ERC-20 escrow route: the token blocks the seller wallet), credit claims,
+///      delivery claims by the recipient or the winner, the emergency start pause, and
+///      governance changes to the config, the opening bid and the increment floor. Every action
+///      is guarded so it never reverts (`fail_on_revert`), and ghost totals record what entered
+///      and left the auction. Ghost terms record what each sale locked and whom its live high
+///      bid names. A bid checks the anti-snipe extension against the locked window; a
+///      settlement checks that the token reaches (or is pending for) that recipient, or the
+///      artist when there was no bid; a second dispute pause must revert; and a withdrawal must
+///      leave the sale paused.
 contract AuctionHandler is Test {
     uint256 internal constant MAX_SALES = 8;
 
@@ -77,6 +82,19 @@ contract AuctionHandler is Test {
     /// @dev How often each path really ran, for coverage checks.
     mapping(bytes32 path => uint256) public hits;
 
+    /// @dev What a sale locked: the opening bid, increment share and anti-snipe window at its
+    ///      start, and the currency's increment floor at its first bid (zero before).
+    struct Locked {
+        uint256 openingBid;
+        uint256 incrementShare;
+        uint256 extensionWindow;
+        uint256 incrementFloor;
+    }
+
+    mapping(uint256 saleId => Locked) internal _locked;
+    /// @dev The token's recipient named by the live high bid (its bidder when it named none).
+    mapping(uint256 saleId => address) public ghostRecipient;
+
     constructor(Setup memory c) {
         (auction, stream, statements, escrow, allowlist, permit2) =
         (c.auction, c.stream, c.statements, c.escrow, c.allowlist, c.permit2);
@@ -101,7 +119,9 @@ contract AuctionHandler is Test {
 
     function start() external {
         if (sales.length >= MAX_SALES || auction.paused()) return;
-        sales.push(auction.start(address(stream), ""));
+        uint256 saleId = auction.start(address(stream), "");
+        sales.push(saleId);
+        _lockStart(saleId);
         ++hits["start"];
     }
 
@@ -115,14 +135,16 @@ contract AuctionHandler is Test {
         bytes memory call =
             abi.encodeCall(auction.startWithBid, (address(stream), "", address(0), p));
         uint256 value = currency == address(0) ? amount : 0;
-        bytes memory result;
+        uint256 saleId;
         if (bidder == address(hostile)) {
-            result = hostile.execute(address(auction), value, call);
-            sales.push(abi.decode(result, (uint256)));
+            saleId = abi.decode(hostile.execute(address(auction), value, call), (uint256));
         } else {
             vm.prank(bidder);
-            sales.push(auction.startWithBid{ value: value }(address(stream), "", address(0), p));
+            saleId = auction.startWithBid{ value: value }(address(stream), "", address(0), p);
         }
+        sales.push(saleId);
+        _lockStart(saleId);
+        _recordBid(saleId, bidder);
         ghostDeposited += amount;
         ++hits["startWithBid"];
     }
@@ -132,14 +154,15 @@ contract AuctionHandler is Test {
     {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
-        if (auction.auction(saleId).state != IEnglishAuction.AuctionState.ACTIVE) return;
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        if (a.state != IEnglishAuction.AuctionState.ACTIVE) return;
         if (currency != address(0) && !allowlist.isActive(currency)) return;
         uint256 minimum = auction.minimumBid(saleId);
         uint256 amount = bound(amountSeed, minimum, minimum * 3 + 1 ether);
         address bidder = actors[actorSeed % actors.length];
-        address recipient = options & 1 == 1 ? address(hostile) : address(0);
+        address recipient = _recipient(options);
         uint256 method =
-            currency == address(0) || bidder == address(hostile) ? 0 : (options >> 1) % 3;
+            currency == address(0) || bidder == address(hostile) ? 0 : (options >> 2) % 3;
         if (method == 0) {
             Payment memory p = _fund(bidder, amount);
             uint256 value = currency == address(0) ? amount : 0;
@@ -169,6 +192,11 @@ contract AuctionHandler is Test {
             ++hits["permit2"];
         }
         ghostDeposited += amount;
+        _recordBid(saleId, recipient == address(0) ? bidder : recipient);
+        if (recipient != address(0) && recipient != bidder) ++hits["forAnother"];
+        uint256 end = block.timestamp + _locked[saleId].extensionWindow;
+        if (a.endTime > end) end = a.endTime;
+        assertEq(auction.auction(saleId).endTime, end, "anti-snipe uses the locked window");
     }
 
     function warp(uint256 seconds_) external {
@@ -178,8 +206,17 @@ contract AuctionHandler is Test {
     function settle(uint256 saleSeed) external {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
-        if (auction.auction(saleId).state != IEnglishAuction.AuctionState.ENDED) return;
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        if (a.state != IEnglishAuction.AuctionState.ENDED) return;
+        address expected = ghostRecipient[saleId];
+        if (expected == address(0)) expected = stream.primaryTerms(a.tokenId, "").creator;
         auction.settle(saleId);
+        address pending = auction.pendingDelivery(saleId);
+        if (pending == address(0)) {
+            assertEq(stream.ownerOf(a.tokenId), expected, "delivered to the named recipient");
+        } else {
+            assertEq(pending, expected, "pending for the named recipient");
+        }
         ++ghostSettlements[saleId];
         ++hits["settle"];
     }
@@ -227,6 +264,7 @@ contract AuctionHandler is Test {
         bytes32 outcome = statements.appendPlatform(s);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
+        ghostRecipient[saleId] = address(0);
         ++ghostCancellations[saleId];
         ++hits["cancel"];
     }
@@ -314,10 +352,36 @@ contract AuctionHandler is Test {
         return actors.length;
     }
 
+    function locked(uint256 saleId) external view returns (Locked memory) {
+        return _locked[saleId];
+    }
+
     // ---------------------------------------------------------------------------- helpers
 
     function _sale(uint256 seed) internal view returns (uint256) {
         return sales[seed % sales.length];
+    }
+
+    /// @dev No recipient (the bidder), the hostile actor, or an honest actor: the bidder itself
+    ///      or a third party.
+    function _recipient(uint256 options) internal view returns (address) {
+        uint256 pick = options % 3;
+        if (pick == 0) return address(0);
+        if (pick == 1) return address(hostile);
+        return actors[(options >> 8) % 3];
+    }
+
+    function _lockStart(uint256 saleId) internal {
+        IEnglishAuction.AuctionConfig memory c = auction.config();
+        _locked[saleId] =
+            Locked(auction.openingBid(currency), c.incrementShare, c.extensionWindow, 0);
+    }
+
+    /// @dev A bid landed: the first one locks the floor, and the recipient is the one it named.
+    function _recordBid(uint256 saleId, address recipient) internal {
+        Locked storage l = _locked[saleId];
+        if (l.incrementFloor == 0) l.incrementFloor = allowlist.incrementFloor(currency);
+        ghostRecipient[saleId] = recipient;
     }
 
     function _token() internal view returns (BlockablePermitToken) {
@@ -328,7 +392,14 @@ contract AuctionHandler is Test {
         if (sales.length == 0) return 0;
         saleId = _sale(saleSeed);
         if (auction.auction(saleId).state != IEnglishAuction.AuctionState.ACTIVE) return 0;
-        if (_paused[saleId]) return 0;
+        if (_paused[saleId]) {
+            bytes memory exhausted =
+                abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, saleId);
+            vm.prank(guardian);
+            vm.expectRevert(exhausted);
+            auction.pause(saleId, keccak256(abi.encode(saleId)));
+            return 0;
+        }
         _paused[saleId] = true;
         vm.prank(guardian);
         auction.pause(saleId, keccak256(abi.encode(saleId)));
@@ -344,6 +415,12 @@ contract AuctionHandler is Test {
             vm.prank(a.bidder);
             auction.withdrawBid(saleId);
         }
+        ghostRecipient[saleId] = address(0);
+        assertEq(
+            uint8(auction.auction(saleId).state),
+            uint8(IEnglishAuction.AuctionState.PAUSED),
+            "a withdrawal keeps the pause"
+        );
         ++hits["withdraw"];
     }
 

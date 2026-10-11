@@ -110,14 +110,16 @@ interface IEnglishAuction is ISaleAdapter {
     ///        `abi.encode(StreamMintRequest)`).
     /// @return saleId `saleIdOf(token, tokenId)`.
     function start(address token, bytes calldata mintData) external returns (uint256 saleId);
-    /// @notice `start` plus a first bid in one transaction.
+    /// @notice `start` plus a first bid in one transaction. The bid is at most
+    ///         `type(uint96).max` base units (about 7.9e28), like every bid.
     function startWithBid(
         address token,
         bytes calldata mintData,
         address recipient,
         Payment calldata payment
     ) external payable returns (uint256 saleId);
-    /// @notice Bids `payment.amount` for `recipient` (the payer when zero).
+    /// @notice Bids `payment.amount` for `recipient` (the payer when zero). A bid is at most
+    ///         `type(uint96).max` base units (about 7.9e28); a larger one reverts.
     function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
     ///         the seller and the network fee. Permissionless.

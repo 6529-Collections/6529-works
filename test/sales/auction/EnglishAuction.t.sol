@@ -348,7 +348,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     function testFuzz_Bid_IncrementIsMaxOfShareAndFloor(uint256 high) public {
-        high = bound(high, 1, 1e30);
+        high = bound(high, 1, 1e28);
         uint256 saleId = _start();
         _bidEth(saleId, alice, high);
         uint256 required = _minimumAfter(high, ETH_FLOOR);
@@ -655,7 +655,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     function testFuzz_Settle_SplitsExactly(uint256 price, uint32 feeShare) public {
-        price = bound(price, 1, 1e36);
+        price = bound(price, 1, type(uint96).max);
         feeShare = uint32(bound(feeShare, 0, 100_000));
         PrimaryTerms memory t = _terms(ETH);
         t.feeShare = feeShare;

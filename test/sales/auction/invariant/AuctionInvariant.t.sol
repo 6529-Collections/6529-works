@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { LockedTerms } from "src/interfaces/types/SaleTypes.sol";
 import { BlockablePermitToken, HostileActor } from "../../../mocks/auction/AuctionMocks.sol";
 import { AuctionBase } from "../AuctionBase.sol";
 import { AuctionHandler } from "./AuctionHandler.sol";
@@ -123,6 +124,37 @@ abstract contract AuctionInvariantBase is AuctionHandlerFixture {
         }
     }
 
+    /// @dev Each sale keeps what it locked whatever governance changed since: its currency, the
+    ///      opening bid, increment share and window of its start, and the floor of its first bid
+    ///      (kept after a withdrawal). A live sale names the recipient of its live high bid.
+    function invariant_LockedTermsAndRecipients() public view {
+        address currency = handler.currency();
+        for (uint256 i; i < handler.salesCount(); ++i) {
+            uint256 saleId = handler.sales(i);
+            IEnglishAuction.Auction memory a = auction.auction(saleId);
+            AuctionHandler.Locked memory l = handler.locked(saleId);
+            LockedTerms memory lt = auction.lockedTerms(saleId);
+            assertEq(a.currency, currency);
+            assertEq(lt.currency, currency);
+            assertEq(lt.token, address(stream));
+            assertEq(lt.id, a.tokenId);
+            assertEq(a.incrementFloor, l.incrementFloor, "floor locked by the first bid");
+            if (
+                a.state == IEnglishAuction.AuctionState.SETTLED
+                    || a.state == IEnglishAuction.AuctionState.CANCELLED
+            ) continue;
+            assertEq(a.recipient, handler.ghostRecipient(saleId), "recipient of the high bid");
+            uint256 minimum;
+            if (a.bidder == address(0)) {
+                minimum = l.openingBid == 0 ? 1 : l.openingBid;
+            } else {
+                uint256 step = (a.bid * l.incrementShare + 99_999) / 100_000;
+                minimum = a.bid + (step > l.incrementFloor ? step : l.incrementFloor);
+            }
+            assertEq(auction.minimumBid(saleId), minimum, "minimum from the locked terms");
+        }
+    }
+
     /// @dev After every auction is driven to an end and every account claims, nothing is stuck:
     ///      the auction holds no funds and no token.
     function afterInvariant() public {
@@ -167,7 +199,7 @@ contract AuctionHandlerCoverage is AuctionHandlerFixture {
     }
 
     function test_EveryPathRuns() public {
-        string[16] memory names = [
+        string[17] memory names = [
             "start",
             "startWithBid",
             "bid",
@@ -182,25 +214,26 @@ contract AuctionHandlerCoverage is AuctionHandlerFixture {
             "delivery",
             "startPause",
             "govern",
+            "forAnother",
             "escrowed",
             "pending"
         ];
-        uint256[16] memory totals;
+        uint256[17] memory totals;
         for (uint256 r; r < 64; ++r) {
             uint256 snap = vm.snapshotState();
             for (uint256 d; d < 128; ++d) {
                 _step(uint256(keccak256(abi.encode(r, d))));
             }
-            for (uint256 i; i < 14; ++i) {
+            for (uint256 i; i < 15; ++i) {
                 totals[i] += handler.hits(bytes32(bytes(names[i])));
             }
-            if (escrow.owed(seller, address(coin)) != 0) ++totals[14];
+            if (escrow.owed(seller, address(coin)) != 0) ++totals[15];
             for (uint256 i; i < handler.salesCount(); ++i) {
-                if (auction.pendingDelivery(handler.sales(i)) != address(0)) ++totals[15];
+                if (auction.pendingDelivery(handler.sales(i)) != address(0)) ++totals[16];
             }
             vm.revertToState(snap);
         }
-        for (uint256 i; i < 16; ++i) {
+        for (uint256 i; i < 17; ++i) {
             console2.log(names[i], totals[i]);
             assertGt(totals[i], 0, names[i]);
         }
