@@ -10,9 +10,13 @@ registration after the chunks instead. The store is permissionless and idempoten
 any repetition and any split between senders is safe.
 
 A `Base64` or `GzipBase64` file then needs `attestBase64(fileId)` before a renderer will inline
-it. Attestation reads every chunk, so it comes LAST, after the manifest is registered and all
-chunks are stored; one call validates at most 48 chunks, so a file needs `ceil(chunks / 48)`
-calls (a repeat call on an attested file is a cheap no-op). Anyone may send them.
+it. Each call reads the chunks it validates, and the call that reaches the end of the file also
+reads the last chunk to find the padding, so the final call cannot succeed until the file is
+complete. The attest calls therefore come LAST, after the manifest is registered and all chunks
+are stored (earlier calls on a big file could run while the upload is still going, but one
+simple order is easier to review). One call validates at most 48 chunks, so a file needs
+`ceil(chunks / 48)` calls (a repeat call on an attested file is a cheap no-op). Anyone may
+send them.
 """
 
 from __future__ import annotations

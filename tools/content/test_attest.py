@@ -263,7 +263,7 @@ class AttestCallsTest(unittest.TestCase):
             with self.subTest(chunks=chunks):
                 self.assertGreaterEqual(gas.attest_execution(chunks), measured)
                 self.assertLess(gas.attest_execution(chunks), int(measured * 1.55))
-        # A middle call also reads the last chunk cold to find the padding.
+        # The worst call also reads the file's last chunk cold to find the padding.
         self.assertGreaterEqual(gas.attest_execution(48), 8_485_707)
         with self.assertRaises(ValueError):
             gas.attest_execution(49)

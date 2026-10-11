@@ -195,10 +195,13 @@ What the tooling does about it:
 - **`calls`** appends the attest calls, `ceil(chunks / 48)` of them: 1 up to 48
   chunks (about 1.18 MB), 2 for 49 to 96, and 11 for the 512-chunk maximum. Each
   is the same 36 bytes of calldata, `attestBase64(fileId)`, and each carries its
-  own gas estimate. They come last because the call reads every chunk (the first
-  call also reads the file's last chunk to find the padding), so the manifest and
-  all chunks must already be stored. Repeating a call on an attested file is a
-  cheap no-op that returns true.
+  own gas estimate. They come last because each call reads the chunks it
+  validates and the call that reaches the end of the file also reads the last
+  chunk to find the padding, so the final call cannot succeed before the manifest
+  is registered and every chunk is stored. (Earlier calls on a big file do not
+  need the end and could run while the upload is still going; the tool keeps one
+  simple order.) Repeating a call on an attested file is a cheap no-op that
+  returns true.
 - **`verify`** reports the status (above).
 
 Cost falls on whoever calls it: about 175,000 gas per chunk, so about 8.5M gas for
@@ -248,16 +251,18 @@ to emit any transaction above the cap, warns above three quarters of it, and set
 | --- | --- | --- | --- |
 | `writeChunk`, new 24,575-byte chunk | 5,107,875 | 5,020,261 | about 5.5M (33% of the cap) |
 | `registerManifest`, 512 chunks, `text/html` | 11,572,400 | 11,460,012 | about 11.9M (71%) |
-| `attestBase64`, 48 distinct cold chunks (the largest call) | 8,790,000 | 8,466,024 | about 8.8M (53%) |
+| `attestBase64`, the worst call (48 cold chunks, then the last chunk for the padding) | 8,790,000 | about 8,500,000 | about 8.8M (53%) |
 
 `writeChunk` is priced as a new chunk, the worst case; a chunk the store already
 holds costs about 16,000. `attestBase64` is priced at 150,000 plus 180,000 per
-chunk validated; a call whose range does not include the file's last chunk reads
-it too, about 20,000 more, which the model's margin covers. The model constants
-(`gas.py`) are upper bounds fitted to measurements. `UploaderGolden.t.sol` fuzzes
-`writeChunk` and `registerManifest` on a real `ContentStore`, and
-`UploaderAttest.t.sol` measures `attestBase64` for 1, 11, 48 and (second call)
-49 chunks, each asserting that measured gas never exceeds the model.
+chunk validated. The worst call is 48 checked chunks plus one read of the file's
+last chunk for the padding (the call that reaches the end of the file does that;
+earlier calls do not), measured at about 8.50M against the model's 8.79M. The
+model constants (`gas.py`) are upper bounds fitted to measurements.
+`UploaderGolden.t.sol` fuzzes `writeChunk` and `registerManifest` on a real
+`ContentStore`, and `UploaderAttest.t.sol` measures `attestBase64` for 1, 11 and
+48 chunks, the worst call (the first call of a 49-chunk file) and the second
+call of that file, each asserting that measured gas never exceeds the model.
 
 A whole 12.58 MB file is 513 transactions and about 2.84 billion gas, about 2.8
 ETH at 1 gwei. One more thing to know before batching chunks with Multicall3:

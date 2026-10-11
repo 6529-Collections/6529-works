@@ -36,8 +36,10 @@ REGISTER_MIME_BYTE_GAS = 400
 REGISTER_LONG_MIME_GAS = 45_000
 SHORT_STRING_MAX = 31
 # `attestBase64` execution validating k chunks: base + per-chunk * k. A call reads and checks
-# each chunk, plus the file's last chunk to find the padding (about 20,000 more when it is not
-# one of the k).
+# each of its k chunks. A call that reaches the end of the file also reads the file's last chunk
+# to find the `=` padding (about 20,000 more when that chunk is not one of the k); earlier calls
+# do not. The worst call is 48 checked chunks plus that read, measured at about 8.50M, against
+# a model of 8.79M.
 ATTEST_BASE_GAS = 150_000
 ATTEST_CHUNK_GAS = 180_000
 

@@ -178,8 +178,19 @@ contract UploaderAttestGasFullCallTest is UploaderAttestGasBase {
     }
 }
 
-/// @dev The second call of a file with 49 chunks: one chunk to check, and the last chunk read cold
-///      to find the padding.
+/// @dev The worst call: the first call of a file with 49 chunks checks 48 chunks and, because it
+///      reaches the end of the file, reads the last chunk cold to find the padding.
+contract UploaderAttestGasWorstCallTest is UploaderAttestGasBase {
+    function setUp() public {
+        _fixture(49, 0);
+    }
+
+    function test_WorstCall() public {
+        _assertWithinModel(48);
+    }
+}
+
+/// @dev The second call of that file: one chunk to check, which is the last one.
 contract UploaderAttestGasSecondCallTest is UploaderAttestGasBase {
     function setUp() public {
         _fixture(49, 1);
