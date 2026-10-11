@@ -7,5 +7,5 @@ dates directly. Identity and payout changes wait 7 days, cancellers are
 captured at staging, and contested changes, estates and lost keys use the
 180-day public override. Signatures are checked with the shared verifier in
 `libraries/`. Governed by
-[ADR 0001](../../docs/adr/0055-v1-network-curated-stream-rescope.md) §11,
+[ADR 0001 §11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery),
 including its "Hardening" decisions.

@@ -7,5 +7,5 @@ dispute pause), fixed price with allowlist phases and ERC-20 permits, and Dutch
 pricing. Each sale locks its currency (ETH or an allowlisted standard ERC-20)
 when it starts, and new sale types arrive as new adapters through a timelocked
 minter-role grant. Governed by
-[ADR 0001](../../docs/adr/0055-v1-network-curated-stream-rescope.md) §5, with
+[ADR 0001 §5](../../docs/adr/0001-v1-scope.md#5-sales-and-auctions), with
 §6 (edition sales), §12 (dispute pause) and §16 (federated use).

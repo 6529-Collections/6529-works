@@ -6,7 +6,7 @@ ERC-1271), EIP-7702 delegation detection, JSON and inline-script escaping with
 RFC 3629 UTF-8 validation, content-addressed SSTORE2 storage and bounded
 `staticcall`. Every function is `internal`, so nothing here is a linked library
 and nothing counts against the five-linked-library budget. Governed by
-[ADR 0001](../../docs/adr/0055-v1-network-curated-stream-rescope.md) §11
+[ADR 0001 §11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery)
 ("Hardening": one shared signature library), §8 (content storage and the
 renderer's bounded read) and the §17 reuse plan ("Signatures and identity",
 "Core" gas-reserve check, "Metadata, content, entropy" keep list), within the
