@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Runs the v1 flows on the Sepolia rehearsal r1 deployment and records the gas of every
-    transaction (deployments/11155111/flows-r1.md).
+    Runs the v1 flows on a Sepolia rehearsal deployment (r2 by default; -Record selects
+    another) and records the gas of every transaction (deployments/11155111/flows.md).
 
 .DESCRIPTION
-    script/sepolia/FlowsR1.s.sol encodes every call and reads every EIP-712 digest from the
+    script/sepolia/Flows.s.sol encodes every call and reads every EIP-712 digest from the
     contract that checks it; this driver signs the digests, sends the transactions with
     `cast send` (so each gas limit comes from the node's eth_estimateGas, which applies
     Glamsterdam's costs) and records each receipt in a JSON state file.
@@ -18,14 +18,16 @@
     Accounts are keystore names in the operator's signer set; see $Accounts below.
 
 .EXAMPLE
-    ./flows-r1.ps1 -SignerModule <path> -State <state.json> -Step content
-    ./flows-r1.ps1 -SignerModule <path> -State <state.json> -Step start -Index 0
-    ./flows-r1.ps1 -SignerModule <path> -State <state.json> -Step settle -TokenId 6
-    ./flows-r1.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 1000000000000000 -Label bid-2-antisnipe
-    ./flows-r1.ps1 -SignerModule <path> -State <state.json> -Step prague
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step content
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step start -Index 0
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step settle -TokenId 6
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 1000000000000000 -Label bid-2-antisnipe
+    ./flows.ps1 -SignerModule <path> -State <r1-state.json> -Record deployments/11155111/1791746472.json -Step settle -TokenId 6
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step prague
 
     The prague step replays each recorded transaction with
     `cast run <tx> --quick --evm-version prague`: the parent block's state, Prague gas costs.
+    Run it soon after the transactions: a public RPC keeps only recent historical state.
 #>
 param(
     [Parameter(Mandatory)] [string] $SignerModule,
@@ -34,6 +36,11 @@ param(
         'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openSale',
         'purchase', 'send', 'record', 'prague', 'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
+    # The deployment record, relative to the repository root (r2 by default).
+    [string] $Record = 'deployments/11155111/1791750816.json',
+    # The keystore that relays permissionless calls (role `any`). A second relayer lets the
+    # content uploads run beside the sale flow, each with its own state file.
+    [string] $Relay = 'stream-deployer',
     [int] $Index = -1,
     [int] $TokenId = 0,
     [string] $Bidder = 'bidder1',
@@ -49,19 +56,22 @@ $ErrorActionPreference = 'Stop'
 Import-Module $SignerModule -Force
 
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$Script = 'script/sepolia/FlowsR1.s.sol:FlowsR1'
+$Script = 'script/sepolia/Flows.s.sol:Flows'
+$env:FLOWS_RECORD = $Record
+$Contracts = (Get-Content -Raw -Encoding UTF8 (Join-Path $Repo $Record) | ConvertFrom-Json).contracts
 $PriorityFee = '50000000'   # 0.05 gwei
 $MaxFee = '200000000'       # 0.2 gwei: cast's own max fee can fall below the priority fee
 # Role -> keystore account name in the operator's signer set.
 $Accounts = @{
-    any      = 'stream-deployer'    # relays permissionless calls; holds no role
+    any      = $Relay               # relays permissionless calls; holds no role
     platform = 'stream-platform'    # PLATFORM
     curator  = 'curator'            # CURATOR
     artist   = 'stream-artist'      # the lead artist of the package
     signer   = 'curation-1'         # CURATION_SIGNER (signs only)
     bidder1  = 'flows-bidder-1'
     bidder2  = 'flows-bidder-2'
-    wallet2  = 'flows-consolidated'  # the artist's consolidated second wallet
+    wallet2  = 'flows-consolidated'  # the artist's consolidated second wallet (from r1)
+    wallet3  = 'flows-wallet3'       # a wallet consolidated after the artist registers on r2
 }
 
 # ---------------------------------------------------------------------------- state
@@ -220,7 +230,7 @@ function Send-Broadcast([string]$Label, [string]$Sig, [string[]]$Arguments) {
     finally { Pop-Location }
     # forge records the receipt with the broadcast (a gitignored cache for chain 11155111).
     $name = ($Sig -split '\(')[0]
-    $run = Get-Content -Raw -Encoding UTF8 "$Repo/broadcast/FlowsR1.s.sol/11155111/$name-latest.json" | ConvertFrom-Json
+    $run = Get-Content -Raw -Encoding UTF8 "$Repo/broadcast/Flows.s.sol/11155111/$name-latest.json" | ConvertFrom-Json
     return Add-Receipt $Label 'any' $run.receipts[-1]
 }
 
@@ -269,10 +279,10 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'content()' @())
     }
     'collections' {
-        $stream = (Get-Content -Raw "$Repo/deployments/11155111/1791746472.json" | ConvertFrom-Json).contracts.Stream.address
+        $stream = $Contracts.Stream.address
         $count = [int](Invoke-Cli 'cast' @('call', $stream, 'collectionCount()(uint256)', '--rpc-url', $Rpc)).Trim()
-        foreach ($name in (@('r1 Flows', 'r1 Flows 2') | Select-Object -Skip $count)) {
-            $hash = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia-r1/flows/collection/$name")).Trim()
+        foreach ($name in (@('Flows', 'Flows 2') | Select-Object -Skip $count)) {
+            $hash = (Invoke-Cli 'cast' @('keccak', "6529-works/sepolia/flows/collection/$name")).Trim()
             $data = (Invoke-Cli 'cast' @('calldata', 'createCollection(string,bytes32)', $name, $hash)).Trim()
             Send-Planned "createCollection-$($name -replace ' ', '-')" 'platform' $stream '0' $data | Out-Null
         }
@@ -302,7 +312,7 @@ switch ($Step) {
         Send-Items (Invoke-Plan 'openRecordTx(uint256,uint256)' @("$Index", "$TokenId"))
     }
     'sync' {
-        $records = (Get-Content -Raw "$Repo/deployments/11155111/1791746472.json" | ConvertFrom-Json).contracts.WorkRecords.address
+        $records = $Contracts.WorkRecords.address
         $data = (Invoke-Cli 'cast' @('calldata', 'syncOnChain(uint256)', "$TokenId")).Trim()
         Send-Planned "syncOnChain-$TokenId" 'any' $records '0' $data | Out-Null
     }

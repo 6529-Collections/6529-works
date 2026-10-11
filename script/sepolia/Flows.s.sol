@@ -54,9 +54,9 @@ interface IDigests {
         returns (bytes32);
 }
 
-/// @title FlowsR1
-/// @notice Encodes the v1 flows run on the Sepolia rehearsal r1 deployment
-///         (`deployments/11155111/1791746472.json`): the content uploads, one curated package of
+/// @title Flows
+/// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r2 by default,
+///         `deployments/11155111/1791750816.json`; set `FLOWS_RECORD` for another record): the content uploads, one curated package of
 ///         eight works, its approval and acceptance, the auction starts, bids, record opening, the
 ///         VRF request and, after the 24-hour auction, settlement and the linked edition.
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
@@ -69,16 +69,20 @@ interface IDigests {
 ///      - `INFO <key> <value>`.
 ///      The package is deterministic: the same artist and collections always give the same
 ///      files, items and root, so every step can be re-run and re-derived.
-///      `script/sepolia/flows-r1.ps1` is the driver used for r1.
-contract FlowsR1 is Script {
+///      `script/sepolia/flows.ps1` is the driver.
+contract Flows is Script {
     using Strings for uint256;
     using Strings for address;
 
-    string internal constant RECORD = "deployments/11155111/1791746472.json";
+    /// @dev The deployment record the flows run against: r2 unless `FLOWS_RECORD` names another
+    ///      (r1 is `deployments/11155111/1791746472.json`).
+    string internal constant RECORD = "deployments/11155111/1791750816.json";
+    /// @dev Seeds every file, record and evidence hash. It is kept from r1 so that r1 and r2 share
+    ///      one package (same files and root); changing it would orphan r1's pending edition.
     string internal constant LABEL = "6529-works/sepolia-r1/flows";
-    /// @dev The r1 artist (a throwaway testnet key).
+    /// @dev The rehearsals' artist (a throwaway testnet key).
     address internal constant DEFAULT_ARTIST = 0x111Cb972e6734feA580D403555a2a0ed4Cd3Ae1B;
-    /// @dev Curation signer 1 of r1 (holds CURATION_SIGNER).
+    /// @dev Curation signer 1 of r1 and r2 (holds CURATION_SIGNER).
     address internal constant DEFAULT_SIGNER = 0xc7091A91Fa76f7494a3b847B6A08f164C7097830;
     uint256 internal constant ITEMS = 8;
     uint256 internal constant EDITION_PRICE = 0.0001 ether;
@@ -125,7 +129,7 @@ contract FlowsR1 is Script {
     // ------------------------------------------------------------------ inputs
 
     function _addrs() internal view returns (Addrs memory a) {
-        string memory json = vm.readFile(RECORD);
+        string memory json = vm.readFile(vm.envOr("FLOWS_RECORD", string(RECORD)));
         a.store = vm.parseJsonAddress(json, ".contracts.ContentStore.address");
         a.registry = vm.parseJsonAddress(json, ".contracts.PackageRegistry.address");
         a.verifier = vm.parseJsonAddress(json, ".contracts.CurationVerifier.address");
