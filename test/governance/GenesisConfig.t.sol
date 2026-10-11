@@ -2,10 +2,27 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
+import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol";
+import { PackageRegistry } from "src/curation/PackageRegistry.sol";
+import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
+import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
+import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
+import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
+import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IDutchSale } from "src/interfaces/IDutchSale.sol";
+import { IEditions } from "src/interfaces/IEditions.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
+import { IMintTarget } from "src/interfaces/IMintTarget.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { StatementLog } from "src/records/StatementLog.sol";
 import {
     Erc165PeerMock,
     GenesisTargetMock,
@@ -13,13 +30,18 @@ import {
 } from "../mocks/GenesisWiringMocks.sol";
 
 /// @notice Checks the committed genesis configuration, `config/genesis.example.json`, against
-///         {Roles} and {GovernanceConfig}, installs it with its wiring on a fresh manager, reads
-///         it back, and sizes the wiring bound against the EIP-7825 transaction gas cap.
+///         the compiled selectors, {Roles} and {GovernanceConfig}; installs it with its wiring
+///         on a fresh manager and reads it back; and sizes the wiring bound against the
+///         EIP-7825 transaction gas cap.
 contract GenesisConfigTest is Test {
     string internal constant PATH = "config/genesis.example.json";
     bytes32 internal constant MANIFEST = keccak256("6529 Works genesis manifest, example");
     /// @dev EIP-7825 (Fusaka): no transaction may carry more than 2^24 gas.
     uint256 internal constant TX_GAS_CAP = 1 << 24;
+    /// @dev `IEnglishAuction.pause(uint256,bytes32)`. It overloads `ISaleAdapter.pause()`, so
+    ///      Solidity cannot name it by member access; tools/check_genesis.py checks it against
+    ///      the compiled artifact.
+    bytes4 internal constant DISPUTE_PAUSE = bytes4(keccak256("pause(uint256,bytes32)"));
 
     string internal json;
     GovernanceConfigurator internal configurator;
@@ -73,19 +95,257 @@ contract GenesisConfigTest is Test {
 
     /// @dev The address of a contract or peer named in the JSON.
     function _addressOf(string memory name) internal view returns (address) {
-        for (uint256 i; i < _count(".contracts"); ++i) {
-            string memory c = _at(".contracts", i);
-            if (_eq(_str(string.concat(c, ".name")), name)) {
-                return vm.parseJsonAddress(json, string.concat(c, ".address"));
-            }
-        }
-        for (uint256 i; i < _count(".peers"); ++i) {
-            string memory p = _at(".peers", i);
-            if (_eq(_str(string.concat(p, ".name")), name)) {
-                return vm.parseJsonAddress(json, string.concat(p, ".address"));
+        string[2] memory lists = [".contracts", ".peers"];
+        for (uint256 l; l < 2; ++l) {
+            for (uint256 i; i < _count(lists[l]); ++i) {
+                string memory c = _at(lists[l], i);
+                if (_eq(_str(string.concat(c, ".name")), name)) {
+                    return vm.parseJsonAddress(json, string.concat(c, ".address"));
+                }
             }
         }
         revert(string.concat("unknown contract ", name));
+    }
+
+    /// @dev Every selector a contract lists: mapped, genesis-only and deferred.
+    function _listed(string memory c) internal view returns (bytes4[] memory all) {
+        string[3] memory groups = [".functions", ".genesisOnly", ".deferred"];
+        uint256 n;
+        for (uint256 g; g < 3; ++g) {
+            n += _count(string.concat(c, groups[g]));
+        }
+        all = new bytes4[](n);
+        uint256 k;
+        for (uint256 g; g < 3; ++g) {
+            string memory base = string.concat(c, groups[g]);
+            for (uint256 j; j < _count(base); ++j) {
+                all[k++] = _selector(string.concat(_at(base, j), ".selector"));
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ compiled selectors
+
+    function _s(bytes4[7] memory xs, uint256 n) internal pure returns (bytes4[] memory out) {
+        out = new bytes4[](n);
+        for (uint256 i; i < n && i < xs.length; ++i) {
+            out[i] = xs[i];
+        }
+    }
+
+    /// @dev The compiled selectors each contract's entries must equal, as a set. A renamed or
+    ///      re-typed function breaks compilation here before it can drift from the JSON.
+    function _compiled(string memory name) internal pure returns (bytes4[] memory) {
+        bytes4 z;
+        if (_eq(name, "Stream")) {
+            return _s(
+                [
+                    IStream.createCollection.selector,
+                    IStream.setContractURI.selector,
+                    IStream.setOwner.selector,
+                    IStream.setDefaultRenderer.selector,
+                    IMintTarget.setAdmittedMinter.selector,
+                    IStream.bindWorkRecords.selector,
+                    IStream.bindEditions.selector
+                ],
+                7
+            );
+        }
+        if (_eq(name, "WorkRecords")) {
+            return _s(
+                [
+                    IWorkRecords.setPreferredKind.selector,
+                    IWorkRecords.setCollectionPreferredKind.selector,
+                    IWorkRecords.setFilePreference.selector,
+                    IWorkRecords.addLocator.selector,
+                    IWorkRecords.relicense.selector,
+                    IWorkRecords.setRoyaltyRate.selector,
+                    IWorkRecords.repinRenderer.selector
+                ],
+                7
+            );
+        }
+        if (_eq(name, "Editions")) {
+            return _s(
+                [
+                    IEditions.setContractURI.selector,
+                    IEditions.setOwner.selector,
+                    IMintTarget.setAdmittedMinter.selector,
+                    IEditions.bindWorkRecords.selector,
+                    z,
+                    z,
+                    z
+                ],
+                4
+            );
+        }
+        if (_eq(name, "PackageRegistry")) {
+            return _s(
+                [
+                    PackageRegistry.revokePackage.selector,
+                    PackageRegistry.setVerifier.selector,
+                    PackageRegistry.bindStream.selector,
+                    PackageRegistry.bindEditions.selector,
+                    z,
+                    z,
+                    z
+                ],
+                4
+            );
+        }
+        if (_eq(name, "CurationVerifier")) {
+            return _s(
+                [
+                    Eip712CurationVerifier.disableSigner.selector,
+                    Eip712CurationVerifier.enableSigner.selector,
+                    z,
+                    z,
+                    z,
+                    z,
+                    z
+                ],
+                2
+            );
+        }
+        if (_eq(name, "ArtistRegistry")) {
+            return _s(
+                [
+                    IArtistRegistry.vetoChange.selector,
+                    IArtistRegistry.stageOverride.selector,
+                    IArtistRegistry.setConsolidationSource.selector,
+                    IArtistRegistry.bindPackageRegistry.selector,
+                    IArtistRegistry.bindStream.selector,
+                    IArtistRegistry.bindSplitFactory.selector,
+                    IArtistRegistry.bindFederationRegistry.selector
+                ],
+                7
+            );
+        }
+        if (_eq(name, "StatementLog")) {
+            return _s(
+                [
+                    StatementLog.appendCurator.selector,
+                    StatementLog.appendPlatform.selector,
+                    StatementLog.appendGovernanceManifest.selector,
+                    StatementLog.setArtistResolver.selector,
+                    z,
+                    z,
+                    z
+                ],
+                4
+            );
+        }
+        if (_eq(name, "EnglishAuction")) {
+            bytes4[] memory out = _s(
+                [
+                    ISaleAdapter.pause.selector,
+                    ISaleAdapter.unpause.selector,
+                    IEnglishAuction.resume.selector,
+                    IEnglishAuction.cancel.selector,
+                    IEnglishAuction.setConfig.selector,
+                    IEnglishAuction.setOpeningBid.selector,
+                    ISaleAdapter.setTarget.selector
+                ],
+                9
+            );
+            (out[7], out[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
+            return out;
+        }
+        if (_eq(name, "FixedPriceSale")) {
+            return _s(
+                [
+                    ISaleAdapter.pause.selector,
+                    ISaleAdapter.unpause.selector,
+                    IFixedPriceSale.openSale.selector,
+                    IFixedPriceSale.closeSale.selector,
+                    ISaleAdapter.setTarget.selector,
+                    ISaleAdapter.setFederationRegistry.selector,
+                    z
+                ],
+                6
+            );
+        }
+        if (_eq(name, "DutchSale")) {
+            return _s(
+                [
+                    ISaleAdapter.pause.selector,
+                    ISaleAdapter.unpause.selector,
+                    IDutchSale.openSale.selector,
+                    IDutchSale.closeSale.selector,
+                    ISaleAdapter.setTarget.selector,
+                    ISaleAdapter.setFederationRegistry.selector,
+                    z
+                ],
+                6
+            );
+        }
+        if (_eq(name, "EconomicsResolver")) {
+            return _s(
+                [
+                    EconomicsResolver.setFeeTerms.selector,
+                    EconomicsResolver.setRoyaltyRate.selector,
+                    EconomicsResolver.setDefaultLicense.selector,
+                    z,
+                    z,
+                    z,
+                    z
+                ],
+                3
+            );
+        }
+        if (_eq(name, "AssetAllowlist")) {
+            return _s(
+                [
+                    AssetAllowlist.admitAsset.selector,
+                    AssetAllowlist.setDefaultCurrency.selector,
+                    AssetAllowlist.setIncrementFloor.selector,
+                    AssetAllowlist.deprecateAsset.selector,
+                    z,
+                    z,
+                    z
+                ],
+                4
+            );
+        }
+        if (_eq(name, "RevenueEscrow")) {
+            return _s([RevenueEscrow.recover.selector, z, z, z, z, z, z], 1);
+        }
+        if (_eq(name, "DependencyRegistry")) {
+            return _s(
+                [
+                    DependencyRegistry.register.selector,
+                    DependencyRegistry.deprecate.selector,
+                    z,
+                    z,
+                    z,
+                    z,
+                    z
+                ],
+                2
+            );
+        }
+        if (_eq(name, "EntropyModule")) {
+            return _s(
+                [
+                    VrfEntropyModule.setConfig.selector,
+                    VrfEntropyModule.setCoordinator.selector,
+                    z,
+                    z,
+                    z,
+                    z,
+                    z
+                ],
+                2
+            );
+        }
+        revert(string.concat("no compiled selectors for ", name));
+    }
+
+    function _contains(bytes4[] memory xs, bytes4 x) internal pure returns (bool) {
+        for (uint256 i; i < xs.length; ++i) {
+            if (xs[i] == x) return true;
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------ build from JSON
@@ -142,6 +402,23 @@ contract GenesisConfigTest is Test {
 
     // ------------------------------------------------------------------ the JSON itself
 
+    function test_JsonMatchesTheCompiledSelectors() public view {
+        uint256 total;
+        for (uint256 i; i < _count(".contracts"); ++i) {
+            string memory c = _at(".contracts", i);
+            string memory name = _str(string.concat(c, ".name"));
+            bytes4[] memory listed = _listed(c);
+            bytes4[] memory compiled = _compiled(name);
+            assertEq(listed.length, compiled.length, name);
+            for (uint256 j; j < listed.length; ++j) {
+                assertTrue(_contains(compiled, listed[j]), name);
+                assertTrue(_contains(listed, compiled[j]), name);
+            }
+            total += listed.length;
+        }
+        assertEq(total, 68, "59 mapped, 8 genesis-only, 1 deferred");
+    }
+
     function test_RoleTableMatchesRolesSol() public view {
         uint256 n = _count(".roles");
         assertEq(n, Roles.COUNT, "one entry per role");
@@ -159,53 +436,65 @@ contract GenesisConfigTest is Test {
         }
     }
 
-    function test_EverySelectorMatchesItsSignatureAndClassDelay() public view {
-        uint256 total;
+    function test_EveryEntryMatchesItsSignatureAndClassDelay() public view {
         for (uint256 i; i < _count(".contracts"); ++i) {
             string memory c = _at(".contracts", i);
-            string memory fnBase = string.concat(c, ".functions");
-            for (uint256 j; j < _count(fnBase); ++j) {
-                string memory f = _at(fnBase, j);
-                string memory sig = _str(string.concat(f, ".signature"));
-                assertEq(
-                    _selector(string.concat(f, ".selector")), bytes4(keccak256(bytes(sig))), sig
-                );
-                uint64 role = _roleId(_str(string.concat(f, ".role")));
-                uint256 delay = vm.parseJsonUint(json, string.concat(f, ".delay"));
-                assertEq(delay, Roles.executionDelay(role), sig);
-                assertEq(delay, _classDelay(_str(string.concat(f, ".class"))), sig);
-                assertTrue(role != Roles.ADMIN && role != Roles.CURATION_SIGNER, sig);
-                ++total;
-            }
-            // Genesis-only binds stay unmapped (ADMIN) and are wired once at genesis.
-            string memory gBase = string.concat(c, ".genesisOnly");
-            for (uint256 j; j < _count(gBase); ++j) {
-                string memory g = _at(gBase, j);
-                string memory sig = _str(string.concat(g, ".signature"));
-                bytes4 sel = _selector(string.concat(g, ".selector"));
-                assertEq(sel, bytes4(keccak256(bytes(sig))), sig);
-                for (uint256 k; k < _count(fnBase); ++k) {
-                    assertTrue(_selector(string.concat(_at(fnBase, k), ".selector")) != sel, sig);
+            string[3] memory groups = [".functions", ".genesisOnly", ".deferred"];
+            for (uint256 g; g < 3; ++g) {
+                string memory base = string.concat(c, groups[g]);
+                for (uint256 j; j < _count(base); ++j) {
+                    string memory f = _at(base, j);
+                    string memory sig = _str(string.concat(f, ".signature"));
+                    assertEq(
+                        _selector(string.concat(f, ".selector")), bytes4(keccak256(bytes(sig))), sig
+                    );
+                    if (g != 0) continue;
+                    uint64 role = _roleId(_str(string.concat(f, ".role")));
+                    uint256 delay = vm.parseJsonUint(json, string.concat(f, ".delay"));
+                    assertEq(delay, Roles.executionDelay(role), sig);
+                    assertEq(delay, _classDelay(_str(string.concat(f, ".class"))), sig);
+                    assertTrue(role != Roles.ADMIN && role != Roles.CURATION_SIGNER, sig);
                 }
             }
         }
-        assertGt(total, 0);
     }
 
-    function test_WiringCalldataMatchesItsSignatureAndArguments() public view {
-        for (uint256 i; i < _count(".wiring"); ++i) {
+    function test_WiringIsGenesisOnlyAndComplete() public view {
+        GovernanceConfig.Call[] memory wiring = _wiring();
+        for (uint256 i; i < wiring.length; ++i) {
             string memory w = _at(".wiring", i);
             string memory sig = _str(string.concat(w, ".signature"));
-            bytes memory data = vm.parseJsonBytes(json, string.concat(w, ".calldata"));
-            assertEq(bytes4(data), bytes4(keccak256(bytes(sig))), sig);
-            _addressOf(_str(string.concat(w, ".contract"))); // the target exists
-            // The first argument names a contract or peer; it must be that placeholder.
-            string memory peer = _str(string.concat(w, ".args[0]"));
-            address encoded;
-            assembly ("memory-safe") {
-                encoded := mload(add(data, 36))
+            bytes4 sel = bytes4(wiring[i].data);
+            assertEq(sel, bytes4(keccak256(bytes(sig))), sig);
+            assertTrue(GovernanceConfig.isGenesisSelector(sel), sig);
+            // When the call names its peer, the first argument is that placeholder address.
+            if (_count(string.concat(w, ".args")) != 0) {
+                bytes memory data = wiring[i].data;
+                address encoded;
+                assembly ("memory-safe") {
+                    encoded := mload(add(data, 36))
+                }
+                assertEq(encoded, _addressOf(_str(string.concat(w, ".args[0]"))), sig);
             }
-            assertEq(encoded, _addressOf(peer), sig);
+        }
+        // Every genesis-only bind is wired; nothing deferred is.
+        for (uint256 i; i < _count(".contracts"); ++i) {
+            string memory c = _at(".contracts", i);
+            address location = vm.parseJsonAddress(json, string.concat(c, ".address"));
+            string[2] memory groups = [".genesisOnly", ".deferred"];
+            for (uint256 g; g < 2; ++g) {
+                string memory base = string.concat(c, groups[g]);
+                for (uint256 j; j < _count(base); ++j) {
+                    bytes4 sel = _selector(string.concat(_at(base, j), ".selector"));
+                    bool wired;
+                    for (uint256 k; k < wiring.length; ++k) {
+                        if (wiring[k].target == location && bytes4(wiring[k].data) == sel) {
+                            wired = true;
+                        }
+                    }
+                    assertEq(wired, g == 0, string.concat(c, groups[g]));
+                }
+            }
         }
     }
 
@@ -248,15 +537,14 @@ contract GenesisConfigTest is Test {
     }
 
     /// @dev Sizes {GovernanceConfig.MAX_WIRING_CALLS}: the genesis configuration with the
-    ///      maximum number of wiring calls, each an ERC-165-checking bind to a cold peer that
-    ///      writes a fresh slot, plus intrinsic and worst-case calldata gas, stays well under
-    ///      the EIP-7825 cap.
+    ///      maximum number of wiring calls, each an admitted-minter grant that ERC-165-checks a
+    ///      fresh peer and writes a fresh slot, with every account cooled first so no access is
+    ///      cheaper than in a real transaction, plus intrinsic and worst-case calldata gas.
     function test_MaximumWiringFitsTheTransactionGasCap() public {
         GovernanceConfig.Config memory genesis = _config();
         _etchTargets(genesis);
         GovernanceConfig.Call[] memory genesisWiring = _wiring();
 
-        // One more target carries the extra binds.
         WiringTargetMock wired = new WiringTargetMock(address(manager));
         GovernanceConfig.Config memory cfg;
         cfg.grants = genesis.grants;
@@ -265,19 +553,30 @@ contract GenesisConfigTest is Test {
             cfg.targets[i] = genesis.targets[i];
         }
         GovernanceConfig.FunctionRole[] memory fns = new GovernanceConfig.FunctionRole[](1);
-        fns[0] =
-            GovernanceConfig.FunctionRole(WiringTargetMock.bind.selector, Roles.SUCCESSOR_SETTER);
+        fns[0] = GovernanceConfig.FunctionRole(
+            WiringTargetMock.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER
+        );
         cfg.targets[genesis.targets.length] = GovernanceConfig.Target(address(wired), fns);
 
         uint256 max = GovernanceConfig.MAX_WIRING_CALLS;
         GovernanceConfig.Call[] memory wiring = new GovernanceConfig.Call[](max);
         for (uint256 i; i < max; ++i) {
-            wiring[i] = i < genesisWiring.length
-                ? genesisWiring[i]
-                : GovernanceConfig.Call(
-                    address(wired),
-                    abi.encodeCall(WiringTargetMock.bind, (i, address(new Erc165PeerMock())))
-                );
+            if (i < genesisWiring.length) {
+                wiring[i] = genesisWiring[i];
+                continue;
+            }
+            Erc165PeerMock peer = new Erc165PeerMock();
+            vm.cool(address(peer));
+            wiring[i] = GovernanceConfig.Call(
+                address(wired),
+                abi.encodeCall(WiringTargetMock.setAdmittedMinter, (address(peer), true))
+            );
+        }
+        vm.cool(address(configurator));
+        vm.cool(address(manager));
+        vm.cool(address(wired));
+        for (uint256 i; i < genesis.targets.length; ++i) {
+            vm.cool(genesis.targets[i].target);
         }
 
         uint256 calldataBytes = 4 + abi.encode(cfg, MANIFEST, wiring).length;

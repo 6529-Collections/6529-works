@@ -3,8 +3,9 @@
   "description": "Example genesis configuration for the 6529 Works WorksAccessManager. Every address is a placeholder.",
   "sources": [
     "docs/adr/0002-access-manager-hardening.md (decision 7: selector classes)",
+    "docs/adr/0003-build-time-decisions.md (build-time role and class decisions)",
     "docs/architecture.md (governance map)",
-    "src/interfaces/ (selectors) and src/governance/Roles.sol (role IDs and delays)"
+    "src/interfaces/ and the implementations on main (selectors); src/governance/Roles.sol (role IDs and delays)"
   ],
   "roles": [
     {
@@ -203,15 +204,21 @@
     {
       "name": "SplitFactory",
       "address": "0x000000000000000000000000000000000000a010",
-      "note": "not governed; passed to a genesis bind"
+      "note": "not governed; passed to ArtistRegistry.bindSplitFactory"
+    },
+    {
+      "name": "WorksAccessManager",
+      "address": "0x000000000000000000000000000000000000a0ff",
+      "note": "configurator.worksManager(); the subject of the epoch-0 manifest"
     }
   ],
   "contracts": [
     {
       "name": "Stream",
-      "interface": "IStream",
+      "artifact": "src/interfaces/IStream.sol:IStream",
+      "implementation": null,
       "address": "0x000000000000000000000000000000000000a001",
-      "status": "pending lane: stream (interface on main)",
+      "status": "interface on main; implementation pending (stream lane)",
       "functions": [
         {
           "signature": "createCollection(string,bytes32)",
@@ -258,13 +265,15 @@
           "signature": "bindEditions(address)",
           "selector": "0x8d12f114"
         }
-      ]
+      ],
+      "deferred": []
     },
     {
       "name": "WorkRecords",
-      "interface": "IWorkRecords",
+      "artifact": "src/interfaces/IWorkRecords.sol:IWorkRecords",
+      "implementation": null,
       "address": "0x000000000000000000000000000000000000a002",
-      "status": "pending lane: stream (interface on main)",
+      "status": "interface on main; implementation pending (stream lane)",
       "functions": [
         {
           "signature": "setPreferredKind(uint8)",
@@ -316,13 +325,15 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "Editions",
-      "interface": "IEditions",
+      "artifact": "src/interfaces/IEditions.sol:IEditions",
+      "implementation": null,
       "address": "0x000000000000000000000000000000000000a003",
-      "status": "pending lane: editions (interface on main)",
+      "status": "interface on main; implementation pending (editions lane)",
       "functions": [
         {
           "signature": "setContractURI(string)",
@@ -351,11 +362,13 @@
           "signature": "bindWorkRecords(address)",
           "selector": "0x8bb9e2fd"
         }
-      ]
+      ],
+      "deferred": []
     },
     {
       "name": "PackageRegistry",
-      "interface": "PackageRegistry",
+      "artifact": "src/curation/PackageRegistry.sol:PackageRegistry",
+      "implementation": "src/curation/PackageRegistry.sol:PackageRegistry",
       "address": "0x000000000000000000000000000000000000a004",
       "status": "implemented on main",
       "functions": [
@@ -383,11 +396,13 @@
           "signature": "bindEditions(address)",
           "selector": "0x8d12f114"
         }
-      ]
+      ],
+      "deferred": []
     },
     {
       "name": "CurationVerifier",
-      "interface": "Eip712CurationVerifier",
+      "artifact": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
+      "implementation": "src/curation/Eip712CurationVerifier.sol:Eip712CurationVerifier",
       "address": "0x000000000000000000000000000000000000a005",
       "status": "implemented on main",
       "functions": [
@@ -406,13 +421,15 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "ArtistRegistry",
-      "interface": "IArtistRegistry",
+      "artifact": "src/interfaces/IArtistRegistry.sol:IArtistRegistry",
+      "implementation": null,
       "address": "0x000000000000000000000000000000000000a006",
-      "status": "pending lane: identity (interface on main)",
+      "status": "interface on main; implementation pending (identity lane)",
       "functions": [
         {
           "signature": "vetoChange(uint256)",
@@ -448,16 +465,20 @@
         {
           "signature": "bindSplitFactory(address)",
           "selector": "0x5b004c86"
-        },
+        }
+      ],
+      "deferred": [
         {
           "signature": "bindFederationRegistry(address)",
-          "selector": "0x3d4dbd3c"
+          "selector": "0x3d4dbd3c",
+          "note": "v1.1: bound when the federation registry ships, as a 30-day ADMIN action"
         }
       ]
     },
     {
       "name": "StatementLog",
-      "interface": "StatementLog",
+      "artifact": "src/records/StatementLog.sol:StatementLog",
+      "implementation": "src/records/StatementLog.sol:StatementLog",
       "address": "0x000000000000000000000000000000000000a007",
       "status": "implemented on main",
       "functions": [
@@ -490,13 +511,15 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "EnglishAuction",
-      "interface": "IEnglishAuction",
+      "artifact": "src/sales/EnglishAuction.sol:EnglishAuction",
+      "implementation": "src/sales/EnglishAuction.sol:EnglishAuction",
       "address": "0x000000000000000000000000000000000000a008",
-      "status": "pending lane: auction (interface on main)",
+      "status": "implemented on main",
       "functions": [
         {
           "signature": "pause()",
@@ -562,13 +585,15 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "FixedPriceSale",
-      "interface": "IFixedPriceSale",
+      "artifact": "src/interfaces/IFixedPriceSale.sol:IFixedPriceSale",
+      "implementation": null,
       "address": "0x000000000000000000000000000000000000a009",
-      "status": "pending lane: sales (interface on main)",
+      "status": "interface on main; implementation pending (sales lane)",
       "functions": [
         {
           "signature": "pause()",
@@ -613,13 +638,15 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "DutchSale",
-      "interface": "IDutchSale",
+      "artifact": "src/interfaces/IDutchSale.sol:IDutchSale",
+      "implementation": null,
       "address": "0x000000000000000000000000000000000000a00a",
-      "status": "pending lane: sales (interface on main)",
+      "status": "interface on main; implementation pending (sales lane)",
       "functions": [
         {
           "signature": "pause()",
@@ -664,11 +691,13 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "EconomicsResolver",
-      "interface": "EconomicsResolver",
+      "artifact": "src/economics/EconomicsResolver.sol:EconomicsResolver",
+      "implementation": "src/economics/EconomicsResolver.sol:EconomicsResolver",
       "address": "0x000000000000000000000000000000000000a00b",
       "status": "implemented on main",
       "functions": [
@@ -694,11 +723,13 @@
           "delay": 172800
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "AssetAllowlist",
-      "interface": "AssetAllowlist",
+      "artifact": "src/economics/AssetAllowlist.sol:AssetAllowlist",
+      "implementation": "src/economics/AssetAllowlist.sol:AssetAllowlist",
       "address": "0x000000000000000000000000000000000000a00c",
       "status": "implemented on main",
       "functions": [
@@ -731,11 +762,13 @@
           "delay": 0
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "RevenueEscrow",
-      "interface": "RevenueEscrow",
+      "artifact": "src/economics/RevenueEscrow.sol:RevenueEscrow",
+      "implementation": "src/economics/RevenueEscrow.sol:RevenueEscrow",
       "address": "0x000000000000000000000000000000000000a00d",
       "status": "implemented on main",
       "functions": [
@@ -747,11 +780,13 @@
           "delay": 1209600
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "DependencyRegistry",
-      "interface": "DependencyRegistry",
+      "artifact": "src/content/DependencyRegistry.sol:DependencyRegistry",
+      "implementation": "src/content/DependencyRegistry.sol:DependencyRegistry",
       "address": "0x000000000000000000000000000000000000a00e",
       "status": "implemented on main",
       "functions": [
@@ -770,11 +805,13 @@
           "delay": 0
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     },
     {
       "name": "EntropyModule",
-      "interface": "VrfEntropyModule",
+      "artifact": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
+      "implementation": "src/entropy/VrfEntropyModule.sol:VrfEntropyModule",
       "address": "0x000000000000000000000000000000000000a00f",
       "status": "implemented on main (optional module)",
       "functions": [
@@ -793,7 +830,8 @@
           "delay": 2592000
         }
       ],
-      "genesisOnly": []
+      "genesisOnly": [],
+      "deferred": []
     }
   ],
   "wiring": [
@@ -914,13 +952,34 @@
         true
       ],
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "StatementLog",
+      "signature": "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))",
+      "args": [],
+      "statement": {
+        "token": "WorksAccessManager",
+        "id": 0,
+        "kind": "GOVERNANCE_MANIFEST",
+        "schema": "keccak256(\"6529-works/governance-manifest/1\")",
+        "content": "SHA-256 (algorithm 2) of the signed epoch-0 manifest JSON (placeholder digest)",
+        "uri": "ar://placeholder-epoch-0-manifest",
+        "fileId": "0",
+        "supersedes": "0 (first epoch)"
+      },
+      "calldata": "0x5cab7fab0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000a0ff0000000000000000000000000000000000000000000000000000000000000000da3e4cfef33ef5fdea6a80cfd6c21354d7614a38addf188d0edad56c431651fc8eed62bc4427fadfd725468d49f945fa5af42bb4e58a6a6e36a907ce8743d4a700000000000000000000000000000000000000000000000000000000000000026e422bb96460cca9f8124fc04f069fe6e7bdce63cb4224e7c9a4eb5bba13d291000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002161723a2f2f706c616365686f6c6465722d65706f63682d302d6d616e696665737400000000000000000000000000000000000000000000000000000000000000"
     }
   ],
+  "initialInstalls": {
+    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics and default license in the EconomicsResolver.",
+    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget) and the epoch-0 governance manifest (appendGovernanceManifest).",
+    "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
+  },
   "pendingLanes": [
     {
       "contract": "Stream, WorkRecords",
       "lane": "stream",
-      "note": "Implementation-only setters (for example locator or record administration beyond the interface) are added when the lane merges."
+      "note": "Implementation-only restricted setters join `functions` when the lane merges; tools/check_genesis.py then requires them."
     },
     {
       "contract": "Editions",
@@ -930,29 +989,19 @@
     {
       "contract": "ArtistRegistry",
       "lane": "identity",
-      "note": "The consolidation source is a constructor argument (an immutable install), not wiring."
+      "note": "The consolidation source is a constructor argument; the binds are wiring."
     },
     {
-      "contract": "EnglishAuction, FixedPriceSale, DutchSale",
-      "lane": "auction, sales",
-      "note": "The resolver, escrow and initial configuration are constructor arguments; only the sale targets are wiring."
-    },
-    {
-      "contract": "EntropyModule",
-      "lane": "entropy",
-      "note": "Implemented (VrfEntropyModule). Optional: omit the target if the module is not deployed."
+      "contract": "FixedPriceSale, DutchSale",
+      "lane": "sales",
+      "note": "The resolver, escrow and initial configuration are constructor arguments; only the sale targets are wiring (as for the English auction)."
     },
     {
       "contract": "FederationRegistry",
       "lane": "federated (v1.1)",
-      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry and the adapters' setFederationRegistry run when it ships (30-day class)."
+      "note": "Not deployed at genesis. setStatus and setArtistDelisted map to PARAMETER_SETTER; ArtistRegistry.bindFederationRegistry (deferred above) and the adapters' setFederationRegistry run when it ships."
     }
   ],
-  "initialInstalls": {
-    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics and default license in the EconomicsResolver.",
-    "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter) and sale targets (setTarget).",
-    "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
-  },
   "unusedRoles": [
     {
       "role": "MINTER",
