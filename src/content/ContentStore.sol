@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
+import { Base64Validator } from "./Base64Validator.sol";
 
 /// @title ContentStore
 /// @notice Permissionless, content-addressed file storage in SSTORE2 chunks (ADR 0001 §8). No
@@ -17,6 +18,11 @@ import { SSTORE2 } from "../libraries/SSTORE2.sol";
 ///      Layout rule: every chunk except the last is exactly `CHUNK_SIZE` bytes. Offsets then map
 ///      to chunks by division, and a manifest whose chunk lengths break the rule never completes
 ///      and never reads (it reverts, it does not return wrong bytes).
+///
+///      Base64 attestation: uploads are never inspected, so a file declared `Base64` could hold
+///      anything, and renderers copy such text verbatim into JSON. {attestBase64} reads the chunks
+///      once, checks them against the strict alphabet and records the result; renderers embed
+///      the file only when it is attested.
 contract ContentStore is IContentStore {
     /// @inheritdoc IContentStore
     uint256 public constant CHUNK_SIZE = SSTORE2.MAX_CHUNK_LENGTH;
@@ -27,6 +33,8 @@ contract ContentStore is IContentStore {
     uint256 public constant MAX_CHUNKS = 512;
     /// @notice Longest accepted MIME type.
     uint256 public constant MAX_MIME_LENGTH = 64;
+    /// @inheritdoc IContentStore
+    uint256 public constant ATTEST_CHUNKS_PER_CALL = 48;
 
     struct File {
         bytes32 sha256Hash;
@@ -36,7 +44,14 @@ contract ContentStore is IContentStore {
         bytes32[] chunks;
     }
 
+    /// @dev `validated` counts the leading chunks already checked; `done` is the attestation.
+    struct Attestation {
+        uint64 validated;
+        bool done;
+    }
+
     mapping(bytes32 fileId => File) private _files;
+    mapping(bytes32 fileId => Attestation) private _attestation;
     /// @inheritdoc IContentStore
     mapping(bytes32 chunkHash => address) public chunkPointer;
 
@@ -137,6 +152,34 @@ contract ContentStore is IContentStore {
     }
 
     /// @inheritdoc IContentStore
+    function attestBase64(bytes32 fileId) external returns (bool done) {
+        File storage f = _file(fileId);
+        Attestation memory a = _attestation[fileId];
+        if (a.done) return true;
+        if (f.encoding != Encoding.Base64 && f.encoding != Encoding.GzipBase64) {
+            revert ContentNotBase64(fileId, f.encoding);
+        }
+        if (f.length % 4 != 0) revert ContentBase64LengthInvalid(fileId, f.length);
+
+        uint256 count = f.chunks.length;
+        uint256 stop = a.validated + ATTEST_CHUNKS_PER_CALL;
+        if (stop > count) stop = count;
+        _validateBase64(fileId, f, a.validated, stop);
+
+        done = stop == count;
+        // Safe: stop is at most MAX_CHUNKS.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        _attestation[fileId] = Attestation(uint64(stop), done);
+        if (done) emit Base64Attested(fileId);
+        else emit Base64Progress(fileId, stop);
+    }
+
+    /// @inheritdoc IContentStore
+    function isBase64Attested(bytes32 fileId) external view returns (bool) {
+        return _attestation[fileId].done;
+    }
+
+    /// @inheritdoc IContentStore
     function read(bytes32 fileId, uint256 offset, uint256 length)
         external
         view
@@ -180,6 +223,52 @@ contract ContentStore is IContentStore {
         if (take > remaining) take = remaining;
         assembly ("memory-safe") {
             mcopy(dest, add(add(chunk, 0x20), within), take)
+            mstore(0x40, mark)
+        }
+    }
+
+    /// @dev Checks chunks `[from, to)`. Everything before the `=` padding at the end of the file
+    ///      must be in the alphabet; the padding bytes themselves are accepted by {_padding}. Each
+    ///      verified chunk buffer is released afterwards, so memory stays at one chunk.
+    function _validateBase64(bytes32 fileId, File storage f, uint256 from, uint256 to)
+        private
+        view
+    {
+        uint256 strictEnd = f.length - _padding(fileId, f);
+        for (uint256 i = from; i < to; ++i) {
+            uint256 mark;
+            assembly ("memory-safe") {
+                mark := mload(0x40)
+            }
+            bytes memory chunk = _readChunk(fileId, f, i);
+            uint256 start = i * CHUNK_SIZE;
+            uint256 strict = strictEnd > start ? strictEnd - start : 0;
+            if (strict > chunk.length) strict = chunk.length;
+            if (!Base64Validator.isAlphabet(chunk, strict)) revert ContentBase64Invalid(fileId, i);
+            assembly ("memory-safe") {
+                mstore(0x40, mark)
+            }
+        }
+    }
+
+    /// @dev How many of the file's last two bytes are `=`: 0, 1 or 2. Padding is only `=`, `==`
+    ///      at the very end, so one trailing `=` means a second one needs the byte before it,
+    ///      which is in the previous chunk when the last chunk holds a single byte. A `=` that is
+    ///      not counted here is not in the alphabet and fails the check in {_validateBase64}.
+    function _padding(bytes32 fileId, File storage f) private view returns (uint256 pad) {
+        uint256 mark;
+        assembly ("memory-safe") {
+            mark := mload(0x40)
+        }
+        uint256 last = f.chunks.length - 1;
+        bytes memory tail = _readChunk(fileId, f, last);
+        uint256 n = tail.length;
+        if (tail[n - 1] == "=") {
+            // The length is a multiple of 4, so a one-byte last chunk has a full chunk before it.
+            bytes1 before = n > 1 ? tail[n - 2] : _readChunk(fileId, f, last - 1)[CHUNK_SIZE - 1];
+            pad = before == "=" ? 2 : 1;
+        }
+        assembly ("memory-safe") {
             mstore(0x40, mark)
         }
     }
