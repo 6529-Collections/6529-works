@@ -5,7 +5,9 @@ import { Test } from "forge-std/Test.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry, IConsolidationSource } from "../../src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "../../src/interfaces/IArtistRoleResolver.sol";
+import { IContentStore } from "../../src/interfaces/IContentStore.sol";
 import { ICurationVerifier } from "../../src/interfaces/ICurationVerifier.sol";
+import { IDependencyRegistry } from "../../src/interfaces/IDependencyRegistry.sol";
 import { IDutchSale } from "../../src/interfaces/IDutchSale.sol";
 import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../../src/interfaces/IEditions.sol";
@@ -38,6 +40,8 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IDutchSale).interfaceId, bytes4(0x5a75af36), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(type(IPackageRegistry).interfaceId, bytes4(0x8ca10840), "IPackageRegistry");
+        assertEq(type(IContentStore).interfaceId, bytes4(0xcce4e4aa), "IContentStore");
+        assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
         assertEq(type(ISplitFactory).interfaceId, bytes4(0x5ca6fba4), "ISplitFactory");
         assertEq(type(ISplitWallet).interfaceId, bytes4(0xd474cce1), "ISplitWallet");

@@ -6,8 +6,8 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { ContentBase } from "./ContentBase.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
-import { IContentStore } from "src/content/IContentStore.sol";
-import { IDependencyRegistry } from "src/content/IDependencyRegistry.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { IDependencyRegistry } from "src/interfaces/IDependencyRegistry.sol";
 
 contract DependencyRegistryTest is ContentBase {
     /// @dev Local stand-in for the registrar role. TODO(governance lane): use the role from

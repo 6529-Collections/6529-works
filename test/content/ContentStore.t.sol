@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { console2 } from "forge-std/console2.sol";
 import { ContentBase } from "./ContentBase.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
-import { IContentStore } from "src/content/IContentStore.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 
 /// @dev The store's selectors typed so the compiler lets a test send value to `writeChunk` and an

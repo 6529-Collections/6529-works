@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IContentStore } from "./IContentStore.sol";
+import { IContentStore } from "../interfaces/IContentStore.sol";
 import { SSTORE2 } from "../libraries/SSTORE2.sol";
 
 /// @title ContentStore
