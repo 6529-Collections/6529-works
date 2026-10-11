@@ -77,9 +77,17 @@ script/          deployment and verification
   - the deploy library, genesis and readback scripts are done;
   - they have been dry-run on a local chain with Verify passing after the 5-day delay;
   - the Sepolia runbook is in `script/README.md`.
+- **Sepolia rehearsal r1 (11 October 2026):**
+  - deployed and configured from `60edd9b`, with throwaway Safes in the mainnet structure,
+    a dedicated VRF subscription and the official 6529 delegation contract;
+  - the record and addresses are in [`deployments/11155111/`](../deployments/11155111/README.md);
+  - Verify passes on a fork advanced five days; the live Verify is due from 16 October.
+  - **Finding:** Sepolia runs Glamsterdam, which reprices state creation. The deploy cost
+    6.2x Foundry's Prague estimate. Every gas budget that writes state must be re-measured
+    on Sepolia.
 - **Next (phase 7, testnet):**
   - build the contested-override recovery the owner chose (ADR 0003);
-  - the owner provisions the Safes (hot and cold admin, three guardians), the curation
-    signers, the VRF subscription and the delegation contract on Sepolia;
-  - then a Sepolia deploy, Verify, the flow and marketplace matrix, and the `tokenURI`
-    threshold matrix.
+  - measure the flows on Sepolia under Glamsterdam: `start`, `settle`, Editions, uploads
+    and the `tokenURI` threshold matrix; then the marketplace matrix;
+  - redeploy (r2) with the contested-override recovery and the Editions gas changes, then
+    run the live Verify.

@@ -2,6 +2,9 @@
 out/
 cache/
 broadcast/*/31337/
+# Live-chain broadcast caches: the deployment record is the evidence (script/README.md)
+broadcast/*/11155111/
+broadcast/*/1/
 broadcast/**/dry-run/
 
 # Environment and secrets
@@ -10,6 +13,8 @@ broadcast/**/dry-run/
 !.env.example
 *.key
 keystore/
+# The CC0 legal code copied under config/ for a deploy run (script/README.md, step 6)
+config/**/cc0-legalcode.txt
 
 # Tooling
 node_modules/
