@@ -127,8 +127,9 @@ contract GenesisConfigTest is Test {
     // ------------------------------------------------------------------ compiled selectors
 
     function _s(bytes4[7] memory xs, uint256 n) internal pure returns (bytes4[] memory out) {
+        require(n <= xs.length, "_s: n exceeds the listed selectors");
         out = new bytes4[](n);
-        for (uint256 i; i < n && i < xs.length; ++i) {
+        for (uint256 i; i < n; ++i) {
             out[i] = xs[i];
         }
     }
@@ -246,10 +247,14 @@ contract GenesisConfigTest is Test {
                     IEnglishAuction.setOpeningBid.selector,
                     ISaleAdapter.setTarget.selector
                 ],
-                9
+                7
             );
-            (out[7], out[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
-            return out;
+            bytes4[] memory all = new bytes4[](9);
+            for (uint256 i; i < 7; ++i) {
+                all[i] = out[i];
+            }
+            (all[7], all[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
+            return all;
         }
         if (_eq(name, "FixedPriceSale")) {
             return _s(

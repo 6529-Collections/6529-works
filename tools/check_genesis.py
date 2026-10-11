@@ -37,6 +37,9 @@ GENESIS_FUNCTIONS = frozenset({
 })
 
 CONTRACT = re.compile(r"\b(?:abstract\s+)?contract\s+([A-Za-z_$][\w$]*)")
+ARTIFACT_REF = re.compile(r"^[^:\s]+\.sol:[A-Za-z_$][\w$]*$")
+HEX = re.compile(r"^0x(?:[0-9a-fA-F]{2})*$")
+STATIC_TYPE = re.compile(r"^(?:address|bool|u?int\d{0,3}|bytes(?:[1-9]|[12]\d|3[0-2]))$")
 FUNCTION = re.compile(r"\bfunction\s+([A-Za-z_$][\w$]*)\s*\(")
 WORD = re.compile(r"[A-Za-z_$][\w$]*")
 
@@ -119,10 +122,24 @@ def scan_sources(src: Path) -> dict[str, set[str]]:
     return result
 
 
+def _check_ref(ref: object) -> str:
+    if not isinstance(ref, str) or not ARTIFACT_REF.match(ref):
+        raise SystemExit(f"malformed artifact reference {ref!r} (expected path/File.sol:Contract)")
+    return ref
+
+
+def _method_map(data: object, where: str) -> dict:
+    methods = data.get("methodIdentifiers") if isinstance(data, dict) else None
+    if not isinstance(methods, dict):
+        raise SystemExit(f"{where}: no methodIdentifiers object")
+    return methods
+
+
 def forge_inspect(root: Path) -> MethodIds:
     cache: dict[str, dict] = {}
 
     def ids(ref: str) -> dict:
+        ref = _check_ref(ref)
         if ref not in cache:
             result = subprocess.run(
                 ["forge", "inspect", ref, "methodIdentifiers", "--json"],
@@ -130,7 +147,10 @@ def forge_inspect(root: Path) -> MethodIds:
             )
             if result.returncode != 0:
                 raise SystemExit(f"forge inspect {ref} failed:\n{result.stderr}")
-            cache[ref] = json.loads(result.stdout)
+            try:
+                cache[ref] = _method_map({"methodIdentifiers": json.loads(result.stdout)}, ref)
+            except json.JSONDecodeError as error:
+                raise SystemExit(f"forge inspect {ref}: unreadable output ({error})") from None
         return cache[ref]
 
     return ids
@@ -138,11 +158,15 @@ def forge_inspect(root: Path) -> MethodIds:
 
 def artifact_ids(out: Path) -> MethodIds:
     def ids(ref: str) -> dict:
-        path, contract = ref.split(":")
+        path, contract = _check_ref(ref).split(":")
         artifact = out / Path(path).name / f"{contract}.json"
         if not artifact.is_file():
             raise SystemExit(f"no artifact {artifact} (run forge build)")
-        return json.loads(artifact.read_text(encoding="utf-8")).get("methodIdentifiers", {})
+        try:
+            data = json.loads(artifact.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise SystemExit(f"unreadable artifact {artifact} ({error})") from None
+        return _method_map(data, str(artifact))
 
     return ids
 
@@ -151,12 +175,42 @@ def _selector(entry: dict) -> str:
     return entry.get("selector", "").lower().removeprefix("0x")
 
 
+def _static_params(sig: str) -> list[str] | None:
+    """Parameter types when every one is a static elementary type, else None."""
+    inner = sig[sig.index("(") + 1 : -1]
+    params = inner.split(",") if inner else []
+    return params if all(STATIC_TYPE.match(p) for p in params) else None
+
+
+def _check_calldata(where: str, sig: str, data: str, args: list, addresses: dict) -> list[str]:
+    """Shape and argument checks for one wiring call's calldata."""
+    if not isinstance(data, str) or not HEX.match(data) or len(data) < 10:
+        return [f"{where}: calldata is not 0x-prefixed, even-length hex with a selector"]
+    params = _static_params(sig)
+    if params is None:
+        return []
+    words = data[10:]
+    if len(words) != 64 * len(params):
+        return [f"{where}: calldata has {len(words) // 2} argument bytes, expected {32 * len(params)}"]
+    problems = []
+    for i, (kind, arg) in enumerate(zip(params, args)):
+        word = int(words[64 * i : 64 * (i + 1)], 16)
+        if kind == "address" and isinstance(arg, str) and arg in addresses:
+            if word != int(addresses[arg], 16):
+                problems.append(f"{where}: argument {i} is not the address of {arg}")
+        elif kind == "bool" and isinstance(arg, bool) and word != int(arg):
+            problems.append(f"{where}: argument {i} is not {str(arg).lower()}")
+    return problems
+
+
 def check(config: dict, ids: MethodIds, restricted: dict[str, set[str]]) -> list[str]:
     """Every problem found, as one line each."""
     problems: list[str] = []
     roles = {r["name"]: r for r in config.get("roles", [])}
     by_name = {c["name"]: c for c in config.get("contracts", [])}
     peers = {p["name"] for p in config.get("peers", [])}
+    addresses = {c["name"]: c["address"] for c in by_name.values()}
+    addresses.update({p["name"]: p["address"] for p in config.get("peers", [])})
     implemented = {c["implementation"] for c in by_name.values() if c.get("implementation")}
 
     for name, c in by_name.items():
@@ -214,6 +268,9 @@ def check(config: dict, ids: MethodIds, restricted: dict[str, set[str]]) -> list
             problems.append(f"{where}: not a method of {by_name[name]['artifact']}")
         elif data[:8] != methods[sig]:
             problems.append(f"{where}: calldata selector 0x{data[:8]} != 0x{methods[sig]}")
+        problems += _check_calldata(
+            where, sig, w.get("calldata"), w.get("args", []), addresses
+        )
         for arg in w.get("args", []):
             if isinstance(arg, str) and arg not in by_name and arg not in peers:
                 problems.append(f"{where}: argument {arg} names no contract or peer")
@@ -243,9 +300,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = args.root or find_root(Path(__file__).resolve().parent)
-    config = json.loads((args.config or root / CONFIG).read_text(encoding="utf-8"))
+    path = args.config or root / CONFIG
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read the genesis configuration {path}: {error}") from None
+    if not isinstance(config, dict):
+        raise SystemExit(f"{path}: the configuration must be a JSON object")
     ids = artifact_ids(args.artifacts) if args.artifacts else forge_inspect(root)
-    problems = check(config, ids, scan_sources(root / "src"))
+    try:
+        problems = check(config, ids, scan_sources(root / "src"))
+    except (KeyError, TypeError, AttributeError, ValueError) as error:
+        raise SystemExit(f"{path}: malformed configuration ({type(error).__name__}: {error})") from None
     for line in problems:
         print(f"FAIL {line}")
     contracts = len(config.get("contracts", []))

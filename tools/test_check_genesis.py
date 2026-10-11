@@ -56,6 +56,7 @@ CONFIG = {
     "contracts": [
         {
             "name": "Foo",
+            "address": "0x" + "00" * 19 + "0f",
             "artifact": "src/x/Foo.sol:Foo",
             "implementation": "src/x/Foo.sol:Foo",
             "functions": [
@@ -70,7 +71,7 @@ CONFIG = {
     ],
     "wiring": [
         {"contract": "Foo", "signature": "bindStream(address)", "args": ["Peer"],
-         "calldata": "0x22222222" + "00" * 32},
+         "calldata": "0x22222222" + "00" * 31 + "01"},
     ],
 }
 
@@ -186,7 +187,7 @@ class CheckGenesisTest(unittest.TestCase):
         self.repo.source("y/Bar.sol", "contract Bar { function set() external restricted {} }")
         self.assertProblem("src/y/Bar.sol:Bar has restricted functions but no contract")
 
-    def test_pending_interface_without_implementation_skips_source_coverage(self) -> None:
+    def test_pending_interface_without_implementation_reports_the_unconfigured_source(self) -> None:
         self.foo["implementation"] = None
         self.assertProblem("src/x/Foo.sol:Foo has restricted functions but no contract")
 
@@ -232,6 +233,67 @@ class CheckGenesisTest(unittest.TestCase):
             {"contract": "Ghost", "signature": "bindStream(address)", "calldata": "0x22222222"}
         )
         self.assertProblem("Ghost.bindStream(address): unknown contract")
+
+    def test_wiring_calldata_must_be_even_length_hex(self) -> None:
+        for bad in ("0x2222222", "22222222" + "00" * 32, "0x2222zz22" + "00" * 32, "0x"):
+            self.repo.config["wiring"][0]["calldata"] = bad
+            self.assertProblem("calldata is not 0x-prefixed, even-length hex with a selector")
+
+    def test_wiring_calldata_length_must_match_static_arguments(self) -> None:
+        self.repo.config["wiring"][0]["calldata"] = "0x22222222"
+        self.assertProblem("calldata has 0 argument bytes, expected 32")
+        self.repo.config["wiring"][0]["calldata"] = "0x22222222" + "00" * 64
+        self.assertProblem("calldata has 64 argument bytes, expected 32")
+
+    def test_wiring_arguments_must_encode_their_named_peers(self) -> None:
+        self.repo.config["wiring"][0]["calldata"] = "0x22222222" + "00" * 31 + "02"
+        self.assertProblem("argument 0 is not the address of Peer")
+        self.repo.config["wiring"] = [
+            {"contract": "Foo", "signature": "bindStream(address)", "args": ["Peer"],
+             "calldata": "0x22222222" + "00" * 31 + "01"},
+            {"contract": "Foo", "signature": "setAdmittedMinter(address,bool)",
+             "args": ["Peer", True], "calldata": "0x33333333" + "00" * 31 + "01" + "00" * 32},
+        ]
+        self.assertProblem("argument 1 is not true")
+
+    def test_dynamic_signatures_skip_the_length_check(self) -> None:
+        self.assertIsNone(cg._static_params("append((address,uint256),string)"))
+        self.assertEqual(cg._static_params("setTarget(address,bool)"), ["address", "bool"])
+        self.assertEqual(cg._static_params("pause()"), [])
+
+    # -- malformed input fails closed ---------------------------------------------------
+
+    def _main_error(self, *argv: str) -> str:
+        with self.assertRaises(SystemExit) as raised, contextlib.redirect_stdout(io.StringIO()):
+            cg.main(["--root", str(self.repo.root), *argv])
+        return str(raised.exception)
+
+    def test_missing_or_invalid_configuration_fails_with_a_message(self) -> None:
+        missing = self.repo.root / "nope.json"
+        self.assertIn("cannot read the genesis configuration", self._main_error("--config", str(missing)))
+        bad = self.repo.root / "bad.json"
+        bad.write_text("{not json", encoding="utf-8")
+        self.assertIn("cannot read the genesis configuration", self._main_error("--config", str(bad)))
+        bad.write_text("[]", encoding="utf-8")
+        self.assertIn("must be a JSON object", self._main_error("--config", str(bad)))
+
+    def test_missing_keys_fail_with_a_message(self) -> None:
+        del self.foo["artifact"]
+        path = self.repo.root / "config.json"
+        path.write_text(json.dumps(self.repo.config), encoding="utf-8")
+        error = self._main_error("--config", str(path), "--artifacts", str(self.repo.root / "out"))
+        self.assertIn("malformed configuration (KeyError", error)
+
+    def test_malformed_artifact_reference_and_artifact_fail_with_a_message(self) -> None:
+        self.foo["artifact"] = "Foo"
+        with self.assertRaises(SystemExit) as raised:
+            self.repo.problems()
+        self.assertIn("malformed artifact reference", str(raised.exception))
+        self.foo["artifact"] = "src/x/Foo.sol:Foo"
+        (self.repo.root / "out" / "Foo.sol" / "Foo.json").write_text("{}", encoding="utf-8")
+        with self.assertRaises(SystemExit) as raised:
+            self.repo.problems()
+        self.assertIn("no methodIdentifiers object", str(raised.exception))
 
     # -- command line -----------------------------------------------------------------------
 
