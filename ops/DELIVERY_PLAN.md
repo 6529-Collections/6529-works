@@ -78,8 +78,8 @@ script/          deployment and verification
   - they have been dry-run on a local chain with Verify passing after the 5-day delay;
   - the Sepolia runbook is in `script/README.md`.
 - **Next (phase 7, testnet):**
-  - the owner decides the open items in ADR 0003;
-  - the owner provisions the Safes, the curation signers, the VRF subscription and the
-    delegation mock on Sepolia;
+  - build the contested-override recovery the owner chose (ADR 0003);
+  - the owner provisions the Safes (hot and cold admin, three guardians), the curation
+    signers, the VRF subscription and the delegation contract on Sepolia;
   - then a Sepolia deploy, Verify, the flow and marketplace matrix, and the `tokenURI`
     threshold matrix.

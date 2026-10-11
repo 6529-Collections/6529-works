@@ -193,7 +193,8 @@ in `lib/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and, for automated agents, [AG
   gas report: steady-state `start` about 276K, `startWithBid` about 317K, and
   `tokenURI` at most about 7.8M with every record cap filled.
 - **What does not exist yet.** The Sepolia deployment (it needs the owner's keys and Safes), the external audit and
-  mainnet. [ADR 0003](docs/adr/0003-build-time-decisions.md) lists the open owner decisions.
+  mainnet. The owner's recovery and governance decisions are in
+  [ADR 0003](docs/adr/0003-build-time-decisions.md#owner-decisions-11-october-2026).
 - **v1.1 and deferred.** 6529 Stream Federated ships in v1.1, and only if needed.
   Deferred beyond v1: other Stream sale types (buy-now, offers, private sales,
   burn-to-mint), VRF reveals after settlement, a verifier backed by the 6529 chain,

@@ -4,8 +4,8 @@ Status: Accepted by the delivery owner (Claude Code, acting for the repository
 owner), 11 October 2026. Amends [ADR 0001](0001-v1-scope.md) and extends
 [ADR 0002](0002-access-manager-hardening.md).
 
-Decisions marked **Owner decision pending** are not settled. They are listed in
-[Open items](#open-items) for the repository owner.
+The owner's decisions on the items this ADR left open are recorded in
+[Owner decisions](#owner-decisions-11-october-2026).
 
 ## Problem
 
@@ -334,21 +334,56 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     a guardian revokes it.
   - Zero-price artist-approved allowlist entries pay no network fee.
   - Anyone who holds an artist's key for 30 days or more can establish their
-    own consolidated wallets, before or after a hijack. Those wallets then
-    cancel recovery overrides, and can fill the standing snapshot's free
-    slots. Recorded wallets keep their standing, but recovery can be blocked.
-    See [Open items](#open-items).
-  - Standing protects only wallets that a refresh has recorded. A permissionless
-    keeper, or the 6529.io UI, calls `refreshStanding` after consolidation
-    events.
+    own consolidated wallets, before or after a hijack. Those wallets can
+    contest recovery overrides and can fill the standing snapshot's free slots.
+    A contested override no longer stalls: a TDH vote decides it (see
+    [Owner decisions](#owner-decisions-11-october-2026)).
+  - Standing protects only wallets that a refresh has recorded. Artists call
+    `refreshStanding` after linking a wallet, prompted by 6529.io.
+
+## Owner decisions (11 October 2026)
+
+**1. Contested recovery overrides go to a TDH vote.**
+- When a captured wallet cancels a recovery override, the override moves to a
+  contested state instead of being deleted. Further cancels have no effect.
+- While it is contested, the payout stays frozen if the override would move
+  it, so a key holder cannot collect during the dispute.
+- A governed `resolveContested` action decides the outcome, in the 30-day
+  class. It must cite the PLATFORM statement in the statement log that records
+  the TDH vote's outcome.
+  - Upholding executes the override.
+  - Voiding deletes it and unfreezes the payout.
+- A guardian may still veto. A contested override that nobody resolves expires
+  after 365 days.
+- Until the 6529 chain exists, the vote is off-chain, and the admin Safe is
+  trusted to execute its result. This is the same trust model as every other
+  governed action.
+
+**2. A cold recovery admin Safe.** A second admin Safe holds only ADMIN.
+- It has distinct signers and is recommended at 3-of-5, on hardware wallets
+  kept apart.
+- It is used only to replace a compromised hot admin. It schedules the hot
+  admin's removal (30 days), which the hot admin cannot cancel, then appoints a
+  new hot admin.
+- Off a test chain, the deploy requires both admin Safes.
+
+**3. Three guardian Safes, 2-of-3 each.** Their signers are independent of
+the admin Safes, they are monitored so at least one can respond within hours,
+and pause and unpause have separate holders. The deploy requires at least
+three.
+
+**4. Sepolia setup.**
+- Throwaway signers, with the mainnet structure and thresholds.
+- A Chainlink VRF subscription is set up, so VRF works are available.
+- The 6529 delegation contract is deployed from its verified mainnet source
+  where possible; otherwise the faithful mock is used.
+- Artists pay for their own `refreshStanding` calls, prompted by 6529.io when
+  they link a wallet. A network-paid keeper is an optional safety net.
+
+**5. The CC0 legal text is a test fixture.** The official file (7,048 bytes,
+SHA-256 `a2010f34…0499`) is committed, so tests and dry runs use the real text.
 
 ## Open items
 
-- **Owner decision pending:** mitigation for override cancels by wallets that a
-  key holder has established. Either cap override cancels, after which only the
-  guardian can stop an override, or escalate contested overrides to a TDH vote.
-- **Owner decision pending:** a cold recovery admin Safe, as recommended in
-  ADR 0002.
-- **Owner decision pending:** three or more guardian Safes at deployment.
 - **Re-measure on Sepolia:** start gas and the `tokenURI` and inline-threshold
   matrix, with the real Chainlink coordinator and the 6529 delegation contract.
