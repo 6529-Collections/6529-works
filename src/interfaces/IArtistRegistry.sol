@@ -50,6 +50,11 @@ interface IConsolidationSource is IERC165 {
 ///      - overrides (CONTESTED, ESTATE, LOST_KEY) are staged by a governed network action with
 ///        a 180-day public notice; ESTATE and LOST_KEY need a year without signed activity; only
 ///        captured wallets (never the previous authority) may cancel, and the guardian may veto.
+///        A captured wallet's cancel does not kill an override: it becomes contested and waits
+///        for a TDH vote, applied by the governed `resolveContested` citing the vote's recorded
+///        DISPUTE_OUTCOME statement (subject `(this registry, artistId)`). Upholding executes it
+///        (not before its notice ends); voiding deletes it; the guardian may still veto it; and a
+///        contest nobody resolves within `CONTEST_TIMEOUT` lapses (`expireContest`).
 ///      One change may be pending per artist. `executeChange` is permissionless once due.
 ///
 ///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
@@ -96,6 +101,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice A contract was bound under `name` (PACKAGE_REGISTRY, STREAM, FEDERATION_REGISTRY
     ///         or SPLIT_FACTORY), once.
     event Bound(bytes32 indexed name, address target);
+    /// @notice A captured wallet contested a pending override; it now waits for a vote.
+    event ChangeContested(uint256 indexed artistId, address indexed by);
+    /// @notice Governance applied a vote on a contested override: upheld (executed) or voided.
+    event ContestResolved(uint256 indexed artistId, bool upheld, bytes32 outcomeRef);
+    /// @notice A contested override lapsed unresolved after `CONTEST_TIMEOUT`.
+    event ContestExpired(uint256 indexed artistId);
     /// @notice The authority revoked its unused change nonce `nonce`.
     event NonceRevoked(uint256 indexed artistId, uint256 nonce);
     /// @notice A federated contract was listed under an artist (ADR 0001 section 16).
@@ -140,6 +151,14 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error InvalidSource(address source);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice The pending override is contested; only a vote, a veto or expiry ends it.
+    error OverrideContested(uint256 artistId);
+    /// @notice No live (unexpired) contested override is pending.
+    error NotContested(uint256 artistId);
+    /// @notice `outcomeRef` is not the latest DISPUTE_OUTCOME recorded for the artist.
+    error OutcomeNotRecorded(uint256 artistId, bytes32 outcomeRef);
+    /// @notice The contest does not lapse before `expiresAt`.
+    error ContestNotExpired(uint256 artistId, uint64 expiresAt);
     /// @notice The artist already lists the maximum number of federated contracts.
     error FederatedListFull(uint256 artistId);
 
@@ -183,12 +202,24 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         uint64 deadline,
         bytes calldata authorityAcceptance
     ) external;
-    /// @notice Cancels the pending change. Callable by a captured consolidated wallet, or by the
-    ///         previous authority for a STANDARD change.
+    /// @notice Cancels a pending STANDARD change (a captured consolidated wallet or the previous
+    ///         authority), or contests a pending override (a captured wallet; it then waits for a
+    ///         vote). A cancel of an already contested override does nothing.
     function cancelChange(uint256 artistId) external;
+    /// @notice Applies a TDH vote on a contested override: upholding executes it (once its notice
+    ///         has passed, with the execution re-checks), voiding deletes it. `outcomeRef` must
+    ///         be `IStatementLog.latestDisputeOutcome(address(this), artistId)`, the PLATFORM
+    ///         statement recording the vote. SUCCESSOR_SETTER role (30 days).
+    function resolveContested(uint256 artistId, bool uphold, bytes32 outcomeRef) external;
+    /// @notice Deletes a contested override that nobody resolved within `CONTEST_TIMEOUT` of
+    ///         its contest. Permissionless; `payoutAddress` already ignores a lapsed contest.
+    function expireContest(uint256 artistId) external;
+    /// @notice Binds the statement log `resolveContested` reads, once. ADMIN role.
+    function bindStatementLog(address target) external;
     /// @notice Vetoes the pending change. GUARDIAN role; it can block, never redirect.
     function vetoChange(uint256 artistId) external;
-    /// @notice Applies a due change. Permissionless. If the next identity is no longer valid (its
+    /// @notice Applies a due, uncontested change. Permissionless. If the next identity is no
+    ///         longer valid (its
     ///         authority was taken or its payout is now rejected), the change is cleared with
     ///         `ChangeCancelled(artistId, address(this), false)` instead of reverting, so a stale
     ///         change cannot keep the payout frozen.
@@ -243,4 +274,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function standingOf(uint256 artistId) external view returns (Standing[] memory);
     /// @notice How long a missing wallet keeps standing (30 days).
     function STANDING_GRACE() external view returns (uint64);
+    /// @notice How long a contested override waits for a vote before it lapses (365 days).
+    function CONTEST_TIMEOUT() external view returns (uint64);
+    /// @notice The bound statement log, or zero before it is bound.
+    function statementLog() external view returns (address);
 }

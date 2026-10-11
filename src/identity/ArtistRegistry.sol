@@ -11,6 +11,7 @@ import { IArtistRegistry, IConsolidationSource } from "../interfaces/IArtistRegi
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IStatementLog } from "../interfaces/IStatementLog.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import {
@@ -79,6 +80,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     uint64 public constant DORMANCY = 365 days;
     /// @inheritdoc IArtistRegistry
     uint64 public constant override STANDING_GRACE = 30 days;
+    /// @inheritdoc IArtistRegistry
+    uint64 public constant override CONTEST_TIMEOUT = 365 days;
     /// @notice The most federated contracts listed per artist.
     uint256 public constant MAX_FEDERATED = 64;
 
@@ -106,6 +109,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     address public override federationRegistry;
     /// @inheritdoc IArtistRegistry
     address public override splitFactory;
+    /// @inheritdoc IArtistRegistry
+    address public override statementLog;
 
     /// @param initialAuthority The AccessManager.
     /// @param source The consolidation source (the v1 `ConsolidationAdapter`).
@@ -144,6 +149,14 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function bindSplitFactory(address target) external restricted {
         _checkBinding(target, bytes4(0));
         splitFactory = _bind("SPLIT_FACTORY", splitFactory, target);
+    }
+
+    /// @inheritdoc IArtistRegistry
+    /// @dev The statement log does not implement ERC-165, so only code and no EIP-7702 are
+    ///      checked.
+    function bindStatementLog(address target) external restricted {
+        _checkBinding(target, bytes4(0));
+        statementLog = _bind("STATEMENT_LOG", statementLog, target);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -244,7 +257,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    /// @dev Records activity: the canceller is the artist's old key or a captured wallet.
+    /// @dev Records activity (the caller is the artist's old key or a captured wallet), except
+    ///      for the no-op cancel of an already contested override.
     function cancelChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
         bool allowed = p.kind == ChangeKind.STANDARD && msg.sender == p.previousAuthority;
@@ -253,8 +267,45 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             allowed = cancellers[i] == msg.sender;
         }
         if (!allowed) revert NotAuthorized(artistId, msg.sender);
+        if (p.contestedAt != 0) return;
         _recordActivity(artistId, _artists[artistId]);
-        _clear(artistId, msg.sender, false);
+        if (p.kind == ChangeKind.STANDARD) {
+            _clear(artistId, msg.sender, false);
+            return;
+        }
+        p.contestedBy = msg.sender;
+        p.contestedAt = uint64(block.timestamp);
+        emit ChangeContested(artistId, msg.sender);
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function resolveContested(uint256 artistId, bool uphold, bytes32 outcomeRef)
+        external
+        restricted
+    {
+        PendingChange storage p = _pending[artistId];
+        if (p.contestedAt == 0 || _lapsed(p)) revert NotContested(artistId);
+        address log = statementLog;
+        if (
+            outcomeRef == bytes32(0) || log == address(0)
+                || outcomeRef != IStatementLog(log).latestDisputeOutcome(address(this), artistId)
+        ) revert OutcomeNotRecorded(artistId, outcomeRef);
+        // forge-lint: disable-next-line(block-timestamp)
+        if (uphold && block.timestamp < p.executableAt) {
+            revert ChangeNotDue(artistId, p.executableAt);
+        }
+        emit ContestResolved(artistId, uphold, outcomeRef);
+        if (uphold) _apply(artistId, p);
+        else _clear(artistId, msg.sender, true);
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function expireContest(uint256 artistId) external {
+        PendingChange storage p = _pending[artistId];
+        if (p.contestedAt == 0) revert NotContested(artistId);
+        if (!_lapsed(p)) revert ContestNotExpired(artistId, p.contestedAt + CONTEST_TIMEOUT);
+        emit ContestExpired(artistId);
+        _clear(artistId, address(this), false);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -271,9 +322,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      dormancy clock and refreshes standing for the new authority.
     function executeChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
+        if (p.contestedAt != 0) revert OverrideContested(artistId);
         // Deadlines and delays are wall-clock bounds; validator drift is immaterial.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < p.executableAt) revert ChangeNotDue(artistId, p.executableAt);
+        _apply(artistId, p);
+    }
+
+    /// @dev Applies `p` after the D18 and payout re-checks, or clears it if they fail.
+    function _apply(uint256 artistId, PendingChange storage p) private {
         ArtistIdentity memory next = p.next;
         if (!_payoutAllowed(next.payout) || _taken(artistId, next.authority)) {
             _clear(artistId, address(this), false);
@@ -354,7 +411,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function payoutAddress(uint256 artistId) external view returns (address) {
         address current = _artists[artistId].identity.payout;
         PendingChange storage p = _pending[artistId];
-        return (p.kind != ChangeKind.NONE && p.next.payout != current) ? address(0) : current;
+        bool moves = p.kind != ChangeKind.NONE && p.next.payout != current && !_lapsed(p);
+        return moves ? address(0) : current;
     }
 
     /// @inheritdoc IERC165
@@ -606,6 +664,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             if (s[i].wallet == wallet) return true;
         }
         return false;
+    }
+
+    /// @dev Whether `p` is a contest nobody resolved within {CONTEST_TIMEOUT}.
+    function _lapsed(PendingChange storage p) private view returns (bool) {
+        uint64 contestedAt = p.contestedAt;
+        // forge-lint: disable-next-line(block-timestamp)
+        return contestedAt != 0 && block.timestamp >= uint256(contestedAt) + CONTEST_TIMEOUT;
     }
 
     function _clear(uint256 artistId, address by, bool vetoed) private {
