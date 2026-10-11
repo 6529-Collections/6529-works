@@ -447,7 +447,7 @@ Entropy is not part of Core's mint path. Copies never get their own seeds
 
 **OpenZeppelin 5 AccessManager governs Stream, 6529 Editions and all
 satellites.**
-- The compiler moves to Solidity 0.8.24 or later. This supersedes the 0.8.19
+- The compiler moves to Solidity 0.8.24 or later (v1 pins 0.8.37). This supersedes the 0.8.19
   pin in `AGENTS.md` and `docs/tooling.md`, which are updated in the
   implementation PR.
 
