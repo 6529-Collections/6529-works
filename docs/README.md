@@ -49,8 +49,7 @@ Every module folder under `src/` has a README with its design and limits.
 | Interfaces: contract surfaces and shared types | [`src/interfaces`](../src/interfaces/README.md) |
 | Federated: templates, factory and registry (v1.1, only if needed) | [`src/federated`](../src/federated/README.md) |
 
-Some of these modules are still in review; the status of each is in the
-[module table](../README.md#modules).
+Every v1 module is on `main`; see the [module table](../README.md#modules).
 
 ## Security
 
@@ -63,10 +62,8 @@ Some of these modules are still in review; the status of each is in the
 
 ## Configuration and deployment
 
-- `config/`: the committed genesis configuration for the AccessManager, with placeholder
-  addresses. It is in review in
-  [#25](https://github.com/6529-Collections/6529-works/pull/25), and its README lands
-  with it.
+- [`config/`](../config/README.md): the committed genesis configuration and policy, with
+  placeholder addresses, checked in CI by `tools/check_genesis.py`.
 - [`script/`](../script/README.md): deployment and verification scripts, still to come.
 - [`ops/DELIVERY_PLAN.md`](../ops/DELIVERY_PLAN.md): phases, exit criteria and current status.
 

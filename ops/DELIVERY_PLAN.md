@@ -61,27 +61,21 @@ script/          deployment and verification
 ## Current status
 
 - 11 October 2026: repository created and ADR 0001 recorded.
-- **Phases 1 and 2 complete:** skeleton, CI budget gates, Slither and link
-  checks, shared libraries, and AccessManager hardening (ADR 0002).
-- **Merged modules:**
-  - content store;
-  - statement log;
-  - governance;
-  - economics: split wallets, allowlist, escrow, claims;
-  - interfaces and architecture;
-  - uploader tooling.
-- **In review or fixing:**
-  - Stream core and records;
-  - curation;
-  - auction;
-  - fixed-price and Dutch sales;
-  - Editions;
-  - identity;
-  - renderer;
-  - entropy;
-  - economics resolver;
-  - genesis wiring.
-- **Build-time decisions:** recorded in
-  [ADR 0003](../docs/adr/0003-build-time-decisions.md).
-- **Next:** integration (end-to-end flows on the real contracts, the deploy
-  script, start-gas and `tokenURI` measurement), then the Sepolia dry run.
+- **Phases 1–6 complete:**
+  - skeleton and CI gates: budgets, Slither, links, genesis coverage;
+  - shared libraries;
+  - governance hardening (ADR 0002) and genesis wiring;
+  - every v1 module, independently reviewed: Stream and records, Editions, curation,
+    auction, fixed-price and Dutch sales, economics, identity with consolidation
+    recovery, content store and renderer, statement log, entropy.
+- **Build-time decisions:** [ADR 0003](../docs/adr/0003-build-time-decisions.md).
+- **Integration:**
+  - end-to-end flows pass on the real contracts;
+  - steady-state `start` is about 276K gas, and `startWithBid` about 319K (two-party about 327K);
+  - `tokenURI` is at most about 7.8M gas.
+- **Next (phase 7, testnet):**
+  - the owner decides the open items in ADR 0003;
+  - the owner provisions the Safes, the curation signers, the VRF subscription and the
+    delegation mock on Sepolia;
+  - then a Sepolia deploy, Verify, the flow and marketplace matrix, and the `tokenURI`
+    threshold matrix.

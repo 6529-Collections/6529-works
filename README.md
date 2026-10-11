@@ -76,16 +76,16 @@ the [delivery plan](ops/DELIVERY_PLAN.md) holds the current state.
 
 | Module | Contracts | What it does | Status |
 | --- | --- | --- | --- |
-| [`stream`](src/stream/README.md) | `Stream`, `WorkRecords` | The shared ERC-721 and its records satellite: finalize, license, locators | In review: [#22](https://github.com/6529-Collections/6529-works/pull/22) |
-| [`editions`](src/editions/README.md) | `Editions` | The shared ERC-1155, linked to Stream masters | In review: [#14](https://github.com/6529-Collections/6529-works/pull/14) |
+| [`stream`](src/stream/README.md) | `Stream`, `WorkRecords` | The shared ERC-721 and its records satellite: finalize, license, locators | On `main` |
+| [`editions`](src/editions/README.md) | `Editions` | The shared ERC-1155, linked to Stream masters | On `main` |
 | [`curation`](src/curation/README.md) | `PackageRegistry`, `Eip712CurationVerifier` | Package roots, party consent, consume-once items, signer attestations | On `main` |
-| [`sales`](src/sales/README.md) | `EnglishAuction`; fixed-price and Dutch adapters | Shared sale adapters over a minimal mint interface | Auction on `main`; other adapters in review: [#18](https://github.com/6529-Collections/6529-works/pull/18) |
+| [`sales`](src/sales/README.md) | `EnglishAuction`; fixed-price and Dutch adapters | Shared sale adapters over a minimal mint interface | On `main` |
 | [`economics`](src/economics/README.md) | `SplitFactory`, `SplitWallet`, `RevenueEscrow`, `AssetAllowlist`, `EconomicsResolver`, `ReleaseVerifier`, `ClaimRouter` | Split wallets, escrow fallback, currency allowlist, per-product terms | On `main` |
-| [`identity`](src/identity/README.md) | `ArtistRegistry`, `ConsolidationAdapter` | Artist identity, payout resolution, 7-day recovery, 180-day override | In review: [#16](https://github.com/6529-Collections/6529-works/pull/16) |
-| [`content`](src/content/README.md) | `ContentStore`, `DependencyRegistry`; `Renderer` | Content-addressed chunks, shared libraries, `tokenURI` | Store and registry on `main`; renderer in review: [#20](https://github.com/6529-Collections/6529-works/pull/20) |
+| [`identity`](src/identity/README.md) | `ArtistRegistry`, `ConsolidationAdapter` | Artist identity, payout resolution, 7-day recovery, 180-day override | On `main` |
+| [`content`](src/content/README.md) | `ContentStore`, `DependencyRegistry`; `Renderer` | Content-addressed chunks, shared libraries, `tokenURI` | On `main` |
 | [`records`](src/records/README.md) | `StatementLog` | Append-only signed log: disputes, curation evidence, fixity, manifests | On `main` |
 | [`entropy`](src/entropy/README.md) | `VrfEntropyModule` | Optional Chainlink VRF v2.5 seed per work, delivered before the mint | On `main` |
-| [`governance`](src/governance/README.md) | `WorksAccessManager`, `GovernanceConfigurator`, `Roles`, `BoundedParameter` | One AccessManager governs everything; guardians can cancel any scheduled operation | On `main`; genesis wiring in review: [#25](https://github.com/6529-Collections/6529-works/pull/25) |
+| [`governance`](src/governance/README.md) | `WorksAccessManager`, `GovernanceConfigurator`, `Roles`, `BoundedParameter` | One AccessManager governs everything; guardians can cancel any scheduled operation | On `main`, including genesis wiring |
 | [`libraries`](src/libraries/README.md) | `SignatureVerifier`, `DelegatedEOA`, `JsonEscape`, `Utf8`, `SSTORE2`, `BoundedCall` | Shared internal libraries (none is linked) | On `main` |
 | [`interfaces`](src/interfaces/README.md) | `IStream`, `IEditions`, `IMintTarget`, and more | Contract surfaces and shared types every module builds against | On `main` |
 | [`federated`](src/federated/README.md) | none in v1 | Templates, factory and registry; v1 keeps only the interfaces | v1.1, only if needed |
@@ -183,14 +183,15 @@ in `lib/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and, for automated agents, [AG
 
 - **Pre-audit and not deployed.** There is no v1 deployment on any network and no
   external audit. Nothing here is production-ready.
-- **What exists.** The shared libraries, governance hardening, content store, curation,
-  economics, English auction, entropy module and statement log are on `main` with tests.
-  Stream, Editions, identity, the other sale adapters, the renderer and genesis wiring
-  are in review (see the [module table](#modules)).
-- **What does not exist yet.** End-to-end flows on the real contracts, the deploy script,
-  measurement of start gas and `tokenURI` gas on the integrated stack, the Sepolia
-  deployment, the audit and mainnet. [ADR 0003](docs/adr/0003-build-time-decisions.md)
-  lists the open owner decisions.
+- **What exists.** Every v1 module is on `main` with unit, fuzz and invariant tests:
+  Stream and its records satellite, Editions, curation, the English auction and the
+  fixed-price and Dutch sales, economics, identity, the content store and renderer, the
+  statement log, the entropy module and governance with genesis wiring.
+  End-to-end flows on the real, integrated contracts are in `test/integration/`, with a
+  gas report: steady-state `start` about 276K, `startWithBid` about 319K, and
+  `tokenURI` at most about 7.8M with every record cap filled.
+- **What does not exist yet.** The deploy script, The Sepolia deployment (it needs the owner's keys and Safes), the external audit and
+  mainnet. [ADR 0003](docs/adr/0003-build-time-decisions.md) lists the open owner decisions.
 - **v1.1 and deferred.** 6529 Stream Federated ships in v1.1, and only if needed.
   Deferred beyond v1: other Stream sale types (buy-now, offers, private sales,
   burn-to-mint), VRF reveals after settlement, a verifier backed by the 6529 chain,
