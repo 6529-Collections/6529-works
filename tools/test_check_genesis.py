@@ -144,6 +144,112 @@ class CheckGenesisTest(unittest.TestCase):
         text = "contract A { function a(uint256 x) external nonReentrant restricted returns (bool) {} }"
         self.assertEqual(cg.restricted_functions(text), {"A": {"a"}})
 
+    def test_scan_keeps_functions_in_their_own_contract_body(self) -> None:
+        text = (
+            "contract A { function a() external {} }\n"
+            "contract B { function b() external restricted {} }"
+        )
+        self.assertEqual(cg.restricted_functions(text), {"B": {"b"}})
+
+    def test_bases_parse_constructor_arguments_and_qualified_names(self) -> None:
+        decl = cg.declarations(
+            "contract C is A(1, f(2)), Lib.B, D { function x() external restricted {} }"
+        )["C"]
+        self.assertEqual(decl.bases, ["A", "B", "D"])
+        self.assertFalse(decl.abstract)
+
+    # -- inheritance ----------------------------------------------------------------------
+
+    BASE = "abstract contract Base { function pauseAll() external restricted { } }"
+
+    def _inherit(self) -> None:
+        self.repo.source("x/Base.sol", self.BASE)
+        self.repo.source("x/Foo.sol", FOO.replace("contract Foo {", "contract Foo is Base {"))
+        self.repo.artifact("Foo.sol", "Foo", {**METHODS, "pauseAll()": "88888888"})
+
+    def test_abstract_base_functions_count_for_their_concrete_children(self) -> None:
+        self._inherit()
+        scanned = cg.scan_sources(self.repo.root / "src")
+        self.assertEqual(scanned["src/x/Foo.sol:Foo"],
+                         {"setFee", "bindStream", "setAdmittedMinter", "pauseAll"})
+        self.assertNotIn("src/x/Base.sol:Base", scanned)
+        self.assertProblem("restricted pauseAll() in src/x/Foo.sol:Foo is not mapped")
+
+    def test_abstract_base_is_not_an_unconfigured_contract(self) -> None:
+        self._inherit()
+        self.foo["deferred"] = [{"signature": "pauseAll()", "selector": "0x88888888"}]
+        self.assertEqual(self.repo.problems(), [])
+
+    def test_every_concrete_child_of_a_base_must_be_configured(self) -> None:
+        self._inherit()
+        self.foo["deferred"] = [{"signature": "pauseAll()", "selector": "0x88888888"}]
+        self.repo.source("y/Bar.sol", "contract Bar is Base { }")
+        self.assertProblem("src/y/Bar.sol:Bar has restricted functions but no contract")
+
+    def test_inheritance_is_transitive(self) -> None:
+        self.repo.source("x/Base.sol", self.BASE)
+        self.repo.source("x/Mid.sol", "abstract contract Mid is Base(1) { }")
+        self.repo.source("y/Bar.sol", "contract Bar is Mid, Other { }")
+        self.assertEqual(
+            cg.scan_sources(self.repo.root / "src")["src/y/Bar.sol:Bar"], {"pauseAll"}
+        )
+
+    # -- pending lanes ----------------------------------------------------------------------
+
+    def _pending_contract(self) -> dict:
+        pending = {
+            "name": "Later",
+            "address": "0x" + "00" * 19 + "0e",
+            "artifact": "src/later/Later.sol:Later",
+            "implementation": "src/later/Later.sol:Later",
+            "functions": [{"signature": "setLater(uint256)", "selector": "0x12345678",
+                           "role": "PARAMETER_SETTER", "class": "standard", "delay": 172800}],
+            "genesisOnly": [{"signature": "bindStream(address)", "selector": "0x7d4b8f67"}],
+            "deferred": [],
+        }
+        self.repo.config["contracts"].append(pending)
+        self.repo.config["wiring"].append(
+            {"contract": "Later", "signature": "bindStream(address)", "args": ["Peer"],
+             "calldata": "0x7d4b8f67" + "00" * 31 + "01"}
+        )
+        return pending
+
+    def test_contract_whose_source_is_not_merged_yet_passes_as_pending(self) -> None:
+        self._pending_contract()
+        present = cg.source_present(self.repo.root)
+        problems = cg.check(
+            self.repo.config, cg.artifact_ids(self.repo.root / "out"),
+            cg.scan_sources(self.repo.root / "src"), present,
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(cg.pending(self.repo.config, present), ["Later"])
+        code, out = self.repo.run()
+        self.assertEqual(code, 0, out)
+        self.assertIn("pending (not merged yet): Later", out)
+
+    def test_pending_contract_is_checked_in_full_once_its_source_lands(self) -> None:
+        self._pending_contract()
+        self.repo.source("later/Later.sol", "contract Later { function setLater(uint256 x) "
+                         "external restricted {} function bindStream(address a) external "
+                         "restricted {} function other() external restricted {} }")
+        self.repo.artifact("Later.sol", "Later", {"setLater(uint256)": "12345678",
+                                                   "bindStream(address)": "7d4b8f67",
+                                                   "other()": "99999999"})
+        code, out = self.repo.run()
+        self.assertEqual(code, 1, out)
+        self.assertIn("restricted other() in src/later/Later.sol:Later is not mapped", out)
+
+    def test_pending_contract_still_needs_valid_roles_and_wiring(self) -> None:
+        pending = self._pending_contract()
+        pending["functions"][0]["role"] = "SYSTEM"
+        self.repo.config["wiring"][-1]["signature"] = "setLater(uint256)"
+        problems = cg.check(
+            self.repo.config, cg.artifact_ids(self.repo.root / "out"),
+            cg.scan_sources(self.repo.root / "src"), cg.source_present(self.repo.root),
+        )
+        self.assertTrue(any("unknown role SYSTEM" in p for p in problems), problems)
+        self.assertTrue(any("not a genesis function" in p for p in problems), problems)
+
     # -- the clean case -----------------------------------------------------------------
 
     def test_clean_configuration_passes(self) -> None:
