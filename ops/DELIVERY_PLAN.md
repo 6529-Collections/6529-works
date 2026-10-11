@@ -85,9 +85,10 @@ script/          deployment and verification
   - **Finding:** Sepolia runs Glamsterdam, which reprices state creation. The deploy cost
     6.2x Foundry's Prague estimate. Every gas budget that writes state must be re-measured
     on Sepolia.
+- **Sepolia rehearsal r2 (11 October 2026):** the full v1 scope from `400f96d`, including
+  the contested-override recovery; same holders as r1, its own VRF subscription. Verify passes
+  on a fork advanced five days.
 - **Next (phase 7, testnet):**
-  - build the contested-override recovery the owner chose (ADR 0003);
   - measure the flows on Sepolia under Glamsterdam: `start`, `settle`, Editions, uploads
     and the `tokenURI` threshold matrix; then the marketplace matrix;
-  - redeploy (r2) with the contested-override recovery and the Editions gas changes, then
-    run the live Verify.
+  - run the live Verify on r2 from 16 October.

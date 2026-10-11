@@ -1,0 +1,141 @@
+{
+  "schema": "6529-works/governance-manifest/1",
+  "epoch": 0,
+  "chainId": 11155111,
+  "deployment": "sepolia-r2",
+  "status": "Testnet rehearsal with throwaway signers. Pre-audit; not for mainnet.",
+  "signatures": "Unsigned: testnet rehearsal. A mainnet manifest is signed by the admin Safe signers.",
+  "source": {
+    "repository": "https://github.com/6529-Collections/6529-works",
+    "commit": "400f96d48c6572483ab84a056554706a9f390f0c",
+    "compiler": "solc 0.8.37, evm prague, optimizer 200 runs, via-ir off"
+  },
+  "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",
+  "namespace": {
+    "label": "6529-works/sepolia/r2",
+    "keccak256": "0xd4cf2286c0d5302e042dacab5882a3b4c1d8f49313eef28f8afe0bc31dd4f090"
+  },
+  "genesis": {
+    "path": "config/sepolia-r2/genesis.json",
+    "sha256": "9241f00b7b13106aa8cb612c26393261970d4626b2a3d5dc989d4fe659646a8e"
+  },
+  "policy": {
+    "path": "config/genesis.example.json",
+    "sha256": "64f7cb7b405af31978bddfcef87550bc7dd45e8cc1e1090be4399eac4da3e2d5"
+  },
+  "safes": {
+    "hot-admin": {
+      "address": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+      "threshold": 2,
+      "owners": [
+        "0xa708B26E5C8ad1c2bc9cB7Eb69C8F10Ba2c1D16E",
+        "0xf9822706316173B85549E5DFe26089C5ffb181Bc",
+        "0x80D6FA7C81E928C1EA942f393E2f2fBab90Ca16D"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "cold-admin": {
+      "address": "0x5090272f56f9139CfE91aa927bc547244FC0d6B9",
+      "threshold": 3,
+      "owners": [
+        "0x971B0fd34b1a18153Dfe05898c0AF36728c6A93A",
+        "0xC6da2A36a008016Cc0d005F5a163A8dF0f5C92e1",
+        "0x97e1b9E4B6398Aa944c145284aCEf2ED286cdf5D",
+        "0x0AC22B14a8E0a7C34649d6A9af04A74C74b1009E",
+        "0xb0B78F6F62daa9026c249A08308fC8f0f774BD87"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "guardian-1": {
+      "address": "0x5d1103f2FC0ce8D0E81a918A3819182208B6E916",
+      "threshold": 2,
+      "owners": [
+        "0xAeB27Fef5B862a3f2cAbcDac3a11232e16af9E7D",
+        "0x520FD0fe169aADb081EbF8E9c296463623C07d4a",
+        "0x9565E99550ad64b994f7B38c19eCA4ccc52FA877"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "guardian-2": {
+      "address": "0x894D246cA153Be5a9b125d694e52cdD146f5be8C",
+      "threshold": 2,
+      "owners": [
+        "0x6A310CDC7Ee650ced8501b67A5A1D457a0703971",
+        "0x5FC95a7b9358E00c37C9395fF3D4e1Cf9d09ce4F",
+        "0x3E9db48e5B66EDBa73FE6f0C40ecBD48608F39F1"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    },
+    "guardian-3": {
+      "address": "0x708A1Eb9D5ea5678D5168752ee0bfe3D58f4bA7e",
+      "threshold": 2,
+      "owners": [
+        "0x0406123046572c750008495905A0e37B881B83D0",
+        "0xcdeaF63C70142F2eC0b50A83c2501a47642bC0a1",
+        "0xc77970569C06008F26789F57d09E49c68ae9de90"
+      ],
+      "version": "Safe 1.4.1 (L1 singleton)"
+    }
+  },
+  "keys": {
+    "curationSigners": [
+      "0xc7091A91Fa76f7494a3b847B6A08f164C7097830",
+      "0x148F83Bd54Ef232d8e7056a21Ca777C6e8Bac709"
+    ],
+    "storageOperator": "0x4484CEBA86645575Fd1E48Ac06dCc8c6CEe44ACd",
+    "platform": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D",
+    "curator": "0xBDccCcBfAF7aAE8702bD41e79f0CF0441676906a"
+  },
+  "parameters": {
+    "networkFeeRecipient": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+    "marketplaceOwner": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D"
+  },
+  "dependencies": {
+    "delegation": {
+      "address": "0x8f86c644f845A077999939C69Bc787662377d915",
+      "note": "The official 6529 NFTDelegation deployment on Sepolia (github.com/6529-Collections/nftdelegation). Its runtime bytecode is identical to mainnet 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d."
+    },
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "create2Factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "vrf": {
+      "coordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
+      "version": "Chainlink VRF v2.5",
+      "subscriptionId": "26755781173204397845410634685189131694841872990785294795546827480670579805631",
+      "keyHash": "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae",
+      "nativePayment": true,
+      "callbackGasLimit": 200000,
+      "confirmations": 3
+    }
+  },
+  "license": {
+    "default": "CC0 1.0 Universal",
+    "textSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+    "contentStoreFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
+    "textPath": "test/fixtures/cc0-legalcode.txt"
+  },
+  "contracts": {
+    "configurator": "0x7720Ba52FC54DF9C749B88010BC191dbb0FD0e3E",
+    "manager": "0x7Aec16E5c5F9903a38cC8798838A336A9Ce4dB2B",
+    "contentStore": "0x3E56048F2aaBEf5251f8e1469FB9979F324b3a11",
+    "dependencyRegistry": "0x4a8ed20fe380e2BB5136cD76c3590571C52dc27D",
+    "consolidationAdapter": "0x058E4c352410D3B0D791a691843755d1A34c3Bb9",
+    "artistRegistry": "0xd97D8c7492CeD34686C945BE7520aeF537e29F0F",
+    "releaseVerifier": "0x83d98ad388f2FAb6CBA8cBe2BFCFe341cB763FD9",
+    "splitFactory": "0x848AD949280d99Cc5D26ff2ec1Ffc1764Fd751E3",
+    "claimRouter": "0x290E6A0643a169B59ECD246040062867eB479996",
+    "assetAllowlist": "0xf620Ea96cC8f34F9ba21b18447BfC14FD08830ad",
+    "economicsResolver": "0xA86Dea795D01F49CcDe5c1Dba6541F849511cd45",
+    "revenueEscrow": "0xFF1Edec521E9F73956C4f58F7C3A3e4208597294",
+    "curationVerifier": "0x3033958a90aFa377fCE4b61597F9ec0D8Af6EC9a",
+    "packageRegistry": "0x48232794Cb568e068770039d1c4Da69861B2e786",
+    "statementLog": "0x054D783CC94b6c5Df06eDceB6910484D5423a3B5",
+    "entropyModule": "0x97f20345E6B0A9769733E42a98C6bfDC059De457",
+    "englishAuction": "0xCa4FEFfA995210BcaDE279D74D7AadD824721813",
+    "fixedPriceSale": "0xbc3ee6DDDb3c117C387049e347573fcFAdEbD6D5",
+    "dutchSale": "0x47DCcCA6f5D09A6af747e02F432838091A17A501",
+    "renderer": "0xA7e78e3825D407198790735BB95982679B03DeEF",
+    "stream": "0x7Ae459CCC1e8410912743d5FD6f832d1cf1981B4",
+    "workRecords": "0xEEa4093106d5918Bc1D1Fa00369aE81c8EB7cAa2",
+    "editions": "0xA83ed940684B7B4D706415c4315AD63b6cdD5cfc"
+  }
+}
