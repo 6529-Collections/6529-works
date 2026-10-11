@@ -845,6 +845,7 @@ contract RendererGasBudgetTest is RendererBase {
     uint256 internal constant F_E0 = 5;
     uint256 internal constant F_4B = 6;
     uint256 internal constant F_2B = 7;
+    uint256 internal constant F_ED = 8; // ED, the other lead with its own second-byte range
 
     function setUp() public override {
         super.setUp();
@@ -867,14 +868,15 @@ contract RendererGasBudgetTest is RendererBase {
         stream.setCollection(1, IStream.Collection(string(_fill("%", 256)), bytes32(0), 9));
 
         // Against 256 KiB of `Base64`: every fill, every shape.
-        bytes[7] memory fills = [
+        bytes[8] memory fills = [
             bytes("a"),
             hex"61e0a080",
             hex"6161c3a9",
             hex"61f09f9880",
             hex"e0a080",
             hex"f09f9880",
-            hex"c3a9"
+            hex"c3a9",
+            hex"ed8080"
         ];
         for (uint256 f; f < fills.length; ++f) {
             _add(f + 1, fills[f], MEMBERS, P_HTML);
@@ -942,6 +944,10 @@ contract RendererGasBudgetTest is RendererBase {
 
     function test_Budget_Html_Members_TwoByte() public {
         _row("every cap, members, 2-byte, 256 KiB b64", _id(F_2B, MEMBERS, P_HTML));
+    }
+
+    function test_Budget_Html_Members_Ed() public {
+        _row("every cap, members, U+D000 (ED), 256 KiB b64", _id(F_ED, MEMBERS, P_HTML));
     }
 
     function test_Budget_Html_Zeros_Ascii() public {
