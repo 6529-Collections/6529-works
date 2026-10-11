@@ -129,6 +129,14 @@ jobs:
       - name: Budget checker unit tests
         run: python -m tools.test_check_budgets
 
+      - name: Content tooling tests
+        # tools/content (standard library only). test_anvil.py sends the emitted calldata to the
+        # compiled ContentStore on a local Anvil node, installed with Foundry above; with
+        # CONTENT_E2E_REQUIRE a missing prerequisite fails the step instead of skipping the test.
+        env:
+          CONTENT_E2E_REQUIRE: "1"
+        run: python -m unittest discover -s tools/content -t . -p "test_*.py"
+
   static-analysis:
     name: Static analysis
     runs-on: ubuntu-latest
