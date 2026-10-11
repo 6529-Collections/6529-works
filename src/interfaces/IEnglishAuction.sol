@@ -148,8 +148,10 @@ interface IEnglishAuction is ISaleAdapter {
     function resume(uint256 saleId) external;
 
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back,
-    ///         burns the token and records `outcomeRef` (the entry hash of the DISPUTE_OUTCOME
-    ///         statement). PARAMETER_SETTER role; it must execute while the auction is paused.
+    ///         burns the token and records `outcomeRef`. PARAMETER_SETTER role; it must execute
+    ///         while the auction is paused. `outcomeRef` must be nonzero and equal
+    ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`, so no auction is cancelled
+    ///         without a public DISPUTE_OUTCOME statement on record.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
 
     /// @notice The high bidder withdraws its bid while the auction is paused; the bid is
@@ -180,4 +182,6 @@ interface IEnglishAuction is ISaleAdapter {
     function entropyModule() external view returns (address);
     /// @notice The revenue escrow that receives failed payouts (immutable).
     function escrow() external view returns (address);
+    /// @notice The statement log whose DISPUTE_OUTCOME entries `cancel` cites (immutable).
+    function statementLog() external view returns (address);
 }

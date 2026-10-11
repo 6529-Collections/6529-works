@@ -22,6 +22,7 @@ import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
+import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
 import { IStream } from "../../src/interfaces/IStream.sol";
 import { Limits } from "../../src/interfaces/types/Limits.sol";
 
@@ -35,7 +36,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IStream).interfaceId, bytes4(0xddf03480), "IStream");
         assertEq(type(IEditions).interfaceId, bytes4(0xf1fda5e4), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x0f69444d), "ISaleAdapter");
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x784c9e1c), "IEnglishAuction");
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x9f6a717f), "IEnglishAuction");
         assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x9f085ac7), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0x5a75af36), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
@@ -47,6 +48,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
         assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x70039a3b), "IEconomicsResolver");
+        assertEq(type(IStatementLog).interfaceId, bytes4(0x276fbc56), "IStatementLog");
         assertEq(type(IArtistRegistry).interfaceId, bytes4(0xa31364a7), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0xc99f1cff), "IConsolidationSource");
         assertEq(type(IEntropyModule).interfaceId, bytes4(0xe3ffb038), "IEntropyModule");

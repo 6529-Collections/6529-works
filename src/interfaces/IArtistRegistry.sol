@@ -41,7 +41,10 @@ interface IConsolidationSource {
 ///      One change may be pending per artist. `executeChange` is permissionless once due.
 ///      `isArtist(token, id, account)` (from `IArtistRoleResolver`) is true when `account` is
 ///      the current authority of the lead artist of 6529 Stream work `id`, or of the master of
-///      6529 Editions edition `id`.
+///      6529 Editions edition `id`. It meets the resolver trust requirement: no governed action
+///      changes an answer faster than the 30-day class, because authorities change only through
+///      7-day artist-initiated changes or 180-day overrides, and the consolidation source swaps
+///      on the 30-day class.
 interface IArtistRegistry is IArtistRoleResolver {
     /// @notice An artist identity was created.
     event ArtistRegistered(uint256 indexed artistId, ArtistIdentity identity);

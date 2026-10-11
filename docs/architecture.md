@@ -65,16 +65,20 @@ ADR wins. The precise contract surfaces are the interfaces in
 | `IFederationRegistry` | v1.1 placeholder, no v1 implementation (`src/federated/`) | §16 |
 
 Shared types live in [`src/interfaces/types/`](../src/interfaces/types/):
-package items and sale terms (`PackageTypes`), media and work records
-(`ContentTypes`), payments and primary terms (`SaleTypes`), shares, payees,
-currencies and product IDs (`EconomicsTypes`), artist identities
-(`IdentityTypes`), the bounds on
-every user-supplied array (`Limits`), and the one definition of every protocol
-hash (`WorksHashing`). Statement types and kinds
-come from the records lane, content-store types from the content lane, and
-the split, escrow and allowlist interfaces from the economics lane (in
-`src/economics/interfaces/` until they move here; `Payee` mirrors its
-`ISplitWallet.Payee` exactly until then).
+- package items and sale terms (`PackageTypes`);
+- media and work records (`ContentTypes`);
+- payments and primary terms (`SaleTypes`);
+- shares, payees, currencies and product IDs (`EconomicsTypes`);
+- artist identities (`IdentityTypes`);
+- the bounds on every user-supplied array (`Limits`);
+- the one definition of every protocol hash (`WorksHashing`);
+- the statement log's `HashRef` and `StatementKinds`.
+
+`IStatementLog`, `IArtistRoleResolver`, `IContentStore` and
+`IDependencyRegistry` live in `src/interfaces/` beside the interfaces above.
+The split, escrow and allowlist interfaces come from the economics lane. They
+stay in `src/economics/interfaces/` until they move here, and until then
+`Payee` mirrors its `ISplitWallet.Payee` exactly.
 
 ## Identifiers and hashes
 
@@ -218,12 +222,15 @@ default when the sale starts".
 2. While paused, the high bidder may `withdrawBid`.
 3. Upheld: the platform appends a `DISPUTE_OUTCOME` statement, and the
    PARAMETER_SETTER role calls `cancel(saleId, outcomeRef)` while the auction is
-   still paused: the bid is credited back and the token is burned, leaving a gap
-   in the ID sequence. The item stays consumed.
+   still paused, citing that entry (`outcomeRef` must equal
+   `IStatementLog.latestDisputeOutcome(token, tokenId)`): the bid is credited
+   back and the token is burned, leaving a gap in the ID sequence. The item
+   stays consumed.
 4. Rejected: the UNPAUSER role calls `resume`. With no outcome, the pause ends
    by itself when the allowance runs out. Either way the auction continues with
    its remaining time, and anti-sniping still applies.
-5. After a sale, a dispute only produces a statement, shown in metadata.
+5. After a sale, a dispute only produces a statement; the renderer shows it in
+   metadata through `latestDisputeOutcome`.
 
 ## Trust boundaries
 
@@ -261,8 +268,10 @@ The interfaces name the role each governed selector is meant to map to:
 | FUNDS_SETTER (14 days) | `IStream.setRoyalty`, `setOwner`; `IEditions.setOwner`; `IEconomicsResolver.setEconomics` |
 | SUCCESSOR_SETTER (30 days) | `IStream.setEditions`, `setDefaultRenderer`, `repinRenderer`; `IPackageRegistry.setVerifier`; `ICurationSignerVerifier.enableSigner`; `IArtistRegistry.setConsolidationSource`; `ISaleAdapter.setTarget` |
 
-Governed functions are non-payable. Setters for funds, recipients, verifiers
-and renderers take the expected current value. Work amendments (`relicense`,
+Each configuration epoch's manifest hash is recorded through the statement
+log's restricted `appendGovernanceManifest`, the only path that may write a
+`GOVERNANCE_MANIFEST` entry. Governed functions are non-payable. Setters for
+funds, recipients, verifiers and renderers take the expected current value. Work amendments (`relicense`,
 `setRoyalty`, `repinRenderer`) also need the artist's EIP-712 `WorkAmendment`
 signature bound to the work's state hash.
 

@@ -7,7 +7,8 @@ pragma solidity ^0.8.24;
 /// @dev A renderer is immutable: a change of rendering is a new renderer contract, which works
 ///      adopt as the default before finalize or by the errata path after. It reads the work
 ///      record, license, locators and seed from 6529 Stream (an edition reads through its
-///      master), the bytes from the content store, and dispute outcomes from the statement log,
+///      master), the bytes from the content store, and dispute status from the statement log's
+///      `latestDisputeOutcome`,
 ///      and adds the collection, artist, license and edition traits. `tokenURI` stays small: it
 ///      inlines the media only when the work is on-chain complete and the primary file is at
 ///      most `inlineThreshold()` bytes; otherwise it gives the preferred locator plus, up to

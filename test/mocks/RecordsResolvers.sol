@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IArtistRoleResolver } from "src/records/IArtistRoleResolver.sol";
+import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 
 /// @notice Adversarial artist resolvers for the records lane.
 
