@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/Test.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { Stream } from "src/stream/Stream.sol";
@@ -94,6 +95,28 @@ contract StreamGasTest is StreamFixture {
         console2.log("royaltyInfo, cold, real SplitFactory:", royalty);
         console2.log("work(), cold, real SplitFactory:", core);
         assertLt(royalty, 60_000);
+    }
+
+    /// @dev What the economics resolver's `newWorkTerms` would add to the start for the two
+    ///      `walletFor` derivations (seller wallet, royalty wallet). Stream's mint share above uses
+    ///      a constant mock, so this is reported beside it (review of PR #22).
+    function test_gas_walletForCosts() public {
+        ISplitWallet.Payee[] memory one = new ISplitWallet.Payee[](1);
+        one[0] = ISplitWallet.Payee(uint256(uint160(artist)), address(0), 100_000);
+        ISplitWallet.Payee[] memory two = new ISplitWallet.Payee[](2);
+        (address lo, address hi) =
+            feeRecipient < seller ? (feeRecipient, seller) : (seller, feeRecipient);
+        two[0] = ISplitWallet.Payee(0, lo, 25_000);
+        two[1] = ISplitWallet.Payee(0, hi, 75_000);
+        vm.cool(address(splitFactory));
+        uint256 before = gasleft();
+        splitFactory.walletFor(one, bytes32(0));
+        uint256 sellerWallet = before - gasleft();
+        before = gasleft();
+        splitFactory.walletFor(two, bytes32(0));
+        uint256 royalty = before - gasleft();
+        console2.log("walletFor seller (1 payee, cold factory):", sellerWallet);
+        console2.log("walletFor royalty (2 payees, warm factory):", royalty);
     }
 
     function test_gas_mintShare_first() public {

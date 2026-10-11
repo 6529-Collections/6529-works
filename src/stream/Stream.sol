@@ -29,15 +29,7 @@ import {
 import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
-
-/// @notice The package-registry function that frees a burned work's content hash.
-/// @dev Requested for `IPackageRegistry` (curation review); bound 6529 Stream only. The registry
-///      checks that `itemHash` consumed `contentHash`, clears the claim so the real artist can
-///      mint, and tombstones the item. TODO(integration): use `IPackageRegistry` once it has it.
-interface IContentRelease {
-    /// @notice Frees `contentHash`, which `itemHash` consumed, and tombstones `itemHash`.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash) external;
-}
+import { SpdxId } from "./SpdxId.sol";
 
 /// @title Stream
 /// @notice 6529 Stream core: the one shared, network-curated ERC-721 holding every curated 1/1
@@ -68,12 +60,6 @@ contract Stream is ERC721, AccessManaged, IStream {
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
 
-    /// @notice The collection name is empty, longer than `MAX_NAME_BYTES` or not UTF-8.
-    error InvalidCollectionName();
-    /// @notice The royalty rate exceeds 100,000.
-    error InvalidRoyaltyRate(uint32 rate);
-    /// @notice The token was never minted, or is still live.
-    error NotBurned(uint256 tokenId);
     /// @notice The primary sale settled, so the token can no longer be burned.
     error SaleAlreadySettled(uint256 tokenId);
 
@@ -250,9 +236,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @inheritdoc IMintTarget
     /// @dev Only the adapter that minted the token, while it still holds it in custody and
     ///      before the primary sale settled: the auction's cancel after an upheld dispute
-    ///      (ADR 0001 section 12). Like `markPrimarySettled`, it works even after the adapter
-    ///      was removed, so a running dispute can still finish. After a sale nothing is
-    ///      confiscated. The ID is never reused.
+    ///      (ADR 0001 section 12). Gated on the minting adapter's index, not on current
+    ///      admission: like `markPrimarySettled`, it works after the adapter was removed, so a
+    ///      running dispute can still finish, and another adapter holding the token can never
+    ///      burn it. After a sale nothing is confiscated. The ID is never reused.
     function burn(uint256 id, uint256 amount) external {
         address holder = _ownerOf(id);
         if (amount != 1) revert InvalidMintRequest();
@@ -264,17 +251,15 @@ contract Stream is ERC721, AccessManaged, IStream {
         _burn(id);
     }
 
-    /// @notice Frees the content hash of a work burned after an upheld dispute, so the real
-    ///         artist can mint that media, and tombstones the burned work's item (curation
-    ///         review). Permissionless: the registry releases only the content hash the burned
-    ///         work's item consumed, which `WorkMinted` and the published package give.
+    /// @inheritdoc IStream
     /// @dev Not part of `burn`: Stream stores the item hash, not the content hash (D3), and
-    ///      storing it would cost every start a word for a rare dispute path.
+    ///      storing it would cost every start a word for a rare dispute path. The content hash
+    ///      is public in `WorkMinted`, the registry's `ItemConsumed` and the package.
     function releaseContent(uint256 tokenId, bytes32 contentHash) external {
         if (tokenId == 0 || tokenId > _counts.minted || _ownerOf(tokenId) != address(0)) {
             revert NotBurned(tokenId);
         }
-        IContentRelease(packageRegistry).releaseContent(contentHash, _tokens[tokenId].itemHash);
+        IPackageRegistry(packageRegistry).releaseContent(contentHash, _tokens[tokenId].itemHash);
     }
 
     /// @inheritdoc IMintTarget
@@ -284,7 +269,8 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IMintTarget
     /// @dev SUCCESSOR_SETTER role. Admission checks code, ERC-165 for `ISaleAdapter` and no
-    ///      EIP-7702 delegation; removal stops new mints and burns, not settlement.
+    ///      EIP-7702 delegation. Removal stops new mints only: the adapter keeps its index, so
+    ///      it can still settle and cancel (burn) the sales it started.
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         Minter storage minter = _minters[adapter];
         if (admitted) {
@@ -364,6 +350,23 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
+    function coreOf(uint256 tokenId)
+        external
+        view
+        returns (
+            bytes32 itemHash,
+            uint256 artistId,
+            uint256 collectionId,
+            ItemKind kind,
+            SeedPolicy seedPolicy,
+            uint32 royaltyRate
+        )
+    {
+        TokenData storage t = _live(tokenId);
+        return (t.itemHash, t.artistId, t.collectionId, t.kind, t.seedPolicy, t.royaltyRate);
+    }
+
+    /// @inheritdoc IStream
     function artistOf(uint256 tokenId) external view returns (uint256) {
         return _live(tokenId).artistId;
     }
@@ -429,17 +432,23 @@ contract Stream is ERC721, AccessManaged, IStream {
     // ------------------------------------------------------------------------ satellite hooks
 
     /// @inheritdoc IStream
+    /// @dev The target must serve this token (`stream() == address(this)`): the bind is
+    ///      one-shot, so a satellite of another deployment could never be replaced.
     function bindWorkRecords(address target) external restricted {
         if (workRecords != address(0)) revert AlreadyBound(WORK_RECORDS);
         _requireInterface(target, type(IWorkRecords).interfaceId);
+        if (IWorkRecords(target).stream() != address(this)) revert InvalidBinding(target);
         workRecords = target;
         emit Bound(WORK_RECORDS, target);
     }
 
     /// @inheritdoc IStream
+    /// @dev The target must serve this token (`stream() == address(this)`), as for
+    ///      `bindWorkRecords`.
     function bindEditions(address target) external restricted {
         if (editions != address(0)) revert AlreadyBound(EDITIONS);
         _requireInterface(target, type(IEditions).interfaceId);
+        if (IEditions(target).stream() != address(this)) revert InvalidBinding(target);
         editions = target;
         emit Bound(EDITIONS, target);
     }
@@ -462,13 +471,15 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev Written once and never changed; the edition ID must equal the token ID.
+    /// @dev Written once and never changed; the edition ID must equal the token ID, and the
+    ///      master's primary sale must have settled (D14, checked here as well as in Editions).
     function linkEdition(uint256 tokenId, uint256 editionId) external {
         _onlyBound(editions);
         TokenData storage t = _live(tokenId);
-        if (t.kind != ItemKind.EDITION_MASTER || t.editionLinked || editionId != tokenId) {
-            revert EditionLinkInvalid(tokenId);
-        }
+        if (
+            t.kind != ItemKind.EDITION_MASTER || !t.primarySaleSettled || t.editionLinked
+                || editionId != tokenId
+        ) revert EditionLinkInvalid(tokenId);
         t.editionLinked = true;
         emit EditionLinked(tokenId, msg.sender, editionId);
         emit MetadataUpdate(tokenId);
@@ -549,7 +560,11 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev Stream rules the registry does not know: auction-only with empty parameters, a lead
-    ///      party, an existing collection, and a coherent seed policy.
+    ///      party, an existing collection, a coherent seed policy, and a license ID
+    ///      `WorkRecords` accepts, so no license can leave a minted work unopenable. The media
+    ///      commitments `openRecord` checks (at most 32 files, the primary first with the
+    ///      item's content hash) are not visible here: the curation signer's tooling must
+    ///      simulate `openRecord` before attesting an item.
     function _checkItem(PackageItem calldata item) private view {
         SeedPolicy policy = item.seedPolicy;
         if (
@@ -557,6 +572,7 @@ contract Stream is ERC721, AccessManaged, IStream {
                 || item.parties.length == 0 || !_collections[item.collectionId].exists
                 || (policy == SeedPolicy.ARTIST) != (item.seed != 0)
                 || (policy == SeedPolicy.VRF && entropyModule == address(0))
+                || !SpdxId.isValid(item.license.spdxId)
         ) revert InvalidMintRequest();
     }
 
@@ -568,15 +584,16 @@ contract Stream is ERC721, AccessManaged, IStream {
         view
         returns (PrimaryTerms memory terms, WorkTerms memory w)
     {
-        IEconomicsResolver resolver = IEconomicsResolver(economics);
-        w = resolver.newWorkTerms(PRODUCT_STREAM, item.payees);
+        w = IEconomicsResolver(economics).newWorkTerms(PRODUCT_STREAM, item.payees);
         if (
             w.seller == address(0) || w.royaltyRate > Splits.DENOMINATOR
                 || w.feeShare >= Splits.DENOMINATOR
                 || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == w.seller))
         ) revert InvalidMintRequest();
         terms.saleKind = SaleKind.ENGLISH_AUCTION;
-        terms.currency = resolver.resolveCurrency(PRODUCT_STREAM, item.sale.currency);
+        // The adapter resolves `CURRENCY_DEFAULT` and checks the allowlist when it locks the
+        // currency (`PrimaryTerms`); an auction's price is zero, so the default is allowed.
+        terms.currency = item.sale.currency;
         terms.seller = w.seller;
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;

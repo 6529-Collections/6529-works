@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
@@ -11,8 +12,8 @@ import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamHandler } from "./StreamHandler.sol";
 
 /// @notice Stateful invariants of 6529 Stream and its records satellite: supply accounting,
-///         token-ID monotonicity and no reuse, royalty terms that move only with consent,
-///         and finalized records that never change.
+///         token-ID monotonicity and no reuse, per-collection serials, royalty terms that move
+///         only with fresh consent, and finalized records that never change.
 contract StreamInvariantTest is RecordsFixture {
     uint256 internal constant ITEMS = 40;
 
@@ -40,7 +41,16 @@ contract StreamInvariantTest is RecordsFixture {
         for (uint256 i; i < 4; ++i) {
             handler.addSpareRecord(_record(1000 + i));
         }
-        bytes4[] memory selectors = new bytes4[](15);
+        handler.addCollection(collectionId);
+        vm.startPrank(platform);
+        handler.addCollection(stream.createCollection("Second", keccak256("second")));
+        handler.addCollection(stream.createCollection("Third", keccak256("third")));
+        vm.stopPrank();
+        address[] memory sellers = new address[](2);
+        sellers[0] = seller;
+        sellers[1] = makeAddr("secondSeller");
+        handler.setEconomics(econ, ISplitFactory(address(splitFactory)), feeRecipient, sellers);
+        bytes4[] memory selectors = new bytes4[](16);
         selectors[0] = handler.mint.selector;
         selectors[1] = handler.burn.selector;
         selectors[2] = handler.deliver.selector;
@@ -56,6 +66,7 @@ contract StreamInvariantTest is RecordsFixture {
         selectors[12] = handler.warp.selector;
         selectors[13] = handler.settle.selector;
         selectors[14] = handler.forgeSettle.selector;
+        selectors[15] = handler.replayRoyalty.selector;
         targetContract(address(handler));
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
     }
@@ -89,14 +100,35 @@ contract StreamInvariantTest is RecordsFixture {
         stream.work(minted + 1);
     }
 
-    /// @dev The royalty receiver never changes after mint; the rate changes only through the
-    ///      consented, governed path the handler tracks.
+    /// @dev The royalty receiver is the one the handler derived from the mint's fee terms
+    ///      with the real split factory, and never changes; the rate changes only through the
+    ///      consented, governed path the handler tracks (replayed consents never apply).
     function invariant_royaltyTermsLocked() public view {
         uint256 minted = stream.totalMinted();
         for (uint256 id = 1; id <= minted; ++id) {
             if (handler.burned(id)) continue;
+            (address receiver, uint256 amount) = stream.royaltyInfo(id, 1 ether);
+            assertEq(receiver, handler.ghostReceiver(id));
             assertEq(stream.work(id).royaltyReceiver, handler.ghostReceiver(id));
             assertEq(stream.work(id).royaltyRate, handler.ghostRate(id));
+            assertEq(amount, uint256(handler.ghostRate(id)) * 1 ether / 100_000);
+        }
+        assertEq(handler.violations(), 0);
+    }
+
+    /// @dev Each collection numbers its works 1, 2, 3, ... in mint order, independently of
+    ///      the global IDs, and its count never drops on a burn.
+    function invariant_serialsPerCollection() public view {
+        for (uint256 i; i < handler.collectionCount(); ++i) {
+            uint256 c = handler.collections(i);
+            assertEq(stream.collection(c).minted, handler.ghostCollectionMinted(c));
+        }
+        uint256 minted = stream.totalMinted();
+        for (uint256 id = 1; id <= minted; ++id) {
+            if (handler.burned(id)) continue;
+            IStream.WorkCore memory w = stream.work(id);
+            assertEq(w.collectionId, handler.ghostCollection(id));
+            assertEq(w.serial, handler.ghostSerial(id));
         }
     }
 

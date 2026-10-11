@@ -14,11 +14,12 @@ import { IStream } from "../interfaces/IStream.sol";
 import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "../interfaces/types/ContentTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
-import { License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
+import { ItemKind, License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
+import { SpdxId } from "./SpdxId.sol";
 
 /// @title WorkRecords
 /// @notice The records satellite of 6529 Stream: descriptive records, media, licenses, seeds,
@@ -44,19 +45,13 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     uint256 private constant NONE = type(uint256).max;
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
+    /// @dev Locators per file the artist may add, and separately the platform (16 in all).
+    uint256 private constant LOCATOR_QUOTA = Limits.MAX_LOCATORS_PER_FILE / 2;
 
-    /// @notice A dependency lacks code or the required ERC-165 support, or is an EIP-7702
-    ///         delegated account.
-    error InvalidDependency(address dependency);
-    /// @notice The license identifier is not 1 to `Limits.MAX_LICENSE_ID_BYTES` bytes of
-    ///         lowercase `[a-z0-9.+-]`, or the deployment's default license is not CC0.
-    error InvalidLicense();
-    /// @notice Only a finalized work has a renderer pin to replace.
-    error WorkNotFinalized(uint256 tokenId);
-    /// @notice The file has no registered locator and is not on-chain complete.
-    error NoLocator(uint256 tokenId, bytes32 fileId);
-    /// @notice The record file still lacks chunks, so it cannot be finalized.
-    error RecordFileIncomplete(bytes32 recordFileId);
+    /// @notice A consented, governed royalty-rate change was applied (in the core and, for a
+    ///         linked master, its edition). `stateHash` is the work's new state hash.
+    /// @dev Local until `IWorkRecords` declares it (interface change request on PR #22).
+    event RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash);
 
     /// @dev Word 0: the pin, version, media count and flags. `roles` packs each file's role in
     ///      eight bits, file `i` at bits `8i`.
@@ -71,6 +66,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bytes32 recordFileId;
         bytes32 mediaHash;
         uint256 roles;
+    }
+
+    /// @dev How many of a file's locators the artist and the platform each added.
+    struct LocatorCounts {
+        uint8 artist;
+        uint8 platform;
     }
 
     /// @inheritdoc IWorkRecords
@@ -95,11 +96,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     mapping(uint256 collectionId => LocatorKind) private _collectionKinds;
     mapping(uint256 tokenId => mapping(bytes32 fileId => Locator[])) private _locators;
     mapping(uint256 tokenId => mapping(bytes32 fileId => uint256 indexPlusOne)) private _filePrefs;
+    mapping(uint256 tokenId => mapping(bytes32 fileId => LocatorCounts)) private _locatorCounts;
+    mapping(uint256 tokenId => mapping(bytes32 fileId => mapping(bytes32 uriHash => bool))) private
+        _locatorUris;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param stream_ The core token, which must bind this contract.
     /// @param contentStore_ The content store.
-    /// @param cc0 The default license, which must be CC0 (`cc0-1.0`).
+    /// @param cc0 The default license, which must be CC0 (`CC0-1.0` in any case), with its text
+    ///        registered in the content store.
     constructor(address authority_, address stream_, address contentStore_, License memory cc0)
         AccessManaged(authority_)
         EIP712(Typehashes.WORK_RECORDS_NAME, Typehashes.DOMAIN_VERSION)
@@ -110,8 +115,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         }
         _requireContract(contentStore_);
         if (
-            !_validSpdx(cc0.spdxId)
+            !SpdxId.isValid(cc0.spdxId)
                 || WorksHashing.licenseKey(cc0.spdxId) != WorksHashing.CC0_LICENSE_KEY
+                || IContentStore(contentStore_).sha256Of(cc0.textFileId) == 0
         ) {
             revert InvalidLicense();
         }
@@ -126,6 +132,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // --------------------------------------------------------------------------------- records
 
     /// @inheritdoc IWorkRecords
+    /// @dev Trust obligation: the media commitments checked here (1 to 32 files, the PRIMARY
+    ///      first and alone, its SHA-256 equal to `item.contentHash`, every declaration matching
+    ///      the content store) are not checked at mint, so a mis-committed item mints and can
+    ///      never open. The curation signer's tooling MUST simulate `openRecord` for an item
+    ///      before attesting it. The license ID is checked at mint, by the core, with the same
+    ///      `SpdxId` rule; a non-default license's text must be registered in the content store.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external
     {
@@ -133,19 +145,20 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (r.opened) revert RecordAlreadyOpen(tokenId);
         uint256 files = media.length;
         if (
-            WorksHashing.itemHashCalldata(item) != IStream(stream).work(tokenId).itemHash
-                || files == 0 || files > Limits.MAX_MEDIA_FILES
-                || WorksHashing.mediaHash(media) != item.mediaHash
-                || media[0].sha256Hash != item.contentHash || !_validSpdx(item.license.spdxId)
+            WorksHashing.itemHashCalldata(item) != _itemHashOf(tokenId) || files == 0
+                || files > Limits.MAX_MEDIA_FILES || WorksHashing.mediaHash(media) != item.mediaHash
+                || media[0].sha256Hash != item.contentHash
         ) revert InvalidRecordData(tokenId);
-        _requireRecordFile(item.recordFileId);
-        uint256 roles;
+        _checkRecordFile(item.recordFileId);
+        uint256 roles = 0;
         bytes32[32] storage list = _media[tokenId];
+        IContentStore store = IContentStore(contentStore);
         for (uint256 i; i < files; ++i) {
             MediaFile calldata file = media[i];
-            (bool known, bytes32 declared) = _sha256Of(file.fileId);
+            // Reverts with the store's `ContentFileUnknown` for an unregistered file.
             if (
-                !known || declared != file.sha256Hash || (file.role == FileRole.PRIMARY) != (i == 0)
+                store.sha256Of(file.fileId) != file.sha256Hash
+                    || (file.role == FileRole.PRIMARY) != (i == 0)
             ) revert InvalidRecordData(tokenId);
             list[i] = file.fileId;
             roles |= uint256(file.role) << (8 * i);
@@ -158,6 +171,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         r.mediaHash = item.mediaHash;
         r.roles = roles;
         if (!_isDefaultLicense(item.license)) {
+            _requireLicenseText(item.license.textFileId);
             r.customLicense = true;
             _licenses[tokenId] = item.license;
         }
@@ -173,7 +187,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         _onlyArtist(tokenId);
         if (recordFileId == r.recordFileId) return;
         _checkState(tokenId, expectedStateHash);
-        _requireRecordFile(recordFileId);
+        _checkRecordFile(recordFileId);
         r.recordFileId = recordFileId;
         ++r.version;
         emit RecordSet(tokenId, recordFileId, workStateHash(tokenId));
@@ -181,16 +195,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev The record file must be complete in the content store, so a finalized record is
-    ///      always readable on-chain.
+    /// @dev `openRecord` and `setRecord` already admit only a complete record file, and stored
+    ///      chunks are permanent; the check is repeated here because finalize is what promises
+    ///      a readable record, and on a single chunk it is cheap.
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external {
         RecordData storage r = _open(tokenId);
         if (r.finalized) revert WorkIsFinalized(tokenId);
         _onlyArtist(tokenId);
         _checkState(tokenId, expectedStateHash);
-        if (!IContentStore(contentStore).isComplete(r.recordFileId)) {
-            revert RecordFileIncomplete(r.recordFileId);
-        }
+        _checkRecordFile(r.recordFileId);
         address renderer = IStream(stream).defaultRenderer();
         r.renderer = renderer;
         r.finalized = true;
@@ -270,7 +283,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
                 r.recordFileId,
                 WorksHashing.licenseKey(license.spdxId),
                 license.textFileId,
-                core.work(tokenId).royaltyRate,
+                _royaltyRateOf(tokenId),
                 r.finalized ? r.renderer : core.defaultRenderer()
             )
         );
@@ -284,12 +297,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @inheritdoc IWorkRecords
     function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
         _open(tokenId);
-        IStream.WorkCore memory core = IStream(stream).work(tokenId);
-        policy = core.seedPolicy;
+        bytes32 itemHash;
+        (itemHash,,,, policy,) = _core(tokenId);
         if (policy == SeedPolicy.ARTIST) {
             seed = _seeds[tokenId];
         } else if (policy == SeedPolicy.VRF) {
-            seed = IEntropyModule(entropyModule).seedOf(core.itemHash);
+            seed = IEntropyModule(entropyModule).seedOf(itemHash);
         }
     }
 
@@ -312,6 +325,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         License memory previous = licenseOf(tokenId);
         bytes32 nextKey = _relicenseKey(tokenId, previous, next);
         if (nextKey == 0) return;
+        _requireLicenseText(next.textFileId);
         bytes32 structHash =
             _relicenseHash(tokenId, nextKey, next.textFileId, expectedStateHash, deadline);
         _checkConsents(tokenId, item, structHash, deadline, partySignatures);
@@ -324,8 +338,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev An unchanged rate is a no-op. The core emits `RoyaltyRateChanged`; a linked
-    ///      edition's rate follows its master's.
+    /// @dev An unchanged rate is a no-op. The version bumps before the external calls; the core
+    ///      emits `RoyaltyRateChanged`, a linked edition's rate follows its master's, and this
+    ///      contract emits `RoyaltyRateSet` and refreshes the metadata.
     function setRoyaltyRate(
         uint256 tokenId,
         uint32 rate,
@@ -335,8 +350,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bytes[] calldata partySignatures
     ) external restricted {
         RecordData storage r = _open(tokenId);
-        IStream core = IStream(stream);
-        if (rate == core.work(tokenId).royaltyRate) return;
+        (,,,,, uint32 previous) = _core(tokenId);
+        if (rate == previous) return;
         bytes32 structHash = keccak256(
             abi.encode(
                 Typehashes.ROYALTY_RATE_CHANGE,
@@ -347,10 +362,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             )
         );
         _checkConsents(tokenId, item, structHash, deadline, partySignatures);
-        core.setRoyaltyRate(tokenId, rate);
-        (address editions,) = core.editionOf(tokenId);
-        if (editions != address(0)) IEditions(editions).setRoyaltyRate(tokenId, rate);
         ++r.version;
+        _applyRate(tokenId, previous, rate);
     }
 
     /// @inheritdoc IWorkRecords
@@ -399,14 +412,26 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // ---------------------------------------------------------------------------- locators
 
     /// @inheritdoc IWorkRecords
+    /// @dev The artist and the platform each have a quota of `MAX_LOCATORS_PER_FILE / 2` (8)
+    ///      locators per file, so neither can exhaust the other's; a URI already registered for
+    ///      the file is refused.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
         _open(tokenId);
-        if (!_isArtist(tokenId, msg.sender)) _checkCanCall(msg.sender, _msgData());
+        bool byArtist = _isArtist(tokenId, msg.sender);
+        if (!byArtist) _checkCanCall(msg.sender, _msgData());
         _requireMedia(tokenId, fileId);
         _checkUri(locator);
+        LocatorCounts storage counts = _locatorCounts[tokenId][fileId];
+        mapping(bytes32 => bool) storage seen = _locatorUris[tokenId][fileId];
+        bytes32 uriHash = keccak256(bytes(locator.uri));
+        if ((byArtist ? counts.artist : counts.platform) >= LOCATOR_QUOTA || seen[uriHash]) {
+            revert InvalidLocator();
+        }
+        seen[uriHash] = true;
+        if (byArtist) ++counts.artist;
+        else ++counts.platform;
         Locator[] storage list = _locators[tokenId][fileId];
         uint256 index = list.length;
-        if (index >= Limits.MAX_LOCATORS_PER_FILE) revert InvalidLocator();
         list.push(locator);
         emit LocatorAdded(tokenId, fileId, index, locator);
         _refresh(tokenId);
@@ -420,29 +445,30 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     /// @dev Every locator of a file is a copy of that one file, so any choice among them is
-    ///      hash-equal (ADR 0001 section 8). With no registered locator, a complete file resolves
-    ///      to the implicit ONCHAIN copy; otherwise this reverts with `NoLocator`.
+    ///      hash-equal (ADR 0001 section 8). ONCHAIN matches on the work's stored
+    ///      `onChainComplete` flag (`syncOnChain`), never on a content-store completeness scan,
+    ///      which costs a read per chunk. With no registered locator, a synced work's file
+    ///      resolves to the implicit ONCHAIN copy; otherwise the result is the empty locator
+    ///      (kind NONE, index `type(uint256).max`).
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view
         returns (Locator memory locator, uint256 index)
     {
-        _open(tokenId);
+        bool onChain = _open(tokenId).onChainComplete;
         _requireMedia(tokenId, fileId);
         Locator[] storage list = _locators[tokenId][fileId];
         index = _filePrefs[tokenId][fileId];
         bool found = index != 0;
         if (found) index -= 1;
         if (!found) {
-            uint256 collectionId = IStream(stream).work(tokenId).collectionId;
-            (found, index) = _firstOfKind(list, fileId, _collectionKinds[collectionId]);
+            (,, uint256 collectionId,,,) = _core(tokenId);
+            (found, index) = _firstOfKind(list, onChain, _collectionKinds[collectionId]);
         }
-        if (!found) (found, index) = _firstOfKind(list, fileId, preferredKind);
+        if (!found) (found, index) = _firstOfKind(list, onChain, preferredKind);
         if (!found && list.length != 0) (found, index) = (true, 0);
-        if (!found && IContentStore(contentStore).isComplete(fileId)) {
-            (found, index) = (true, NONE);
-        }
-        if (!found) revert NoLocator(tokenId, fileId);
+        if (!found && onChain) (found, index) = (true, NONE);
+        if (!found) return (Locator(LocatorKind.NONE, ""), NONE);
         locator = index == NONE ? Locator(LocatorKind.ONCHAIN, "") : list[index];
     }
 
@@ -458,7 +484,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         external
         restricted
     {
-        IStream(stream).collection(collectionId); // reverts with `UnknownCollection`
+        // Collection IDs run from 1 to the count and are never removed.
+        if (collectionId == 0 || collectionId > IStream(stream).collectionCount()) {
+            revert IStream.UnknownCollection(collectionId);
+        }
         emit CollectionPreferredKindSet(collectionId, _collectionKinds[collectionId], kind);
         _collectionKinds[collectionId] = kind;
         _refreshAll();
@@ -504,7 +533,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         nextKey = WorksHashing.licenseKey(next.spdxId);
         if (nextKey == previousKey && next.textFileId == previous.textFileId) return 0;
         if (previousKey == WorksHashing.CC0_LICENSE_KEY) revert LicenseIrrevocable(tokenId);
-        if (!_validSpdx(next.spdxId)) revert InvalidLicense();
+        if (!SpdxId.isValid(next.spdxId)) revert InvalidLicense();
     }
 
     function _relicenseHash(
@@ -518,18 +547,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         return keccak256(
             abi.encode(Typehashes.RELICENSE, tokenId, licenseKey, textFileId, state, deadline)
         );
-    }
-
-    /// @dev 1 to `MAX_LICENSE_ID_BYTES` bytes of lowercase `[a-z0-9.+-]` (normalised SPDX).
-    function _validSpdx(string memory spdxId) private pure returns (bool) {
-        bytes memory id = bytes(spdxId);
-        if (id.length == 0 || id.length > Limits.MAX_LICENSE_ID_BYTES) return false;
-        for (uint256 i; i < id.length; ++i) {
-            bytes1 c = id[i];
-            if (!((c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c == "." || c == "+"
-                        || c == "-")) return false;
-        }
-        return true;
     }
 
     function _open(uint256 tokenId) private view returns (RecordData storage r) {
@@ -566,7 +583,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         uint64 deadline,
         bytes[] calldata signatures
     ) private view {
-        if (WorksHashing.itemHashCalldata(item) != IStream(stream).work(tokenId).itemHash) {
+        if (WorksHashing.itemHashCalldata(item) != _itemHashOf(tokenId)) {
             revert InvalidRecordData(tokenId);
         }
         uint256 parties = item.parties.length;
@@ -591,26 +608,85 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             && keccak256(bytes(license.spdxId)) == keccak256(bytes(_cc0SpdxId));
     }
 
-    /// @dev The content store's declared SHA-256 of `fileId`, or `known = false` when the store
-    ///      reports the file unknown. Any other failure (including running out of gas)
-    ///      propagates, so a failed read never passes for an unregistered file.
-    function _sha256Of(bytes32 fileId) private view returns (bool known, bytes32 sha) {
-        try IContentStore(contentStore).sha256Of(fileId) returns (bytes32 declared) {
-            return (true, declared);
-        } catch (bytes memory reason) {
-            // Only the selector is compared, so truncating to four bytes is intended.
-            // forge-lint: disable-next-line(unsafe-typecast)
-            if (reason.length < 4 || bytes4(reason) != IContentStore.ContentFileUnknown.selector) {
-                assembly ("memory-safe") {
-                    revert(add(reason, 0x20), mload(reason))
-                }
-            }
-        }
+    /// @dev The core's per-work facts (`IStream.coreOf`); reverts with `UnknownWork` for a
+    ///      burned or unminted token.
+    function _core(uint256 tokenId)
+        private
+        view
+        returns (
+            bytes32 itemHash,
+            uint256 artistId,
+            uint256 collectionId,
+            ItemKind kind,
+            SeedPolicy policy,
+            uint32 rate
+        )
+    {
+        (itemHash, artistId, collectionId, kind, policy, rate) = IStream(stream).coreOf(tokenId);
     }
 
-    function _requireRecordFile(bytes32 fileId) private view {
-        (bool known,) = _sha256Of(fileId);
-        if (!known) revert UnknownRecordFile(fileId);
+    /// @dev The work's linked edition (`IStream.editionOf`), or zero.
+    function _edition(uint256 tokenId) private view returns (address editions, uint256 editionId) {
+        (editions, editionId) = IStream(stream).editionOf(tokenId);
+    }
+
+    function _itemHashOf(uint256 tokenId) private view returns (bytes32 itemHash) {
+        (itemHash,,,,,) = _core(tokenId);
+    }
+
+    function _royaltyRateOf(uint256 tokenId) private view returns (uint32 rate) {
+        (,,,,, rate) = _core(tokenId);
+    }
+
+    /// @dev A license's text must be a registered content-store file. An unknown file reverts
+    ///      with the store's `ContentFileUnknown`; a registered one has a nonzero SHA-256.
+    function _requireLicenseText(bytes32 textFileId) private view {
+        if (IContentStore(contentStore).sha256Of(textFileId) == 0) revert InvalidLicense();
+    }
+
+    /// @dev Applies a consented rate in the core and a linked edition, then reports it.
+    function _applyRate(uint256 tokenId, uint32 previous, uint32 rate) private {
+        IStream(stream).setRoyaltyRate(tokenId, rate);
+        (address editions, uint256 editionId) = _edition(tokenId);
+        if (editions != address(0)) IEditions(editions).setRoyaltyRate(editionId, rate);
+        emit RoyaltyRateSet(tokenId, previous, rate, workStateHash(tokenId));
+        _refresh(tokenId);
+    }
+
+    /// @dev The record file's structural bounds: registered, a single chunk of at most
+    ///      `Limits.MAX_RECORD_BYTES`, `Identity` encoding, and complete (that one chunk stored).
+    ///      Each check is O(1). The JSON itself is not parsed here: the renderer validates it and
+    ///      falls back to core-only metadata for an invalid record. Only the store's
+    ///      `ContentFileUnknown` reads as unregistered; any other store failure propagates.
+    function _checkRecordFile(bytes32 fileId) private view {
+        (bool ok, bytes memory info) =
+            contentStore.staticcall(abi.encodeCall(IContentStore.fileInfo, (fileId)));
+        if (!ok) {
+            // Only the selector is compared, so truncating to four bytes is intended.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            if (info.length >= 4 && bytes4(info) == IContentStore.ContentFileUnknown.selector) {
+                revert UnknownRecordFile(fileId);
+            }
+            assembly ("memory-safe") {
+                revert(add(info, 0x20), mload(info))
+            }
+        }
+        // `FileInfo` comes back as one dynamic tuple: offset, sha256Hash, length, chunkCount,
+        // encoding, then the MIME type. The trusted store's encoding is read in place.
+        uint256 length;
+        uint256 chunkCount;
+        uint256 encoding;
+        if (info.length < 0xc0) revert UnknownRecordFile(fileId);
+        assembly ("memory-safe") {
+            length := mload(add(info, 0x60))
+            chunkCount := mload(add(info, 0x80))
+            encoding := mload(add(info, 0xa0))
+        }
+        if (
+            chunkCount != 1 || length > Limits.MAX_RECORD_BYTES
+                || encoding != uint256(IContentStore.Encoding.Identity)
+                || !IContentStore(contentStore).isComplete(fileId)
+        ) revert UnknownRecordFile(fileId);
     }
 
     function _requireMedia(uint256 tokenId, bytes32 fileId) private view {
@@ -626,12 +702,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      after the kind's scheme: `ar://` or `ipfs://` (D11).
     function _checkUri(Locator calldata locator) private pure {
         bytes calldata uri = bytes(locator.uri);
-        uint256 start;
-        if (locator.kind == LocatorKind.ARWEAVE) start = _scheme(uri, "ar://");
-        else if (locator.kind == LocatorKind.IPFS) start = _scheme(uri, "ipfs://");
-        if (start == 0 || uri.length == start || uri.length > Limits.MAX_URI_BYTES) {
-            revert InvalidLocator();
+        uint256 start = 0;
+        if (locator.kind == LocatorKind.ARWEAVE && uri.length > 5 && bytes5(uri[:5]) == "ar://") {
+            start = 5;
+        } else if (
+            locator.kind == LocatorKind.IPFS && uri.length > 7 && bytes7(uri[:7]) == "ipfs://"
+        ) {
+            start = 7;
         }
+        if (start == 0 || uri.length > Limits.MAX_URI_BYTES) revert InvalidLocator();
         for (uint256 i = start; i < uri.length; ++i) {
             bytes1 c = uri[i];
             if (c < 0x21 || c > 0x7e || c == '"' || c == "\\" || c == "<" || c == ">") {
@@ -640,24 +719,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         }
     }
 
-    /// @dev The scheme's length if `uri` starts with it, else zero.
-    function _scheme(bytes calldata uri, bytes memory scheme) private pure returns (uint256) {
-        uint256 n = scheme.length;
-        if (uri.length < n || keccak256(uri[:n]) != keccak256(scheme)) return 0;
-        return n;
-    }
-
-    /// @dev The first locator of `kind`, or the implicit ONCHAIN one (`NONE`) when the file is
-    ///      complete. NONE as a kind never matches.
-    function _firstOfKind(Locator[] storage list, bytes32 fileId, LocatorKind kind)
+    /// @dev The first locator of `kind`, or the implicit ONCHAIN one (`NONE`) when the work is
+    ///      on-chain complete. NONE as a kind never matches.
+    function _firstOfKind(Locator[] storage list, bool onChain, LocatorKind kind)
         private
         view
         returns (bool, uint256)
     {
         if (kind == LocatorKind.NONE) return (false, 0);
-        if (kind == LocatorKind.ONCHAIN) {
-            return (IContentStore(contentStore).isComplete(fileId), NONE);
-        }
+        if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
         for (uint256 i; i < list.length; ++i) {
             if (list[i].kind == kind) return (true, i);
         }
@@ -667,9 +737,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev ERC-4906 through the core, and a linked edition master's edition through 6529
     ///      Editions.
     function _refresh(uint256 tokenId) private {
-        IStream core = IStream(stream);
-        core.emitMetadataUpdate(tokenId, tokenId);
-        (address editions,) = core.editionOf(tokenId);
+        IStream(stream).emitMetadataUpdate(tokenId, tokenId);
+        (address editions,) = _edition(tokenId);
         if (editions != address(0)) IEditions(editions).notifyMasterUpdated(tokenId);
     }
 

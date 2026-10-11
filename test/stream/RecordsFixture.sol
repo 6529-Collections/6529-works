@@ -32,6 +32,11 @@ abstract contract RecordsFixture is StreamFixture {
         collaborator = vm.addr(collaboratorKey);
         artists.register(collaborator);
         store = new ContentStore();
+        string[6] memory texts =
+            ["cc0-1.0", "CC0-1.0", "mit", "cc-by-4.0", "CC-BY-4.0", "cc-by-sa-4.0"];
+        for (uint256 i; i < texts.length; ++i) {
+            _registerText(bytes(texts[i]));
+        }
         records =
             new WorkRecords(address(manager), address(stream), address(store), _license("cc0-1.0"));
         stream.bindWorkRecords(address(records));
@@ -59,6 +64,16 @@ abstract contract RecordsFixture is StreamFixture {
             hashes, data.length, IContentStore.Encoding.Identity, mime, sha256(data)
         );
         if (upload) store.writeChunk(data);
+    }
+
+    /// @dev Registers (without uploading) the `text/plain` file `_textFileId(text)` names.
+    function _registerText(bytes memory text) internal returns (bytes32 fileId) {
+        bytes32[] memory hashes = new bytes32[](1);
+        hashes[0] = keccak256(text);
+        fileId = store.registerManifest(
+            hashes, text.length, IContentStore.Encoding.Identity, "text/plain", keccak256(text)
+        );
+        assertEq(fileId, _textFileId(text));
     }
 
     function _mediaBytes(uint256 salt) internal pure returns (bytes memory) {
@@ -149,5 +164,13 @@ abstract contract RecordsFixture is StreamFixture {
         sigs = new bytes[](2);
         sigs[0] = _sign(artistKey, structHash);
         sigs[1] = _sign(collaboratorKey, structHash);
+    }
+
+    function _royaltyHash(uint256 tokenId, uint32 rate, bytes32 state, uint64 deadline)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline));
     }
 }

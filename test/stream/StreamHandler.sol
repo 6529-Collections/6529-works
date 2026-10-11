@@ -4,7 +4,10 @@ pragma solidity ^0.8.24;
 import { CommonBase } from "forge-std/Base.sol";
 import { StdCheats } from "forge-std/StdCheats.sol";
 import { StdUtils } from "forge-std/StdUtils.sol";
+import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import {
     MoveAuthorization,
@@ -14,18 +17,27 @@ import {
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
-import { MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
+import { MockEconomics, MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 
-/// @notice Drives 6529 Stream and its records satellite through random sequences of mints,
-///         burns, transfers, record edits, finalizes, attacks on finalized works, consented and
-///         unconsented royalty changes and renderer swaps, keeping ghost state for the
-///         invariants.
+/// @notice Drives 6529 Stream and its records satellite through random sequences of mints
+///         (with random fee terms, into random collections), burns, transfers, record edits,
+///         finalizes, attacks on finalized works, consented, unconsented and replayed royalty
+///         changes and renderer swaps, keeping ghost state for the invariants.
 /// @dev Every action either succeeds or is skipped, so `fail_on_revert` holds; an action that
 ///      must revert is checked with try/catch and counted as a violation if it does not.
 contract StreamHandler is CommonBase, StdCheats, StdUtils {
     struct Snapshot {
         bytes32 recordFileId;
         address renderer;
+    }
+
+    /// @dev The last consent bundle applied to a work, kept to replay it later.
+    struct Consent {
+        uint32 rate;
+        bytes32 state;
+        uint64 deadline;
+        bytes artistSig;
+        bytes collaboratorSig;
     }
 
     Stream internal immutable stream;
@@ -42,6 +54,11 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     bytes[] internal _items;
     bytes32[] internal _spareRecords;
     address[] public actors;
+    uint256[] public collections;
+    address[] internal _sellers;
+    MockEconomics internal _econ;
+    ISplitFactory internal _factory;
+    address internal _feeRecipient;
 
     uint256 public nextItem;
     uint256 public ghostMinted;
@@ -54,6 +71,10 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     mapping(uint256 => bool) public finalized;
     mapping(uint256 => bool) public settled;
     mapping(uint256 => Snapshot) internal _final;
+    mapping(uint256 => Consent) internal _lastConsent;
+    mapping(uint256 => uint256) public ghostCollection;
+    mapping(uint256 => uint256) public ghostSerial;
+    mapping(uint256 => uint256) public ghostCollectionMinted;
 
     constructor(
         Stream stream_,
@@ -89,6 +110,28 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         _spareRecords.push(fileId);
     }
 
+    function addCollection(uint256 collectionId) external {
+        collections.push(collectionId);
+    }
+
+    function collectionCount() external view returns (uint256) {
+        return collections.length;
+    }
+
+    /// @dev The economics mock whose terms `mint` randomizes, the real split factory for the
+    ///      independent receiver ghost, and the sellers and fee recipient to draw from.
+    function setEconomics(
+        MockEconomics econ,
+        ISplitFactory factory,
+        address feeRecipient,
+        address[] calldata sellers
+    ) external {
+        _econ = econ;
+        _factory = factory;
+        _feeRecipient = feeRecipient;
+        _sellers = sellers;
+    }
+
     function actorCount() external view returns (uint256) {
         return actors.length;
     }
@@ -99,15 +142,31 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
 
     // -------------------------------------------------------------------------------- actions
 
-    function mint(uint256) external {
+    /// @dev Mints the next item into a random collection under random fee terms (no fee a
+    ///      quarter of the time). The receiver ghost is computed here from those terms with the
+    ///      real split factory, independently of Stream's derivation.
+    function mint(uint256 seed, uint32 feeShare, uint32 rate) external {
         if (nextItem >= _items.length) return;
-        (PackageItem memory item,) = _item(nextItem++);
+        uint256 index = nextItem++;
+        (PackageItem memory item, MediaFile[] memory media) = _item(index);
+        uint256 collectionId = collections[seed % collections.length];
+        item.collectionId = collectionId;
+        _items[index] = abi.encode(item, media);
+
+        address sellerWallet = _sellers[(seed >> 8) % _sellers.length];
+        feeShare = (seed >> 16) % 4 == 0 ? 0 : uint32(bound(feeShare, 1, 99_999));
+        rate = uint32(bound(rate, 0, 100_000));
+        address fee = feeShare == 0 ? address(0) : _feeRecipient;
+        _econ.setTerms(WorkTerms(sellerWallet, fee, feeShare, address(0), rate));
+
         uint256 expected = stream.totalMinted() + 1;
         (uint256 tokenId,) = auction.start(stream, _request(item));
         if (tokenId != expected) ++violations;
         ++ghostMinted;
-        ghostReceiver[tokenId] = stream.work(tokenId).royaltyReceiver;
-        ghostRate[tokenId] = stream.work(tokenId).royaltyRate;
+        ghostReceiver[tokenId] = _expectedReceiver(sellerWallet, fee, feeShare);
+        ghostRate[tokenId] = rate;
+        ghostCollection[tokenId] = collectionId;
+        ghostSerial[tokenId] = ++ghostCollectionMinted[collectionId];
     }
 
     function burn(uint256 seed) external {
@@ -218,6 +277,26 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, rate, item, state, deadline, sigs);
         ghostRate[tokenId] = rate;
+        _lastConsent[tokenId] = Consent(rate, state, deadline, sigs[0], sigs[1]);
+    }
+
+    /// @dev Re-submits a work's last applied consents (stale after the version bump). Any
+    ///      effect is a violation: the state hash must not move.
+    function replayRoyalty(uint256 seed) external {
+        (bool ok, uint256 tokenId) = _live(seed);
+        if (!ok || !opened[tokenId]) return;
+        Consent memory c = _lastConsent[tokenId];
+        if (c.state == bytes32(0)) return;
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = c.artistSig;
+        sigs[1] = c.collaboratorSig;
+        (PackageItem memory item,) = _item(tokenId - 1);
+        bytes32 before = records.workStateHash(tokenId);
+        vm.prank(governor);
+        try records.setRoyaltyRate(tokenId, c.rate, item, c.state, c.deadline, sigs) {
+            // Only an unchanged rate (a no-op) may return without reverting.
+            if (records.workStateHash(tokenId) != before) ++violations;
+        } catch { }
     }
 
     /// @dev A royalty change by governance alone, without the parties' consent, must revert.
@@ -250,7 +329,8 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         (, MediaFile[] memory media) = _item(tokenId - 1);
         bytes32 file = media[0].fileId;
         uint256 n = records.locators(tokenId, file).length;
-        if (n >= 16) return;
+        // The platform's quota is 8 per file.
+        if (n >= 8) return;
         vm.prank(platform);
         records.addLocator(
             tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", vm.toString(n)))
@@ -290,6 +370,20 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
                 keccak256("root"), item, new bytes32[](0), MoveAuthorization(1, 0, new bytes(0))
             )
         );
+    }
+
+    /// @dev The seller with no fee, else the salt-zero wallet for the canonical payee list.
+    function _expectedReceiver(address sellerWallet, address fee, uint32 feeShare)
+        internal
+        view
+        returns (address)
+    {
+        if (feeShare == 0) return sellerWallet;
+        ISplitWallet.Payee[] memory payees = new ISplitWallet.Payee[](2);
+        ISplitWallet.Payee memory a = ISplitWallet.Payee(0, fee, feeShare);
+        ISplitWallet.Payee memory b = ISplitWallet.Payee(0, sellerWallet, 100_000 - feeShare);
+        (payees[0], payees[1]) = fee < sellerWallet ? (a, b) : (b, a);
+        return _factory.walletFor(payees, bytes32(0));
     }
 
     function _sign(uint256 key, bytes32 structHash) internal view returns (bytes memory) {

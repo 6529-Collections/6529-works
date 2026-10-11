@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
 import { ItemKind, License, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -24,7 +27,7 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.stream(), address(stream));
         assertEq(records.artistRegistry(), address(artists));
         assertEq(records.contentStore(), address(store));
-        assertEq(records.cc0TextFileId(), keccak256("cc0-1.0"));
+        assertEq(records.cc0TextFileId(), _textFileId("cc0-1.0"));
         assertEq(records.entropyModule(), address(entropy));
         assertTrue(records.supportsInterface(type(IWorkRecords).interfaceId));
         assertTrue(records.supportsInterface(0x01ffc9a7));
@@ -41,21 +44,32 @@ contract WorkRecordsTest is RecordsFixture {
     function test_constructor_rejects() public {
         address eoa = makeAddr("eoa");
         License memory cc0 = _license("cc0-1.0");
-        vm.expectRevert(abi.encodeWithSelector(WorkRecords.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidDependency.selector, eoa));
         new WorkRecords(address(manager), eoa, address(store), cc0);
         vm.expectRevert(
-            abi.encodeWithSelector(WorkRecords.InvalidDependency.selector, address(store))
+            abi.encodeWithSelector(IWorkRecords.InvalidDependency.selector, address(store))
         );
         new WorkRecords(address(manager), address(store), address(store), cc0);
-        vm.expectRevert(abi.encodeWithSelector(WorkRecords.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidDependency.selector, eoa));
         new WorkRecords(address(manager), address(stream), eoa, cc0);
-        vm.expectRevert(WorkRecords.InvalidLicense.selector);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         new WorkRecords(address(manager), address(stream), address(store), _license("mit"));
-        // Identifiers are normalised to lowercase, so an uppercase CC0 is rejected.
-        vm.expectRevert(WorkRecords.InvalidLicense.selector);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        new WorkRecords(address(manager), address(stream), address(store), _license("cc0 1.0"));
+        // The CC0 text must be a registered content-store file.
+        bytes32 unknown = keccak256("unregistered cc0 text");
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
         new WorkRecords(
-            address(manager), address(stream), address(store), License("CC0-1.0", bytes32(0))
+            address(manager), address(stream), address(store), License("cc0-1.0", unknown)
         );
+    }
+
+    /// @dev SPDX IDs keep their original case; only the license key is lowercased.
+    function test_constructor_keepsCc0Case() public {
+        WorkRecords other = new WorkRecords(
+            address(manager), address(stream), address(store), _license("CC0-1.0")
+        );
+        assertEq(other.cc0TextFileId(), _license("CC0-1.0").textFileId);
     }
 
     // ------------------------------------------------------------------------ openRecord
@@ -131,11 +145,15 @@ contract WorkRecordsTest is RecordsFixture {
         item = _recordsItem(2, media);
         _expectBadOpen(_mint(item), item, media);
 
-        // An unregistered file.
+        // An unregistered file: the store's own error.
         media = _single(3, false);
         media[0].fileId = keccak256("unregistered");
         item = _recordsItem(3, media);
-        _expectBadOpen(_mint(item), item, media);
+        uint256 tokenId = _mint(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, media[0].fileId)
+        );
+        records.openRecord(tokenId, item, media);
 
         // The primary is not first, or there are two.
         media = new MediaFile[](2);
@@ -156,15 +174,37 @@ contract WorkRecordsTest is RecordsFixture {
         item = _recordsItem(6, media);
         _expectBadOpen(_mint(item), item, media);
 
-        // An invalid license identifier: empty, or not normalised lowercase.
-        media = _single(7, false);
-        item = _recordsItem(7, media);
-        item.license = _license("");
-        _expectBadOpen(_mint(item), item, media);
-        media = _single(8, false);
-        item = _recordsItem(8, media);
-        item.license = License("CC-BY-4.0", bytes32(0));
-        _expectBadOpen(_mint(item), item, media);
+        // An invalid license identifier cannot reach `openRecord`: the core refuses it at mint
+        // (`Stream.t.sol`, `test_mint_revertsForStreamRuleBreaks`).
+    }
+
+    /// @dev A non-default license's text must be registered in the content store.
+    function test_openRecord_needsRegisteredLicenseText() public {
+        MediaFile[] memory media = _single(1, false);
+        PackageItem memory item = _recordsItem(1, media);
+        bytes32 unknown = keccak256("unregistered text");
+        item.license = License("MIT", unknown);
+        uint256 tokenId = _mint(item);
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
+        records.openRecord(tokenId, item, media);
+
+        media = _single(2, false);
+        item = _recordsItem(2, media);
+        item.license = License("MIT", _registerText("MIT text"));
+        tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        assertEq(records.licenseOf(tokenId).textFileId, item.license.textFileId);
+    }
+
+    /// @dev The SPDX ID is stored in its original case; the key is of its lowercase form.
+    function test_openRecord_keepsLicenseCase() public {
+        MediaFile[] memory media = _single(1, false);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = _license("CC-BY-4.0");
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        assertEq(records.licenseOf(tokenId).spdxId, "CC-BY-4.0");
+        assertEq(records.record(tokenId).licenseKey, keccak256("cc-by-4.0"));
     }
 
     /// @dev Only the store's "unknown file" error reads as unregistered; any other store
@@ -188,6 +228,86 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, item.recordFileId)
         );
         records.openRecord(tokenId, item, media);
+    }
+
+    /// @dev Registers a record manifest over `chunks` with `encoding`, uploading them if asked.
+    function _recordFile(bytes[] memory chunks, IContentStore.Encoding encoding, bool upload)
+        internal
+        returns (bytes32)
+    {
+        bytes32[] memory hashes = new bytes32[](chunks.length);
+        uint256 length;
+        for (uint256 i; i < chunks.length; ++i) {
+            hashes[i] = keccak256(chunks[i]);
+            length += chunks[i].length;
+            if (upload) store.writeChunk(chunks[i]);
+        }
+        return store.registerManifest(
+            hashes, length, encoding, "application/json", keccak256(abi.encode(hashes))
+        );
+    }
+
+    function _oneChunk(bytes memory data) internal pure returns (bytes[] memory chunks) {
+        chunks = new bytes[](1);
+        chunks[0] = data;
+    }
+
+    /// @dev `recordFileId` is refused both by `setRecord` and by `openRecord`.
+    function _expectBadRecord(uint256 salt, bytes32 recordFileId) internal {
+        (uint256 tokenId,) = _work(salt);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, recordFileId)
+        );
+        records.setRecord(tokenId, recordFileId, state);
+
+        MediaFile[] memory media = _single(salt + 1000, false);
+        PackageItem memory item = _recordsItem(salt + 1000, media);
+        item.recordFileId = recordFileId;
+        tokenId = _mint(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, recordFileId)
+        );
+        records.openRecord(tokenId, item, media);
+    }
+
+    /// @dev The structural record bounds, at open and at every set: one complete `Identity`
+    ///      chunk of at most `MAX_RECORD_BYTES`.
+    function test_recordBounds_rejectStructuralBreaks() public {
+        bytes memory json = '{"name":"r"}';
+        // Registered, not stored yet.
+        _expectBadRecord(1, _recordFile(_oneChunk(json), IContentStore.Encoding.Identity, false));
+        // Stored, but not `Identity` encoding.
+        _expectBadRecord(2, _recordFile(_oneChunk(json), IContentStore.Encoding.Gzip, true));
+        _expectBadRecord(3, _recordFile(_oneChunk(json), IContentStore.Encoding.Base64, true));
+        // Two stored chunks, and so longer than `MAX_RECORD_BYTES`.
+        bytes[] memory two = new bytes[](2);
+        two[0] = new bytes(Limits.MAX_RECORD_BYTES);
+        two[1] = "}";
+        _expectBadRecord(4, _recordFile(two, IContentStore.Encoding.Identity, true));
+    }
+
+    /// @dev A full chunk is accepted, and the JSON is not parsed here: the renderer validates
+    ///      it and falls back to core-only metadata for an invalid record.
+    function test_recordBounds_acceptCompleteSingleChunk() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 full = _recordFile(
+            _oneChunk(new bytes(Limits.MAX_RECORD_BYTES)), IContentStore.Encoding.Identity, true
+        );
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.setRecord(tokenId, full, state);
+        assertEq(records.record(tokenId).recordFileId, full);
+
+        bytes32 notJson = _recordFile(_oneChunk("not json"), IContentStore.Encoding.Identity, true);
+        state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.setRecord(tokenId, notJson, state);
+        state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        assertEq(records.record(tokenId).recordFileId, notJson);
     }
 
     function _expectBadOpen(uint256 tokenId, PackageItem memory item, MediaFile[] memory media)
@@ -343,18 +463,29 @@ contract WorkRecordsTest is RecordsFixture {
         records.finalize(tokenId, signed);
     }
 
+    /// @dev A pending record file is refused when set; once stored, it sets and finalizes.
+    ///      Finalize checks the record file again. Stored chunks are permanent, so a store that
+    ///      reports the file incomplete is simulated.
     function test_finalize_needsCompleteRecordFile() public {
         (uint256 tokenId,) = _work(1);
         bytes memory json = '{"name":"pending"}';
         bytes32 pending = _file(json, "application/json", false);
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, pending));
+        records.setRecord(tokenId, pending, state);
+        store.writeChunk(json);
+        vm.prank(artist);
         records.setRecord(tokenId, pending, state);
         state = records.workStateHash(tokenId);
+
+        vm.mockCall(
+            address(store), abi.encodeCall(IContentStore.isComplete, (pending)), abi.encode(false)
+        );
         vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(WorkRecords.RecordFileIncomplete.selector, pending));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.UnknownRecordFile.selector, pending));
         records.finalize(tokenId, state);
-        store.writeChunk(json);
+        vm.clearMockedCalls();
         vm.prank(artist);
         records.finalize(tokenId, state);
         assertTrue(records.record(tokenId).finalized);
@@ -478,7 +609,7 @@ contract WorkRecordsTest is RecordsFixture {
     function test_relicense_cc0IsIrrevocableInAnyCase() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
-        item.license = License("cc0-1.0", keccak256("other cc0 text"));
+        item.license = License("cc0-1.0", _registerText("other cc0 text"));
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
@@ -491,26 +622,25 @@ contract WorkRecordsTest is RecordsFixture {
         (uint256 tokenId, PackageItem memory item) = _byWork();
         vm.recordLogs();
         vm.prank(governor);
-        records.relicense(
-            tokenId,
-            License("cc-by-4.0", keccak256("cc-by-4.0")),
-            item,
-            bytes32(0),
-            0,
-            new bytes[](0)
-        );
+        records.relicense(tokenId, _license("cc-by-4.0"), item, bytes32(0), 0, new bytes[](0));
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
     function test_relicense_rejectsInvalidNext() public {
         (uint256 tokenId, PackageItem memory item) = _byWork();
+        bytes32 unknown = keccak256("unregistered text");
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, unknown));
+        records.relicense(tokenId, License("mit", unknown), item, bytes32(0), 0, new bytes[](0));
         vm.startPrank(governor);
-        vm.expectRevert(WorkRecords.InvalidLicense.selector);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         records.relicense(tokenId, _license(""), item, bytes32(0), 0, new bytes[](0));
-        vm.expectRevert(WorkRecords.InvalidLicense.selector);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         records.relicense(
             tokenId, _license(string(new bytes(65))), item, bytes32(0), 0, new bytes[](0)
         );
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.relicense(tokenId, _license("MIT License"), item, bytes32(0), 0, new bytes[](0));
         vm.stopPrank();
     }
 
@@ -594,14 +724,6 @@ contract WorkRecordsTest is RecordsFixture {
 
     // ------------------------------------------------------------------------ royalty rate
 
-    function _royaltyHash(uint256 tokenId, uint32 rate, bytes32 state, uint64 deadline)
-        internal
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline));
-    }
-
     function test_setRoyaltyRate_withEveryConsent() public {
         (uint256 tokenId, PackageItem memory item) = _work(1);
         bytes32 state = records.workStateHash(tokenId);
@@ -609,13 +731,30 @@ contract WorkRecordsTest is RecordsFixture {
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 10_000, state, deadline));
         vm.expectEmit(address(stream));
         emit IStream.RoyaltyRateChanged(tokenId, 6_529, 10_000);
+        // The new state hash: version 1 at the new rate.
+        vm.expectEmit(true, false, false, false, address(records));
+        emit WorkRecords.RoyaltyRateSet(tokenId, 6_529, 10_000, bytes32(0));
+        vm.expectEmit(address(stream));
+        emit MetadataUpdate(tokenId);
+        vm.recordLogs();
         vm.prank(governor);
         records.setRoyaltyRate(tokenId, 10_000, item, state, deadline, sigs);
         (address receiver, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
         assertEq(receiver, _defaultRoyaltyWallet());
         assertEq(amount, 0.1 ether);
         assertEq(records.record(tokenId).version, 1);
-        assertTrue(records.workStateHash(tokenId) != state);
+        bytes32 next = records.workStateHash(tokenId);
+        assertTrue(next != state);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == WorkRecords.RoyaltyRateSet.selector) {
+                (,, bytes32 reported) = abi.decode(logs[i].data, (uint32, uint32, bytes32));
+                assertEq(reported, next);
+                found = true;
+            }
+        }
+        assertTrue(found);
     }
 
     function test_setRoyaltyRate_reverts() public {
@@ -624,7 +763,7 @@ contract WorkRecordsTest is RecordsFixture {
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes[] memory sigs = _both(_royaltyHash(tokenId, 100_001, state, deadline));
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(_streamError("InvalidRoyaltyRate(uint32)"), 100_001));
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
         records.setRoyaltyRate(tokenId, 100_001, item, state, deadline, sigs);
         sigs = _both(_royaltyHash(tokenId, 1, state, deadline));
         vm.prank(governor);
@@ -635,10 +774,6 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
         );
         records.setRoyaltyRate(tokenId, 1, item, state, deadline, sigs);
-    }
-
-    function _streamError(string memory signature) internal pure returns (bytes4) {
-        return bytes4(keccak256(bytes(signature)));
     }
 
     function test_setRoyaltyRate_identicalIsNoOp() public {
@@ -655,6 +790,7 @@ contract WorkRecordsTest is RecordsFixture {
         item.kind = ItemKind.EDITION_MASTER;
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
+        auction.settle(stream, tokenId);
         editionsMock.link(stream, tokenId, tokenId);
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 15 days);
@@ -737,7 +873,7 @@ contract WorkRecordsTest is RecordsFixture {
         MockRenderer next = new MockRenderer("errata");
         uint64 deadline = uint64(block.timestamp + 1 days);
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(WorkRecords.WorkNotFinalized.selector, open));
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.WorkNotFinalized.selector, open));
         records.repinRenderer(open, address(next), bytes32(0), bytes32(0), deadline, "");
 
         uint256 tokenId = _finalized(1);
@@ -791,6 +927,7 @@ contract WorkRecordsTest is RecordsFixture {
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
         assertEq(editionsMock.notified(tokenId), 0);
+        auction.settle(stream, tokenId);
         editionsMock.link(stream, tokenId, tokenId);
         vm.prank(platform);
         records.addLocator(tokenId, media[0].fileId, _ar("tx"));
@@ -870,11 +1007,47 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(
             tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", _repeat(2041)))
         );
-        for (uint256 i = 1; i < 16; ++i) {
-            records.addLocator(tokenId, file, _ar(vm.toString(i)));
-        }
-        _expectBadLocator(tokenId, file, _ar("seventeenth"));
         vm.stopPrank();
+    }
+
+    /// @dev The artist and the platform each add at most 8 locators per file, so neither can
+    ///      fill the file's 16 slots and lock the other out.
+    function test_addLocator_separateQuotas() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.startPrank(platform);
+        for (uint256 i; i < 8; ++i) {
+            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+        }
+        _expectBadLocator(tokenId, file, _ar("p8"));
+        vm.stopPrank();
+        vm.startPrank(artist);
+        for (uint256 i; i < 8; ++i) {
+            records.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
+        }
+        _expectBadLocator(tokenId, file, _ipfs("a8"));
+        vm.stopPrank();
+        assertEq(records.locators(tokenId, file).length, 16);
+        // Quotas are per file: the work's other files are unaffected.
+        (uint256 other,) = _work(2);
+        bytes32 otherFile = _primary(other);
+        vm.prank(platform);
+        records.addLocator(other, otherFile, _ar("p0"));
+    }
+
+    /// @dev A URI already registered for the file is refused, whoever adds it again.
+    function test_addLocator_rejectsDuplicateUri() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.prank(artist);
+        records.addLocator(tokenId, file, _ar("tx"));
+        vm.prank(artist);
+        _expectBadLocator(tokenId, file, _ar("tx"));
+        vm.prank(platform);
+        _expectBadLocator(tokenId, file, _ar("tx"));
+        vm.prank(platform);
+        records.addLocator(tokenId, file, _ar("tx2"));
+        assertEq(records.locators(tokenId, file).length, 2);
     }
 
     function _expectBadLocator(uint256 tokenId, bytes32 file, Locator memory locator) internal {
@@ -910,32 +1083,48 @@ contract WorkRecordsTest is RecordsFixture {
         records.setCollectionPreferredKind(collectionId, LocatorKind.ONCHAIN);
         _expectPreferred(tokenId, file, 2, "ar://a2");
         records.setFilePreference(tokenId, file, NONE);
+        // The media is stored but the work is not synced, so ONCHAIN falls through to IPFS.
+        _expectPreferred(tokenId, file, 1, "ipfs://i1");
+        vm.stopPrank();
+        records.syncOnChain(tokenId);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
-        vm.stopPrank();
     }
 
-    function test_preferredLocator_onchainOnlyWhenComplete() public {
+    /// @dev ONCHAIN matches only the stored `onChainComplete` flag: uploading the media is not
+    ///      enough until `syncOnChain` runs, and resolution never scans the content store.
+    function test_preferredLocator_onchainOnlyWhenSynced() public {
         (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, false);
         records.openRecord(tokenId, item, media);
         bytes32 file = media[0].fileId;
-        vm.expectRevert(abi.encodeWithSelector(WorkRecords.NoLocator.selector, tokenId, file));
-        records.preferredLocator(tokenId, file);
+        _expectNoLocator(tokenId, file);
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.ONCHAIN);
         vm.prank(platform);
         records.addLocator(tokenId, file, _ipfs("i0"));
         _expectPreferred(tokenId, file, 0, "ipfs://i0");
         _upload(1);
+        _expectPreferred(tokenId, file, 0, "ipfs://i0");
+        records.syncOnChain(tokenId);
+        vm.expectCall(address(store), abi.encodeWithSelector(IContentStore.isComplete.selector), 0);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
         assertEq(index, NONE);
         assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
         assertEq(bytes(chosen.uri).length, 0);
     }
 
+    function _expectNoLocator(uint256 tokenId, bytes32 file) internal view {
+        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
+        assertEq(index, NONE);
+        assertEq(uint8(chosen.kind), uint8(LocatorKind.NONE));
+        assertEq(bytes(chosen.uri).length, 0);
+    }
+
     function test_preferredLocator_implicitOnchainFallback() public {
         (uint256 tokenId,) = _work(1);
+        _expectNoLocator(tokenId, _primary(tokenId));
+        records.syncOnChain(tokenId);
         (Locator memory chosen, uint256 index) =
             records.preferredLocator(tokenId, _primary(tokenId));
         assertEq(index, NONE);
@@ -1053,7 +1242,7 @@ contract WorkRecordsTest is RecordsFixture {
                 uint32(0),
                 item.recordFileId,
                 WorksHashing.CC0_LICENSE_KEY,
-                keccak256("cc0-1.0"),
+                _textFileId("cc0-1.0"),
                 uint32(6_529),
                 address(renderer)
             )
@@ -1062,11 +1251,16 @@ contract WorkRecordsTest is RecordsFixture {
     }
 }
 
-/// @notice A content store whose `sha256Of` fails with an error other than "unknown file".
+/// @notice A content store whose reads fail with an error other than "unknown file".
 contract BrokenStore {
     error Broken();
 
-    function sha256Of(bytes32) external pure returns (bytes32) {
+    function fileInfo(bytes32) external pure returns (IContentStore.FileInfo memory) {
         revert Broken();
+    }
+
+    /// @dev Answers for the constructor's CC0-text check.
+    function sha256Of(bytes32) external pure returns (bytes32) {
+        return keccak256("text");
     }
 }

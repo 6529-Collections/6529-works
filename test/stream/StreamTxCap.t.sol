@@ -70,7 +70,7 @@ contract StreamTxCapTest is RecordsFixture {
             item.parties[i] = Party(account, PartyRole.COLLABORATOR);
             item.payees[i] = ISplitWallet.Payee(uint256(uint160(account)), address(0), 6_250);
         }
-        item.license = License(string(_repeat("l", 64)), keccak256("long license"));
+        item.license = License(string(_repeat("l", 64)), _registerText("long license"));
     }
 
     function _maxMedia(uint256 salt) internal returns (MediaFile[] memory media) {
@@ -107,7 +107,7 @@ contract StreamTxCapTest is RecordsFixture {
         PackageItem memory item = _wideItem(1, media);
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
-        License memory next = License(string(_repeat("m", 64)), keccak256("next text"));
+        License memory next = License(string(_repeat("m", 64)), _registerText("next text"));
         bytes32 state = records.workStateHash(tokenId);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes32 structHash = keccak256(
@@ -141,13 +141,13 @@ contract StreamTxCapTest is RecordsFixture {
     function test_txCap_preferredLocatorScansSixteen() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = records.mediaOf(tokenId)[0].fileId;
-        vm.startPrank(platform);
+        // The platform's 8 and the artist's 8: the most a file can hold.
         for (uint256 i; i < 16; ++i) {
+            vm.prank(i < 8 ? platform : artist);
             records.addLocator(
                 tokenId, file, Locator(LocatorKind.ARWEAVE, string.concat("ar://", vm.toString(i)))
             );
         }
-        vm.stopPrank();
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
         bytes memory callData = abi.encodeCall(records.preferredLocator, (tokenId, file));

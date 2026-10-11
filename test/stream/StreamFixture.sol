@@ -9,6 +9,7 @@ import { Splits } from "src/economics/Splits.sol";
 import { Test } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
@@ -86,7 +87,7 @@ abstract contract StreamFixture is Test {
             address(renderer).codehash,
             marketOwner
         );
-        editionsMock = new MockEditions();
+        editionsMock = new MockEditions(address(stream));
         registry.bindStream(address(stream));
         _configureRoles();
         artists.register(artist);
@@ -120,7 +121,7 @@ abstract contract StreamFixture is Test {
 
     /// @dev Binds a mock records satellite and the mock Editions (the test is the admin).
     function _bindMocks() internal {
-        recordsMock = new MockWorkRecords();
+        recordsMock = new MockWorkRecords(address(stream));
         stream.bindWorkRecords(address(recordsMock));
         stream.bindEditions(address(editionsMock));
     }
@@ -145,8 +146,23 @@ abstract contract StreamFixture is Test {
         return _royaltyWallet(seller, feeRecipient, 25_000);
     }
 
+    /// @dev A license whose text file is the one-chunk `text/plain` file of the ID's bytes
+    ///      (the records fixture registers the texts its tests use).
     function _license(string memory spdx) internal pure returns (License memory) {
-        return License(spdx, keccak256(bytes(spdx)));
+        return License(spdx, _textFileId(bytes(spdx)));
+    }
+
+    /// @dev The content-store file ID (`IContentStore.manifestId`) of a one-chunk `Identity`
+    ///      `text/plain` file holding `text`, declaring `keccak256(text)` as its SHA-256 (the
+    ///      store does not recompute it). No precompile is called, so the helper can sit in the
+    ///      arguments of a call under `vm.prank` or `vm.expectRevert`.
+    function _textFileId(bytes memory text) internal pure returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](1);
+        hashes[0] = keccak256(text);
+        string memory mime = "text/plain";
+        return keccak256(
+            abi.encode(hashes, text.length, IContentStore.Encoding.Identity, mime, keccak256(text))
+        );
     }
 
     /// @dev An ORIGINAL item by `artist` in the fixture collection; `salt` varies the content.

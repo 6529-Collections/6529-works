@@ -3,11 +3,11 @@ pragma solidity ^0.8.24;
 
 import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
 ///         global kind, then first registered, then the implicit ONCHAIN copy) against a model.
+///         ONCHAIN matches only a work marked on-chain complete by `syncOnChain`.
 contract PreferredLocationTest is RecordsFixture {
     uint256 internal constant NONE = type(uint256).max;
 
@@ -16,17 +16,56 @@ contract PreferredLocationTest is RecordsFixture {
         return LocatorKind(raw % 4);
     }
 
-    function _modelFirst(LocatorKind[] memory kinds, LocatorKind kind, bool complete)
+    function _modelFirst(LocatorKind[] memory kinds, LocatorKind kind, bool onChain)
         internal
         pure
         returns (bool, uint256)
     {
         if (kind == LocatorKind.NONE) return (false, 0);
-        if (kind == LocatorKind.ONCHAIN) return (complete, NONE);
+        if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
         for (uint256 i; i < kinds.length; ++i) {
             if (kinds[i] == kind) return (true, i);
         }
         return (false, 0);
+    }
+
+    /// @dev Mints and opens a work with `count` locators on its primary file, ARWEAVE or IPFS
+    ///      by the bits of `kindBits`; uploads its media if `complete` and syncs it if `sync`.
+    function _workWithLocators(uint256 count, uint256 kindBits, bool complete, bool sync)
+        internal
+        returns (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds)
+    {
+        PackageItem memory item;
+        MediaFile[] memory media;
+        (tokenId, item, media) = _minted(1, complete);
+        records.openRecord(tokenId, item, media);
+        file = media[0].fileId;
+        if (sync) records.syncOnChain(tokenId);
+        kinds = new LocatorKind[](count);
+        for (uint256 i; i < count; ++i) {
+            kinds[i] = (kindBits >> i) & 1 == 0 ? LocatorKind.ARWEAVE : LocatorKind.IPFS;
+            string memory uri = string.concat(
+                kinds[i] == LocatorKind.ARWEAVE ? "ar://" : "ipfs://", vm.toString(i)
+            );
+            // The platform's quota of 8, then the artist's.
+            vm.prank(i < 8 ? platform : artist);
+            records.addLocator(tokenId, file, Locator(kinds[i], uri));
+        }
+    }
+
+    function _model(
+        LocatorKind[] memory kinds,
+        uint256 filePref,
+        LocatorKind collectionKind,
+        LocatorKind globalKind,
+        bool onChain
+    ) internal pure returns (bool found, uint256 expected) {
+        found = filePref != NONE;
+        expected = filePref;
+        if (!found) (found, expected) = _modelFirst(kinds, collectionKind, onChain);
+        if (!found) (found, expected) = _modelFirst(kinds, globalKind, onChain);
+        if (!found && kinds.length != 0) (found, expected) = (true, 0);
+        if (!found && onChain) (found, expected) = (true, NONE);
     }
 
     function testFuzz_preferredLocator_matchesModel(
@@ -35,23 +74,14 @@ contract PreferredLocationTest is RecordsFixture {
         uint8 globalRaw,
         uint8 collectionRaw,
         uint8 filePrefRaw,
-        bool complete
+        bool complete,
+        bool synced
     ) public {
         count = uint8(bound(count, 0, 16));
-        (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, complete);
-        records.openRecord(tokenId, item, media);
-        bytes32 file = media[0].fileId;
-
-        LocatorKind[] memory kinds = new LocatorKind[](count);
-        vm.startPrank(platform);
-        for (uint256 i; i < count; ++i) {
-            kinds[i] = (kindBits >> i) & 1 == 0 ? LocatorKind.ARWEAVE : LocatorKind.IPFS;
-            string memory scheme = kinds[i] == LocatorKind.ARWEAVE ? "ar://" : "ipfs://";
-            records.addLocator(
-                tokenId, file, Locator(kinds[i], string.concat(scheme, vm.toString(i)))
-            );
-        }
-        vm.stopPrank();
+        // A complete file that was never synced does not resolve on-chain.
+        bool onChain = complete && synced;
+        (uint256 tokenId, bytes32 file, LocatorKind[] memory kinds) =
+            _workWithLocators(count, kindBits, complete, onChain);
 
         LocatorKind globalKind = _kind(globalRaw);
         LocatorKind collectionKind = _kind(collectionRaw);
@@ -62,27 +92,22 @@ contract PreferredLocationTest is RecordsFixture {
         records.setFilePreference(tokenId, file, filePref);
         vm.stopPrank();
 
-        bool found = filePref != NONE;
-        uint256 expected = filePref;
-        if (!found) (found, expected) = _modelFirst(kinds, collectionKind, complete);
-        if (!found) (found, expected) = _modelFirst(kinds, globalKind, complete);
-        if (!found && count != 0) (found, expected) = (true, 0);
-        if (!found && complete) (found, expected) = (true, NONE);
-
+        (bool found, uint256 expected) =
+            _model(kinds, filePref, collectionKind, globalKind, onChain);
+        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
         if (!found) {
-            vm.expectRevert(abi.encodeWithSelector(WorkRecords.NoLocator.selector, tokenId, file));
-            records.preferredLocator(tokenId, file);
+            assertEq(index, NONE);
+            assertEq(uint8(chosen.kind), uint8(LocatorKind.NONE));
+            assertEq(bytes(chosen.uri).length, 0);
             return;
         }
-        (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
         assertEq(index, expected);
         if (expected == NONE) {
             assertEq(uint8(chosen.kind), uint8(LocatorKind.ONCHAIN));
             assertEq(bytes(chosen.uri).length, 0);
         } else {
             assertEq(uint8(chosen.kind), uint8(kinds[expected]));
-            Locator[] memory list = records.locators(tokenId, file);
-            assertEq(chosen.uri, list[expected].uri);
+            assertEq(chosen.uri, records.locators(tokenId, file)[expected].uri);
         }
     }
 

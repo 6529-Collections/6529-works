@@ -48,6 +48,8 @@ contract MockPackageRegistry is Supports165 {
     bytes32 public lastRoot;
     uint256 public lastProofLength;
     uint256 public lastMoveNonce;
+    address internal _reentryAdapter;
+    bytes internal _reentryCall;
 
     function _interface() internal pure override returns (bytes4) {
         return type(IPackageRegistry).interfaceId;
@@ -55,6 +57,13 @@ contract MockPackageRegistry is Supports165 {
 
     function bindStream(address stream_) external {
         stream = stream_;
+    }
+
+    /// @dev Makes the next `consume` call `adapter` with `call` (once) before returning, the
+    ///      re-entry Slither's `reentrancy-no-eth` finding on `Stream.mint` describes.
+    function setReentry(address adapter, bytes calldata call) external {
+        _reentryAdapter = adapter;
+        _reentryCall = call;
     }
 
     /// @dev Mirrors the requested registry semantics: bound Stream only, for the exact pair.
@@ -89,6 +98,16 @@ contract MockPackageRegistry is Supports165 {
         lastProofLength = proof.length;
         lastMoveNonce = move.nonce;
         artistId = overrideArtist ? artistOverride : uint256(uint160(item.parties[0].account));
+        address adapter = _reentryAdapter;
+        if (adapter != address(0)) {
+            delete _reentryAdapter;
+            (bool ok, bytes memory reason) = adapter.call(_reentryCall);
+            if (!ok) {
+                assembly ("memory-safe") {
+                    revert(add(reason, 0x20), mload(reason))
+                }
+            }
+        }
     }
 }
 
@@ -356,8 +375,14 @@ contract ConstantAuction is IERC721Receiver, Supports165 {
 
 /// @notice A records-satellite mock: holds renderer pins and drives the core's hooks.
 contract MockWorkRecords is Supports165 {
+    /// @notice The Stream this satellite serves, which `bindWorkRecords` checks.
+    address public immutable stream;
     mapping(uint256 => address) public pinnedRenderer;
     mapping(uint256 => bool) public isOpen;
+
+    constructor(address stream_) {
+        stream = stream_;
+    }
 
     function _interface() internal pure override returns (bytes4) {
         return type(IWorkRecords).interfaceId;
@@ -368,20 +393,26 @@ contract MockWorkRecords is Supports165 {
         isOpen[tokenId] = true;
     }
 
-    function setRoyaltyRate(IStream stream, uint256 tokenId, uint32 rate) external {
-        stream.setRoyaltyRate(tokenId, rate);
+    function setRoyaltyRate(IStream target, uint256 tokenId, uint32 rate) external {
+        target.setRoyaltyRate(tokenId, rate);
     }
 
-    function refresh(IStream stream, uint256 fromTokenId, uint256 toTokenId) external {
-        stream.emitMetadataUpdate(fromTokenId, toTokenId);
+    function refresh(IStream target, uint256 fromTokenId, uint256 toTokenId) external {
+        target.emitMetadataUpdate(fromTokenId, toTokenId);
     }
 }
 
 /// @notice An Editions mock: links masters and records the hooks Stream and WorkRecords call.
 contract MockEditions is Supports165 {
+    /// @notice The Stream this contract serves, which `bindEditions` checks.
+    address public immutable stream;
     mapping(uint256 => uint256) public notified;
     mapping(uint256 => uint32) public rateOf;
     uint256 public notifiedAll;
+
+    constructor(address stream_) {
+        stream = stream_;
+    }
 
     function _interface() internal pure override returns (bytes4) {
         return type(IEditions).interfaceId;
@@ -395,8 +426,8 @@ contract MockEditions is Supports165 {
         rateOf[editionId] = rate;
     }
 
-    function link(IStream stream, uint256 tokenId, uint256 editionId) external {
-        stream.linkEdition(tokenId, editionId);
+    function link(IStream target, uint256 tokenId, uint256 editionId) external {
+        target.linkEdition(tokenId, editionId);
     }
 
     function notifyMasterUpdated(uint256 workId) external {

@@ -15,7 +15,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_DEFAULT, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
     MoveAuthorization,
@@ -29,7 +29,6 @@ import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import {
-    MockEconomics,
     MockEditions,
     MockPackageRegistry,
     MockRenderer,
@@ -232,11 +231,48 @@ contract StreamTest is StreamFixture {
         assertEq(stream.collection(second).minted, 1);
     }
 
-    function test_mint_resolvesDefaultCurrency() public {
+    /// @dev The item's currency passes through unresolved: the adapter resolves
+    ///      `CURRENCY_DEFAULT` and checks the allowlist when it locks the currency.
+    function test_mint_passesCurrencyThrough() public {
         PackageItem memory item = _item(1);
-        item.sale.currency = address(type(uint160).max);
+        item.sale.currency = CURRENCY_DEFAULT;
         (, PrimaryTerms memory terms) = auction.start(stream, _request(item));
-        assertEq(terms.currency, address(0));
+        assertEq(terms.currency, CURRENCY_DEFAULT);
+        item = _item(2);
+        item.sale.currency = address(0xBEEF);
+        (, terms) = auction.start(stream, _request(item));
+        assertEq(terms.currency, address(0xBEEF));
+    }
+
+    /// @dev `coreOf` is the cheap read the records satellite uses; it agrees with `work` and
+    ///      reverts for an unminted or burned token.
+    function test_coreOf() public {
+        PackageItem memory item = _item(1);
+        item.seedPolicy = SeedPolicy.ARTIST;
+        item.seed = keccak256("seed");
+        item.kind = ItemKind.EDITION_MASTER;
+        uint256 tokenId = _mint(item);
+        (
+            bytes32 itemHash,
+            uint256 artistId,
+            uint256 collection,
+            ItemKind kind,
+            SeedPolicy seedPolicy,
+            uint32 royaltyRate
+        ) = stream.coreOf(tokenId);
+        IStream.WorkCore memory w = stream.work(tokenId);
+        assertEq(itemHash, WorksHashing.itemHash(item));
+        assertEq(itemHash, w.itemHash);
+        assertEq(artistId, w.artistId);
+        assertEq(collection, collectionId);
+        assertEq(uint8(kind), uint8(ItemKind.EDITION_MASTER));
+        assertEq(uint8(seedPolicy), uint8(SeedPolicy.ARTIST));
+        assertEq(royaltyRate, w.royaltyRate);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, tokenId + 1));
+        stream.coreOf(tokenId + 1);
+        auction.burn(stream, tokenId, 1);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, tokenId));
+        stream.coreOf(tokenId);
     }
 
     function test_mint_artistSeedAndEditionMaster() public {
@@ -386,6 +422,44 @@ contract StreamTest is StreamFixture {
         item.seedPolicy = SeedPolicy.VRF;
         item.seed = keccak256("stray");
         _expectInvalid(item);
+
+        // A license ID `WorkRecords` would refuse, so the work could never open.
+        string[4] memory badIds = ["", "CC BY 4.0", "cc_by", string(new bytes(65))];
+        for (uint256 i; i < badIds.length; ++i) {
+            item = _item(1);
+            item.license.spdxId = badIds[i];
+            _expectInvalid(item);
+        }
+    }
+
+    /// @dev SPDX IDs keep their original case, so the canonical `CC0-1.0` mints.
+    function test_mint_acceptsMixedCaseLicenseId() public {
+        PackageItem memory item = _item(1);
+        item.license = _license("CC0-1.0");
+        _mint(item);
+        item = _item(2);
+        item.license = _license("LicenseRef-6529.Works+1");
+        _mint(item);
+    }
+
+    /// @dev Covers the `reentrancy-no-eth` triage row: even if the (trusted, immutable)
+    ///      registry re-entered `mint` through an admitted adapter during `consume`, nothing
+    ///      read before the call is used after it, so IDs and serials stay consistent. The
+    ///      inner mint takes ID 1 and serial 1; the outer one ID 2 and serial 2.
+    function test_mint_reentrantRegistryKeepsCountersConsistent() public {
+        PackageItem memory outer = _item(1);
+        PackageItem memory inner = _item(2);
+        registry.setReentry(
+            address(auction), abi.encodeCall(auction.start, (stream, _request(inner)))
+        );
+        (uint256 tokenId,) = auction.start(stream, _request(outer));
+        assertEq(tokenId, 2);
+        assertEq(stream.totalMinted(), 2);
+        assertEq(stream.work(1).itemHash, WorksHashing.itemHash(inner));
+        assertEq(stream.work(2).itemHash, WorksHashing.itemHash(outer));
+        assertEq(stream.work(1).serial, 1);
+        assertEq(stream.work(2).serial, 2);
+        assertEq(stream.collection(collectionId).minted, 2);
     }
 
     function test_mint_bubblesRegistryRevert() public {
@@ -438,15 +512,14 @@ contract StreamTest is StreamFixture {
         assertEq(stream.primaryTerms(tokenId, "").feeRecipient, address(0));
     }
 
-    function test_mint_bubblesCurrencyRejection() public {
+    /// @dev Stream does not consult the currency allowlist; the adapter does, when it locks
+    ///      the currency, so a blocked currency is not Stream's revert.
+    function test_mint_leavesCurrencyCheckToAdapter() public {
         PackageItem memory item = _item(1);
         item.sale.currency = address(0xBEEF);
         econ.setBlocked(address(0xBEEF), true);
-        bytes memory data = _request(item);
-        vm.expectRevert(
-            abi.encodeWithSelector(MockEconomics.CurrencyNotAllowed.selector, address(0xBEEF))
-        );
-        auction.start(stream, data);
+        (, PrimaryTerms memory terms) = auction.start(stream, _request(item));
+        assertEq(terms.currency, address(0xBEEF));
     }
 
     // ----------------------------------------------------------------------- primaryTerms
@@ -575,7 +648,7 @@ contract StreamTest is StreamFixture {
         );
         auction.start(stream, data);
 
-        vm.expectRevert(abi.encodeWithSelector(Stream.NotBurned.selector, tokenId));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, tokenId));
         stream.releaseContent(tokenId, copy.contentHash);
         auction.burn(stream, tokenId, 1);
 
@@ -599,9 +672,9 @@ contract StreamTest is StreamFixture {
     }
 
     function test_releaseContent_reverts() public {
-        vm.expectRevert(abi.encodeWithSelector(Stream.NotBurned.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 0));
         stream.releaseContent(0, bytes32(0));
-        vm.expectRevert(abi.encodeWithSelector(Stream.NotBurned.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 1));
         stream.releaseContent(1, bytes32(0));
         uint256 tokenId = _mint(1);
         auction.burn(stream, tokenId, 1);
@@ -630,6 +703,24 @@ contract StreamTest is StreamFixture {
         stream.transferFrom(collector, address(auction), 1);
         vm.expectRevert(abi.encodeWithSelector(Stream.SaleAlreadySettled.selector, 1));
         auction.burn(stream, 1, 1);
+    }
+
+    /// @dev Removal stops new mints, not the adapter's cancel: it still burns the unsettled
+    ///      token it minted, as it still settles.
+    function test_burn_byRemovedMintingAdapter() public {
+        _mint(1);
+        _mint(2);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        bytes memory data = _request(_item(3));
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(auction))
+        );
+        auction.start(stream, data);
+        auction.burn(stream, 1, 1);
+        auction.settle(stream, 2);
+        assertEq(stream.totalSupply(), 1);
+        assertTrue(stream.primarySaleSettled(2));
     }
 
     /// @dev Only the adapter that minted a token may burn it, even if another admitted adapter
@@ -684,11 +775,11 @@ contract StreamTest is StreamFixture {
 
     function test_createCollection_reverts() public {
         vm.startPrank(platform);
-        vm.expectRevert(Stream.InvalidCollectionName.selector);
+        vm.expectRevert(IStream.InvalidCollectionName.selector);
         stream.createCollection("", bytes32(0));
-        vm.expectRevert(Stream.InvalidCollectionName.selector);
+        vm.expectRevert(IStream.InvalidCollectionName.selector);
         stream.createCollection(string(new bytes(257)), bytes32(0));
-        vm.expectRevert(Stream.InvalidCollectionName.selector);
+        vm.expectRevert(IStream.InvalidCollectionName.selector);
         stream.createCollection(string(bytes(hex"c0af")), bytes32(0));
         vm.stopPrank();
         vm.prank(outsider);
@@ -811,7 +902,7 @@ contract StreamTest is StreamFixture {
         IStream.WorkCore memory w = stream.work(1);
         assertEq(w.royaltyReceiver, _defaultRoyaltyWallet());
         assertEq(w.royaltyRate, 10_000);
-        vm.expectRevert(abi.encodeWithSelector(Stream.InvalidRoyaltyRate.selector, 100_001));
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidRoyaltyRate.selector, 100_001));
         recordsMock.setRoyaltyRate(stream, 1, 100_001);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 2));
         recordsMock.setRoyaltyRate(stream, 2, 1);
@@ -846,8 +937,8 @@ contract StreamTest is StreamFixture {
     // ---------------------------------------------------------------------------- binding
 
     function test_bind_oncePerTargetWithEvents() public {
-        MockWorkRecords r = new MockWorkRecords();
-        MockEditions e = new MockEditions();
+        MockWorkRecords r = new MockWorkRecords(address(stream));
+        MockEditions e = new MockEditions(address(stream));
         vm.expectEmit(address(stream));
         emit IStream.Bound("WORK_RECORDS", address(r));
         stream.bindWorkRecords(address(r));
@@ -876,9 +967,20 @@ contract StreamTest is StreamFixture {
             abi.encodeWithSelector(IStream.InvalidBinding.selector, address(editionsMock))
         );
         stream.bindWorkRecords(address(editionsMock));
-        MockWorkRecords r = new MockWorkRecords();
+        MockWorkRecords r = new MockWorkRecords(address(stream));
         vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(r)));
         stream.bindEditions(address(r));
+        // A satellite serving another Stream is refused: the bind is one-shot.
+        MockWorkRecords foreignRecords = new MockWorkRecords(address(econ));
+        MockEditions foreignEditions = new MockEditions(address(econ));
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(foreignRecords))
+        );
+        stream.bindWorkRecords(address(foreignRecords));
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(foreignEditions))
+        );
+        stream.bindEditions(address(foreignEditions));
         address delegated = makeAddr("delegated");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(r)));
         vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, delegated));
@@ -905,6 +1007,7 @@ contract StreamTest is StreamFixture {
         (address e, uint256 id) = stream.editionOf(1);
         assertEq(e, address(0));
         assertEq(id, 0);
+        auction.settle(stream, 1);
         vm.expectEmit(address(stream));
         emit IStream.EditionLinked(1, address(editionsMock), 1);
         vm.expectEmit(address(stream));
@@ -923,6 +1026,11 @@ contract StreamTest is StreamFixture {
         PackageItem memory master = _item(2);
         master.kind = ItemKind.EDITION_MASTER;
         _mint(master);
+        // The master's primary sale has not settled.
+        vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
+        editionsMock.link(stream, 2, 2);
+        auction.settle(stream, 1);
+        auction.settle(stream, 2);
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 1));
         editionsMock.link(stream, 1, 1);
         vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
