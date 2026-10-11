@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 
 /// @notice A peer that answers ERC-165, like the contracts a genesis bind checks.
 contract Erc165PeerMock is IERC165 {
@@ -11,36 +12,70 @@ contract Erc165PeerMock is IERC165 {
     }
 }
 
-/// @notice A target with `restricted` one-shot binds, shaped like `IStream.bindWorkRecords`:
-///         each slot binds once, to a peer that passes an ERC-165 check.
+/// @notice A target exposing genesis selectors as `restricted` one-shot binds, admitted
+///         minters and sale targets (each peer must pass an ERC-165 check), two genesis binds
+///         that always revert, and a 30-day-class setter that wiring must not reach.
 contract WiringTargetMock is AccessManaged {
-    mapping(uint256 slot => address peer) public bound;
+    address public workRecords;
+    address public editions;
+    address public verifier;
+    mapping(address minter => bool admitted) public isAdmittedMinter;
+    mapping(address token => bool listed) public isTarget;
 
-    event Bound(uint256 indexed slot, address peer);
+    event Bound(bytes4 indexed selector, address peer);
 
-    error AlreadyBound(uint256 slot);
+    error AlreadyBound(bytes4 selector);
     error NotErc165(address peer);
     error Refused();
 
     constructor(address manager) AccessManaged(manager) { }
 
-    function bind(uint256 slot, address peer) external restricted {
-        if (bound[slot] != address(0)) revert AlreadyBound(slot);
-        if (!IERC165(peer).supportsInterface(type(IERC165).interfaceId)) revert NotErc165(peer);
-        bound[slot] = peer;
-        emit Bound(slot, peer);
+    function bindWorkRecords(address peer) external restricted {
+        workRecords = _bind(workRecords, peer);
     }
 
-    /// Always reverts, to prove a failing wiring call aborts the whole configuration.
-    function refuse() external restricted {
+    function bindEditions(address peer) external restricted {
+        editions = _bind(editions, peer);
+    }
+
+    function setAdmittedMinter(address minter, bool admitted) external restricted {
+        _checkErc165(minter);
+        isAdmittedMinter[minter] = admitted;
+        emit Bound(msg.sig, minter);
+    }
+
+    function setTarget(address token, bool listed) external restricted {
+        _checkErc165(token);
+        isTarget[token] = listed;
+        emit Bound(msg.sig, token);
+    }
+
+    /// A genesis selector that always reverts with a reason.
+    function bindPackageRegistry(address) external restricted {
         revert Refused();
     }
 
-    /// Reverts with no data, to prove the configurator names the failing wiring call.
-    function silent() external restricted {
+    /// A genesis selector that always reverts without data.
+    function bindSplitFactory(address) external restricted {
         assembly ("memory-safe") {
             revert(0, 0)
         }
+    }
+
+    /// Not a genesis selector: a 30-day verifier swap that wiring must refuse.
+    function setVerifier(address next) external restricted {
+        verifier = next;
+    }
+
+    function _bind(address current, address peer) private returns (address) {
+        if (current != address(0)) revert AlreadyBound(msg.sig);
+        _checkErc165(peer);
+        emit Bound(msg.sig, peer);
+        return peer;
+    }
+
+    function _checkErc165(address peer) private view {
+        if (!IERC165(peer).supportsInterface(type(IERC165).interfaceId)) revert NotErc165(peer);
     }
 }
 
@@ -67,5 +102,16 @@ contract GenesisTargetMock is AccessManaged {
         bytes32 key = keccak256(msg.data);
         if (called[key]) revert AlreadyCalled(bytes4(msg.data));
         called[key] = true;
+    }
+}
+
+/// @notice Exposes the internal wiring validation, so tests can probe it with a configuration
+///         the configurator itself would never accept (for example the manager as a target).
+contract WiringValidationHarness {
+    function validateWiring(
+        GovernanceConfig.Config memory cfg,
+        GovernanceConfig.Call[] memory wiring
+    ) external pure {
+        GovernanceConfig.validateWiring(cfg, wiring);
     }
 }

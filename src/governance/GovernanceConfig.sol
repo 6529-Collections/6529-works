@@ -3,6 +3,12 @@ pragma solidity ^0.8.24;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { IMintTarget } from "../interfaces/IMintTarget.sol";
+import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
+import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
+import { IStatementLog } from "../interfaces/IStatementLog.sol";
+import { IStream } from "../interfaces/IStream.sol";
 import { Roles } from "./Roles.sol";
 
 /// @title GovernanceConfig
@@ -17,10 +23,11 @@ import { Roles } from "./Roles.sol";
 ///      cannot see one; deployment CI scans `RoleGrantDelayChanged` and
 ///      `TargetAdminDelayUpdated` events for future effect times instead.
 ///
-///      Genesis wiring: `install` also executes the one-shot `bind*` calls and admitted-minter
-///      grants as the zero-delay installer, after the roles and target admin delays are set
-///      and before any selector is mapped. Every wired selector therefore still resolves to
-///      `ADMIN`; without this phase those calls would wait the admins' 30-day delay.
+///      Genesis wiring: `install` also executes the genesis calls ({isGenesisSelector}: one-shot
+///      binds, admitted minters, sale targets, the epoch-0 manifest) as the zero-delay
+///      installer, after the roles and target admin delays are set and before any selector is
+///      mapped. Every wired selector therefore still resolves to `ADMIN`; without this phase
+///      those calls would wait the admins' 30-day delay.
 library GovernanceConfig {
     /// @notice One holder of one role. Its execution delay is always `Roles.executionDelay`.
     struct Grant {
@@ -59,8 +66,8 @@ library GovernanceConfig {
     uint32 internal constant TARGET_ADMIN_DELAY = Roles.SUCCESSOR;
     /// @notice Maximum genesis wiring calls. The whole configuration is one transaction under
     ///         the EIP-7825 cap of 2^24 gas: the example genesis configuration plus this many
-    ///         ERC-165-checking binds measures about 6.5M gas, 39% of the cap, including
-    ///         worst-case calldata (`GenesisConfig.t.sol` gates it at 60%).
+    ///         ERC-165-checking calls on cold accounts measures about 6.6M gas, 39% of the cap,
+    ///         including worst-case calldata (`GenesisConfig.t.sol` gates it at 60%).
     uint256 internal constant MAX_WIRING_CALLS = 64;
 
     /// @notice Fewer than {MIN_GUARDIANS} guardian grants.
@@ -94,8 +101,10 @@ library GovernanceConfig {
     /// @notice More than {MAX_WIRING_CALLS} wiring calls.
     error TooManyWiringCalls(uint256 count);
     /// @notice A wiring call targets an address outside the configured targets (the manager
-    ///         included), carries no selector, or uses an access-management selector.
+    ///         included) or carries no selector.
     error InvalidWiringCall(address target, bytes4 selector);
+    /// @notice A wiring call's selector is not a genesis selector ({isGenesisSelector}).
+    error WiringSelectorNotAllowed(address target, bytes4 selector);
     /// @notice Wiring call `index` reverted without a reason.
     error WiringCallFailed(uint256 index);
 
@@ -120,9 +129,23 @@ library GovernanceConfig {
         }
     }
 
-    /// @notice Reverts unless every wiring call targets a configured target with a selector
-    ///         that is not an access-management function, and there are at most
-    ///         {MAX_WIRING_CALLS} of them.
+    /// @notice Whether `selector` may be wired at genesis: a one-shot bind (including the
+    ///         v1.1 federation bind), an admitted-minter grant, a sale target, or the epoch-0
+    ///         governance manifest. Everything else waits its delay class after genesis.
+    function isGenesisSelector(bytes4 selector) internal pure returns (bool) {
+        return selector == IStream.bindWorkRecords.selector
+            || selector == IStream.bindEditions.selector
+            || selector == IPackageRegistry.bindStream.selector
+            || selector == IArtistRegistry.bindPackageRegistry.selector
+            || selector == IArtistRegistry.bindSplitFactory.selector
+            || selector == IArtistRegistry.bindFederationRegistry.selector
+            || selector == IMintTarget.setAdmittedMinter.selector
+            || selector == ISaleAdapter.setTarget.selector
+            || selector == IStatementLog.appendGovernanceManifest.selector;
+    }
+
+    /// @notice Reverts unless there are at most {MAX_WIRING_CALLS} wiring calls, each on a
+    ///         configured target with a genesis selector.
     function validateWiring(Config memory cfg, Call[] memory wiring) internal pure {
         if (wiring.length > MAX_WIRING_CALLS) revert TooManyWiringCalls(wiring.length);
         for (uint256 i = 0; i < wiring.length; ++i) {
@@ -131,9 +154,10 @@ library GovernanceConfig {
             // Casting to bytes4 is safe: it keeps the selector, the first four bytes.
             // forge-lint: disable-next-line(unsafe-typecast)
             bytes4 selector = data.length < 4 ? bytes4(0) : bytes4(data);
-            if (data.length < 4 || !_isTarget(cfg, target) || _isAuthoritySelector(selector)) {
+            if (data.length < 4 || !_isTarget(cfg, target)) {
                 revert InvalidWiringCall(target, selector);
             }
+            if (!isGenesisSelector(selector)) revert WiringSelectorNotAllowed(target, selector);
         }
     }
 
@@ -243,21 +267,6 @@ library GovernanceConfig {
             if (cfg.targets[i].target == account) return true;
         }
         return false;
-    }
-
-    /// @dev The manager's admin, scheduling and batching functions, and `setAuthority`.
-    function _isAuthoritySelector(bytes4 s) private pure returns (bool) {
-        return s == IAccessManager.labelRole.selector || s == IAccessManager.grantRole.selector
-            || s == IAccessManager.revokeRole.selector || s == IAccessManager.renounceRole.selector
-            || s == IAccessManager.setRoleAdmin.selector
-            || s == IAccessManager.setRoleGuardian.selector
-            || s == IAccessManager.setGrantDelay.selector
-            || s == IAccessManager.setTargetFunctionRole.selector
-            || s == IAccessManager.setTargetAdminDelay.selector
-            || s == IAccessManager.setTargetClosed.selector
-            || s == IAccessManager.updateAuthority.selector || s == IAccessManager.schedule.selector
-            || s == IAccessManager.execute.selector || s == IAccessManager.cancel.selector
-            || s == IAccessManaged.setAuthority.selector;
     }
 
     function _validateGrants(Grant[] memory grants) private pure {

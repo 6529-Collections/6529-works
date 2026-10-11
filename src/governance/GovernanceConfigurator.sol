@@ -46,28 +46,14 @@ contract GovernanceConfigurator {
     ///         admin, renounces this contract's admin role and emits the epoch's hashes.
     /// @param cfg Holders and target selector mappings; delays come from {Roles}.
     /// @param manifestHash Hash of the signed governance manifest describing `cfg`.
-    /// @param wiring One-shot genesis calls on configured targets, at most
-    ///        `GovernanceConfig.MAX_WIRING_CALLS`; any revert aborts the whole configuration.
+    /// @param wiring Genesis calls on configured targets, at most
+    ///        `GovernanceConfig.MAX_WIRING_CALLS`, each with a genesis selector
+    ///        (`GovernanceConfig.isGenesisSelector`); any revert aborts the whole configuration.
     function configure(
         GovernanceConfig.Config calldata cfg,
         bytes32 manifestHash,
         GovernanceConfig.Call[] calldata wiring
     ) external {
-        _configure(cfg, manifestHash, wiring);
-    }
-
-    /// @notice {configure} with no genesis wiring.
-    /// @param cfg Holders and target selector mappings; delays come from {Roles}.
-    /// @param manifestHash Hash of the signed governance manifest describing `cfg`.
-    function configure(GovernanceConfig.Config calldata cfg, bytes32 manifestHash) external {
-        _configure(cfg, manifestHash, new GovernanceConfig.Call[](0));
-    }
-
-    function _configure(
-        GovernanceConfig.Config calldata cfg,
-        bytes32 manifestHash,
-        GovernanceConfig.Call[] memory wiring
-    ) private {
         if (msg.sender != deployer) revert NotDeployer(msg.sender);
         GovernanceConfig.install(worksManager, cfg, wiring);
         worksManager.renounceRole(Roles.ADMIN, address(this));
