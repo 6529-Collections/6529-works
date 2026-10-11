@@ -92,11 +92,16 @@ contract EnglishAuction is
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
     uint8 private constant _DELIVERY_PENDING = 2;
+    /// @dev Slot 2 holds a recipient. With this flag and `_PAUSE_USED` clear, a bid never reads
+    ///      slot 2, which a first bid for oneself would otherwise read cold.
+    uint8 private constant _RECIPIENT_SET = 4;
 
-    /// @dev One auction. Slot 0 is written at start; slot 1 by bids and disputes; slot 3 (the
-    ///      high bid and the increment floor the first bid locks) by bids. Slot 2 holds the
-    ///      recipient only when it differs from the bidder (zero means the bidder), and the
-    ///      artist after a no-bid settlement, so a bid for oneself writes two slots.
+    /// @dev One auction in three slots. Slot 0 is written at start (and its terms reference
+    ///      and flags again by the first bid, which locks the increment floor). Slot 1 holds the
+    ///      high bidder and the high bid (at most `uint96`). Slot 2 holds the recipient only when
+    ///      it differs from the bidder (`_RECIPIENT_SET`), the artist after a no-bid settlement,
+    ///      and the dispute pause (`_PAUSE_USED`). A first bid for oneself writes one fresh slot
+    ///      and does not read slot 2.
     struct Sale {
         address token;
         uint32 tokenId;
@@ -105,11 +110,10 @@ contract EnglishAuction is
         AuctionState status;
         uint8 flags;
         address bidder;
+        uint96 bid;
+        address recipient;
         uint32 pausedAt;
         uint24 pausedTotal;
-        address recipient;
-        uint128 bid;
-        uint96 incrementFloor;
     }
 
     /// @dev The governed parameters and the emergency start pause: one slot, read once per start.
@@ -120,9 +124,12 @@ contract EnglishAuction is
         bool paused;
     }
 
-    /// @dev The values a sale locks at start, shared by every sale that locked the same ones.
+    /// @dev The values a sale locks, shared by every sale that locked the same ones. A start
+    ///      locks every field but the increment floor (zero); the first bid moves the sale to the
+    ///      record with the floor it reads (E2).
     struct Terms {
         address currency;
+        uint96 incrementFloor;
         uint128 openingBid;
         uint24 incrementShare;
         uint24 extensionWindow;
@@ -295,6 +302,7 @@ contract EnglishAuction is
         if (s.bidder == address(0)) {
             if (creator == address(0)) revert InvalidRecipient(creator);
             s.recipient = creator;
+            s.flags |= _RECIPIENT_SET;
         }
         uint256 price = s.bid;
         uint256 fee = Math.mulDiv(price, lt.feeShare, Splits.DENOMINATOR);
@@ -485,7 +493,7 @@ contract EnglishAuction is
         a.token = s.token;
         a.tokenId = s.tokenId;
         a.currency = t.currency;
-        a.incrementFloor = s.incrementFloor;
+        a.incrementFloor = t.incrementFloor;
         a.bidder = s.bidder;
         a.recipient = _recipientOf(s);
         a.bid = s.bid;
@@ -681,12 +689,16 @@ contract EnglishAuction is
         Sale storage s = _require(saleId, AuctionState.ACTIVE);
         Terms storage t = _terms[s.termsId];
         address currency = t.currency;
-        if (s.incrementFloor == 0) {
+        if (t.incrementFloor == 0) {
+            Terms memory locked = t;
             // A floor beyond 96 bits (7.9e28 base units) is capped: it is already a prohibitive
             // increment, and capping keeps an absurd allowlist value from blocking the sale.
             // forge-lint: disable-next-line(unsafe-typecast)
-            s.incrementFloor =
+            locked.incrementFloor =
                 uint96(Math.min(allowlist.incrementFloor(currency), type(uint96).max));
+            uint16 id = _termsId(locked);
+            s.termsId = id;
+            t = _terms[id];
         } else if (!allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
@@ -696,9 +708,18 @@ contract EnglishAuction is
         address previous = s.bidder;
         if (previous != address(0)) _credit(previous, currency, saleId, s.bid);
         s.bidder = payment.payer;
-        address stored = recipient == payment.payer ? address(0) : recipient;
-        if (s.recipient != stored) s.recipient = stored;
-        s.bid = SafeCast.toUint128(payment.amount);
+        if (recipient != payment.payer) {
+            if (s.flags & _RECIPIENT_SET == 0) {
+                s.flags |= _RECIPIENT_SET;
+                s.recipient = recipient;
+            } else if (s.recipient != recipient) {
+                s.recipient = recipient;
+            }
+        } else if (s.flags & _RECIPIENT_SET != 0) {
+            s.flags &= ~_RECIPIENT_SET;
+            s.recipient = address(0);
+        }
+        s.bid = SafeCast.toUint96(payment.amount);
         uint256 end = s.endTime;
         uint256 window = t.extensionWindow;
         // Anti-snipe compares seconds; validator drift only shifts the window edge.
@@ -774,7 +795,7 @@ contract EnglishAuction is
         if (s.bidder == address(0)) return Math.max(t.openingBid, 1);
         uint256 high = s.bid;
         uint256 step = Math.mulDiv(high, t.incrementShare, Splits.DENOMINATOR, Math.Rounding.Ceil);
-        return high + Math.max(step, s.incrementFloor);
+        return high + Math.max(step, t.incrementFloor);
     }
 
     /// @dev Pays nothing for a zero amount, so a zero-fee configuration may name no fee
@@ -834,7 +855,10 @@ contract EnglishAuction is
         if (bidder == address(0)) return;
         _credit(bidder, _terms[s.termsId].currency, saleId, s.bid);
         s.bidder = address(0);
-        if (s.recipient != address(0)) s.recipient = address(0);
+        if (s.flags & _RECIPIENT_SET != 0) {
+            s.flags &= ~_RECIPIENT_SET;
+            s.recipient = address(0);
+        }
         s.bid = 0;
     }
 
@@ -846,11 +870,13 @@ contract EnglishAuction is
     /// @dev Loads a sale after writing down an expired pause, and requires the `wanted` state.
     function _require(uint256 saleId, AuctionState wanted) private returns (Sale storage s) {
         s = _sales[saleId];
-        uint256 pausedAt = s.pausedAt;
-        // The pause clock is in seconds; a validator moves it by seconds, not days.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (pausedAt != 0 && block.timestamp > pausedAt + MAX_PAUSE) {
-            _endPause(saleId, s, MAX_PAUSE);
+        if (s.flags & _PAUSE_USED != 0) {
+            uint256 pausedAt = s.pausedAt;
+            // The pause clock is in seconds; a validator moves it by seconds, not days.
+            // forge-lint: disable-next-line(block-timestamp)
+            if (pausedAt != 0 && block.timestamp > pausedAt + MAX_PAUSE) {
+                _endPause(saleId, s, MAX_PAUSE);
+            }
         }
         AuctionState state = _state(s);
         if (state == AuctionState.NONE) revert UnknownSale(saleId);
@@ -871,7 +897,7 @@ contract EnglishAuction is
         AuctionState status = s.status;
         if (status != AuctionState.ACTIVE) return status;
         uint256 end = s.endTime;
-        uint256 pausedAt = s.pausedAt;
+        uint256 pausedAt = s.flags & _PAUSE_USED == 0 ? 0 : s.pausedAt;
         if (pausedAt != 0) {
             // forge-lint: disable-next-line(block-timestamp)
             if (block.timestamp <= pausedAt + MAX_PAUSE) return AuctionState.PAUSED;
@@ -891,8 +917,7 @@ contract EnglishAuction is
 
     /// @dev The token's recipient: the stored one, or the bidder when none is stored.
     function _recipientOf(Sale storage s) private view returns (address) {
-        address recipient = s.recipient;
-        return recipient == address(0) ? s.bidder : recipient;
+        return s.flags & _RECIPIENT_SET != 0 ? s.recipient : s.bidder;
     }
 
     function _setTarget(address token, bool listed) private {

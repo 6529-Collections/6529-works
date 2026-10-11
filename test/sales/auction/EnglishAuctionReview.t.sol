@@ -360,14 +360,18 @@ contract EnglishAuctionReviewTest is AuctionBase {
         assertEq(stream.ownerOf(1), alice);
     }
 
-    /// @dev L-4: bids above 128 bits are refused rather than truncated.
-    function test_L4_BidAbove128BitsReverts() public {
+    /// @dev L-4: bids above 96 bits (7.9e28 base units) are refused rather than truncated; the
+    ///      largest one is accepted.
+    function test_L4_BidAbove96BitsReverts() public {
+        uint256 largest = _start();
+        _bidEth(largest, bob, type(uint96).max);
+        assertEq(auction.auction(largest).bid, type(uint96).max);
         uint256 saleId = _start();
-        uint256 amount = uint256(type(uint128).max) + 1;
+        uint256 amount = uint256(type(uint96).max) + 1;
         vm.deal(alice, amount);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(SafeCast.SafeCastOverflowedUintDowncast.selector, 128, amount)
+            abi.encodeWithSelector(SafeCast.SafeCastOverflowedUintDowncast.selector, 96, amount)
         );
         auction.bid{ value: amount }(saleId, address(0), _direct(alice, amount));
     }

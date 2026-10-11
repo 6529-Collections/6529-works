@@ -109,7 +109,7 @@ contract EnglishAuctionGasTest is Test {
     ///      before, and the auction already holds another live token.
     function test_StartGas_SteadyState() public {
         _startItem(0, 1, artistPk);
-        _startItem(1, 2, otherArtistPk);
+        _priorBid(_startItem(1, 2, otherArtistPk));
         uint256 total = _measureStart(2, 3, artistPk, "steady state");
         assertLe(total, START_GATE, "steady-state start gate (E1)");
     }
@@ -128,7 +128,7 @@ contract EnglishAuctionGasTest is Test {
     ///      writes two more slots: the bidder and the packed bid with its floor).
     function test_StartWithBidGas_SteadyState() public {
         _startItem(0, 1, artistPk);
-        _startItem(1, 2, otherArtistPk);
+        _priorBid(_startItem(1, 2, otherArtistPk));
         address bidder = makeAddr("gasBidder");
         vm.deal(bidder, 1 ether);
         bytes memory callData = abi.encodeCall(
@@ -160,7 +160,7 @@ contract EnglishAuctionGasTest is Test {
     /// @dev The steady state, but with no other token in custody (the adapter's ERC-721 balance
     ///      is written from zero), and the first and second bids of a sale.
     function test_StartAndBidGas_Profile() public {
-        _startItem(0, 1, artistPk);
+        _priorBid(_startItem(0, 1, artistPk));
         _settleAway(_saleOf(1));
         _startItem(1, 2, otherArtistPk);
         _settleAway(_saleOf(2));
@@ -190,7 +190,7 @@ contract EnglishAuctionGasTest is Test {
     ///      subtracting the mint call's gas reported by a probe on a fresh copy of the state.
     function test_StartGas_AuctionShare() public {
         _startItem(0, 1, artistPk);
-        _startItem(1, 2, otherArtistPk);
+        _priorBid(_startItem(1, 2, otherArtistPk));
         bytes memory data = _mintData(2, 3, artistPk);
         uint256 snapshot = vm.snapshotState();
         _coolAll();
@@ -255,6 +255,33 @@ contract EnglishAuctionGasTest is Test {
         console2.log("  execution (incl. a cold call into the auction)", used);
         console2.log("  whole transaction", total);
         console2.log("  steady-state gate", START_GATE);
+    }
+
+    /// @dev A bid on an earlier sale: in steady state the terms record with the current
+    ///      increment floor exists, since some earlier first bid locked it (E2). The first bid
+    ///      after a config or floor change creates it once (`test_FirstBidAfterAConfigChange`).
+    function _priorBid(uint256 saleId) internal {
+        address bidder = makeAddr("priorBidder");
+        vm.deal(bidder, 1 ether);
+        vm.prank(bidder);
+        auction.bid{ value: 1 ether }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
+        );
+    }
+
+    /// @dev The one-off cost after governance changes the config or the floor: the first first
+    ///      bid writes the new terms record (two words, its key and the counter).
+    function test_FirstBidAfterAConfigChange() public {
+        uint256 saleId = _startItem(0, 1, artistPk);
+        address bidder = makeAddr("firstEver");
+        vm.deal(bidder, 1 ether);
+        _coolAll();
+        vm.prank(bidder);
+        uint256 before = gasleft();
+        auction.bid{ value: 1 ether }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, 1 ether, 0, 0, "")
+        );
+        console2.log("first bid creating its terms record, execution (cold)", before - gasleft());
     }
 
     function _startItem(uint256 index, uint256 nonce, uint256 pk) internal returns (uint256) {
