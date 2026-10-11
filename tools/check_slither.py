@@ -2,15 +2,25 @@
 """Fail on High or Medium Slither findings that the triage record does not disposition.
 
 The gate:
-  1. runs Slither on the Foundry project (config: slither.config.json, which filters
-     lib/, test/ and script/ so only src/ is analysed) and reads its JSON report, or
-     reads a report you already have with `--report`;
-  2. requires every High or Medium impact finding to match a row of
+  1. runs Slither on the Foundry project and reads its JSON report (detectors plus the
+     compilation it analysed), or reads a report you already have with `--report`;
+  2. keeps the findings whose file is not under lib/, test/ or script/, judged on the
+     repository-relative path, and requires every High or Medium one to match a row of
      docs/security/slither-triage.md (detector, location, disposition, reason);
-  3. fails closed: an unreadable or failed report, a Slither run that analysed no
-     contracts, a malformed finding or a malformed triage row all fail the gate.
+  3. proves coverage from the report itself: every `src/**/*.sol` file on disk must be a
+     source unit Slither analysed, and at least one contract under src/ must be defined;
+  4. fails closed: an unreadable or failed report, a report without compilation data,
+     unanalysed src/ files, a malformed finding or a malformed triage row all fail.
 
 Lower impacts (Low, Informational, Optimization) are counted but never gate.
+
+Why the gate does its own path filtering. Slither matches `filter_paths` as a regex
+against each finding's ABSOLUTE resolved path, so a checkout under a directory such as
+`content-attest/` (it contains `test/`) or `lib/` silently filtered out every finding,
+and a clean-looking `results: {}` is exactly what a genuinely clean tree produces. The
+gate therefore overrides the config filter with a pattern that matches nothing, and
+filters on the repository-relative path itself. slither.config.json keeps an anchored
+filter for people who run `slither .` by hand.
 
 Run from anywhere: `python tools/check_slither.py`. Standard library only; Slither
 itself comes from the hash-locked requirements-tools.lock. Note that Slither runs
@@ -41,8 +51,15 @@ LOCATION = re.compile(
     r"(?::(?P<contract>[A-Za-z_$][\w$]*)(?:\.(?P<function>[A-Za-z_$][\w$]*))?)?$"
 )
 SEPARATOR_CELL = re.compile(r"^:?-{3,}:?$")
-ANALYZED = re.compile(r"analyzed \((\d+) contracts?")
 MAX_PARENT_DEPTH = 6
+
+# Directories whose findings are out of scope, matched on the first segment of the
+# repository-relative path (never on an absolute path, whose ancestors are arbitrary).
+OUT_OF_SCOPE_DIRS = ("lib", "test", "script")
+SOURCE_DIR = "src"
+# `--filter-paths` value that can never match, overriding the config file's filter.
+MATCH_NOTHING = "(?!)"
+JSON_TYPES = "detectors,compilations"
 
 
 @dataclass(frozen=True)
@@ -192,13 +209,21 @@ def element_location(element: object) -> Location | None:
     )
 
 
+def in_scope(file: str) -> bool:
+    """False for lib/, test/ and script/ files, judged on the repository-relative path."""
+    return file.replace("\\", "/").lstrip("./").split("/")[0] not in OUT_OF_SCOPE_DIRS
+
+
+def finding_locations(finding: dict) -> list[Location]:
+    """The locations of a finding's elements, primary first (Slither lists it first)."""
+    elements = finding.get("elements")
+    found = (element_location(element) for element in elements) if isinstance(elements, list) else ()
+    return [location for location in found if location]
+
+
 def finding_location(finding: dict) -> Location | None:
-    """The location of a finding's first element that has one (Slither lists the primary first)."""
-    for element in finding.get("elements") or []:
-        found = element_location(element)
-        if found:
-            return found
-    return None
+    """The first in-scope location of a finding (its primary one), or None if it has none."""
+    return next((location for location in finding_locations(finding) if in_scope(location.file)), None)
 
 
 def _headline(finding: dict) -> str:
@@ -206,8 +231,66 @@ def _headline(finding: dict) -> str:
     return description.strip().splitlines()[0] if isinstance(description, str) and description.strip() else ""
 
 
-def evaluate(slither: object, rows: list[Row], triage_name: str, report: Report) -> None:
-    """Check a decoded Slither JSON report against the triage rows."""
+def source_units(slither: dict) -> dict[str, int] | None:
+    """Analysed source file -> contracts it defines, from results.compilations.
+
+    None when the report carries no compilation data. File names are repository-relative.
+    """
+    results = slither.get("results")
+    compilations = results.get("compilations") if isinstance(results, dict) else None
+    if not isinstance(compilations, list) or not compilations:
+        return None
+    units: dict[str, int] = {}
+    for compilation in compilations:
+        unit_map = compilation.get("compilation_units") if isinstance(compilation, dict) else None
+        for unit in (unit_map.values() if isinstance(unit_map, dict) else ()):
+            files = unit.get("source_units") if isinstance(unit, dict) else None
+            for name, source in (files.items() if isinstance(files, dict) else ()):
+                contracts = source.get("contracts") if isinstance(source, dict) else None
+                name = str(name).replace("\\", "/")
+                units[name] = units.get(name, 0) + (len(contracts) if isinstance(contracts, dict) else 0)
+    return units
+
+
+def check_coverage(slither: dict, src_files: set[str] | None, report: Report) -> None:
+    """Fail unless Slither demonstrably analysed the contracts under src/.
+
+    A clean tree and a tree whose every finding was filtered or never analysed both give
+    `results: {}`, so the absence of findings proves nothing without this check.
+    """
+    units = source_units(slither)
+    if units is None:
+        report.fail(
+            "slither report: no compilation data, so analysis of src/ cannot be confirmed"
+            f" (run Slither with --json-types {JSON_TYPES})"
+        )
+        return
+    analysed = {name: count for name, count in units.items() if name.startswith(f"{SOURCE_DIR}/")}
+    contracts = sum(analysed.values())
+    if not contracts:
+        sample = ", ".join(sorted(units)[:3]) or "none"
+        report.fail(f"slither analysed no contracts under {SOURCE_DIR}/ (source units: {sample})")
+        return
+    missing = sorted((src_files or set()) - set(analysed))
+    if missing:
+        listed = ", ".join(missing[:5]) + (f", and {len(missing) - 5} more" if len(missing) > 5 else "")
+        report.fail(f"slither did not analyse {len(missing)} of the {SOURCE_DIR}/ files on disk: {listed}")
+        return
+    report.ok(f"slither analysed {contracts} contracts in {len(analysed)} {SOURCE_DIR}/ files")
+
+
+def evaluate(
+    slither: object,
+    rows: list[Row],
+    triage_name: str,
+    report: Report,
+    src_files: set[str] | None = None,
+) -> None:
+    """Check a decoded Slither JSON report against the triage rows.
+
+    `src_files` is the set of `src/**/*.sol` files on disk (repository-relative), each of
+    which the report must show as analysed; None checks only that some src/ contract was.
+    """
     if not isinstance(slither, dict):
         report.fail("slither report: expected a JSON object")
         return
@@ -215,14 +298,16 @@ def evaluate(slither: object, rows: list[Row], triage_name: str, report: Report)
         report.fail(f"slither report: analysis did not succeed ({slither.get('error')})")
         return
     results = slither.get("results")
-    findings = results.get("detectors") if isinstance(results, dict) else None
+    # Slither writes `results: {}`, with no `detectors` key, when it has no findings at all.
+    findings = results.get("detectors", []) if isinstance(results, dict) else None
     if not isinstance(findings, list):
-        report.fail("slither report: no results.detectors list")
+        report.fail("slither report: results.detectors is not a list")
         return
+    check_coverage(slither, src_files, report)
 
     used: set[int] = set()
     counts: Counter[str] = Counter()
-    gated = 0
+    gated = outside = 0
     for index, finding in enumerate(findings):
         if not isinstance(finding, dict) or not isinstance(finding.get("check"), str) or not isinstance(
             finding.get("impact"), str
@@ -230,6 +315,10 @@ def evaluate(slither: object, rows: list[Row], triage_name: str, report: Report)
             report.fail(f"slither report: finding {index} lacks a check name or impact")
             continue
         detector, impact = finding["check"], finding["impact"].title()
+        locations = finding_locations(finding)
+        if locations and not any(in_scope(location.file) for location in locations):
+            outside += 1  # every element is in lib/, test/ or script/
+            continue
         counts[impact] += 1
         if impact not in GATED_IMPACTS:
             continue
@@ -250,12 +339,35 @@ def evaluate(slither: object, rows: list[Row], triage_name: str, report: Report)
             report.note(f"triage line {row.line} ({row.detector} at {row.location}) matches no finding")
     others = ", ".join(f"{name} {count}" for name, count in sorted(counts.items()) if name not in GATED_IMPACTS)
     report.ok(f"{gated} High/Medium findings gated; not gated: {others or 'none'}")
+    if outside:
+        report.note(f"{outside} findings entirely in {', '.join(d + '/' for d in OUT_OF_SCOPE_DIRS)} ignored")
+
+
+def source_files(root: Path) -> set[str]:
+    """Repository-relative POSIX paths of every `src/**/*.sol` file."""
+    return {path.relative_to(root).as_posix() for path in (root / SOURCE_DIR).rglob("*.sol")}
 
 
 def run_slither(root: Path, config: Path, command: list[str], output: Path) -> tuple[str, int]:
-    """Run Slither, writing its JSON report to `output`; returns its combined log."""
+    """Run Slither, writing its JSON report to `output`; returns its combined log.
+
+    The config's path filter is overridden by one that matches nothing: Slither would test
+    it against absolute paths, and this gate filters on repository-relative paths itself.
+    """
     result = subprocess.run(
-        [*command, ".", "--config-file", str(config), "--json", str(output), "--fail-none"],
+        [
+            *command,
+            ".",
+            "--config-file",
+            str(config),
+            "--filter-paths",
+            MATCH_NOTHING,
+            "--json-types",
+            JSON_TYPES,
+            "--json",
+            str(output),
+            "--fail-none",
+        ],
         cwd=root,
         capture_output=True,
         text=True,
@@ -265,13 +377,15 @@ def run_slither(root: Path, config: Path, command: list[str], output: Path) -> t
     return result.stdout + result.stderr, result.returncode
 
 
-def check_report_file(path: Path, rows: list[Row], triage_name: str, report: Report) -> None:
+def check_report_file(
+    path: Path, rows: list[Row], triage_name: str, report: Report, src_files: set[str] | None = None
+) -> None:
     try:
         slither = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         report.fail(f"slither report: cannot read {path.name} ({error})")
         return
-    evaluate(slither, rows, triage_name, report)
+    evaluate(slither, rows, triage_name, report, src_files)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -298,8 +412,11 @@ def main(argv: list[str] | None = None) -> int:
     for error in errors:
         report.fail(f"{triage.name}: {error}")
 
+    src_files = source_files(root)
+    if not src_files:
+        report.fail(f"no {SOURCE_DIR}/**/*.sol files under {root}: wrong --root?")
     if args.report:
-        check_report_file(args.report, rows, triage.name, report)
+        check_report_file(args.report, rows, triage.name, report, src_files)
     else:
         with tempfile.TemporaryDirectory() as scratch:
             output = Path(scratch) / "slither.json"
@@ -309,16 +426,11 @@ def main(argv: list[str] | None = None) -> int:
                 "slither",
             ]
             log, code = run_slither(root, config, command, output)
-            analyzed = ANALYZED.search(log)
-            if not output.is_file():
+            if output.is_file():
+                check_report_file(output, rows, triage.name, report, src_files)
+            else:
                 report.fail(f"slither produced no report (exit {code}); its output follows")
                 report.extra(log.strip()[-3000:])
-            elif not analyzed or int(analyzed.group(1)) == 0:
-                report.fail("slither analysed no contracts: check slither.config.json filters")
-                report.extra(log.strip()[-3000:])
-            else:
-                report.ok(f"slither analysed {analyzed.group(1)} contracts")
-                check_report_file(output, rows, triage.name, report)
 
     print(report.render())
     if report.failures:

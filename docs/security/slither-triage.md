@@ -1,10 +1,16 @@
 # Slither triage
 
-Slither runs in the **Static analysis** CI job on `src/` (`lib/`, `test/` and `script/`
-are filtered out by [`slither.config.json`](../../slither.config.json)). The gate,
+Slither runs in the **Static analysis** CI job on `src/`. The gate,
 [`tools/check_slither.py`](../../tools/check_slither.py), **fails on every High or Medium
 impact finding that has no row in this file**. Low, Informational and Optimization
 findings are counted in the job log and do not gate.
+
+The gate ignores findings whose files are all under `lib/`, `test/` or `script/`, judged
+on the repository-relative path, and fails if Slither did not analyse every
+`src/**/*.sol` file. It deliberately does not use the path filter in
+[`slither.config.json`](../../slither.config.json): Slither matches that filter against
+absolute paths, so a checkout under a directory such as `content-attest/` hid every
+finding. The config's filter only tidies a hand-run `slither .`.
 
 Slither's version is pinned by the hash-locked
 [`requirements-tools.lock`](../../requirements-tools.lock). A version bump can change
