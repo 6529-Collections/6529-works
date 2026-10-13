@@ -81,6 +81,7 @@ contract DeployScriptTest is Test {
             vm.etch(_account(safes[i]), safe);
         }
         _genesisFile(_filled());
+        vm.deal(makeAddr("fee"), 1); // an existing account
         deployer.setEnv("NETWORK_FEE_RECIPIENT", vm.toString(makeAddr("fee")));
         deployer.setEnv("MARKETPLACE_OWNER", vm.toString(makeAddr("owner")));
         delegation = new DelegationManagementMock();
@@ -275,6 +276,36 @@ contract DeployScriptTest is Test {
             deployer.setEnv(names[i], values[i]);
         }
         deployer.prepare();
+    }
+
+    /// @dev ADR 0004: off anvil the network fee recipient must already exist, so no payout pays
+    ///      to create it. Code, a balance or a nonce each count; on anvil the placeholder stays.
+    function test_OffAnvilTheFeeRecipientMustExist() public {
+        _sepolia();
+        address empty = makeAddr("emptyFeeRecipient");
+        deployer.setEnv("NETWORK_FEE_RECIPIENT", vm.toString(empty));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.AccountDoesNotExist.selector, "NETWORK_FEE_RECIPIENT", empty
+            )
+        );
+        deployer.prepare();
+
+        address[3] memory existing =
+            [makeAddr("feeWithNonce"), makeAddr("feeWithBalance"), makeAddr("feeSafe")];
+        vm.setNonce(existing[0], 1); // an EOA that has sent a transaction
+        vm.deal(existing[1], 1); // a funded EOA
+        vm.etch(existing[2], address(new MockSafe()).code); // a Safe
+        for (uint256 i; i < existing.length; ++i) {
+            deployer.setEnv("NETWORK_FEE_RECIPIENT", vm.toString(existing[i]));
+            assertEq(deployer.prepare().p.feeRecipient, existing[i]);
+        }
+
+        // On anvil the placeholder, which does not exist, is still accepted.
+        deployer.setEnv("NETWORK_FEE_RECIPIENT", "");
+        address placeholder = deployer.params(true).feeRecipient;
+        assertEq(placeholder, address(0xC001));
+        assertEq(placeholder.balance + placeholder.code.length + vm.getNonce(placeholder), 0);
     }
 
     function test_OffAnvilTheExampleIsRefusedUnderAnyPath() public {

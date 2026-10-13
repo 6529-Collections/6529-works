@@ -45,7 +45,7 @@ import {
 contract EnglishAuctionGasTest is Test {
     uint256 internal constant ITEMS = 16;
     /// @dev E1 (ADR 0003): the steady-state gate, amended from 300K. ADR 0004 keeps it as Prague
-    ///      execution gas, the only gas Foundry 1.7.1 measures.
+    ///      gas, the only gas Foundry 1.7.1 measures.
     uint256 internal constant START_GATE = 350_000;
     uint256 internal constant REDESIGN_THRESHOLD = 400_000;
     uint256 internal constant TX_GAS_CAP = 16_777_216;
@@ -120,7 +120,7 @@ contract EnglishAuctionGasTest is Test {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
         uint256 total = _measureStart(2, 3, artistPk, "steady state");
-        assertLe(total, START_GATE, "steady-state start gate (E1), Prague execution gas");
+        assertLe(total, START_GATE, "steady-state start gate (E1), Prague gas");
     }
 
     /// @dev The first work of a new artist in a new collection while custody is empty: the
@@ -133,18 +133,14 @@ contract EnglishAuctionGasTest is Test {
         assertLe(total, REDESIGN_THRESHOLD, "above 400K the start path needs a redesign (D5)");
     }
 
-    /// @dev L-4: the 350K steady-state gate (Prague execution gas, ADR 0004) covers
+    /// @dev L-4: the 350K steady-state gate (Prague gas, ADR 0004) covers
     ///      `startWithBid` too (a first bid for oneself writes one more slot: the bidder with the
     ///      packed bid).
     function test_StartWithBidGas_SteadyState() public {
         _startItem(0, 1, artistPk);
         _priorBid(_startItem(1, 2, otherArtistPk));
         uint256 total = _measureStartWithBid("startWithBid steady state, whole transaction");
-        assertLe(
-            total,
-            START_GATE,
-            "steady-state start gate (E1) covers startWithBid, Prague execution gas"
-        );
+        assertLe(total, START_GATE, "steady-state start gate (E1) covers startWithBid, Prague gas");
     }
 
     /// @dev PR #33 review: the first `startWithBid` after a real config change writes both a
@@ -277,7 +273,7 @@ contract EnglishAuctionGasTest is Test {
         console2.log("  calldata bytes", callData.length);
         console2.log("  execution (incl. a cold call into the auction)", used);
         console2.log("  whole transaction", total);
-        console2.log("  steady-state gate (Prague execution gas)", START_GATE);
+        console2.log("  steady-state gate (Prague gas)", START_GATE);
     }
 
     /// @dev A bid on an earlier sale: in steady state the terms record with the current

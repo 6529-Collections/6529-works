@@ -3,29 +3,34 @@ pragma solidity ^0.8.24;
 
 import { Vm, VmSafe } from "forge-std/Vm.sol";
 
-/// @notice The state a transaction creates, counted from a Foundry state-diff recording
-///         (`vm.startStateDiffRecording` / `vm.stopAndReturnStateDiff`). ADR 0004 caps these
-///         counts per operation, because Glamsterdam prices state creation far above Prague and
-///         Foundry 1.7.1 can only measure Prague gas.
-/// @dev Definitions:
-///      - **New slot:** a storage slot whose value was zero when the recording started and is
-///        non-zero at the end. Each slot counts once, however many times it is written. A write
-///        that a revert undid does not count, and neither does a slot written from zero and
-///        cleared again (zero to zero), or a non-zero slot that was overwritten or cleared.
-///      - **New account:** an account that was empty when first touched (no code, nonce zero,
-///        balance zero) and is not empty at the end: a contract creation, or ETH sent to a fresh
-///        address. Calls that leave an account empty (a precompile, a zero-value call, a value
-///        transfer that reverted) do not count.
+/// @notice The state a transaction creates, and the accounts it reaches, from a Foundry
+///         state-diff recording (`vm.startStateDiffRecording` / `vm.stopAndReturnStateDiff`).
+///         ADR 0004 caps the creation per operation, because Glamsterdam prices it far above
+///         Prague and Foundry 1.7.1 can only measure Prague gas.
+/// @dev The recording only names the candidates: every storage slot and every account the call
+///      accessed. Whether each one is new is read from the state itself, before and after the
+///      call, so the result does not depend on how Foundry orders or flags the recorded accesses
+///      (a write in a frame that halted out of gas or on `INVALID` is undone even when the
+///      recording does not mark it reverted).
+///      - **New slot:** a slot that is zero before the call and non-zero after it. A slot
+///        written several times counts once; a write that was undone, a zero-to-zero write and
+///        an overwrite or clearing of a non-zero slot do not count. Transient storage is never
+///        a slot.
+///      - **New account:** an account that is empty before the call (no code, nonce zero,
+///        balance zero) and not empty after it: a contract creation, or ETH sent to an empty
+///        address (a precompile included, when it is empty). The sender is never new: a real
+///        transaction's sender pays for it.
+///      - **Cold accounts:** the accounts a real transaction would first reach cold under
+///        EIP-2929. Every account the call reached, except its sender and target (warm from
+///        the start), the precompiles 0x01 to 0x11, the cheatcode address, and the accounts the
+///        call created (warmed by their creation).
 ///
-///      Call `count` right after `vm.stopAndReturnStateDiff()`, before anything else changes
-///      state: it checks every slot's computed final value against `vm.load`, so a change in how
-///      Foundry orders or flags the recorded accesses fails loudly instead of miscounting.
-///
-///      Recording changes gas: Foundry reads each account and slot it records, which warms it
-///      before the opcode pays for it. Never measure gas in a recorded run; count the growth in
-///      one run and measure the gas in another from the same snapshot.
+///      Recording changes gas: Foundry reads each account and slot it records, and once a test
+///      has recorded, every later account and slot access in that test is priced warm. Never
+///      measure gas in or after a recording; measure first, then record from the same snapshot.
 library StateGrowth {
     Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    uint160 private constant LAST_PRECOMPILE = 0x11;
 
     /// @dev A storage slot written from zero, with its final value.
     struct Slot {
@@ -39,125 +44,179 @@ library StateGrowth {
         uint256 accounts;
         Slot[] newSlots;
         address[] newAccounts;
+        address[] coldAccounts;
     }
 
-    /// @dev One distinct storage slot seen in the recording.
-    struct SlotState {
-        address account;
-        bytes32 slot;
-        bytes32 initial;
-        bytes32 last;
-    }
+    /// @notice What the recorded call created, and the accounts it reached cold.
+    /// @param accesses The recording of exactly one call.
+    /// @param preCall A state snapshot taken just before that call. The current state must be
+    ///        the call's final state; it is restored before this returns.
+    /// @param sender The transaction's sender.
+    /// @param target The transaction's target.
+    function count(
+        Vm.AccountAccess[] memory accesses,
+        uint256 preCall,
+        address sender,
+        address target
+    ) internal returns (Growth memory growth) {
+        (address[] memory slotAccounts, bytes32[] memory slots) = _candidateSlots(accesses);
+        address[] memory accounts = _candidateAccounts(accesses);
 
-    /// @notice The new slots and new accounts in `accesses`, counted and listed.
-    function count(Vm.AccountAccess[] memory accesses)
-        internal
-        view
-        returns (Growth memory growth)
-    {
-        growth.newSlots = newSlots(accesses);
-        growth.newAccounts = newAccounts(accesses);
-        growth.slots = growth.newSlots.length;
-        growth.accounts = growth.newAccounts.length;
-    }
+        bytes32[] memory slotsAfter = new bytes32[](slots.length);
+        bool[] memory existsAfter = new bool[](accounts.length);
+        _read(slotAccounts, slots, accounts, slotsAfter, existsAfter);
+        // The state before the call, then back to the state after it.
+        uint256 postCall = VM.snapshotState();
+        require(VM.revertToState(preCall), "StateGrowth: no pre-call snapshot");
+        bytes32[] memory slotsBefore = new bytes32[](slots.length);
+        bool[] memory existsBefore = new bool[](accounts.length);
+        _read(slotAccounts, slots, accounts, slotsBefore, existsBefore);
+        require(VM.revertToStateAndDelete(postCall), "StateGrowth: no post-call snapshot");
 
-    /// @notice Storage slots that went from zero to non-zero.
-    function newSlots(Vm.AccountAccess[] memory accesses)
-        internal
-        view
-        returns (Slot[] memory found)
-    {
-        SlotState[] memory seen = new SlotState[](_storageAccessCount(accesses));
-        uint256 distinct;
-        // The recording is chronological: a call's accesses follow its caller's earlier ones,
-        // and a `Resume` entry carries the caller's accesses after the call returns.
-        for (uint256 i; i < accesses.length; ++i) {
-            Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
-            for (uint256 j; j < sa.length; ++j) {
-                uint256 k = _find(seen, distinct, sa[j].account, sa[j].slot);
-                if (k == distinct) {
-                    // First touch: its previous value is the value before the transaction.
-                    seen[k] = SlotState(
-                        sa[j].account, sa[j].slot, sa[j].previousValue, sa[j].previousValue
-                    );
-                    ++distinct;
-                }
-                // A write in a frame that reverted (or whose caller reverted) was undone.
-                if (sa[j].isWrite && !sa[j].reverted) seen[k].last = sa[j].newValue;
+        growth.newSlots = new Slot[](slots.length);
+        for (uint256 i; i < slots.length; ++i) {
+            if (slotsBefore[i] == bytes32(0) && slotsAfter[i] != bytes32(0)) {
+                growth.newSlots[growth.slots++] = Slot(slotAccounts[i], slots[i], slotsAfter[i]);
             }
         }
-        found = new Slot[](distinct);
-        uint256 n;
-        for (uint256 k; k < distinct; ++k) {
-            require(
-                seen[k].last == VM.load(seen[k].account, seen[k].slot),
-                "StateGrowth: recorded diff disagrees with state"
-            );
-            if (seen[k].initial == bytes32(0) && seen[k].last != bytes32(0)) {
-                found[n++] = Slot(seen[k].account, seen[k].slot, seen[k].last);
+        _truncate(growth.newSlots, growth.slots);
+        growth.newAccounts = new address[](accounts.length);
+        for (uint256 i; i < accounts.length; ++i) {
+            if (!existsBefore[i] && existsAfter[i] && accounts[i] != sender) {
+                growth.newAccounts[growth.accounts++] = accounts[i];
             }
         }
-        assembly ("memory-safe") {
-            mstore(found, n)
-        }
+        _truncate(growth.newAccounts, growth.accounts);
+        growth.coldAccounts = _cold(accesses, accounts, sender, target);
     }
 
-    /// @notice Accounts that were empty when first touched and are not empty now.
-    function newAccounts(Vm.AccountAccess[] memory accesses)
-        internal
-        view
-        returns (address[] memory found)
-    {
-        address[] memory seen = new address[](accesses.length);
-        found = new address[](accesses.length);
-        uint256 distinct;
-        uint256 n;
-        for (uint256 i; i < accesses.length; ++i) {
-            address account = accesses[i].account;
-            bool known;
-            for (uint256 k; k < distinct && !known; ++k) {
-                known = seen[k] == account;
-            }
-            if (known) continue;
-            seen[distinct++] = account;
-            if (_emptyBefore(accesses[i]) && !_empty(account)) found[n++] = account;
-        }
-        assembly ("memory-safe") {
-            mstore(found, n)
-        }
-    }
+    // ------------------------------------------------------------------ candidates
 
-    /// @dev Whether the account was empty before this access. Foundry 1.7.1 reports a created
-    ///      account as `initialized` (it reads it after the creation), so a creation is judged by
-    ///      the nonce and balance it had before: a CREATE cannot land on code.
-    function _emptyBefore(Vm.AccountAccess memory access) private pure returns (bool) {
-        if (access.kind == VmSafe.AccountAccessKind.Create) {
-            return access.oldNonce == 0 && access.oldBalance == 0;
-        }
-        return !access.initialized;
-    }
-
-    function _empty(address account) private view returns (bool) {
-        return account.code.length == 0 && account.balance == 0 && VM.getNonce(account) == 0;
-    }
-
-    function _storageAccessCount(Vm.AccountAccess[] memory accesses)
+    /// @dev Every distinct (account, slot) the recording accessed, reads included.
+    function _candidateSlots(Vm.AccountAccess[] memory accesses)
         private
         pure
-        returns (uint256 total)
+        returns (address[] memory accounts, bytes32[] memory slots)
     {
+        uint256 total;
         for (uint256 i; i < accesses.length; ++i) {
             total += accesses[i].storageAccesses.length;
         }
+        accounts = new address[](total);
+        slots = new bytes32[](total);
+        uint256 n;
+        for (uint256 i; i < accesses.length; ++i) {
+            Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
+            for (uint256 j; j < sa.length; ++j) {
+                bool known;
+                for (uint256 k; k < n && !known; ++k) {
+                    known = accounts[k] == sa[j].account && slots[k] == sa[j].slot;
+                }
+                if (known) continue;
+                accounts[n] = sa[j].account;
+                slots[n] = sa[j].slot;
+                ++n;
+            }
+        }
+        _truncate(accounts, n);
+        _truncate(slots, n);
     }
 
-    function _find(SlotState[] memory seen, uint256 distinct, address account, bytes32 slot)
+    /// @dev Every distinct account the recording accessed, other than the cheatcode address.
+    function _candidateAccounts(Vm.AccountAccess[] memory accesses)
         private
         pure
-        returns (uint256 k)
+        returns (address[] memory accounts)
     {
-        for (; k < distinct; ++k) {
-            if (seen[k].account == account && seen[k].slot == slot) return k;
+        accounts = new address[](accesses.length);
+        uint256 n;
+        for (uint256 i; i < accesses.length; ++i) {
+            address account = accesses[i].account;
+            if (account == address(VM) || _contains(accounts, n, account)) continue;
+            accounts[n++] = account;
+        }
+        _truncate(accounts, n);
+    }
+
+    /// @dev The candidates a real transaction reaches cold (EIP-2929).
+    function _cold(
+        Vm.AccountAccess[] memory accesses,
+        address[] memory accounts,
+        address sender,
+        address target
+    ) private pure returns (address[] memory cold) {
+        cold = new address[](accounts.length);
+        uint256 n;
+        for (uint256 i; i < accounts.length; ++i) {
+            address account = accounts[i];
+            if (account == sender || account == target) continue;
+            if (uint160(account) != 0 && uint160(account) <= LAST_PRECOMPILE) continue;
+            if (_created(accesses, account)) continue;
+            cold[n++] = account;
+        }
+        _truncate(cold, n);
+    }
+
+    function _created(Vm.AccountAccess[] memory accesses, address account)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 i; i < accesses.length; ++i) {
+            if (
+                accesses[i].kind == VmSafe.AccountAccessKind.Create
+                    && accesses[i].account == account
+            ) return true;
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------ state
+
+    function _read(
+        address[] memory slotAccounts,
+        bytes32[] memory slots,
+        address[] memory accounts,
+        bytes32[] memory slotValues,
+        bool[] memory exists
+    ) private view {
+        for (uint256 i; i < slots.length; ++i) {
+            slotValues[i] = VM.load(slotAccounts[i], slots[i]);
+        }
+        for (uint256 i; i < accounts.length; ++i) {
+            address a = accounts[i];
+            exists[i] = a.code.length != 0 || a.balance != 0 || VM.getNonce(a) != 0;
+        }
+    }
+
+    // ------------------------------------------------------------------ arrays
+
+    function _contains(address[] memory list, uint256 n, address account)
+        private
+        pure
+        returns (bool)
+    {
+        for (uint256 k; k < n; ++k) {
+            if (list[k] == account) return true;
+        }
+        return false;
+    }
+
+    function _truncate(address[] memory list, uint256 n) private pure {
+        assembly ("memory-safe") {
+            mstore(list, n)
+        }
+    }
+
+    function _truncate(bytes32[] memory list, uint256 n) private pure {
+        assembly ("memory-safe") {
+            mstore(list, n)
+        }
+    }
+
+    function _truncate(Slot[] memory list, uint256 n) private pure {
+        assembly ("memory-safe") {
+            mstore(list, n)
         }
     }
 }

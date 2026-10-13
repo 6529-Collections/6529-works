@@ -114,7 +114,7 @@ or stores a key:
 | Storage operator | STORAGE_OPERATOR | EOA |
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
-| Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | Any address |
+| Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
 | Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it | Safe or EOA |
 | VRF subscription owner | No role; owns the Chainlink subscription | EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
@@ -131,6 +131,17 @@ independent of the admins they check:
 - **Separate pause and unpause.** The guardians hold PAUSER and the hot admin holds UNPAUSER;
   the configuration refuses one account holding both. A pause by a guardian is undone only by
   the admins.
+
+#### The network fee recipient must exist
+
+Sales pay the network fee by sending it to the fee recipient. If that address is empty (no
+code, a zero balance and a zero nonce), the first payout creates the account. Under
+Glamsterdam that costs whoever settles or buys about 184K more gas
+([ADR 0004](../docs/adr/0004-gas-budgets-under-glamsterdam.md)).
+- Off anvil the script refuses an empty `NETWORK_FEE_RECIPIENT` (`AccountDoesNotExist`).
+  Name a Safe, or fund the address first.
+- A later `EconomicsResolver.setFeeTerms` must also name an existing account, for the same
+  reason. Nothing on-chain checks it.
 
 ### 2. Safe pre-flight
 
@@ -500,7 +511,7 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | --- | --- | --- |
 | `GENESIS_CONFIG` | `config/genesis.example.json` | Required; the committed policy with reachable holders (step 3) |
 | `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Optional; changes every address |
-| `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required |
+| `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required; must exist: code, a balance or a nonce |
 | `MARKETPLACE_OWNER` | Placeholder `0xC002` | Required |
 | `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet. Default on Sepolia: the official deployment |
 | `CC0_TEXT_PATH` | `test/fixtures/cc0-legalcode.txt` | Same default; must hash to the pinned digest |

@@ -23,6 +23,7 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      below aborts the run with nothing broadcast. Off anvil:
 ///      - the RPC's chain ID must match (`ChainIdMismatch`);
 ///      - every placeholder is refused, and every required input must be given;
+///      - the network fee recipient must already exist (`AccountDoesNotExist`);
 ///      - the genesis file must name reachable holders and the committed policy
 ///        (`DeployGuards`);
 ///      - the CC0 text must hash to `DeployV1.CC0_LEGALCODE_SHA256`;
@@ -49,6 +50,10 @@ contract Deploy is ScriptIO {
     error ConflictingParameters(string a, string b);
     error NoCode(string name, address account);
     error NonCanonicalOnMainnet(string name, address account);
+    /// @notice The account has no code, a zero balance and a zero nonce. The first payout to it
+    ///         would create it, which under Glamsterdam costs whoever settles about 184K more
+    ///         gas (ADR 0004). Fund it, or name a Safe.
+    error AccountDoesNotExist(string name, address account);
     /// @notice `--sender` was not given: the script's sender is Foundry's default, not the
     ///         signing account, so the configurator would name the wrong deployer.
     error SenderNotSet();
@@ -155,6 +160,9 @@ contract Deploy is ScriptIO {
         p.feeRecipient =
             _envAddress("NETWORK_FEE_RECIPIENT", local ? PLACEHOLDER_FEE_RECIPIENT : address(0));
         if (p.feeRecipient == address(0)) revert MissingParameter("NETWORK_FEE_RECIPIENT");
+        if (!local && !_exists(p.feeRecipient)) {
+            revert AccountDoesNotExist("NETWORK_FEE_RECIPIENT", p.feeRecipient);
+        }
         p.marketOwner =
             _envAddress("MARKETPLACE_OWNER", local ? PLACEHOLDER_MARKET_OWNER : address(0));
         if (p.marketOwner == address(0)) revert MissingParameter("MARKETPLACE_OWNER");
@@ -177,6 +185,11 @@ contract Deploy is ScriptIO {
             SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000))
         );
         _vrf(p, local);
+    }
+
+    /// @dev Whether `account` exists: it has code, a balance or a nonce.
+    function _exists(address account) internal view returns (bool) {
+        return account.code.length != 0 || account.balance != 0 || vm.getNonce(account) != 0;
     }
 
     /// @dev An external contract the deployment pins: `byDefault` unless set, canonical on

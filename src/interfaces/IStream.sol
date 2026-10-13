@@ -18,7 +18,7 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      the adapter's are both `SaleKind.ENGLISH_AUCTION`. A VRF item's seed must already be
 ///      delivered (`IEntropyModule.requestSeed` runs before the start).
 ///
-///      Start-gas budget: 350K execution gas at Prague costs, and at most 6 new storage slots, per
+///      Start-gas budget: 350K Prague gas, and at most 6 new storage slots (7 with a bid), per
 ///      steady-state start transaction (ADR 0003, ADR 0004; the first start in an empty
 ///      collection or custody may cost more, and its measured value is recorded). A
 ///      mint stores per token only the item hash, the seller, the lead artist ID and one packed

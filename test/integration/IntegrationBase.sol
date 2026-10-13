@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
-import { Vm } from "forge-std/Vm.sol";
+import { Vm, VmSafe } from "forge-std/Vm.sol";
 import { IERC5267 } from "@openzeppelin/contracts/interfaces/IERC5267.sol";
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -47,6 +47,8 @@ abstract contract IntegrationBase is WorksDeployment {
     uint256 internal constant TX_GAS_CAP = 1 << 24;
     /// @dev ADR 0003 and ADR 0004: a steady-state start, as a whole transaction in Prague gas.
     uint256 internal constant START_BUDGET = 350_000;
+    /// @dev EIP-2929: the first access to an account costs 2,600, a warm one 100.
+    uint256 internal constant COLD_ACCOUNT_SURCHARGE = 2500;
     uint256 internal constant TOKEN_URI_BUDGET = 8_000_000;
     /// @dev The selector of `Error(string)`, what a failed `require` with a message reverts with.
     bytes4 internal constant ERROR_STRING = 0x08c379a0;
@@ -458,8 +460,9 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      opened, attested and synced on-chain, then `Stream.tokenURI` measured from a cold
     ///      start through the whole path (Stream, WorkRecords, the renderer, the content store,
     ///      the statement log). Rows: 32, 64, 128 and 256 KiB of base64-stored media, and 32 and
-    ///      64 KiB of identity media. Each row must fit 8M gas (Prague), inline exactly when the
-    ///      renderer's cost-weighted threshold allows it, and create no state.
+    ///      64 KiB of identity media. Each row must fit 8M Prague gas (with the cold-account
+    ///      surcharge, see `_measureGrowth`), inline exactly when the renderer's cost-weighted
+    ///      threshold allows it, and create no state.
     function _tokenUriMatrix(address lead, address reader) internal {
         Work[] memory works = new Work[](6);
         for (uint256 i; i < 4; ++i) {
@@ -490,27 +493,34 @@ abstract contract IntegrationBase is WorksDeployment {
             if (i < 4) _attestAll(works[i].media[0].fileId);
             records.syncOnChain(ids[i]);
         }
-        console2.log("Stream.tokenURI gas, cold (stored bytes of the primary file)");
+        // Every gas figure first: none can be measured after a state-diff recording. Each view
+        // is called once before it is measured, so every account it reaches is warm and the
+        // cold-account surcharge below applies to all of them.
+        uint256[] memory used = new uint256[](6);
         for (uint256 i; i < 6; ++i) {
-            (, uint256 used) =
-                _measure(reader, address(stream), abi.encodeCall(stream.tokenURI, (ids[i])), 0);
-            string memory label = i < 4
-                ? string.concat("  base64   ", vm.toString(base64Sizes[i]))
-                : string.concat("  identity ", vm.toString(identitySizes[i - 4]));
-            console2.log(label, used);
-            assertLe(used, TOKEN_URI_BUDGET, label);
             bool inlined = _contains(stream.tokenURI(ids[i]), "data:image/png;base64,");
             // Base64 inlines up to the 256 KiB threshold; identity media counts eight times, so
             // 32 KiB inlines and 64 KiB falls back to its locator.
-            assertEq(inlined, i != 5, string.concat(label, ": inline as expected"));
+            assertEq(inlined, i != 5, string.concat(_matrixLabel(i), ": inline as expected"));
+            (, used[i]) =
+                _measure(reader, address(stream), abi.encodeCall(stream.tokenURI, (ids[i])), 0);
         }
-        // ADR 0004: a view creates no state. Recorded after every measurement above, since no
-        // gas can be measured after a state-diff recording (`_requireCooling`).
+        console2.log("Stream.tokenURI Prague gas, cold (stored bytes of the primary file)");
         for (uint256 i; i < 6; ++i) {
             StateGrowth.Growth memory growth =
                 _growth(reader, address(stream), abi.encodeCall(stream.tokenURI, (ids[i])), 0);
+            // ADR 0004: a view creates no state.
             assertEq(growth.slots + growth.accounts, 0, "tokenURI creates no state");
+            used[i] += COLD_ACCOUNT_SURCHARGE * growth.coldAccounts.length;
+            console2.log(_matrixLabel(i), used[i]);
+            assertLe(used[i], TOKEN_URI_BUDGET, _matrixLabel(i));
         }
+    }
+
+    function _matrixLabel(uint256 i) internal view returns (string memory) {
+        return i < 4
+            ? string.concat("  base64   ", vm.toString(base64Sizes[i]))
+            : string.concat("  identity ", vm.toString(identitySizes[i - 4]));
     }
 
     /// @dev Calldata gas: the EIP-2028 price and the EIP-7623 floor.
@@ -535,12 +545,10 @@ abstract contract IntegrationBase is WorksDeployment {
         if (21_000 + floor > total) total = 21_000 + floor;
     }
 
-    /// @dev Cools every deployed contract's storage, as at the start of a new transaction.
-    ///      Foundry 1.7.1's `vm.cool` cools storage slots but not the accounts themselves, so
-    ///      each account a measured call reaches is still priced as warm: about 2,500 gas under a
-    ///      real cold access (ADR 0004).
-    function _coolAll() internal {
-        address[22] memory all = [
+    /// @dev Every account whose storage `_coolAll` cools: the deployed contracts, the 6529
+    ///      delegation contract, Permit2 and the test ERC-20.
+    function _cooled() internal view returns (address[] memory all) {
+        address[24] memory list = [
             address(store),
             address(dependencies),
             address(consolidation),
@@ -562,19 +570,32 @@ abstract contract IntegrationBase is WorksDeployment {
             address(fixedSale),
             address(dutchSale),
             address(manager),
-            address(delegation)
+            address(delegation),
+            PERMIT2,
+            address(usd)
         ];
+        all = new address[](list.length);
+        for (uint256 i; i < list.length; ++i) {
+            all[i] = list[i];
+        }
+    }
+
+    /// @dev Cools the storage of every account in `_cooled`, as at the start of a new
+    ///      transaction, and checks that cooling works. Foundry 1.7.1's `vm.cool` cools storage
+    ///      slots but not the accounts themselves: `_measureGrowth` adds the cold-account cost.
+    function _coolAll() internal {
+        address[] memory all = _cooled();
         for (uint256 i; i < all.length; ++i) {
             vm.cool(all[i]);
         }
         _requireCooling();
     }
 
-    /// @dev Fails when `vm.cool` does not cool. Foundry 1.7.1 stops cooling storage for the rest
-    ///      of a test once a state-diff recording has run in that test (even after a state
-    ///      revert), so every later measurement would read warm slots and come out tens of
-    ///      thousands of gas low. The probe is a word of this contract's own storage: cooled, its
-    ///      next read must cost the cold price (2,100) again.
+    /// @dev Fails when `vm.cool` does not cool. Once a state-diff recording has run in a test,
+    ///      Foundry 1.7.1 prices every account and slot as warm for the rest of that test (even
+    ///      after a state revert), so a later measurement would come out tens of thousands of
+    ///      gas low. The probe is a word of this contract's own storage: cooled, its next read
+    ///      must cost the cold price (2,100) again.
     function _requireCooling() internal {
         uint256 warmed = _coolProbe;
         vm.cool(address(this));
@@ -587,11 +608,12 @@ abstract contract IntegrationBase is WorksDeployment {
         );
     }
 
-    /// @dev Calls `target` with `data` as `from` (and `value`) from a cold start and returns the
-    ///      whole-transaction gas: 21,000, the calldata (or its EIP-7623 floor) and the called
-    ///      frame's own execution gas before refunds (`vm.lastCallGas`), which is what a
-    ///      transaction to `target` executes: its target is warm and its value is free. A revert
-    ///      bubbles up.
+    /// @dev Calls `target` with `data` as `from` (and `value`) with every contract's storage
+    ///      cooled, and returns the whole-transaction gas: 21,000, the calldata (or its
+    ///      EIP-7623 floor) and the called frame's own execution gas before refunds
+    ///      (`vm.lastCallGas`), which is what a transaction to `target` executes: its target is
+    ///      warm and its value is free. A revert bubbles up. The accounts the call reaches are
+    ///      priced as warm or cold as this test left them; `_measureGrowth` corrects that.
     function _measure(address from, address target, bytes memory data, uint256 value)
         internal
         returns (uint256 total, uint256 execution)
@@ -605,36 +627,153 @@ abstract contract IntegrationBase is WorksDeployment {
         total = _txGas(data, execution);
     }
 
-    /// @dev `_measure`, plus the state the call creates (ADR 0004): the new storage slots and
-    ///      the new accounts, counted by `StateGrowth` from a state diff recorded around the
-    ///      call alone. The call runs twice from the same snapshot: measured first, then
-    ///      recorded. Recording warms what it reads, and once it has run `vm.cool` stops working
-    ///      for the rest of the test (`_requireCooling`), so a test measures every gas figure
-    ///      before its first recording. The recorded run's state, the same as the measured
-    ///      run's, is the one that remains.
+    /// @dev Which accounts of `_probeSet` are warm at this point of the test: an account the
+    ///      test function touched earlier is warm, one touched only in `setUp` (a separate
+    ///      transaction) or never is cold.
+    struct Warmth {
+        address[] accounts;
+        bool[] warm;
+    }
+
+    /// @dev Every account a measured call may reach besides its sender and target, whose warmth
+    ///      `_measureGrowth` probes: by default the contracts `_coolAll` cools and the network
+    ///      fee recipient. A report adds its actors and wallets. Computed from a snapshot, so the
+    ///      calls it makes warm nothing.
+    function _probeSet() internal virtual returns (address[] memory accounts) {
+        address[] memory cooled = _cooled();
+        accounts = new address[](cooled.length + 1);
+        for (uint256 i; i < cooled.length; ++i) {
+            accounts[i] = cooled[i];
+        }
+        accounts[cooled.length] = networkFee;
+    }
+
+    /// @dev Probes the warmth of every account in `_probeSet`, then restores the state (and
+    ///      with it the warmth). Must run before any state-diff recording in the test.
+    function _warmth() internal returns (Warmth memory w) {
+        uint256 snapshot = vm.snapshotState();
+        w.accounts = _probeSet();
+        vm.revertToState(snapshot);
+        w.warm = new bool[](w.accounts.length);
+        for (uint256 i; i < w.accounts.length; ++i) {
+            w.warm[i] = _isWarm(w.accounts[i]);
+        }
+        vm.revertToStateAndDelete(snapshot);
+    }
+
+    /// @dev Whether `account` is warm: its first `EXTCODESIZE` costs 100, not 2,600.
+    function _isWarm(address account) internal view returns (bool) {
+        uint256 size;
+        uint256 before = gasleft();
+        assembly ("memory-safe") {
+            size := extcodesize(account)
+        }
+        uint256 used = before - gasleft();
+        return used < 1000 && size != type(uint256).max;
+    }
+
+    /// @dev How many of `cold` (the accounts a real transaction reaches cold) the measured run
+    ///      priced warm. Each must have been probed, so none is counted twice or missed.
+    function _warmButCold(Warmth memory w, address[] memory cold)
+        internal
+        view
+        returns (uint256 n)
+    {
+        for (uint256 i; i < cold.length; ++i) {
+            uint256 k;
+            while (k < w.accounts.length && w.accounts[k] != cold[i]) ++k;
+            if (k == w.accounts.length) {
+                revert(
+                    string.concat(
+                        "the call reached an account _probeSet does not probe: ",
+                        vm.getLabel(cold[i])
+                    )
+                );
+            }
+            if (w.warm[k]) ++n;
+        }
+    }
+
+    /// @dev The Prague gas of a real transaction, and the state it creates (ADR 0004).
+    ///      - **Gas:** `_measure`, plus 2,500 (EIP-2929: 2,600 cold against 100 warm) for each
+    ///        account that a real transaction reaches cold (`StateGrowth`'s cold accounts) but
+    ///        the measured run reached warm, because the test had touched it earlier. Foundry
+    ///        cannot cool accounts; `_warmth` finds which were warm.
+    ///      - **Growth:** the new storage slots and new accounts, counted by `StateGrowth`.
+    ///      The call runs twice from one snapshot: measured first, then recorded, since nothing
+    ///      can be measured or probed after a recording (`_requireCooling`). The recorded run's
+    ///      state, the same as the measured run's, is the one that remains.
     function _measureGrowth(address from, address target, bytes memory data, uint256 value)
         internal
         returns (uint256 total, uint256 execution, StateGrowth.Growth memory growth)
     {
-        uint256 snapshot = vm.snapshotState();
-        (total, execution) = _measure(from, target, data, value);
-        vm.revertToStateAndDelete(snapshot);
+        Warmth memory w = _warmth();
+        uint256 preCall = vm.snapshotState();
+        (, execution) = _measure(from, target, data, value);
+        vm.revertToStateAndDelete(preCall);
         growth = _growth(from, target, data, value);
+        execution += COLD_ACCOUNT_SURCHARGE * _warmButCold(w, growth.coldAccounts);
+        total = _txGas(data, execution);
     }
 
-    /// @dev The state growth of calling `target` with `data` as `from` (and `value`), from a
-    ///      state diff recorded around the call alone. A revert bubbles up.
+    /// @dev The state growth and cold accounts of calling `target` with `data` as `from` (and
+    ///      `value`), from a state diff recorded around the call alone. A revert bubbles up.
+    ///      Checks that every account whose storage the call reached is one `_coolAll` cools,
+    ///      so no measured slot was left warm.
     function _growth(address from, address target, bytes memory data, uint256 value)
         internal
         returns (StateGrowth.Growth memory growth)
     {
         vm.deal(from, from.balance + value);
-        vm.startStateDiffRecording();
+        uint256 preCall = vm.snapshotState();
         vm.prank(from);
+        vm.startStateDiffRecording();
         (bool ok, bytes memory reason) = target.call{ value: value }(data);
         Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
         _bubble(ok, reason);
-        growth = StateGrowth.count(accesses);
+        _requireCooled(accesses);
+        growth = StateGrowth.count(accesses, preCall, from, target);
+        vm.deleteStateSnapshot(preCall);
+    }
+
+    /// @dev Every account whose storage the recorded call reached is cooled by `_coolAll`, or
+    ///      was created by the call (its storage starts cold).
+    function _requireCooled(Vm.AccountAccess[] memory accesses) internal view {
+        address[] memory cooled = _cooled();
+        for (uint256 i; i < accesses.length; ++i) {
+            Vm.StorageAccess[] memory sa = accesses[i].storageAccesses;
+            for (uint256 j; j < sa.length; ++j) {
+                if (_listed(cooled, sa[j].account) || _createdBy(accesses, sa[j].account)) {
+                    continue;
+                }
+                revert(
+                    string.concat(
+                        "measured storage that _coolAll does not cool: ", vm.toString(sa[j].account)
+                    )
+                );
+            }
+        }
+    }
+
+    function _listed(address[] memory list, address account) internal pure returns (bool) {
+        for (uint256 i; i < list.length; ++i) {
+            if (list[i] == account) return true;
+        }
+        return false;
+    }
+
+    function _createdBy(Vm.AccountAccess[] memory accesses, address account)
+        internal
+        pure
+        returns (bool)
+    {
+        for (uint256 i; i < accesses.length; ++i) {
+            if (
+                accesses[i].kind == VmSafe.AccountAccessKind.Create
+                    && accesses[i].account == account
+            ) return true;
+        }
+        return false;
     }
 
     /// @dev `vm.lastCallGas().gasTotalUsed`, read by hand: the pinned forge-std declares a sixth

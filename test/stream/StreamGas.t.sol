@@ -18,7 +18,7 @@ import {
 import { StreamFixture } from "./StreamFixture.sol";
 
 /// @notice 6529 Stream's own share of the auction start (ADR 0003 and ADR 0004 budget: 350K
-///         Prague execution gas for the whole steady-state start). The registry, economics and
+///         Prague gas for the whole steady-state start). The registry, economics and
 ///         artist registry are constant mocks and every account is cold, so Stream's storage,
 ///         events, AccessManager check, call overhead and its seller-wallet derivation on the
 ///         real split factory are measured; the real registry and auction costs come on top.

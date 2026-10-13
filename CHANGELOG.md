@@ -11,16 +11,21 @@
 - ADR 0002 records how the AccessManager hardening in ADR 0001 §13 is implemented:
   a guardian-cancellable subclassed manager, guardian rules, a cold recovery admin
   and the selector delay classes decided during the build.
-- ADR 0004 records the gas budgets under Glamsterdam. The budgets stay as execution
-  gas at Prague costs (a steady-state start at most 350K). Each measured operation
-  gets a cap on new storage slots and new accounts (a steady-state start at most 6
-  slots, 7 with a bid). The Sepolia totals are published next to them, and the
-  EIP-7825 per-transaction cap is restated for regular gas.
+- ADR 0004 records the gas budgets under Glamsterdam. The budgets stay as Prague gas
+  (a steady-state ETH start at most 350K). Each measured operation asserts its exact
+  count of new storage slots and new accounts, with a maximum for a steady-state start
+  of 6 slots, 7 with a bid. The Sepolia totals are published next to them, the
+  EIP-7825 per-transaction cap is restated for regular gas, and payees are assumed to
+  exist.
 - Tests: `test/helpers/StateGrowth.sol` counts the storage slots and accounts a
-  transaction creates, from a Foundry state diff. The integration gas report now
-  enforces its caps on every row, adds `createEdition`, `openSale`, `purchase`,
-  `refreshStanding` and the first-payout `settle`, and prints one table
+  transaction creates, and the accounts it reaches cold, from a Foundry state diff
+  and the state before and after the call. The integration gas report adds the
+  cold-account cost Foundry cannot model, asserts exact counts and a Prague ceiling
+  on every row, adds VRF, edition-master, ERC-20 Permit2, `settle`, `createEdition`,
+  `openSale`, `purchase` and `refreshStanding` rows, and prints one table
   (`forge test --match-test test_Gas_Table -vv`).
+- Deployment: off anvil, `Deploy.s.sol` refuses a `NETWORK_FEE_RECIPIENT` that does
+  not exist (`AccountDoesNotExist`).
 - Governance: `WorksAccessManager` (guardians cancel any scheduled operation;
   nobody cancels their own revocation), the canonical role and delay-class table
   (`Roles.sol`), a one-shot configurator that owns its manager and reads it back,

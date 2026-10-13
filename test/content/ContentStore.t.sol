@@ -728,7 +728,8 @@ contract ContentStoreGasTest is ContentBase {
         console2.log("gas writeChunk, 24,575 bytes, transaction", txGas);
         console2.log("gas per MB uploaded, transaction", perMB);
         assertLt(execution, 5_400_000);
-        // About 0.23 ETH per MB at 1 gwei.
+        // About 0.23 ETH per MB at 1 gwei, at Prague costs. Under Glamsterdam it is about 1.65 ETH
+        // per MiB (ADR 0004; src/content/README.md, "Glamsterdam").
         assertGt(perMB, 225_000_000);
         assertLt(perMB, 240_000_000);
     }

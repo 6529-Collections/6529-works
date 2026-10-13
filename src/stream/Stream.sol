@@ -42,8 +42,8 @@ import { SpdxId } from "./SpdxId.sol";
 ///      the marketplace metadata, and forwards `tokenURI` to the work's renderer. Records,
 ///      licenses, seeds, finalize and locators live in the bound `IWorkRecords` satellite.
 ///
-///      Storage is shaped by the auction-start budget (350K execution gas at Prague costs and at
-///      most 6 new slots per steady-state start, ADR 0004). A mint writes the ERC-721 owner and
+///      Storage is shaped by the auction-start budget (350K Prague gas and at most 6 new slots,
+///      7 with a bid, per steady-state start; ADR 0004). A mint writes the ERC-721 owner and
 ///      balance, one shared counter word, the collection's counter word and three work words: the
 ///      seller, serial, collection, kind, seed policy and flags; the lead artist ID, royalty rate,
 ///      fee share, fee-recipient index and minting adapter's index; the item hash. Fee recipients

@@ -93,7 +93,9 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - A file holds at most 512 chunks (about 12.58 MB). Registering a manifest
     must fit the Fusaka transaction cap.
   - Two full chunks (about 49 KB) fit in one transaction, not the 72 KB stated
-    in ADR 0001 §8. (Pre-Glamsterdam: see
+    in ADR 0001 §8. (Pre-Glamsterdam: under Glamsterdam it is one full chunk
+    per transaction; see the
+    [content module](../../src/content/README.md#upload-flow) and
     [ADR 0004](0004-gas-budgets-under-glamsterdam.md).)
   - Encodings are `Identity`, `Gzip`, `Base64` and `GzipBase64`.
   - The file ID binds the chunk list, length, encoding, MIME type and decoded
@@ -125,7 +127,7 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     sits at about 270–300K.
   - The first start in an empty collection or custody is measured separately.
   - Amended by [ADR 0004](0004-gas-budgets-under-glamsterdam.md): 350K is
-    execution gas at Prague costs, with a cap of 6 new slots.
+    Prague gas, with at most 6 new slots (7 with a bid).
 - **Opening bid and increments.**
   - The first bid must be at least `max(openingBid, 1 wei)`, so a zero bid
     cannot claim a work.

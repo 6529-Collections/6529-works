@@ -25,7 +25,7 @@ an ADR disagree, the accepted ADR wins, and a later ADR amends an earlier one. T
 | [0001: v1 scope](adr/0001-v1-scope.md) | The product, network tiers, curation, token model, sales, Editions, economics, storage, permanence, identity and recovery, disputes, governance, Federated, the reuse plan and the engineering budgets |
 | [0002: AccessManager hardening](adr/0002-access-manager-hardening.md) | How guardians cancel any scheduled operation, guardian rules, the cold recovery admin, manifests after genesis, and the selector delay classes |
 | [0003: build-time decisions](adr/0003-build-time-decisions.md) | What building the modules changed: ABI package hashing, the Stream and WorkRecords split, the 350K start-gas budget, pull-only artist payouts, base64 attestation, and the EIP-7825 transaction cap |
-| [0004: gas budgets under Glamsterdam](adr/0004-gas-budgets-under-glamsterdam.md) | Gas budgets as execution gas at Prague costs, caps on new storage slots and accounts per operation, the measured Glamsterdam totals, and the per-transaction cap restated |
+| [0004: gas budgets under Glamsterdam](adr/0004-gas-budgets-under-glamsterdam.md) | Gas budgets in Prague gas, exact counts of new storage slots and accounts per operation, the measured Glamsterdam totals, the per-transaction cap restated, and the payee assumption |
 
 Earlier decisions for the RC1 reference implementation are in the ADR index of the
 private 6529Stream repository.

@@ -5,16 +5,23 @@ import { console2 } from "forge-std/console2.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
+import {
+    CURRENCY_ETH,
+    PRODUCT_EDITIONS,
+    PRODUCT_STREAM
+} from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
     ItemKind,
     Party,
     PartyRole,
+    SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
 import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
@@ -25,38 +32,50 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 /// @dev Two measures per row (ADR 0004):
 ///      - **Prague gas.** Foundry 1.7.1 has no Glamsterdam EVM, so every figure is the gas the
 ///        transaction uses at Prague costs: 21,000 intrinsic, the calldata (EIP-2028, or the
-///        EIP-7623 floor when higher) and the execution measured with every contract's storage
-///        cooled first. The execution is the called frame's own gas (`vm.lastCallGas`), which is
-///        what a transaction to the target executes: the test's cold call into the target and its
-///        value transfer are paid by the caller's frame and are not counted. Refunds are not
-///        deducted. The 350K start budget and the other ceilings are Prague figures.
-///
-///        `vm.cool` cools storage but not accounts, so every account the call reaches besides
-///        its target is priced as warm, about 2,500 gas under a real transaction. The
-///        steady-state start reaches seven, which is why a Prague replay of the Sepolia start
-///        (293,243) is about 17,500 above this report.
+///        EIP-7623 floor when higher) and the execution, before refunds. The execution is the
+///        called frame's own gas (`vm.lastCallGas`) with every contract's storage cooled first,
+///        plus 2,500 for each account a real transaction would reach cold but this test had
+///        already touched: Foundry cannot cool accounts (`_measureGrowth`). The 350K start
+///        budget, the 400K test ceilings and the regression ceilings are all Prague gas.
 ///      - **State growth.** Glamsterdam prices each new storage slot and each new account far
 ///        above Prague (on Sepolia, about 111K per slot and about 205K for ETH sent to a fresh
-///        account). Every row caps the new slots and new accounts its transaction creates,
-///        counted by `StateGrowth` from the state diff. The steady-state start caps (6 slots,
-///        7 with a bid) are ADR 0004's; the others are the counts measured when ADR 0004 set
-///        them, as a regression gate. Lower a cap when a change saves a slot.
+///        account). Every row asserts the exact number of new slots and new accounts its
+///        transaction creates, counted by `StateGrowth`, so a saved slot cannot be spent again
+///        unnoticed. The steady-state start rows are also held to ADR 0004's maxima: 6 slots,
+///        7 with a bid. A change that lowers a count lowers it here, in ADR 0004's table and
+///        in AGENTS.md; raising one needs a reason, and raising a maximum needs an ADR.
 ///
 ///      Steady state (ADR 0003): Stream, the collection, the auction's custody balance, the
 ///      artist's move-nonce word and the auction's shared sale terms (with and without the
-///      increment floor a first bid locks) have all been written before. Items are single-artist works
-///      (the artist is the sole, artist-resolved payee) in an eight-item package (proof depth 3).
+///      increment floor a first bid locks) have all been written before. Items are
+///      single-artist works (the artist is the sole, artist-resolved payee) in an eight-item
+///      package (proof depth 3).
 contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant ITEMS = 8;
-    /// @dev Prague execution gas, whole transaction (ADR 0004 keeps the ceilings at Prague).
-    uint256 internal constant SETTLE_BUDGET = 400_000;
-    /// @dev Tracked, not gated by an ADR: the first work of a new collection writes its serial
-    ///      word from zero; ADR 0003 measures it separately. Prague execution gas.
+    /// @dev ADR 0004 maxima for a steady-state start's new slots, without and with a bid: the
+    ///      token record and its owner, the consumed-content record and the sale; the bid.
+    ///      Raising one needs an ADR.
+    uint256 internal constant START_MAX_SLOTS = 6;
+    uint256 internal constant START_WITH_BID_MAX_SLOTS = 7;
+    /// @dev Test ceilings in Prague gas, kept by ADR 0004.
+    uint256 internal constant SETTLE_CEILING = 400_000;
+    /// @dev `createCollection` writes a new collection's counter word, so the first start in it
+    ///      costs what any steady-state start costs; this ceiling only tracks it.
     uint256 internal constant FIRST_IN_COLLECTION_CEILING = 400_000;
-    /// @dev ADR 0004: the new storage slots a steady-state start may write, without and with a
-    ///      bid (the token record, the owner, the consumed-content record and the sale; the bid).
-    uint256 internal constant START_SLOTS = 6;
-    uint256 internal constant START_WITH_BID_SLOTS = 7;
+    /// @dev Regression ceilings (ADR 0004), in Prague gas: each row's figure when it was set,
+    ///      plus about 2%, rounded up to the thousand. They are not budgets. A change that
+    ///      crosses one says why in its pull request and moves it.
+    uint256 internal constant FIRST_START_CEILING = 452_000;
+    uint256 internal constant NEW_TERMS_CEILING = 413_000;
+    uint256 internal constant PERMIT2_START_CEILING = 388_000;
+    uint256 internal constant BID_CEILING = 75_000;
+    uint256 internal constant CONSUME_CEILING = 96_000;
+    uint256 internal constant CREATE_EDITION_CEILING = 331_000;
+    uint256 internal constant OPEN_SALE_CEILING = 293_000;
+    uint256 internal constant PURCHASE_FIRST_CEILING = 195_000;
+    uint256 internal constant PURCHASE_LATER_CEILING = 177_000;
+    uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
+    uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     /// @dev The edition master's terms, as on the Sepolia rehearsal (flows.md, section 3).
     uint64 internal constant EDITION_SIZE = 10;
     uint256 internal constant EDITION_PRICE = 0.0001 ether;
@@ -67,13 +86,17 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev One measured transaction.
     struct Row {
         string label;
+        bytes data;
+        bool isView;
+        Warmth warmth;
         uint256 total;
         uint256 execution;
         StateGrowth.Growth growth;
     }
 
-    /// @dev What `_row` measures. A row's own test takes both; `test_Gas_Table` takes every
-    ///      row's gas before any state-diff recording (see `_measureGrowth`), then the growth.
+    /// @dev What `_row` measures. A row's own test takes both and runs its gates;
+    ///      `test_Gas_Table` takes every row's gas before any state-diff recording (see
+    ///      `_measureGrowth`), then every row's growth, and runs no gates.
     enum Pass {
         BOTH,
         GAS,
@@ -100,13 +123,12 @@ contract IntegrationGasReport is IntegrationBase {
         }
         root = _publish(works);
         _keep(root, works);
-        // On a real deployment the network fee recipient is a Safe, an account that exists (the
-        // deploy refuses holders without code). Here it is a placeholder address, so it is
-        // funded once, and no row counts it as a new account.
+        // ADR 0004 assumes the network fee recipient already exists, and off anvil the deploy
+        // refuses one that does not. Here it is a placeholder address, so it is funded once.
         vm.deal(networkFee, 1);
     }
 
-    // ------------------------------------------------------------------ measuring
+    // ------------------------------------------------------------------ measuring and gates
 
     function _row(
         string memory label,
@@ -116,21 +138,37 @@ contract IntegrationGasReport is IntegrationBase {
         uint256 value
     ) internal returns (Row memory r) {
         r.label = label;
+        r.data = data;
         if (pass == Pass.BOTH) {
             (r.total, r.execution, r.growth) = _measureGrowth(from, target, data, value);
         } else if (pass == Pass.GAS) {
+            // Without the cold-account surcharge, which needs the recording: the table adds it.
+            r.warmth = _warmth();
             (r.total, r.execution) = _measure(from, target, data, value);
         } else {
             r.growth = _growth(from, target, data, value);
         }
     }
 
-    /// @dev Caps `r`'s state growth (ADR 0004). Over a cap, the new slots and accounts are
-    ///      logged first, so the failure names them.
-    function _capGrowth(Row memory r, uint256 slots, uint256 accounts) internal view {
-        if (r.growth.slots > slots || r.growth.accounts > accounts) _logGrowth(r);
-        assertLe(r.growth.slots, slots, string.concat(r.label, ": new storage slots (ADR 0004)"));
-        assertLe(r.growth.accounts, accounts, string.concat(r.label, ": new accounts (ADR 0004)"));
+    /// @dev `r`'s Prague gas is at most `ceiling` (a budget, a test ceiling or a regression
+    ///      ceiling, as `what` says).
+    function _gasAtMost(Row memory r, uint256 ceiling, string memory what) internal view {
+        if (pass != Pass.BOTH) return;
+        assertLe(r.total, ceiling, string.concat(r.label, ": Prague gas over the ", what));
+    }
+
+    /// @dev `r` creates exactly `slots` new slots and `accounts` new accounts (ADR 0004). On a
+    ///      mismatch the new slots and accounts are logged first, so the failure names them.
+    function _growthIs(Row memory r, uint256 slots, uint256 accounts) internal view {
+        if (pass != Pass.BOTH) return;
+        if (r.growth.slots != slots || r.growth.accounts != accounts) _logGrowth(r);
+        assertEq(r.growth.slots, slots, string.concat(r.label, ": new storage slots (ADR 0004)"));
+        assertEq(r.growth.accounts, accounts, string.concat(r.label, ": new accounts (ADR 0004)"));
+    }
+
+    /// @dev The ADR 0004 policy maximum for a steady-state start's new slots.
+    function _slotsAtMost(Row memory r, uint256 max) internal pure {
+        assertLe(r.growth.slots, max, string.concat(r.label, ": over the ADR 0004 slot maximum"));
     }
 
     function _logGrowth(Row memory r) internal view {
@@ -156,8 +194,52 @@ contract IntegrationGasReport is IntegrationBase {
         if (account == address(economics)) return "EconomicsResolver";
         if (account == address(splitFactory)) return "SplitFactory";
         if (account == address(statements)) return "StatementLog";
+        if (account == address(entropy)) return "VrfEntropyModule";
+        if (account == PERMIT2) return "Permit2";
+        if (account == address(usd)) return "ERC-20";
         return vm.getLabel(account);
     }
+
+    /// @dev The accounts whose warmth `_measureGrowth` probes: the contracts, the network fee
+    ///      recipient, every actor of this report and the seller wallets its sales pay.
+    function _probeSet() internal override returns (address[] memory accounts) {
+        address[] memory base = super._probeSet();
+        ISplitWallet.Payee[] memory solo = new ISplitWallet.Payee[](1);
+        solo[0] = ISplitWallet.Payee(uint160(artistA), address(0), 100_000);
+        ISplitWallet.Payee[] memory duo = new ISplitWallet.Payee[](2);
+        duo[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
+        duo[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
+        address[19] memory extra = [
+            artistA,
+            artistB,
+            platform,
+            starter,
+            bidder,
+            address(coordinator),
+            makeAddr("earlierBidder"),
+            makeAddr("secondBidder"),
+            makeAddr("masterCollector"),
+            makeAddr("firstCopyBuyer"),
+            makeAddr("laterCopyBuyer"),
+            makeAddr("gasWallet1"),
+            makeAddr("gasWallet2"),
+            makeAddr("gasCollaborator"),
+            makeAddr("permit2Payer"),
+            makeAddr("relayer"),
+            economics.newWorkTerms(PRODUCT_STREAM, solo).seller,
+            economics.newWorkTerms(PRODUCT_EDITIONS, solo).seller,
+            economics.newWorkTerms(PRODUCT_STREAM, duo).seller
+        ];
+        accounts = new address[](base.length + extra.length);
+        for (uint256 i; i < base.length; ++i) {
+            accounts[i] = base[i];
+        }
+        for (uint256 i; i < extra.length; ++i) {
+            accounts[base.length + i] = extra[i];
+        }
+    }
+
+    // ------------------------------------------------------------------ fixtures
 
     /// @dev Two live sales, one with a bid: every per-system record a start or a first bid
     ///      writes once (the fee recipient, the sale terms with and without their increment
@@ -189,21 +271,32 @@ contract IntegrationGasReport is IntegrationBase {
         );
     }
 
+    /// @dev Eight single-artist works by artist A in the genesis collection, unpublished, so a
+    ///      row can shape item 0 first.
+    function _eightWorks() internal returns (Work[] memory works) {
+        works = new Work[](ITEMS);
+        for (uint256 i; i < ITEMS; ++i) {
+            works[i] = _work(artistA, collectionId);
+        }
+    }
+
     // ------------------------------------------------------------------ the auction start
 
     function _rowStart() internal returns (Row memory r) {
         _steadyState();
         r = _row("start, steady state", starter, address(auction), _startData(2), 0);
-        assertLe(r.total, START_BUDGET, "ADR 0004: start <= 350K Prague execution gas");
-        _capGrowth(r, START_SLOTS, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 6, 0);
+        _slotsAtMost(r, START_MAX_SLOTS);
     }
 
     function _rowStartWithBid() internal returns (Row memory r) {
         _steadyState();
         bytes memory data = _startWithBidData(root, _package(root), 2);
         r = _row("startWithBid, steady state", bidder, address(auction), data, 1 ether);
-        assertLe(r.total, START_BUDGET, "ADR 0004: startWithBid <= 350K Prague execution gas");
-        _capGrowth(r, START_WITH_BID_SLOTS, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
     /// @dev A two-party work: the lead artist and a collaborator who is paid as a fixed payee.
@@ -229,12 +322,14 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(twoRoot, works, 1)));
         r = _row("start, steady state, two-party work", starter, address(auction), data, 0);
-        assertLe(r.total, START_BUDGET, "ADR 0004: a two-party start <= 350K Prague execution gas");
-        _capGrowth(r, START_SLOTS, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 6, 0);
+        _slotsAtMost(r, START_MAX_SLOTS);
     }
 
     /// @dev The smallest collaboration (the artist plus one collaborator, paid as a fixed payee)
-    ///      is held to the same steady-state budget (formerly finding G-2, resolved by #34).
+    ///      is held to the same steady-state budget (formerly finding G-2, resolved by #34). It
+    ///      is the closest row to the budget.
     function _rowStartWithBidTwoParty() internal returns (Row memory r) {
         _steadyState();
         (bytes32 twoRoot, Work[] memory works) = _twoPartyPackage();
@@ -243,10 +338,127 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row(
             "startWithBid, steady state, two-party work", bidder, address(auction), data, 1 ether
         );
-        assertLe(
-            r.total, START_BUDGET, "ADR 0004: a two-party startWithBid <= 350K Prague execution gas"
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
+    /// @dev A VRF-seeded work, its seed delivered before the start (ADR 0003).
+    function _rowStartVrf() internal returns (Row memory r) {
+        _steadyState();
+        Work[] memory works = _eightWorks();
+        works[0].item.seedPolicy = SeedPolicy.VRF;
+        bytes32 vrfRoot = _publish(works);
+        uint256 requestId = entropy.requestSeed(works[0].item, vrfRoot, _proofOf(works, 0));
+        coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
+        bytes memory data =
+            abi.encodeCall(auction.start, (address(stream), _mintData(vrfRoot, works, 0)));
+        r = _row("start, steady state, VRF work", starter, address(auction), data, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 6, 0);
+        _slotsAtMost(r, START_MAX_SLOTS);
+    }
+
+    /// @dev An edition master (a fixed edition of 10 at 0.0001 ETH, sold at a fixed price), as
+    ///      on the Sepolia rehearsal.
+    function _masterWorks() internal returns (Work[] memory works) {
+        works = _eightWorks();
+        works[0].item.kind = ItemKind.EDITION_MASTER;
+        works[0].item.edition = EditionTerms(
+            EditionFormat.FIXED,
+            EDITION_SIZE,
+            0,
+            EDITION_PRICE,
+            CURRENCY_ETH,
+            SaleKind.FIXED_PRICE,
+            ""
         );
-        _capGrowth(r, START_WITH_BID_SLOTS, 0);
+    }
+
+    function _rowStartMaster() internal returns (Row memory r) {
+        _steadyState();
+        Work[] memory works = _masterWorks();
+        bytes32 masterRoot = _publish(works);
+        bytes memory data =
+            abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0)));
+        r = _row("start, steady state, edition master", starter, address(auction), data, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 6, 0);
+        _slotsAtMost(r, START_MAX_SLOTS);
+    }
+
+    /// @dev A Permit2 payment whose witness binds the start: token, mint data, payer, amount.
+    function _permit2StartBid(bytes memory mintData, address payer, uint256 amount, uint256 nonce)
+        internal
+        view
+        returns (Payment memory)
+    {
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes32 witness = keccak256(
+            abi.encode(
+                Typehashes.START_BID_WITNESS,
+                address(stream),
+                keccak256(mintData),
+                payer,
+                amount,
+                deadline
+            )
+        );
+        bytes32 digest = permit2.witnessDigest(
+            address(auction),
+            ISignatureTransfer.PermitTransferFrom(
+                ISignatureTransfer.TokenPermissions(address(usd), amount), nonce, deadline
+            ),
+            witness,
+            Typehashes.START_BID_WITNESS_TYPE
+        );
+        return Payment(PaymentMethod.PERMIT2, payer, amount, deadline, nonce, _sign(payer, digest));
+    }
+
+    /// @dev An ERC-20 auction opened with a first bid paid by a relayed Permit2 transfer, at
+    ///      steady state for the currency and the payer: the token is admitted, its sale terms
+    ///      (with and without the floor) exist, the auction holds a balance of it, and the payer
+    ///      has used Permit2 before (its nonce word exists). The Permit2 is the sales lane's
+    ///      faithful reproduction, not the canonical deployment. The 350K budget was set for
+    ///      ETH starts, and this row is above it: ADR 0004 tracks it with a regression ceiling
+    ///      until the owner decides whether ERC-20 starts get a budget of their own.
+    function _rowStartWithPermit2Bid() internal returns (Row memory r) {
+        _govern(
+            hotAdmin,
+            address(allowlist),
+            abi.encodeCall(allowlist.admitAsset, (address(usd), 0, 1e16))
+        );
+        _steadyState();
+        address payer = _actor("permit2Payer");
+        usd.mint(payer, 1_000e18);
+        vm.prank(payer);
+        usd.approve(PERMIT2, type(uint256).max);
+        Work[] memory works = _eightWorks();
+        for (uint256 i; i < 2; ++i) {
+            works[i].item.sale.currency = address(usd);
+        }
+        bytes32 usdRoot = _publish(works);
+        // The first: the payer's first Permit2 transfer and the currency's first bid.
+        bytes memory first = _mintData(usdRoot, works, 0);
+        vm.prank(makeAddr("relayer"));
+        auction.startWithBid(
+            address(stream), first, payer, _permit2StartBid(first, payer, 100e18, 0)
+        );
+        bytes memory mintData = _mintData(usdRoot, works, 1);
+        bytes memory data = abi.encodeCall(
+            auction.startWithBid,
+            (address(stream), mintData, payer, _permit2StartBid(mintData, payer, 100e18, 1))
+        );
+        r = _row(
+            "startWithBid, steady state, ERC-20 by relayed Permit2",
+            makeAddr("relayer"),
+            address(auction),
+            data,
+            0
+        );
+        _gasAtMost(r, PERMIT2_START_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
     function _rowStartNewCollection() internal returns (Row memory r) {
@@ -254,24 +466,21 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row(
             "start, first work in a new collection", starter, address(auction), _startData(6), 0
         );
-        assertLe(
-            r.total,
-            FIRST_IN_COLLECTION_CEILING,
-            "first start in a new collection <= 400K Prague execution gas"
-        );
-        _capGrowth(r, 6, 0);
+        _gasAtMost(r, FIRST_IN_COLLECTION_CEILING, "400K test ceiling");
+        _growthIs(r, 6, 0);
     }
 
-    /// @dev Tracked, not gas-gated: the first start on a new deployment (empty custody, the
-    ///      first fee terms and sale terms).
+    /// @dev One-time: the first start on a new deployment (empty custody, the first fee terms
+    ///      and sale terms).
     function _rowStartFirstEver() internal returns (Row memory r) {
         r = _row("start, first work ever (one-time)", starter, address(auction), _startData(0), 0);
-        _capGrowth(r, 13, 0);
+        _gasAtMost(r, FIRST_START_CEILING, "regression ceiling");
+        _growthIs(r, 13, 0);
     }
 
-    /// @dev Tracked, not gas-gated: the first bid placed under a set of sale terms nobody has
-    ///      bid under yet (after genesis, a new currency, or an auction config or opening-bid
-    ///      change). Live sales exist, but none has a bid.
+    /// @dev One-time: the first bid placed under a set of sale terms nobody has bid under yet
+    ///      (after genesis, a new currency, or an auction config or opening-bid change). Live
+    ///      sales exist, but none has a bid.
     function _rowStartWithBidNewTerms() internal returns (Row memory r) {
         Work[] memory works = _package(root);
         _start(root, works, 0);
@@ -284,7 +493,8 @@ contract IntegrationGasReport is IntegrationBase {
             data,
             1 ether
         );
-        _capGrowth(r, 10, 0);
+        _gasAtMost(r, NEW_TERMS_CEILING, "regression ceiling");
+        _growthIs(r, 10, 0);
     }
 
     // ------------------------------------------------------------------ bids and settlement
@@ -301,7 +511,8 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row(
             "bid, outbids and credits the previous bidder", second, address(auction), data, 2 ether
         );
-        _capGrowth(r, 1, 0);
+        _gasAtMost(r, BID_CEILING, "regression ceiling");
+        _growthIs(r, 1, 0);
     }
 
     /// @dev The first sale to pay a payee configuration: its seller wallet's predicted address
@@ -313,9 +524,9 @@ contract IntegrationGasReport is IntegrationBase {
         vm.warp(auction.auction(saleId).endTime);
         bytes memory data = abi.encodeCall(auction.settle, (saleId));
         r = _row("settle, first payout to the seller wallet", starter, address(auction), data, 0);
-        assertLe(r.total, SETTLE_BUDGET, "settle <= 400K Prague execution gas");
+        _gasAtMost(r, SETTLE_CEILING, "400K test ceiling");
         assertEq(stream.ownerOf(auction.auction(saleId).tokenId), bidder);
-        _capGrowth(r, 1, 1);
+        _growthIs(r, 1, 1);
     }
 
     /// @dev A settlement once the seller wallet exists: the artist has been paid before.
@@ -327,9 +538,9 @@ contract IntegrationGasReport is IntegrationBase {
         auction.settle(earlier); // the same artist's earlier sale pays its seller wallet first
         bytes memory data = abi.encodeCall(auction.settle, (saleId));
         r = _row("settle, with a bid", starter, address(auction), data, 0);
-        assertLe(r.total, SETTLE_BUDGET, "settle <= 400K Prague execution gas");
+        _gasAtMost(r, SETTLE_CEILING, "400K test ceiling");
         assertEq(stream.ownerOf(auction.auction(saleId).tokenId), bidder);
-        _capGrowth(r, 1, 0);
+        _growthIs(r, 1, 0);
     }
 
     /// @dev `IPackageRegistry.consume` alone, as Stream calls it at steady state.
@@ -346,33 +557,20 @@ contract IntegrationGasReport is IntegrationBase {
             data,
             0
         );
-        _capGrowth(r, 1, 0);
+        _gasAtMost(r, CONSUME_CEILING, "regression ceiling");
+        _growthIs(r, 1, 0);
     }
 
     // ------------------------------------------------------------------ 6529 Editions
 
-    /// @dev An eight-item package whose item 0 is an edition master (a fixed edition of 10 at
-    ///      0.0001 ETH, sold at a fixed price), as on the Sepolia rehearsal. The master is
-    ///      started at steady state, bid on and settled.
+    /// @dev The master package, published, with item 0 started at steady state, bid on and
+    ///      settled.
     function _settledMaster()
         internal
         returns (uint256 workId, bytes32 masterRoot, Work[] memory works)
     {
         _steadyState();
-        works = new Work[](ITEMS);
-        for (uint256 i; i < ITEMS; ++i) {
-            works[i] = _work(artistA, collectionId);
-        }
-        works[0].item.kind = ItemKind.EDITION_MASTER;
-        works[0].item.edition = EditionTerms(
-            EditionFormat.FIXED,
-            EDITION_SIZE,
-            0,
-            EDITION_PRICE,
-            CURRENCY_ETH,
-            SaleKind.FIXED_PRICE,
-            ""
-        );
+        works = _masterWorks();
         masterRoot = _publish(works);
         uint256 saleId;
         (saleId, workId) = _start(masterRoot, works, 0);
@@ -380,22 +578,14 @@ contract IntegrationGasReport is IntegrationBase {
         _settleAtEnd(saleId);
     }
 
-    function _createEditionData(uint256 workId, bytes32 masterRoot, Work[] memory works)
-        internal
-        view
-        returns (bytes memory)
-    {
-        return abi.encodeCall(
-            editions.createEdition, (workId, works[0].item, masterRoot, _proofOf(works, 0))
-        );
-    }
-
-    /// @dev Tracked, not gas-gated (no ADR sets an Editions budget).
     function _rowCreateEdition() internal returns (Row memory r) {
         (uint256 workId, bytes32 masterRoot, Work[] memory works) = _settledMaster();
-        bytes memory data = _createEditionData(workId, masterRoot, works);
+        bytes memory data = abi.encodeCall(
+            editions.createEdition, (workId, works[0].item, masterRoot, _proofOf(works, 0))
+        );
         r = _row("createEdition", starter, address(editions), data, 0);
-        _capGrowth(r, 9, 0);
+        _gasAtMost(r, CREATE_EDITION_CEILING, "regression ceiling");
+        _growthIs(r, 9, 0);
     }
 
     function _openSaleData(uint256 editionId) internal view returns (bytes memory) {
@@ -417,7 +607,7 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev The PLATFORM opens one public phase at the package price, without the artist's
-    ///      consent. Tracked, not gas-gated.
+    ///      consent.
     function _rowOpenSale() internal returns (Row memory r) {
         uint256 editionId = _createdEdition();
         r = _row(
@@ -427,7 +617,8 @@ contract IntegrationGasReport is IntegrationBase {
             _openSaleData(editionId),
             0
         );
-        _capGrowth(r, 8, 0);
+        _gasAtMost(r, OPEN_SALE_CEILING, "regression ceiling");
+        _growthIs(r, 8, 0);
     }
 
     function _purchaseData(uint256 saleId, address buyer, uint256 quantity)
@@ -464,7 +655,8 @@ contract IntegrationGasReport is IntegrationBase {
             _purchaseData(saleId, buyer, 1),
             EDITION_PRICE
         );
-        _capGrowth(r, 3, 0);
+        _gasAtMost(r, PURCHASE_FIRST_CEILING, "regression ceiling");
+        _growthIs(r, 3, 0);
     }
 
     function _rowPurchaseLater() internal returns (Row memory r) {
@@ -483,7 +675,8 @@ contract IntegrationGasReport is IntegrationBase {
             _purchaseData(saleId, buyer, 1),
             EDITION_PRICE
         );
-        _capGrowth(r, 2, 0);
+        _gasAtMost(r, PURCHASE_LATER_CEILING, "regression ceiling");
+        _growthIs(r, 2, 0);
     }
 
     // ------------------------------------------------------------------ identity
@@ -505,13 +698,14 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev The artist's first consolidated wallet is recorded (as pending) by a refresh the
-    ///      artist pays for (ADR 0003). Tracked, not gas-gated.
+    ///      artist pays for (ADR 0003).
     function _rowRefreshFirst() internal returns (Row memory r) {
         _consolidate(artistA, makeAddr("gasWallet1"));
         r = _row(
             "refreshStanding, records a first wallet", artistA, address(artists), _refreshData(), 0
         );
-        _capGrowth(r, 2, 0);
+        _gasAtMost(r, REFRESH_FIRST_CEILING, "regression ceiling");
+        _growthIs(r, 2, 0);
     }
 
     /// @dev A further wallet joins a snapshot that already has one, as on Sepolia r2.
@@ -526,7 +720,8 @@ contract IntegrationGasReport is IntegrationBase {
             _refreshData(),
             0
         );
-        _capGrowth(r, 1, 0);
+        _gasAtMost(r, REFRESH_FURTHER_CEILING, "regression ceiling");
+        _growthIs(r, 1, 0);
     }
 
     // ------------------------------------------------------------------ views
@@ -537,9 +732,10 @@ contract IntegrationGasReport is IntegrationBase {
         _steadyState();
         bytes memory data = abi.encodeCall(stream.royaltyInfo, (1, 1 ether));
         r = _row("royaltyInfo (cold)", starter, address(stream), data, 0);
+        r.isView = true;
         r.total = 21_000 + r.execution; // a view: the call itself, without its calldata
-        assertLt(r.execution, 50_000);
-        _capGrowth(r, 0, 0);
+        if (pass == Pass.BOTH) assertLt(r.execution, 50_000, "royaltyInfo: one cheap view call");
+        _growthIs(r, 0, 0);
     }
 
     // ------------------------------------------------------------------ the gates
@@ -558,6 +754,18 @@ contract IntegrationGasReport is IntegrationBase {
 
     function test_Gas_StartWithBid_TwoPartyWork() public {
         _rowStartWithBidTwoParty();
+    }
+
+    function test_Gas_Start_VrfWork() public {
+        _rowStartVrf();
+    }
+
+    function test_Gas_Start_EditionMaster() public {
+        _rowStartMaster();
+    }
+
+    function test_Gas_StartWithBid_Permit2Erc20() public {
+        _rowStartWithPermit2Bid();
     }
 
     function test_Gas_Start_FirstWorkInANewCollection() public {
@@ -623,14 +831,18 @@ contract IntegrationGasReport is IntegrationBase {
     // ------------------------------------------------------------------ the table
 
     /// @dev Every row, each from a fresh copy of the set-up state, printed as one table. The
-    ///      gates are the rows' own tests: here each row runs twice, for its gas and then for its
-    ///      state growth, since no gas can be measured after a recording.
+    ///      gates are the rows' own tests. Here each row runs twice: once for its gas, every
+    ///      row before any recording, then once for its growth and cold accounts, which add the
+    ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[18] memory rows = [
+        function() internal returns (Row memory)[21] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
             _rowStartWithBidTwoParty,
+            _rowStartVrf,
+            _rowStartMaster,
+            _rowStartWithPermit2Bid,
             _rowStartNewCollection,
             _rowStartFirstEver,
             _rowStartWithBidNewTerms,
@@ -646,7 +858,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowRefreshFurther,
             _rowRoyaltyInfo
         ];
-        Row[18] memory measured;
+        Row[21] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }
@@ -654,10 +866,14 @@ contract IntegrationGasReport is IntegrationBase {
         console2.log(_line("---", "---:", "---:", "---:"));
         for (uint256 i; i < rows.length; ++i) {
             StateGrowth.Growth memory growth = _runRow(rows[i], Pass.GROWTH).growth;
+            uint256 execution = measured[i].execution + COLD_ACCOUNT_SURCHARGE
+                * _warmButCold(measured[i].warmth, growth.coldAccounts);
+            uint256 total =
+                measured[i].isView ? 21_000 + execution : _txGas(measured[i].data, execution);
             console2.log(
                 _line(
                     measured[i].label,
-                    _thousands(measured[i].total),
+                    _thousands(total),
                     vm.toString(growth.slots),
                     vm.toString(growth.accounts)
                 )
