@@ -203,12 +203,12 @@ Prague figures, at `60edd9b`, are:
 | [`bid`, outbids and credits the previous bidder](https://sepolia.etherscan.io/tx/0xdaf7c61d76e8bdf9b8219b5f36ce4081901759106bf91530222d9ed6b9038e84) | 168,932 | 73,312 | 2.30 | 1 | [168,944](https://sepolia.etherscan.io/tx/0x0e1010d3dc7d1ebe05422a7c2455ba454d084513af8c4251447f7959cd8d15ed) | | |
 | [`claim`, the outbid bidder's credit](https://sepolia.etherscan.io/tx/0xcc11270e1882f2b04491a2dd8dc5a7ece95cce66fc45aa456bdc40ffce304c34) | 32,580 | 32,425 | 1.00 | 0 | [32,580](https://sepolia.etherscan.io/tx/0xefe7f481a1630a9b185c87dc9320afc7a26d9165bce7d4e0099c40d65a591335) | | |
 | `bid` 5 minutes before the end (simulated; see below) | 179,354 | 76,534 | 2.34 | 1 | 179,366 | | |
-| [`settle`, with a bid, first payout to the seller](https://sepolia.etherscan.io/tx/0x2ef2f5e6c1735ffc60f31cf2534c96a938629720f086c68eba55299aa98f7e48) | 441,363 | 164,743 | 2.68 | 1 and an account | [441,363](https://sepolia.etherscan.io/tx/0x5dbbc598d80b64d75d8f59300885eb1efcb3c6ab579cd9a68aed362820b9ffaf) | 400,000 test ceiling | **fail** |
-| [`settle`, with a bid](https://sepolia.etherscan.io/tx/0x5caa9f050a95a29c57e6738a41b73d61ab097d610fae16ead6ae3ffc17c5593b) | 257,763 | 139,743 | 1.84 | 1 | [257,763](https://sepolia.etherscan.io/tx/0x10e0abc979bed8f6d73cde72f31b89da3325516fcada9c0d22521dcdacf2cab2) | 400,000 test ceiling | pass |
-| [`settle`, with a bid, the winner already holds a token](https://sepolia.etherscan.io/tx/0xb467df2fa0eae46bcb4cdc698cf1c66ece2aacb67e1b02987c99d4fa8df90958) | 159,831 | 122,631 | 1.30 | 0 | [159,843](https://sepolia.etherscan.io/tx/0x67bca628e9a96e267de998d7bf32b1825836b6e17bc665e158e3f61b94c44684) | 400,000 test ceiling | pass |
-| [`settle`, no bid: the token goes to the artist](https://sepolia.etherscan.io/tx/0x5dca7e59cc366e7b89aaa8e6a98d2a640c065dd7baece0e72368684599c0bade) | 335,817 | 135,577 | 2.48 | 2 | [335,817](https://sepolia.etherscan.io/tx/0xe922c1ecb573802748322c7a351b42321b371955851697a1c2141d3a1901576f) | 400,000 test ceiling | pass |
-| [`settle`, no bid, the artist already holds a token](https://sepolia.etherscan.io/tx/0xa5785bcf95c8c07cf9ee80b364a57fa746dc3d5b93f6d84e9ce05eee61f7bee5) | 237,897 | 118,477 | 2.01 | 1 | [237,897](https://sepolia.etherscan.io/tx/0x0c2da02d826d122c93b4aa186f1d322a799522d7bea1d8b9eb93528d194c84f0) | 400,000 test ceiling | pass |
-| [`settle`, no bid, a VRF work](https://sepolia.etherscan.io/tx/0x9f729a0478193949bc776bdbe9ca469b15500f8f74456cde3d22ea5cb6231305) | 226,281 | 113,677 | 1.99 | 1 | [226,281](https://sepolia.etherscan.io/tx/0x9b9f7d89595c0bfdf62028ac1b6985c5d7384fbc3ae71dcce2c9c3957086bce6) | 400,000 test ceiling | pass |
+| [`settle`, with a bid, first payout to the seller (token 6)](https://sepolia.etherscan.io/tx/0x2ef2f5e6c1735ffc60f31cf2534c96a938629720f086c68eba55299aa98f7e48) | 441,363 | 164,743 | 2.68 | 1 and an account | [441,363](https://sepolia.etherscan.io/tx/0x5dbbc598d80b64d75d8f59300885eb1efcb3c6ab579cd9a68aed362820b9ffaf) | 400,000 test ceiling | **fail** |
+| [`settle`, with a bid (token 4)](https://sepolia.etherscan.io/tx/0x5caa9f050a95a29c57e6738a41b73d61ab097d610fae16ead6ae3ffc17c5593b) | 257,763 | 139,743 | 1.84 | 1 | [257,763](https://sepolia.etherscan.io/tx/0x10e0abc979bed8f6d73cde72f31b89da3325516fcada9c0d22521dcdacf2cab2) | 400,000 test ceiling | pass |
+| [`settle`, with a bid, the winner already holds a token (token 1)](https://sepolia.etherscan.io/tx/0xb467df2fa0eae46bcb4cdc698cf1c66ece2aacb67e1b02987c99d4fa8df90958) | 159,831 | 122,631 | 1.30 | 0 | [159,843](https://sepolia.etherscan.io/tx/0x67bca628e9a96e267de998d7bf32b1825836b6e17bc665e158e3f61b94c44684) | 400,000 test ceiling | pass |
+| [`settle`, no bid: the token goes to the artist (token 7)](https://sepolia.etherscan.io/tx/0x5dca7e59cc366e7b89aaa8e6a98d2a640c065dd7baece0e72368684599c0bade) | 335,817 | 135,577 | 2.48 | 2 | [335,817](https://sepolia.etherscan.io/tx/0xe922c1ecb573802748322c7a351b42321b371955851697a1c2141d3a1901576f) | 400,000 test ceiling | pass |
+| [`settle`, no bid, the artist already holds a token (token 2)](https://sepolia.etherscan.io/tx/0xa5785bcf95c8c07cf9ee80b364a57fa746dc3d5b93f6d84e9ce05eee61f7bee5) | 237,897 | 118,477 | 2.01 | 1 | [237,897](https://sepolia.etherscan.io/tx/0x0c2da02d826d122c93b4aa186f1d322a799522d7bea1d8b9eb93528d194c84f0) | 400,000 test ceiling | pass |
+| [`settle`, no bid, a VRF work (token 8)](https://sepolia.etherscan.io/tx/0x9f729a0478193949bc776bdbe9ca469b15500f8f74456cde3d22ea5cb6231305) | 226,281 | 113,677 | 1.99 | 1 | [226,281](https://sepolia.etherscan.io/tx/0x9b9f7d89595c0bfdf62028ac1b6985c5d7384fbc3ae71dcce2c9c3957086bce6) | 400,000 test ceiling | pass |
 
 - **Steady state.** The `start` rows from the second work on are all steady state:
   - the first start writes the custody balance, the fee recipient and the sale terms;
@@ -225,7 +225,14 @@ Prague figures, at `60edd9b`, are:
   1,791,835,452. The scheduled run that was to place a real one did not fire, and every
   auction had ended by 13 October.
 - **The settlement order** was 6, 4, 1, 7, 2, 3, 5, 8, so token 6 carries the first
-  payout. Tokens 3 and 5 cost the same as token 2: 237,897 on both instances.
+  payout. Tokens 3 and 5 cost the same as token 2:
+  - r2: token 3 [237,897](https://sepolia.etherscan.io/tx/0x1ffbea91e4be60e7de40503132651568ebbe5ef0b14f77e2a8d0a5012565f961), token 5 [237,897](https://sepolia.etherscan.io/tx/0x234d65c6662dfecc4f9db6b6e608dbd6d5ff2758074c2abd0968283fcd5ca77b);
+  - r1: token 3 [237,897](https://sepolia.etherscan.io/tx/0x3914938bd05fa922b552b2b12534412c8340f87a2e126c8b579100e39e5fe16e), token 5 [237,897](https://sepolia.etherscan.io/tx/0x7515aaeea831356e51bc6e359e63297abf5c8b9b45c15bef1c29c88cf848ca29).
+
+  Every receipt is in the state files.
+- **Each receipt matches its own instance's simulation.** r1 and r2 differ by a few gas
+  in places, for example `settle` of token 1: 159,843 on r1 against 159,831 on r2, with
+  Prague 122,643 against 122,631. Each instance's receipt equals its own simulation.
 - **The first `settle` with a bid** pays the seller. The seller is the payee
   configuration's split wallet, at its predicted address, which is still empty. Sending
   ETH to an empty account creates it, and that costs about 184,000 gas more on Sepolia.
@@ -451,6 +458,7 @@ function Flow {
     if ($LASTEXITCODE -ne 0) { throw "flow step failed ($LASTEXITCODE)" }
 }
 $r2 = @('-State', 'deployments/11155111/flows/r2.json')
+$r1 = @('-State', 'deployments/11155111/flows/r1.json', '-Record', 'deployments/11155111/1791746472.json')
 ```
 
 **Needs a scheduled operation (not done).**
