@@ -38,12 +38,18 @@ Other contracts should depend on the interfaces. Tests are in
   such a manifest is accepted but inert, and the dependency registry refuses it
   because it is not complete.
 - **Limits** (`CHUNK_SIZE` and `MAX_CHUNKS` are on `IContentStore`). 1 to 512
-  chunks per file, which is 12,582,400 bytes (about 12.58 MB). The cap exists
-  because Fusaka's EIP-7825 limits every transaction to 16,777,216 gas:
-  registering a manifest at 512 chunks costs 11.8M gas including calldata and the
-  21,000 base, so it fits with room for repricing (1,024 chunks would not). MIME
-  type up to 64 bytes, lowercase `type/subtype` from `[a-z0-9+._-]`, no
-  parameters.
+  chunks per file, which is 12,582,400 bytes (about 12.58 MB). MIME type up to 64
+  bytes, lowercase `type/subtype` from `[a-z0-9+._-]`, no parameters.
+- **Why 512 chunks.** Fusaka's EIP-7825 limits every transaction to 16,777,216
+  gas. Under Prague, registering a manifest at 512 chunks costs 11.8M gas
+  including calldata and the 21,000 base, so it fits with room for repricing
+  (1,024 chunks would not). Glamsterdam reprices state creation, and on Sepolia
+  the cap bounds only a transaction's regular gas, as observed: the
+  registration's regular part still fits, but the whole transaction is about
+  57.6M gas. `MAX_CHUNKS` stays 512 as the protocol limit. The largest manifests
+  need a chain whose blocks hold them (Sepolia's blocks were 200M on 11 October
+  2026), and a gas limit from the offline model or from a node whose RPC gas cap
+  is above 50M. See [Gas](#gas) below.
 
 **Encodings.** The value is part of the file ID, so it is permanent.
 
@@ -108,17 +114,23 @@ for them, and nobody needs permission to complete a work's on-chain copy.
    too (see the file ID notes above).
 2. **Compute the file ID** with the formula above. The artist's package commits
    to it (the store itself needs nothing at this point).
-3. **Register the manifest** with `registerManifest`. It is cheap (about 1.05M
-   gas for 1 MB) and can be done by the artist, the platform or a collector.
+3. **Register the manifest** with `registerManifest`. It is cheap next to the
+   upload (for 1 MiB, 43 chunks, about 1.1M gas under Prague and 5.3M under
+   Glamsterdam) and can be done by the artist, the platform or a collector.
 4. **Find what is missing** with `missingChunks(fileId)`, which returns the
    indexes still to be uploaded, and `isComplete(fileId)` for the yes or no.
 5. **Upload chunks** with `writeChunk(bytes)`, in any order and across as many
-   transactions as needed. Because `writeChunk` does not depend on the caller,
-   any batching tool works (for example Multicall3, to fit two full chunks, about
-   49 KB, in one transaction, at about two thirds of the 16,777,216-gas transaction
-   cap; three full chunks reach 97–99% of the cap and are not recommended). A collector, the designated payer in the product,
+   transactions as needed. A collector, the designated payer in the product,
    finishes what the artist or platform started. Re-sending a chunk costs almost
-   nothing.
+   nothing. Because `writeChunk` does not depend on the caller, any batching tool
+   works (for example Multicall3), but batch only while the batch's regular gas
+   still fits the cap:
+   - **Glamsterdam:** one full chunk (24,575 bytes) per transaction. A full chunk
+     costs about 38.4M gas, so two would be about 77M: more than a node with the
+     default 50M RPC gas cap can estimate, and more than many blocks hold.
+   - **Prague:** two full chunks (about 49 KB) per transaction, at about two
+     thirds of the 16,777,216-gas cap; three reach 97–99% of the cap and are not
+     recommended.
 6. **Done.** When `isComplete(fileId)` is true every chunk is stored with the
    length the layout requires, so `read(fileId, 0, length)` succeeds. On-chain
    bytes are permanent. Completion is derived, not recorded: there is no
@@ -210,17 +222,25 @@ complete, since the cost falls on whoever calls it.
 
 ### Gas
 
-Measured by `forge test --match-contract Gas -vv` (Foundry 1.7.1, Solidity
-0.8.37, optimizer 200 runs). Each figure is the gas the call itself uses, from a
-**cold** start: the fixtures are built in a separate transaction, so the store,
-its storage and the chunk contracts are all first touches, as in a fresh
-`eth_call`. The 21,000 base and calldata are added only where a row says so.
+Two pricing schedules matter. Foundry 1.7.1 has no Amsterdam EVM, so the
+`forge` figures below are **Prague** costs. Glamsterdam, which Sepolia has run
+since 6 October 2026, reprices state creation: the content store pays for every
+stored byte as contract code. Its figures were measured on Sepolia on 11 and 12
+October 2026 and are in [Glamsterdam](#glamsterdam) below; mainnet parameters
+may differ.
+
+**Prague.** Measured by `forge test --match-contract Gas -vv` (Foundry 1.7.1,
+Solidity 0.8.37, optimizer 200 runs). Each figure is the gas the call itself
+uses, from a **cold** start: the fixtures are built in a separate transaction, so
+the store, its storage and the chunk contracts are all first touches, as in a
+fresh `eth_call`. The 21,000 base and calldata are added only where a row says
+so.
 
 | Operation | Gas |
 | --- | --- |
 | `writeChunk`, 24,575 bytes (new): execution | 5,020,000 |
 | `writeChunk`, same, as a transaction (execution + 21,000 + 392,000 calldata at 16 gas per byte) | 5,434,000 |
-| Upload per MB, as transactions | 231.8M, which is **about 0.23 ETH per MB per gwei** |
+| Upload per MB, as transactions | 231.8M, which is **about 0.23 ETH per MB per gwei under Prague** |
 | `writeChunk`, bytes already stored | 16,000 |
 | `registerManifest`, 100 KB / 1 MB (execution) | 212,000 / 1,055,000 |
 | `registerManifest`, 512 chunks (the cap): execution / transaction | 11,521,000 / 11,806,000 (limit 16,777,216) |
@@ -247,6 +267,45 @@ returned `bytes` is ABI-encoded into a second buffer, so the callee holds twice
 the file size. On-chain callers that handle large files should read in ranges
 (a few hundred KB) or chunk by chunk. The store releases each verified chunk
 buffer after copying, so memory is the output size plus one chunk.
+
+#### Glamsterdam
+
+Measured on Sepolia
+([`deployments/11155111/flows.md`](../../deployments/11155111/flows.md)): each
+transaction's receipt, next to the same transaction replayed with Prague costs.
+
+| Operation | Sepolia (Glamsterdam) | Prague |
+| --- | ---: | ---: |
+| `writeChunk`, 24,572 bytes (new), as a transaction | 38,364,370 | 5,431,552 |
+| `writeChunk`, per stored byte | about 1,548 | about 218 |
+| `writeChunk`, the 7,048-byte CC0 legal code | 11,238,006 | |
+| `registerManifest`, 1 chunk | 577,375 | 143,475 |
+| `registerManifest`, 43 chunks (1 MiB; `eth_estimateGas`) | 5,265,859 | |
+| `registerManifest`, 256 chunks (simulated) | 28,784,463 | |
+| `registerManifest`, 512 chunks (the cap; extrapolated) | about 57.6M | about 11.8M |
+| `attestBase64`, one 24,572-byte chunk | 325,172 | 242,152 |
+| A 256 KiB `Base64` work on chain: upload, manifest and attestation | about 413M, **0.41 ETH at 1 gwei** | about 60M, 0.06 ETH |
+| A 1 MiB `Base64` work on chain | about 1,650M, **1.65 ETH at 1 gwei** | about 241M, 0.24 ETH |
+
+- **About 7 times dearer.** A new slot costs about 111,000 gas (Prague 22,100), a
+  byte of contract code about 1,542 to 1,548 (Prague 200), and an empty contract
+  creation about 210,000 (Prague about 53,000). A full 24,575-byte chunk costs
+  about 38.4M gas, and storage about 1.65 ETH per MiB at 1 gwei. Reads are not
+  repriced (`tokenURI` measured within about 3% of Prague), so the 256 KiB inline
+  threshold stands.
+- **The transaction cap, as observed.** Sepolia accepts transactions above
+  EIP-7825's 16,777,216 when the excess is state-creation gas: the cap bounds only
+  the regular gas. The uploader's model bounds a full chunk's regular gas at
+  about 5.5M and the largest manifest's at about 11.9M, both within the cap.
+- **Estimation.** The public Sepolia RPC caps `eth_estimateGas` and simulations at
+  50M gas, as geth and reth do by default. A manifest above about 440 chunks costs
+  more, so such a node cannot estimate it: use the
+  [uploader's](../../tools/content/README.md#gas-schedules-the-cap-and-quotes)
+  offline model (`--schedule glamsterdam`) or a self-hosted node with a raised
+  cap.
+
+The uploader prints a cost quote under both schedules for any file. ADR 0004
+(gas budgets under Glamsterdam) records the repository's budgets.
 
 ### DependencyRegistry
 

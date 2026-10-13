@@ -1,8 +1,9 @@
 """Read-only JSON-RPC access to a content store, over `urllib`.
 
-Only `eth_call`, `eth_getCode` and `eth_chainId` are used. Nothing here can change chain state or
-sign anything. The endpoint URL often carries an API key, so it is never printed: errors and
-reports name only its scheme, host and port.
+Only `eth_call`, `eth_getCode`, `eth_chainId` and `eth_estimateGas` are used. Nothing here can
+change chain state or sign anything: `eth_estimateGas` only simulates a call. The endpoint URL
+often carries an API key, so it is never printed: errors and reports name only its scheme, host
+and port.
 """
 
 from __future__ import annotations
@@ -80,6 +81,17 @@ class JsonRpc:
         result = self.request("eth_getCode", [checksum_address(address), "latest"])
         return _hex_bytes(result, "eth_getCode result")
 
+    def chain_id(self) -> int:
+        return _hex_quantity(self.request("eth_chainId", []), "eth_chainId result")
+
+    def estimate_gas(self, to: bytes, data: bytes) -> int:
+        """The node's `eth_estimateGas` for a zero-value call with this calldata, on the latest
+        state. A node with the default RPC gas cap answers at most 50M."""
+        result = self.request(
+            "eth_estimateGas", [{"to": checksum_address(to), "data": "0x" + data.hex()}]
+        )
+        return _hex_quantity(result, "eth_estimateGas result")
+
 
 def _hex_bytes(value: Any, what: str) -> bytes:
     if not isinstance(value, str) or not value.startswith("0x") or len(value) % 2:
@@ -88,6 +100,15 @@ def _hex_bytes(value: Any, what: str) -> bytes:
         return bytes.fromhex(value[2:])
     except ValueError:
         raise RpcError(f"{what} is not valid hex") from None
+
+
+def _hex_quantity(value: Any, what: str) -> int:
+    if not isinstance(value, str) or not value.startswith("0x") or len(value) < 3:
+        raise RpcError(f"{what} is not a 0x-prefixed quantity")
+    try:
+        return int(value[2:], 16)
+    except ValueError:
+        raise RpcError(f"{what} is not a valid quantity") from None
 
 
 def _error_from(label: str, error: Any) -> RpcError:

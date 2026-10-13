@@ -1,10 +1,10 @@
 """Test support: an in-memory `ContentStore` read model behind a local JSON-RPC server.
 
 It answers exactly the read calls the tooling makes (`eth_call` on the store's views,
-`eth_getCode`, `eth_chainId`), with the same ABI shapes and custom-error reverts as the real
-contract, so `verify` and `rebuild` can be exercised end to end without a node. It is only a
-model of the contract's reads; the real contract is checked by the Foundry golden test and by
-`test_anvil.py`.
+`eth_getCode`, `eth_chainId`, and `eth_estimateGas` when a test sets an estimator), with the same
+ABI shapes and custom-error reverts as the real contract, so `verify` and `rebuild` can be
+exercised end to end without a node. It is only a model of the contract's reads; the real
+contract is checked by the Foundry golden test and by `test_anvil.py`.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Callable
 
 from . import abi
 from .abi import uint_word
@@ -31,6 +31,10 @@ class Revert(Exception):
         self.data = data
 
 
+class NodeError(Exception):
+    """A JSON-RPC error that is not a revert, such as a node's RPC gas cap."""
+
+
 def _error(signature: str, *words: bytes) -> Revert:
     return Revert(abi.selector(signature) + b"".join(words))
 
@@ -45,6 +49,8 @@ class FakeStore:
         self.tamper: dict[bytes, bytes] = {}  # chunk hash -> bytes served instead of the real ones
         self.attested: set[bytes] = set()
         self.supports_attest = True  # False models a store deployed before attestBase64
+        # eth_estimateGas: calldata -> gas; may raise Revert or NodeError. None: unsupported.
+        self.estimator: Callable[[bytes], int] | None = None
 
     # --- writes, as plain methods (the real contract takes calldata; see test_anvil.py) ---
 
@@ -171,6 +177,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "message": "execution reverted",
                 "data": "0x" + exc.data.hex(),
             }
+        except NodeError as exc:
+            reply["error"] = {"code": -32000, "message": str(exc)}
         payload = json.dumps(reply).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -182,7 +190,11 @@ class _Handler(BaseHTTPRequestHandler):
         store = self.server.store
         self.server.methods.append(method)
         if method == "eth_chainId":
-            return "0x7a69"
+            return hex(self.server.chain_id)
+        if method == "eth_estimateGas":
+            if store.estimator is None or params[0]["to"].lower() != _STORE_TEXT:
+                raise NodeError("the method eth_estimateGas does not exist")
+            return hex(store.estimator(bytes.fromhex(params[0]["data"][2:])))
         if method == "eth_getCode":
             return "0x6080" if params[0].lower() == _STORE_TEXT else "0x"
         if method == "eth_call":
@@ -200,6 +212,7 @@ class FakeChain(ThreadingHTTPServer):
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), _Handler)
         self.store = FakeStore()
+        self.chain_id = 31_337
         self.methods: list[str] = []  # every JSON-RPC method received, for assertions
         self._thread = threading.Thread(target=self.serve_forever, daemon=True)
 

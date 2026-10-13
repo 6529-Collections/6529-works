@@ -54,6 +54,13 @@
   delegation deployment. That deployment is the default there, and the canonical code hash is
   pinned. Artists refresh their own recovery standing; a network keeper is optional. The CC0
   legal code is committed as a byte-exact test fixture and is the deploy's default text.
+- Content tooling: the uploader's gas model has a `glamsterdam` schedule next to `prague`
+  (still the default), fitted to the Sepolia receipts of 11 and 12 October 2026. Under it the
+  EIP-7825 cap bounds only regular gas, so a full chunk gets a gas limit of about 42M instead of
+  a clamped 16.8M. `calls --schedule glamsterdam` also limits batching to one full chunk per
+  transaction and warns above the 50M RPC estimate cap and an assumed block gas limit.
+  `--gas-limits rpc` takes limits from the node's `eth_estimateGas`. `plan` and `calls` quote
+  the cost under both schedules (`--gwei`). The content READMEs carry both sets of figures.
 - CI: the budget gate measures an explicit Foundry profile (`--profile`, default
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
