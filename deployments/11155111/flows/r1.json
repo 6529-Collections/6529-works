@@ -603,6 +603,123 @@
                     "gasUsed":  32580,
                     "status":  "0x1",
                     "prague":  32425
+                },
+                {
+                    "label":  "settle-6",
+                    "from":  "any",
+                    "hash":  "0x5dbbc598d80b64d75d8f59300885eb1efcb3c6ab579cd9a68aed362820b9ffaf",
+                    "block":  11908907,
+                    "gasUsed":  441363,
+                    "status":  "0x1",
+                    "prague":  164743
+                },
+                {
+                    "label":  "settle-4",
+                    "from":  "any",
+                    "hash":  "0x10e0abc979bed8f6d73cde72f31b89da3325516fcada9c0d22521dcdacf2cab2",
+                    "block":  11908908,
+                    "gasUsed":  257763,
+                    "status":  "0x1",
+                    "prague":  139743
+                },
+                {
+                    "label":  "settle-1",
+                    "from":  "any",
+                    "hash":  "0x67bca628e9a96e267de998d7bf32b1825836b6e17bc665e158e3f61b94c44684",
+                    "block":  11908909,
+                    "gasUsed":  159843,
+                    "status":  "0x1",
+                    "prague":  122643
+                },
+                {
+                    "label":  "settle-7",
+                    "from":  "any",
+                    "hash":  "0xe922c1ecb573802748322c7a351b42321b371955851697a1c2141d3a1901576f",
+                    "block":  11908910,
+                    "gasUsed":  335817,
+                    "status":  "0x1",
+                    "prague":  135577
+                },
+                {
+                    "label":  "settle-2",
+                    "from":  "any",
+                    "hash":  "0x0c2da02d826d122c93b4aa186f1d322a799522d7bea1d8b9eb93528d194c84f0",
+                    "block":  11908911,
+                    "gasUsed":  237897,
+                    "status":  "0x1",
+                    "prague":  118477
+                },
+                {
+                    "label":  "settle-3",
+                    "from":  "any",
+                    "hash":  "0x3914938bd05fa922b552b2b12534412c8340f87a2e126c8b579100e39e5fe16e",
+                    "block":  11908912,
+                    "gasUsed":  237897,
+                    "status":  "0x1",
+                    "prague":  118477
+                },
+                {
+                    "label":  "settle-5",
+                    "from":  "any",
+                    "hash":  "0x7515aaeea831356e51bc6e359e63297abf5c8b9b45c15bef1c29c88cf848ca29",
+                    "block":  11908913,
+                    "gasUsed":  237897,
+                    "status":  "0x1",
+                    "prague":  118477
+                },
+                {
+                    "label":  "settle-8",
+                    "from":  "any",
+                    "hash":  "0x9b9f7d89595c0bfdf62028ac1b6985c5d7384fbc3ae71dcce2c9c3957086bce6",
+                    "block":  11908914,
+                    "gasUsed":  226281,
+                    "status":  "0x1",
+                    "prague":  113677
+                },
+                {
+                    "label":  "createEdition-6",
+                    "from":  "any",
+                    "hash":  "0x25cf2e44e34dcad4335226395ab8355be00c3a076fb8982b07df7d95729520ff",
+                    "block":  11908916,
+                    "gasUsed":  1133867,
+                    "status":  "0x1",
+                    "prague":  338987
+                },
+                {
+                    "label":  "openSale-6",
+                    "from":  "platform",
+                    "hash":  "0xd2f342a8c0466ea5397b35602dd365ee8f450017ddcd743fd4c69a38d26bdaf9",
+                    "block":  11908917,
+                    "gasUsed":  993668,
+                    "status":  "0x1",
+                    "prague":  286608
+                },
+                {
+                    "label":  "purchase-first-copy",
+                    "from":  "bidder1",
+                    "hash":  "0x7ee16bd7a47af85fa0afde47903879239c7b9abf3c326e5c303210a6a8bd66ae",
+                    "block":  11908918,
+                    "gasUsed":  476183,
+                    "status":  "0x1",
+                    "prague":  204623
+                },
+                {
+                    "label":  "purchase-later-copy",
+                    "from":  "bidder2",
+                    "hash":  "0x3045c553a49d94051ef0883f15e2aea85363ebfdfabe7314ff99d912fc870c6b",
+                    "block":  11908919,
+                    "gasUsed":  378239,
+                    "status":  "0x1",
+                    "prague":  187499
+                },
+                {
+                    "label":  "purchase-two-copies",
+                    "from":  "bidder1",
+                    "hash":  "0x7f69a3fafd7422c1e41a040fa8f80ce47ec975e7bcbd33895775ed037f58616a",
+                    "block":  11908920,
+                    "gasUsed":  182423,
+                    "status":  "0x1",
+                    "prague":  153323
                 }
             ],
     "notes":  {
