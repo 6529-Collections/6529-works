@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Sequence
 
@@ -35,6 +36,9 @@ from .verify import verify_file
 EXIT_NOT_OK = 1
 EXIT_ERROR = 2
 
+# Chains known to price state creation under Glamsterdam, where Prague gas limits run out of gas.
+GLAMSTERDAM_CHAINS = {11_155_111: "Sepolia (Glamsterdam since 6 October 2026)"}
+
 
 def _eprint(message: str) -> None:
     print(message, file=sys.stderr)
@@ -60,6 +64,48 @@ def _client(args: argparse.Namespace) -> StoreClient:
     if not url:
         raise ToolError("no RPC endpoint: pass --rpc URL or set ETH_RPC_URL")
     return StoreClient(JsonRpc(url), parse_address(args.store))
+
+
+# --- gas options and quotes ---
+
+
+def _gwei(text: str) -> Decimal:
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+    if not value.is_finite() or value <= 0:
+        raise argparse.ArgumentTypeError("the gas price must be a positive number of gwei")
+    return value
+
+
+def _gas_amount(text: str) -> int:
+    try:
+        value = int(text.replace(",", ""))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole amount of gas: {text!r}") from None
+    if value < gas.TX_GAS_CAP:
+        raise argparse.ArgumentTypeError(
+            f"a block gas limit below the transaction cap ({gas.TX_GAS_CAP:,}) is not plausible"
+        )
+    return value
+
+
+def _quote_lines(quotes: list[gas.Quote], gwei: Decimal) -> list[str]:
+    width = max(len(q.schedule) for q in quotes)
+    lines = [f"cost quote at {gwei} gwei (offline model, an upper bound):"]
+    for q in quotes:
+        lines.append(f"  {q.schedule:<{width}}  {q.gas:>15,} gas  {q.eth:,.6f} ETH")
+    return lines
+
+
+def _schedule_note(schedule: gas.Schedule) -> str:
+    if schedule.cap_counts_state:
+        return f"gas schedule  {schedule.name}: the EIP-7825 cap counts every unit of gas"
+    return (
+        f"gas schedule  {schedule.name}: state creation priced as measured on Sepolia "
+        "(11-12 October 2026; mainnet may differ); the EIP-7825 cap bounds regular gas only"
+    )
 
 
 # --- plan ---
@@ -115,6 +161,15 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print(f"reproducible  {reproducible}")
     print(f"manifest      {manifest_path}")
     print(f"stored stream {stored_path}")
+    upload = calls_module.calls_for_plan(plan)
+    writes = sum(c.name == "writeChunk" for c in upload)
+    attests = len(upload) - writes - 1
+    print(
+        f"on-chain copy {len(upload)} transaction(s): registerManifest, {writes} writeChunk"
+        + (f", {attests} attestBase64" if attests else "")
+    )
+    for line in _quote_lines(calls_module.quotes(upload, args.gwei), args.gwei):
+        print(line)
     if not plan.reproducible:
         _eprint(
             "warning: re-encoding the decoded media does not give this stream. It is valid, but "
@@ -142,15 +197,28 @@ def cmd_calls(args: argparse.Namespace) -> int:
     else:
         raise ToolError("the manifest names no stored file; pass --stored PATH")
     stored = _read_file(stored_path, "stored stream")
+    schedule = gas.schedule_named(args.schedule)
+    rpc_limits = args.gas_limits == "rpc"
+
+    client: StoreClient | None = None
+    for flag, wanted in (("--only-missing", args.only_missing), ("--gas-limits rpc", rpc_limits)):
+        if wanted and not (args.rpc or os.environ.get("ETH_RPC_URL")):
+            raise ToolError(f"{flag} needs --rpc URL (or ETH_RPC_URL)")
+    if args.only_missing or rpc_limits:
+        client = _client(args)
+        client.check_contract()
+        chain = GLAMSTERDAM_CHAINS.get(client.rpc.chain_id())
+        if chain is not None and schedule.cap_counts_state:
+            raise ToolError(
+                f"the RPC endpoint is on {chain}: {schedule.name} gas limits would run out of "
+                "gas there; pass --schedule glamsterdam"
+            )
 
     skip_register = False
     skip_attest = False
     present: set[bytes] = set()
     if args.only_missing:
-        if not (args.rpc or os.environ.get("ETH_RPC_URL")):
-            raise ToolError("--only-missing needs --rpc URL (or ETH_RPC_URL)")
-        client = _client(args)
-        client.check_contract()
+        assert client is not None
         skip_register = client.file_info(manifest.file_id) is not None
         for digest in dict.fromkeys(manifest.chunk_hashes):
             if client.chunk_pointer(digest) is not None:
@@ -171,10 +239,17 @@ def cmd_calls(args: argparse.Namespace) -> int:
     plan = calls_module.build_calls(
         manifest, stored, register=args.register, skip_register=skip_register,
         present_chunk_hashes=present, attest=not args.no_attest, skip_attest=skip_attest,
+        schedule=schedule, block_gas=args.block_gas,
     )
+    notes: list[str] = []
+    if rpc_limits:
+        assert client is not None
+        rpc = client.rpc
+        plan, notes = calls_module.with_rpc_limits(plan, lambda data: rpc.estimate_gas(store, data))
     document = calls_module.calls_document(
         plan, manifest.file_id, store, skipped_register=skip_register,
-        skipped_chunks=len(present), skipped_attest=skip_attest,
+        skipped_chunks=len(present), skipped_attest=skip_attest, schedule=schedule,
+        block_gas=args.block_gas, gwei=args.gwei, notes=notes,
     )
     out_dir = Path(args.out_dir) if args.out_dir else manifest_path.with_suffix(".calls")
     if out_dir.exists() and any(out_dir.iterdir()):
@@ -186,13 +261,14 @@ def cmd_calls(args: argparse.Namespace) -> int:
     for call in plan:
         text = calls_module.calldata_file_text(call)
         write_new_file(out_dir / call.filename, text.encode(), True)
-    script = calls_module.render_script(plan, manifest.file_id, store)
+    script = calls_module.render_script(plan, manifest.file_id, store, schedule)
     write_new_file(out_dir / "send.sh", script.encode("utf-8"), True)
     write_new_file(out_dir / "calls.json", calls_module.calls_json(document).encode("utf-8"), True)
 
     total = document["totalGasEstimate"]
     largest = max((c.estimate for c in plan), key=lambda e: e.transaction, default=None)
     _eprint(f"{len(plan)} transaction(s) written to {out_dir}; nothing was sent")
+    _eprint(_schedule_note(schedule))
     _eprint(f"estimated total {total:,} gas")
     attests = sum(c.name == "attestBase64" for c in plan)
     if attests:
@@ -206,13 +282,33 @@ def cmd_calls(args: argparse.Namespace) -> int:
             f", {len(present)} chunk(s) already stored"
             + (", already attested" if skip_attest else "")
         )
-    if largest is not None:
+    if largest is not None and schedule.cap_counts_state:
         _eprint(
             f"largest transaction {largest.transaction:,} gas = {largest.cap_fraction:.0%} of the "
             f"EIP-7825 cap ({gas.TX_GAS_CAP:,})"
         )
-        if not largest.has_margin:
-            _eprint("warning: a transaction uses more than three quarters of the gas cap")
+    elif largest is not None:
+        regular = max(c.estimate.regular for c in plan)
+        _eprint(
+            f"largest transaction {largest.transaction:,} gas; the most regular gas in one is "
+            f"{regular:,} = {regular / gas.TX_GAS_CAP:.0%} of the EIP-7825 cap ({gas.TX_GAS_CAP:,})"
+        )
+    if rpc_limits:
+        from_node = sum(c.gas_limit_source == "rpc" for c in plan)
+        _eprint(
+            f"gas limits from the node's eth_estimateGas plus 10% for {from_node} of {len(plan)} "
+            "transaction(s); the rest from the offline model"
+        )
+    if any(c.name == "writeChunk" for c in plan):
+        per_batch = gas.chunks_per_transaction(schedule=schedule, block_gas=args.block_gas)
+        _eprint(
+            f"batching: at most {per_batch} full chunk(s) per transaction under {schedule.name}, "
+            "if you batch these writes yourself (for example with Multicall3)"
+        )
+    for warning in document["warnings"]:
+        _eprint(f"warning: {warning}")
+    for line in _quote_lines(calls_module.quotes(plan, args.gwei), args.gwei):
+        _eprint(line)
     if args.json:
         sys.stdout.write(calls_module.calls_json(document))
     else:
@@ -300,6 +396,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="FILE is already the encoded stream (for example fetched from Arweave)",
     )
     p.add_argument("--force", action="store_true", help="overwrite existing output files")
+    _add_gwei(p)
     p.set_defaults(func=cmd_plan)
 
     p = sub.add_parser("calls", help="emit the transactions (calldata and cast send lines)")
@@ -315,11 +412,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--only-missing", action="store_true",
         help="ask the chain (needs --rpc) and skip what is already stored or registered",
     )
-    p.add_argument("--rpc", help="JSON-RPC URL (default: $ETH_RPC_URL); only for --only-missing")
+    p.add_argument(
+        "--rpc",
+        help="JSON-RPC URL (default: $ETH_RPC_URL); only for --only-missing and --gas-limits rpc",
+    )
     p.add_argument(
         "--no-attest", action="store_true",
         help="omit the attestBase64 calls a Base64 or GzipBase64 file otherwise gets",
     )
+    p.add_argument(
+        "--schedule", choices=sorted(gas.SCHEDULES), default=gas.DEFAULT_SCHEDULE.name,
+        help="gas pricing: prague (default) or glamsterdam (state creation repriced, as on "
+        "Sepolia since 6 October 2026)",
+    )
+    p.add_argument(
+        "--gas-limits", choices=("model", "rpc"), default="model",
+        help="take each gas limit from the offline model (default) or from the node's "
+        "eth_estimateGas plus 10%% (needs --rpc); quotes always use the model",
+    )
+    p.add_argument(
+        "--block-gas", type=_gas_amount, default=gas.DEFAULT_BLOCK_GAS, metavar="GAS",
+        help=f"the target chain's block gas limit, for the warnings and the glamsterdam limits "
+        f"(default {gas.DEFAULT_BLOCK_GAS:,})",
+    )
+    _add_gwei(p)
     p.add_argument("--json", action="store_true", help="print calls.json instead of the script")
     p.add_argument("--force", action="store_true", help="write into a non-empty out-dir")
     p.set_defaults(func=cmd_calls)
@@ -354,6 +470,13 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument("--check", action="store_true", help="fail if any committed file is stale")
     p.set_defaults(func=cmd_golden)
     return parser
+
+
+def _add_gwei(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        "--gwei", type=_gwei, default=Decimal(1),
+        help="gas price for the cost quote, in gwei per gas (default 1)",
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -12,10 +12,14 @@ and nothing handles a private key. Pre-audit software, like the contracts.
 
 ```bash
 python -m tools.content plan art.png --mime image/png --encoding base64
-python -m tools.content calls art.png.content.json --store 0xSTORE
+python -m tools.content calls art.png.content.json --store 0xSTORE --schedule glamsterdam
 python -m tools.content verify  --rpc "$ETH_RPC_URL" --store 0xSTORE 0xFILEID
 python -m tools.content rebuild --rpc "$ETH_RPC_URL" --store 0xSTORE 0xFILEID -o art.png
 ```
+
+Use `--schedule glamsterdam` for Sepolia, which has priced state creation under
+Glamsterdam since 6 October 2026; Prague limits run out of gas there (see
+[Gas](#gas-schedules-the-cap-and-quotes)).
 
 Run from the repository root. Exit codes: `0` success, `1` the file did not
 verify (or is incomplete), `2` bad input or an unreachable endpoint.
@@ -51,6 +55,12 @@ next to the decoded media.** The file ID commits to those exact bytes, and gzip
 output depends on the compressor, so nobody can promise to reproduce it later;
 see the [content README](../../src/content/README.md#the-model).
 
+`plan` also prints a **cost quote** for putting the file on chain (registration,
+one write per distinct chunk, and the attest calls of a base64 file) under each
+gas schedule, as total gas and as ETH at `--gwei` per gas (default 1). This is
+what a collector pays to make a work on-chain complete; see
+[cost quotes](#cost-quotes).
+
 `--already-encoded` takes a stream you already have (for example fetched from
 Arweave) instead of media. It must decode cleanly; the media SHA-256 comes from
 the decoded bytes, and the manifest records whether this tool's encoder would
@@ -69,9 +79,26 @@ Emits the ordered transactions, **without broadcasting anything**:
   chunk is stored, because attestation reads the chunks (see
   [Base64 attestation](#base64-attestation); `--no-attest` leaves them out);
 - ABI-encoded calldata in `<manifest>.calls/NNN-<name>.calldata`, a machine
-  readable `calls.json` (gas estimate and recommended gas limit per
-  transaction), and `send.sh`, a script of `cast send` lines that is also
-  printed to stdout (`--json` prints `calls.json` instead).
+  readable `calls.json` (per transaction: the gas estimate with its regular and
+  state parts, and the recommended gas limit and where it came from; for the
+  whole set: the schedule, the cost quotes and any warnings), and `send.sh`, a
+  script of `cast send` lines that is also printed to stdout (`--json` prints
+  `calls.json` instead).
+
+Gas options (see [Gas](#gas-schedules-the-cap-and-quotes)):
+
+- `--schedule prague|glamsterdam` prices every transaction and sets its gas
+  limit. `prague` is the default. Use `glamsterdam` on a chain that runs it, such
+  as Sepolia. With `--rpc` on Sepolia, `prague` is refused.
+- `--gas-limits rpc` (needs `--rpc`) takes each gas limit from the node's
+  `eth_estimateGas` plus 10 percent instead of from the model. A call the node
+  cannot estimate keeps the model's limit, with a warning: the attest calls
+  revert until every chunk is stored, and a node with the default 50M RPC gas
+  cap refuses a larger call. The quotes always come from the model.
+- `--block-gas GAS` is the target chain's block gas limit (default 60,000,000,
+  a deliberately conservative assumption). Under `glamsterdam` no gas limit is
+  set above it, and a transaction that would not fit a block is flagged.
+- `--gwei PRICE` is the gas price for the cost quote (default 1).
 
 Before emitting anything it re-proves that the stored stream is the one the
 manifest commits to (length, every chunk hash, and the decoded media SHA-256),
@@ -80,9 +107,10 @@ and it refuses a manifest whose `fileId` is not the hash of its own fields.
 `--only-missing --rpc URL` asks the chain and drops what it already has: a
 registered manifest, any chunk the store already holds, and the attest calls if
 `isBase64Attested` is already true. That is how a collector finishes an upload
-the artist started. (Against a store that has no `attestBase64` it warns and
-emits no attest calls; against one whose `ATTEST_CHUNKS_PER_CALL` is not 48 it
-refuses, because the calls are sized for 48.)
+the artist started, and its cost quote is what finishing costs. (Against a
+store that has no `attestBase64` it warns and emits no attest calls; against one
+whose `ATTEST_CHUNKS_PER_CALL` is not 48 it refuses, because the calls are sized
+for 48.)
 
 Run `send.sh` yourself, with your own signer:
 
@@ -206,7 +234,8 @@ What the tooling does about it:
 
 Cost falls on whoever calls it: about 175,000 gas per chunk, so about 8.5M gas for
 a full call of 48 distinct chunks (about half the Fusaka cap), and about 90M gas
-for a 512-chunk file.
+for a 512-chunk file. Attestation only reads chunks, so Glamsterdam adds only the
+new slot that records it: about 89,000 gas once per file.
 
 ## Manifest JSON
 
@@ -239,13 +268,20 @@ differs, so editing a manifest cannot change what gets sent. `storedFile` must
 be a plain file name beside the manifest: a manifest from someone else cannot
 point the tool at an arbitrary local file.
 
-## Gas and the Fusaka cap
+## Gas: schedules, the cap and quotes
+
+`calls` prices every transaction with an offline model (`gas.py`) under one of
+two schedules, and `plan` and `calls` quote both. Foundry 1.7.1 has no
+Amsterdam EVM, so every `forge` gas figure in this repository is a Prague
+figure; the Glamsterdam constants come from Sepolia receipts.
+
+### Prague (the default)
 
 [EIP-7825](https://eips.ethereum.org/EIPS/eip-7825) caps every transaction at
-16,777,216 gas. `calls` estimates each transaction with an offline model
-(execution plus 21,000 plus calldata, or the EIP-7623 floor if higher), refuses
-to emit any transaction above the cap, warns above three quarters of it, and sets
-`--gas-limit` to the estimate plus 10 percent, never above the cap.
+16,777,216 gas. The model is execution plus 21,000 plus calldata, or the EIP-7623
+floor if higher. `calls` refuses to emit any transaction above the cap, warns
+above three quarters of it, and sets `--gas-limit` to the estimate plus 10
+percent, never above the cap.
 
 | Transaction | Model (execution) | Measured on `ContentStore` | As a transaction |
 | --- | --- | --- | --- |
@@ -265,9 +301,112 @@ model constants (`gas.py`) are upper bounds fitted to measurements.
 call of that file, each asserting that measured gas never exceeds the model.
 
 A whole 12.58 MB file is 513 transactions and about 2.84 billion gas, about 2.8
-ETH at 1 gwei. One more thing to know before batching chunks with Multicall3:
-three full chunks in one transaction come to 97% to 99% of the cap, with no room
-for repricing; two per transaction is about 66%.
+ETH at 1 gwei. Batching chunks (for example with Multicall3): three full chunks
+in one transaction come to 97% to 99% of the cap, with no room for repricing;
+two per transaction (about 49 KB) is about 66%.
+
+### Glamsterdam
+
+Glamsterdam reprices state creation. Sepolia has run it since 6 October 2026,
+and the constants below were measured there on 11 and 12 October 2026
+([`flows.md`](../../deployments/11155111/flows.md)). Mainnet parameters may
+differ, so re-measure before relying on them there.
+
+| State created | Prague | Sepolia (Glamsterdam) |
+| --- | ---: | ---: |
+| A byte of contract code (a chunk's bytes) | 200 | about 1,542 to 1,548 |
+| A storage slot written from zero | 22,100 | about 111,000 |
+| A contract creation, empty | about 53,000 | about 210,000 |
+
+The model is the Prague model plus a state surcharge per new contract, per byte
+of new code and per new slot. The surcharges are the measured increases over
+Prague: `writeChunk` receipts for 191 to 24,572 bytes rise by 247,459 plus
+1,330.2 per byte over their Prague replays, within 20 gas, and each chunk hash a
+manifest stores costs 88,400 to 89,300 more. The model uses 1,331 per code byte,
+89,400 per new slot and 157,000 per new contract, at or above every
+measurement. Against the receipts:
+
+| Transaction | Model | Sepolia |
+| --- | ---: | ---: |
+| `writeChunk`, 24,572 bytes | 38,474,847 | 38,364,370 |
+| `writeChunk`, the 7,048-byte CC0 text | 11,277,679 | 11,238,006 |
+| `writeChunk`, a full 24,575-byte chunk | 38,479,491 | about 38.4M |
+| `registerManifest`, 1 chunk | 596,176 | 577,375 |
+| `registerManifest`, 43 chunks (1 MiB) | 5,313,244 | 5,265,859 (estimate) |
+| `registerManifest`, 256 chunks | 29,235,328 | 28,784,463 (simulated) |
+| `registerManifest`, 512 chunks | 57,986,912 | about 57.6M |
+
+`test_glamsterdam.py` holds these receipts and fails if the model drops below
+any of them or drifts more than a few percent above.
+
+**The transaction cap, as observed.** On Sepolia, EIP-7825's 16,777,216 cap
+bounds a transaction's **regular** gas only: Sepolia accepts transactions above
+the cap when the excess is state-creation gas. A full chunk costs about 38.4M
+and a 512-chunk manifest about 57.6M. So under `glamsterdam` the model splits
+each estimate in two:
+
+- **regular gas**, bounded by the Prague estimate, which still counts state
+  creation at its Prague price. That makes it an upper bound as far as Sepolia
+  shows: reads and other execution cost there what they cost on Prague, or
+  slightly less. It is an observation, not a reading of the final EIP
+  mechanics, and mainnet must confirm it. `calls` refuses a
+  transaction whose regular gas is above the cap and warns above three quarters
+  of it. A full chunk is about 5.5M regular, and a 512-chunk manifest about
+  11.9M;
+- **state gas**, the surcharge, which the cap does not count.
+
+The gas limit is the whole estimate plus 10 percent, **not** clamped to the cap
+(a full chunk gets 42,328,000). It is never above the assumed block gas limit
+(`--block-gas`, default 60M), unless the transaction could not fit a block
+anyway.
+
+**Batching.** Batch only while the regular gas still fits:
+`gas.chunks_per_transaction` adds a chunk to a transaction only while the
+batch's regular gas keeps the quarter reserve, and under Glamsterdam only while
+the batch also stays within 50M and the block gas limit. That allows one full
+chunk per transaction under Glamsterdam: two would be about 77M. The emitted
+transactions are always one chunk each; `calls` prints the batching limit for
+anyone who batches them with another tool.
+
+**Warnings.** `calls` warns when a transaction needs more than 50,000,000 gas,
+and when it needs more than the block gas assumption.
+
+- **The 50M estimate cap.** The public Sepolia RPC caps estimates and
+  simulations at 50M gas, and so do geth and reth by default (`--rpc.gascap`).
+  Under Glamsterdam a manifest above about **440 chunks**
+  (about 10.8 MB) costs more than that, so such a node cannot estimate it. Use
+  the offline model's limit (the default, and the fallback of `--gas-limits
+  rpc`) or a self-hosted node with a raised cap.
+- **The block.** A transaction has to fit in one block. Sepolia's blocks were
+  200M on 11 October 2026; the default assumption is 60M.
+
+**`MAX_CHUNKS` stays 512.** It is the protocol's limit, part of `IContentStore`
+and of every file's layout rule. Under Prague it was sized so that registering
+the largest manifest fits the cap. Under Glamsterdam the regular part still
+fits, but the whole registration is about 57.6M gas. So registering a manifest
+near the limit needs a chain whose blocks hold it with room to spare: Sepolia's
+200M blocks do, but on a chain with 60M blocks it would take almost a whole
+block. It also needs a gas limit from the offline model or from a node with a
+raised RPC gas cap. Chunks are written one per transaction (about 38.4M each),
+so only the registration grows with the file. ADR 0004 (gas budgets under
+Glamsterdam) records the repository's budgets.
+
+### Cost quotes
+
+`plan` and `calls` print the total gas of their transactions under each
+schedule, and its price at `--gwei` per gas (default 1). `calls.json` carries
+the same `quotes`. The figures are the offline model's upper bounds; at another
+gas price, scale linearly. What a file costs on chain (upload, manifest and
+attestation; the gas price includes the base fee):
+
+| File | Prague | at 1 gwei | Glamsterdam | at 1 gwei |
+| --- | ---: | ---: | ---: | ---: |
+| 256 KiB as `Base64` (11 chunks) | 61M | 0.061 ETH | 415M | 0.41 ETH |
+| 1 MiB as `Base64` (43 chunks) | 245M | 0.24 ETH | 1,655M | 1.65 ETH |
+| 12.58 MB, the largest file (512 chunks, no attestation) | 2,839M | 2.84 ETH | 19,759M | 19.8 ETH |
+
+Storage is about 7 times dearer under Glamsterdam: about 1.65 ETH per MiB at 1
+gwei, against about 0.24 ETH under Prague.
 
 ## Cross-language agreement
 
@@ -336,6 +475,6 @@ prerequisite fails there instead. CI runs these in the Contracts job, next to
   (512 chunks, 12.58 MB) takes about 14 seconds to plan and again to emit calls.
 - `verify` and `rebuild` make about two RPC calls per chunk; the whole file
   and its decoded form are held in memory (at most 12.58 MB stored).
-- Not covered: signing or sending (by design), batching through Multicall3,
-  gas estimation against live chain state (`cast estimate` does that), and
-  publishing to Arweave or IPFS.
+- Not covered: signing or sending (by design), batching through Multicall3 (the
+  limit is printed, the batches are not built), and publishing to Arweave or
+  IPFS. Gas estimation against live chain state is `--gas-limits rpc`.
