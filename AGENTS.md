@@ -26,7 +26,9 @@ Instructions for automated coding agents working in this repository.
   Prague gas and writes at most 6 new storage slots, 7 with a bid
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)). An ERC-20 start paid by
   Permit2 is a supported, non-default path: it has a regression ceiling and exact counts, not
-  a budget. `tokenURI` costs at most 8M Prague gas.
+  a budget. Admitting the first ERC-20, or approving a Stream package that names one, must be
+  accompanied by a re-measurement and publication of its start cost, in Prague gas and on the
+  target chain. `tokenURI` costs at most 8M Prague gas.
 - Every operation in `test/integration/GasReport.t.sol` asserts its exact count of new storage
   slots and new accounts, and a Prague gas ceiling. When a change lowers a count, the same PR
   lowers the test's figure, ADR 0004's table and the figures here; that needs no new ADR.

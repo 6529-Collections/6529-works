@@ -98,13 +98,17 @@ nonce).
 
 **6. The start budget is for ETH, Stream's launch currency.** The 350K Prague
 budget and the 6 and 7 slot maxima apply to starts in ETH. ADR 0001 §5 says
-Stream launches with ETH, and makes ERC-20 payment a governed configuration.
+Stream launches with ETH and makes ERC-20 payment a governed configuration. It
+also lets a package's sale terms name any currency on the asset allowlist.
 - An ERC-20 start paid by Permit2 is a supported path, not the default. It has
   a Prague regression ceiling (388,000) and exact counts (7 new slots, no new
   account), but no budget.
-- If governance ever makes an ERC-20 Stream's default currency, the same
-  governance proposal must re-measure and publish the ERC-20 start's cost, in
-  Prague gas and on the target chain.
+- The allowlist is global, so ERC-20 Stream starts can happen without any
+  change to the default currency.
+- Admitting the first ERC-20 to the allowlist, or curation approving a Stream
+  package that names an ERC-20, must be accompanied by a re-measurement of the
+  ERC-20 start's cost, in Prague gas and on the target chain, and by its
+  publication.
 
 ### The table
 
@@ -224,6 +228,12 @@ cold start fully. The harness works around three quirks:
 So each row is probed and measured first, and recorded last, all from one
 snapshot. A probe fails any measurement whose cooling did not work, and another
 check fails if a measured call reached storage the harness does not cool.
+
+`test/integration/GasHarness.t.sol` checks the correction against the truth.
+A steady-state `start` measured at the very start of a test, where every
+account and slot is cold, must equal the corrected figure measured after the
+test has warmed every account the call reaches. Today they are both 292,455,
+against 274,955 uncorrected: seven accounts at 2,500 each.
 
 **What CI cannot check.**
 - **Glamsterdam totals.** The Sepolia column is measured by hand on a

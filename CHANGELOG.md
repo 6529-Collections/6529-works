@@ -23,7 +23,8 @@
   cold-account cost Foundry cannot model, asserts exact counts and a Prague ceiling
   on every row, adds VRF, edition-master, ERC-20 Permit2, `settle`, `createEdition`,
   `openSale`, `purchase` and `refreshStanding` rows, and prints one table
-  (`forge test --match-test test_Gas_Table -vv`).
+  (`forge test --match-test test_Gas_Table -vv`). `GasHarness.t.sol` checks the
+  correction against a fully cold measurement.
 - Deployment: off anvil, `Deploy.s.sol` refuses a `NETWORK_FEE_RECIPIENT` that does
   not exist (`AccountDoesNotExist`).
 - Governance: `WorksAccessManager` (guardians cancel any scheduled operation;

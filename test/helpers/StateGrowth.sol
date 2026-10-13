@@ -23,7 +23,7 @@ import { Vm, VmSafe } from "forge-std/Vm.sol";
 ///      - **Cold accounts:** the accounts a real transaction would first reach cold under
 ///        EIP-2929. Every account the call reached, except its sender and target (warm from
 ///        the start), the precompiles 0x01 to 0x11, the cheatcode address, and the accounts the
-///        call created (warmed by their creation).
+///        call created without touching them first (warmed by their creation).
 ///
 ///      Recording changes gas: Foundry reads each account and slot it records, and once a test
 ///      has recorded, every later account and slot access in that test is priced warm. Never
@@ -151,22 +151,24 @@ library StateGrowth {
             address account = accounts[i];
             if (account == sender || account == target) continue;
             if (uint160(account) != 0 && uint160(account) <= LAST_PRECOMPILE) continue;
-            if (_created(accesses, account)) continue;
+            if (_createdFirst(accesses, account)) continue;
             cold[n++] = account;
         }
         _truncate(cold, n);
     }
 
-    function _created(Vm.AccountAccess[] memory accesses, address account)
+    /// @dev Whether the call's first access to `account` created it. Creation warms the new
+    ///      address, but an address the call touched before creating it (a CREATE2 address
+    ///      checked first) paid the cold price at that first touch.
+    function _createdFirst(Vm.AccountAccess[] memory accesses, address account)
         private
         pure
         returns (bool)
     {
         for (uint256 i; i < accesses.length; ++i) {
-            if (
-                accesses[i].kind == VmSafe.AccountAccessKind.Create
-                    && accesses[i].account == account
-            ) return true;
+            if (accesses[i].account == account) {
+                return accesses[i].kind == VmSafe.AccountAccessKind.Create;
+            }
         }
         return false;
     }

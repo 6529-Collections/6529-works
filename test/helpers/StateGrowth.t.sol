@@ -112,6 +112,27 @@ contract GrowthToy {
         return address(new GrowthChild());
     }
 
+    /// @dev Reads the CREATE2 address first (a cold touch), then creates the contract there.
+    function createAfterCheck(bytes32 salt) external returns (address created) {
+        address predicted = address(
+            uint160(
+                uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            bytes1(0xff),
+                            address(this),
+                            salt,
+                            keccak256(type(GrowthChild).creationCode)
+                        )
+                    )
+                )
+            )
+        );
+        require(predicted.code.length == 0, "already created");
+        created = address(new GrowthChild{ salt: salt }());
+        require(created == predicted, "prediction");
+    }
+
     function send(address to, uint256 amount) external payable {
         (bool ok,) = to.call{ value: amount }("");
         require(ok, "send failed");
@@ -315,6 +336,15 @@ contract StateGrowthTest is Test {
         cold = _grow(abi.encodeCall(toy.setByDelegatecall, (logic, 1, 5)), 0).coldAccounts;
         assertEq(cold.length, 1);
         assertEq(cold[0], address(logic));
+    }
+
+    /// @dev An address the call touched before creating it paid the cold price at that touch.
+    function test_AnAddressTouchedBeforeItsCreationIsCold() public {
+        StateGrowth.Growth memory growth =
+            _grow(abi.encodeCall(toy.createAfterCheck, (bytes32(uint256(1)))), 0);
+        _assertGrowth(growth, 1, 1);
+        assertEq(growth.coldAccounts.length, 1);
+        assertEq(growth.coldAccounts[0], growth.newAccounts[0]);
     }
 
     function test_CreatedAccountsAndPrecompilesAreNotCold() public {

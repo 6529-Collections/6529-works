@@ -42,6 +42,9 @@ import {
 ///      calldata (EIP-2028, with the EIP-7623 floor) and the execution measured with every
 ///      contract cooled first, including the cold call into the auction (about 2,600 gas a real
 ///      transaction does not pay, since its target is warm).
+///      Caveat: `vm.cool` cools storage but not accounts, so the other accounts the start
+///      reaches are priced warm and this figure reads low (ADR 0004); the integration report
+///      (`test/integration/GasReport.t.sol`) corrects for that and is authoritative.
 contract EnglishAuctionGasTest is Test {
     uint256 internal constant ITEMS = 16;
     /// @dev E1 (ADR 0003): the steady-state gate, amended from 300K. ADR 0004 keeps it as Prague
