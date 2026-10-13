@@ -41,8 +41,8 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///        above Prague (on Sepolia, about 111K per slot and about 205K for ETH sent to a fresh
 ///        account). Every row asserts the exact number of new slots and new accounts its
 ///        transaction creates, counted by `StateGrowth`, so a saved slot cannot be spent again
-///        unnoticed. The steady-state start rows are also held to ADR 0004's maxima: 6 slots,
-///        7 with a bid. A change that lowers a count lowers it here, in ADR 0004's table and
+///        unnoticed. The steady-state ETH start rows are also held to ADR 0004's maxima:
+///        6 slots, 7 with a bid. A change that lowers a count lowers it here, in ADR 0004's table and
 ///        in AGENTS.md; raising one needs a reason, and raising a maximum needs an ADR.
 ///
 ///      Steady state (ADR 0003): Stream, the collection, the auction's custody balance, the
@@ -419,9 +419,10 @@ contract IntegrationGasReport is IntegrationBase {
     ///      steady state for the currency and the payer: the token is admitted, its sale terms
     ///      (with and without the floor) exist, the auction holds a balance of it, and the payer
     ///      has used Permit2 before (its nonce word exists). The Permit2 is the sales lane's
-    ///      faithful reproduction, not the canonical deployment. The 350K budget was set for
-    ///      ETH starts, and this row is above it: ADR 0004 tracks it with a regression ceiling
-    ///      until the owner decides whether ERC-20 starts get a budget of their own.
+    ///      faithful reproduction, not the canonical deployment. ADR 0004 (decision 6): the
+    ///      350K budget and the slot maxima are for ETH, Stream's launch currency. An ERC-20
+    ///      start by Permit2 is a supported, non-default path with a regression ceiling and
+    ///      exact counts, not a budget; the Permit2 transfer path makes it cost more.
     function _rowStartWithPermit2Bid() internal returns (Row memory r) {
         _govern(
             hotAdmin,
@@ -458,7 +459,6 @@ contract IntegrationGasReport is IntegrationBase {
         );
         _gasAtMost(r, PERMIT2_START_CEILING, "regression ceiling");
         _growthIs(r, 7, 0);
-        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
     function _rowStartNewCollection() internal returns (Row memory r) {

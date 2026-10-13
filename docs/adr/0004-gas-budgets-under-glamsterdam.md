@@ -40,8 +40,9 @@ all.
   included at Prague's prices, with storage and accounts cold at the start as
   in a real transaction. CI measures it with Foundry.
 - Every existing ceiling keeps its number, now as Prague gas:
-  - a steady-state ETH `start` and `startWithBid`, at most **350K**, for one
-    artist and for the two-party variants;
+  - a steady-state `start` and `startWithBid` in ETH, at most **350K**, for
+    one artist and for the two-party variants (decision 6 covers ERC-20
+    starts);
   - the first start in a new collection, and `settle`: 400K test ceilings;
   - `tokenURI`: 8M.
 - Every other measured operation gets a **regression ceiling**: its Prague gas
@@ -60,8 +61,8 @@ transaction creates:
 
 Each measured operation asserts its exact counts, so a slot one change saves
 cannot be spent again unnoticed. A steady-state `start` is also held to a
-maximum of **6** new slots, and `startWithBid` to **7**: for one or two
-parties, for VRF and edition-master works, and for an ERC-20 bid.
+maximum of **6** new slots, and `startWithBid` to **7**, in ETH: for one or
+two parties, and for VRF and edition-master works.
 - When a change lowers a count, the same pull request lowers the test's
   figure, this ADR's table and the figure in `AGENTS.md`. Lowering needs no
   new ADR.
@@ -95,6 +96,16 @@ nonce).
   on its first payout. This happens once per configuration, and the table
   shows it.
 
+**6. The start budget is for ETH, Stream's launch currency.** The 350K Prague
+budget and the 6 and 7 slot maxima apply to starts in ETH. ADR 0001 §5 says
+Stream launches with ETH, and makes ERC-20 payment a governed configuration.
+- An ERC-20 start paid by Permit2 is a supported path, not the default. It has
+  a Prague regression ceiling (388,000) and exact counts (7 new slots, no new
+  account), but no budget.
+- If governance ever makes an ERC-20 Stream's default currency, the same
+  governance proposal must re-measure and publish the ERC-20 start's cost, in
+  Prague gas and on the target chain.
+
 ### The table
 
 Prague gas, counts and ceilings are from `test/integration/GasReport.t.sol`
@@ -112,7 +123,7 @@ no ceiling, or not run on Sepolia.
 | `startWithBid`, two-party work | 342,901 | 350,000 | **7** | 0 | — |
 | `start`, VRF work | 298,736 | 350,000 | **6** | 0 | 852,868 |
 | `start`, edition master | 293,890 | 350,000 | **6** | 0 | 847,598 |
-| `startWithBid`, ERC-20 by relayed Permit2 | 379,456 | 388,000 (regression) | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 379,456 | 388,000 (regression) | 7 | 0 | — |
 | `start`, first work in a new collection | 293,244 | 400,000 | 6 | 0 | 846,977 |
 | `start`, first work ever (one-time) | 442,314 | 452,000 (regression) | 13 | 0 | 1,604,862 |
 | `startWithBid`, first bid under new sale terms (one-time) | 404,733 | 413,000 (regression) | 10 | 0 | — |
@@ -130,12 +141,16 @@ no ceiling, or not run on Sepolia.
 | `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
 
 - **The two-party `startWithBid` is tight:** 342,901, about 7K under 350K.
-- **The ERC-20 `startWithBid` is above 350K.** Paid by a relayed Permit2
-  transfer, a steady-state start costs 379,456. The 350K budget was set and
-  measured for ETH starts, so this row has a regression ceiling instead.
-  Whether ERC-20 starts get a budget of their own is an open owner decision.
-  The row uses the test suite's reproduction of Permit2, not the canonical
-  deployment.
+- **An ERC-20 `startWithBid` paid by Permit2 costs 379,456**, about 45K more
+  than in ETH, because of the Permit2 transfer path. That path adds:
+  - the signed permit and its witness in the calldata;
+  - Permit2's signature check and nonce update;
+  - the token transfer, with the balance checks around it;
+  - two more accounts, Permit2 and the token.
+
+  It is not the launch currency, so the row has a regression ceiling, not the
+  350K budget (decision 6). The row uses the test suite's reproduction of
+  Permit2, not the canonical deployment.
 - **A rule of thumb on Sepolia's parameters:** a transaction's Glamsterdam gas
   is about its Prague gas, plus about 89,000 per new slot, plus about 184,000
   per new account. It is not a gate.
