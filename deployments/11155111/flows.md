@@ -1,7 +1,8 @@
 # Sepolia: the v1 flows and their gas under Glamsterdam
 
 On 11 October 2026 the v1 flows were run on two Sepolia rehearsal deployments
-([README](README.md)):
+([README](README.md)). Settlement and the edition flow followed on 13 October, once the
+24-hour auctions had ended:
 
 | Instance | Source | Record | Role here |
 | --- | --- | --- | --- |
@@ -49,10 +50,10 @@ These are testnet rehearsals with throwaway keys, and the code is pre-audit.
   artist had already consolidated.
 - **Reads are unchanged.** `tokenURI` and `royaltyInfo` cost the same as on Prague, or
   slightly less. The `tokenURI` budget holds.
-- **Settlement and editions have not been broadcast yet.** The 24-hour auctions end on
-  12 October 2026: r1 from 19:54 UTC, r2 from 20:45 UTC. Until then, `settle`,
-  `createEdition`, `openSale` and the mints were measured by simulation on the live state
-  at a later timestamp (see Method). The commands to run them are under Pending.
+- **Settlement and editions match their simulation exactly.** They were first simulated
+  at a later timestamp, then broadcast on 13 October 2026. All 18 receipts that had a
+  simulated counterpart (9 per instance) gave the same Sepolia and Prague gas. Only the
+  anti-snipe bid is still simulated: every auction had ended before it could be placed.
 
 ## Method
 
@@ -84,8 +85,10 @@ These are testnet rehearsals with throwaway keys, and the code is pre-audit.
   an anvil Prague fork of the same block.
   - The simulation reproduced a mined transaction's receipt exactly (577,375 gas for
     `registerManifest`).
-  - It is still a simulation. The rows are replaced by receipts once the transactions
-    are sent.
+  - Settlement and the edition flow were simulated on 11 October and broadcast on
+    13 October. Each of the 18 receipts with a simulated counterpart equals it, on both
+    rule sets.
+  - One row is still simulated: the anti-snipe bid (see section 2).
 - **Views** are measured as the gas a call uses: `eth_simulateV1` for Sepolia, and a
   transaction on the anvil Prague fork.
 - **Repo gas report** is `forge test --match-contract IntegrationGasReport -vv` at
@@ -103,23 +106,23 @@ These are testnet rehearsals with throwaway keys, and the code is pre-audit.
   - the artist's second wallet (`0x5817…5F6B`), consolidated during r1;
   - a third wallet (`0xB95e…2211`), consolidated during r2.
 - Both runs together sent 0.098 ETH of funding from the operator, most of it still in
-  those accounts, and used about 0.009 ETH of gas (170M gas).
+  those accounts, and used about 0.009 ETH of gas (181M gas, settlement included).
 
 **What was created on each instance.**
 - Collections 1 and 2.
 - Package root `0xde416feb…e68d`, which has eight items by the artist.
-- Stream tokens 1 to 8, all in live 24-hour auctions:
+- Stream tokens 1 to 8, auctioned for 24 hours and settled on 13 October:
 
 | Token | Item | State (r2 and r1) |
 | ---: | --- | --- |
-| 1 | 1,024-byte base64 media | Record opened and synced. 0.002 ETH bid (bidder 2). |
-| 2 | 8,192-byte base64 media | Record opened and synced. |
-| 3 | Registered-only media | Record opened. |
-| 4 | Registered-only media | `startWithBid`: 0.001 ETH (bidder 2). |
-| 5 | 24,572-byte base64 media | Record opened and synced. |
-| 6 | `EDITION_MASTER`: fixed edition of 10 at 0.0001 ETH | 0.001 ETH bid (bidder 1). |
-| 7 | In collection 2 | No bid. |
-| 8 | VRF seed | No bid. |
+| 1 | 1,024-byte base64 media | Record opened and synced. Sold to bidder 2 for 0.002 ETH. |
+| 2 | 8,192-byte base64 media | Record opened and synced. No bid: went to the artist. |
+| 3 | Registered-only media | Record opened. No bid: went to the artist. |
+| 4 | Registered-only media | `startWithBid`: sold to bidder 2 for 0.001 ETH. |
+| 5 | 24,572-byte base64 media | Record opened and synced. No bid: went to the artist. |
+| 6 | `EDITION_MASTER`: fixed edition of 10 at 0.0001 ETH | Sold to bidder 1 for 0.001 ETH. Edition 6 created; 4 copies sold (bidder 1: 3, bidder 2: 1). |
+| 7 | In collection 2 | No bid: went to the artist. |
+| 8 | VRF seed | No bid: went to the artist. |
 
 ## 1. Content
 
@@ -199,11 +202,13 @@ Prague figures, at `60edd9b`, are:
 | [`bid`, first bid on a sale](https://sepolia.etherscan.io/tx/0x149716babe91733fda495b9e1e24ae2bcf01f7015dc52b7bf59af48204357982) | 168,777 | 73,157 | 2.31 | 1 | [168,777](https://sepolia.etherscan.io/tx/0x25062f4d54350b0bfa079b8c5653d1b84c27c91488d2dbd2d1056a32152fc049) | | |
 | [`bid`, outbids and credits the previous bidder](https://sepolia.etherscan.io/tx/0xdaf7c61d76e8bdf9b8219b5f36ce4081901759106bf91530222d9ed6b9038e84) | 168,932 | 73,312 | 2.30 | 1 | [168,944](https://sepolia.etherscan.io/tx/0x0e1010d3dc7d1ebe05422a7c2455ba454d084513af8c4251447f7959cd8d15ed) | | |
 | [`claim`, the outbid bidder's credit](https://sepolia.etherscan.io/tx/0xcc11270e1882f2b04491a2dd8dc5a7ece95cce66fc45aa456bdc40ffce304c34) | 32,580 | 32,425 | 1.00 | 0 | [32,580](https://sepolia.etherscan.io/tx/0xefe7f481a1630a9b185c87dc9320afc7a26d9165bce7d4e0099c40d65a591335) | | |
-| `bid` 5 minutes before the end (simulated) | 179,354 | 76,534 | 2.34 | 1 | 179,366 | | |
-| `settle`, with a bid, first payout to the seller (simulated) | 441,363 | 164,743 | 2.68 | 1 and an account | 441,363 | 400,000 test ceiling | **fail** |
-| `settle`, with a bid (simulated) | 257,763 | 139,743 | 1.84 | 1 | 257,763 | 400,000 test ceiling | pass |
-| `settle`, with a bid, the winner already holds a token (simulated) | 159,831 | 122,631 | 1.30 | 0 | 159,843 | 400,000 test ceiling | pass |
-| `settle`, no bid: the token goes to the artist (simulated) | 335,817 | 135,577 | 2.48 | 2 | 335,817 | 400,000 test ceiling | pass |
+| `bid` 5 minutes before the end (simulated; see below) | 179,354 | 76,534 | 2.34 | 1 | 179,366 | | |
+| [`settle`, with a bid, first payout to the seller (token 6)](https://sepolia.etherscan.io/tx/0x2ef2f5e6c1735ffc60f31cf2534c96a938629720f086c68eba55299aa98f7e48) | 441,363 | 164,743 | 2.68 | 1 and an account | [441,363](https://sepolia.etherscan.io/tx/0x5dbbc598d80b64d75d8f59300885eb1efcb3c6ab579cd9a68aed362820b9ffaf) | 400,000 test ceiling | **fail** |
+| [`settle`, with a bid (token 4)](https://sepolia.etherscan.io/tx/0x5caa9f050a95a29c57e6738a41b73d61ab097d610fae16ead6ae3ffc17c5593b) | 257,763 | 139,743 | 1.84 | 1 | [257,763](https://sepolia.etherscan.io/tx/0x10e0abc979bed8f6d73cde72f31b89da3325516fcada9c0d22521dcdacf2cab2) | 400,000 test ceiling | pass |
+| [`settle`, with a bid, the winner already holds a token (token 1)](https://sepolia.etherscan.io/tx/0xb467df2fa0eae46bcb4cdc698cf1c66ece2aacb67e1b02987c99d4fa8df90958) | 159,831 | 122,631 | 1.30 | 0 | [159,843](https://sepolia.etherscan.io/tx/0x67bca628e9a96e267de998d7bf32b1825836b6e17bc665e158e3f61b94c44684) | 400,000 test ceiling | pass |
+| [`settle`, no bid: the token goes to the artist (token 7)](https://sepolia.etherscan.io/tx/0x5dca7e59cc366e7b89aaa8e6a98d2a640c065dd7baece0e72368684599c0bade) | 335,817 | 135,577 | 2.48 | 2 | [335,817](https://sepolia.etherscan.io/tx/0xe922c1ecb573802748322c7a351b42321b371955851697a1c2141d3a1901576f) | 400,000 test ceiling | pass |
+| [`settle`, no bid, the artist already holds a token (token 2)](https://sepolia.etherscan.io/tx/0xa5785bcf95c8c07cf9ee80b364a57fa746dc3d5b93f6d84e9ce05eee61f7bee5) | 237,897 | 118,477 | 2.01 | 1 | [237,897](https://sepolia.etherscan.io/tx/0x0c2da02d826d122c93b4aa186f1d322a799522d7bea1d8b9eb93528d194c84f0) | 400,000 test ceiling | pass |
+| [`settle`, no bid, a VRF work (token 8)](https://sepolia.etherscan.io/tx/0x9f729a0478193949bc776bdbe9ca469b15500f8f74456cde3d22ea5cb6231305) | 226,281 | 113,677 | 1.99 | 1 | [226,281](https://sepolia.etherscan.io/tx/0x9b9f7d89595c0bfdf62028ac1b6985c5d7384fbc3ae71dcce2c9c3957086bce6) | 400,000 test ceiling | pass |
 
 - **Steady state.** The `start` rows from the second work on are all steady state:
   - the first start writes the custody balance, the fee recipient and the sale terms;
@@ -215,32 +220,41 @@ Prague figures, at `60edd9b`, are:
   - On r2 the artist had already consolidated wallet 2 (during r1, on the shared
     delegation contract). Registration's own refresh recorded that wallet: 10 new slots,
     8 of them in the artist registry. Most of the 263K difference is that entry, not #44.
-- **The anti-snipe bid** was simulated 5 minutes before token 1's end, on both instances.
-  It moved the end to 15 minutes after the bid: on r1, from 1,791,834,852 to
-  1,791,835,452.
+- **The anti-snipe bid** stays simulated. It ran 5 minutes before token 1's end, on both
+  instances, and moved the end to 15 minutes after the bid: on r1, from 1,791,834,852 to
+  1,791,835,452. The scheduled run that was to place a real one did not fire, and every
+  auction had ended by 13 October.
+- **The settlement order** was 6, 4, 1, 7, 2, 3, 5, 8, so token 6 carries the first
+  payout. Tokens 3 and 5 cost the same as token 2:
+  - r2: token 3 [237,897](https://sepolia.etherscan.io/tx/0x1ffbea91e4be60e7de40503132651568ebbe5ef0b14f77e2a8d0a5012565f961), token 5 [237,897](https://sepolia.etherscan.io/tx/0x234d65c6662dfecc4f9db6b6e608dbd6d5ff2758074c2abd0968283fcd5ca77b);
+  - r1: token 3 [237,897](https://sepolia.etherscan.io/tx/0x3914938bd05fa922b552b2b12534412c8340f87a2e126c8b579100e39e5fe16e), token 5 [237,897](https://sepolia.etherscan.io/tx/0x7515aaeea831356e51bc6e359e63297abf5c8b9b45c15bef1c29c88cf848ca29).
+
+  Every receipt is in the state files.
+- **Each receipt matches its own instance's simulation.** r1 and r2 differ by a few gas
+  in places, for example `settle` of token 1: 159,843 on r1 against 159,831 on r2, with
+  Prague 122,643 against 122,631. Each instance's receipt equals its own simulation.
 - **The first `settle` with a bid** pays the seller. The seller is the payee
   configuration's split wallet, at its predicted address, which is still empty. Sending
   ETH to an empty account creates it, and that costs about 184,000 gas more on Sepolia.
   This happens once per payee configuration.
 
-## 3. 6529 Editions (simulated)
+## 3. 6529 Editions
 
-`createEdition` needs the master's sale to be settled, so every row here was simulated.
-On r2 the simulation settled master token 6, and tokens 1, 4 and 7, in a block dated
-12 October 2026, 21:22:48 UTC. Then:
+`createEdition` needs the master's sale to be settled. On 13 October, after master
+token 6 settled on each instance:
 - the edition was created;
 - the PLATFORM opened a fixed-price sale with one public phase;
 - buyers bought copies at the package price.
 
-r1 ran the same sequence on its own state.
+Every row equals the figure simulated on 11 October.
 
 | Operation | r2 Sepolia | r2 Prague | Ratio | New slots (r2) | r1 Sepolia | r1 Prague |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `createEdition` | 1,118,699 | 323,819 | 3.45 | 9 | 1,133,867 | 338,987 |
-| `openSale` (PLATFORM, one public phase, no artist consent) | 993,668 | 286,608 | 3.47 | 8 | 993,668 | 286,608 |
-| `purchase`: mints the first copy (new holder) | 468,086 | 196,926 | 2.38 | 3 | 476,183 | 204,623 |
-| `purchase`: a later copy (new holder) | 370,142 | 179,802 | 2.06 | 2 | 378,239 | 187,499 |
-| `purchase`: two copies (existing holder) | 174,326 | 145,626 | 1.20 | 0 | 182,423 | 153,323 |
+| [`createEdition`](https://sepolia.etherscan.io/tx/0x80ac7a621e081c0625b361a5e2f767321c1e217a34c0df7fa4ce3baa903a720a) | 1,118,699 | 323,819 | 3.45 | 9 | [1,133,867](https://sepolia.etherscan.io/tx/0x25cf2e44e34dcad4335226395ab8355be00c3a076fb8982b07df7d95729520ff) | 338,987 |
+| [`openSale` (PLATFORM, one public phase, no artist consent)](https://sepolia.etherscan.io/tx/0x3238c1dc02f64a1c1043a6fe9cc58a432f7d66db8c60e37bf046220dfd1ee158) | 993,668 | 286,608 | 3.47 | 8 | [993,668](https://sepolia.etherscan.io/tx/0xd2f342a8c0466ea5397b35602dd365ee8f450017ddcd743fd4c69a38d26bdaf9) | 286,608 |
+| [`purchase`: mints the first copy (new holder)](https://sepolia.etherscan.io/tx/0x6db2f3c207441d337d55c35a3e6f6ba9e2a1e2e188c5b2e71d0eb4323bbe6f48) | 468,086 | 196,926 | 2.38 | 3 | [476,183](https://sepolia.etherscan.io/tx/0x7ee16bd7a47af85fa0afde47903879239c7b9abf3c326e5c303210a6a8bd66ae) | 204,623 |
+| [`purchase`: a later copy (new holder)](https://sepolia.etherscan.io/tx/0xfad32b96ca695baf80f7723281e78cd7d8b1b4b04aabe0916507a41ae0bad4f4) | 370,142 | 179,802 | 2.06 | 2 | [378,239](https://sepolia.etherscan.io/tx/0x3045c553a49d94051ef0883f15e2aea85363ebfdfabe7314ff99d912fc870c6b) | 187,499 |
+| [`purchase`: two copies (existing holder)](https://sepolia.etherscan.io/tx/0x5c9509b5edb5578e65b29915acf76d4be5513acde5bd98581174e9adac02e5cf) | 174,326 | 145,626 | 1.20 | 0 | [182,423](https://sepolia.etherscan.io/tx/0x7f69a3fafd7422c1e41a040fa8f80ce47ec975e7bcbd33895775ed037f58616a) | 153,323 |
 
 - **What #41 changed.** It saved 15,168 gas on `createEdition` and 8,097 per purchase.
   The Prague savings are about the same: 15,168 and 7,697. #41 cut execution, not new
@@ -344,7 +358,7 @@ own cost 145,701 gas on Sepolia and 56,581 on Prague. The callback therefore use
 | `startWithBid` ≤ 350K at steady state, one artist | ADR 0003 | 982,312 | **breaks (2.8 times over)** |
 | `start` ≤ 300K | ADR 0001 (superseded by ADR 0003) | 846,963 | breaks |
 | First start in a new collection ≤ 400K | `GasReport.t.sol` ceiling | 846,977 | **breaks** |
-| `settle` ≤ 400K | `GasReport.t.sol` ceiling | 441,363 for the first payout to a new seller (simulated); 160K to 336K otherwise | **breaks once per payee configuration** |
+| `settle` ≤ 400K | `GasReport.t.sol` ceiling | 441,363 for the first payout to a new seller; 160K to 336K otherwise | **breaks once per payee configuration** |
 | `tokenURI` ≤ 8M | ADR 0001, ADR 0003, AGENTS.md | at most 0.39M measured; views are not repriced | holds |
 | `royaltyInfo`: one external view, about 25K | ADR 0003 | 40,667 for the whole call | holds |
 | Every transaction ≤ 16,777,216 gas for worst-case bounded inputs | AGENTS.md, ADR 0003, content README | Sepolia accepts transactions above the cap for state gas. One full chunk is about 38.4M and a 256-chunk manifest 28.8M; a 512-chunk manifest is about 57.6M | **no longer holds as written** |
@@ -420,20 +434,22 @@ Two behaviors are worth knowing:
 
 ## Pending
 
-**Real settlement and editions.**
-- r2's auctions end on 12 October 2026, from 20:45:36 UTC (token 1) to 20:47:48 UTC
-  (token 8). Token 3, the anti-snipe target below, ends at 20:46:12.
-- r1's auctions end from 19:54:12 to 19:56:36 UTC.
+**Done on 13 October.** The settlement and edition sequences ran on both instances,
+from the driver with the committed state files, [`flows/r2.json`](flows/r2.json) and
+[`flows/r1.json`](flows/r1.json). Each state file holds its run's addresses, receipts
+and Prague replays. In `r2.json`, the content rows sent by the second relayer say
+`relay2`.
 
-The runs' state files are committed:
-- [`flows/r2.json`](flows/r2.json) and [`flows/r1.json`](flows/r1.json) hold each run's
-  addresses, receipts and Prague replays;
-- in `r2.json`, the content rows sent by the second relayer say `relay2`.
+**Anti-snipe.** A real anti-snipe bid needs a bid in the last 15 minutes of a live
+auction, and every auction in this package has ended. The simulated row stands. A real
+one needs a new 24-hour auction, and someone present in its last 15 minutes to run:
 
-The driver appends each new receipt to the state file it is given. Run these from the
-repository root:
-- `<module>` is the operator's signer module (see the script header);
-- run `prague` within minutes, because the public RPC keeps only recent state.
+```powershell
+Flow @r2 -Step bid -TokenId <id> -Bidder bidder1 -Amount <at least the minimum bid> -Label bid-antisnipe
+```
+
+`Flow` is a helper that runs `script/sepolia/flows.ps1` with the operator's signer
+module, and `@r2` passes r2's state file:
 
 ```powershell
 function Flow {
@@ -443,36 +459,7 @@ function Flow {
 }
 $r2 = @('-State', 'deployments/11155111/flows/r2.json')
 $r1 = @('-State', 'deployments/11155111/flows/r1.json', '-Record', 'deployments/11155111/1791746472.json')
-
-# r2, only between 20:31:12 and 20:46:12 UTC: a real anti-snipe bid (token 3 has no bid).
-Flow @r2 -Step bid -TokenId 3 -Bidder bidder1 -Amount 1000000000000000 -Label bid-3-antisnipe
-
-# r2, after 20:47:48 UTC. Token 6 goes first, so its row is the first payout to the seller.
-foreach ($t in 6, 4, 1, 7, 2, 5, 8) { Flow @r2 -Step settle -TokenId $t }
-Flow @r2 -Step settle -TokenId 3   # after its end: 15 minutes after the anti-snipe bid
-Flow @r2 -Step createEdition -TokenId 6
-Flow @r2 -Step openSale -TokenId 6
-Flow @r2 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 1 -Label purchase-first-copy
-Flow @r2 -Step purchase -SaleId 1 -Bidder bidder2 -Quantity 1 -Label purchase-later-copy
-Flow @r2 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 2 -Label purchase-two-copies
-Flow @r2 -Step prague
-
-# r1 (ended at 19:56:36 UTC): the same steps without the anti-snipe bid.
-foreach ($t in 6, 4, 1, 7, 2, 3, 5, 8) { Flow @r1 -Step settle -TokenId $t }
-Flow @r1 -Step createEdition -TokenId 6
-Flow @r1 -Step openSale -TokenId 6
-Flow @r1 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 1 -Label purchase-first-copy
-Flow @r1 -Step purchase -SaleId 1 -Bidder bidder2 -Quantity 1 -Label purchase-later-copy
-Flow @r1 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 2 -Label purchase-two-copies
-Flow @r1 -Step prague
 ```
-
-- **Fixed-price sale ID.** `openSale` returns it. It was 1 in simulation on both
-  instances, and it stays 1 if nobody opens another fixed-price sale first.
-- **Anti-snipe timing.** A real anti-snipe bid needs a bid in the last 15 minutes of an
-  auction. After 20:46:12 UTC on r2, and after 19:56:36 on r1, no auction in this
-  package is live. The simulated row then stands, and a later package would need a new
-  24-hour auction.
 
 **Needs a scheduled operation (not done).**
 - **A shorter auction.** `EnglishAuction.setConfig` is PARAMETER_SETTER (48 hours).
