@@ -116,8 +116,9 @@ the [delivery plan](ops/DELIVERY_PLAN.md) holds the current state.
 | Linked libraries | At most 5 | `tools/check_budgets.py` |
 | `delegatecall` and proxies | None in `src/`; the one sanctioned exception is OpenZeppelin's `Multicall` in `lib/` ([ADR 0002](docs/adr/0002-access-manager-hardening.md)) | `tools/check_budgets.py`; no proxies by design |
 | Contract size | EIP-170 (24,576 bytes runtime) and EIP-3860 (49,152 bytes initcode), every contract | `tools/check_budgets.py` on `forge build --sizes` |
-| Auction start | At most 350,000 gas at steady state ([ADR 0003](docs/adr/0003-build-time-decisions.md); ADR 0001 said 300K) | `test/sales/auction/EnglishAuctionGas.t.sol` |
-| Transaction cap | Every transaction fits 16,777,216 gas (EIP-7825, Fusaka) for worst-case inputs | Gas-cap tests; `Limits` bounds every array |
+| Auction start | An ETH start at steady state: at most 350K Prague gas, and at most 6 new storage slots (7 with a bid) ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md); ADR 0001 said 300K). On Glamsterdam Sepolia the same start costs about 847K | `test/integration/GasReport.t.sol`, `test/sales/auction/EnglishAuctionGas.t.sol` |
+| State growth | Every operation in the gas report asserts its exact count of new storage slots and new accounts, and a Prague gas ceiling ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)) | `test/integration/GasReport.t.sol` |
+| Transaction cap | Every transaction's regular gas fits 16,777,216 (EIP-7825) for worst-case inputs; on Sepolia, state-creation gas above it was accepted ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)) | Gas-cap tests; `Limits` bounds every array |
 | `tokenURI` | At most 8M gas in the worst case | The renderer's tests, once [#20](https://github.com/6529-Collections/6529-works/pull/20) lands |
 | Invariants | At least 256 runs of depth 128 for contracts that move value | `foundry.toml` |
 | CI time | Under 15 minutes per job | Job timeouts |

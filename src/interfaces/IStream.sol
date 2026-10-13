@@ -18,8 +18,9 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      the adapter's are both `SaleKind.ENGLISH_AUCTION`. A VRF item's seed must already be
 ///      delivered (`IEntropyModule.requestSeed` runs before the start).
 ///
-///      Start-gas budget: 350K per steady-state start transaction (ADR 0003; the first start in
-///      an empty collection or custody may cost more, and its measured value is recorded). A
+///      Start-gas budget: 350K Prague gas, and at most 6 new storage slots (7 with a bid), per
+///      steady-state start transaction (ADR 0003, ADR 0004; the first start in an empty
+///      collection or custody may cost more, and its measured value is recorded). A
 ///      mint stores per token only the item hash, the seller, the lead artist ID and one packed
 ///      word of serial, collection, kind, seed policy, royalty rate, fee share, a small fee
 ///      recipient index and flags. The royalty receiver is derived, not stored: the split

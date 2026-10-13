@@ -10,7 +10,7 @@ between v1 modules is mocked. Only external systems are:
 
 ```bash
 forge test --match-path "test/integration/*"
-forge test --match-contract IntegrationGasReport -vv   # prints the gas table
+forge test --match-test test_Gas_Table -vv   # prints the gas table
 ```
 
 ## Deployment
@@ -45,7 +45,8 @@ acts directly; any other role is scheduled, waited out and executed.
 | [`VrfWork.t.sol`](VrfWork.t.sol) | 6. `requestSeed`, the mock fulfilment, `start`, and the seed in the metadata. Also the 3-day retry and the artist seed. |
 | [`Genesis.t.sol`](Genesis.t.sol) | 7. Deploy, configure and wire. The readback passes and the configurator keeps no ADMIN. Guardians cancel hostile admin operations, the cold admin removes the hot admin, and `configure` fits the transaction cap. |
 | [`Helpers.t.sol`](Helpers.t.sol) | The helpers themselves: the package Merkle trees agree with OpenZeppelin's `MerkleProof` for 1 to 17 leaves. |
-| [`GasReport.t.sol`](GasReport.t.sol) | The budgets: `start`, `startWithBid`, `settle`, `bid`, `consume`, `royaltyInfo`, the first start in a new collection, and `tokenURI` by size. |
+| [`GasHarness.t.sol`](GasHarness.t.sol) | The gas report's harness against the truth: a start measured from a fully cold state equals the corrected figure after every account it reaches was warmed, and storage the harness does not cool is refused. |
+| [`GasReport.t.sol`](GasReport.t.sol) | The budgets ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)): Prague gas, and the exact new slots and accounts, of `start` and `startWithBid` (one and two parties, VRF, edition master, ERC-20 by Permit2, first ever, new collection, new terms), `bid`, `settle`, `consume`, `createEdition`, `openSale`, `purchase`, `refreshStanding` and `royaltyInfo`, and `tokenURI` by size. |
 
 ## Findings
 

@@ -142,7 +142,8 @@ default when the sale starts".
    no-ops. Nothing is in custody yet, so nothing can get stuck.
 5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
    `revokeMove` cancels an unused one.
-6. **Start (permissionless, 350K gas per steady-state start).** Anyone calls
+6. **Start (permissionless; per steady-state start, at most 350K Prague gas and
+   6 new slots, 7 with a bid; ADR 0004).** Anyone calls
    `IEnglishAuction.start(stream, abi.encode(StreamMintRequest))` or
    `startWithBid`.
    - The auction calls `IStream.mint`, which checks the admitted-minter mapping
@@ -339,9 +340,13 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
 
 ## Budget notes
 
-- **Start gas (ADR 0003).** An end-to-end test measures `start`.
-  - The gate is 350K per steady-state start transaction. The first start in an
-    empty collection or custody may cost more; its measured value is recorded.
+- **Start gas (ADR 0003, ADR 0004).** An end-to-end test measures `start`.
+  - The gate is 350K Prague gas, and at most 6 new storage slots (7 with a
+    bid), per steady-state ETH start transaction. The first start in
+    an empty collection or custody may cost more; its measured value is recorded.
+  - Glamsterdam prices each new slot at about 111K on Sepolia, so the same start
+    costs about 847K there. Every operation in the gas report asserts its exact
+    count of new slots and new accounts.
   - Stream stores the item hash, the seller, the lead artist and one packed
     word per token, and derives the royalty receiver. The registry stores one
     word per consumed item.
@@ -352,8 +357,9 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
     artist heartbeats all happen off the start path.
 - **`tokenURI` gas (at most 8M).** The renderer inlines media only for on-chain
   complete works under the inline threshold.
-- **Transaction cap.** Every transaction must fit the EIP-7825 cap of
-  16,777,216 gas; `Limits` bounds every user-supplied array with that in mind.
+- **Transaction cap.** Every transaction's regular gas must fit the
+  EIP-7825 cap of 16,777,216; `Limits` bounds every user-supplied array with that
+  in mind. On Sepolia, state-creation gas above the cap was accepted (ADR 0004).
 - **Contract size.** Stream core stays within EIP-170 because records, licenses,
   finalize and locators live in `IWorkRecords`.
 - **Lines.** Interfaces and shared types count toward the 12K-line budget.

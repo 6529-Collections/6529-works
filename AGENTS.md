@@ -22,9 +22,20 @@ Instructions for automated coding agents working in this repository.
 - EIP-170 respected, measured on the explicit `--profile default` build.
 - No unreviewed High or Medium Slither finding (`docs/security/slither-triage.md`).
 - CI under 15 minutes.
-- Starting an auction costs 350K gas or less at steady state ([ADR 0003](docs/adr/0003-build-time-decisions.md));
-  `tokenURI` costs 8M gas or less.
-- Every transaction fits the 16,777,216-gas cap (EIP-7825) for worst-case bounded inputs.
+- Starting an auction in ETH, Stream's launch currency, at steady state costs at most 350K
+  Prague gas and writes at most 6 new storage slots, 7 with a bid
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)). An ERC-20 start paid by
+  Permit2 is a supported, non-default path: it has a regression ceiling and exact counts, not
+  a budget. Admitting the first ERC-20, or approving a Stream package that names one, must be
+  accompanied by a re-measurement and publication of its start cost, in Prague gas and on the
+  target chain. `tokenURI` costs at most 8M Prague gas.
+- Every operation in `test/integration/GasReport.t.sol` asserts its exact count of new storage
+  slots and new accounts, and a Prague gas ceiling. When a change lowers a count, the same PR
+  lowers the test's figure, ADR 0004's table and the figures here; that needs no new ADR.
+  Raising a count needs a stated reason, and raising the `start` or `startWithBid` maximum
+  needs an ADR.
+- Every transaction's regular gas fits the 16,777,216 cap (EIP-7825) for worst-case bounded
+  inputs.
 
 **Solidity:** the pinned 0.8.x compiler in `foundry.toml`, OpenZeppelin 5, and
 custom errors.
