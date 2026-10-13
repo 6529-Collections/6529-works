@@ -14,8 +14,10 @@
   - no delegatecall or proxies;
   - EIP-170 respected;
   - CI under 15 minutes;
-  - starting an auction costs 350K gas or less at steady state (ADR 0003);
-  - every transaction fits the 16,777,216-gas cap (EIP-7825);
+  - starting an auction costs 350K execution gas or less at Prague costs, with at most
+    6 new storage slots, at steady state (ADR 0004);
+  - every reported operation has a cap on new storage slots and new accounts (ADR 0004);
+  - every transaction's regular (execution) gas fits the 16,777,216 cap (EIP-7825);
   - `tokenURI` costs 8M gas or less.
 - **Port, don't merge.** Reuse comes from the ADR 0001 §17 keep list, rewritten
   to the budgets. The RC1 reference
@@ -88,6 +90,9 @@ script/          deployment and verification
 - **Sepolia rehearsal r2 (11 October 2026):** the full v1 scope from `400f96d`, including
   the contested-override recovery; same holders as r1, its own VRF subscription. Verify passes
   on a fork advanced five days.
+- **Gas budgets under Glamsterdam (13 October 2026):** [ADR 0004](../docs/adr/0004-gas-budgets-under-glamsterdam.md).
+  The budgets stay as Prague gas, CI caps new slots and accounts per operation, and the
+  Sepolia totals are published next to them.
 - **Next (phase 7, testnet):**
   - measure the flows on Sepolia under Glamsterdam: `start`, `settle`, Editions, uploads
     and the `tokenURI` threshold matrix; then the marketplace matrix;

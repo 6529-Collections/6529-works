@@ -2,7 +2,8 @@
 
 Status: Accepted by the owner, 11 October 2026. §13 is amended by
 [ADR 0002](0002-access-manager-hardening.md); build-time decisions across §3–§13
-are recorded in [ADR 0003](0003-build-time-decisions.md).
+are recorded in [ADR 0003](0003-build-time-decisions.md); the gas budgets under
+Glamsterdam are in [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
 (6529Stream PR #745),
@@ -316,7 +317,8 @@ The network pays Arweave and IPFS storage costs from its share.
   manifest. The collector is the designated payer in the product.
 - The work then becomes on-chain complete. On-chain bytes are permanent.
 - Cost is about 0.23 ETH per MB per gwei, and about 72 KB fits in each
-  transaction.
+  transaction. (Pre-Glamsterdam figures: see
+  [ADR 0004](0004-gas-budgets-under-glamsterdam.md) for current ones.)
 - Libraries such as p5.js and three.js live in a shared dependency registry.
   Text is gzipped.
 
@@ -716,7 +718,9 @@ AccessManager governs all of them. The VRF module is optional.
 - **Contract size:** EIP-170 enforced in every Foundry profile.
 - **CI time:** full build and test in under 15 minutes.
 - **Gas:** starting an auction costs 300K gas or less; `tokenURI` costs 8M gas
-  or less in the worst case.
+  or less in the worst case. (Amended by ADR 0003 and
+  [ADR 0004](0004-gas-budgets-under-glamsterdam.md): see ADR 0004 for current
+  figures.)
 - **Testing:**
   - forge-std assertions;
   - selector-specific `expectRevert`;

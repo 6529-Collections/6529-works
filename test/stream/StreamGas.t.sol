@@ -17,12 +17,13 @@ import {
 } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 
-/// @notice 6529 Stream's own share of the auction start (ADR 0003 budget: 350K for the whole
-///         steady-state start). The registry, economics and artist registry are constant mocks
-///         and every account is cold, so Stream's storage, events, AccessManager check, call
-///         overhead and its seller-wallet derivation on the real split factory are measured;
-///         the real registry and auction costs come on top. `test_gas_mintShare_realEconomics`
-///         also puts the real `EconomicsResolver` in the path (review G-2).
+/// @notice 6529 Stream's own share of the auction start (ADR 0003 and ADR 0004 budget: 350K
+///         Prague execution gas for the whole steady-state start). The registry, economics and
+///         artist registry are constant mocks and every account is cold, so Stream's storage,
+///         events, AccessManager check, call overhead and its seller-wallet derivation on the
+///         real split factory are measured; the real registry and auction costs come on top.
+///         `test_gas_mintShare_realEconomics` also puts the real `EconomicsResolver` in the path
+///         (review G-2).
 contract StreamGasTest is StreamFixture {
     /// @dev Regression guards for Stream's share of the start, per case. Since G-2 the share
     ///      includes the seller-wallet `walletFor` that the resolver's `newWorkTerms` used to do.

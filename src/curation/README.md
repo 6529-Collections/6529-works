@@ -49,7 +49,10 @@ word. The acceptance that creates the identity pre-writes word 0, so tools
 should use nonces 0, 1, 2… per artist: the first 255 starts then update an
 existing slot instead of creating one.
 
-**Gas.** `consume` sits on the auction start path (350K steady-state budget, ADR 0003). It writes one fresh slot
+**Gas.** `consume` sits on the auction start path, whose budget is 350K
+execution gas at Prague costs and at most 6 new slots per steady-state start
+([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)). It writes
+one of those slots
 (Stream's content hash → item hash, which is both the consume-once record and
 the uniqueness record), reads consent from `acceptedAs`, and makes one external
 call: the lead artist's current authority.

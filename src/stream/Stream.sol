@@ -42,16 +42,16 @@ import { SpdxId } from "./SpdxId.sol";
 ///      the marketplace metadata, and forwards `tokenURI` to the work's renderer. Records,
 ///      licenses, seeds, finalize and locators live in the bound `IWorkRecords` satellite.
 ///
-///      Storage is shaped by the auction-start budget (350K per steady-state start, ADR 0003). A
-///      mint writes the ERC-721 owner and balance, one shared counter word, the collection's
-///      counter word and three work words: the seller, serial, collection, kind, seed policy and
-///      flags; the lead artist ID, royalty rate, fee share, fee-recipient index and minting
-///      adapter's index; the item hash. Fee recipients are stored once each and referenced by
-///      index. The ERC-2981 receiver is derived, not stored: the seller itself when the fee share
-///      is zero, otherwise the split factory's salt-zero wallet for the canonical payee list
-///      `(feeRecipient: feeShare, seller: rest)`. `royaltyInfo` makes that one plain view call
-///      and no other: it can run out of gas and revert, but never return a zero royalty for
-///      lack of gas (RC1's Medium finding).
+///      Storage is shaped by the auction-start budget (350K execution gas at Prague costs and at
+///      most 6 new slots per steady-state start, ADR 0004). A mint writes the ERC-721 owner and
+///      balance, one shared counter word, the collection's counter word and three work words: the
+///      seller, serial, collection, kind, seed policy and flags; the lead artist ID, royalty rate,
+///      fee share, fee-recipient index and minting adapter's index; the item hash. Fee recipients
+///      are stored once each and referenced by index. The ERC-2981 receiver is derived, not stored:
+///      the seller itself when the fee share is zero, otherwise the split factory's salt-zero
+///      wallet for the canonical payee list `(feeRecipient: feeShare, seller: rest)`. `royaltyInfo`
+///      makes that one plain view call and no other: it can run out of gas and revert, but never
+///      return a zero royalty for lack of gas (RC1's Medium finding).
 ///
 ///      Trust: the package registry, artist registry, economics resolver, split factory and
 ///      entropy module are immutable. Sale adapters are admitted one by one by a governed action

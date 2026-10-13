@@ -11,6 +11,16 @@
 - ADR 0002 records how the AccessManager hardening in ADR 0001 §13 is implemented:
   a guardian-cancellable subclassed manager, guardian rules, a cold recovery admin
   and the selector delay classes decided during the build.
+- ADR 0004 records the gas budgets under Glamsterdam. The budgets stay as execution
+  gas at Prague costs (a steady-state start at most 350K). Each measured operation
+  gets a cap on new storage slots and new accounts (a steady-state start at most 6
+  slots, 7 with a bid). The Sepolia totals are published next to them, and the
+  EIP-7825 per-transaction cap is restated for regular gas.
+- Tests: `test/helpers/StateGrowth.sol` counts the storage slots and accounts a
+  transaction creates, from a Foundry state diff. The integration gas report now
+  enforces its caps on every row, adds `createEdition`, `openSale`, `purchase`,
+  `refreshStanding` and the first-payout `settle`, and prints one table
+  (`forge test --match-test test_Gas_Table -vv`).
 - Governance: `WorksAccessManager` (guardians cancel any scheduled operation;
   nobody cancels their own revocation), the canonical role and delay-class table
   (`Roles.sol`), a one-shot configurator that owns its manager and reads it back,

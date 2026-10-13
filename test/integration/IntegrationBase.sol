@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { IERC5267 } from "@openzeppelin/contracts/interfaces/IERC5267.sol";
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -27,6 +28,7 @@ import {
 import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { WorksDeployment } from "./WorksDeployment.sol";
 
 /// @notice Actors, package building, signatures and sale helpers shared by the end-to-end flows.
@@ -43,12 +45,15 @@ abstract contract IntegrationBase is WorksDeployment {
 
     /// @dev EIP-7825 (Fusaka): no transaction may carry more than 2^24 gas.
     uint256 internal constant TX_GAS_CAP = 1 << 24;
+    /// @dev ADR 0003 and ADR 0004: a steady-state start, as a whole transaction in Prague gas.
     uint256 internal constant START_BUDGET = 350_000;
     uint256 internal constant TOKEN_URI_BUDGET = 8_000_000;
     /// @dev The selector of `Error(string)`, what a failed `require` with a message reverts with.
     bytes4 internal constant ERROR_STRING = 0x08c379a0;
 
     mapping(address account => uint256 pk) internal keyOf;
+    /// @dev Read by `_requireCooling`.
+    uint256 private _coolProbe = 1;
     mapping(uint256 artistId => uint256 nonce) internal nextMoveNonce;
     uint256 internal collectionId;
     uint256 private _salt;
@@ -453,8 +458,8 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      opened, attested and synced on-chain, then `Stream.tokenURI` measured from a cold
     ///      start through the whole path (Stream, WorkRecords, the renderer, the content store,
     ///      the statement log). Rows: 32, 64, 128 and 256 KiB of base64-stored media, and 32 and
-    ///      64 KiB of identity media. Each row must fit 8M gas and inline exactly when the
-    ///      renderer's cost-weighted threshold allows it.
+    ///      64 KiB of identity media. Each row must fit 8M gas (Prague), inline exactly when the
+    ///      renderer's cost-weighted threshold allows it, and create no state.
     function _tokenUriMatrix(address lead, address reader) internal {
         Work[] memory works = new Work[](6);
         for (uint256 i; i < 4; ++i) {
@@ -499,6 +504,13 @@ abstract contract IntegrationBase is WorksDeployment {
             // 32 KiB inlines and 64 KiB falls back to its locator.
             assertEq(inlined, i != 5, string.concat(label, ": inline as expected"));
         }
+        // ADR 0004: a view creates no state. Recorded after every measurement above, since no
+        // gas can be measured after a state-diff recording (`_requireCooling`).
+        for (uint256 i; i < 6; ++i) {
+            StateGrowth.Growth memory growth =
+                _growth(reader, address(stream), abi.encodeCall(stream.tokenURI, (ids[i])), 0);
+            assertEq(growth.slots + growth.accounts, 0, "tokenURI creates no state");
+        }
     }
 
     /// @dev Calldata gas: the EIP-2028 price and the EIP-7623 floor.
@@ -523,8 +535,10 @@ abstract contract IntegrationBase is WorksDeployment {
         if (21_000 + floor > total) total = 21_000 + floor;
     }
 
-    /// @dev Cools every deployed contract (accounts and storage), as at the start of a new
-    ///      transaction.
+    /// @dev Cools every deployed contract's storage, as at the start of a new transaction.
+    ///      Foundry 1.7.1's `vm.cool` cools storage slots but not the accounts themselves, so
+    ///      each account a measured call reaches is still priced as warm: about 2,500 gas under a
+    ///      real cold access (ADR 0004).
     function _coolAll() internal {
         address[22] memory all = [
             address(store),
@@ -553,6 +567,24 @@ abstract contract IntegrationBase is WorksDeployment {
         for (uint256 i; i < all.length; ++i) {
             vm.cool(all[i]);
         }
+        _requireCooling();
+    }
+
+    /// @dev Fails when `vm.cool` does not cool. Foundry 1.7.1 stops cooling storage for the rest
+    ///      of a test once a state-diff recording has run in that test (even after a state
+    ///      revert), so every later measurement would read warm slots and come out tens of
+    ///      thousands of gas low. The probe is a word of this contract's own storage: cooled, its
+    ///      next read must cost the cold price (2,100) again.
+    function _requireCooling() internal {
+        uint256 warmed = _coolProbe;
+        vm.cool(address(this));
+        uint256 before = gasleft();
+        uint256 cooled = _coolProbe;
+        uint256 used = before - gasleft();
+        require(
+            used > 2000 && warmed == cooled,
+            "vm.cool did not cool: measure gas before any state-diff recording in the test"
+        );
     }
 
     /// @dev Calls `target` with `data` as `from` (and `value`) from a cold start and returns the
@@ -571,6 +603,38 @@ abstract contract IntegrationBase is WorksDeployment {
         execution = _lastCallGasUsed();
         _bubble(ok, reason);
         total = _txGas(data, execution);
+    }
+
+    /// @dev `_measure`, plus the state the call creates (ADR 0004): the new storage slots and
+    ///      the new accounts, counted by `StateGrowth` from a state diff recorded around the
+    ///      call alone. The call runs twice from the same snapshot: measured first, then
+    ///      recorded. Recording warms what it reads, and once it has run `vm.cool` stops working
+    ///      for the rest of the test (`_requireCooling`), so a test measures every gas figure
+    ///      before its first recording. The recorded run's state, the same as the measured
+    ///      run's, is the one that remains.
+    function _measureGrowth(address from, address target, bytes memory data, uint256 value)
+        internal
+        returns (uint256 total, uint256 execution, StateGrowth.Growth memory growth)
+    {
+        uint256 snapshot = vm.snapshotState();
+        (total, execution) = _measure(from, target, data, value);
+        vm.revertToStateAndDelete(snapshot);
+        growth = _growth(from, target, data, value);
+    }
+
+    /// @dev The state growth of calling `target` with `data` as `from` (and `value`), from a
+    ///      state diff recorded around the call alone. A revert bubbles up.
+    function _growth(address from, address target, bytes memory data, uint256 value)
+        internal
+        returns (StateGrowth.Growth memory growth)
+    {
+        vm.deal(from, from.balance + value);
+        vm.startStateDiffRecording();
+        vm.prank(from);
+        (bool ok, bytes memory reason) = target.call{ value: value }(data);
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+        _bubble(ok, reason);
+        growth = StateGrowth.count(accesses);
     }
 
     /// @dev `vm.lastCallGas().gasTotalUsed`, read by hand: the pinned forge-std declares a sixth
