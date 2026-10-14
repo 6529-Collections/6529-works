@@ -52,6 +52,11 @@
 - Deployment (DEPS-4): off anvil, `Verify.s.sol` requires the entropy module to be its VRF
   subscription's only consumer; on mainnet the subscription owner must be the hot admin Safe.
   The runbook makes that the mainnet setup and lists the coordinator events guardians watch.
+- Deployment: `Verify.s.sol` gains an epoch mode (`GOVERNANCE_CONFIG`) so readback passes
+  after a governance change such as an admin recovery, and fails on any operation still
+  pending on the manager unless `ALLOW_PENDING_OPERATIONS=1`. The admin-recovery runbook
+  revokes first and grants after, covers a guardian that cancels the recovery, moves the VRF
+  subscription, and re-verifies in epoch mode.
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

@@ -499,7 +499,14 @@ The record is only an index; each check is made against the chain or the committ
 - the `GovernanceConfigured` hashes match the configuration and wiring recomputed from the
   JSON;
 - no other grant-delay or admin-delay change is pending;
-- no account outside the configuration was granted a role.
+- no account outside the configuration was granted a role;
+- no operation scheduled on the manager since genesis is still pending. Each one fails the
+  run with its ID, caller, target, selector and ready time. After reviewing them, set
+  `ALLOW_PENDING_OPERATIONS=1` to log them instead.
+
+Verify checks the genesis configuration. After a governance change, such as an
+[admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
+`GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders.
 
 ### 12. Standing refresh: `refreshStanding`
 
@@ -538,24 +545,47 @@ re-measure it on Sepolia before relying on that figure.
 The cold recovery admin Safe holds ADMIN only and stays offline. It acts in one case: the hot
 admin Safe is lost or compromised (owner decision 2).
 
-1. **Pause if needed.** A guardian pauses the affected contracts while the recovery runs.
+1. **Pause and suspend if needed.** A guardian pauses the affected contracts while the
+   recovery runs, and suspends any operational key the hot Safe could have reached
+   (`manager.suspend`).
 2. **Schedule the removal.** The cold Safe schedules `revokeRole(role, hotSafe)` on the
    manager for each of the hot Safe's roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
    SUCCESSOR_SETTER. In the Safe transaction builder, each is
    `manager.schedule(manager, revokeRole(role, hotSafe), 0)`. ADMIN's 30-day execution delay
-   applies to each.
+   applies to each. Schedule nothing else yet.
    - **The hot Safe cannot cancel its own removal.** `WorksAccessManager` lets no one but the
-     scheduler cancel the revocation of their own role.
+     scheduler cancel the revocation of their own role, and no admin cancel another
+     account's revocation (Rules 2 and 3).
    - **The guardians can cancel any operation.** They must know of the recovery and let these
      through, and keep cancelling anything the compromised hot Safe schedules.
-3. **Appoint the new hot Safe.** In the same batch, schedule
-   `grantRole(role, newHotSafe, Roles.executionDelay(role))` for the same five roles.
-4. **Execute after 30 days.** The cold Safe calls `manager.execute` for each operation. The old
-   hot Safe loses its roles at once. The new one holds each role after that role's grant
-   delay: 48 hours for UNPAUSER and PARAMETER_SETTER, 14 days for FUNDS_SETTER, and 30 days for
-   SUCCESSOR_SETTER and ADMIN.
-5. **Re-verify.** Run `Verify.s.sol` against a genesis file with the new holder, after the
-   setback. Publish the change as a governance manifest (`appendGovernanceManifest`).
+3. **If a guardian cancels the removal,** treat that guardian as compromised too. The cold
+   Safe schedules `revokeRole(GUARDIAN, guardian)` and `revokeRole(PAUSER, guardian)`. Only
+   the other guardians may cancel those. After 30 days it executes them, then schedules the
+   hot Safe's revocations again (step 2).
+4. **Execute after 30 days.** The cold Safe calls `manager.execute` for each revocation. The old
+   hot Safe loses its roles at once.
+5. **Only then appoint the new hot Safe.** Schedule
+   `grantRole(role, newHotSafe, Roles.executionDelay(role))` for the same five roles, and
+   execute them after 30 days. Revocations go first: a hot Safe that still holds ADMIN can
+   cancel any grant scheduled before its removal executes. The new Safe holds each role after
+   that role's grant delay: 48 hours for UNPAUSER and PARAMETER_SETTER, 14 days for
+   FUNDS_SETTER, and 30 days for SUCCESSOR_SETTER and ADMIN.
+6. **Move the VRF subscription.** On mainnet the hot Safe owns it ([step 7](#7-chainlink-vrf-the-entropy-module)),
+   and governance cannot take it over. Create a subscription owned by the new hot Safe, fund
+   it, add the module as its only consumer, and have the new Safe schedule the module's
+   `setConfig` to it (PARAMETER_SETTER, 48 hours).
+7. **Re-verify in epoch mode.** Copy the genesis file, replace the old hot Safe's entries with
+   the new one, and run Verify with `GOVERNANCE_CONFIG` set to the copy, after the last grant
+   delay:
+
+   ```bash
+   DEPLOYMENT=deployments/<chainId>/<timestamp>.json GOVERNANCE_CONFIG=config/<epoch file> \
+     forge script script/Verify.s.sol --rpc-url "$RPC_URL"
+   ```
+
+   The current-state checks use the copy. The genesis event checks keep the recorded genesis
+   file, and every genesis holder the copy drops must hold no record any more. Publish the
+   change as a governance manifest (`appendGovernanceManifest`).
 
 **Rehearse this once on Sepolia** with the throwaway Safes, end to end, before mainnet.
 
@@ -583,4 +613,6 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `VRF_COORDINATOR_CODEHASH` | Unset | Optional off mainnet; must match the coordinator's code. On mainnet the canonical coordinator and its code hash are pinned |
 | `NO_VRF` | `0` | `1` declines the entropy module explicitly |
 | `DEPLOYMENT` | (Verify) | The record to verify |
+| `GOVERNANCE_CONFIG` | (Verify) unset: the genesis file | Epoch mode: a copy of the genesis file with the current holders, for readback after a governance change |
+| `ALLOW_PENDING_OPERATIONS` | (Verify) `0` | `1` logs pending manager operations instead of failing on the first |
 | `MANIFEST_PATH` | (Verify) the recorded path | The manifest file to hash again |

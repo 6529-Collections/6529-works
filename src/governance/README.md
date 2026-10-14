@@ -295,6 +295,7 @@ therefore executes them itself:
   4. After 30 days the cold admin executes the revocations.
   5. Only then does it grant the roles to a new hot Safe. Revocations go first,
      because a still-active hot admin can cancel grants to its replacement.
+  6. Readback then runs in epoch mode (`GOVERNANCE_CONFIG`, script/README.md).
 
   The owner confirms the cold Safe and its signer set at deployment.
 - **Onboarding a target after genesis:**

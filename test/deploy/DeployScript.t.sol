@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
@@ -1263,6 +1264,177 @@ contract DeployScriptTest is Test {
                 DeployGuards.HolderIsADeploymentContract.selector, Roles.PLATFORM, address(d.stream)
             )
         );
+        verifier.verify(record);
+    }
+
+    // ------------------------------------------------------------------ re-verify after a change
+
+    /// @dev The cold admin (…b002) replaces the hot admin (…b001) with …b003, by the runbook:
+    ///      the revocations first, the grants once they have executed. Records the logs.
+    function _recoverHotAdmin(DeployV1.Deployment memory d) internal returns (address newHot) {
+        address hot = _account("01");
+        address cold = _account("02");
+        newHot = _account("03");
+        vm.etch(newHot, address(new MockSharedSignerSafe()).code);
+        uint64[5] memory roles = [
+            Roles.ADMIN,
+            Roles.UNPAUSER,
+            Roles.PARAMETER_SETTER,
+            Roles.FUNDS_SETTER,
+            Roles.SUCCESSOR_SETTER
+        ];
+        vm.recordLogs();
+        vm.startPrank(cold);
+        for (uint256 i; i < 5; ++i) {
+            d.manager
+                .schedule(
+                    address(d.manager),
+                    abi.encodeCall(IAccessManager.revokeRole, (roles[i], hot)),
+                    0
+                );
+        }
+        vm.warp(block.timestamp + 30 days);
+        for (uint256 i; i < 5; ++i) {
+            d.manager
+                .execute(
+                    address(d.manager), abi.encodeCall(IAccessManager.revokeRole, (roles[i], hot))
+                );
+            d.manager
+                .schedule(
+                    address(d.manager),
+                    abi.encodeCall(
+                        IAccessManager.grantRole, (roles[i], newHot, Roles.executionDelay(roles[i]))
+                    ),
+                    0
+                );
+        }
+        vm.warp(block.timestamp + 30 days);
+        for (uint256 i; i < 5; ++i) {
+            d.manager
+                .execute(
+                    address(d.manager),
+                    abi.encodeCall(
+                        IAccessManager.grantRole, (roles[i], newHot, Roles.executionDelay(roles[i]))
+                    )
+                );
+        }
+        vm.stopPrank();
+        verifier.addLogs(vm.getRecordedLogs());
+        vm.warp(block.timestamp + 30 days); // every grant delay has passed
+    }
+
+    /// @dev The genesis copy with the hot admin's entries moved to …b003.
+    function _epochFile() internal view returns (string memory updated) {
+        updated = vm.replace(
+            _filled(),
+            string.concat(
+                '"account": "', FILLED_PREFIX, "01", '",\n      "label": "Hot admin Safe"'
+            ),
+            string.concat(
+                    '"account": "', FILLED_PREFIX, "03", '",\n      "label": "Hot admin Safe"'
+                )
+        );
+        assertTrue(keccak256(bytes(updated)) != keccak256(bytes(_filled())), "edited");
+    }
+
+    /// Improvement (runbook): after an admin recovery, Verify passes in epoch mode against a
+    /// copy of the genesis file with the new holders, while the genesis event checks keep the
+    /// recorded genesis file.
+    function test_ReverifyAfterAdminRecoveryPassesInEpochMode() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address newHot = _recoverHotAdmin(d);
+        // Against the genesis file alone the readback fails: the old holder is gone.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, _account("01")
+            )
+        );
+        verifier.verify(record);
+        // Epoch mode.
+        verifier.setFile("config/epoch-1.json", bytes(_epochFile()));
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        (,, uint256 holders) = verifier.verify(record);
+        assertEq(holders, 17);
+        (bool admin,) = d.manager.hasRole(Roles.ADMIN, newHot);
+        assertTrue(admin);
+    }
+
+    /// Epoch mode: a holder the current file drops must be gone from the chain.
+    function test_EpochModeRequiresDroppedHoldersToBeRevoked() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address hot = _account("01");
+        address oldCurator = _account("61");
+        address newCurator = makeAddr("newCurator");
+        bytes memory grant =
+            abi.encodeCall(IAccessManager.grantRole, (Roles.CURATOR, newCurator, 0));
+        vm.recordLogs();
+        vm.prank(hot);
+        d.manager.schedule(address(d.manager), grant, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hot);
+        d.manager.execute(address(d.manager), grant);
+        verifier.addLogs(vm.getRecordedLogs());
+        vm.warp(block.timestamp + Roles.grantDelay(Roles.CURATOR));
+        string memory epoch =
+            _tamper(_filled(), vm.toLowercase(vm.toString(oldCurator)), vm.toString(newCurator));
+        verifier.setFile("config/epoch-1.json", bytes(epoch));
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.HolderNotRemoved.selector, Roles.CURATOR, oldCurator)
+        );
+        verifier.verify(record);
+        // Once the old key is revoked, the epoch verifies.
+        bytes memory revoke = abi.encodeCall(IAccessManager.revokeRole, (Roles.CURATOR, oldCurator));
+        vm.prank(hot);
+        d.manager.schedule(address(d.manager), revoke, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hot);
+        d.manager.execute(address(d.manager), revoke);
+        verifier.verify(record);
+    }
+
+    /// Improvement (runbook): Verify reports operations still pending on the manager.
+    function test_VerifyReportsPendingOperations() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        address hot = address(0xB001);
+        bytes memory data =
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, address(0xB011)));
+        vm.recordLogs();
+        vm.prank(hot);
+        (bytes32 id,) = d.manager.schedule(address(d.manager), data, 0);
+        verifier.addLogs(vm.getRecordedLogs());
+        uint48 readyAt = d.manager.getSchedule(id);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.PendingOperation.selector,
+                id,
+                hot,
+                address(d.manager),
+                IAccessManager.revokeRole.selector,
+                readyAt
+            )
+        );
+        verifier.verify(record);
+        // Reviewed and allowed: it is logged instead.
+        verifier.setEnv("ALLOW_PENDING_OPERATIONS", "1");
+        verifier.verify(record);
+        verifier.setEnv("ALLOW_PENDING_OPERATIONS", "");
+        // A cancelled operation is no longer pending.
+        vm.prank(address(0xB012));
+        d.manager.cancel(hot, address(d.manager), data);
+        verifier.verify(record);
+    }
+
+    /// An operation that expired without executing is not pending either.
+    function test_AnExpiredOperationIsNotPending() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        bytes memory data = abi.encodeCall(IAccessManager.setGrantDelay, (Roles.KEEPER, 2 days));
+        vm.recordLogs();
+        vm.prank(address(0xB001));
+        (bytes32 id,) = d.manager.schedule(address(d.manager), data, 0);
+        verifier.addLogs(vm.getRecordedLogs());
+        vm.warp(d.manager.getSchedule(id) + d.manager.expiration());
+        assertEq(d.manager.getSchedule(id), 0, "expired");
         verifier.verify(record);
     }
 

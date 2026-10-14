@@ -49,6 +49,13 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            the configured value (OpenZeppelin has no getter for these, ADR 0002).
 ///         9. Every `RoleGranted` since genesis is a configured holder (or the configurator's
 ///            own initial ADMIN, renounced).
+///         10. No operation scheduled on the manager since genesis is still pending, unless
+///            `ALLOW_PENDING_OPERATIONS=1` (then each is logged).
+///
+///         After a governance change (an admin recovery, a key rotation), set
+///         `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders (epoch
+///         mode). Checks 5, 6 and 9 then use it; checks 7 and 8 keep the genesis file; every
+///         genesis holder it drops must hold no record for that role any more.
 contract Verify is ScriptIO {
     error MissingParameter(string name);
     error WrongChain(uint256 recorded, uint256 actual);
@@ -73,6 +80,14 @@ contract Verify is ScriptIO {
     error SubscriptionOwner(address owner);
     /// @notice On mainnet, the coordinator does not report the subscription.
     error SubscriptionUnreadable(address coordinator, uint256 subscriptionId);
+    /// @notice Epoch mode: a genesis holder the current configuration drops still has a record
+    ///         for the role.
+    error HolderNotRemoved(uint64 role, address account);
+    /// @notice An operation scheduled on the manager since genesis is still pending (neither
+    ///         executed, cancelled nor expired). Review it, then set `ALLOW_PENDING_OPERATIONS=1`.
+    error PendingOperation(
+        bytes32 operationId, address caller, address target, bytes4 selector, uint48 readyAt
+    );
 
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
 
@@ -86,7 +101,10 @@ contract Verify is ScriptIO {
         console2.log("verified: holders", holders);
     }
 
-    /// @notice Every check above against `record`; returns the counts verified.
+    /// @notice Every check above against `record`; returns the counts verified. With
+    ///         `GOVERNANCE_CONFIG` set (epoch mode), the current-state checks use that file, a
+    ///         copy of the genesis file with the holders of a later epoch, while the genesis
+    ///         event checks keep the recorded genesis file.
     function verify(string memory record)
         public
         view
@@ -106,15 +124,12 @@ contract Verify is ScriptIO {
         DeployV1.Manifest memory manifest = _checkManifest(record, local);
 
         string memory genesis = _read(vm.parseJsonString(record, ".genesisConfig"));
-        GovernanceConfig.Config memory cfg = DeployV1.config(d, genesis);
+        GovernanceConfig.Config memory cfg = DeployV1.config(d, _currentConfig(genesis));
         GovernanceConfig.Call[] memory wired = DeployV1.wiring(d, genesis, manifest);
-        if (!local) _checkGuards(record, d, genesis, cfg, manifest);
+        if (!local) _checkGuards(record, d, _currentConfig(genesis), cfg, manifest);
         VerifyV1.check(d, cfg, wired);
         if (!local) _checkSubscription(d, cfg, block.chainid == DeployGuards.MAINNET_CHAIN_ID);
-        uint256 fromBlock = vm.parseJsonUint(record, ".startBlock");
-        _checkConfigured(d, cfg, wired, manifest, fromBlock);
-        _checkPendingDelays(d, fromBlock);
-        _checkGrants(d, cfg, fromBlock);
+        _checkHistory(d, genesis, cfg, wired, manifest, record);
         return (cfg.targets.length, wired.length, cfg.grants.length);
     }
 
@@ -237,6 +252,85 @@ contract Verify is ScriptIO {
         return false;
     }
 
+    /// @dev Checks 7 to 10, from the manager's and the configurator's events since genesis.
+    ///      `genesis` is the genesis file, `cfg` the current configuration (the genesis one
+    ///      outside epoch mode).
+    function _checkHistory(
+        DeployV1.Deployment memory d,
+        string memory genesis,
+        GovernanceConfig.Config memory cfg,
+        GovernanceConfig.Call[] memory wired,
+        DeployV1.Manifest memory manifest,
+        string memory record
+    ) internal view {
+        GovernanceConfig.Config memory initial = DeployV1.config(d, genesis);
+        uint256 fromBlock = vm.parseJsonUint(record, ".startBlock");
+        _checkConfigured(d, initial, wired, manifest, fromBlock);
+        _checkPendingDelays(d, fromBlock);
+        _checkGrants(d, initial, cfg, fromBlock);
+        _checkRemoved(d, initial, cfg);
+        _checkPendingOperations(d, fromBlock);
+    }
+
+    /// @dev The file at `GOVERNANCE_CONFIG` (epoch mode), or the genesis file.
+    function _currentConfig(string memory genesis) internal view returns (string memory) {
+        string memory path = _env("GOVERNANCE_CONFIG");
+        return bytes(path).length == 0 ? genesis : _read(path);
+    }
+
+    /// @dev Epoch mode: every genesis holder the current configuration drops holds no record
+    ///      for that role any more (revoked or renounced).
+    function _checkRemoved(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory initial,
+        GovernanceConfig.Config memory cfg
+    ) internal view {
+        for (uint256 i; i < initial.grants.length; ++i) {
+            GovernanceConfig.Grant memory g = initial.grants[i];
+            if (_holds(cfg, g.role, g.account)) continue;
+            if (GovernanceConfig.hasRecord(d.manager, g.role, g.account)) {
+                revert HolderNotRemoved(g.role, g.account);
+            }
+        }
+    }
+
+    /// @dev Every operation scheduled on the manager since genesis that can still execute
+    ///      (`getSchedule` nonzero for its latest nonce). Fails on the first, unless
+    ///      `ALLOW_PENDING_OPERATIONS=1`, which logs each one instead.
+    function _checkPendingOperations(DeployV1.Deployment memory d, uint256 fromBlock)
+        internal
+        view
+    {
+        bool allowed = _envUint("ALLOW_PENDING_OPERATIONS", 0) == 1;
+        Vm.EthGetLogs[] memory logs = _logs(
+            fromBlock,
+            address(d.manager),
+            keccak256("OperationScheduled(bytes32,uint32,uint48,address,address,bytes)")
+        );
+        for (uint256 i; i < logs.length; ++i) {
+            bytes32 id = logs[i].topics[1];
+            uint48 readyAt = d.manager.getSchedule(id);
+            if (readyAt != 0 && d.manager.getNonce(id) == uint32(uint256(logs[i].topics[2]))) {
+                _pending(id, readyAt, logs[i].data, allowed);
+            }
+        }
+    }
+
+    function _pending(bytes32 id, uint48 readyAt, bytes memory logData, bool allowed)
+        internal
+        pure
+    {
+        (, address caller, address target, bytes memory data) =
+            abi.decode(logData, (uint48, address, address, bytes));
+        // Casting to bytes4 is safe: it keeps the selector, the first four bytes.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        bytes4 selector = data.length < 4 ? bytes4(0) : bytes4(data);
+        if (!allowed) revert PendingOperation(id, caller, target, selector, readyAt);
+        console2.log("pending operation", vm.toString(id));
+        console2.log("  caller, target", caller, target);
+        console2.log("  selector, ready at", vm.toString(selector), uint256(readyAt));
+    }
+
     /// @dev Check 5: the deploy's off-anvil guards, repeated against the chain as it is now.
     function _checkGuards(
         string memory record,
@@ -352,8 +446,12 @@ contract Verify is ScriptIO {
         }
     }
 
+    /// @dev Every `RoleGranted` since genesis is a holder of the genesis or the current
+    ///      configuration, the configurator's own initial ADMIN, or (epoch mode only) an account
+    ///      that no longer holds the role, such as an intermediate holder since replaced.
     function _checkGrants(
         DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory initial,
         GovernanceConfig.Config memory cfg,
         uint256 fromBlock
     ) internal view {
@@ -362,13 +460,13 @@ contract Verify is ScriptIO {
             address(d.manager),
             keccak256("RoleGranted(uint64,address,uint32,uint48,bool)")
         );
+        bool epoch = keccak256(abi.encode(initial)) != keccak256(abi.encode(cfg));
         for (uint256 i; i < logs.length; ++i) {
             uint64 role = uint64(uint256(logs[i].topics[1]));
             address account = address(uint160(uint256(logs[i].topics[2])));
-            bool expected = role == Roles.ADMIN && account == address(d.configurator);
-            for (uint256 j; j < cfg.grants.length && !expected; ++j) {
-                expected = cfg.grants[j].role == role && cfg.grants[j].account == account;
-            }
+            bool expected = (role == Roles.ADMIN && account == address(d.configurator))
+                || _holds(initial, role, account) || _holds(cfg, role, account)
+                || (epoch && !GovernanceConfig.hasRecord(d.manager, role, account));
             if (!expected) revert UnexpectedGrant(role, account);
         }
     }
