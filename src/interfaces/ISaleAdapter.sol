@@ -76,8 +76,15 @@ interface ISaleAdapter is IERC165 {
     error InvalidPayment();
     /// @notice No sale has this ID.
     error UnknownSale(uint256 saleId);
-    /// @notice The adapter is paused, so no sale may open, start or sell.
+    /// @notice The adapter is paused, so no sale may open, start or sell; also a repeated
+    ///         `pause`.
     error SalePaused();
+    /// @notice `unpause` was called while the adapter is not paused.
+    error NotPaused();
+    /// @notice The address cannot receive the token or the credit (for `claim`, zero).
+    error InvalidRecipient(address recipient);
+    /// @notice An ETH claim could not be delivered to `to`; the credit is kept.
+    error ClaimFailed(address to);
     /// @notice A sale of this token is already open.
     error SaleAlreadyOpen(address token, uint256 id);
     /// @notice The caller is neither the token's creator nor the PLATFORM role.

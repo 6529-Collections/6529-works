@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { AuthorityUtils } from "@openzeppelin/contracts/access/manager/AuthorityUtils.sol";
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
 import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -74,7 +73,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     }
 
     /// @notice Gas forwarded with an ETH payout; a wallet that needs more is paid in escrow.
-    uint256 public constant ETH_PAYOUT_GAS = 100_000;
+    uint256 public constant PAYOUT_GAS = 100_000;
 
     /// @notice Where a payout goes when the wallet or the token refuses it.
     IRevenueEscrow public immutable escrow;
@@ -117,8 +116,6 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     error InvalidQuantity();
     /// @notice The permit's deadline has passed.
     error PaymentExpired(uint256 deadline);
-    /// @notice An ETH claim could not be delivered; the credit is kept.
-    error ClaimFailed(address to);
     /// @notice A dependency has no code, is an EIP-7702 delegated account, or does not support
     ///         its interface through ERC-165.
     error InvalidDependency(address dependency);
@@ -187,20 +184,24 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     }
 
     /// @inheritdoc ISaleAdapter
+    /// @dev Reverts with `SalePaused` when already paused.
     function pause() external restricted {
+        if (paused) revert SalePaused();
         paused = true;
         emit Paused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
+    /// @dev Reverts with `NotPaused` when not paused.
     function unpause() external restricted {
+        if (!paused) revert NotPaused();
         paused = false;
         emit Unpaused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
     function claim(address currency, address to) external nonReentrant returns (uint256 amount) {
-        if (to == address(0)) revert InvalidAddress();
+        if (to == address(0)) revert InvalidRecipient(to);
         amount = claimable[msg.sender][currency];
         if (amount == 0) revert NothingToClaim(msg.sender, currency);
         claimable[msg.sender][currency] = 0;
@@ -338,11 +339,20 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         }
         if (pay.payer != msg.sender) revert InvalidPayment();
         if (pay.method == PaymentMethod.PERMIT) {
-            (uint8 v, bytes32 r, bytes32 s) = ECDSA.parseCalldata(pay.signature);
+            // The documented 65-byte `r || s || v`, as the auction takes it.
+            if (pay.signature.length != 65) revert InvalidPayment();
             // A permit already submitted by someone else fails here; the pull below then
             // succeeds only on the allowance that permit (or the payer) granted.
             try IERC20Permit(currency)
-                .permit(pay.payer, address(this), pay.amount, pay.deadline, v, r, s) { }
+                .permit(
+                    pay.payer,
+                    address(this),
+                    pay.amount,
+                    pay.deadline,
+                    uint8(pay.signature[64]),
+                    bytes32(pay.signature[0:32]),
+                    bytes32(pay.signature[32:64])
+                ) { }
                 catch { }
         }
         if (charge != 0) TokenTransfer.pullExact(currency, pay.payer, charge);
@@ -418,7 +428,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             pay.signature
         );
         if (
-            TokenTransfer.balanceOf(currency, address(this)) != ours + charge
+            TokenTransfer.balanceOf(currency, address(this)) != ours + charge || theirs < charge
                 || TokenTransfer.balanceOf(currency, pay.payer) != theirs - charge
         ) revert TokenTransfer.TokenBalanceMismatch(currency);
     }
@@ -434,7 +444,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     function _pay(address currency, address to, uint256 amount) private {
         if (amount != 0) {
             if (currency == CURRENCY_ETH) {
-                RevenuePayment.payETH(escrow, to, amount, ETH_PAYOUT_GAS);
+                RevenuePayment.payETH(escrow, to, amount, PAYOUT_GAS);
             } else {
                 RevenuePayment.payERC20(escrow, to, currency, amount);
             }

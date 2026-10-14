@@ -79,7 +79,9 @@ emergency tightening. Claims are never blocked.
 
 **Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
 `purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
-resumes them. `closeSale` and `claim` always work.
+resumes them. `closeSale` and `claim` always work. As on the auction, pausing a
+paused adapter reverts with `SalePaused`, and unpausing one that is not paused
+reverts with `NotPaused`.
 
 ### Allowlists
 
@@ -144,7 +146,7 @@ price of zero. A gift pays no network fee, by design.
 | Method | Payer | What happens |
 | --- | --- | --- |
 | `DIRECT` | `msg.sender` | ETH as `msg.value`, or a pull of an approved ERC-20. |
-| `PERMIT` | `msg.sender` | An EIP-2612 permit for `amount`, then a pull. A permit someone already submitted is tolerated: the pull uses the allowance it granted. |
+| `PERMIT` | `msg.sender` | An EIP-2612 permit for `amount` (the 65-byte `r \|\| s \|\| v`; any other length reverts with `InvalidPayment`), then a pull. A permit someone already submitted is tolerated: the pull uses the allowance it granted. |
 | `PERMIT2` | the signer | `permitWitnessTransferFrom`; the witness binds the purchase, so a relayer can submit it. |
 
 The Permit2 witnesses are `Typehashes.PURCHASE_WITNESS` (fixed price: sale,
@@ -158,6 +160,11 @@ the deadline itself and checks both balance deltas after Permit2, because
 Permit2 does not. Every ERC-20 movement is exact, so fee-on-transfer, rebasing,
 no-return and false-returning tokens revert. Replay protection is the token's
 or Permit2's nonce, never signature bytes.
+
+The fixed-price, Dutch and auction adapters share these rules and their errors: a
+claim to the zero address reverts with `InvalidRecipient`, an ETH claim the recipient
+refuses with `ClaimFailed` (the credit is kept), and a token that misreports the
+payer's balance around a Permit2 transfer with `TokenBalanceMismatch`.
 
 Fixed price charges exactly `quantity × unit price`, and `Payment.amount` must
 equal it. In a Dutch sale, `Payment.amount` is the most the buyer will pay. An

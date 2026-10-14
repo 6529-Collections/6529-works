@@ -161,8 +161,6 @@ contract EnglishAuction is
     mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
-    /// @notice `unpause` was called while the adapter is not paused.
-    error NotPaused();
     /// @notice A dependency has no code, is a delegated account, or lacks its ERC-165 interface.
     error InvalidDependency(address dependency);
     /// @notice A configuration is outside the bounds above.
@@ -171,8 +169,6 @@ contract EnglishAuction is
     error InvalidTerms(address token, uint256 tokenId);
     /// @notice The token contract cannot be listed (no code, delegated, or not ERC-721).
     error InvalidTarget(address token);
-    /// @notice The address cannot receive the token or the credit.
-    error InvalidRecipient(address recipient);
     /// @notice The caller is not the high bidder.
     error NotHighBidder(address caller);
     /// @notice The opening bid is above its absolute ceiling.
@@ -391,12 +387,10 @@ contract EnglishAuction is
         if (amount == 0) revert NothingToClaim(msg.sender, currency);
         _credits[msg.sender][currency] = 0;
         emit Claimed(msg.sender, currency, to, amount);
-        if (currency == CURRENCY_ETH) {
-            if (!TokenTransfer.sendETH(to, amount, gasleft())) {
-                revert IRevenueEscrow.ETHTransferFailed(to, amount);
-            }
-        } else {
+        if (currency != CURRENCY_ETH) {
             TokenTransfer.transferExact(currency, to, amount);
+        } else if (!TokenTransfer.sendETH(to, amount, gasleft())) {
+            revert ClaimFailed(to);
         }
     }
 

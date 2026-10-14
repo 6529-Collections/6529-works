@@ -399,7 +399,7 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(a.recipient, carol);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(auction))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(auction))
         );
         auction.bid(saleId, address(auction), _direct(alice, 0));
     }
@@ -759,9 +759,7 @@ contract EnglishAuctionTest is AuctionBase {
         uint256 saleId = _start();
         stream.setLockedCreator(1, address(0));
         _end(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
     }
 
@@ -924,14 +922,12 @@ contract EnglishAuctionTest is AuctionBase {
         auction.bid{ value: 1 ether }(saleId, address(winner), _direct(alice, 1 ether));
         _end(saleId);
         auction.settle(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         winner.execute(
             address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(0)))
         );
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(auction))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(auction))
         );
         winner.execute(
             address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(auction)))
@@ -944,9 +940,7 @@ contract EnglishAuctionTest is AuctionBase {
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, alice, ETH));
         vm.prank(alice);
         auction.claim(ETH, alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         vm.prank(alice);
         auction.claim(ETH, address(0));
     }
@@ -959,9 +953,7 @@ contract EnglishAuctionTest is AuctionBase {
         refusing.configure(HostileActor.Behaviour.REVERT, HostileActor.Behaviour.ACCEPT);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IRevenueEscrow.ETHTransferFailed.selector, address(refusing), 1 ether
-            )
+            abi.encodeWithSelector(ISaleAdapter.ClaimFailed.selector, address(refusing))
         );
         auction.claim(ETH, address(refusing));
         assertEq(auction.claimable(alice, ETH), 1 ether);
@@ -1026,7 +1018,7 @@ contract EnglishAuctionTest is AuctionBase {
         );
         auction.pause();
         vm.prank(unpauser);
-        vm.expectRevert(EnglishAuction.NotPaused.selector);
+        vm.expectRevert(ISaleAdapter.NotPaused.selector);
         auction.unpause();
         vm.prank(pauser);
         auction.pause();

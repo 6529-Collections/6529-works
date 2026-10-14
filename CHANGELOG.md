@@ -251,3 +251,10 @@
   (`IArtistRegistry.consolidationSourceCodeHash`) and re-checks it at every use. On a
   mismatch, staging, heartbeats and `refreshStanding` revert with `InvalidSource`, and
   registration and execution skip their standing refresh (`StandingRefreshSkipped`).
+- Sales review fixes (F2):
+  - QUALITY-7: the fixed-price, Dutch and auction adapters share their money-path rules.
+    `claim` reverts with `InvalidRecipient` for a zero recipient and `ClaimFailed` for a
+    refused ETH claim in all three; a repeated `pause` or an `unpause` while not paused
+    reverts (`SalePaused`, `NotPaused`); EIP-2612 takes only the 65-byte signature; a
+    misreported payer balance around Permit2 reverts with `TokenBalanceMismatch`. The
+    fixed-price and Dutch payout allowance is renamed `PAYOUT_GAS`, as on the auction.

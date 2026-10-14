@@ -61,11 +61,7 @@ contract EnglishAuctionHostileTest is AuctionBase {
         _actorBid(actor, saleId, 1 ether);
         _bidEth(saleId, alice, 2 ether);
         assertEq(auction.claimable(address(actor), ETH), 1 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRevenueEscrow.ETHTransferFailed.selector, address(actor), 1 ether
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.ClaimFailed.selector, address(actor)));
         actor.execute(address(auction), 0, abi.encodeCall(auction.claim, (ETH, address(actor))));
         actor.execute(address(auction), 0, abi.encodeCall(auction.claim, (ETH, carol)));
         assertEq(carol.balance, 1 ether);

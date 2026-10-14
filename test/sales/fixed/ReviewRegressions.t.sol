@@ -498,6 +498,20 @@ contract ReviewRegressionsTest is FixedPriceBase {
         fixedSale.unpause();
     }
 
+    /// @dev QUALITY-7: as in the auction, a repeated `pause` reverts with `SalePaused` and an
+    ///      `unpause` while not paused with `NotPaused`; neither emits twice.
+    function test_Pause_RepeatedPauseOrUnpauseReverts() public {
+        vm.expectRevert(ISaleAdapter.NotPaused.selector);
+        vm.prank(unpauser);
+        fixedSale.unpause();
+        vm.prank(pauser);
+        fixedSale.pause();
+        vm.expectRevert(ISaleAdapter.SalePaused.selector);
+        vm.prank(pauser);
+        fixedSale.pause();
+        assertTrue(fixedSale.paused());
+    }
+
     // ------------------------------------------------------------------ closing ended sales
 
     function test_AnyoneClosesASaleWhosePhasesEnded() public {

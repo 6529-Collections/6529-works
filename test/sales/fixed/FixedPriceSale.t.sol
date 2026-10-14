@@ -83,7 +83,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(version, "1");
         assertEq(chainId, block.chainid);
         assertEq(verifying, address(fixedSale));
-        assertEq(fixedSale.ETH_PAYOUT_GAS(), 100_000);
+        assertEq(fixedSale.PAYOUT_GAS(), 100_000);
         assertEq(address(fixedSale.escrow()), address(escrow));
         assertEq(address(fixedSale.assets()), address(allowlist));
         assertFalse(fixedSale.paused());
@@ -658,7 +658,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         vm.prank(alice);
         fixedSale.claim(CURRENCY_ETH, alice);
         assertEq(fixedSale.claimable(alice, CURRENCY_ETH), 0);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         vm.prank(alice);
         fixedSale.claim(CURRENCY_ETH, address(0));
     }

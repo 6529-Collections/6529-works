@@ -292,12 +292,12 @@ contract DutchSaleTest is DutchBase {
         _buy(alice, saleId, alice, 1, START, 2 ether);
         RejectingRecipient refusing = new RejectingRecipient();
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.ClaimFailed.selector, address(refusing))
+            abi.encodeWithSelector(ISaleAdapter.ClaimFailed.selector, address(refusing))
         );
         vm.prank(alice);
         dutch.claim(CURRENCY_ETH, address(refusing));
         assertEq(dutch.claimable(alice, CURRENCY_ETH), 1 ether);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         vm.prank(alice);
         dutch.claim(CURRENCY_ETH, address(0));
     }
