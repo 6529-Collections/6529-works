@@ -55,7 +55,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         After a governance change (an admin recovery, a key rotation), set
 ///         `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders (epoch
 ///         mode). Checks 5, 6 and 9 then use it; checks 7 and 8 keep the genesis file; every
-///         genesis holder it drops must hold no record for that role any more.
+///         genesis holder it drops must hold no record for that role any more. The wiring
+///         readback in check 6 stays genesis readback (a later default-currency change still
+///         fails it).
 contract Verify is ScriptIO {
     error MissingParameter(string name);
     error WrongChain(uint256 recorded, uint256 actual);
@@ -331,22 +333,21 @@ contract Verify is ScriptIO {
         console2.log("  selector, ready at", vm.toString(selector), uint256(readyAt));
     }
 
-    /// @dev Check 5: the deploy's off-anvil guards, repeated against the chain as it is now.
+    /// @dev Check 5: the deploy's off-anvil guards on `json` (the genesis file, or the epoch
+    ///      file), repeated against the chain as it is now.
     function _checkGuards(
         string memory record,
         DeployV1.Deployment memory d,
-        string memory genesis,
+        string memory json,
         GovernanceConfig.Config memory cfg,
         DeployV1.Manifest memory manifest
     ) internal view {
         string memory example = _read(EXAMPLE_GENESIS);
         DeployGuards.checkNothingDropped(
-            d,
-            genesis,
-            keccak256(bytes(vm.parseJsonString(record, ".entropy"))) == keccak256("none")
+            d, json, keccak256(bytes(vm.parseJsonString(record, ".entropy"))) == keccak256("none")
         );
-        DeployGuards.checkPolicy(d, genesis, example, manifest);
-        DeployGuards.checkHolders(genesis, example);
+        DeployGuards.checkPolicy(d, json, example, manifest);
+        DeployGuards.checkHolders(json, example);
         DeployGuards.checkHoldersAgainst(d, paramsOf(record), cfg);
     }
 

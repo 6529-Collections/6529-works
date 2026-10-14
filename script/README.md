@@ -512,7 +512,8 @@ The record is only an index; each check is made against the chain or the committ
 
 Verify checks the genesis configuration. After a governance change, such as an
 [admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
-`GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders.
+`GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
+readback stays genesis readback, so a later default-currency change still fails it.
 
 ### 12. Standing refresh: `refreshStanding`
 
