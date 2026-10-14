@@ -121,3 +121,7 @@
   for a seller wallet, an artist's first ETH `release`, and a first and a later signed
   release through the claim router), with exact counts and regression ceilings, also in
   ADR 0004's table.
+- Economics: `Splits.entitlement` uses 6529 Stream's exact, overflow-free share formula
+  instead of a full-width `mulDiv` (identical results for every canonical share, fuzzed
+  over the full range). A split wallet's code shrinks from 5,439 to 5,302 bytes: about
+  27,600 less Prague gas per deployment, and about 211,000 less on Sepolia's Glamsterdam.
