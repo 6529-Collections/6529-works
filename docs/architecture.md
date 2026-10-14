@@ -249,7 +249,10 @@ default when the sale starts".
    - The guardian can veto (`vetoChange`), which blocks a change but never
      redirects it.
 3. After 7 days anyone calls `executeChange`. At staging and again at execution,
-   the new authority must be unmapped or already this artist's. Future payouts
+   the new authority must be unmapped or already this artist's, and not
+   reserved by another artist's pending change. Staging reserves it
+   (`reservedFor`) until the change ends, so a package acceptance by the new
+   key cannot register it as a separate artist meanwhile. Future payouts
    follow the new payout address, including balances already accrued.
 4. Overrides cover contested changes, estates, and lost keys with no
    consolidation.

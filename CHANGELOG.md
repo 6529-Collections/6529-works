@@ -81,3 +81,7 @@
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
   any High or Medium finding without a row in `docs/security/slither-triage.md`.
+- Identity review fixes. IDENTITY-2: a staged change that moves the authority reserves the
+  new one for the artist (`IArtistRegistry.reservedFor`, one storage slot while it waits) until
+  it executes or ends; `register` and other artists' changes refuse a reserved account with
+  `AccountTaken`.

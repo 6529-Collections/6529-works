@@ -47,8 +47,10 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///        replaces a pending STANDARD change, so a key holder cannot block one by keeping a
 ///        change staged.
 ///      Every staging consumes the per-artist nonce (replay protection never keys on signature
-///      bytes); {revokeNonce} burns it to retract an unused signature. The guardian can only
-///      veto: no guardian path writes an identity.
+///      bytes); {revokeNonce} burns it to retract an unused signature. A staging that changes the
+///      authority reserves the new one ({reservedFor}) until the change executes or ends, so a
+///      package acceptance by the new key cannot register it as a separate artist and void the
+///      change. The guardian can only veto: no guardian path writes an identity.
 ///
 ///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
 ///      consolidated wallets, refreshed on registration, staging, heartbeats, executions and by
@@ -104,6 +106,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     mapping(address account => uint256) public override artistIdOf;
+    /// @inheritdoc IArtistRegistry
+    mapping(address account => uint256) public override reservedFor;
     /// @inheritdoc IArtistRegistry
     IConsolidationSource public override consolidationSource;
     /// @inheritdoc IArtistRegistry
@@ -193,7 +197,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     {
         if (msg.sender != packageRegistry) revert UnboundCaller(msg.sender);
         if (account == address(0) || !_payoutAllowed(account)) revert InvalidIdentity();
-        if (artistIdOf[account] != 0) revert AccountTaken(account);
+        if (artistIdOf[account] != 0 || reservedFor[account] != 0) revert AccountTaken(account);
         artistId = uint256(uint160(account));
         ArtistIdentity memory identity = ArtistIdentity(account, account, profileId, profileDocHash);
         _artists[artistId] = Artist(identity, uint64(block.timestamp), 0);
@@ -332,11 +336,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
-    /// @dev Re-checks the next identity; if it is no longer valid (its authority was taken or
-    ///      its payout became a split wallet), the change is cleared with
-    ///      `ChangeCancelled(artistId, address(this), false)` instead of reverting, so a stale
-    ///      change cannot freeze the payout. Otherwise it applies the change, restarts the
-    ///      dormancy clock and refreshes standing for the new authority.
+    /// @dev Re-checks the next identity; if it is no longer valid (its payout became a split
+    ///      wallet), the change is cleared with `ChangeCancelled(artistId, address(this), false)`
+    ///      instead of reverting, so a stale change cannot freeze the payout. The authority
+    ///      re-check is defence in depth: the staging reserved the new authority
+    ///      ({reservedFor}), so nothing can take it meanwhile. Otherwise it applies the change,
+    ///      restarts the dormancy clock and refreshes standing for the new authority.
     function executeChange(uint256 artistId) external {
         PendingChange storage p = _pendingOf(artistId);
         if (p.contestedAt != 0) revert OverrideContested(artistId);
@@ -358,6 +363,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         ArtistIdentity memory previous = a.identity;
         artistIdOf[next.authority] = artistId;
         a.identity = next;
+        delete reservedFor[next.authority];
         delete _pending[artistId];
         _recordActivity(artistId, a);
         emit ChangeExecuted(artistId, previous, next);
@@ -550,8 +556,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (_taken(artistId, next.authority)) revert AccountTaken(next.authority);
     }
 
+    /// @dev Whether `account` belongs to another artist, or another artist's pending change
+    ///      reserves it as its next authority.
     function _taken(uint256 artistId, address account) private view returns (bool) {
         uint256 holder = artistIdOf[account];
+        if (holder == 0) holder = reservedFor[account];
         return holder != 0 && holder != artistId;
     }
 
@@ -587,7 +596,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev Refreshes standing, captures the snapshot's effective entries (missing ones within
-    ///      their grace included; the refresh has removed the rest) and consumes the nonce.
+    ///      their grace included; the refresh has removed the rest), consumes the nonce and
+    ///      reserves a new authority until the change ends.
     function _stage(
         uint256 artistId,
         Artist storage a,
@@ -617,6 +627,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         p.executableAt = uint64(block.timestamp) + delay;
         p.evidenceHash = evidenceHash;
         p.cancellers = cancellers;
+        if (next.authority != current) reservedFor[next.authority] = artistId;
         emit ChangeStaged(artistId, p);
     }
 
@@ -699,7 +710,10 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return contestedAt != 0 && block.timestamp >= uint256(contestedAt) + CONTEST_TIMEOUT;
     }
 
+    /// @dev Ends the pending change and its reservation. A change that keeps the authority
+    ///      reserved nothing, and no other artist can reserve this artist's authority.
     function _clear(uint256 artistId, address by, bool vetoed) private {
+        delete reservedFor[_pending[artistId].next.authority];
         delete _pending[artistId];
         emit ChangeCancelled(artistId, by, vetoed);
     }

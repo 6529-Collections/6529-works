@@ -108,6 +108,20 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(handler.lapsed(), 1);
     }
 
+    /// @dev IDENTITY-2: exactly the next authority of a pending change that moves the authority
+    ///      is reserved for the artist; every other key is unreserved.
+    function invariant_OnlyThePendingNextAuthorityIsReserved() public view {
+        PendingChange memory p = registry.pendingChange(artistId);
+        address current = registry.authorityOf(artistId);
+        address[4] memory keys =
+            [vm.addr(artistKey), vm.addr(walletKey), vm.addr(newKey), vm.addr(thiefKey)];
+        for (uint256 i; i < keys.length; ++i) {
+            bool reserved =
+                p.kind != ChangeKind.NONE && p.next.authority == keys[i] && keys[i] != current;
+            assertEq(registry.reservedFor(keys[i]), reserved ? artistId : 0);
+        }
+    }
+
     /// @dev The authority resolves to the artist, and the standing snapshot stays bounded and
     ///      free of duplicates.
     function invariant_AuthorityAndStandingAreConsistent() public view {

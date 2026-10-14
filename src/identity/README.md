@@ -33,15 +33,20 @@ replaced.
    next identity (authority, payout, profile ID, profile document hash), the
    artist's nonce and a deadline. A new authority countersigns the same digest.
    Anyone relays it with `stageChange`, which consumes the nonce and captures
-   the cancellers.
+   the cancellers. A change that moves the authority reserves the new one for
+   the artist (`reservedFor`) until it executes or ends: `register` (a package
+   acceptance by the new key) and another artist's change revert with
+   `AccountTaken`, so the new key cannot become a separate artist meanwhile and
+   void the change.
 3. **Wait 7 days.** Until then, these can stop the change:
    - the previous authority (`cancelChange`);
    - any wallet captured at staging (`cancelChange`);
    - the guardian (`vetoChange`, veto only).
 4. **Execute.** Anyone calls `executeChange` once it is due. If the next
-   identity is no longer valid (its authority was taken, or its payout became a
-   split wallet), the change is cleared with
-   `ChangeCancelled(artistId, registry, false)` instead of reverting.
+   identity is no longer valid (its payout became a split wallet), the change is
+   cleared with `ChangeCancelled(artistId, registry, false)` instead of
+   reverting. The authority is re-checked too, as defence in depth; the
+   reservation keeps anything from taking it.
 
 **Overrides.** CONTESTED, ESTATE and LOST_KEY overrides:
 - are staged by the PARAMETER_SETTER role with an evidence hash;
@@ -194,7 +199,7 @@ Limitations:
 
 | Function | Caller |
 | --- | --- |
-| `register` | the bound package registry only |
+| `register` | the bound package registry only; refuses an account that is mapped, or reserved by a pending change |
 | `stageChange` | anyone, relaying the authority's or an established wallet's signature |
 | `stageOverride` | PARAMETER_SETTER (48 hours) |
 | `cancelChange` | a captured wallet, or the previous authority for a STANDARD change; a captured wallet's cancel contests an override |

@@ -43,7 +43,10 @@ interface IConsolidationSource is IERC165 {
 ///
 ///      Every change of authority, payout or profile is staged, waits, and can be cancelled. At
 ///      staging and again at execution, `next.authority` must be unmapped or already mapped to
-///      the same artist ID, and a new authority must sign its acceptance (two-sided):
+///      the same artist ID, and not reserved by another artist's pending change; a new authority
+///      must sign its acceptance (two-sided). Staging reserves a new authority for the artist
+///      (`reservedFor`) until the change executes or ends, so neither `register` (a package
+///      acceptance) nor another artist's change can take it meanwhile (`AccountTaken`):
 ///      - STANDARD changes are staged by the authority or an established consolidated wallet,
 ///        wait 7 days, and may be cancelled by the previous authority or any consolidated wallet
 ///        captured at staging, or vetoed by the guardian (which blocks but never redirects);
@@ -182,7 +185,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function bindSplitFactory(address target) external;
     /// @notice Creates an identity for `authority` with ID `uint256(uint160(authority))` and
     ///         payout `authority`, and counts as its first activity. Bound package registry only,
-    ///         after it verified the signed acceptance. Reverts with `AccountTaken` if mapped.
+    ///         after it verified the signed acceptance. Reverts with `AccountTaken` if mapped, or
+    ///         reserved as a pending change's next authority.
     function register(address authority, bytes32 profileId, bytes32 profileDocHash)
         external
         returns (uint256 artistId);
@@ -234,9 +238,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Vetoes the pending change. GUARDIAN role; it can block, never redirect.
     function vetoChange(uint256 artistId) external;
     /// @notice Applies a due, uncontested change. Permissionless. If the next identity is no
-    ///         longer valid (its authority was taken or its payout is now rejected), the change is
-    ///         cleared with `ChangeCancelled(artistId, address(this), false)` instead of
-    ///         reverting, so a stale change cannot keep the payout frozen.
+    ///         longer valid (its payout is now rejected; its authority is reserved, so it cannot
+    ///         be taken), the change is cleared with `ChangeCancelled(artistId, address(this),
+    ///         false)` instead of reverting, so a stale change cannot keep the payout frozen.
     function executeChange(uint256 artistId) external;
     /// @notice Records signed activity. Callable by the authority or an established consolidated
     ///         wallet. Never on the auction-start path.
@@ -266,6 +270,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
         returns (ArtistIdentity memory identity, uint64 lastActivity);
     /// @notice The artist ID of an account that is or was an authority, or zero.
     function artistIdOf(address account) external view returns (uint256);
+    /// @notice The artist whose pending change would make `account` its new authority, or zero.
+    ///         A reserved account cannot be registered or become another artist's authority.
+    function reservedFor(address account) external view returns (uint256);
     /// @notice The current authority. Reverts with `UnknownArtist`.
     function authorityOf(uint256 artistId) external view returns (address);
     /// @notice The pending change (kind NONE if none).

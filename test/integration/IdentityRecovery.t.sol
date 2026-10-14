@@ -7,6 +7,7 @@ import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import { PartyAcceptance } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import {
     ArtistIdentity,
@@ -272,6 +273,103 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.prank(newKey);
         ISplitWallet(seller).release(CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether);
+    }
+
+    /// @dev PARAMETER_SETTER stages a CONTESTED override to `next`, which `next` accepted.
+    function _stageRecovery(address next) internal returns (PendingChange memory p) {
+        ArtistIdentity memory id = _identity(next);
+        bytes32 evidence = keccak256("recovery evidence, public notice");
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes memory acceptance = _sign(
+            next, artists.overrideDigest(artistId, ChangeKind.CONTESTED, id, evidence, deadline)
+        );
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(
+                artists.stageOverride,
+                (artistId, ChangeKind.CONTESTED, id, evidence, deadline, acceptance)
+            )
+        );
+        p = artists.pendingChange(artistId);
+    }
+
+    /// @dev `account`'s acceptance of `root` with the profile fields `profileOf`'s identity
+    ///      carries, signed by `signer` and relayed by a stranger; it reverts with `err` unless
+    ///      `err` is empty.
+    function _relayAcceptance(
+        bytes32 root_,
+        address account,
+        address profileOf,
+        address signer,
+        bytes memory err
+    ) internal returns (uint256) {
+        PartyAcceptance memory a = PartyAcceptance(
+            account, _profileId(profileOf), _profileDoc(profileOf), uint64(block.timestamp + 1 days)
+        );
+        bytes memory signature = _sign(signer, registry.acceptanceDigest(root_, a));
+        if (err.length != 0) vm.expectRevert(err);
+        vm.prank(makeAddr("relayer"));
+        return registry.acceptPackage(root_, a, signature);
+    }
+
+    /// @dev IDENTITY-2: a pending change reserves its next authority. While a recovery override
+    ///      to the new key waits, the new key's own acceptance of a package cannot register it as
+    ///      a separate artist, so the override executes and the frozen balance goes to the
+    ///      recovered artist. After execution the new key's acceptance resolves to the artist.
+    function test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes() public {
+        PendingChange memory p = _stageRecovery(newKey);
+        assertEq(artists.reservedFor(newKey), artistId, "reserved for the artist");
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+
+        // Day 30 of the notice: the artist accepts a package with the new key, and anyone relays
+        // it. The acceptance would create a separate identity: it reverts instead.
+        vm.warp(block.timestamp + 30 days);
+        Work[] memory mine = _one(_work(newKey, collectionId));
+        bytes32 rootMine = _rootOf(mine);
+        _approve(rootMine);
+        _relayAcceptance(rootMine, newKey, newKey, newKey, _taken(newKey));
+        assertEq(artists.artistIdOf(newKey), 0, "no separate identity");
+
+        // Day 180: the override executes, and the recovered artist collects the frozen balance.
+        vm.warp(p.executableAt);
+        artists.executeChange(artistId);
+        assertEq(artists.authorityOf(artistId), newKey, "applied, not cleared");
+        assertEq(artists.reservedFor(newKey), 0, "the reservation ends with the change");
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artist, newKey)
+        );
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        vm.prank(newKey);
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        assertEq(newKey.balance, 0.75 ether, "the recovered artist collects");
+        assertEq(artist.balance, 0);
+
+        // The new key now accepts for the artist's identity, with its profile fields.
+        assertEq(_relayAcceptance(rootMine, newKey, artist, newKey, ""), artistId);
+    }
+
+    /// @dev IDENTITY-2 for a STANDARD change: the reservation holds while the change waits, and
+    ///      a guardian veto releases it.
+    function test_StandardChangeReservesItsNewAuthorityUntilVetoed() public {
+        vm.warp(block.timestamp + 31 days);
+        _stage(wallet, newKey);
+        Work[] memory mine = _one(_work(newKey, collectionId));
+        bytes32 rootMine = _rootOf(mine);
+        _approve(rootMine);
+        _relayAcceptance(rootMine, newKey, newKey, newKey, _taken(newKey));
+
+        vm.prank(guardian2);
+        artists.vetoChange(artistId);
+        assertEq(artists.reservedFor(newKey), 0, "released by the veto");
+        assertEq(_relayAcceptance(rootMine, newKey, newKey, newKey, ""), uint160(newKey));
+    }
+
+    function _taken(address account) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, account);
     }
 
     function _authorization(address account, address recipient, uint256 amount, uint256 nonce)
