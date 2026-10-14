@@ -25,6 +25,7 @@ import {
     MockSafeWithoutOwners,
     MockSharedSignerSafe,
     MockTwoKeySafe,
+    MockVrfSubscriptions,
     MockZeroThresholdSafe,
     VerifyHarness
 } from "./ScriptHarness.sol";
@@ -831,6 +832,75 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(Verify.NonCanonicalOnMainnet.selector, "PERMIT2", address(fake))
         );
         verifier.verify(otherPermit2);
+    }
+
+    // ------------------------------------------------------------------ DEPS-4: the subscription
+
+    function _vrfRecord(MockVrfSubscriptions coordinator)
+        internal
+        returns (string memory record, DeployV1.Deployment memory d)
+    {
+        _sepolia();
+        _withVrf(address(coordinator));
+        vm.recordLogs();
+        d = deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        vm.warp(block.timestamp + 5 days);
+    }
+
+    function _one(address a) internal pure returns (address[] memory list) {
+        list = new address[](1);
+        list[0] = a;
+    }
+
+    /// DEPS-4: off anvil, Verify requires the module to be the subscription's only consumer.
+    function test_DEPS4_VerifyChecksTheSubscriptionConsumers() public {
+        MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
+        (string memory record, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
+        address module = address(d.entropyModule);
+        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 0));
+        verifier.verify(record);
+        address[] memory two = new address[](2);
+        two[0] = module;
+        two[1] = makeAddr("anotherConsumer");
+        coordinator.setSubscription(address(this), two);
+        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 2));
+        verifier.verify(record);
+        coordinator.setSubscription(address(this), _one(makeAddr("notTheModule")));
+        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 1));
+        verifier.verify(record);
+        // Off mainnet any owner is accepted (Sepolia r2's is the operator).
+        coordinator.setSubscription(address(this), _one(module));
+        verifier.verify(record);
+    }
+
+    /// DEPS-4: on mainnet the subscription owner must be the hot admin Safe (ADMIN and
+    /// PARAMETER_SETTER), and a coordinator that cannot report it fails closed.
+    function test_DEPS4_OnMainnetTheSubscriptionOwnerIsTheHotAdminSafe() public {
+        MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
+        (, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
+        GovernanceConfig.Config memory cfg = DeployV1.config(d, _filled());
+        address[] memory consumers = _one(address(d.entropyModule));
+        address[2] memory wrong = [address(this), _account("02")]; // the operator, the cold admin
+        for (uint256 i; i < 2; ++i) {
+            coordinator.setSubscription(wrong[i], consumers);
+            verifier.checkSubscriptionExternal(d, cfg, false);
+            vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionOwner.selector, wrong[i]));
+            verifier.checkSubscriptionExternal(d, cfg, true);
+        }
+        coordinator.setSubscription(_account("01"), consumers);
+        verifier.checkSubscriptionExternal(d, cfg, true);
+        // A coordinator without `getSubscription`: skipped off mainnet, refused on mainnet.
+        MockVrfCoordinator plain = new MockVrfCoordinator();
+        vm.etch(address(coordinator), address(plain).code);
+        verifier.checkSubscriptionExternal(d, cfg, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+        );
+        verifier.checkSubscriptionExternal(d, cfg, true);
     }
 
     function test_EnvironmentNumbersAreCheckedCasts() public {

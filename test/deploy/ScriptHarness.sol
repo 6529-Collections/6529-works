@@ -2,10 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Deploy } from "script/Deploy.s.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { Verify } from "script/Verify.s.sol";
+import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 
 /// @notice The scripts' outside inputs, set by the test instead of read from the process:
 ///         environment variables, files (falling back to the real ./config and ./deployments),
@@ -113,6 +115,14 @@ contract VerifyHarness is Verify, ScriptInputs {
         view
     {
         _checkCc0(d, record, local);
+    }
+
+    function checkSubscriptionExternal(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        bool mainnet
+    ) external view {
+        _checkSubscription(d, cfg, mainnet);
     }
 
     function checkManifestExternal(string memory record, bool local)
@@ -290,6 +300,26 @@ contract MockNestedOwnerSafe {
         owners = new address[](2);
         owners[0] = INNER;
         owners[1] = address(uint160(uint256(keccak256(abi.encode(address(this))))));
+    }
+}
+
+/// @notice A VRF v2.5 coordinator stand-in that also answers `getSubscription`, as the real one
+///         does: (balance, native balance, request count, owner, consumers).
+contract MockVrfSubscriptions is MockVrfCoordinator {
+    address public subscriptionOwner;
+    address[] internal _consumers;
+
+    function setSubscription(address owner, address[] calldata consumers) external {
+        subscriptionOwner = owner;
+        _consumers = consumers;
+    }
+
+    function getSubscription(uint256)
+        external
+        view
+        returns (uint96, uint96, uint64, address, address[] memory)
+    {
+        return (0, 0, 0, subscriptionOwner, _consumers);
     }
 }
 

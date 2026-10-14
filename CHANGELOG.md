@@ -49,6 +49,9 @@
   coordinator with its pinned code hash; off mainnet `VRF_COORDINATOR_CODEHASH` optionally
   pins it. On mainnet, `Verify.s.sol` requires the canonical coordinator, Permit2 and
   delegation contract with their pinned code, and no delegation mock.
+- Deployment (DEPS-4): off anvil, `Verify.s.sol` requires the entropy module to be its VRF
+  subscription's only consumer; on mainnet the subscription owner must be the hot admin Safe.
+  The runbook makes that the mainnet setup and lists the coordinator events guardians watch.
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

@@ -40,7 +40,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`).
 ///         6. `VerifyV1.check`: every role, holder, delay and selector, no role left with the
 ///            configurator, every target's authority, every wired getter, and PLATFORM's
-///            immediate path into `openSale`, `closeSale` and `addLocator`.
+///            immediate path into `openSale`, `closeSale` and `addLocator`. Off anvil, the
+///            entropy module is its VRF subscription's only consumer, and on mainnet the
+///            subscription's owner is the hot admin Safe.
 ///         7. The `GovernanceConfigured` event carries the configuration, manifest and wiring
 ///            hashes recomputed from the JSON.
 ///         8. No pending grant-delay or target-admin-delay change other than genesis setting
@@ -64,6 +66,13 @@ contract Verify is ScriptIO {
     /// @notice On mainnet, a canonical dependency's code (or its recorded hash) is not the pinned
     ///         code.
     error NonCanonicalCode(string name, address account, bytes32 codehash);
+    /// @notice The VRF subscription's consumers are not exactly the entropy module (`count`
+    ///         consumers).
+    error SubscriptionConsumers(uint256 subscriptionId, uint256 count);
+    /// @notice On mainnet, the VRF subscription's owner is not the hot admin Safe.
+    error SubscriptionOwner(address owner);
+    /// @notice On mainnet, the coordinator does not report the subscription.
+    error SubscriptionUnreadable(address coordinator, uint256 subscriptionId);
 
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
 
@@ -101,6 +110,7 @@ contract Verify is ScriptIO {
         GovernanceConfig.Call[] memory wired = DeployV1.wiring(d, genesis, manifest);
         if (!local) _checkGuards(record, d, genesis, cfg, manifest);
         VerifyV1.check(d, cfg, wired);
+        if (!local) _checkSubscription(d, cfg, block.chainid == DeployGuards.MAINNET_CHAIN_ID);
         uint256 fromBlock = vm.parseJsonUint(record, ".startBlock");
         _checkConfigured(d, cfg, wired, manifest, fromBlock);
         _checkPendingDelays(d, fromBlock);
@@ -184,6 +194,47 @@ contract Verify is ScriptIO {
             p.delegation.codehash != DeployGuards.CANONICAL_DELEGATION_CODEHASH
                 || vm.parseJsonBool(record, ".delegationMock")
         ) revert NonCanonicalCode("DELEGATION_CONTRACT", p.delegation, p.delegation.codehash);
+    }
+
+    /// @dev The live entropy module's VRF subscription, read from its current coordinator when
+    ///      the coordinator reports it (`getSubscription`, Chainlink v2.5): the module is the only
+    ///      consumer. On `mainnet` the owner must be the hot admin Safe, the configured holder of
+    ///      both ADMIN and PARAMETER_SETTER (which moves the module between subscriptions), and a
+    ///      coordinator that does not report the subscription fails.
+    function _checkSubscription(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        bool mainnet
+    ) internal view {
+        if (address(d.entropyModule) == address(0)) return;
+        address coordinator = d.entropyModule.coordinator();
+        uint256 id = d.entropyModule.config().subscriptionId;
+        (bool ok, bytes memory ret) =
+            coordinator.staticcall(abi.encodeWithSignature("getSubscription(uint256)", id));
+        if (!ok || ret.length < 192) {
+            if (mainnet) revert SubscriptionUnreadable(coordinator, id);
+            return;
+        }
+        (,,, address owner, address[] memory consumers) =
+            abi.decode(ret, (uint96, uint96, uint64, address, address[]));
+        if (consumers.length != 1 || consumers[0] != address(d.entropyModule)) {
+            revert SubscriptionConsumers(id, consumers.length);
+        }
+        if (
+            mainnet
+                && !(_holds(cfg, Roles.ADMIN, owner) && _holds(cfg, Roles.PARAMETER_SETTER, owner))
+        ) revert SubscriptionOwner(owner);
+    }
+
+    function _holds(GovernanceConfig.Config memory cfg, uint64 role, address account)
+        internal
+        pure
+        returns (bool)
+    {
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            if (cfg.grants[i].role == role && cfg.grants[i].account == account) return true;
+        }
+        return false;
     }
 
     /// @dev Check 5: the deploy's off-anvil guards, repeated against the chain as it is now.

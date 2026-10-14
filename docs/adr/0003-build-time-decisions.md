@@ -498,3 +498,6 @@ Accepted by the delivery owner. It extends the deployment guards above.
 - **Canonical dependencies on mainnet.** The deploy pins the Chainlink VRF v2.5
   coordinator's address and runtime code hash, as it pins the delegation contract and
   Permit2. The readback requires all three to be canonical, with their pinned code.
+- **The VRF subscription on mainnet.** Its owner is the hot admin Safe and the module is
+  its only consumer; the readback checks both through the coordinator's
+  `getSubscription`.

@@ -116,7 +116,7 @@ or stores a key:
 | Curator | CURATOR | EOA |
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
 | Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it | Safe or EOA |
-| VRF subscription owner | No role; owns the Chainlink subscription | EOA or Safe |
+| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
 Delays and responsibilities are in the [role table](../src/governance/README.md).
@@ -344,7 +344,16 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
 3. After the broadcast, add the module (`EntropyModule` in the record) as the subscription's
    only consumer. Requests fail until it is a consumer and the subscription is funded.
-4. Never use Chainlink's subscription `migrate`. The [entropy README](../src/entropy/README.md)
+   Verify, off anvil, requires the module to be the only consumer.
+4. **On mainnet, the subscription owner is the hot admin Safe.** Create the subscription
+   from it, or transfer it (`requestSubscriptionOwnerTransfer`, then the Safe's
+   `acceptSubscriptionOwnerTransfer`) before Verify. The owner can cancel the subscription
+   and take its balance, or remove the consumer, at once and outside governance; the
+   module's recovery is a 48-hour `setConfig`. Verify reads `getSubscription` and requires
+   the owner to hold ADMIN and PARAMETER_SETTER. Keep the balance small, and alert the
+   guardians on the coordinator's `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and
+   `SubscriptionOwnerTransferRequested` for the subscription ID.
+5. Never use Chainlink's subscription `migrate`. The [entropy README](../src/entropy/README.md)
    describes the coordinator-change procedure.
 
 ### 8. Default currencies
@@ -484,6 +493,9 @@ The record is only an index; each check is made against the chain or the committ
   configurator, and every target's authority;
 - every wired getter and default currency, the epoch-0 manifest, and PLATFORM's immediate
   path into the sale adapters;
+- off anvil, the entropy module is its VRF subscription's only consumer, read from its
+  current coordinator; on mainnet the subscription's owner is the hot admin Safe, and a
+  coordinator that does not report the subscription fails;
 - the `GovernanceConfigured` hashes match the configuration and wiring recomputed from the
   JSON;
 - no other grant-delay or admin-delay change is pending;
