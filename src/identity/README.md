@@ -100,6 +100,20 @@ captured wallet.
 nonce, voiding every unused STANDARD payload signed for it. Override
 acceptances are unaffected (`test_Override_AcceptanceSurvivesANonceBurn`).
 
+**No return to an earlier authority.** A change's new authority must be an
+account that has never been an authority, of any artist. Every earlier
+authority still maps to the artist ID (a package naming it resolves), but the
+artist can never rotate back to it: A, then B, then A reverts with
+`AccountTaken(A)`, for a STANDARD change and for an override. The move,
+fixed-price consent and acceptance signatures a key left unused are checked
+against the current authority, so they never verify again once it rotates
+away (`test_RotationBackToAPreviousAuthorityIsRefused`). Rotating to a
+temporary key and back is therefore not possible: rotate to a fresh key.
+Recovery likewise installs a fresh key. Changes that keep the current
+authority (payout or profile only) are unaffected. Signed release
+authorizations bind the payout address instead, which may return; see
+`IReleaseVerifier`.
+
 ## Recovery standing (sticky snapshot)
 
 Each artist has a snapshot of at most 16 consolidated wallets. These calls

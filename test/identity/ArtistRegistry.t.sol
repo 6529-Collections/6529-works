@@ -761,6 +761,26 @@ contract ArtistRegistryTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
     }
 
+    /// @dev SIGS-3: an authority the artist rotated away from never becomes its authority again
+    ///      (A, then B, then A is refused), by a STANDARD change or an override, so the signatures
+    ///      A left unused (moves, sale consents, acceptances, which check the current authority)
+    ///      stay dead. The current authority may still stage changes that keep it.
+    function test_StageChange_RevertsForAPreviousAuthority() public {
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        assertEq(registry.artistIdOf(artist), artistId, "still resolves to the artist");
+
+        bytes memory taken = abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, artist);
+        _armRevert(taken);
+        _stage(newKey, _identity(artist, payout), artistKey);
+        _armRevert(taken);
+        _stageOverride(ChangeKind.CONTESTED, _identity(artist, artist), artistKey);
+
+        _stage(newKey, _identity(newAuthority, artist), 0);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.STANDARD));
+    }
+
     // ----------------------------------------------------------------- heartbeat
 
     function test_Heartbeat_ByAuthorityAndWallet() public {

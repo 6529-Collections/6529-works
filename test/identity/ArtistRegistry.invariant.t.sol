@@ -122,6 +122,17 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         }
     }
 
+    /// @dev SIGS-3: exactly the keys that have been the artist's authority resolve to it, and the
+    ///      handler's model (which refuses a return to any of them) matches.
+    function invariant_PastAuthoritiesResolveToTheArtist() public view {
+        address[4] memory keys =
+            [vm.addr(artistKey), vm.addr(walletKey), vm.addr(newKey), vm.addr(thiefKey)];
+        for (uint256 i; i < keys.length; ++i) {
+            bool was = handler.ghostWasAuthority(keys[i]);
+            assertEq(registry.artistIdOf(keys[i]), was ? artistId : 0);
+        }
+    }
+
     /// @dev The authority resolves to the artist, and the standing snapshot stays bounded and
     ///      free of duplicates.
     function invariant_AuthorityAndStandingAreConsistent() public view {

@@ -50,7 +50,9 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      bytes); {revokeNonce} burns it to retract an unused signature. A staging that changes the
 ///      authority reserves the new one ({reservedFor}) until the change executes or ends, so a
 ///      package acceptance by the new key cannot register it as a separate artist and void the
-///      change. The guardian can only veto: no guardian path writes an identity.
+///      change. A new authority must never have been an authority, so the artist never returns
+///      to a key it rotated away from, and that key's unused signatures stay void. The guardian
+///      can only veto: no guardian path writes an identity.
 ///
 ///      Standing: each artist keeps a sticky snapshot of at most `Limits.MAX_CANCELLERS`
 ///      consolidated wallets, refreshed on registration, staging, heartbeats, executions and by
@@ -561,12 +563,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (_taken(artistId, next.authority)) revert AccountTaken(next.authority);
     }
 
-    /// @dev Whether `account` belongs to another artist, or another artist's pending change
-    ///      reserves it as its next authority.
+    /// @dev Whether `account` may not become `artistId`'s authority: it is or was an authority
+    ///      (of another artist, or a previous one of this artist), or another artist's pending
+    ///      change reserves it. The current authority itself is never taken. Refusing a return to
+    ///      a previous authority (A, then B, then A) keeps the signatures A left unused dead: every
+    ///      consumer verifies against the current authority, which A never is again.
     function _taken(uint256 artistId, address account) private view returns (bool) {
-        uint256 holder = artistIdOf[account];
-        if (holder == 0) holder = reservedFor[account];
-        return holder != 0 && holder != artistId;
+        if (account == _artists[artistId].identity.authority) return false;
+        uint256 reserved = reservedFor[account];
+        return artistIdOf[account] != 0 || (reserved != 0 && reserved != artistId);
     }
 
     /// @dev False for payouts that would strand or stall pull-only artist funds.

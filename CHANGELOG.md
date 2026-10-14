@@ -89,3 +89,6 @@
   IDENTITY-4: the consolidation adapter's reads fail closed. Only a getter's no-data revert
   past the end of an array ends a walk; a read that runs out of gas, reverts with data or
   returns too much reverts with `DelegationReadFailed`. `READ_GAS` rises from 50,000 to 200,000.
+  SIGS-3: an account that has been an artist's authority can never become its authority again
+  (A, then B, then A reverts with `AccountTaken`), so its unused move, consent and acceptance
+  signatures stay void after a rotation.

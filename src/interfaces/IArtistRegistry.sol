@@ -40,13 +40,16 @@ interface IConsolidationSource is IERC165 {
 ///      before any transaction, are the same on every chain, fit in 160 bits, and never change
 ///      when the authority does. Every account that has been an artist's authority maps to that
 ///      ID forever, so a package naming an old address still resolves to the identity, while
-///      only the current authority can sign. `profileId` is the artist's unverified claim of a
-///      6529 profile; the profile document hash is what the artist signed.
+///      only the current authority can sign. An account the artist rotated away from never
+///      becomes its authority again (A, then B, then A is refused with `AccountTaken`), so the
+///      move, consent and acceptance signatures it left unused, which every consumer checks
+///      against the current authority, never verify again. `profileId` is the artist's
+///      unverified claim of a 6529 profile; the profile document hash is what the artist signed.
 ///
 ///      Every change of authority, payout or profile is staged, waits, and can be cancelled. At
-///      staging and again at execution, `next.authority` must be unmapped or already mapped to
-///      the same artist ID, and not reserved by another artist's pending change; a new authority
-///      must sign its acceptance (two-sided). Staging reserves a new authority for the artist
+///      staging and again at execution, `next.authority` must be the current authority or an
+///      account that has never been an authority, and not reserved by another artist's pending
+///      change; a new authority must sign its acceptance (two-sided). Staging reserves a new authority for the artist
 ///      (`reservedFor`) until the change executes or ends, so neither `register` (a package
 ///      acceptance) nor another artist's change can take it meanwhile (`AccountTaken`):
 ///      - STANDARD changes are staged by the authority or an established consolidated wallet,

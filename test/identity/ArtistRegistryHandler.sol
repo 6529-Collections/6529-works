@@ -61,6 +61,8 @@ contract ArtistRegistryHandler is Test {
 
     address public ghostPayout;
     address public ghostAuthority;
+    /// @dev Every key that has been the artist's authority (SIGS-3: never again a new one).
+    mapping(address account => bool) public ghostWasAuthority;
     uint64 public ghostLastActivity;
     uint256 public ghostNonce;
     bytes32 public ghostCancellers;
@@ -108,6 +110,7 @@ contract ArtistRegistryHandler is Test {
         (ArtistIdentity memory identity, uint64 last) = registry.artist(artistId);
         ghostPayout = identity.payout;
         ghostAuthority = identity.authority;
+        ghostWasAuthority[identity.authority] = true;
         ghostLastActivity = last;
         consolidated[_pair(vm.addr(keys[0]), vm.addr(keys[1]))] = true;
     }
@@ -123,7 +126,7 @@ contract ArtistRegistryHandler is Test {
         bytes32 digest = registry.changeDigest(artistId, next, ghostNonce, deadline);
         Used memory u = Used(next, vm.addr(signerKey), deadline, _sign(signerKey, digest), "");
         u.acceptance = _sign(nextKey, digest);
-        bytes memory err = _stageError(u.signer, next.payout);
+        bytes memory err = _stageError(u.signer, next);
         if (err.length != 0) vm.expectRevert(err);
         registry.stageChange(artistId, next, u.signer, deadline, u.signature, u.acceptance);
         if (err.length != 0) return;
@@ -136,7 +139,7 @@ contract ArtistRegistryHandler is Test {
     function replayLast() external {
         Used memory u = lastUsed;
         if (u.signer == address(0)) return;
-        bytes memory err = _stageError(u.signer, u.next.payout);
+        bytes memory err = _stageError(u.signer, u.next);
         vm.expectRevert(err.length != 0 ? err : _sel(IArtistRegistry.InvalidSignature.selector));
         registry.stageChange(artistId, u.next, u.signer, u.deadline, u.signature, u.acceptance);
     }
@@ -242,6 +245,7 @@ contract ArtistRegistryHandler is Test {
         if (!uphold || factory.isWallet(p.next.payout)) return;
         ghostPayout = p.next.payout;
         ghostAuthority = p.next.authority;
+        ghostWasAuthority[p.next.authority] = true;
         ghostLastActivity = uint64(block.timestamp);
         ++executed;
     }
@@ -280,7 +284,7 @@ contract ArtistRegistryHandler is Test {
         );
         vm.prank(guardian);
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, keccak256("e"), 0, "");
-        _expect(_stageError(guardian, next.payout));
+        _expect(_stageError(guardian, next));
         registry.stageChange(artistId, next, guardian, type(uint64).max, "", "");
     }
 
@@ -317,6 +321,7 @@ contract ArtistRegistryHandler is Test {
         assertGe(block.timestamp, p.stagedAt + delay);
         ghostPayout = p.next.payout;
         ghostAuthority = p.next.authority;
+        ghostWasAuthority[p.next.authority] = true;
         ghostLastActivity = uint64(block.timestamp);
         ++executed;
     }
@@ -424,20 +429,34 @@ contract ArtistRegistryHandler is Test {
     }
 
     /// @dev The registry's check order for `stageChange` up to the signature.
-    function _stageError(address signer, address payout) private view returns (bytes memory) {
+    function _stageError(address signer, ArtistIdentity memory next)
+        private
+        view
+        returns (bytes memory)
+    {
         if (registry.pendingChange(artistId).kind != ChangeKind.NONE) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);
         }
         if (signer != ghostAuthority && !adapter.isEstablished(ghostAuthority, signer)) {
             return _notAuthorized(signer);
         }
-        if (factory.isWallet(payout)) return _sel(IArtistRegistry.InvalidIdentity.selector);
+        return _nextError(next);
+    }
+
+    /// @dev `_checkNext`: a valid payout, and a new authority that has never been the artist's
+    ///      (SIGS-3; the handler drives one artist, so nothing else is mapped or reserved).
+    function _nextError(ArtistIdentity memory next) private view returns (bytes memory) {
+        if (factory.isWallet(next.payout)) return _sel(IArtistRegistry.InvalidIdentity.selector);
+        if (next.authority != ghostAuthority && ghostWasAuthority[next.authority]) {
+            return abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, next.authority);
+        }
         return "";
     }
 
     /// @dev The registry's check order for `stageOverride`.
     function _overrideError(Accepted memory u) private view returns (bytes memory) {
-        if (factory.isWallet(u.next.payout)) return _sel(IArtistRegistry.InvalidIdentity.selector);
+        bytes memory err = _nextError(u.next);
+        if (err.length != 0) return err;
         if (u.kind != ChangeKind.CONTESTED && block.timestamp < ghostLastActivity + 365 days) {
             return abi.encodeWithSelector(
                 IArtistRegistry.NotDormant.selector, artistId, ghostLastActivity
