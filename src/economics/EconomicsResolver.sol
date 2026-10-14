@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import {
     CURRENCY_DEFAULT,
@@ -31,6 +32,10 @@ import { Splits } from "./Splits.sol";
 ///      (src/governance/Roles.sol): {setFeeTerms} maps to `Roles.FUNDS_SETTER` (14 days);
 ///      {setRoyaltyRate} and {setDefaultLicense} map to `Roles.PARAMETER_SETTER` (48 hours).
 ///      Each setter compares its own revision, bumped by every change to that setting.
+///      A fee recipient must be able to accept payments, because works lock it at mint: the
+///      resolver refuses itself, its allowlist and factory, and every protocol contract that
+///      declares an interface it cannot be paid through (`ProtocolContracts`: the revenue
+///      escrow, the claim router, the sale adapters, 6529 Stream and 6529 Editions).
 contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @notice The launch network share of Stream and Editions primary sales and royalties.
     uint32 public constant DEFAULT_FEE_SHARE = 25_000;
@@ -213,11 +218,16 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         if (expected != actual) revert RevisionMismatch(expected, actual);
     }
 
-    function _validate(ProductEconomics memory e) private pure {
+    function _validate(ProductEconomics memory e) private view {
         if (
             e.feeShare >= Splits.DENOMINATOR || e.royaltyRate > Splits.DENOMINATOR
                 || (e.feeShare != 0 && e.feeRecipient == address(0))
         ) revert InvalidEconomics();
+        address r = e.feeRecipient;
+        if (
+            r == address(this) || r == address(_allowlist) || r == address(_factory)
+                || ProtocolContracts.isProtocolContract(r)
+        ) revert InvalidFeeRecipient(r);
     }
 
     function _validateLicense(License memory license) private pure {

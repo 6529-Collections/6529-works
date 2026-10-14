@@ -153,6 +153,44 @@ contract EconomicsResolverTest is EconomicsBase {
         assertEq(econ.networkFeeRecipient(PRODUCT_STREAM), address(0));
     }
 
+    /// @dev CALLS-1 (resolver side): a recipient that could never be paid is refused, because
+    ///      works lock their fee recipient at mint.
+    function test_FeeRecipientMustBePayable() public {
+        address[5] memory refused = [
+            address(escrow), address(router), address(econ), address(allowlist), address(factory)
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, refused[i])
+            );
+            econ.setFeeTerms(PRODUCT_STREAM, 1, refused[i], 25_000);
+            // Even with no fee: the adapters pay (or skip) the locked recipient at settlement.
+            vm.expectRevert(
+                abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, refused[i])
+            );
+            econ.setFeeTerms(PRODUCT_STREAM, 1, refused[i], 0);
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, address(escrow))
+        );
+        new EconomicsResolver(address(manager), allowlist, factory, address(escrow), CC0_TEXT);
+        _assertEconomics(_econ(PRODUCT_STREAM), network, 25_000, 6_529);
+
+        // Accounts that accept payments stay allowed: a split wallet (its `receive` is empty) and
+        // an existing account.
+        address split = address(_solo(alice));
+        vm.expectEmit(true, false, false, true, address(econ));
+        emit IEconomicsResolver.EconomicsSet(
+            PRODUCT_STREAM,
+            ProductEconomics(network, 25_000, 6_529),
+            ProductEconomics(split, 25_000, 6_529),
+            2
+        );
+        econ.setFeeTerms(PRODUCT_STREAM, 1, split, 25_000);
+        econ.setFeeTerms(PRODUCT_STREAM, 2, stranger, 25_000);
+        assertEq(econ.networkFeeRecipient(PRODUCT_STREAM), stranger);
+    }
+
     function test_SetRoyaltyRateIsCompareAndSetOnItsOwnRevision() public {
         // A fee change does not invalidate a royalty change queued against revision 1.
         econ.setFeeTerms(PRODUCT_EDITIONS, 1, network, 30_000);

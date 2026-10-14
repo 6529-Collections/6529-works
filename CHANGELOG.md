@@ -101,3 +101,8 @@
   ERC-165 (the escrow and the router now do too), and `ArtistRegistry` refuses them at
   registration, staging and execution (`src/libraries/ProtocolContracts.sol`). A split
   wallet's predicted address is still refused only once deployed.
+- Economics (CALLS-1, resolver side): `EconomicsResolver` refuses a network fee recipient
+  that could never be paid (`InvalidFeeRecipient`): itself, its allowlist and split factory,
+  and any contract declaring the revenue escrow, claim router, sale adapter or mint target
+  interface. Works lock the recipient at mint, so such a recipient made their sales
+  unsettleable.

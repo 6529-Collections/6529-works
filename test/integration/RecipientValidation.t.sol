@@ -5,8 +5,15 @@ import { Vm } from "forge-std/Vm.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
+import {
+    PRODUCT_EDITIONS,
+    PRODUCT_FEDERATED,
+    PRODUCT_STREAM,
+    WorkTerms
+} from "src/interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { Mock1271Account } from "../mocks/EconomicsMocks.sol";
@@ -14,7 +21,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Who may receive money, on the real deployment. An artist's payout address must be
 ///         able to pull (artist-resolved payees are pull-only), so the registry refuses the
-///         protocol contracts that cannot (MONEY-4).
+///         protocol contracts that cannot (MONEY-4). The network fee recipient must accept
+///         payments, so the economics resolver refuses the system contracts that cannot
+///         (CALLS-1).
 contract RecipientValidationTest is IntegrationBase {
     address internal artist;
     address internal bidder = makeAddr("recipientBidder");
@@ -142,6 +151,66 @@ contract RecipientValidationTest is IntegrationBase {
         emit IArtistRegistry.ChangeCancelled(artistId, address(artists), false);
         artists.executeChange(artistId);
         assertEq(artists.payoutAddress(artistId), artist);
+    }
+
+    // ------------------------------------------------------------------ CALLS-1 (resolver)
+
+    /// @dev CALLS-1 regression, the resolver's side: governance cannot point a product's network
+    ///      fee at the revenue escrow, or at another system contract that cannot accept a
+    ///      payment. The governed execution reverts after its delay, and the product keeps its
+    ///      recipient.
+    function test_FeeRecipientRefusesSystemContracts() public {
+        address[10] memory refused = [
+            address(escrow),
+            address(claimRouter),
+            address(auction),
+            address(fixedSale),
+            address(dutchSale),
+            address(stream),
+            address(editions),
+            address(economics),
+            address(allowlist),
+            address(splitFactory)
+        ];
+        bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
+        for (uint256 i; i < refused.length; ++i) {
+            bytes32 product = products[i % 3];
+            (uint64 revision,,) = economics.revisions(product);
+            bytes memory call =
+                abi.encodeCall(economics.setFeeTerms, (product, revision, refused[i], 25_000));
+            _schedule(hotAdmin, address(economics), call);
+            vm.warp(block.timestamp + Roles.FUNDS);
+            vm.prank(hotAdmin);
+            vm.expectRevert(
+                abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, refused[i])
+            );
+            manager.execute(address(economics), call);
+            assertEq(economics.networkFeeRecipient(product), networkFee);
+        }
+    }
+
+    /// @dev CALLS-1, the PoC's flow with the fix: the refused change leaves the fee recipient
+    ///      valid, so a work started afterwards settles and pays the network.
+    function test_WorksStartedAfterARefusedChangeSettle() public {
+        (uint64 revision,,) = economics.revisions(PRODUCT_STREAM);
+        bytes memory call = abi.encodeCall(
+            economics.setFeeTerms, (PRODUCT_STREAM, revision, address(escrow), 25_000)
+        );
+        _schedule(hotAdmin, address(economics), call);
+        vm.warp(block.timestamp + Roles.FUNDS);
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, address(escrow))
+        );
+        manager.execute(address(economics), call);
+
+        Work[] memory works = _one(_work(artist, collectionId));
+        bytes32 root = _publish(works);
+        uint256 feeBefore = networkFee.balance;
+        uint256 tokenId = _sell(root, works, 0, bidder, 1 ether);
+        assertEq(stream.ownerOf(tokenId), bidder);
+        assertEq(networkFee.balance - feeBefore, 0.25 ether, "the network fee is paid");
+        assertEq(escrow.totalOwed(address(0)), 0);
     }
 
     /// @dev External, so `vm.expectRevert` sees the registry's revert at this call depth.

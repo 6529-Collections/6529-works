@@ -120,6 +120,14 @@ Withdrawals never read the allowlist: a deprecated or never-admitted asset
 stays withdrawable from wallets and the escrow (fixes RC1 Medium M-3).
 Deprecation is reversible only through a compare-and-set re-admission.
 
+A work locks its network fee recipient at mint, so `setFeeTerms` (and the
+launch configuration) refuses a recipient that could never be paid: the
+resolver itself, its allowlist and split factory, and any contract that
+declares the interface of the revenue escrow, the claim router, a sale adapter
+or a mint target (`InvalidFeeRecipient`). The recipient must still be an
+account that accepts ETH from a 100,000-gas call; the runbook checks that it
+exists.
+
 ## New work terms
 
 `EconomicsResolver.newWorkTerms(product, payees)` predicts, without deploying:
