@@ -61,6 +61,9 @@ interface IWorkRecords {
     event WorkFinalized(uint256 indexed tokenId, address renderer, bytes32 stateHash);
     /// @notice Every media file of the work is stored on-chain; on-chain bytes are permanent.
     event WorkOnChainComplete(uint256 indexed tokenId);
+    /// @notice `syncOnChain` found the work's first `files` media files complete and stopped at
+    ///         its chunk budget; the next call resumes there.
+    event OnChainSyncProgress(uint256 indexed tokenId, uint256 files);
     /// @notice A work's license changed, by every party's agreement plus a governed action.
     event LicenseChanged(uint256 indexed tokenId, License previous, License next);
     /// @notice A work's royalty rate changed, by every party's agreement plus a governed action
@@ -161,6 +164,11 @@ interface IWorkRecords {
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks the work on-chain complete once every media file is complete in the
     ///         content store. Permissionless and one-way; does not change the state hash.
+    ///         Resumable: a call checks whole files, in media order, up to a budget of 1,024
+    ///         chunks (a file of up to 512 always fits), keeps its place and emits
+    ///         `OnChainSyncProgress` when the budget stops it, so a work of any size completes
+    ///         over calls that each fit the EIP-7825 cap. Reverts with `NotOnChainComplete` at
+    ///         the first file it finds incomplete (earlier calls' progress stays).
     function syncOnChain(uint256 tokenId) external;
 
     /// @notice Whether a work's record is open. Never reverts.

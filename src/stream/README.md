@@ -98,6 +98,14 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   change bumps the version before its external calls, emits `RoyaltyRateSet`
   and refreshes the metadata. A repin needs the lead artist and the 30-day
   class, and binds the renderer's code hash.
+- **On-chain completeness.** `syncOnChain` is permissionless and resumable.
+  Each call checks whole media files, in order, while their chunks fit a budget
+  of 1,024 (about 8.3M gas from cold storage; a file of up to 512 chunks always
+  fits), stores how many files it found complete in the record's first word
+  (no new slot) and emits `OnChainSyncProgress`; the call that reaches the end
+  marks the work on-chain complete. A file found incomplete reverts the call
+  with `NotOnChainComplete`, and earlier calls' progress stays, since media is
+  fixed and on-chain bytes are permanent.
 - **Finalize** applies the record-file checks and requires the license text,
   the default CC0 text included, to be complete on-chain. A finalized work's
   record and license text are therefore permanent and readable on-chain.

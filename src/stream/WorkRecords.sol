@@ -51,9 +51,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      base32 CID (`a-z 2-7`), as bit sets over ASCII.
     uint256 private constant TXID_CHARS = 0x07fffffe87fffffe03ff200000000000;
     uint256 private constant CID_CHARS = 0x07fffffe0000000000fc000000000000;
+    /// @dev Chunks one `syncOnChain` call checks at most, in whole files. A chunk costs about
+    ///      8,100 gas from cold storage, so a call stays near half of the EIP-7825 cap; one file
+    ///      (at most `IContentStore.MAX_CHUNKS`, 512) always fits.
+    uint256 private constant SYNC_CHUNKS = 1_024;
 
-    /// @dev Word 0: the pin, version, media count and flags. `roles` packs each file's role in
-    ///      eight bits, file `i` at bits `8i`.
+    /// @dev Word 0: the pin, version, media count, flags and how many leading media files
+    ///      `syncOnChain` has found complete. `roles` packs each file's role in eight bits, file
+    ///      `i` at bits `8i`.
     struct RecordData {
         address renderer;
         uint32 version;
@@ -62,6 +67,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bool finalized;
         bool onChainComplete;
         bool customLicense;
+        uint8 syncedFiles;
         bytes32 recordFileId;
         bytes32 mediaHash;
         uint256 roles;
@@ -219,15 +225,32 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev Media is fixed by approval (D2), so completeness is permanent; a repeat is a no-op.
+    /// @dev Media is fixed by approval (D2) and on-chain bytes are permanent, so a file found
+    ///      complete stays complete: each call resumes at the first file not yet found complete,
+    ///      checks whole files while their chunks fit `SYNC_CHUNKS`, and keeps its place. A
+    ///      repeat after completion is a no-op.
     function syncOnChain(uint256 tokenId) external {
         RecordData storage r = _open(tokenId);
         if (r.onChainComplete) return;
+        uint256 files = r.mediaCount;
+        uint256 next = r.syncedFiles;
+        uint256 budget = SYNC_CHUNKS;
         bytes32[32] storage list = _media[tokenId];
-        for (uint256 i; i < r.mediaCount; ++i) {
-            if (!IContentStore(contentStore).isComplete(list[i])) {
+        for (; next < files; ++next) {
+            bytes32 fileId = list[next];
+            (,, uint256 chunks,) = _fileInfo(fileId);
+            if (chunks > budget) break;
+            if (!IContentStore(contentStore).isComplete(fileId)) {
                 revert NotOnChainComplete(tokenId);
             }
+            budget -= chunks;
+        }
+        // At most `Limits.MAX_MEDIA_FILES` (32).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        r.syncedFiles = uint8(next);
+        if (next < files) {
+            emit OnChainSyncProgress(tokenId, next);
+            return;
         }
         r.onChainComplete = true;
         emit WorkOnChainComplete(tokenId);
@@ -715,22 +738,32 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId`, which must be within
-    ///      `Limits.MAX_PREVIEW_BYTES`, an `Identity` file counting four times. `fileInfo` is
-    ///      read in place as in `_checkRecordFile`; a store revert (`ContentFileUnknown`)
-    ///      propagates.
+    ///      `Limits.MAX_PREVIEW_BYTES`, an `Identity` file counting four times.
     function _previewSha(uint256 tokenId, bytes32 fileId) private view returns (bytes32 sha) {
-        (bool ok, bytes memory info) =
-            contentStore.staticcall(abi.encodeCall(IContentStore.fileInfo, (fileId)));
         uint256 length;
         uint256 encoding;
+        (sha, length,, encoding) = _fileInfo(fileId);
+        if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
+        if (length > Limits.MAX_PREVIEW_BYTES) revert InvalidRecordData(tokenId);
+    }
+
+    /// @dev A media file's declared SHA-256, stored length, chunk count and encoding, read in
+    ///      place from the trusted store's `fileInfo` answer as in `_checkRecordFile`. A store
+    ///      revert (`ContentFileUnknown` for an unregistered file) propagates.
+    function _fileInfo(bytes32 fileId)
+        private
+        view
+        returns (bytes32 sha, uint256 length, uint256 chunks, uint256 encoding)
+    {
+        (bool ok, bytes memory info) =
+            contentStore.staticcall(abi.encodeCall(IContentStore.fileInfo, (fileId)));
         assembly ("memory-safe") {
             if or(iszero(ok), lt(mload(info), 0xc0)) { revert(add(info, 0x20), mload(info)) }
             sha := mload(add(info, 0x40))
             length := mload(add(info, 0x60))
+            chunks := mload(add(info, 0x80))
             encoding := mload(add(info, 0xa0))
         }
-        if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
-        if (length > Limits.MAX_PREVIEW_BYTES) revert InvalidRecordData(tokenId);
     }
 
     function _requireMedia(uint256 tokenId, bytes32 fileId) private view {

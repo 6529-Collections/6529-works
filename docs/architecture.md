@@ -234,7 +234,9 @@ default when the sale starts".
    is on-chain complete: the record becomes immutable and Stream's default
    renderer is pinned.
 4. Anyone uploads the media's chunks and calls `syncOnChain`; the work is then
-   permanently on-chain complete. This does not change the state hash.
+   permanently on-chain complete. A call checks whole files up to 1,024 chunks and
+   keeps its place, so a large work takes a few calls, each within the
+   per-transaction cap. This does not change the state hash.
 5. Amendments need agreement plus a governed action:
    - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable.
    - **Royalty-rate change:** every party, FUNDS_SETTER role. Payees never

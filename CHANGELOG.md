@@ -205,6 +205,10 @@
   (16 KiB stored, `Identity` counted four times). With the content-address locators this
   restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once
   (`test/integration/TokenUriBudget.t.sol`: at most 7.7M, `Editions.uri` included).
+- Records (CONTENT-4): `syncOnChain` is resumable. Each call checks whole media files up to
+  1,024 chunks (about 8.3M gas cold), keeps its place in the record's first word and emits
+  `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete
+  over calls that each fit the EIP-7825 cap.
 - Renderer: the media-list read has its own gas cap (1,000,000; other reads keep 300,000),
   and `ContentStore.sha256Of` reads one storage word, so `mediaOf` at 32 files needs about a
   fifth of its cap cold instead of nine tenths of 300,000.
