@@ -93,7 +93,10 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   CC0 irrevocability is enforced on-chain, on the canonical license key; whether
   a new license is more permissive is the judgement of the parties' consent plus
   governance, and the contract does not order licenses. A CC0 work may still
-  correct its text file (CC0 to CC0). A relicense's text file must be
+  correct its text file (CC0 to CC0), but only to the deployment's CC0 text
+  (`cc0TextFileId`, the legal code pinned by digest at deployment), and any
+  relicense to CC0 names that text, so a work that reads CC0 never points at
+  other terms. A relicense's text file must be
   registered, and stored on-chain once the work is finalized. A royalty-rate
   change bumps the version before its external calls, emits `RoyaltyRateSet`
   and refreshes the metadata. A repin needs the lead artist and the 30-day

@@ -718,6 +718,28 @@ contract WorkRecordsTest is RecordsFixture {
         records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
     }
 
+    /// @dev A CC0 license set by a relicense names the deployment's CC0 text: a CC0 work's text
+    ///      is corrected only to it, and checked before the consents.
+    function test_relicense_cc0TextOnlyToTheDeploymentText() public {
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = License("cc0-1.0", _registerText("cc0 text with a typo"));
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        License memory other = License("CC0-1.0", _registerText("other terms"));
+        vm.prank(governor);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.relicense(tokenId, other, item, bytes32(0), 0, new bytes[](0));
+
+        License memory next = License("CC0-1.0", records.cc0TextFileId());
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
+        vm.prank(governor);
+        records.relicense(tokenId, next, item, state, deadline, sigs);
+        assertEq(records.licenseOf(tokenId).textFileId, records.cc0TextFileId());
+    }
+
     function test_relicense_identicalIsNoOp() public {
         (uint256 tokenId, PackageItem memory item) = _byWork();
         vm.recordLogs();

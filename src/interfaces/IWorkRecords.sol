@@ -126,9 +126,10 @@ interface IWorkRecords {
     ///         is an EIP-7702 delegated account.
     error InvalidDependency(address dependency);
     /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`, the deployment's
-    ///         default license is not CC0, a license text file declares no SHA-256, or a license
-    ///         text that must be permanent (at finalize, or relicensing a finalized work) is not
-    ///         complete on-chain.
+    ///         default license is not CC0, a license text file declares no SHA-256, a relicense to
+    ///         CC0 names a text other than the deployment's CC0 text, or a license text that must
+    ///         be permanent (at finalize, or relicensing a finalized work) is not complete
+    ///         on-chain.
     error InvalidLicense();
     /// @notice The work is not finalized (an errata repin needs a finalized work).
     error WorkNotFinalized(uint256 tokenId);
@@ -192,8 +193,10 @@ interface IWorkRecords {
     /// @notice Changes a work's license toward more permissive terms. PARAMETER_SETTER role plus
     ///         an EIP-712 `Typehashes.RELICENSE` signature from every party of `item`, in order,
     ///         each by its current authority. Reverts with `LicenseIrrevocable` when the current
-    ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not (a CC0 work may
-    ///         correct its text file). The new license's text file must be registered in the
+    ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not. A CC0 license
+    ///         set here names the deployment's CC0 text, so a CC0 work may correct its text file
+    ///         only to that text (`InvalidLicense` otherwise). The new license's text file must
+    ///         be registered in the
     ///         content store, and complete on-chain for a finalized work. Only CC0
     ///         irrevocability is enforced on-chain; whether `next` is more permissive rests with
     ///         the consents and the governed action.

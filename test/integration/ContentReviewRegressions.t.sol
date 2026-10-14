@@ -5,6 +5,9 @@ import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
+import { License } from "src/interfaces/types/PackageTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
@@ -191,6 +194,82 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertTrue(_contains(stream.tokenURI(tokenId), '"record_status":"incomplete"'));
         store.writeChunk(json);
         assertTrue(_contains(stream.tokenURI(tokenId), '"name":"Registered later"'));
+    }
+
+    // ------------------------------------- the CC0 text: a correction restores the pinned text
+
+    /// @dev The governed relicense of `tokenId` to `next`, with the artist's consent.
+    function _relicense(uint256 tokenId, Work memory w, License memory next)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes32 digest = _typedDigest(
+            address(records),
+            keccak256(
+                abi.encode(
+                    Typehashes.RELICENSE,
+                    tokenId,
+                    WorksHashing.licenseKey(next.spdxId),
+                    next.textFileId,
+                    state,
+                    deadline
+                )
+            )
+        );
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = _sign(artist, digest);
+        return abi.encodeCall(records.relicense, (tokenId, next, w.item, state, deadline, sigs));
+    }
+
+    function _expectRelicenseRefused(bytes memory call) internal {
+        _schedule(hotAdmin, address(records), call);
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        manager.execute(address(records), call);
+    }
+
+    /// @dev A CC0 work's text can only be corrected to the deployment's pinned CC0 text, with
+    ///      every party's consent and the governed action: never to any other text, before or
+    ///      after finalize, so a work that reads `CC0-1.0` keeps the CC0 legal code.
+    function test_Cc0_TheTextCorrectsOnlyToThePinnedText() public {
+        bytes32 typo = _storeText("CC0 1.0 Universal, with a typo", "text/plain");
+        bytes32 reserved = _storeText("All rights reserved. No reuse permitted.", "text/plain");
+        Work memory w = _work(artist, collectionId);
+        w.item.license = License("CC0-1.0", typo);
+        Work[] memory works = _one(w);
+        uint256 tokenId = _sell(_publish(works), works, 0, collector, 1 ether);
+        records.openRecord(tokenId, w.item, w.media);
+        _finalize(tokenId);
+
+        _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", reserved)));
+        _expectRelicenseRefused(_relicense(tokenId, w, License("cc0-1.0", reserved)));
+        assertEq(records.licenseOf(tokenId).textFileId, typo);
+
+        _govern(
+            hotAdmin, address(records), _relicense(tokenId, w, License("CC0-1.0", cc0TextFileId))
+        );
+        assertEq(records.licenseOf(tokenId).textFileId, cc0TextFileId);
+        assertEq(records.record(tokenId).licenseKey, WorksHashing.CC0_LICENSE_KEY);
+    }
+
+    /// @dev A work relicensed to CC0 from another license takes the pinned CC0 text too.
+    function test_Cc0_ARelicenseToCc0TakesThePinnedText() public {
+        bytes32 byText = _storeText("Creative Commons Attribution 4.0 (fixture)", "text/plain");
+        bytes32 other = _storeText("CC0, as the artist wrote it", "text/plain");
+        Work memory w = _work(artist, collectionId);
+        w.item.license = License("CC-BY-4.0", byText);
+        Work[] memory works = _one(w);
+        uint256 tokenId = _sell(_publish(works), works, 0, collector, 1 ether);
+        records.openRecord(tokenId, w.item, w.media);
+        _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", other)));
+        _govern(
+            hotAdmin, address(records), _relicense(tokenId, w, License("CC0-1.0", cc0TextFileId))
+        );
+        assertEq(records.record(tokenId).licenseKey, WorksHashing.CC0_LICENSE_KEY);
     }
 
     // ------------------------------------------------------------------------------ helpers

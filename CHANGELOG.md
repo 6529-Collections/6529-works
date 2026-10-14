@@ -209,6 +209,9 @@
   1,024 chunks (about 8.3M gas cold), keeps its place in the record's first word and emits
   `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete
   over calls that each fit the EIP-7825 cap.
+- Records: a relicense to CC0, including the CC0-to-CC0 text correction, must name the
+  deployment's CC0 text (`cc0TextFileId`), so a work that reads `CC0-1.0` cannot be pointed at
+  other terms.
 - Renderer (CONTENT-2): a work whose record file the content store does not know (an approved
   manifest that was never registered) renders core-only metadata marked `incomplete` instead of
   reverting `tokenURI`. To make room, the renderer's `image/` prefix test is one comparison.

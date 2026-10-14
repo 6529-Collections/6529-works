@@ -339,11 +339,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     /// @dev Only CC0 irrevocability is enforced on-chain, on the canonical key: a CC0 work may
-    ///      only correct its text file. Whether `next` is more permissive than the current
-    ///      license is a judgement the artist's and every party's consent plus the governed
-    ///      action carry; the contract does not order licenses. A license with the current key
-    ///      and text is a no-op. The new text must be registered, and complete on-chain once
-    ///      the work is finalized.
+    ///      only correct its text file, and only to the deployment's CC0 text (`cc0TextFileId`,
+    ///      pinned by digest at deployment), which any relicense to CC0 names. Whether `next`
+    ///      is more permissive than the current license is a judgement the artist's and every
+    ///      party's consent plus the governed action carry; the contract does not order
+    ///      licenses. A license with the current key and text is a no-op. The new text must be
+    ///      registered, and complete on-chain once the work is finalized.
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -567,11 +568,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // -------------------------------------------------------------------------------- internal
 
     /// @dev The canonical key of `next`, or zero when it is the current license (a no-op).
-    ///      Reverts when leaving CC0 (CC0 to CC0 with another text file is a correction) or for
-    ///      an invalid identifier.
+    ///      Reverts when leaving CC0 (CC0 to CC0 with another text file is a correction), when
+    ///      a CC0 license would name any text but the deployment's CC0 text, or for an invalid
+    ///      identifier.
     function _relicenseKey(uint256 tokenId, License memory previous, License calldata next)
         private
-        pure
+        view
         returns (bytes32 nextKey)
     {
         bytes32 previousKey = WorksHashing.licenseKey(previous.spdxId);
@@ -579,7 +581,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (nextKey == previousKey && next.textFileId == previous.textFileId) return 0;
         bytes32 cc0 = WorksHashing.CC0_LICENSE_KEY;
         if (previousKey == cc0 && nextKey != cc0) revert LicenseIrrevocable(tokenId);
-        if (!SpdxId.isValidCalldata(next.spdxId)) revert InvalidLicense();
+        if (
+            (nextKey == cc0 && next.textFileId != cc0TextFileId)
+                || !SpdxId.isValidCalldata(next.spdxId)
+        ) revert InvalidLicense();
     }
 
     function _relicenseHash(
