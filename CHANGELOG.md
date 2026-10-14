@@ -111,3 +111,9 @@
   account names its replacement with `RevenueEscrow.consentToRecovery`, and the governed
   `recover` (14 days) moves the credit only there. The fee recipient's share in existing
   royalty wallets is released with `releaseTo`; the economics README and ADR 0003 say how.
+- Economics (MONEY-3, CALLS-4): `ClaimRouter` continue mode reverts with
+  `ClaimInsufficientGas` when an item fails after spending all but 1/64 of the gas it was
+  given, so gas estimation raises the limit until a first release (which under Glamsterdam
+  costs far more than the Prague-sized minimums) is paid, instead of settling where it fails
+  silently. A target that burns all its gas now reverts the batch instead of being skipped.
+  The NatSpec, the economics README and ADR 0004 restate the minimums and batch sizes.

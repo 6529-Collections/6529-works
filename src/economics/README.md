@@ -97,14 +97,30 @@ mint, so rotating the fee recipient with `setFeeTerms` only helps new works).
 ## Batch claims and gas
 
 Continue mode reverts unless every item can be offered its minimum gas: 200,000
-per plain item and 450,000 per signed item. This stops gas estimation settling
-on a limit at which every item silently runs dry. An item that needs more than
-its minimum can still fail at the estimated limit; submit it with more gas, or
-in atomic mode.
+per plain item and 450,000 per signed item. It also reverts
+(`ClaimInsufficientGas`) when an item fails after spending all but EIP-150's
+1/64 reserve of the gas it was offered, in the wallet or in a payee or token
+under it. So gas estimation never settles on a limit at which an item silently
+runs dry, whatever the gas schedule: it raises the limit until every item is
+paid or fails with gas to spare (and is then reported and skipped).
+
+- **Glamsterdam.** A first release from a wallet writes new slots and may
+  create the payee's account: about 120,000 Prague gas, but several hundred
+  thousand under Glamsterdam's state pricing. The minimums are Prague-sized
+  floors; the check above, not their size, keeps continue mode correct under
+  any schedule. Raising them to Glamsterdam figures would only shrink the
+  batches that fit one transaction, and would be wrong again for mainnet's
+  final parameters.
+- **Hostile items.** An item that burns all the gas it is given cannot be told
+  apart from one that needs more, so it reverts every continue-mode batch it
+  is in. Leave it out (the revert names its index).
+- **Batch size.** A full batch of first releases may not fit one transaction
+  under Glamsterdam. It then reverts rather than paying part of the batch;
+  split it.
 
 Every loop is bounded so each transaction fits the EIP-7825 cap of 16,777,216
-gas. `test/economics/GasCap.t.sol` measures the cold worst cases, including
-intrinsic and calldata gas:
+gas in Prague gas. `test/economics/GasCap.t.sol` measures the cold worst cases,
+including intrinsic and calldata gas:
 
 | Case | Gas |
 | --- | --- |

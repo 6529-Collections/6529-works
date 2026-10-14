@@ -273,6 +273,13 @@ pricing.
 - **The VRF callback** used about 62% of its 200,000-gas limit on Sepolia (one
   new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours),
   raise-only.
+- **The claim router's continue-mode minimums** (200,000 per plain item,
+  450,000 per signed item) are Prague-sized floors. A first release needs more
+  under Glamsterdam: new slots, and possibly the payee's account. Continue mode
+  reverts when an item fails after spending its share, so gas estimation raises
+  the limit until the item is paid, under any schedule. Only the batch sizes
+  remain to re-check: a full batch of first releases may not fit one
+  transaction, and then reverts for the caller to split.
 
 Re-check all three allowances against mainnet's Glamsterdam parameters before
 mainnet.

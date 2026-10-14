@@ -15,17 +15,30 @@ import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 ///      targets are contained: at most one word of return data is copied on success and at most
 ///      256 bytes of revert data on failure, and in continue mode each call gets only its share of
 ///      the gas left, but never less than its minimum.
+///      Continue mode never reports a gas shortfall as an item's failure, whatever the gas
+///      schedule: an item that fails after spending all but EIP-150's 1/64 reserve of the gas it
+///      was given (in its own frame or in a call it made) reverts the batch with
+///      {ClaimInsufficientGas}, so `eth_estimateGas` raises the limit until every item either is
+///      paid or fails with gas to spare. The minimums are only the floor of each item's share;
+///      they were sized on Prague and stay correct under Glamsterdam's state pricing because of
+///      this check, not because of their size. An item that burns whatever it is given (a hostile
+///      target) therefore reverts every continue-mode batch it is in: leave it out.
 contract ClaimRouter is IClaimRouter {
     /// @inheritdoc IClaimRouter
-    /// @dev A worst-case plain item costs about 130,000 gas, so a full atomic batch stays under
-    ///      7M, and continue mode needs at most `(MAX_CLAIMS + 1) * MIN_ITEM_GAS` (10.2M).
+    /// @dev In Prague gas a worst-case plain item costs about 130,000, so a full atomic batch
+    ///      stays under 7M, and continue mode needs at least `(MAX_CLAIMS + 1) * MIN_ITEM_GAS`
+    ///      (10.2M). Under Glamsterdam a first release also pays for its new slots and, to a
+    ///      fresh payee, a new account (about 89,000 and 184,000 each on Sepolia), so a full batch
+    ///      of first releases may not fit one transaction: it then reverts, never pays part of
+    ///      the batch silently, and the caller splits it.
     uint256 public constant MAX_CLAIMS = 50;
     /// @inheritdoc IClaimRouter
     uint256 public constant MIN_ITEM_GAS = 200_000;
     /// @inheritdoc IClaimRouter
-    /// @dev A worst-case signed item (a 200,000-gas ERC-1271 check, a 4 KiB signature in
-    ///      calldata, a cold release) costs under 400,000 gas, so a full batch stays under the
-    ///      cap in both modes; see `test/economics/GasCap.t.sol`.
+    /// @dev In Prague gas a worst-case signed item (a 200,000-gas ERC-1271 check, a 4 KiB
+    ///      signature in calldata, a cold release) costs under 400,000, so a full batch stays
+    ///      under the cap in both modes; see `test/economics/GasCap.t.sol`. The Glamsterdam note
+    ///      on {MAX_CLAIMS} applies here too.
     uint256 public constant MAX_SIGNED_CLAIMS = 20;
     /// @inheritdoc IClaimRouter
     uint256 public constant MIN_SIGNED_ITEM_GAS = 450_000;
@@ -94,7 +107,8 @@ contract ClaimRouter is IClaimRouter {
         } else {
             // Continue mode splits the gas left between this call, the later items and the router,
             // recomputed per item so a failed item's share passes on.
-            uint256 callGas = item.keepGoing ? gasleft() / (item.remaining + 1) : gasleft();
+            uint256 available = gasleft();
+            uint256 callGas = item.keepGoing ? available / (item.remaining + 1) : available;
             if (item.keepGoing && callGas < item.minGas) {
                 revert ClaimInsufficientGas(item.index, callGas);
             }
@@ -105,6 +119,12 @@ contract ClaimRouter is IClaimRouter {
                 amount := mload(0x00)
             }
             if (ok && size == 32) return amount;
+            // A failure that spent all but the 1/64 reserve of the item's gas may be a shortfall
+            // (the wallet's, or a payee's or token's under it): revert so estimation raises the
+            // limit, instead of reporting a failure the caller paid for.
+            if (!ok && item.keepGoing && available - gasleft() > callGas - callGas / 64) {
+                revert ClaimInsufficientGas(item.index, callGas);
+            }
             amount = 0;
             if (ok) {
                 reason = abi.encodeWithSelector(InvalidClaimReturnData.selector, size);

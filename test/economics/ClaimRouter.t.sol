@@ -15,6 +15,8 @@ import {
     BlocklistToken,
     ClaimReentrantRecipient,
     ClaimWalletAdversary,
+    GasHungryPayee,
+    GasHungryWallet,
     Mock1271Account
 } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
@@ -310,8 +312,24 @@ contract ClaimRouterTest is EconomicsBase {
         _hostileThenReal(5);
     }
 
-    function test_GasBurnerCannotStarveLaterClaim() public {
-        _hostileThenReal(7);
+    /// @dev A target that burns all the gas it gets (`INVALID`) cannot be told apart from an item
+    ///      that needs more gas, so it reverts the continue-mode batch and names its index
+    ///      (MONEY-3), rather than being skipped. It never starves a later item silently, and
+    ///      without it the batch pays.
+    function test_GasBurnerRevertsAContinueBatchAndNamesItsIndex() public {
+        ClaimWalletAdversary hostile = new ClaimWalletAdversary();
+        hostile.configure(7);
+        SplitWallet real = _solo(alice);
+        vm.deal(address(real), 1 ether);
+        (bool ok, bytes memory data) = address(router).call{ gas: 1_500_000 }(
+            abi.encodeCall(IClaimRouter.claim, (_two(address(hostile), 0, address(real), 0), true))
+        );
+        assertFalse(ok);
+        assertEq(_selector(data), IClaimRouter.ClaimInsufficientGas.selector);
+        (uint256 index,) = abi.decode(_args(data), (uint256, uint256));
+        assertEq(index, 0);
+        assertEq(alice.balance, 0);
+        assertEq(router.claim{ gas: 1_500_000 }(_one(address(real), ETH, 0), true)[0], 1 ether);
     }
 
     function test_AtomicRevertBombHasBoundedErrorAndRollsBack() public {
@@ -347,6 +365,125 @@ contract ClaimRouterTest is EconomicsBase {
         );
         assertFalse(ok);
         assertEq(address(first).balance, 1 ether);
+    }
+
+    // ------------------------------------------------------------------ gas estimation (MONEY-3)
+
+    /// @dev The least gas at which `input` does not revert, found by binary search as
+    ///      `eth_estimateGas` does, and the output at that gas. Every probe runs from the same
+    ///      state.
+    function _estimate(bytes memory input)
+        internal
+        returns (uint256 estimate, bytes memory output)
+    {
+        uint256 lo = 21_000;
+        uint256 hi = 10_000_000;
+        while (hi - lo > 500) {
+            uint256 mid = (lo + hi) / 2;
+            uint256 snap = vm.snapshotState();
+            (bool ok,) = address(router).call{ gas: mid }(input);
+            vm.revertToStateAndDelete(snap);
+            if (ok) hi = mid;
+            else lo = mid;
+        }
+        bool success;
+        (success, output) = address(router).call{ gas: hi }(input);
+        assertTrue(success, "the batch succeeds at its estimate");
+        estimate = hi;
+    }
+
+    function _selector(bytes memory data) internal pure returns (bytes4 selector) {
+        assembly ("memory-safe") {
+            selector := mload(add(data, 32))
+        }
+    }
+
+    /// @dev MONEY-3 regression (the review's PoC): an item that needs more gas than its minimum
+    ///      share, as a first release does under Glamsterdam, is paid at the gas limit estimation
+    ///      settles on. It used to fail silently there (`ClaimFailed`, the batch succeeding).
+    function test_ContinueModeAtItsEstimatePaysAnItemAboveItsMinimum() public {
+        GasHungryPayee payee = new GasHungryPayee();
+        payee.setBurn(426_000); // 3 slots and an account under Glamsterdam, minus Prague
+        SplitWallet w = _wallet(_list(_fixed(address(payee), 20_000), _artist(ARTIST, 80_000)));
+        vm.deal(address(w), 1 ether);
+        bytes memory input = abi.encodeCall(
+            IClaimRouter.claim, (_one(address(w), ETH, _indexOf(w, address(payee))), true)
+        );
+        vm.recordLogs();
+        (uint256 estimate, bytes memory output) = _estimate(input);
+        assertEq(abi.decode(output, (uint256[]))[0], 0.2 ether, "paid at the estimate");
+        assertEq(address(payee).balance, 0.2 ether);
+        assertGt(estimate, 2 * router.MIN_ITEM_GAS(), "above what the minimum alone asks");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != FAILED, "no item failed at the estimate");
+        }
+    }
+
+    /// @dev MONEY-3: an item whose wallet frame runs out of the gas it was given reverts the
+    ///      continue-mode batch with `ClaimInsufficientGas`, so estimation raises the limit,
+    ///      instead of reporting a failure the caller paid for. Given enough, it is paid.
+    function test_ContinueModeRevertsWhenAnItemRunsOutOfGas() public {
+        GasHungryWallet hungry = new GasHungryWallet();
+        hungry.setBurn(400_000);
+        SplitWallet real = _solo(alice);
+        vm.deal(address(real), 1 ether);
+        bytes memory input =
+            abi.encodeCall(IClaimRouter.claim, (_two(address(real), 0, address(hungry), 0), true));
+        // About 345,000 for the second item: above the 200,000 minimum, below its need.
+        (bool ok, bytes memory data) = address(router).call{ gas: 800_000 }(input);
+        assertFalse(ok);
+        assertEq(_selector(data), IClaimRouter.ClaimInsufficientGas.selector);
+        (uint256 index, uint256 available) = abi.decode(_args(data), (uint256, uint256));
+        assertEq(index, 1);
+        assertGe(available, router.MIN_ITEM_GAS());
+        assertLt(available, 400_000);
+        assertEq(alice.balance, 0, "the whole batch reverted");
+
+        (, bytes memory output) = _estimate(input);
+        uint256[] memory amounts = abi.decode(output, (uint256[]));
+        assertEq(amounts[0], 1 ether);
+        assertEq(amounts[1], 1);
+        assertEq(hungry.releases(), 1);
+    }
+
+    /// @dev MONEY-3, signed items: the same holds for a signed release whose recipient's receipt
+    ///      costs more than the signed minimum leaves.
+    function test_ContinueSignedAtItsEstimatePaysAnItemAboveItsMinimum() public {
+        GasHungryPayee payee = new GasHungryPayee();
+        payee.setBurn(426_000);
+        SplitWallet w = _solo(alice);
+        vm.deal(address(w), 1 ether);
+        IReleaseVerifier.Authorization memory a =
+            _auth(w, ETH, 0, alice, address(payee), type(uint256).max, 3);
+        IClaimRouter.SignedClaim[] memory one = new IClaimRouter.SignedClaim[](1);
+        one[0] = IClaimRouter.SignedClaim(a, _sign(alicePk, a));
+        (, bytes memory output) = _estimate(abi.encodeCall(IClaimRouter.claimSigned, (one, true)));
+        assertEq(abi.decode(output, (uint256[]))[0], 1 ether);
+        assertEq(address(payee).balance, 1 ether);
+        assertTrue(verifier.nonceUsed(alice, 3));
+    }
+
+    /// @dev A failure that leaves the item's gas unspent is not a gas shortfall: continue mode
+    ///      reports it and goes on, at any gas that offers each item its minimum.
+    function test_ContinueModeStillSkipsAnItemThatFailsWithGasLeft() public {
+        SplitWallet empty = _solo(bob);
+        SplitWallet real = _solo(alice);
+        vm.deal(address(real), 1 ether);
+        bytes memory reason = abi.encodeWithSelector(ISplitWallet.NothingToRelease.selector, ETH, 0);
+        vm.expectEmit(true, true, true, true, address(router));
+        emit IClaimRouter.ClaimFailed(address(empty), ETH, 0, 0, reason.length, reason);
+        uint256[] memory amounts =
+            router.claim{ gas: 700_000 }(_two(address(empty), 0, address(real), 0), true);
+        assertEq(amounts[0], 0);
+        assertEq(amounts[1], 1 ether);
+    }
+
+    function _args(bytes memory data) internal pure returns (bytes memory args) {
+        args = new bytes(data.length - 4);
+        for (uint256 i; i < args.length; ++i) {
+            args[i] = data[i + 4];
+        }
     }
 
     function test_ZeroSuccessIsNotAFailureAndRepeatPaysOnce() public {

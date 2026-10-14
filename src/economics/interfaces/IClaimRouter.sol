@@ -11,9 +11,11 @@ import { IReleaseVerifier } from "./IReleaseVerifier.sol";
 ///         skipped in continue mode). Signed items call `releaseWithAuthorization`, so an artist
 ///         or any payee can batch its own releases with one signature per wallet. The router can
 ///         never redirect funds and never holds any.
-/// @dev Continue mode reverts unless every item can be offered its minimum gas, so gas estimation
-///      cannot settle on a limit where every item silently runs dry. An item that needs more than
-///      that minimum can still fail at the estimated limit; submit with more gas, or atomically.
+/// @dev Continue mode reverts unless every item can be offered its minimum gas, and reverts when an
+///      item fails after spending (all but EIP-150's 1/64 reserve of) the gas it was offered, so
+///      gas estimation cannot settle on a limit where an item silently runs dry, at any gas
+///      schedule. An item that fails with gas to spare is reported and skipped. An item that
+///      burns all the gas it gets reverts every continue-mode batch it is in; leave it out.
 ///      Declares itself through ERC-165, so the artist registry and the economics resolver can
 ///      refuse the router as a payout or fee recipient (`ProtocolContracts`).
 interface IClaimRouter is IERC165 {
@@ -44,7 +46,8 @@ interface IClaimRouter is IERC165 {
     /// @notice The batch has `count` items, more than its maximum.
     error TooManyClaims(uint256 count);
     /// @notice In continue mode, item `index` would get only `available` gas, less than its
-    ///         minimum; the whole batch reverts so gas estimation raises the limit.
+    ///         minimum, or it failed after spending (all but 1/64 of) the `available` gas it got;
+    ///         the whole batch reverts so gas estimation raises the limit.
     error ClaimInsufficientGas(uint256 index, uint256 available);
     /// @notice In atomic mode, item `index` failed and the whole batch reverted.
     error ClaimCallFailed(uint256 index, address wallet, uint256 size, bytes reason);
@@ -57,14 +60,17 @@ interface IClaimRouter is IERC165 {
     ///         per-transaction gas cap of 16,777,216.
     function MAX_CLAIMS() external view returns (uint256);
 
-    /// @notice In continue mode, the least gas each plain item must be offered.
+    /// @notice In continue mode, the least gas each plain item must be offered. A floor, not a
+    ///         promise: an item that needs more (a first release under Glamsterdam) makes the
+    ///         batch revert until it gets it.
     function MIN_ITEM_GAS() external view returns (uint256);
 
     /// @notice The most signed claims one batch may carry (each may verify an ERC-1271 signature
     ///         of up to 4 KiB), so a batch fits the EIP-7825 cap.
     function MAX_SIGNED_CLAIMS() external view returns (uint256);
 
-    /// @notice In continue mode, the least gas each signed item must be offered.
+    /// @notice In continue mode, the least gas each signed item must be offered. A floor, as
+    ///         {MIN_ITEM_GAS} is.
     function MIN_SIGNED_ITEM_GAS() external view returns (uint256);
 
     /// @notice Releases every plain claim in order. In atomic mode any failure reverts the batch;

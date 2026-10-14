@@ -458,6 +458,41 @@ contract ClaimWalletAdversary {
     }
 }
 
+/// @dev A payee whose receipt costs `burn` gas: a stand-in, in Prague gas, for the state gas a
+///      first release creates under Glamsterdam (new slots and a new account), which Foundry
+///      cannot price. Given less, it runs out of gas.
+contract GasHungryPayee {
+    uint256 public burn;
+
+    function setBurn(uint256 burn_) external {
+        burn = burn_;
+    }
+
+    receive() external payable {
+        uint256 start = gasleft();
+        while (start - gasleft() < burn) { }
+    }
+}
+
+/// @dev A claim target whose `release` needs `burn` gas in its own frame before it returns 1, as a
+///      split wallet's first release does once its new slots cost Glamsterdam prices. Given less,
+///      the wallet frame itself runs out of gas.
+contract GasHungryWallet {
+    uint256 public burn;
+    uint256 public releases;
+
+    function setBurn(uint256 burn_) external {
+        burn = burn_;
+    }
+
+    function release(address, uint256) external returns (uint256) {
+        uint256 start = gasleft();
+        while (start - gasleft() < burn) { }
+        ++releases;
+        return 1;
+    }
+}
+
 /// @dev On receiving ETH, re-enters the router with a two-item continue-mode batch once.
 contract ClaimReentrantRecipient {
     IClaimRouter private immutable router;
