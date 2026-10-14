@@ -165,7 +165,8 @@ default when the sale starts".
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against
    Stream's item hash, and the media against the media hash, the content hash
-   and the content store's declared SHA-256. It then stores the record file ID,
+   and the content store's declared SHA-256, and caps each PREVIEW file's size
+   (`Limits.MAX_PREVIEW_BYTES`). It then stores the record file ID,
    the media file IDs and an ARTIST seed. Until then every per-token
    `IWorkRecords` call reverts with `RecordNotOpen`, and the renderer shows
    core-only metadata.

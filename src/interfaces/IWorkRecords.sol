@@ -137,8 +137,10 @@ interface IWorkRecords {
 
     /// @notice Opens a work's record from its approved item and media. Permissionless (off the
     ///         auction-start path). Checks the item against Stream's stored item hash, `media`
-    ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`, and
-    ///         each file's declared SHA-256 against `IContentStore.sha256Of`; stores the record
+    ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`,
+    ///         each file's declared SHA-256 against `IContentStore.sha256Of`, and each PREVIEW
+    ///         file's size against `Limits.MAX_PREVIEW_BYTES` (an `Identity` file counting four
+    ///         times, so `tokenURI` keeps its 8M budget); stores the record
     ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license as approved.
     ///         Neither the record file's bounds nor the license text are checked here, so
     ///         neither can freeze a minted work: `setRecord` corrects a record before finalize,

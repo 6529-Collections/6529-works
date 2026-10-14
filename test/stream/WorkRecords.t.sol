@@ -381,6 +381,35 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).recordFileId, notJson);
     }
 
+    /// @dev A PREVIEW file is at most `Limits.MAX_PREVIEW_BYTES`, an `Identity` one counting four
+    ///      times; an unregistered one reverts with the store's error, like any media file.
+    function test_openRecord_previewCap() public {
+        MediaFile[] memory media = new MediaFile[](2);
+        media[0] = _mediaFile(40, FileRole.PRIMARY, false);
+        bytes memory big = new bytes(Limits.MAX_PREVIEW_BYTES / 4 + 1);
+        media[1] = MediaFile(_file(big, "image/png", false), sha256(big), FileRole.PREVIEW);
+        PackageItem memory item = _recordsItem(40, media);
+        _expectBadOpen(_mint(item), item, media);
+
+        // At the cap it opens.
+        media[0] = _mediaFile(41, FileRole.PRIMARY, false);
+        bytes memory fits = new bytes(Limits.MAX_PREVIEW_BYTES / 4);
+        media[1] = MediaFile(_file(fits, "image/png", false), sha256(fits), FileRole.PREVIEW);
+        item = _recordsItem(41, media);
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        assertTrue(records.isOpen(tokenId));
+
+        media[0] = _mediaFile(42, FileRole.PRIMARY, false);
+        media[1].fileId = keccak256("unregistered preview");
+        item = _recordsItem(42, media);
+        tokenId = _mint(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, media[1].fileId)
+        );
+        records.openRecord(tokenId, item, media);
+    }
+
     function _expectBadOpen(uint256 tokenId, PackageItem memory item, MediaFile[] memory media)
         internal
     {

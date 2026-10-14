@@ -201,3 +201,7 @@
   after it, `ar://` and a 43-character transaction ID or `ipfs://` and a CIDv1 of the fixed
   profile (`bafkrei`/`bafybei`, 59 characters). A locator the artist adds after finalize is
   held: `preferredLocator` serves it only through the storage operator's file preference.
+- Records (CONTENT-1): `openRecord` refuses a PREVIEW file over `Limits.MAX_PREVIEW_BYTES`
+  (16 KiB stored, `Identity` counted four times). With the content-address locators this
+  restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once
+  (`test/integration/TokenUriBudget.t.sol`: at most 7.8M, `Editions.uri` included).

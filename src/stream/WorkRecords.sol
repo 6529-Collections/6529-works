@@ -139,9 +139,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      minted work: an invalid record renders core-only metadata until the artist sets a
     ///      valid one, and `finalize` enforces both. Trust obligation: the media commitments
     ///      checked here (1 to 32 files, the PRIMARY first and alone, its SHA-256 equal to
-    ///      `item.contentHash`, every declaration matching the content store) are not checked
-    ///      at mint, so a mis-committed item mints and can never open. The curation signer's
-    ///      tooling MUST simulate `openRecord` for an item before attesting it.
+    ///      `item.contentHash`, every declaration matching the content store, every PREVIEW
+    ///      file within `Limits.MAX_PREVIEW_BYTES`) are not checked at mint, so a
+    ///      mis-committed item mints and can never open. The curation signer's tooling MUST
+    ///      simulate `openRecord` for an item before attesting it.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external
     {
@@ -159,10 +160,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         for (uint256 i; i < files; ++i) {
             MediaFile calldata file = media[i];
             // Reverts with the store's `ContentFileUnknown` for an unregistered file.
-            if (
-                store.sha256Of(file.fileId) != file.sha256Hash
-                    || (file.role == FileRole.PRIMARY) != (i == 0)
-            ) revert InvalidRecordData(tokenId);
+            bytes32 declared = file.role == FileRole.PREVIEW
+                ? _previewSha(tokenId, file.fileId)
+                : store.sha256Of(file.fileId);
+            if (declared != file.sha256Hash || (file.role == FileRole.PRIMARY) != (i == 0)) {
+                revert InvalidRecordData(tokenId);
+            }
             list[i] = file.fileId;
             roles |= uint256(file.role) << (8 * i);
         }
@@ -709,6 +712,25 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             length > Limits.MAX_RECORD_BYTES || encoding != uint256(IContentStore.Encoding.Identity)
                 || !IContentStore(contentStore).isComplete(fileId)
         ) revert UnknownRecordFile(fileId);
+    }
+
+    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId`, which must be within
+    ///      `Limits.MAX_PREVIEW_BYTES`, an `Identity` file counting four times. `fileInfo` is
+    ///      read in place as in `_checkRecordFile`; a store revert (`ContentFileUnknown`)
+    ///      propagates.
+    function _previewSha(uint256 tokenId, bytes32 fileId) private view returns (bytes32 sha) {
+        (bool ok, bytes memory info) =
+            contentStore.staticcall(abi.encodeCall(IContentStore.fileInfo, (fileId)));
+        uint256 length;
+        uint256 encoding;
+        assembly ("memory-safe") {
+            if or(iszero(ok), lt(mload(info), 0xc0)) { revert(add(info, 0x20), mload(info)) }
+            sha := mload(add(info, 0x40))
+            length := mload(add(info, 0x60))
+            encoding := mload(add(info, 0xa0))
+        }
+        if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
+        if (length > Limits.MAX_PREVIEW_BYTES) revert InvalidRecordData(tokenId);
     }
 
     function _requireMedia(uint256 tokenId, bytes32 fileId) private view {

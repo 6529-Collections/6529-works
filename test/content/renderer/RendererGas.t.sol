@@ -755,7 +755,9 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 }
 
-/// @dev The budget proof (decision H2, round 3): every cap at once. Each class of byte and each
+/// @dev The record matrix (decision H2, round 3): every cap at once, with the mocks. The budget
+///      proof proper, its dearest rows with every satellite cap as well on the real stack, is
+///      `test/integration/TokenUriBudget.t.sol`. Each class of byte and each
 ///      limit is bounded on its own, but a record can sit at all of them, and its cost is their
 ///      sum. The record here has the most attributes (each with all four members it may have), the
 ///      most `%`, the most units in members, an array or a nested object, white space (before

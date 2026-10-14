@@ -462,7 +462,9 @@ record at every cap at once (32 attributes of four members, 512 `%`, the rest of
 the units as top-level members, an array or a nested object, and the rest of its
 12 KiB the costliest mix of UTF-8, or white space in the attributes) costs at most
 7.8M gas with 256 KiB of attested `Base64` next to it and 6.4M with the dearest
-script; those are the rows of `RendererGasBudgetTest`, the budget proof (see Gas). Because the whole file is
+script; those are the rows of `RendererGasBudgetTest`, the record matrix, and the
+dearest of them are measured again on the real stack, with every other cap at once,
+by the budget proof (see Gas). Because the whole file is
 percent-escaped first, `%` and `#` inside it survive the URI.
 
 ### Output
@@ -523,7 +525,11 @@ name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
 - **Fields.** `image` is the primary when it is an image and inlined; otherwise the
   on-chain preview if the work lists a `PREVIEW` image that is complete, attested if
   `Base64`, and within `PREVIEW_LIMIT` (65,536, cost-weighted like the threshold),
-  else the primary's locator for an image, else the preview's locator.
+  else the primary's locator for an image, else the preview's locator. A 6529 Stream
+  work's previews are smaller still: `WorkRecords.openRecord` refuses a `PREVIEW` file
+  over `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity` file counting four
+  times, so 4 KiB of `Identity` or 16 KiB of `Base64` text), which keeps the budget
+  below.
   `animation_url` is the primary when it is not an image (inline, or its locator).
   `media_url` is the primary's preferred locator whenever the primary is not
   inlined.
@@ -610,14 +616,41 @@ read, for the dearest to validate (8 KiB of ASCII and U+0800 alternating). A scr
 over the size or the `<` cap is served by locator by `tokenURI` (0.6M); `fullTokenURI`
 wraps a script up to 128 KiB (its limit is the size check of the full form).
 
-**The budget proof.** A record at every cap at once, with the dearest media: a
+**The budget proof** is `test/integration/TokenUriBudget.t.sol`, on the real stack
+(Stream, WorkRecords, the content store, the statement log and this renderer, as
+deployed): every cap a work can reach at once, measured cold through
+`Stream.tokenURI` and `Editions.uri`. The dearest records of the matrix below (white
+space in all the room the attributes leave, before each or after every token, with
+top-level members or an array of zeros, and the dearest UTF-8 fill), next to 256 KiB
+of attested `Base64` `text/html` (inlined), a `PREVIEW` image at the WorkRecords cap
+(4 KiB of `Identity` or 16 KiB of attested `Base64`, inlined), 32 media files, a
+64-byte `LicenseRef` license whose text file is served by locator, 16 locators on it
+(the longest, 66 bytes, served last), a collection name of 256 `%`, an ARTIST seed
+and a dispute statement:
+
+| Row | Gas |
+| --- | --- |
+| white space before each attribute, an array of zeros (the dearest) | 7.75M |
+| the same, rendered as the edition of its master (`Editions.uri`) | 7.76M |
+| the same, the preview as 16 KiB of `Base64` | 7.66M |
+| white space after every token, an array of zeros | 7.73M |
+| white space before each attribute, top-level members | 7.73M |
+| `aa` and a 2-byte sequence, an array of zeros | 7.39M |
+
+The WorkRecords caps are what make it hold. Without them the same work cost up to
+9.8M: a locator could be 2 KiB of `%` (each escaped at about 470 gas), and a preview
+up to the renderer's own limit (8 KiB of `Identity` or 64 KiB of `Base64`, up to 1.2M
+more).
+
+**The record matrix.** A record at every cap at once, with the dearest media: a
 non-image primary of 256 KiB attested `Base64`, the script of `</script` with the most
-`<`, or a script of ASCII and U+0800, an 8 KiB `Identity` preview, a collection whose
+`<`, or a script of ASCII and U+0800, an 8 KiB `Identity` preview (the renderer's own
+limit, above what WorkRecords lets a work have), a collection whose
 name is all `%`, a seed, a dispute and a `LicenseRef` license with a text file and a
 locator. The record is 12 KiB with 32 attributes of four members (the most each may
 have), 512 `%` and the rest of the 1,024 units as top-level members, an array of zeros
 or members of a nested object, and the rest of its bytes one fill. All are accepted,
-cold, and asserted under 8M by `RendererGasBudgetTest`:
+cold, and asserted under 8M by `RendererGasBudgetTest`, with the mocks:
 
 | The fill of the rest of the record (top-level members) | 256 KiB `Base64` | script of `a` and U+0800 |
 | --- | --- | --- |
