@@ -40,7 +40,10 @@ attestation), which can then never be registered. Revocation is per root, not
 per item: an item listed in two roots stays consumable through the other, so
 the guardian revokes every root that lists it. Disabling a curation signer
 stops only future registrations. The verifier is swapped through the 30-day
-class: compare-and-set, ERC-165 checked, code-hash pinned, never a no-op.
+class: compare-and-set, ERC-165 checked, code-hash pinned, never a no-op. The
+pinned hash is checked again at every registration (`InvalidDependency`), so
+code that replaced the reviewed code at the verifier's address registers
+nothing.
 
 **Consent is per account.** An acceptance is recorded as
 `acceptedAs[root][account] = artistId` for the account that the item lists,

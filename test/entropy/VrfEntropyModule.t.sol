@@ -17,6 +17,13 @@ import {
     ReentrantVrfCoordinator
 } from "test/mocks/EntropyMocks.sol";
 
+/// @dev Different bytecode, same storage and functions as the mock (DEPS-6).
+contract AlteredVrfCoordinator is MockVrfCoordinator {
+    function altered() external pure returns (bool) {
+        return true;
+    }
+}
+
 /// @notice Requests, the package gate, fulfilment, repeats and reads of the VRF entropy module.
 contract VrfEntropyModuleTest is EntropyBase {
     event SeedLinked(bytes32 indexed itemHash, bytes32 indexed contentHash);
@@ -646,6 +653,36 @@ contract VrfEntropyModuleTest is EntropyBase {
         assertFalse(module.isDelivered(items[0]));
         coordinator.fulfill(id, 5);
         assertEq(module.seedOf(items[0]), bytes32(uint256(5)));
+    }
+
+    // ------------------------------------------------------------------ the pinned coordinator
+
+    /// @dev DEPS-6: the coordinator's code hash is checked at every use, not only at install. If
+    ///      the code at the pinned address no longer has the pinned hash, requests and deliveries
+    ///      stop until governance installs a coordinator again.
+    function test_Pin_ACoordinatorWhoseCodeChangedIsRefused() public {
+        uint256 id = _request(0);
+        bytes32 pinned = address(coordinator).codehash;
+        vm.etch(address(coordinator), address(new AlteredVrfCoordinator()).code);
+        bytes32 actual = address(coordinator).codehash;
+        assertTrue(actual != pinned);
+        bytes memory mismatch = abi.encodeWithSelector(
+            VrfEntropyModule.CodeHashMismatch.selector, address(coordinator), pinned, actual
+        );
+
+        vm.expectRevert(mismatch);
+        _request(1);
+        vm.expectRevert(mismatch);
+        coordinator.deliver(address(module), id, _oneWord(7));
+        assertFalse(module.isDelivered(items[0]));
+
+        // A swap pins the code that is there now (here, the altered code at a new address).
+        AlteredVrfCoordinator next = new AlteredVrfCoordinator();
+        _swap(address(next));
+        vm.prank(stranger);
+        uint256 again = module.requestSeed(_item(1), root, proofs[1]);
+        next.fulfill(again, 8);
+        assertEq(module.seedOf(items[1]), bytes32(uint256(8)));
     }
 
     // ------------------------------------------------------------------ one draw per content

@@ -144,7 +144,9 @@ strong as**:
    `setAuthority`).
 
 The install checks (compare-and-set, ERC-165, code present, not an EIP-7702
-account, reviewed code hash) bind bytecode, not behaviour. What the log adds is
+account, reviewed code hash) bind bytecode, not behaviour. The code hash is
+checked again at every ARTIST authorization (`ResolverCodeHashMismatch`), not
+only at install. What the log adds is
 visibility: every ARTIST entry records the resolver that vouched for it, in its
 entry hash and its event, and every swap emits `ArtistResolverSet`. A reader can
 therefore discard or flag the entries of any resolver it does not trust. OWNER

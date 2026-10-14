@@ -92,6 +92,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     address public stream;
     /// @inheritdoc IPackageRegistry
     address public editions;
+    /// @dev The verifier's pinned code hash, checked again at every registration, not only at
+    ///      install.
+    bytes32 private _verifierCodeHash;
 
     mapping(bytes32 root => Package) private _packages;
     mapping(bytes32 root => mapping(address account => uint256 artistId)) private _acceptedAs;
@@ -151,6 +154,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         Package storage p = _packages[packageRoot];
         if (p.status != PackageStatus.NONE) revert PackageExists(packageRoot);
         ICurationVerifier v = verifier;
+        if (address(v).codehash != _verifierCodeHash) revert InvalidDependency(address(v));
         (bool approved, address signer) = v.isApproved(packageRoot, evidenceHash, attestation);
         if (!approved || evidenceHash == 0) revert NotApproved(packageRoot);
         p.status = PackageStatus.APPROVED;
@@ -304,7 +308,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IPackageRegistry
     /// @dev Governed: map to SUCCESSOR_SETTER (30 days). Reinstalling the current verifier is a
-    ///      no-op and reverts with `InvalidDependency`.
+    ///      no-op and reverts with `InvalidDependency`. The pinned code hash is checked again at
+    ///      every registration.
     function setVerifier(ICurationVerifier expected, ICurationVerifier next, bytes32 nextCodeHash)
         external
         restricted
@@ -508,6 +513,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         _requireInstallable(address(next), codeHash, type(ICurationVerifier).interfaceId);
         emit VerifierSet(address(verifier), address(next), codeHash);
         verifier = next;
+        _verifierCodeHash = codeHash;
     }
 
     /// @dev Installs (decision D8): ERC-165 support, the pinned code hash, not delegated.

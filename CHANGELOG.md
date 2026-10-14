@@ -162,8 +162,8 @@
   `SeedDelivered` is indexed by content hash.
 - Entropy (DEPS-2): the VRF callback creates no storage slot. The seed overwrites the word
   that held the request ID (`requestOf` reads zero once delivered), so a delivery costs about
-  32,000 gas under Glamsterdam, under a third of the 100,000 callback floor; the floor's
-  NatSpec and the entropy README give the Glamsterdam figures.
+  34,000 gas under Glamsterdam (with the DEPS-6 pin check), about a third of the 100,000
+  callback floor; the floor's NatSpec and the entropy README give the Glamsterdam figures.
 - Entropy (DEPS-5): `lowerCallbackGasLimit(expected, next)` lowers the VRF callback gas limit,
   never below the floor, in the 30-day SUCCESSOR_SETTER class (new genesis selector), so the
   module can follow a coordinator whose maximum Chainlink lowered below the limit. `setConfig`
@@ -188,3 +188,7 @@
   pre-mint outcomes are shown on the work and its edition. The precedence of a later outcome
   over earlier ones is documented, with the rule that each outcome restates those it keeps in
   force.
+- Pins (DEPS-6): the curation verifier (package registry), the VRF coordinator (entropy
+  module, at every request and delivery) and the artist resolver (statement log, at every
+  ARTIST authorization) are checked against their pinned code hash at every use, not only at
+  install.

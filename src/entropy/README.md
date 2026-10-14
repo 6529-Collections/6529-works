@@ -120,7 +120,7 @@ delegated account. The module applies the same checks to what it depends on:
 | Dependency | Checks |
 | --- | --- |
 | Package registry (constructor, immutable) | Has code, is not an EIP-7702 delegated account, answers ERC-165 for `IPackageRegistry`, and has the code hash passed as a constructor argument. |
-| VRF coordinator (constructor and `setCoordinator(expected, next, nextCodeHash)`) | Has code, is not an EIP-7702 delegated account, has the pinned code hash, and (for a swap) differs from the current coordinator. |
+| VRF coordinator (constructor and `setCoordinator(expected, next, nextCodeHash)`) | Has code, is not an EIP-7702 delegated account, has the pinned code hash, and (for a swap) differs from the current coordinator. The pinned hash is checked again at every request and delivery (`CodeHashMismatch`): code at that address without the pinned hash can neither request nor deliver. |
 
 The coordinator is a Chainlink contract with no ERC-165, so it gets the code and
 hash checks only.
@@ -133,7 +133,7 @@ current struct and reverts with `ExpectedValueMismatch` if it is stale.
 
 | Parameter | Bounds |
 | --- | --- |
-| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `setConfig` (`BoundedParameter`): each step may at most double it, never above the ceiling, never down (or left unchanged). Lowering it, never below the floor, is `lowerCallbackGasLimit` in the 30-day class, so the module can follow a coordinator whose maximum Chainlink lowered below the limit. The callback creates no storage slot and costs about 18,000 Prague gas with every slot cold, about 32,000 under Glamsterdam (measured, then repriced as ADR 0004 does), so the floor leaves a margin of three and a hostile setter cannot starve it. |
+| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `setConfig` (`BoundedParameter`): each step may at most double it, never above the ceiling, never down (or left unchanged). Lowering it, never below the floor, is `lowerCallbackGasLimit` in the 30-day class, so the module can follow a coordinator whose maximum Chainlink lowered below the limit. The callback creates no storage slot and costs about 20,000 Prague gas with every slot cold, about 34,000 under Glamsterdam (measured, then repriced as ADR 0004 does), so the floor leaves a margin of three and a hostile setter cannot starve it. |
 | Confirmations | 3 to 200 (the coordinator's own limits on Ethereum mainnet). |
 | Subscription ID, key hash | Nonzero. |
 | `retryDelay` (constructor, immutable) | 3 days to 30 days. Not an expiry: VRF v2.5 never expires a request on-chain, so a repeat waits until a delivery is plainly overdue. |
@@ -218,8 +218,8 @@ Delivered seeds never change.
 
 Measured by `test/entropy/VrfEntropyModule.t.sol` (see the test logs):
 
-- **Callback:** about 18,000 Prague gas with every slot cold and no new
-  storage slot; about 32,000 under Glamsterdam, where a new slot alone would
+- **Callback:** about 20,000 Prague gas with every slot cold and no new
+  storage slot; about 34,000 under Glamsterdam, where a new slot alone would
   cost about 111,000. The floor is 100,000.
 - **`requestSeed`:** about 176,000 gas including the two registry reads, hashing
   the item, a two-hash proof, four new storage slots (the item's content link,

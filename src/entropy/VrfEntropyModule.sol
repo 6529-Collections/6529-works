@@ -43,8 +43,8 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      `NotRequestable(itemHash)`. This keeps {requestSeed} open to anyone (the
 ///      artist, a relayer, a bot) with no privileged step, while the total possible spend is one
 ///      draw per approved VRF content, plus a repeat per `retryDelay` for each one whose draw
-///      never arrived. A guardian's `revokePackage` stops further requests at once. The gate is checked
-///      on every call, repeats included.
+///      never arrived. A guardian's `revokePackage` stops further requests at once. The gate is
+///      checked on every call, repeats included.
 ///
 ///      Repeat. A request still undelivered `retryDelay` seconds after it was made may be
 ///      requested again by anyone. A repeat ADDS a request and never invalidates an earlier one:
@@ -59,9 +59,11 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///
 ///      Trust. The coordinator can only deliver the seed of a content it was asked for, and the
 ///      first delivery is final: a delivered seed never changes. Governance chooses the
-///      coordinator ({setCoordinator}, 30-day class, compare-and-set, code hash pinned) and the
-///      request parameters ({setConfig}, 48-hour class, compare-and-set, with a raise-only
-///      callback gas limit; {lowerCallbackGasLimit} lowers it in the 30-day class). Request IDs are scoped to their coordinator, so a coordinator swap
+///      coordinator ({setCoordinator}, 30-day class, compare-and-set, code hash pinned and
+///      checked again at every request and delivery, so code that replaced the reviewed code at
+///      the pinned address is refused) and the request parameters ({setConfig}, 48-hour class,
+///      compare-and-set, with a raise-only callback gas limit; {lowerCallbackGasLimit} lowers it
+///      in the 30-day class). Request IDs are scoped to their coordinator, so a coordinator swap
 ///      orphans in-flight requests of the old one; each is requested again after `retryDelay`.
 contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The request parameters.
@@ -88,8 +90,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @notice The lowest callback gas limit. The callback creates no storage slot (the seed
-    ///         overwrites the request ID), so with every slot cold it costs about 18,000 Prague
-    ///         gas and about 32,000 under Glamsterdam's storage pricing: under a third of it.
+    ///         overwrites the request ID), so with every slot cold it costs about 20,000 Prague
+    ///         gas and about 34,000 under Glamsterdam's storage pricing: about a third of it.
     uint32 public constant MIN_CALLBACK_GAS = 100_000;
     /// @notice The absolute ceiling of the callback gas limit (the coordinator's own maximum).
     uint32 public constant MAX_CALLBACK_GAS = 2_500_000;
@@ -116,6 +118,9 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @inheritdoc IEntropyModule
     /// @dev The only caller of {rawFulfillRandomWords}.
     address public coordinator;
+    /// @dev The coordinator's pinned code hash, checked again at every use, not only at
+    ///      install.
+    bytes32 private _coordinatorCodeHash;
 
     VrfConfig private _config;
     /// @dev The draw of each content hash.
@@ -188,6 +193,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         retryDelay = retryDelay_;
         packageRegistry = packageRegistry_;
         coordinator = coordinator_;
+        _coordinatorCodeHash = coordinatorCodeHash;
         _config = c;
         emit CoordinatorSet(address(0), coordinator_, coordinatorCodeHash);
         emit ConfigSet(VrfConfig(0, 0, 0, 0, false), c);
@@ -241,6 +247,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
         VrfConfig memory c = _config;
         address coord = coordinator;
+        _checkCodeHash(coord, _coordinatorCodeHash);
         requestId = IVRFCoordinatorV2Plus(coord)
             .requestRandomWords(
                 IVRFCoordinatorV2Plus.RandomWordsRequest({
@@ -266,14 +273,16 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The VRF callback: stores the seed of the content `requestId` was made for.
     /// @dev Only the coordinator may call it, for a request ID it was issued by this module's
     ///      request. Any outstanding request of an undelivered content delivers, and the first
-    ///      delivery is final: a later delivery for the same content is a silent no-op that does not
-    ///      revert, so the oracle's fulfilment succeeds and nothing can be re-drawn. The seed is
-    ///      the random word unchanged, so anyone can check it against the oracle's proof. A
-    ///      malformed delivery reverts and is absorbed by the coordinator.
+    ///      delivery is final: a later delivery for the same content is a silent no-op that does
+    ///      not revert, so the oracle's fulfilment succeeds and nothing can be re-drawn. The seed
+    ///      is the random word unchanged, so anyone can check it against the oracle's proof. A
+    ///      malformed delivery, or code at the coordinator's address that no longer has the
+    ///      pinned hash, reverts and is absorbed by the coordinator.
     /// @param requestId The coordinator's request ID.
     /// @param randomWords The delivered words: exactly one.
     function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
         if (msg.sender != coordinator) revert OnlyCoordinatorCanFulfill(msg.sender, coordinator);
+        _checkCodeHash(msg.sender, _coordinatorCodeHash);
         bytes32 contentHash = _requests[msg.sender][requestId];
         if (contentHash == 0) revert UnknownRequest(requestId);
         Seed storage seed = _seeds[contentHash];
@@ -344,6 +353,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _checkCoordinator(next, nextCodeHash);
         emit CoordinatorSet(expected, next, nextCodeHash);
         coordinator = next;
+        _coordinatorCodeHash = nextCodeHash;
     }
 
     /// @notice The request parameters.

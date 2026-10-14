@@ -355,7 +355,10 @@ accounts and checks ERC-165, except where the target does not implement it:
 checks for code and that the log's artist resolver is the registry. Every installed dependency
 (verifier, renderer, consolidation source, entropy module, economics resolver,
 package registry, sale adapter, federation registry) supports ERC-165. Installs
-check it, pin the code hash and reject EIP-7702 delegated accounts.
+check it, pin the code hash and reject EIP-7702 delegated accounts. The curation
+verifier, the VRF coordinator, the statement log's artist resolver and the sale
+adapters' federation registry are also checked against their pinned hash at
+every use, not only at install.
 
 Each configuration epoch's manifest hash is recorded through the statement log's
 restricted `appendGovernanceManifest`. Governed functions are non-payable, and

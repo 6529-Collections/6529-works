@@ -33,6 +33,17 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ERC1271WalletMock } from "test/mocks/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
 
+/// @dev A verifier that approves every root: code that could take the place of the pinned one.
+contract ApproveEverythingVerifier {
+    function isApproved(bytes32, bytes32, bytes calldata) external pure returns (bool, address) {
+        return (true, address(0xBAD));
+    }
+
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return true;
+    }
+}
+
 contract PackageRegistryTest is CurationBase {
     // Golden vectors computed independently with `cast keccak` and `cast abi-encode`.
     bytes32 internal constant GOLDEN_MOVE_TYPEHASH =
@@ -1366,6 +1377,20 @@ contract PackageRegistryTest is CurationBase {
         bytes memory sig =
             _sig(signerKey1, next.approvalDigest(root, EVIDENCE, next.signerEpoch(signer1)));
         registry.registerPackage(root, EVIDENCE, abi.encode(signer1, sig));
+    }
+
+    /// @dev DEPS-6: the verifier's code hash is checked at every registration, so code that
+    ///      replaced the pinned code at the verifier's address (here one that approves anything)
+    ///      registers nothing.
+    function test_registerPackage_refusesAVerifierWhoseCodeChanged() public {
+        vm.etch(address(verifier), address(new ApproveEverythingVerifier()).code);
+        bytes32 root = keccak256("an unapproved root");
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(verifier))
+        );
+        registry.registerPackage(root, EVIDENCE, "");
+        (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
+        assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.NONE));
     }
 
     function test_setVerifier_keepsRegisteredApprovals() public {

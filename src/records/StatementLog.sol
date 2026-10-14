@@ -45,9 +45,10 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      roles never consult the AccessManager. But ARTIST authority is exactly as strong as the
 ///      resolver's code, whatever governs the resolver's answers, {setArtistResolver}, and the
 ///      AccessManager that can call it or replace this contract's authority. The code-hash pin
-///      binds bytecode, not behaviour. So {setArtistResolver} must map to the 30-day class, and
-///      every ARTIST entry records the resolver that vouched for it, in its hash and its event, so
-///      a swap can never pass unnoticed. OWNER authority is only as strong as the token contract.
+///      binds bytecode, not behaviour; it is checked again at every ARTIST authorization. So
+///      {setArtistResolver} must map to the 30-day class, and every ARTIST entry records the
+///      resolver that vouched for it, in its hash and its event, so a swap can never pass
+///      unnoticed. OWNER authority is only as strong as the token contract.
 ///      No statement is ever attributed to the AccessManager, with one exception: a governance
 ///      manifest (ADR 0002 section 6) written by {appendGovernanceManifest}, which records the
 ///      AccessManager as the signer of a statement about itself.
@@ -86,6 +87,9 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
 
     /// @notice The contract answering "is this account an artist of this subject?".
     address public artistResolver;
+    /// @dev The resolver's pinned code hash, checked again at every ARTIST authorization, not
+    ///      only at install.
+    bytes32 private _resolverCodeHash;
 
     mapping(bytes32 subjectKey => Chain) private _chains;
     mapping(bytes32 subjectKey => bytes32 entryHash) private _latestDispute;
@@ -337,8 +341,11 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     {
         if (role == Role.ARTIST) {
             address resolver = artistResolver;
-            return
-                resolver != address(0) && IArtistRoleResolver(resolver).isArtist(s.token, s.id, who);
+            if (resolver == address(0)) return false;
+            if (resolver.codehash != _resolverCodeHash) {
+                revert ResolverCodeHashMismatch(_resolverCodeHash, resolver.codehash);
+            }
+            return IArtistRoleResolver(resolver).isArtist(s.token, s.id, who);
         }
         if (role == Role.OWNER) return _owns(s.token, s.id, who);
         if (role != Role.CURATOR && role != Role.PLATFORM) return false;
@@ -393,6 +400,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         }
         emit ArtistResolverSet(artistResolver, next, codeHash);
         artistResolver = next;
+        _resolverCodeHash = codeHash;
     }
 
     /// @dev EIP-712 `hashStruct(Statement)`; also the statement's identity inside the entry hash.
