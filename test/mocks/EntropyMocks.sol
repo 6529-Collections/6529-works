@@ -33,8 +33,12 @@ contract MockVrfCoordinator is IVRFCoordinatorV2Plus {
     );
 
     error RequestsDisabled();
+    /// @dev The real coordinator's error for a callback gas limit above its maximum.
+    error GasLimitTooBig(uint32 have, uint32 want);
 
     uint256 public nextId = 1;
+    /// @dev The coordinator's maximum callback gas limit; zero means no maximum.
+    uint32 public maxGasLimit;
     /// @dev When nonzero, every request returns this ID (zero and duplicate-ID tests).
     uint256 public forcedId;
     bool public forceZero;
@@ -54,12 +58,20 @@ contract MockVrfCoordinator is IVRFCoordinatorV2Plus {
         disabled = value;
     }
 
+    /// @dev Chainlink can lower its coordinator's maximum (`setConfig` on the coordinator).
+    function setMaxGasLimit(uint32 value) external {
+        maxGasLimit = value;
+    }
+
     function requestRandomWords(RandomWordsRequest calldata req)
         external
         virtual
         returns (uint256 requestId)
     {
         if (disabled) revert RequestsDisabled();
+        if (maxGasLimit != 0 && req.callbackGasLimit > maxGasLimit) {
+            revert GasLimitTooBig(req.callbackGasLimit, maxGasLimit);
+        }
         requestId = forceZero ? 0 : (forcedId != 0 ? forcedId : nextId++);
         pending[requestId] = Pending(msg.sender, req.callbackGasLimit);
         emit RandomWordsRequested(

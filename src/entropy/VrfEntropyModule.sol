@@ -61,7 +61,7 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///      first delivery is final: a delivered seed never changes. Governance chooses the
 ///      coordinator ({setCoordinator}, 30-day class, compare-and-set, code hash pinned) and the
 ///      request parameters ({setConfig}, 48-hour class, compare-and-set, with a raise-only
-///      callback gas limit). Request IDs are scoped to their coordinator, so a coordinator swap
+///      callback gas limit; {lowerCallbackGasLimit} lowers it in the 30-day class). Request IDs are scoped to their coordinator, so a coordinator swap
 ///      orphans in-flight requests of the old one; each is requested again after `retryDelay`.
 contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @notice The request parameters.
@@ -308,6 +308,25 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         }
         _config = updated;
         emit ConfigSet(current, updated);
+    }
+
+    /// @notice Lowers the callback gas limit, never below `MIN_CALLBACK_GAS`. Governed (map to
+    ///         the 30-day `SUCCESSOR_SETTER` class), non-payable, compare-and-set: `expected` must
+    ///         equal the current limit.
+    /// @dev The coordinator refuses a request whose limit exceeds its own maximum, and Chainlink
+    ///      may lower that maximum. {setConfig} only raises the limit, so that a 48-hour setter
+    ///      cannot starve the callback; this slower path lets the module follow the coordinator
+    ///      down (6529 Stream pins the module, so a limit stuck above the maximum would end VRF
+    ///      works for the deployment), while the floor and the guardians' 30-day veto still
+    ///      protect the callback.
+    /// @param expected The current callback gas limit.
+    /// @param next The new, lower limit.
+    function lowerCallbackGasLimit(uint32 expected, uint32 next) external restricted {
+        VrfConfig memory previous = _config;
+        if (expected != previous.callbackGasLimit) revert ExpectedValueMismatch();
+        if (next >= expected || next < MIN_CALLBACK_GAS) revert InvalidConfig();
+        _config.callbackGasLimit = next;
+        emit ConfigSet(previous, _config);
     }
 
     /// @inheritdoc IEntropyModule

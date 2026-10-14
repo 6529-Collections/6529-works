@@ -103,10 +103,11 @@ repeats included.
 | `rawFulfillRandomWords` | The coordinator only | none |
 | `setConfig(expected, next)` | `Roles.PARAMETER_SETTER` | 48 hours, compare-and-set |
 | `setCoordinator(expected, next)` | `Roles.SUCCESSOR_SETTER` | 30 days, compare-and-set |
+| `lowerCallbackGasLimit(expected, next)` | `Roles.SUCCESSOR_SETTER` | 30 days, compare-and-set, never below the floor |
 
 Governed functions are non-payable and emit the previous and next values.
 `requestSeed` is not payable either; the subscription pays. The deploy
-configuration maps the two governed selectors as above; `test/entropy/VrfEntropyManaged.t.sol`
+configuration maps the three governed selectors as above; `test/entropy/VrfEntropyManaged.t.sol`
 configures the module under the real `GovernanceConfigurator` and proves the
 delay classes, the guardian's cancellation and that nothing is payable.
 
@@ -132,7 +133,7 @@ current struct and reverts with `ExpectedValueMismatch` if it is stale.
 
 | Parameter | Bounds |
 | --- | --- |
-| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `BoundedParameter`: each step may at most double it, never above the ceiling, never down (or left unchanged). The callback creates no storage slot and costs about 18,000 Prague gas with every slot cold, about 32,000 under Glamsterdam (measured, then repriced as ADR 0004 does), so the floor leaves a margin of three and a hostile setter cannot starve it. |
+| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `setConfig` (`BoundedParameter`): each step may at most double it, never above the ceiling, never down (or left unchanged). Lowering it, never below the floor, is `lowerCallbackGasLimit` in the 30-day class, so the module can follow a coordinator whose maximum Chainlink lowered below the limit. The callback creates no storage slot and costs about 18,000 Prague gas with every slot cold, about 32,000 under Glamsterdam (measured, then repriced as ADR 0004 does), so the floor leaves a margin of three and a hostile setter cannot starve it. |
 | Confirmations | 3 to 200 (the coordinator's own limits on Ethereum mainnet). |
 | Subscription ID, key hash | Nonzero. |
 | `retryDelay` (constructor, immutable) | 3 days to 30 days. Not an expiry: VRF v2.5 never expires a request on-chain, so a repeat waits until a delivery is plainly overdue. |
@@ -153,8 +154,8 @@ Delivered seeds never change.
 | --- | --- | --- |
 | VRF coordinator | Deliver the seed of a content for any request it was given; the first delivery is final | Pick which items are VRF, change a delivered seed, deliver for a request it was not given |
 | Anyone | Request a VRF item of an approved, unconsumed package (or join its content's draw); repeat it after `retryDelay` | Request an unapproved, revoked, consumed or non-VRF item, draw a second seed for a content, or request one already delivered |
-| `PARAMETER_SETTER` | Change the lane, subscription, confirmations, payment mode, and raise the gas limit | Lower the gas limit, exceed the bounds, change the coordinator |
-| `SUCCESSOR_SETTER` | Replace the coordinator (30 days, guardians can cancel) | Alter a delivered seed |
+| `PARAMETER_SETTER` | Change the lane, subscription, confirmations, payment mode, and raise the gas limit | Lower the gas limit (a 30-day `SUCCESSOR_SETTER` action), exceed the bounds, change the coordinator |
+| `SUCCESSOR_SETTER` | Replace the coordinator; lower the gas limit to no less than the floor (30 days, guardians can cancel) | Alter a delivered seed |
 
 - **First delivery wins (and why a repeat does not supersede).** Chainlink VRF
   v2.5 never expires a pending request on-chain, so an earlier request can

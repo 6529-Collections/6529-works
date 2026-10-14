@@ -331,7 +331,7 @@ interfaces name the role each governed selector is meant to map to:
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
 | PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted

@@ -839,6 +839,13 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "lowerCallbackGasLimit(uint32,uint32)",
+          "selector": "0x37f9925e",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [],

@@ -164,3 +164,7 @@
   that held the request ID (`requestOf` reads zero once delivered), so a delivery costs about
   32,000 gas under Glamsterdam, under a third of the 100,000 callback floor; the floor's
   NatSpec and the entropy README give the Glamsterdam figures.
+- Entropy (DEPS-5): `lowerCallbackGasLimit(expected, next)` lowers the VRF callback gas limit,
+  never below the floor, in the 30-day SUCCESSOR_SETTER class (new genesis selector), so the
+  module can follow a coordinator whose maximum Chainlink lowered below the limit. `setConfig`
+  stays raise-only.
