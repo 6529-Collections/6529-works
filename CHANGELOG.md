@@ -40,6 +40,8 @@
   built on them. Only an ADMIN grant or revocation (30 days) lifts it. The genesis example
   marks the suspendable roles and lists the manager's own functions, and
   `tools/check_genesis.py` checks both; readback names a suspended holder.
+- Deployment (GOV-3): off anvil, `Verify.s.sol` repeats the deploy's holder guards
+  (`DeployGuards.checkHolders` and `checkHoldersAgainst`) against the chain as it is now.
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

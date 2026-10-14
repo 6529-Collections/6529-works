@@ -469,6 +469,10 @@ The record is only an index; each check is made against the chain or the committ
 - the manifest file hashes to the recorded digest;
 - off anvil, the genesis file still matches the committed policy and names nothing the
   deployment lacks;
+- off anvil, the holders still pass the deploy's holder guards against the chain as it is
+  now: admin and guardian Safes with their current owners and thresholds, no shared signer,
+  and no contract of the deployment as a holder. A Safe owner change after genesis that the
+  deploy would refuse fails the readback;
 - the configurator's own `verify` (roles, delays and selector map), no role left with the
   configurator, and every target's authority;
 - every wired getter and default currency, the epoch-0 manifest, and PLATFORM's immediate

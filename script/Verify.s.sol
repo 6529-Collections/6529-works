@@ -34,7 +34,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         4. The manifest file (`MANIFEST_PATH`, by default the recorded path) hashes to the
 ///            recorded manifest digest; required off anvil.
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
-///            the deployment lacks (`DeployGuards`).
+///            the deployment lacks, and its holders pass the deploy's holder guards against the
+///            chain as it is now: Safes, signer separation, no deployment contract
+///            (`DeployGuards.checkHolders`, `checkHoldersAgainst`).
 ///         6. `VerifyV1.check`: every role, holder, delay and selector, no role left with the
 ///            configurator, every target's authority, every wired getter, and PLATFORM's
 ///            immediate path into `openSale`, `closeSale` and `addLocator`.
@@ -90,14 +92,7 @@ contract Verify is ScriptIO {
         string memory genesis = _read(vm.parseJsonString(record, ".genesisConfig"));
         GovernanceConfig.Config memory cfg = DeployV1.config(d, genesis);
         GovernanceConfig.Call[] memory wired = DeployV1.wiring(d, genesis, manifest);
-        if (!local) {
-            DeployGuards.checkNothingDropped(
-                d,
-                genesis,
-                keccak256(bytes(vm.parseJsonString(record, ".entropy"))) == keccak256("none")
-            );
-            DeployGuards.checkPolicy(d, genesis, _read(EXAMPLE_GENESIS), manifest);
-        }
+        if (!local) _checkGuards(record, d, genesis, cfg, manifest);
         VerifyV1.check(d, cfg, wired);
         uint256 fromBlock = vm.parseJsonUint(record, ".startBlock");
         _checkConfigured(d, cfg, wired, manifest, fromBlock);
@@ -151,6 +146,25 @@ contract Verify is ScriptIO {
 
     function _uint(string memory record, string memory key) private pure returns (uint256) {
         return vm.parseJsonUint(record, string.concat(".params.", key));
+    }
+
+    /// @dev Check 5: the deploy's off-anvil guards, repeated against the chain as it is now.
+    function _checkGuards(
+        string memory record,
+        DeployV1.Deployment memory d,
+        string memory genesis,
+        GovernanceConfig.Config memory cfg,
+        DeployV1.Manifest memory manifest
+    ) internal view {
+        string memory example = _read(EXAMPLE_GENESIS);
+        DeployGuards.checkNothingDropped(
+            d,
+            genesis,
+            keccak256(bytes(vm.parseJsonString(record, ".entropy"))) == keccak256("none")
+        );
+        DeployGuards.checkPolicy(d, genesis, example, manifest);
+        DeployGuards.checkHolders(genesis, example);
+        DeployGuards.checkHoldersAgainst(d, paramsOf(record), cfg);
     }
 
     /// @dev The record is for this chain; off anvil it carries no placeholder or stand-in.

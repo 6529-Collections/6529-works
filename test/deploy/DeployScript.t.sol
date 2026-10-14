@@ -954,6 +954,64 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
+    // ------------------------------------------------------------------ GOV-3: holders at readback
+
+    /// @dev An off-anvil deployment, recorded, with Verify's inputs set, 5 days later.
+    function _offAnvilRecord()
+        internal
+        returns (string memory record, DeployV1.Deployment memory d)
+    {
+        _sepolia();
+        vm.recordLogs();
+        d = deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        vm.warp(block.timestamp + 5 days);
+        verifier.verify(record);
+    }
+
+    /// GOV-3: Verify repeats the deploy's holder guards against the chain. After genesis the
+    /// cold admin Safe takes one of the hot admin's signers (an ordinary owner swap), which the
+    /// deploy refuses; the readback now refuses it too.
+    function test_GOV3_VerifyRepeatsTheHolderGuards() public {
+        (string memory record,) = _offAnvilRecord();
+        bytes memory shared = address(new MockSharedSignerSafe()).code;
+        vm.etch(_account("01"), shared);
+        vm.etch(_account("02"), shared);
+        address signer = MockSharedSignerSafe(_account("01")).SHARED();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector, _account("01"), _account("02"), signer
+            )
+        );
+        verifier.verify(record);
+        // A guardian Safe that lost its code (or was never a Safe) is refused as well.
+        vm.etch(_account("01"), address(new MockSafe()).code);
+        vm.etch(_account("02"), address(new MockSafe()).code);
+        vm.etch(_account("13"), "");
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "GUARDIAN", _account("13"))
+        );
+        verifier.verify(record);
+    }
+
+    /// GOV-3: a genesis file naming a contract of the deployment as a holder fails readback.
+    function test_GOV3_VerifyRefusesADeploymentContractAsAHolder() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        string memory platform = vm.toLowercase(vm.toString(_account("51")));
+        string memory edited = vm.replace(_filled(), platform, vm.toString(address(d.stream)));
+        assertTrue(keccak256(bytes(edited)) != keccak256(bytes(_filled())), "edited");
+        verifier.setFile(GENESIS, bytes(edited));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsADeploymentContract.selector, Roles.PLATFORM, address(d.stream)
+            )
+        );
+        verifier.verify(record);
+    }
+
     /// @dev A fresh verifier and deployment (the harness keeps logs across calls).
     function _reset() internal returns (string memory record, DeployV1.Deployment memory d) {
         deployer = new DeployHarness();
