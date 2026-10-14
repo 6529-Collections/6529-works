@@ -11,7 +11,7 @@ touch this module. A package item opts in with seed policy `VRF`.
 
 | File | Role |
 | --- | --- |
-| `VrfEntropyModule.sol` (interface: [`IEntropyModule`](../interfaces/IEntropyModule.sol)) | Requests a seed for a package item, stores it once the coordinator delivers it, answers `isDelivered`, `seedOf`, `requestOf` and ERC-165. Governed `setConfig` and `setCoordinator`. |
+| `VrfEntropyModule.sol` (interface: [`IEntropyModule`](../interfaces/IEntropyModule.sol)) | Requests the seed of a package item's content, stores it once the coordinator delivers it, answers `isDelivered`, `seedOf`, `requestOf` (by item hash) and ERC-165. Governed `setConfig` and `setCoordinator`. |
 | `IVRFCoordinatorV2Plus.sol` | The one coordinator function the module calls (`requestRandomWords`), declared locally. There is no Chainlink dependency. |
 
 Tests are in [`test/entropy/`](../../test/entropy), mocks in
@@ -21,11 +21,13 @@ Tests are in [`test/entropy/`](../../test/entropy), mocks in
 
 1. **Request.** Anyone calls `requestSeed(item, packageRoot, proof)` for a VRF
    item of an approved package, before any token exists. The module hashes the
-   item itself, checks the gate (below), calls the coordinator and records the
-   request ID.
+   item itself, checks the gate (below) and links the item to its content's
+   draw (`SeedLinked`). If the content has no draw yet, it calls the coordinator
+   and records the request ID; if the content's draw is delivered or pending,
+   the item only joins it and the call returns zero.
 2. **Delivery.** The coordinator calls `rawFulfillRandomWords(requestId,
-   words)`. The module stores `bytes32(words[0])` under the item hash and emits
-   `SeedDelivered`. It calls nothing: not the token, not the auction.
+   words)`. The module stores `bytes32(words[0])` under the content hash and
+   emits `SeedDelivered`. It calls nothing: not the token, not the auction.
 3. **Start.** The auction's `start` requires `isDelivered(itemHash)`, then
    consumes the item, mints and opens the 24-hour clock in one transaction.
    The Stream reads the seed with `seedOf(itemHash)` through the item hash it
@@ -34,8 +36,17 @@ Tests are in [`test/entropy/`](../../test/entropy), mocks in
    made may be requested again by anyone. A repeat **adds** a request and never
    invalidates an earlier one: a delivery for any outstanding request is
    accepted, **the first delivery fixes the seed**, and a later delivery for the
-   same item is a silent no-op (it does not revert, so the oracle's fulfilment
+   same content is a silent no-op (it does not revert, so the oracle's fulfilment
    succeeds).
+
+**One draw per content.** The draw is keyed by the item's content hash, the
+package registry's uniqueness key, not by the item hash. Every approved item
+carrying the same work reads the same seed: a revised package of the work, or
+the rightful artist's item after an upheld dispute released the content. A
+work has exactly one seed, whichever package lists it. The reads stay
+keyed by item hash through the link, so an item that never called
+`requestSeed` reads as undelivered (and cannot start) until it links, which
+costs one storage slot and no oracle request.
 
 Nothing is in custody while a seed is outstanding, so a missing delivery
 delays a work but never strands one. The seed is the VRF output unchanged, so
@@ -59,7 +70,8 @@ of these hold, and any failure is `NotRequestable(itemHash)`:
    consumed, and its content hash was not claimed by another item (either way
    it could never mint).
 
-The gate runs on every call, repeats included.
+It also refuses an item with a zero content hash. The gate runs on every call,
+repeats included.
 
 **Why this and not a fee or a fixed caller.**
 - **A fee** would have to track the oracle's cost, which moves with gas prices
@@ -72,13 +84,13 @@ The gate runs on every call, repeats included.
   block honest requests.
 - **The package gate** keeps requests open to anyone (the artist, a relayer, a
   bot) with no privileged step. The total possible spend is one draw per VRF
-  item the network approved, plus one repeat per `retryDelay` for each item
-  whose draw never arrived. The curation signer, the party consent and the
+  content the network approved, plus one repeat per `retryDelay` for each
+  content whose draw never arrived. The curation signer, the party consent and the
   guardian's revocation already bound that set.
 
 **Accepted limits.**
-- A hostile approved package with many VRF items could still drain the
-  subscription, one draw per item. The guardian revokes it, and keeping the
+- A hostile approved package with many VRF works could still drain the
+  subscription, one draw per content. The guardian revokes it, and keeping the
   subscription balance topped up in small amounts bounds the loss.
 - A request made before a revocation still delivers; the seed can never be
   used because the item can no longer mint.
@@ -127,7 +139,7 @@ The coordinator is changeable (`setCoordinator(expected, next, nextCodeHash)`,
 30 days) because the Stream and the auction hold this module's address
 immutably: when Chainlink retires a coordinator, the module must be able to
 follow. A swap affects only undelivered items. Every request is remembered under
-the coordinator that issued it (`coordinator => requestId => item`), so the old
+the coordinator that issued it (`coordinator => requestId => content`), so the old
 coordinator can no longer deliver, the new one cannot deliver what the old one
 issued, and the two may use the same numbers, even across A to B to A. Requests
 the old coordinator still held are requested again after `retryDelay`.
@@ -137,8 +149,8 @@ Delivered seeds never change.
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| VRF coordinator | Deliver the seed of an item for any request it was given; the first delivery is final | Pick which items are VRF, change a delivered seed, deliver for a request it was not given |
-| Anyone | Request a VRF item of an approved, unconsumed package; repeat it after `retryDelay` | Request an unapproved, revoked, consumed or non-VRF item, or one already delivered |
+| VRF coordinator | Deliver the seed of a content for any request it was given; the first delivery is final | Pick which items are VRF, change a delivered seed, deliver for a request it was not given |
+| Anyone | Request a VRF item of an approved, unconsumed package (or join its content's draw); repeat it after `retryDelay` | Request an unapproved, revoked, consumed or non-VRF item, draw a second seed for a content, or request one already delivered |
 | `PARAMETER_SETTER` | Change the lane, subscription, confirmations, payment mode, and raise the gas limit | Lower the gas limit, exceed the bounds, change the coordinator |
 | `SUCCESSOR_SETTER` | Replace the coordinator (30 days, guardians can cancel) | Alter a delivered seed |
 
@@ -218,4 +230,4 @@ Measured by `test/entropy/VrfEntropyModule.t.sol` (see the test logs):
 - Per-copy seeds (ADR 0001 §9; "1/1/x" is NextGen).
 - A fallback to another randomness source. VRF alone is acceptable.
 - Wiring into the Stream and the auction: those lanes read `isDelivered` and
-  `seedOf` by item hash.
+  `seedOf` by item hash (resolved through the item's content link).

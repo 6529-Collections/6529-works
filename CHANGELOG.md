@@ -156,3 +156,7 @@
   they already declare), and `EconomicsResolver` also refuses its factory's release
   verifier as a fee recipient. The resolver NatSpec, the economics README and the runbook
   name the system contracts still not recognised on-chain.
+- Entropy (DEPS-1): VRF seeds are drawn once per content hash. Every approved item with the
+  same content links to that draw (`SeedLinked`) and reads it by item hash; an item whose
+  content already has a delivered or pending draw joins it without a new oracle request.
+  `SeedDelivered` is indexed by content hash.

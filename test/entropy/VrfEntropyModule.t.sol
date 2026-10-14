@@ -7,6 +7,7 @@ import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EntropyBase } from "./EntropyBase.sol";
 import {
     MockPackageRegistry,
@@ -16,8 +17,9 @@ import {
 
 /// @notice Requests, the package gate, fulfilment, repeats and reads of the VRF entropy module.
 contract VrfEntropyModuleTest is EntropyBase {
+    event SeedLinked(bytes32 indexed itemHash, bytes32 indexed contentHash);
     event SeedRequested(bytes32 indexed itemHash, uint256 requestId);
-    event SeedDelivered(bytes32 indexed itemHash, uint256 requestId, bytes32 seed);
+    event SeedDelivered(bytes32 indexed contentHash, uint256 requestId, bytes32 seed);
     event RandomWordsRequested(
         uint256 indexed requestId,
         address indexed consumer,
@@ -509,7 +511,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     function test_Fulfill_StoresTheSeedAndEmits() public {
         uint256 id = _request(0);
         vm.expectEmit(true, false, false, true, address(module));
-        emit SeedDelivered(items[0], id, bytes32(uint256(123)));
+        emit SeedDelivered(_item(0).contentHash, id, bytes32(uint256(123)));
         coordinator.fulfill(id, 123);
 
         assertTrue(module.isDelivered(items[0]));
@@ -642,6 +644,91 @@ contract VrfEntropyModuleTest is EntropyBase {
         assertFalse(module.isDelivered(items[0]));
         coordinator.fulfill(id, 5);
         assertEq(module.seedOf(items[0]), bytes32(uint256(5)));
+    }
+
+    // ------------------------------------------------------------------ one draw per content
+
+    /// @dev Another item carrying item 0's content (its own one-item package): a revision of the
+    ///      same work, with a different record file and so a different item hash.
+    function _revision() internal returns (PackageItem memory item, bytes32 revisionRoot) {
+        item = _makeItem(300, SeedPolicy.VRF);
+        item.contentHash = _item(0).contentHash;
+        revisionRoot = WorksHashing.leaf(_hash(item));
+        registry.setStatus(revisionRoot, IPackageRegistry.PackageStatus.APPROVED);
+    }
+
+    function test_Content_TheFirstRequestLinksTheItem() public {
+        vm.expectEmit(true, true, false, false, address(module));
+        emit SeedLinked(items[0], _item(0).contentHash);
+        vm.expectEmit(true, false, false, true, address(module));
+        emit SeedRequested(items[0], 1);
+        assertEq(_request(0), 1);
+    }
+
+    function test_Content_ASecondItemJoinsTheDeliveredDrawWithoutARequest() public {
+        coordinator.fulfill(_request(0), 42);
+        (PackageItem memory item, bytes32 revisionRoot) = _revision();
+        bytes32 revision = _hash(item);
+        uint256 nextId = coordinator.nextId();
+        vm.recordLogs();
+        vm.prank(stranger);
+        assertEq(module.requestSeed(item, revisionRoot, new bytes32[](0)), 0);
+        assertEq(_countModuleLogs(IEntropyModule.SeedLinked.selector), 1);
+        assertEq(coordinator.nextId(), nextId, "the coordinator was not asked");
+        assertTrue(module.isDelivered(revision));
+        assertEq(module.seedOf(revision), bytes32(uint256(42)));
+        // Linked once: a repeat reverts as for the first item.
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.SeedAlreadyDelivered.selector, revision)
+        );
+        module.requestSeed(item, revisionRoot, new bytes32[](0));
+    }
+
+    function test_Content_ASecondItemJoinsAPendingDrawAndSharesItsClock() public {
+        uint256 first = _request(0);
+        (PackageItem memory item, bytes32 revisionRoot) = _revision();
+        bytes32 revision = _hash(item);
+        assertEq(module.requestSeed(item, revisionRoot, new bytes32[](0)), 0, "joined");
+        (uint256 requestId, uint64 requestedAt) = module.requestOf(revision);
+        assertEq(requestId, first);
+        assertEq(requestedAt, block.timestamp);
+        uint64 retryAt = uint64(block.timestamp + RETRY_DELAY);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RequestPending.selector, revision, retryAt)
+        );
+        module.requestSeed(item, revisionRoot, new bytes32[](0));
+        // Overdue, either item repeats the content's request; any delivery seeds both.
+        vm.warp(retryAt);
+        uint256 second = module.requestSeed(item, revisionRoot, new bytes32[](0));
+        assertTrue(second != 0 && second != first);
+        coordinator.fulfill(first, 9);
+        assertEq(module.seedOf(items[0]), bytes32(uint256(9)));
+        assertEq(module.seedOf(revision), bytes32(uint256(9)));
+        coordinator.fulfill(second, 10);
+        assertEq(module.seedOf(revision), bytes32(uint256(9)), "the first delivery wins");
+    }
+
+    /// @dev An item that never called `requestSeed` reads as undelivered, even when its content's
+    ///      seed exists: Stream then refuses to mint it until it links.
+    function test_Content_AnUnlinkedItemReadsAsUndelivered() public {
+        coordinator.fulfill(_request(0), 42);
+        (PackageItem memory item,) = _revision();
+        bytes32 revision = _hash(item);
+        assertFalse(module.isDelivered(revision));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.SeedNotDelivered.selector, revision));
+        module.seedOf(revision);
+        (uint256 requestId, uint64 requestedAt) = module.requestOf(revision);
+        assertEq(requestId, 0);
+        assertEq(requestedAt, 0);
+    }
+
+    function test_Gate_RejectsAnItemWithoutAContentHash() public {
+        PackageItem memory item = _makeItem(301, SeedPolicy.VRF);
+        item.contentHash = 0;
+        bytes32 itemRoot = WorksHashing.leaf(_hash(item));
+        registry.setStatus(itemRoot, IPackageRegistry.PackageStatus.APPROVED);
+        vm.expectRevert(_notRequestable(_hash(item)));
+        module.requestSeed(item, itemRoot, new bytes32[](0));
     }
 
     function test_SeedOf_RevertsBeforeDelivery() public {

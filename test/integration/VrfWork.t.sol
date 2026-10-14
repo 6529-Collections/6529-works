@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -102,5 +103,67 @@ contract VrfWorkFlowTest is IntegrationBase {
         assertFalse(_contains(stream.tokenURI(tokenId), seedTrait), "stored when the record opens");
         records.openRecord(tokenId, works[1].item, works[1].media);
         assertTrue(_contains(stream.tokenURI(tokenId), seedTrait));
+    }
+
+    /// @dev A revision of the VRF item, approved in its own root: the same content, media,
+    ///      record and parties, a different item hash (the sale currency spelled as the default).
+    function _revision() internal returns (bytes32 revisionRoot, bytes32 revisionItem) {
+        Work memory w = _package(root)[0];
+        w.item.sale.currency = CURRENCY_DEFAULT;
+        revisionRoot = _publish(_one(w));
+        _keep(revisionRoot, _one(w));
+        revisionItem = WorksHashing.itemHash(w.item);
+        assertTrue(revisionItem != itemHash, "a different item of the same content");
+    }
+
+    function _requestRevision(bytes32 revisionRoot) internal returns (uint256 requestId) {
+        Work[] memory revision = _package(revisionRoot);
+        vm.prank(anyone);
+        requestId = entropy.requestSeed(revision[0].item, revisionRoot, _proofOf(revision, 0));
+    }
+
+    /// @dev One seed per work, whatever package lists it: a revision approved after the seed was
+    ///      delivered joins the content's draw, and the coordinator is not asked again.
+    function test_ARevisionOfTheWorkReadsTheSameSeed() public {
+        uint256 word = uint256(keccak256("the work's one draw"));
+        coordinator.fulfill(_request(), word);
+        (bytes32 revisionRoot, bytes32 revisionItem) = _revision();
+        uint256 nextId = coordinator.nextId();
+
+        assertEq(_requestRevision(revisionRoot), 0, "joined, not requested");
+        assertEq(coordinator.nextId(), nextId, "the coordinator was not asked");
+        assertTrue(entropy.isDelivered(revisionItem));
+        assertEq(entropy.seedOf(revisionItem), bytes32(word));
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.SeedAlreadyDelivered.selector, revisionItem)
+        );
+        _requestRevision(revisionRoot);
+
+        Work[] memory revision = _package(revisionRoot);
+        (, uint256 tokenId) = _start(revisionRoot, revision, 0);
+        records.openRecord(tokenId, revision[0].item, revision[0].media);
+        (SeedPolicy policy, bytes32 seed) = records.seedOf(tokenId);
+        assertEq(uint8(policy), uint8(SeedPolicy.VRF));
+        assertEq(seed, bytes32(word), "the token carries the work's one draw");
+    }
+
+    /// @dev A revision approved while the draw is pending joins it too: one delivery seeds both
+    ///      items, and the revision may repeat only when the content's request is overdue.
+    function test_ARevisionJoinsAPendingDraw() public {
+        uint256 first = _request();
+        (bytes32 revisionRoot, bytes32 revisionItem) = _revision();
+        assertEq(_requestRevision(revisionRoot), 0, "joined the pending draw");
+        assertFalse(entropy.isDelivered(revisionItem));
+        (uint256 pendingId,) = entropy.requestOf(revisionItem);
+        assertEq(pendingId, first, "the content's pending request");
+        uint64 retryAt = uint64(block.timestamp + 3 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.RequestPending.selector, revisionItem, retryAt)
+        );
+        _requestRevision(revisionRoot);
+
+        coordinator.fulfill(first, 7);
+        assertEq(entropy.seedOf(revisionItem), bytes32(uint256(7)));
+        assertEq(entropy.seedOf(itemHash), bytes32(uint256(7)));
     }
 }

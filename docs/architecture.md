@@ -50,7 +50,7 @@ decisions win. The precise contract surfaces are the interfaces in
      |   |  Registry     |           |  pinned)    |   |  signed)        |
      |   +---------------+           +-------------+   +-----------------+
      |
-     +-- IEntropyModule (optional VRF, seeds keyed by item hash, before the start)
+     +-- IEntropyModule (optional VRF, one seed per content hash, before the start)
          IFederationRegistry (v1.1 placeholder; read by the sale adapters)
 ```
 
@@ -136,9 +136,11 @@ default when the sale starts".
    `acceptedAs[root][account] = artistId`; a first acceptance creates the
    identity and counts as artist activity.
 4. **Seed (VRF works only).** Anyone calls `IEntropyModule.requestSeed(item,
-   packageRoot, proof)` for an approved, unconsumed VRF item. The seed is keyed
-   by item hash. While no seed is fixed, anyone may add another request after
-   the retry delay (at least 3 days); the first delivery wins and later ones are
+   packageRoot, proof)` for an approved, unconsumed VRF item. The seed is drawn
+   once per content hash: every approved item carrying the same work links to
+   that one draw and reads it by item hash, so re-packaging a work cannot draw
+   again. While no seed is fixed, anyone may add another request after the
+   retry delay (at least 3 days); the first delivery wins and later ones are
    no-ops. Nothing is in custody yet, so nothing can get stuck.
 5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
    `revokeMove` cancels an unused one.
@@ -306,7 +308,7 @@ default when the sale starts".
 | Lead artist (current authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
 | Bound contracts | Stream consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts under artists; WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
-| VRF coordinator | Deliver a seed once per requested item | Choose which items are VRF, or change a delivered seed |
+| VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
 | 6529 delegation contract | Supply consolidations used as recovery cancellers and stagers | Execute a change before 7 days, or bypass the guardian veto |
 
 On-chain content uniqueness is defense in depth: the curation signer's SHA-256
