@@ -25,6 +25,8 @@ library DeployGuards {
     uint256 internal constant MIN_GUARDIANS = 3;
     /// @notice Off anvil, at least two curation signer keys.
     uint256 internal constant MIN_CURATION_SIGNERS = 2;
+    /// @notice Off anvil, every admin and guardian Safe needs at least two signatures.
+    uint256 internal constant MIN_THRESHOLD = 2;
     /// @notice The 6529 delegation contract on Ethereum mainnet (`DelegationManagementContract`,
     ///         github.com/6529-Collections/nftdelegation).
     address internal constant CANONICAL_DELEGATION = 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d;
@@ -50,10 +52,15 @@ library DeployGuards {
     error HolderNotASafe(string role, address account);
     error TooFewAdmins(uint256 count);
     error TooFewGuardians(uint256 count);
-    /// @notice Two admin Safes, or an admin Safe and a guardian Safe, share a signer: the cold
-    ///         admin must be able to recover from a lost hot admin, and the guardians must be
-    ///         able to veto the admins.
+    /// @notice Two of the admin and guardian Safes share a signer: the cold admin must be able
+    ///         to recover from a lost hot admin, the guardians must be able to veto the admins,
+    ///         and each guardian must be independent of the others.
     error SharedSigner(address safe, address other, address signer);
+    /// @notice An admin or guardian Safe needs fewer than `MIN_THRESHOLD` signatures.
+    error ThresholdTooLow(string role, address safe, uint256 threshold);
+    /// @notice An owner of an admin or guardian Safe has code (a nested Safe, another contract
+    ///         or an EIP-7702 delegated EOA), so its signers cannot be compared.
+    error NestedOwner(address safe, address owner);
     error TooFewCurationSigners(uint256 count);
     /// @notice A holder is a contract of this deployment or one of its dependencies.
     error HolderIsADeploymentContract(uint64 role, address account);
@@ -68,13 +75,14 @@ library DeployGuards {
     /// @notice Off-anvil checks of the genesis file alone: not the example itself, and every
     ///         holder reachable (M-1).
     ///         - ADMIN and GUARDIAN holders must be deployed Safes (code, not an EIP-7702
-    ///           delegated EOA, a nonzero `getThreshold()`, a `getOwners()` list).
+    ///           delegated EOA, a `getThreshold()` of at least `MIN_THRESHOLD`, a
+    ///           `getOwners()` list of keys without code).
     ///         - No holder may be a placeholder or a system address.
     ///         - At least `MIN_ADMINS` admins (hot and cold), `MIN_GUARDIANS` guardians and
     ///           `MIN_CURATION_SIGNERS` curation signers. `GovernanceConfig` rejects duplicate
     ///           grants, so the counts are of distinct accounts.
-    ///         - No signer is shared between two admin Safes, or between an admin Safe and a
-    ///           guardian Safe (owner decision 2).
+    ///         - No signer is shared between any two of the admin and guardian Safes (owner
+    ///           decisions 2 and 3).
     function checkHolders(string memory json, string memory example) internal view {
         if (keccak256(bytes(json)) == keccak256(bytes(example))) revert ExampleGenesisOffAnvil();
         uint256 holders;
@@ -101,23 +109,32 @@ library DeployGuards {
         _requireSeparateSigners(admins, nAdmins, guardians, nGuardians);
     }
 
-    /// @dev Every admin Safe's signers are disjoint from every other admin Safe's and from
-    ///      every guardian Safe's. (Guardian Safes may share signers with each other.)
+    /// @dev The signers of every admin and guardian Safe are pairwise disjoint: admins with
+    ///      admins, admins with guardians, and guardians with guardians.
     function _requireSeparateSigners(
         address[] memory admins,
         uint256 nAdmins,
         address[] memory guardians,
         uint256 nGuardians
     ) private view {
-        for (uint256 i; i < nAdmins; ++i) {
-            address[] memory mine = ownersOf("ADMIN", admins[i]);
-            for (uint256 j = i + 1; j < nAdmins; ++j) {
-                _disjoint(admins[i], mine, admins[j], ownersOf("ADMIN", admins[j]));
-            }
-            for (uint256 g; g < nGuardians; ++g) {
-                _disjoint(admins[i], mine, guardians[g], ownersOf("GUARDIAN", guardians[g]));
+        uint256 n = nAdmins + nGuardians;
+        for (uint256 i; i < n; ++i) {
+            (string memory role, address safe) = _safeAt(admins, nAdmins, guardians, i);
+            address[] memory mine = ownersOf(role, safe);
+            for (uint256 j = i + 1; j < n; ++j) {
+                (string memory otherRole, address other) = _safeAt(admins, nAdmins, guardians, j);
+                _disjoint(safe, mine, other, ownersOf(otherRole, other));
             }
         }
+    }
+
+    function _safeAt(
+        address[] memory admins,
+        uint256 nAdmins,
+        address[] memory guardians,
+        uint256 i
+    ) private pure returns (string memory role, address safe) {
+        return i < nAdmins ? ("ADMIN", admins[i]) : ("GUARDIAN", guardians[i - nAdmins]);
     }
 
     function _disjoint(address a, address[] memory ownersA, address b, address[] memory ownersB)
@@ -131,7 +148,8 @@ library DeployGuards {
         }
     }
 
-    /// @notice A Safe's `getOwners()`; fails closed (`HolderNotASafe`) when it has none.
+    /// @notice A Safe's `getOwners()`; fails closed (`HolderNotASafe`) when it has none, and
+    ///         refuses an owner with code (`NestedOwner`).
     function ownersOf(string memory role, address safe)
         internal
         view
@@ -141,18 +159,22 @@ library DeployGuards {
         if (!ok || ret.length < 64) revert HolderNotASafe(role, safe);
         owners = abi.decode(ret, (address[]));
         if (owners.length == 0) revert HolderNotASafe(role, safe);
+        for (uint256 i; i < owners.length; ++i) {
+            if (owners[i].code.length != 0) revert NestedOwner(safe, owners[i]);
+        }
     }
 
     /// @notice Reverts unless `account` looks like a deployed Safe: code that is not an EIP-7702
-    ///         delegation, and `getThreshold()` returning one nonzero word.
+    ///         delegation, and `getThreshold()` returning one word of at least `MIN_THRESHOLD`.
     function requireSafe(string memory role, address account) internal view {
         if (account.code.length == 0 || DelegatedEOA.isDelegated(account)) {
             revert HolderNotASafe(role, account);
         }
         (bool ok, bytes memory ret) = account.staticcall(abi.encodeWithSignature("getThreshold()"));
-        if (!ok || ret.length != 32 || abi.decode(ret, (uint256)) == 0) {
-            revert HolderNotASafe(role, account);
-        }
+        if (!ok || ret.length != 32) revert HolderNotASafe(role, account);
+        uint256 threshold = abi.decode(ret, (uint256));
+        if (threshold == 0) revert HolderNotASafe(role, account);
+        if (threshold < MIN_THRESHOLD) revert ThresholdTooLow(role, account, threshold);
     }
 
     /// @notice Addresses no key controls that a typo could still name: the system contracts

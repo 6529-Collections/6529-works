@@ -248,6 +248,51 @@ contract MockSharedSignerSafe {
     }
 }
 
+/// @notice A 1-of-1 Safe of one fixed key, wherever it is etched.
+contract MockOneKeySafe {
+    address public constant KEY = address(0xBAD0);
+
+    function getThreshold() external pure returns (uint256) {
+        return 1;
+    }
+
+    function getOwners() external pure returns (address[] memory owners) {
+        owners = new address[](1);
+        owners[0] = KEY;
+    }
+}
+
+/// @notice A 2-of-2 Safe of the same two fixed keys, wherever it is etched.
+contract MockTwoKeySafe {
+    address public constant KEY_A = address(0xBAD1);
+    address public constant KEY_B = address(0xBAD2);
+
+    function getThreshold() external pure returns (uint256) {
+        return 2;
+    }
+
+    function getOwners() external pure returns (address[] memory owners) {
+        owners = new address[](2);
+        owners[0] = KEY_A;
+        owners[1] = KEY_B;
+    }
+}
+
+/// @notice A 2-of-2 Safe whose owners are another Safe, `INNER`, and a key of its own.
+contract MockNestedOwnerSafe {
+    address public constant INNER = address(0x1EE7);
+
+    function getThreshold() external pure returns (uint256) {
+        return 2;
+    }
+
+    function getOwners() external view returns (address[] memory owners) {
+        owners = new address[](2);
+        owners[0] = INNER;
+        owners[1] = address(uint160(uint256(keccak256(abi.encode(address(this))))));
+    }
+}
+
 /// @notice A threshold but no `getOwners()`.
 contract MockSafeWithoutOwners {
     function getThreshold() external pure returns (uint256) {

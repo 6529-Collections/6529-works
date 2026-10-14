@@ -19,9 +19,12 @@ import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import {
     DeployHarness,
+    MockNestedOwnerSafe,
+    MockOneKeySafe,
     MockSafe,
     MockSafeWithoutOwners,
     MockSharedSignerSafe,
+    MockTwoKeySafe,
     MockZeroThresholdSafe,
     VerifyHarness
 } from "./ScriptHarness.sol";
@@ -444,15 +447,80 @@ contract DeployScriptTest is Test {
             )
         );
         deployer.prepare();
-        // Guardians may share signers with each other.
+        // GOV-4: guardian Safes share no signer with each other either.
         vm.etch(_account("02"), address(new MockSafe()).code);
         vm.etch(_account("11"), shared);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector, _account("11"), _account("12"), signer
+            )
+        );
+        deployer.prepare();
+        vm.etch(_account("12"), address(new MockSafe()).code);
         deployer.prepare();
         // A Safe must list its owners.
         vm.etch(_account("02"), address(new MockSafeWithoutOwners()).code);
         vm.expectRevert(
             abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "ADMIN", _account("02"))
         );
+        deployer.prepare();
+    }
+
+    /// GOV-4: one key behind every guardian Safe is refused: a 1-of-1 Safe is below the
+    ///        threshold floor, and 2-of-2 Safes of the same two keys share signers.
+    function test_GOV4_OneKeyBehindEveryGuardianSafeIsRefused() public {
+        _sepolia();
+        bytes memory oneKey = address(new MockOneKeySafe()).code;
+        vm.etch(_account("11"), oneKey);
+        vm.etch(_account("12"), oneKey);
+        vm.etch(_account("13"), oneKey);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.ThresholdTooLow.selector, "GUARDIAN", _account("11"), 1
+            )
+        );
+        deployer.prepare();
+        bytes memory twoKeys = address(new MockTwoKeySafe()).code;
+        vm.etch(_account("11"), twoKeys);
+        vm.etch(_account("12"), twoKeys);
+        vm.etch(_account("13"), twoKeys);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector,
+                _account("11"),
+                _account("12"),
+                MockTwoKeySafe(_account("11")).KEY_A()
+            )
+        );
+        deployer.prepare();
+        // The admins need the floor too.
+        _sepolia();
+        vm.etch(_account("01"), oneKey);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.ThresholdTooLow.selector, "ADMIN", _account("01"), 1
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// GOV-4: an owner with code (a nested Safe, any contract or an EIP-7702 delegated EOA) is
+    ///        refused, so it cannot hide a signer shared with another Safe.
+    function test_GOV4_ANestedOwnerIsRefused() public {
+        _sepolia();
+        address inner = MockNestedOwnerSafe(address(new MockNestedOwnerSafe())).INNER();
+        vm.etch(_account("01"), address(new MockNestedOwnerSafe()).code);
+        vm.etch(inner, address(new MockSafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.NestedOwner.selector, _account("01"), inner)
+        );
+        deployer.prepare();
+        vm.etch(inner, abi.encodePacked(hex"ef0100", makeAddr("delegate")));
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.NestedOwner.selector, _account("01"), inner)
+        );
+        deployer.prepare();
+        vm.etch(inner, "");
         deployer.prepare();
     }
 

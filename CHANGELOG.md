@@ -42,6 +42,9 @@
   `tools/check_genesis.py` checks both; readback names a suspended holder.
 - Deployment (GOV-3): off anvil, `Verify.s.sol` repeats the deploy's holder guards
   (`DeployGuards.checkHolders` and `checkHoldersAgainst`) against the chain as it is now.
+- Deployment (GOV-4): off anvil, every admin and guardian Safe needs a threshold of at least 2
+  (`ThresholdTooLow`) and owners without code (`NestedOwner`), and no two of the admin and
+  guardian Safes may share a signer, guardians included (`SharedSigner`).
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

@@ -485,3 +485,13 @@ veto, a captured wallet's contest decided by the vote, or the lapse.
 
 - **Re-measure on Sepolia:** start gas and the `tokenURI` and inline-threshold
   matrix, with the real Chainlink coordinator and the 6529 delegation contract.
+
+## Addendum (review of 14 October 2026)
+
+Accepted by the delivery owner. It extends the deployment guards above.
+
+- **Holder topology (owner decisions 2 and 3).** Off anvil, every admin and guardian
+  Safe needs a threshold of at least 2, and owners that are plain keys (no code, so no
+  nested Safe and no EIP-7702 delegation). No two of the admin and guardian Safes may
+  share a signer, guardians included. `Verify.s.sol` repeats these checks against the
+  chain as it is at readback.

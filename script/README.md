@@ -123,8 +123,8 @@ Delays and responsibilities are in the [role table](../src/governance/README.md)
 
 **Guardians.** They veto any scheduled operation and pause in an emergency, so they must be
 independent of the admins they check:
-- **Signers.** Use signers independent of the admin Safes; the script refuses a signer shared
-  with an admin Safe. Mix team and community members across the three Safes.
+- **Signers.** Use signers independent of the admin Safes and of the other guardian Safes; the
+  script refuses a signer shared between any two admin or guardian Safes. Mix team and community members across the three Safes.
 - **Monitoring.** Alert every guardian on the manager's `OperationScheduled`, `RoleGranted`,
   `RoleGrantDelayChanged` and `TargetAdminDelayUpdated` events. A hostile admin operation
   waits at least its delay class (up to 30 days), and a guardian cancels it in that window.
@@ -172,10 +172,14 @@ can operate is therefore permanent. Off anvil, the script refuses an ADMIN or GU
 in these cases:
 - it has no code;
 - it is an EIP-7702 delegated EOA;
-- it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list.
+- it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list;
+- its threshold is below 2 (`ThresholdTooLow`);
+- one of its owners has code: a nested Safe, another contract or an EIP-7702 delegated EOA
+  (`NestedOwner`). Owners must be plain keys, so the script can compare them.
 
-It also requires at least two admin Safes, the hot and the cold, and refuses a signer that two
-admin Safes share, or that an admin Safe shares with a guardian Safe.
+It also requires at least two admin Safes, the hot and the cold, and refuses a signer that any
+two of the admin and guardian Safes share: two admin Safes, an admin and a guardian Safe, or
+two guardian Safes (owner decision 3: independent guardians).
 
 The script cannot check that the owners are the right people, so check every Safe before the
 run:
@@ -190,7 +194,7 @@ done
 
 - Each Safe is on this chain, with the intended owners and threshold.
 - The hot and cold admin Safes share no signer.
-- Each guardian Safe is separate from the admins.
+- Each guardian Safe is separate from the admins and from the other guardians.
 - At least one owner of each Safe has signed a test transaction on it.
 
 ### 3. The genesis configuration
