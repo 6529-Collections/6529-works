@@ -45,6 +45,10 @@
 - Deployment (GOV-4): off anvil, every admin and guardian Safe needs a threshold of at least 2
   (`ThresholdTooLow`) and owners without code (`NestedOwner`), and no two of the admin and
   guardian Safes may share a signer, guardians included (`SharedSigner`).
+- Deployment (DEPS-3): on mainnet the VRF coordinator must be the canonical Chainlink v2.5
+  coordinator with its pinned code hash; off mainnet `VRF_COORDINATOR_CODEHASH` optionally
+  pins it. On mainnet, `Verify.s.sol` requires the canonical coordinator, Permit2 and
+  delegation contract with their pinned code, and no delegation mock.
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

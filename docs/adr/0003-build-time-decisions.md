@@ -495,3 +495,6 @@ Accepted by the delivery owner. It extends the deployment guards above.
   nested Safe and no EIP-7702 delegation). No two of the admin and guardian Safes may
   share a signer, guardians included. `Verify.s.sol` repeats these checks against the
   chain as it is at readback.
+- **Canonical dependencies on mainnet.** The deploy pins the Chainlink VRF v2.5
+  coordinator's address and runtime code hash, as it pins the delegation contract and
+  Permit2. The readback requires all three to be canonical, with their pinned code.

@@ -34,6 +34,13 @@ library DeployGuards {
     ///         the official Sepolia deployment, whose runtime code is byte-identical.
     bytes32 internal constant CANONICAL_DELEGATION_CODEHASH =
         0x28e32b740f699e25d2a1afac207a84e31197c0d4b87c1432c9c5c52c4c1e74e0;
+    /// @notice The Chainlink VRF v2.5 coordinator on Ethereum mainnet (docs.chain.link, "VRF
+    ///         v2.5 supported networks").
+    address internal constant CANONICAL_VRF_COORDINATOR =
+        0xD7f86b4b8Cae7D942340FF628F82735b7a20893a;
+    /// @notice Its runtime code hash (24,094 bytes), read from mainnet on 14 October 2026.
+    bytes32 internal constant CANONICAL_VRF_COORDINATOR_CODEHASH =
+        0xbe4ae0321fb1c74c80eea0c14c9c7b28c69ce17df15222e27b1e934cc98f5f61;
     /// @notice The official 6529 delegation deployment on Sepolia (the nftdelegation README).
     address internal constant SEPOLIA_DELEGATION = 0x8f86c644f845A077999939C69Bc787662377d915;
     uint256 internal constant SEPOLIA_CHAIN_ID = 11_155_111;

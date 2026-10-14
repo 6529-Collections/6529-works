@@ -333,7 +333,8 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
    | Variable | Value | Bounds |
    | --- | --- | --- |
-   | `VRF_COORDINATOR` | `0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B` | Must have code; its code hash is pinned |
+   | `VRF_COORDINATOR` | `0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B` | Must have code; its code hash is recorded. On mainnet it must be the canonical coordinator, `0xD7f86b4b8Cae7D942340FF628F82735b7a20893a`, with its pinned code hash (`DeployGuards`) |
+   | `VRF_COORDINATOR_CODEHASH` | Optional off mainnet: the coordinator's expected runtime code hash (`cast codehash`) | Must match when set |
    | `VRF_SUBSCRIPTION_ID` | The subscription ID | Nonzero |
    | `VRF_KEY_HASH` | A Sepolia gas lane. 6529Stream's Sepolia instance used `0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae`; confirm it on Chainlink's supported-networks page | Nonzero |
    | `VRF_CALLBACK_GAS_LIMIT` | Default 200,000 | 100,000 to 2,500,000 |
@@ -471,6 +472,8 @@ The record is only an index; each check is made against the chain or the committ
 - the CC0 text: WorkRecords and every product's default name the recorded file, which is
   complete and hashes to the pinned canonical digest;
 - the manifest file hashes to the recorded digest;
+- on mainnet, the recorded VRF coordinator, Permit2 and delegation contract are the canonical
+  contracts with their pinned code, and the delegation contract is no mock;
 - off anvil, the genesis file still matches the committed policy and names nothing the
   deployment lacks;
 - off anvil, the holders still pass the deploy's holder guards against the chain as it is
@@ -565,6 +568,7 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `AUCTION_INCREMENT_SHARE` | 5,000 (5% of 100,000) | Optional |
 | `VRF_COORDINATOR`, `VRF_SUBSCRIPTION_ID`, `VRF_KEY_HASH` | Unset: no entropy module | Required unless `NO_VRF=1` (step 7) |
 | `VRF_CALLBACK_GAS_LIMIT`, `VRF_CONFIRMATIONS`, `VRF_NATIVE_PAYMENT`, `VRF_RETRY_DELAY` | Defaults in step 7 | Optional |
+| `VRF_COORDINATOR_CODEHASH` | Unset | Optional off mainnet; must match the coordinator's code. On mainnet the canonical coordinator and its code hash are pinned |
 | `NO_VRF` | `0` | `1` declines the entropy module explicitly |
 | `DEPLOYMENT` | (Verify) | The record to verify |
 | `MANIFEST_PATH` | (Verify) the recorded path | The manifest file to hash again |

@@ -28,6 +28,7 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///        (`DeployGuards`);
 ///      - the CC0 text must hash to `DeployV1.CC0_LEGALCODE_SHA256`;
 ///      - Permit2 and the delegation contract must have code, and be canonical on mainnet;
+///      - on mainnet the VRF coordinator must be the canonical one with its pinned code hash;
 ///      - the entropy module is required unless declined with `NO_VRF=1`;
 ///      - nothing the genesis names may be left out.
 ///      On anvil, when the delegation contract has no code, a `DelegationManagementMock` is
@@ -50,6 +51,10 @@ contract Deploy is ScriptIO {
     error ConflictingParameters(string a, string b);
     error NoCode(string name, address account);
     error NonCanonicalOnMainnet(string name, address account);
+    /// @notice On mainnet, the canonical address holds code other than the pinned code.
+    error NonCanonicalCode(string name, address account, bytes32 codehash);
+    /// @notice The code hash differs from the one the operator pinned (`VRF_COORDINATOR_CODEHASH`).
+    error UnexpectedCodeHash(string name, bytes32 expected, bytes32 actual);
     /// @notice The account has no code, a zero balance and a zero nonce. The first payout to it
     ///         would create it, which under Glamsterdam costs whoever settles about 184K more
     ///         gas (ADR 0004). Fund it, or name a Safe.
@@ -207,7 +212,9 @@ contract Deploy is ScriptIO {
     }
 
     /// @dev The entropy module's parameters. Off anvil a VRF coordinator is required unless
-    ///      `NO_VRF=1` declines the module explicitly (6529 Stream pins it immutably).
+    ///      `NO_VRF=1` declines the module explicitly (6529 Stream pins it immutably). On mainnet
+    ///      it must be the canonical coordinator with its pinned code; elsewhere
+    ///      `VRF_COORDINATOR_CODEHASH`, when set, must match the coordinator's code.
     function _vrf(DeployV1.Params memory p, bool local) internal view {
         p.vrfCoordinator = _envAddress("VRF_COORDINATOR", address(0));
         uint256 declined = _envUint("NO_VRF", 0);
@@ -221,6 +228,20 @@ contract Deploy is ScriptIO {
         if (declined == 1) revert ConflictingParameters("VRF_COORDINATOR", "NO_VRF");
         if (p.vrfCoordinator.code.length == 0) revert NoCode("VRF_COORDINATOR", p.vrfCoordinator);
         p.vrfCoordinatorCodeHash = p.vrfCoordinator.codehash;
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            if (p.vrfCoordinator != DeployGuards.CANONICAL_VRF_COORDINATOR) {
+                revert NonCanonicalOnMainnet("VRF_COORDINATOR", p.vrfCoordinator);
+            }
+            if (p.vrfCoordinatorCodeHash != DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH) {
+                revert NonCanonicalCode(
+                    "VRF_COORDINATOR", p.vrfCoordinator, p.vrfCoordinatorCodeHash
+                );
+            }
+        }
+        bytes32 pinned = _envBytes32("VRF_COORDINATOR_CODEHASH", bytes32(0));
+        if (pinned != bytes32(0) && pinned != p.vrfCoordinatorCodeHash) {
+            revert UnexpectedCodeHash("VRF_COORDINATOR", pinned, p.vrfCoordinatorCodeHash);
+        }
         uint256 subscription = _envUint("VRF_SUBSCRIPTION_ID", 0);
         if (subscription == 0) revert MissingParameter("VRF_SUBSCRIPTION_ID");
         bytes32 keyHash = _envBytes32("VRF_KEY_HASH", bytes32(0));

@@ -24,7 +24,8 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         The record is only an index: every check recomputes from the chain and the
 ///         committed inputs, failing on the first difference.
 ///         1. The RPC is on the recorded chain; off anvil, the record has no placeholders and
-///            no stand-ins.
+///            no stand-ins. On mainnet, the recorded VRF coordinator, Permit2 and delegation
+///            contract are the canonical ones with their pinned code (no delegation mock).
 ///         2. Every recorded address is where CREATE2 puts that contract given the recorded
 ///            constructor parameters and CREATE2 deployer (`DeployV1.predict`, which reads
 ///            each pinned code hash from the chain), and every recorded code hash is on chain.
@@ -58,6 +59,11 @@ contract Verify is ScriptIO {
     error PendingTargetAdminDelayChange(address target, uint32 delay, uint48 effect);
     error UnexpectedGrant(uint64 role, address account);
     error CodeHashMismatch(string name, address account);
+    /// @notice On mainnet, a recorded dependency is not the canonical contract.
+    error NonCanonicalOnMainnet(string name, address account);
+    /// @notice On mainnet, a canonical dependency's code (or its recorded hash) is not the pinned
+    ///         code.
+    error NonCanonicalCode(string name, address account, bytes32 codehash);
 
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
 
@@ -78,6 +84,7 @@ contract Verify is ScriptIO {
         returns (uint256 targets, uint256 calls, uint256 holders)
     {
         bool local = _checkRecordChain(record);
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) _checkCanonical(record);
         DeployV1.Deployment memory d = load(record);
         VerifyV1.checkAddresses(
             DeployV1.predict(
@@ -146,6 +153,37 @@ contract Verify is ScriptIO {
 
     function _uint(string memory record, string memory key) private pure returns (uint256) {
         return vm.parseJsonUint(record, string.concat(".params.", key));
+    }
+
+    /// @dev On mainnet, every dependency the record names is the canonical contract with its
+    ///      pinned code: the VRF coordinator (when the module was deployed), Permit2 and the 6529
+    ///      delegation contract, which is no mock.
+    function _checkCanonical(string memory record) internal view {
+        DeployV1.Params memory p = paramsOf(record);
+        if (keccak256(bytes(vm.parseJsonString(record, ".entropy"))) != keccak256("none")) {
+            address coordinator = p.vrfCoordinator;
+            if (coordinator != DeployGuards.CANONICAL_VRF_COORDINATOR) {
+                revert NonCanonicalOnMainnet("VRF_COORDINATOR", coordinator);
+            }
+            bytes32 pin = DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH;
+            if (coordinator.codehash != pin) {
+                revert NonCanonicalCode("VRF_COORDINATOR", coordinator, coordinator.codehash);
+            }
+            if (p.vrfCoordinatorCodeHash != pin) {
+                revert NonCanonicalCode("VRF_COORDINATOR", coordinator, p.vrfCoordinatorCodeHash);
+            }
+        }
+        if (p.permit2 != DeployV1.CANONICAL_PERMIT2) {
+            revert NonCanonicalOnMainnet("PERMIT2", p.permit2);
+        }
+        if (p.permit2.code.length == 0) revert NonCanonicalCode("PERMIT2", p.permit2, bytes32(0));
+        if (p.delegation != DeployGuards.CANONICAL_DELEGATION) {
+            revert NonCanonicalOnMainnet("DELEGATION_CONTRACT", p.delegation);
+        }
+        if (
+            p.delegation.codehash != DeployGuards.CANONICAL_DELEGATION_CODEHASH
+                || vm.parseJsonBool(record, ".delegationMock")
+        ) revert NonCanonicalCode("DELEGATION_CONTRACT", p.delegation, p.delegation.codehash);
     }
 
     /// @dev Check 5: the deploy's off-anvil guards, repeated against the chain as it is now.

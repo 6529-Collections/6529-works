@@ -717,6 +717,122 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
+    // ------------------------------------------------------------------ DEPS-3: the coordinator
+
+    /// @dev The off-anvil inputs with a VRF coordinator instead of NO_VRF.
+    function _withVrf(address coordinator) internal {
+        deployer.setEnv("NO_VRF", "");
+        deployer.setEnv("VRF_COORDINATOR", vm.toString(coordinator));
+        deployer.setEnv("VRF_SUBSCRIPTION_ID", "7");
+        deployer.setEnv("VRF_KEY_HASH", vm.toString(keccak256("lane")));
+    }
+
+    /// The Chainlink VRF v2.5 coordinator on Ethereum mainnet (docs.chain.link), and its runtime
+    /// code hash read from mainnet on 14 October 2026.
+    function test_DEPS3_TheMainnetCoordinatorIsPinned() public pure {
+        assertEq(DeployGuards.CANONICAL_VRF_COORDINATOR, 0xD7f86b4b8Cae7D942340FF628F82735b7a20893a);
+        assertEq(
+            DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH,
+            0xbe4ae0321fb1c74c80eea0c14c9c7b28c69ce17df15222e27b1e934cc98f5f61
+        );
+    }
+
+    /// DEPS-3: on mainnet the coordinator must be the canonical one, with its pinned code.
+    function test_DEPS3_MainnetRefusesANonCanonicalCoordinator() public {
+        DelegationManagementMock delegation = _sepolia();
+        vm.chainId(1);
+        vm.etch(DeployGuards.CANONICAL_DELEGATION, address(delegation).code);
+        deployer.setEnv("DELEGATION_CONTRACT", "");
+        MockVrfCoordinator fake = new MockVrfCoordinator();
+        _withVrf(address(fake));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.NonCanonicalOnMainnet.selector, "VRF_COORDINATOR", address(fake)
+            )
+        );
+        deployer.prepare();
+        // The canonical address with other code is refused too.
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        vm.etch(canonical, address(fake).code);
+        _withVrf(canonical);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.NonCanonicalCode.selector, "VRF_COORDINATOR", canonical, canonical.codehash
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// DEPS-3: off mainnet the operator may pin the coordinator's code hash.
+    function test_DEPS3_TheCoordinatorCodeHashCanBePinnedOffMainnet() public {
+        _sepolia();
+        MockVrfCoordinator coordinator = new MockVrfCoordinator();
+        _withVrf(address(coordinator));
+        deployer.setEnv("VRF_COORDINATOR_CODEHASH", vm.toString(keccak256("other code")));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.UnexpectedCodeHash.selector,
+                "VRF_COORDINATOR",
+                keccak256("other code"),
+                address(coordinator).codehash
+            )
+        );
+        deployer.prepare();
+        deployer.setEnv("VRF_COORDINATOR_CODEHASH", vm.toString(address(coordinator).codehash));
+        assertEq(deployer.prepare().p.vrfCoordinator, address(coordinator));
+    }
+
+    /// DEPS-3: Verify refuses a mainnet record whose dependencies are not the canonical
+    /// contracts with their pinned code. (A Sepolia deployment's record, relabelled chain 1.)
+    function test_DEPS3_VerifyRefusesNonCanonicalDependenciesOnMainnet() public {
+        DelegationManagementMock delegation = _sepolia();
+        MockVrfCoordinator fake = new MockVrfCoordinator();
+        _withVrf(address(fake));
+        vm.recordLogs();
+        deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        string memory record = _tamper(deployer.lastRecord(), '"chainId":11155111', '"chainId":1');
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        vm.warp(block.timestamp + 5 days);
+        verifier.verify(deployer.lastRecord());
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalOnMainnet.selector, "VRF_COORDINATOR", address(fake)
+            )
+        );
+        verifier.verify(record);
+        // The canonical address with other code.
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        vm.etch(canonical, address(fake).code);
+        string memory moved = _tamper(record, vm.toString(address(fake)), vm.toString(canonical));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector, "VRF_COORDINATOR", canonical, canonical.codehash
+            )
+        );
+        verifier.verify(moved);
+        // Permit2 and the delegation contract, on a record without the module.
+        string memory noVrf = _tamper(
+            _tamper(record, '"entropy":"vrf"', '"entropy":"none"'),
+            vm.toString(address(fake)),
+            vm.toString(address(0))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalOnMainnet.selector, "DELEGATION_CONTRACT", address(delegation)
+            )
+        );
+        verifier.verify(noVrf);
+        string memory otherPermit2 =
+            _tamper(noVrf, vm.toString(DeployV1.CANONICAL_PERMIT2), vm.toString(address(fake)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.NonCanonicalOnMainnet.selector, "PERMIT2", address(fake))
+        );
+        verifier.verify(otherPermit2);
+    }
+
     function test_EnvironmentNumbersAreCheckedCasts() public {
         _sepolia();
         deployer.setEnv("AUCTION_DURATION", vm.toString(uint256(type(uint32).max) + 1));
