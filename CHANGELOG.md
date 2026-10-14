@@ -57,6 +57,9 @@
   pending on the manager unless `ALLOW_PENDING_OPERATIONS=1`. The admin-recovery runbook
   revokes first and grants after, covers a guardian that cancels the recovery, moves the VRF
   subscription, and re-verifies in epoch mode.
+- Deployment: `Deploy.s.sol` refuses an EIP-7702 delegated sender (`DelegatedDeployer`),
+  requires an explicit `DEPLOY_NAMESPACE` off anvil, and stops before the broadcast when any
+  predictable address under the namespace is taken (`AddressTaken`).
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

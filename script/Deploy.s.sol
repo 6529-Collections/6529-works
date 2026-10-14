@@ -7,6 +7,7 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { DelegatedEOA } from "src/libraries/DelegatedEOA.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 import { DeployGuards } from "./DeployGuards.sol";
 import { DeployV1 } from "./DeployV1.sol";
@@ -22,6 +23,9 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      (script/README.md). The whole run is simulated before anything is sent, so every check
 ///      below aborts the run with nothing broadcast. Off anvil:
 ///      - the RPC's chain ID must match (`ChainIdMismatch`);
+///      - the sender must not be an EIP-7702 delegated EOA (`DelegatedDeployer`, on anvil too);
+///      - `DEPLOY_NAMESPACE` must be given, and no contract's address under it may be taken
+///        (`AddressTaken`);
 ///      - every placeholder is refused, and every required input must be given;
 ///      - the network fee recipient must already exist (`AccountDoesNotExist`);
 ///      - the genesis file must name reachable holders and the committed policy
@@ -69,6 +73,12 @@ contract Deploy is ScriptIO {
     ///         operator's own initcode under this namespace first. Use a new DEPLOY_NAMESPACE
     ///         (and a private RPC on mainnet).
     error ConfiguratorAddressTaken(address configurator);
+    /// @notice The sender is an EIP-7702 delegated EOA. Until genesis completes the deployer
+    ///         alone may call `configure`, so no wallet code may act for it. Sign from a plain key.
+    error DelegatedDeployer(address deployer);
+    /// @notice Contract `name`'s CREATE2 address under this namespace already has code. Use a new
+    ///         DEPLOY_NAMESPACE, kept private until the broadcast.
+    error AddressTaken(string name, address account);
 
     /// @notice The last run's record, also written to `deployments/` when broadcasting.
     string public lastRecord;
@@ -122,6 +132,7 @@ contract Deploy is ScriptIO {
         r.local = block.chainid == DeployV1.LOCAL_CHAIN_ID;
         checkChain();
         if (msg.sender == DEFAULT_SENDER) revert SenderNotSet();
+        if (DelegatedEOA.isDelegated(msg.sender)) revert DelegatedDeployer(msg.sender);
         r.genesisPath = _envString("GENESIS_CONFIG", r.local ? EXAMPLE_GENESIS : "");
         if (bytes(r.genesisPath).length == 0) revert MissingParameter("GENESIS_CONFIG");
         r.json = _read(r.genesisPath);
@@ -130,6 +141,7 @@ contract Deploy is ScriptIO {
         r.p.deployer = msg.sender;
         (r.manifest, r.manifestPath) = manifest(r.local);
         checkConfiguratorSlot(r.p);
+        checkAddressesFree(r.p);
     }
 
     /// @notice Off-anvil checks against the deployed contracts, before `configure`: nothing the
@@ -159,9 +171,27 @@ contract Deploy is ScriptIO {
         if (configurator.code.length != 0) revert ConfiguratorAddressTaken(configurator);
     }
 
+    /// @notice No contract's predicted CREATE2 address has code. Exact for every contract whose
+    ///         constructor arguments are known before the broadcast, in particular those with
+    ///         none (ContentStore, ReleaseVerifier, ClaimRouter), whose address depends on the
+    ///         namespace alone; a contract that pins an earlier one's code hash is predicted
+    ///         before that code exists, so it is only caught by the simulation.
+    function checkAddressesFree(DeployV1.Params memory p) public view {
+        DeployV1.Deployment memory d = DeployV1.predict(p, bytes32(0), DeployGuards.CREATE2_FACTORY);
+        string[] memory list = DeployV1.order(p);
+        for (uint256 i; i < list.length; ++i) {
+            address a = DeployV1.addressOf(d, list[i]);
+            if (a.code.length != 0) revert AddressTaken(list[i], a);
+        }
+    }
+
     /// @notice Deployment parameters from the environment, with anvil defaults.
     function params(bool local) public view returns (DeployV1.Params memory p) {
-        p.namespace = _envBytes32("DEPLOY_NAMESPACE", keccak256("6529-works/v1"));
+        // Off anvil the namespace is explicit: under a default one, anyone could create the
+        // contracts whose address depends on the namespace alone before the first run.
+        p.namespace =
+            _envBytes32("DEPLOY_NAMESPACE", local ? keccak256("6529-works/v1") : bytes32(0));
+        if (p.namespace == bytes32(0)) revert MissingParameter("DEPLOY_NAMESPACE");
         p.feeRecipient =
             _envAddress("NETWORK_FEE_RECIPIENT", local ? PLACEHOLDER_FEE_RECIPIENT : address(0));
         if (p.feeRecipient == address(0)) revert MissingParameter("NETWORK_FEE_RECIPIENT");

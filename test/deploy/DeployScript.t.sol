@@ -15,6 +15,7 @@ import { DeployV1 } from "script/DeployV1.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { Verify } from "script/Verify.s.sol";
 import { Editions } from "src/editions/Editions.sol";
+import { ContentStore } from "src/content/ContentStore.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
@@ -96,6 +97,7 @@ contract DeployScriptTest is Test {
         deployer.setFile("config/manifest.json", MANIFEST);
         deployer.setEnv("MANIFEST_PATH", "config/manifest.json");
         deployer.setEnv("MANIFEST_URI", "ar://epoch-0");
+        deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/script-test")));
     }
 
     /// @dev A deployment on anvil with recorded logs, verified-ready (5 days later).
@@ -955,6 +957,56 @@ contract DeployScriptTest is Test {
         vm.expectRevert(abi.encodeWithSelector(Deploy.ConfiguratorAddressTaken.selector, predicted));
         deployer.prepare();
         deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/v1-retry")));
+        deployer.prepare();
+    }
+
+    // ------------------------------------------------------------------ deployer and namespace
+
+    /// Improvement (DEPS): an EIP-7702 delegated deployer is refused. It alone may call
+    /// `configure` until genesis completes, so wallet code driving it must not be in play.
+    function test_ADelegatedDeployerIsRefused() public {
+        _sepolia();
+        address operator = makeAddr("delegatedOperator");
+        vm.etch(operator, abi.encodePacked(hex"ef0100", makeAddr("walletCode")));
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Deploy.DelegatedDeployer.selector, operator));
+        deployer.prepare();
+        // On anvil too.
+        vm.chainId(DeployV1.LOCAL_CHAIN_ID);
+        deployer.setRpcChainId(DeployV1.LOCAL_CHAIN_ID);
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Deploy.DelegatedDeployer.selector, operator));
+        deployer.prepare();
+    }
+
+    /// Improvement (DEPS): off anvil the namespace must be explicit, so no address can be taken
+    /// in advance under the default one.
+    function test_OffAnvilTheNamespaceIsExplicit() public {
+        _sepolia();
+        deployer.setEnv("DEPLOY_NAMESPACE", "");
+        vm.expectRevert(
+            abi.encodeWithSelector(Deploy.MissingParameter.selector, "DEPLOY_NAMESPACE")
+        );
+        deployer.prepare();
+    }
+
+    /// Improvement (DEPS): a contract whose address depends only on the namespace (no
+    /// constructor arguments) can be created by anyone who knows the namespace. A taken address
+    /// stops the run before anything is broadcast, with its name.
+    function test_ATakenAddressIsRefusedBeforeTheBroadcast() public {
+        _sepolia();
+        DeployV1.Params memory p = deployer.params(false);
+        bytes32 s = DeployV1.salt(p, "ContentStore");
+        vm.prank(makeAddr("squatter"));
+        (bool ok,) =
+            DeployGuards.CREATE2_FACTORY.call(abi.encodePacked(s, type(ContentStore).creationCode));
+        assertTrue(ok);
+        address taken = vm.computeCreate2Address(
+            s, keccak256(type(ContentStore).creationCode), DeployGuards.CREATE2_FACTORY
+        );
+        vm.expectRevert(abi.encodeWithSelector(Deploy.AddressTaken.selector, "ContentStore", taken));
+        deployer.prepare();
+        deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/fresh")));
         deployer.prepare();
     }
 

@@ -90,11 +90,15 @@ or stores a key:
   operator's shell. They never go into a committed file.
 - **Broadcast caches.** Do not commit forge's `broadcast/` output for Sepolia; `.gitignore`
   only covers anvil's. The deployment record is the committed evidence.
-- **Mainnet: use a private RPC.** Every address is predictable from public inputs. Someone who
-  sees the configurator's creation in the public mempool can create the same initcode first.
-  That gains them nothing, because the configurator still only obeys the operator, but the
-  namespace is then spent. The next run stops with `ConfiguratorAddressTaken` and needs a new
-  `DEPLOY_NAMESPACE`. A private transaction endpoint avoids the denial of service.
+- **Mainnet: use a private RPC and a private namespace.** Every address is predictable from
+  public inputs. Someone who sees the configurator's creation in the public mempool can create
+  the same initcode first. ContentStore, ReleaseVerifier and ClaimRouter take no constructor
+  arguments, so their addresses depend on `DEPLOY_NAMESPACE` alone, and anyone who knows the
+  namespace can create them in advance. That gains nothing, because the code is identical and
+  the configurator still only obeys the operator, but the namespace is then spent: the next
+  run stops with `ConfiguratorAddressTaken` or `AddressTaken` and needs a new
+  `DEPLOY_NAMESPACE`. Off anvil the namespace has no default. Choose a fresh one, keep it
+  private until the broadcast, and send through a private transaction endpoint.
 - **Sepolia mirrors mainnet.** Use throwaway signers, but the mainnet structure and thresholds:
   - the same Safes, roles and thresholds as below;
   - the entropy module with a real VRF subscription (step 7), not `NO_VRF`;
@@ -106,7 +110,7 @@ or stores a key:
 
 | Account | Roles | Kind |
 | --- | --- | --- |
-| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH |
+| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`) |
 | Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER | Safe |
 | Cold recovery admin Safe | ADMIN only. It acts only for [admin recovery](#admin-recovery) | Safe, 3-of-5 recommended. Its signers differ from the hot admin's and the guardians', on hardware wallets kept in separate places |
 | Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe, 2-of-3 each |
@@ -428,15 +432,17 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 - **Everything is checked before anything is sent.** Forge simulates the whole run first, so
   any failed check aborts it with nothing broadcast. The checks:
   - the RPC's `eth_chainId` is the chain the script runs on;
-  - `--sender` was given and is the signer;
-  - every input above (steps 2 to 9);
-  - the configurator's CREATE2 address is free;
+  - `--sender` was given and is the signer, and is not an EIP-7702 delegated EOA;
+  - every input above (steps 2 to 9), and `DEPLOY_NAMESPACE`;
+  - the configurator's CREATE2 address is free, and so is every other address that can be
+    predicted before the broadcast (`AddressTaken`);
   - after the contracts are simulated and before `configure`: nothing the genesis names is
     missing, the policy is the committed one, and no holder is a contract of the deployment.
 - **The sender is the deployer.** It becomes the configurator's `deployer`, the only account
   that can call `configure`.
-- **Addresses are predictable.** They depend on the deployer and `DEPLOY_NAMESPACE`. To repeat
-  a rehearsal from the same deployer, use a new `DEPLOY_NAMESPACE`.
+- **Addresses are predictable.** Most depend on the deployer and `DEPLOY_NAMESPACE`;
+  ContentStore, ReleaseVerifier and ClaimRouter depend on `DEPLOY_NAMESPACE` alone. To repeat a
+  rehearsal, use a new `DEPLOY_NAMESPACE`.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.**
@@ -596,7 +602,7 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | Variable | Anvil default | Off anvil |
 | --- | --- | --- |
 | `GENESIS_CONFIG` | `config/genesis.example.json` | Required; the committed policy with reachable holders (step 3) |
-| `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Optional; changes every address |
+| `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Required; changes every address. Use a fresh one, kept private until the broadcast |
 | `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required; must exist: code, a balance or a nonce |
 | `MARKETPLACE_OWNER` | Placeholder `0xC002` | Required |
 | `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet. Default on Sepolia: the official deployment |
