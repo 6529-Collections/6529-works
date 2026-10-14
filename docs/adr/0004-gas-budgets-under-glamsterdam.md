@@ -288,7 +288,9 @@ pricing.
   unaffected.
 - **The VRF callback** used about 62% of its 200,000-gas limit on Sepolia (one
   new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours),
-  raise-only.
+  raise-only. The callback now creates no slot (the seed overwrites the request
+  ID, DEPS-2): about 32,000 under Glamsterdam, under a third of the 100,000
+  floor.
 - **The claim router's continue-mode minimums** (200,000 per plain item,
   450,000 per signed item) are Prague-sized floors. A first release needs more
   under Glamsterdam: new slots, and possibly the payee's account (about 716,000

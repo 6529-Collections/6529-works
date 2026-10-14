@@ -160,3 +160,7 @@
   same content links to that draw (`SeedLinked`) and reads it by item hash; an item whose
   content already has a delivered or pending draw joins it without a new oracle request.
   `SeedDelivered` is indexed by content hash.
+- Entropy (DEPS-2): the VRF callback creates no storage slot. The seed overwrites the word
+  that held the request ID (`requestOf` reads zero once delivered), so a delivery costs about
+  32,000 gas under Glamsterdam, under a third of the 100,000 callback floor; the floor's
+  NatSpec and the entropy README give the Glamsterdam figures.

@@ -78,15 +78,18 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         bool nativePayment;
     }
 
-    /// @dev One content's randomness; `seed` is meaningful only once `delivered`.
+    /// @dev One content's randomness. `value` is the latest request ID until `delivered`, then
+    ///      the seed: the callback overwrites a word `requestSeed` already made nonzero, so a
+    ///      delivery creates no storage slot (about 111,000 gas each under Glamsterdam).
     struct Seed {
-        uint256 requestId;
-        bytes32 seed;
+        uint256 value;
         uint64 requestedAt;
         bool delivered;
     }
 
-    /// @notice The lowest callback gas limit: the callback uses well under half of it.
+    /// @notice The lowest callback gas limit. The callback creates no storage slot (the seed
+    ///         overwrites the request ID), so with every slot cold it costs about 18,000 Prague
+    ///         gas and about 32,000 under Glamsterdam's storage pricing: under a third of it.
     uint32 public constant MIN_CALLBACK_GAS = 100_000;
     /// @notice The absolute ceiling of the callback gas limit (the coordinator's own maximum).
     uint32 public constant MAX_CALLBACK_GAS = 2_500_000;
@@ -255,7 +258,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _requests[coord][requestId] = contentHash;
         // The coordinator may have delivered an earlier request while this one was being made.
         if (!seed.delivered) {
-            seed.requestId = requestId;
+            seed.value = requestId;
             emit SeedRequested(itemHash, requestId);
         }
     }
@@ -277,7 +280,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         if (seed.delivered) return;
         if (randomWords.length != 1) revert InvalidRandomWords(requestId);
         bytes32 word = bytes32(randomWords[0]);
-        seed.seed = word;
+        seed.value = uint256(word);
         seed.delivered = true;
         emit SeedDelivered(contentHash, requestId, word);
     }
@@ -339,17 +342,19 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     function seedOf(bytes32 itemHash) external view returns (bytes32) {
         Seed storage seed = _seeds[_contentOf[itemHash]];
         if (!seed.delivered) revert SeedNotDelivered(itemHash);
-        return seed.seed;
+        return bytes32(seed.value);
     }
 
     /// @inheritdoc IEntropyModule
+    /// @dev The request ID reads zero once the seed is delivered: no request is outstanding
+    ///      then, and the word holds the seed.
     function requestOf(bytes32 itemHash)
         external
         view
         returns (uint256 requestId, uint64 requestedAt)
     {
         Seed storage seed = _seeds[_contentOf[itemHash]];
-        return (seed.requestId, seed.requestedAt);
+        return (seed.delivered ? 0 : seed.value, seed.requestedAt);
     }
 
     /// @inheritdoc IERC165

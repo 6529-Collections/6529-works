@@ -26,8 +26,10 @@ Tests are in [`test/entropy/`](../../test/entropy), mocks in
    and records the request ID; if the content's draw is delivered or pending,
    the item only joins it and the call returns zero.
 2. **Delivery.** The coordinator calls `rawFulfillRandomWords(requestId,
-   words)`. The module stores `bytes32(words[0])` under the content hash and
-   emits `SeedDelivered`. It calls nothing: not the token, not the auction.
+   words)`. The module stores `bytes32(words[0])` under the content hash, over
+   the word that held the request ID, so the delivery creates no storage slot,
+   and emits `SeedDelivered`. It calls nothing: not the token, not the auction.
+   `requestOf` then reads a request ID of zero.
 3. **Start.** The auction's `start` requires `isDelivered(itemHash)`, then
    consumes the item, mints and opens the 24-hour clock in one transaction.
    The Stream reads the seed with `seedOf(itemHash)` through the item hash it
@@ -130,7 +132,7 @@ current struct and reverts with `ExpectedValueMismatch` if it is stale.
 
 | Parameter | Bounds |
 | --- | --- |
-| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `BoundedParameter`: each step may at most double it, never above the ceiling, never down (or left unchanged). The callback costs about 35,000 gas with every slot cold (measured), so the floor leaves a wide margin and a hostile setter cannot starve it. |
+| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `BoundedParameter`: each step may at most double it, never above the ceiling, never down (or left unchanged). The callback creates no storage slot and costs about 18,000 Prague gas with every slot cold, about 32,000 under Glamsterdam (measured, then repriced as ADR 0004 does), so the floor leaves a margin of three and a hostile setter cannot starve it. |
 | Confirmations | 3 to 200 (the coordinator's own limits on Ethereum mainnet). |
 | Subscription ID, key hash | Nonzero. |
 | `retryDelay` (constructor, immutable) | 3 days to 30 days. Not an expiry: VRF v2.5 never expires a request on-chain, so a repeat waits until a delivery is plainly overdue. |
@@ -215,11 +217,14 @@ Delivered seeds never change.
 
 Measured by `test/entropy/VrfEntropyModule.t.sol` (see the test logs):
 
-- **Callback:** about 35,000 gas with every slot cold, against a 100,000
-  floor.
-- **`requestSeed`:** about 153,000 gas including the two registry reads, hashing
-  the item, a two-hash proof, three new storage slots and a mock coordinator
-  that stores one slot. A real coordinator costs more. The request is off the
+- **Callback:** about 18,000 Prague gas with every slot cold and no new
+  storage slot; about 32,000 under Glamsterdam, where a new slot alone would
+  cost about 111,000. The floor is 100,000.
+- **`requestSeed`:** about 176,000 gas including the two registry reads, hashing
+  the item, a two-hash proof, four new storage slots (the item's content link,
+  the draw's two words and the request ID's record) and a mock coordinator
+  that stores one slot. An item joining an existing draw writes one slot, its
+  link, and makes no request. A real coordinator costs more. The request is off the
   auction's start path (D4), so the start budget (350K Prague gas, at most 6
   new slots; ADR 0004) does not apply to it; `start` pays only
   for reading `isDelivered`.

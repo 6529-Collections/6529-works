@@ -54,7 +54,8 @@ interface IEntropyModule is IERC165 {
     function isDelivered(bytes32 itemHash) external view returns (bool);
     /// @notice The delivered seed of the item's content. Reverts with `SeedNotDelivered`.
     function seedOf(bytes32 itemHash) external view returns (bytes32);
-    /// @notice The latest request for the item's content: its ID and when it was made.
+    /// @notice The latest request for the item's content: its ID (zero once the seed is
+    ///         delivered) and when it was made.
     function requestOf(bytes32 itemHash)
         external
         view

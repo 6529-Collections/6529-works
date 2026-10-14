@@ -180,12 +180,12 @@ contract VrfEntropyInvariantTest is EntropyBase {
         }
     }
 
-    /// @dev The module's current request of an item is the last one it issued; an item whose
-    ///      seed policy is not VRF never has one.
+    /// @dev The module's current request of an item is the last one it issued until the seed
+    ///      is delivered, then zero; an item whose seed policy is not VRF never has one.
     function invariant_TheCurrentRequestIsTheLastIssued() public view {
         for (uint256 i; i < handler.itemCount(); ++i) {
             (uint256 requestId,) = module.requestOf(handler.itemHash(i));
-            assertEq(requestId, handler.currentId(i));
+            assertEq(requestId, handler.delivered(i) ? 0 : handler.currentId(i));
             if (i >= 4) assertEq(requestId, 0);
         }
     }
