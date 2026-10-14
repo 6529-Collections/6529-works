@@ -77,6 +77,17 @@ Installation:
 on the allowlist, so deprecating an asset halts running sales in it as an
 emergency tightening. Claims are never blocked.
 
+**Halts stop the clock.** A pause of the adapter, or a deprecation of a sale's
+currency, stops the sale's schedule as well as its purchases. Each sale records,
+when it opens, how long the adapter has been paused and its currency deprecated
+so far; the growth since is the sale's `scheduleDelay(saleId)`. Fixed-price
+phase windows and the Dutch curve run that much later than configured, so a halt
+never uses up an allowlist phase or lets the Dutch price fall: trading resumes
+where it stopped. A pause during a deprecation counts twice, which only moves the
+schedule later. The adapter's own pause time is `pausedTotal` plus the running
+pause; the currency's is the allowlist's `statusClock`. Anyone may close a
+fixed-price sale once its moved phases have all ended.
+
 **Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
 `purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
 resumes them. `closeSale` and `claim` always work. As on the auction, pausing a
@@ -208,6 +219,8 @@ There is no clearing price.
   curve.
 - After the curve, the price rests at `restingPrice` until the supply or window
   runs out or the sale is closed.
+- A pause or a currency deprecation moves the whole curve later by its length
+  (`scheduleDelay`), so the price resumes where it stopped.
 - `maxUnitPrice` protects a buyer whose transaction lands earlier than expected.
 
 ### Governance

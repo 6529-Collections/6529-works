@@ -55,17 +55,21 @@ import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.so
 ///      token decides what may be minted (size, window, admitted minters). At most one sale per
 ///      `(token, id)` is open at a time. Every ERC-20 movement is checked by exact balance
 ///      delta, and every entry point that moves value is non-reentrant. While paused, sales
-///      neither open nor sell; closing and claiming always work.
+///      neither open nor sell; closing and claiming always work. A pause, or a deprecation of a
+///      sale's currency, also stops the sale's schedule (`scheduleDelay`, MARKET-1).
 abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, ReentrancyGuardTransient {
     /// @notice A sale's locked terms and state, packed so the flags share the first slot.
     /// @dev `approved` is the artist's approval of a fixed-price phase configuration;
-    ///      `federated` marks a token served through the federation registry.
+    ///      `federated` marks a token served through the federation registry; `haltedAtOpen` is
+    ///      {_halted} for the sale's currency when it opened, so the schedule's delay is the halt
+    ///      time since (MARKET-1).
     struct Listing {
         address token;
         uint32 feeShare;
         bool approved;
         bool closed;
         bool federated;
+        uint40 haltedAtOpen;
         uint256 id;
         address currency;
         uint256 price;
@@ -99,6 +103,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     bool public paused;
     /// @notice When the current pause began; zero while not paused.
     uint40 public pausedAt;
+    /// @notice Seconds the adapter spent paused in earlier, closed pauses.
+    uint40 public pausedTotal;
 
     mapping(uint256 saleId => Listing) internal _listings;
     mapping(address token => mapping(uint256 id => uint256 saleId)) internal _openSales;
@@ -203,6 +209,9 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         uint256 allowedAt = uint256(pausedAt) + Roles.STANDARD;
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
+        // Safe: a pause lasts far less than 2^40 seconds.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        pausedTotal += uint40(block.timestamp - pausedAt);
         (paused, pausedAt) = (false, 0);
         emit Unpaused(msg.sender);
     }
@@ -224,6 +233,15 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     /// @inheritdoc ISaleAdapter
     function isTarget(address token) public view returns (bool) {
         return isListed[token] || _federated(token);
+    }
+
+    /// @notice Seconds sale `saleId`'s schedule has moved since it opened (MARKET-1): the time
+    ///         this adapter was paused and its currency deprecated since then, including a pause
+    ///         or deprecation still running. Phase windows (fixed price) and the price curve
+    ///         (Dutch) run that much later than configured, so a halt never uses up the sale.
+    function scheduleDelay(uint256 saleId) external view returns (uint256) {
+        Listing storage l = _listing(saleId);
+        return _halted(l.currency) - l.haltedAtOpen;
     }
 
     /// @inheritdoc ERC165
@@ -283,6 +301,9 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             approved,
             false,
             federated,
+            // Safe: seconds of halt, far below 2^40.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint40(_halted(t.currency)),
             id,
             t.currency,
             t.price,
@@ -312,9 +333,33 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         return true;
     }
 
+    /// @dev For a purchase of sale `l`: requires its locked currency to be active and a
+    ///      federated token still listed, and returns the schedule's delay (`scheduleDelay`). The
+    ///      adapter is not paused (`whenNotPaused`) and the currency is active, so only closed
+    ///      halts count.
+    function _purchaseDelay(Listing storage l) internal view returns (uint256) {
+        address currency = l.currency;
+        (IAssetAllowlist.Status status,, uint256 frozen) = assets.statusClock(currency);
+        if (status != IAssetAllowlist.Status.Active) revert CurrencyNotActive(currency);
+        if (l.federated && !_federated(l.token)) revert TargetNotAllowed(l.token);
+        return pausedTotal + frozen - l.haltedAtOpen;
+    }
+
+    /// @dev Seconds sales in `currency` have been halted so far: this adapter's pauses and the
+    ///      currency's deprecations, closed and running. A sale's delay is the growth of this
+    ///      since it opened. A pause during a deprecation counts twice, which only moves the
+    ///      schedule later.
+    function _halted(address currency) internal view returns (uint256 halted) {
+        (IAssetAllowlist.Status status, uint256 since, uint256 frozen) =
+            assets.statusClock(currency);
+        halted = pausedTotal + frozen;
+        if (status != IAssetAllowlist.Status.Active) halted += block.timestamp - since;
+        if (paused) halted += block.timestamp - pausedAt;
+    }
+
     /// @dev Takes `charge` of sale `saleId`'s currency from `pay.payer` and returns the ETH sent
-    ///      above it. `value` is the payable entry point's `msg.value`. The locked currency must
-    ///      be active and a federated token still listed. DIRECT and PERMIT need
+    ///      above it. `value` is the payable entry point's `msg.value`. The caller has checked
+    ///      the currency and the target ({_purchaseDelay}). DIRECT and PERMIT need
     ///      `pay.payer == msg.sender`; PERMIT2 authenticates the payer by its signature over
     ///      `witness`, and both balance deltas are checked here because Permit2 does not.
     function _collect(
@@ -325,10 +370,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         string memory witnessType,
         uint256 value
     ) internal returns (uint256 excess) {
-        Listing storage l = _listings[saleId];
-        address currency = l.currency;
-        if (!assets.isActive(currency)) revert CurrencyNotActive(currency);
-        if (l.federated && !_federated(l.token)) revert TargetNotAllowed(l.token);
+        address currency = _listings[saleId].currency;
         if (pay.amount < charge) revert InvalidPayment();
         if (currency == CURRENCY_ETH) {
             if (

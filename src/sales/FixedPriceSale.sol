@@ -260,8 +260,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         isConsentNonceUsed[t.creator][consent.nonce] = true;
     }
 
-    /// @dev Checks the phase is open, the leaf, the price and the caps; counts the purchase;
-    ///      returns the unit price.
+    /// @dev Checks the phase is open (its window moved by the schedule's delay, MARKET-1), the
+    ///      leaf, the price and the caps; counts the purchase; returns the unit price.
     function _admit(Purchase calldata p, bytes32[] calldata proof, address payer, address recipient)
         private
         returns (uint256 unit)
@@ -270,9 +270,12 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         Listing storage l = _listings[p.saleId];
         if (p.phase >= list.length || l.closed) revert PhaseNotOpen(p.saleId, p.phase);
         Phase memory phase = list[p.phase];
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < phase.start || block.timestamp >= phase.end) {
-            revert PhaseNotOpen(p.saleId, p.phase);
+        {
+            uint256 delay = _purchaseDelay(l);
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp < phase.start + delay || block.timestamp >= phase.end + delay) {
+                revert PhaseNotOpen(p.saleId, p.phase);
+            }
         }
         if (p.quantity == 0) revert InvalidQuantity();
         address account = phase.payerKeyed ? payer : recipient;
@@ -308,12 +311,16 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         }
     }
 
-    /// @dev Whether every phase of the sale has ended (an unknown sale has none).
+    /// @dev Whether every phase of the sale has ended, its windows moved by the schedule's
+    ///      delay (an unknown sale has none).
     function _ended(uint256 saleId) private view returns (bool) {
         Phase[] storage list = _phases[saleId];
+        if (list.length == 0) return true;
+        Listing storage l = _listings[saleId];
+        uint256 delay = _halted(l.currency) - l.haltedAtOpen;
         for (uint256 i; i < list.length; ++i) {
             // forge-lint: disable-next-line(block-timestamp)
-            if (list[i].end > block.timestamp) return false;
+            if (list[i].end + delay > block.timestamp) return false;
         }
         return true;
     }

@@ -261,3 +261,8 @@
   - GOV-5: an adapter's `unpause`, and the auction's `resume(saleId)`, are refused with
     `UnpauseTooEarly` until 48 hours after the pause they end, so a guardian can always
     cancel them, including one scheduled before the pause. The adapters record `pausedAt`.
+  - MARKET-1: a pause of the fixed-price or Dutch adapter, or a deprecation of a sale's
+    currency, stops the sale's schedule too. Phase windows and the Dutch curve move later by
+    the halt time (`scheduleDelay(saleId)`), so trading resumes where it stopped. The
+    adapters keep `pausedTotal`, and `AssetAllowlist.statusClock` reports when an asset's
+    status last changed and its total earlier deprecation time (no new storage slot).

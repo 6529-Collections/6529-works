@@ -94,13 +94,12 @@ contract DutchSale is IDutchSale, MintSaleBase {
         Payment calldata payment
     ) external payable whenNotPaused nonReentrant {
         Listing storage l = _listings[saleId];
-        if (
-            l.token == address(0) || l.closed
-                // forge-lint: disable-next-line(block-timestamp)
-                || block.timestamp < _schedules[saleId].startTime
-        ) revert SaleNotOpen(saleId);
+        if (l.token == address(0) || l.closed) revert SaleNotOpen(saleId);
+        uint256 delay = _purchaseDelay(l);
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < _schedules[saleId].startTime + delay) revert SaleNotOpen(saleId);
         if (quantity == 0) revert InvalidQuantity();
-        uint256 unit = _priceNow(saleId);
+        uint256 unit = _priceNow(saleId, delay);
         if (unit > maxUnitPrice) revert PriceAboveLimit(unit, maxUnitPrice);
         uint256 total = unit * quantity;
         uint256 excess = _collect(
@@ -134,9 +133,10 @@ contract DutchSale is IDutchSale, MintSaleBase {
     }
 
     /// @inheritdoc IDutchSale
+    /// @dev The curve runs `scheduleDelay(saleId)` seconds later than configured (MARKET-1).
     function currentPrice(uint256 saleId) external view returns (uint256) {
-        _listing(saleId);
-        return _priceNow(saleId);
+        Listing storage l = _listing(saleId);
+        return _priceNow(saleId, _halted(l.currency) - l.haltedAtOpen);
     }
 
     /// @inheritdoc IDutchSale
@@ -169,12 +169,13 @@ contract DutchSale is IDutchSale, MintSaleBase {
         return interfaceId == type(IDutchSale).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function _priceNow(uint256 saleId) private view returns (uint256) {
+    /// @dev The unit price now, on the curve moved `delay` seconds later.
+    function _priceNow(uint256 saleId, uint256 delay) private view returns (uint256) {
         Schedule storage s = _schedules[saleId];
         return DutchPricing.priceAt(
             _listings[saleId].price,
             s.restingPrice,
-            s.startTime,
+            s.startTime + delay,
             s.duration,
             s.stepSeconds,
             block.timestamp
