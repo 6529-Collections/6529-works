@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Renderer } from "src/content/Renderer.sol";
+import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
@@ -150,6 +152,45 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.ARWEAVE);
         assertEq(_served(tokenId, file), CA.arweave("artist before"));
+    }
+
+    // ----------------------------- CONTENT-2: a record file the store does not know is incomplete
+
+    /// @dev An approved record file whose manifest was never registered: once the record opens
+    ///      the work gets core-only metadata marked `incomplete`, never a revert, until the
+    ///      manifest is registered (and uploaded) or the artist sets another record.
+    function test_Record_AnUnregisteredRecordFileRendersCoreOnly() public {
+        Work memory w = _work(artist, collectionId);
+        bytes memory json = '{"name":"Registered later"}';
+        bytes32[] memory hashes = new bytes32[](1);
+        hashes[0] = keccak256(json);
+        bytes32 recordFile = store.manifestId(
+            hashes, json.length, IContentStore.Encoding.Identity, "application/json", sha256(json)
+        );
+        w.item = _item(artist, collectionId, w.media[0].sha256Hash, w.media, recordFile);
+        Work[] memory works = _one(w);
+        (, uint256 tokenId) = _start(_publish(works), works, 0);
+        assertTrue(_contains(stream.tokenURI(tokenId), '"record_status":"not_open"'));
+
+        vm.prank(collector);
+        records.openRecord(tokenId, w.item, w.media);
+        string memory uri = stream.tokenURI(tokenId);
+        assertTrue(_contains(uri, '"record_status":"incomplete"'), "core-only, not a revert");
+        assertTrue(_contains(uri, '"name":"Genesis %23'));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Renderer.RendererNotInlineable.selector, address(stream), tokenId
+            )
+        );
+        renderer.fullTokenURI(address(stream), tokenId);
+
+        // Registered: still incomplete until the bytes are there; then the record renders.
+        store.registerManifest(
+            hashes, json.length, IContentStore.Encoding.Identity, "application/json", sha256(json)
+        );
+        assertTrue(_contains(stream.tokenURI(tokenId), '"record_status":"incomplete"'));
+        store.writeChunk(json);
+        assertTrue(_contains(stream.tokenURI(tokenId), '"name":"Registered later"'));
     }
 
     // ------------------------------------------------------------------------------ helpers

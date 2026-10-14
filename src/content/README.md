@@ -372,7 +372,7 @@ is not available." and a field that says why:
 | `record_status` | Meaning |
 | --- | --- |
 | `not_open` | `openRecord` has not run |
-| `incomplete` | the record file is not completely in the content store |
+| `incomplete` | the record file is not completely in the content store, or not registered there at all (an approved manifest nobody registered yet) |
 | `invalid` | the record breaks a rule below |
 
 The ARTIST seed is stored when the record opens, so it appears only after.

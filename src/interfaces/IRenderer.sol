@@ -17,8 +17,9 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      small on-chain preview. Above 1 MiB the media is reachable only through the content
 ///      store's chunked reads. Reads are bounded and fail closed: a renderer never returns
 ///      plausible metadata for a token it cannot read. A work whose record is not open yet, not
-///      completely uploaded or not acceptable is not an unreadable token: it gets core-only
-///      metadata from 6529 Stream with a `record_status` field, and never a revert.
+///      completely uploaded (or not registered in the store at all) or not acceptable is not an
+///      unreadable token: it gets core-only metadata from 6529 Stream with a `record_status`
+///      field, and never a revert.
 interface IRenderer is IERC165 {
     /// @notice The compact metadata URI (`data:application/json;...`) for `tokenId` of
     ///         `token`, which is 6529 Stream or 6529 Editions.

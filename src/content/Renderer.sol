@@ -39,9 +39,9 @@ import { JsonScan } from "./JsonScan.sol";
 ///      `medium`, `dimensions` and each of `artists` into the metadata (the `attributes` array
 ///      goes in as it is, after the renderer's own traits; other members are validated and
 ///      ignored). Until the work's record is open (`IWorkRecords.isOpen`) and its file is
-///      complete, or when it is not acceptable, the work gets core-only metadata from Stream with
-///      a `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a
-///      revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
+///      registered and complete, or when it is not acceptable, the work gets core-only metadata
+///      from Stream with a `record_status` field (`not_open`, `incomplete` or `invalid`)
+///      instead, and never a revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
 ///      `Identity`, is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a
 ///      backslash, no `\u0000`, lone surrogate or bad hex digit in an escape, no number of more
 ///      than 24 bytes or with more than two exponent digits, at most `JsonScan.MAX_VALUES`
@@ -339,10 +339,21 @@ contract Renderer is IRenderer {
 
     /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
     ///      complete yet, and never if it is not `Identity`, is over one chunk, is not UTF-8, or
-    ///      holds too many `%` and `#` to escape within the gas budget.
+    ///      holds too many `%` and `#` to escape within the gas budget. A record file the store
+    ///      does not answer for (an approved one whose manifest was never registered) is not
+    ///      complete either: the store answered for the primary file in this same call, so the
+    ///      failure is the unknown file, not a broken store.
     function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
         bytes32 id = c.rec.recordFileId;
-        IContentStore.FileInfo memory fi = _fileInfo(id);
+        (bool known, bytes memory info) = BoundedCall.tryRead(
+            address(contentStore),
+            abi.encodeWithSelector(IContentStore.fileInfo.selector, id),
+            SMALL_GAS,
+            512,
+            AFTER_GAS
+        );
+        if (!known) return (RecordState.Incomplete, j);
+        IContentStore.FileInfo memory fi = abi.decode(info, (IContentStore.FileInfo));
         if (fi.encoding != IContentStore.Encoding.Identity || fi.length > MAX_RECORD_BYTES) {
             return (RecordState.Invalid, j);
         }
@@ -559,7 +570,7 @@ contract Renderer is IRenderer {
         Media memory p = _primary(c);
         Media memory v = _preview(c);
         if (p.mode == Mode.Locator) m[2] = p;
-        if (_startsWith(bytes(c.primary.mimeType), "image/")) {
+        if (_isImage(c.primary.mimeType)) {
             m[0] = p.mode >= Mode.Data || v.mode == Mode.None ? p : v;
         } else {
             (m[0], m[1]) = (v, p);
@@ -582,7 +593,7 @@ contract Renderer is IRenderer {
             if (c.media[i].role != FileRole.PREVIEW) continue;
             bytes32 id = c.media[i].fileId;
             IContentStore.FileInfo memory fi = _fileInfo(id);
-            if (!_startsWith(bytes(fi.mimeType), "image/")) return m;
+            if (!_isImage(fi.mimeType)) return m;
             if (_weight(fi) <= PREVIEW_LIMIT && _complete(id)) {
                 m = _inline(c, id, fi, false);
                 if (m.mode != Mode.None) return m;
@@ -1020,12 +1031,12 @@ contract Renderer is IRenderer {
         return h == keccak256("text/javascript") || h == keccak256("application/javascript");
     }
 
-    function _startsWith(bytes memory s, bytes memory prefix) private pure returns (bool) {
-        if (s.length < prefix.length) return false;
-        for (uint256 i; i < prefix.length; ++i) {
-            if (s[i] != prefix[i]) return false;
+    /// @dev Whether a MIME type is `image/*`. The store's MIME types are lowercase, so this is
+    ///      one comparison of the first six bytes.
+    function _isImage(string memory mime) private pure returns (bool yes) {
+        assembly ("memory-safe") {
+            yes := and(gt(mload(mime), 5), eq(shr(208, mload(add(mime, 0x20))), 0x696d6167652f))
         }
-        return true;
     }
 
     function _ptr(bytes memory b) private pure returns (uint256 p) {

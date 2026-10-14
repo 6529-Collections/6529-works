@@ -209,6 +209,9 @@
   1,024 chunks (about 8.3M gas cold), keeps its place in the record's first word and emits
   `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete
   over calls that each fit the EIP-7825 cap.
+- Renderer (CONTENT-2): a work whose record file the content store does not know (an approved
+  manifest that was never registered) renders core-only metadata marked `incomplete` instead of
+  reverting `tokenURI`. To make room, the renderer's `image/` prefix test is one comparison.
 - Renderer (CONTENT-5): a record's `trait_type` must be printable ASCII with no backslash
   and no two spaces in a row, and the renderer's own trait names are refused in any case and
   with or without spaces, so a record cannot show a look-alike of a trait the renderer
