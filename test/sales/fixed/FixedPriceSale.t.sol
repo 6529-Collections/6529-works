@@ -279,16 +279,23 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
     }
 
-    function test_Approval_PlatformSaleRejectsDiscountsButNotPremiums() public {
+    /// @dev MARKET-6: alone, PLATFORM sells at the package price only: discounts and premiums
+    ///      alike need the artist.
+    function test_Approval_PlatformAloneCannotPriceLeaves() public {
         bytes32[] memory leaves = _pricedLeaves();
-        uint256 saleId = _platformPriced(leaves, _noConsent());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
+            )
+        );
+        _platformPriced(leaves, _noConsent());
+        // The creator prices leaves both ways.
+        uint256 saleId = _open(creator, ETH_ED, _one(_phase(_root(leaves), 0, false, true)));
         vm.deal(alice, 1 ether);
         vm.deal(bob, 1 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(IFixedPriceSale.PriceBelowPackage.selector, A_PRICE, PRICE)
-        );
         _purchaseEth(alice, _p(saleId, 0, alice, 1, 2, A_PRICE), _proof(leaves, 0), A_PRICE);
         _purchaseEth(bob, _p(saleId, 0, bob, 1, 1, 0.2 ether), _proof(leaves, 1), 0.2 ether);
+        assertEq(editions.balanceOf(alice, ETH_ED), 1);
         assertEq(editions.balanceOf(bob, ETH_ED), 1);
     }
 

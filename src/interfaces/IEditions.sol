@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IMintTarget } from "./IMintTarget.sol";
-import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
+import { EditionFormat, EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 
 /// @title IEditions
 /// @notice 6529 Editions: the one shared ERC-1155 for editions, each anchored by a 6529 Stream
@@ -125,6 +125,10 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
         returns (address streamContract, uint256 workId, bytes32 contentHash);
     /// @notice Whether an edition exists.
     function exists(uint256 editionId) external view returns (bool);
+    /// @notice An edition's format: FIXED (a size) or OPEN (a one-time window from its first
+    ///         mint). The sale adapters let PLATFORM open a sale alone only for a FIXED edition.
+    ///         Reverts with `UnknownEdition`.
+    function formatOf(uint256 editionId) external view returns (EditionFormat);
     /// @notice An edition's content hash (its master's). Reverts with `UnknownEdition`.
     function contentHashOf(uint256 editionId) external view returns (bytes32);
     /// @notice An edition's license: its master's current license from the work-records

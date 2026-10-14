@@ -59,7 +59,11 @@ contract DutchSale is IDutchSale, MintSaleBase {
         // forge-lint: disable-next-line(block-timestamp)
         if (startTime < block.timestamp) revert InvalidSchedule();
         (PrimaryTerms memory t, bool federated) = _terms(token, id, SaleKind.DUTCH);
-        if (msg.sender != t.creator && !_isPlatform()) revert NotSaleManager(msg.sender);
+        if (msg.sender != t.creator) {
+            if (!_isPlatform()) revert NotSaleManager(msg.sender);
+            // MARKET-6: PLATFORM never spends an OPEN edition's one-time window.
+            _requirePlatformMayOpen(token, id, federated);
+        }
         if (_openSales[token][id] != 0) revert SaleAlreadyOpen(token, id);
         DutchParams memory d = abi.decode(t.params, (DutchParams));
         if (!DutchPricing.isValid(t.price, d.restingPrice, d.duration, d.stepSeconds)) {

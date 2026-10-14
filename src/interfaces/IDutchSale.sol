@@ -33,7 +33,8 @@ interface IDutchSale is ISaleAdapter {
     error PriceAboveLimit(uint256 price, uint256 maxUnitPrice);
 
     /// @notice Opens a Dutch sale of token `id` starting at `startTime` (not in the past).
-    ///         Callable by the creator or the PLATFORM role.
+    ///         Callable by the creator or the PLATFORM role; PLATFORM only for a listed edition
+    ///         of FIXED size (an OPEN edition's one-time window is the artist's, MARKET-6).
     function openSale(address token, uint256 id, uint64 startTime) external returns (uint256 saleId);
     /// @notice Closes a sale. Callable by the creator or the PLATFORM role.
     function closeSale(uint256 saleId) external;

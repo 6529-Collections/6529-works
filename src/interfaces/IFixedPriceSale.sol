@@ -21,12 +21,14 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      only when the phase is `leafPriced`. A phase with a zero `root` is public, limited per
 ///      recipient by `walletCap` (zero means no limit). Purchases name their phase.
 ///
-///      Artist consent to discounts: a leaf price below the package price counts only in a sale
-///      whose phases the artist approved, by opening it as the `creator` or by the creator's
-///      `Typehashes.PHASE_CONFIGURATION` signature, which binds the resolved currency, the package
-///      unit price and every phase as a typed `Phase[]` (single-use revocable nonce). Otherwise
-///      such a purchase reverts with `PriceBelowPackage`. Purchase counts are kept per edition
-///      `(token, id, phase, account)`, not per sale, so reopening a sale cannot reset a cap.
+///      Artist consent (MARKET-6): a leaf-priced phase (prices below or above the package price),
+///      or a sale of an OPEN edition (its one-time window starts at the first mint), opens only
+///      if the artist approved the phases, by opening the sale as the `creator` or by the
+///      creator's `Typehashes.PHASE_CONFIGURATION` signature, which binds the resolved currency,
+///      the package unit price and every phase as a typed `Phase[]` (single-use revocable nonce).
+///      Alone, PLATFORM opens unpriced phases of a FIXED edition only. Purchase counts are kept
+///      per edition `(token, id, phase, account)`, not per sale, so reopening a sale cannot reset
+///      a cap.
 ///      `saleKind()` is `SaleKind.FIXED_PRICE`; PERMIT2 purchases use
 ///      `Typehashes.PURCHASE_WITNESS`, and `payment.amount` is the exact total.
 interface IFixedPriceSale is ISaleAdapter {
@@ -77,14 +79,13 @@ interface IFixedPriceSale is ISaleAdapter {
     error NotAllowlisted(uint256 saleId, uint256 phase, address account);
     /// @notice The purchase exceeds the wallet's cap in this phase.
     error WalletCapExceeded(uint256 saleId, uint256 phase, address account);
-    /// @notice A leaf price below the package price, in a sale the artist did not approve.
-    error PriceBelowPackage(uint256 leafPrice, uint256 packagePrice);
     /// @notice The consent is expired, its nonce is used, or the signature is not the creator's.
     error InvalidArtistConsent();
 
     /// @notice Opens a sale of token `id` with 1 to `Limits.MAX_PHASES` phases. Callable by the
     ///         creator or the PLATFORM role; a PLATFORM opener may pass the creator's `consent`,
-    ///         which must verify and consumes its nonce.
+    ///         which must verify and consumes its nonce. Without it, PLATFORM may open only
+    ///         unpriced phases (the package price) of a listed edition of FIXED size.
     function openSale(
         address token,
         uint256 id,

@@ -206,8 +206,10 @@ default when the sale starts".
    - Allowlist leaves bind `(chainid, adapter, token, id, phase, account, cap,
      price)`, with the account being the receiving wallet (or the payer, for
      payer-keyed phases).
-   - A per-wallet price below the package price counts only if the artist
-     approved the phases.
+   - A per-wallet price (below or above the package price) needs the artist's
+     approval of the phases, and so does any sale of an OPEN edition, whose
+     one-time window starts at its first mint. Alone, PLATFORM opens a FIXED
+     edition at the package price.
 4. Each purchase mints through `IEditions.mint`. Dutch purchases charge exactly
    the current price, and `Payment.amount` is the maximum the buyer will pay.
    The edition renders its master's media and record. `WorkRecords` calls
@@ -335,7 +337,7 @@ default when the sale starts".
 | Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
 | Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations | Redirect funds or identities; cancel or resume an auction |
 | Storage operator | Set preferred locations among registered, hash-equal locators | Add, remove or change locators; change content hashes |
-| Platform | Create collections; add locators; open edition sales and phases | Change an approved package's prices, currencies, sizes or media; set allowlist prices below the package price without the artist's signed approval |
+| Platform | Create collections; add locators; open edition sales and phases at the package price for FIXED editions | Change an approved package's prices, currencies, sizes or media; set allowlist prices (below or above the package price), or open an OPEN edition's one-time window, without the artist's signed approval |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
 | Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |

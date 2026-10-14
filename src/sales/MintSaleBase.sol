@@ -17,6 +17,7 @@ import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -33,6 +34,7 @@ import {
     PrimaryTerms
 } from "../interfaces/types/SaleTypes.sol";
 import { Roles } from "../governance/Roles.sol";
+import { EditionFormat } from "../interfaces/types/PackageTypes.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 
@@ -130,6 +132,10 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     error InvalidDependency(address dependency);
     /// @notice The sale is already closed.
     error SaleAlreadyClosed(uint256 saleId);
+    /// @notice PLATFORM opened, without the artist's approval, a sale only the artist may
+    ///         configure: an edition with a one-time window (OPEN), or a token that is not a
+    ///         listed 6529 Editions edition.
+    error ArtistApprovalRequired(address token, uint256 id);
 
     /// @dev Reverts while the adapter is paused.
     modifier whenNotPaused() {
@@ -310,6 +316,17 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             t.seller,
             t.feeRecipient
         );
+    }
+
+    /// @dev MARKET-6 (ADR 0001 section 6: the artist chooses an edition's format and price within
+    ///      the package): alone, PLATFORM may open a sale only of a listed edition of FIXED size.
+    ///      An OPEN edition's one-time window starts at its first mint, whichever sale makes it,
+    ///      so opening one decides when the artist's drop is spent. A federated token's sale
+    ///      configuration is its artist's (section 16).
+    function _requirePlatformMayOpen(address token, uint256 id, bool federated) internal view {
+        if (federated || IEditions(token).formatOf(id) != EditionFormat.FIXED) {
+            revert ArtistApprovalRequired(token, id);
+        }
     }
 
     /// @dev Whether the caller may run the current selector through the PLATFORM mapping now.

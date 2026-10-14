@@ -266,3 +266,9 @@
     the halt time (`scheduleDelay(saleId)`), so trading resumes where it stopped. The
     adapters keep `pausedTotal`, and `AssetAllowlist.statusClock` reports when an asset's
     status last changed and its total earlier deprecation time (no new storage slot).
+  - MARKET-6: alone, PLATFORM opens an edition sale only on the package's approved terms:
+    no leaf-priced phase (prices above or below the package price need the artist) and only
+    for a listed edition of FIXED size. An OPEN edition's one-time window, or a federated
+    token's sale, needs the artist (`ArtistApprovalRequired`): the creator opens it, or
+    PLATFORM relays the creator's signed phase configuration (fixed price). `IEditions`
+    gains `formatOf(editionId)`. The unreachable `PriceBelowPackage` error is removed.

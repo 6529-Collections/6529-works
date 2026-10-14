@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { Vm } from "forge-std/Vm.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
+import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
@@ -129,7 +130,8 @@ contract ReviewRegressionsTest is FixedPriceBase {
         bytes32[] memory leaves = _leaves(
             ETH_ED, 0, _list3(alice, bob, creator), _nums3(1, 1, 1), _nums3(PRICE, PRICE, PRICE)
         );
-        IFixedPriceSale.Phase[] memory phases = _one(_phase(_root(leaves), 0, false, true));
+        // Unpriced: alone, PLATFORM sells at the package price (MARKET-6).
+        IFixedPriceSale.Phase[] memory phases = _one(_phase(_root(leaves), 0, false, false));
         uint256 first = _open(platform, ETH_ED, phases);
         vm.deal(bob, 1 ether);
         vm.prank(bob);
@@ -363,17 +365,21 @@ contract ReviewRegressionsTest is FixedPriceBase {
         assertEq(editions.balanceOf(relayer, USD_ED), 0);
     }
 
-    /// C7: a leaf price one wei below the package price needs approval; equal does not.
+    /// C7 (MARKET-6): leaf prices need the artist's approval whatever their level, so PLATFORM
+    ///     cannot open a leaf-priced phase alone; in the creator's sale each leaf pays its price.
     function test_Kill_C7_DiscountBoundary() public {
         bytes32[] memory leaves = _leaves(
             ETH_ED, 0, _list3(alice, bob, creator), _nums3(1, 1, 1), _nums3(PRICE - 1, PRICE, PRICE)
         );
-        uint256 saleId = _open(platform, ETH_ED, _one(_phase(_root(leaves), 0, false, true)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
+            )
+        );
+        _open(platform, ETH_ED, _one(_phase(_root(leaves), 0, false, true)));
+        uint256 saleId = _open(creator, ETH_ED, _one(_phase(_root(leaves), 0, false, true)));
         vm.deal(alice, 1 ether);
         vm.deal(bob, 1 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(IFixedPriceSale.PriceBelowPackage.selector, PRICE - 1, PRICE)
-        );
         vm.prank(alice);
         fixedSale.purchase{ value: PRICE - 1 }(
             _p(saleId, 0, alice, 1, 1, PRICE - 1), _proof(leaves, 0), _eth(alice, PRICE - 1)
@@ -382,6 +388,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         fixedSale.purchase{ value: PRICE }(
             _p(saleId, 0, bob, 1, 1, PRICE), _proof(leaves, 1), _eth(bob, PRICE)
         );
+        assertEq(editions.balanceOf(alice, ETH_ED) + editions.balanceOf(bob, ETH_ED), 2);
     }
 
     function _tokenSale(address token) internal returns (uint256 saleId) {

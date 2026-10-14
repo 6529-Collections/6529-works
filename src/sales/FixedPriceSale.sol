@@ -61,7 +61,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @notice The phases are empty, too many, or one is malformed (start not before end, or an
     ///         allowlist-only flag without a root).
     error InvalidPhases();
-    /// @notice A zero-price sale prices its leaves without the artist's approval.
+    /// @notice A sale prices its leaves without the artist's approval (MARKET-6).
     error PricedLeavesNeedApproval(address token, uint256 id);
 
     /// @param authority_ The AccessManager.
@@ -94,8 +94,12 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
             _consume(token, id, t, phases_, consent);
             approved = true;
         }
-        // In a zero-price sale every leaf price is a premium, so only the artist may price leaves.
-        if (priced && t.price == 0 && !approved) revert PricedLeavesNeedApproval(token, id);
+        // MARKET-6: alone, PLATFORM sells at the package price only (any leaf price, above or
+        // below it, is the artist's), and never spends an OPEN edition's one-time window.
+        if (!approved) {
+            if (priced) revert PricedLeavesNeedApproval(token, id);
+            _requirePlatformMayOpen(token, id, federated);
+        }
         saleId = _store(token, id, t, approved, federated);
         for (uint256 i; i < phases_.length; ++i) {
             _phases[saleId].push(phases_[i]);
@@ -282,10 +286,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         unit = l.price;
         if (phase.root != 0) {
             _verifyLeaf(p, proof, phase.root, account, l);
-            if (phase.leafPriced) {
-                if (p.leafPrice < unit && !l.approved) revert PriceBelowPackage(p.leafPrice, unit);
-                unit = p.leafPrice;
-            }
+            // Only an approved sale has leaf-priced phases (`openSale`).
+            if (phase.leafPriced) unit = p.leafPrice;
         }
         address token = l.token;
         uint256 id = l.id;

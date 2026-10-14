@@ -15,7 +15,7 @@ minter-role grant. Governed by
 | File | Role |
 | --- | --- |
 | `MintSaleBase.sol` | What both adapters share: targets (listed, or active in the federation registry), `LockedTerms` at open, one open sale per `(token, id)`, payment collection, minting per purchase, payouts with the escrow fallback, pull credits, the emergency pause, ERC-165. |
-| `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of discounts. |
+| `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of leaf prices and OPEN drops. |
 | `DutchSale.sol` | `IDutchSale`: a descending price from the token's `DutchParams`. |
 | `DutchPricing.sol` | The price curve (internal library, ported from PR #744's `StreamDutchPricing`). |
 
@@ -24,8 +24,15 @@ Permit2 is called through the shared
 
 ### Opening a sale
 
-The lead artist (the terms' `creator`) or the PLATFORM role opens a sale. The
-adapter reads the token's `primaryTerms(id, "")` and fails closed unless:
+The lead artist (the terms' `creator`) or the PLATFORM role opens a sale.
+Alone, PLATFORM opens only on the package's approved terms (ADR 0001 §6, MARKET-6):
+at the package price (no leaf-priced phase) and only for a listed 6529 Editions
+edition of FIXED size. An OPEN edition's one-time window starts at its first mint,
+whichever sale makes it, so a PLATFORM sale of one, or of a federated token, needs
+the artist (`ArtistApprovalRequired`): the creator opens it, or, for fixed price,
+PLATFORM relays the creator's signed phase configuration. The adapter reads the
+edition's format with `IEditions.formatOf`. The adapter reads the token's
+`primaryTerms(id, "")` and fails closed unless:
 - the token is a target;
 - the sale kind matches the adapter;
 - a priced sale names its currency (`CURRENCY_DEFAULT` is only for zero-price
@@ -135,8 +142,10 @@ start. An allowlist phase enforces the
 leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
 enforces `walletCap` per recipient.
 
-**Discounts need the artist** (integrator decision 4). A leaf price below the
-package price is accepted only in an approved sale. A sale is approved when:
+**Leaf prices need the artist** (integrator decision 4, widened by MARKET-6). A
+leaf-priced phase, whose leaves set prices below or above the package price, is
+accepted only in an approved sale (`PricedLeavesNeedApproval` at `openSale`
+otherwise). A sale is approved when:
 - the creator opens it; or
 - the PLATFORM role opens it with the creator's EIP-712 signature over
   `PhaseConfiguration(token, id, currency, packagePrice, Phase[] phases, nonce,
@@ -149,9 +158,7 @@ to another currency or price.
 
 The nonce is single-use and revocable (`revokeConsentNonce`), and contract
 creators sign through ERC-1271. `phaseConfigurationDigest` returns the digest
-to sign. Leaf prices at or above the package price need no approval, except in a
-zero-price sale: there every priced leaf needs the artist's approval
-(`PricedLeavesNeedApproval`), because only the approval binds the currency a
+to sign. In a zero-price sale the approval also binds the currency a
 default-currency gift resolves to.
 
 **Gifts** are zero-price sales: a package price of zero, or an approved leaf
