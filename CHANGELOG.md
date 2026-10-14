@@ -173,3 +173,8 @@
   dispute outcome. The package registry reserves the released content hash for that artist
   (`releasedTo`, `ContentReserved`); `ContentReleased` carries the beneficiary. The dispute
   runbook adds the guardian's revocation of the copier's roots before the cancel executes.
+- Curation (SIGS-2): a curation approval binds the signer's epoch,
+  `PackageApproval(packageRoot, evidenceHash, signerEpoch)`. The epoch combines the time the
+  signer's CURATION_SIGNER grant took effect with a count of its disables and enables
+  (`signerEpoch`), so re-enabling a signer or granting its role again never revives an older
+  approval. `approvalDigest` takes the epoch.

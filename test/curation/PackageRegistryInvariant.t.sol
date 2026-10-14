@@ -267,9 +267,8 @@ contract CurationHandler is CurationHelpers {
     function registerLate(uint8 rootSeed) external {
         bytes32 root = roots[rootSeed % 3];
         bytes32 evidence = keccak256(abi.encode("late evidence", root));
-        bytes memory att = abi.encode(
-            vm.addr(signerKey), _sig(signerKey, verifier.approvalDigest(root, evidence))
-        );
+        bytes memory att =
+            abi.encode(vm.addr(signerKey), _sig(signerKey, _approvalDigest(root, evidence)));
         bool expected = statusOf[root] == NONE;
         try registry.registerPackage(root, evidence, att) {
             if (!expected) unexpectedSuccess = true;
@@ -311,9 +310,13 @@ contract CurationHandler is CurationHelpers {
 
     // ------------------------------------------------------------------------ helpers
 
+    function _approvalDigest(bytes32 root, bytes32 evidence) internal view returns (bytes32) {
+        return verifier.approvalDigest(root, evidence, verifier.signerEpoch(vm.addr(signerKey)));
+    }
+
     function _register(bytes32 root) internal {
         bytes32 evidence = keccak256(abi.encode("evidence", root));
-        bytes memory sig = _sig(signerKey, verifier.approvalDigest(root, evidence));
+        bytes memory sig = _sig(signerKey, _approvalDigest(root, evidence));
         registry.registerPackage(root, evidence, abi.encode(vm.addr(signerKey), sig));
         statusOf[root] = APPROVED;
     }

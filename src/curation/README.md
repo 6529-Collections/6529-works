@@ -21,11 +21,16 @@ with the linked-pair exception from §6.
   The release happens once per burned item; `releasedTo` reads the
   beneficiary.
 - **`Eip712CurationVerifier`.** It accepts a `PackageApproval(packageRoot,
-  evidenceHash)` EIP-712 signature by an active curation signer, encoded exactly
-  as `abi.encode(signer, signature)`, and reports that signer. A signer is
-  active while it holds `Roles.CURATION_SIGNER` with no execution delay and the
-  guardian has not disabled it. Disabling is immediate and one-way; re-enabling
-  is in the 30-day class. Deployments grant the role to at least two keys.
+  evidenceHash, signerEpoch)` EIP-712 signature by an active curation signer,
+  encoded exactly as `abi.encode(signer, signature)`, and reports that signer. A
+  signer is active while it holds `Roles.CURATION_SIGNER` with no execution
+  delay and the guardian has not disabled it. Disabling is immediate and
+  one-way; re-enabling is in the 30-day class. Deployments grant the role to at
+  least two keys. The signature binds the signer's current `signerEpoch`: the
+  time its role grant took effect and how many times it was disabled or
+  enabled. Disabling a signer, re-enabling it, or revoking and granting its role
+  again therefore voids every approval it signed before, and nothing signed
+  while it was disabled counts; the signer re-signs what it still approves. Tooling reads `signerEpoch(signer)` before signing.
 
 **Governance.** The genesis configurator, which holds ADMIN with no delay until
 it renounces it, binds Stream and Editions (`bindStream`, `bindEditions`, each

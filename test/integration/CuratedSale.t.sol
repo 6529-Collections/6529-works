@@ -13,6 +13,7 @@ import { ItemKind, Party, PartyRole } from "src/interfaces/types/PackageTypes.so
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { RefusingWallet } from "../mocks/integration/IntegrationMocks.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -393,14 +394,76 @@ contract CuratedSaleFlowTest is IntegrationBase {
         Work[] memory fresh = _one(_work(artist, collectionId));
         bytes32 freshRoot = _rootOf(fresh);
         bytes32 evidence = _evidence(freshRoot);
-        bytes memory bySigner1 =
-            abi.encode(signer1, _sign(signer1, verifier.approvalDigest(freshRoot, evidence)));
+        bytes memory bySigner1 = _attestation(signer1, freshRoot, evidence);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, freshRoot));
         registry.registerPackage(freshRoot, evidence, bySigner1);
-        bytes memory bySigner2 =
-            abi.encode(signer2, _sign(signer2, verifier.approvalDigest(freshRoot, evidence)));
+        bytes memory bySigner2 = _attestation(signer2, freshRoot, evidence);
         registry.registerPackage(freshRoot, evidence, bySigner2);
         (,, address signer) = registry.packageOf(freshRoot);
         assertEq(signer, signer2);
+    }
+
+    /// @dev `signer`'s attestation of `packageRoot` at its current epoch.
+    function _attestation(address signer, bytes32 packageRoot, bytes32 evidence)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 digest =
+            verifier.approvalDigest(packageRoot, evidence, verifier.signerEpoch(signer));
+        return abi.encode(signer, _sign(signer, digest));
+    }
+
+    /// @dev SIGS-2: re-enabling a disabled signer starts a new epoch. Approvals its key signed
+    ///      before, or while it was disabled, never count again; the signer re-signs what it
+    ///      still approves.
+    function test_ReEnablingASignerDoesNotReviveOlderApprovals() public {
+        address unvetted = _actor("unvetted");
+        uint256 epoch = verifier.signerEpoch(signer1);
+        vm.prank(guardian1);
+        verifier.disableSigner(signer1);
+        assertTrue(verifier.signerEpoch(signer1) != epoch, "disabling ends the epoch");
+        Work[] memory unreviewed = _one(_work(unvetted, collectionId));
+        bytes32 unreviewedRoot = _rootOf(unreviewed);
+        bytes32 evidence = keccak256("unreviewed evidence");
+        bytes memory signedWhileDisabled = _attestation(signer1, unreviewedRoot, evidence);
+
+        _govern(hotAdmin, address(verifier), abi.encodeCall(verifier.enableSigner, (signer1)));
+        assertTrue(verifier.isSignerActive(signer1));
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, unreviewedRoot)
+        );
+        registry.registerPackage(unreviewedRoot, evidence, signedWhileDisabled);
+
+        // What the signer approves now registers.
+        Work[] memory fresh = _one(_work(artist, collectionId));
+        bytes32 freshRoot = _rootOf(fresh);
+        registry.registerPackage(
+            freshRoot, _evidence(freshRoot), _attestation(signer1, freshRoot, _evidence(freshRoot))
+        );
+        (IPackageRegistry.PackageStatus status,, address signer) = registry.packageOf(freshRoot);
+        assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.APPROVED));
+        assertEq(signer, signer1);
+    }
+
+    /// @dev SIGS-2: revoking the CURATION_SIGNER role and granting it again to the same key is a
+    ///      new grant, with a new epoch: approvals signed under the old grant stay dead.
+    function test_RegrantingTheSignerRoleDoesNotReviveOlderApprovals() public {
+        Work[] memory works = _one(_work(_actor("unregistered"), collectionId));
+        bytes32 packageRoot = _rootOf(works);
+        bytes32 evidence = _evidence(packageRoot);
+        bytes memory oldGrant = _attestation(signer1, packageRoot, evidence);
+        uint64 role = Roles.CURATION_SIGNER;
+        _govern(hotAdmin, address(manager), abi.encodeCall(manager.revokeRole, (role, signer1)));
+        _govern(hotAdmin, address(manager), abi.encodeCall(manager.grantRole, (role, signer1, 0)));
+        vm.warp(block.timestamp + 31 days); // the role's grant delay
+        assertTrue(verifier.isSignerActive(signer1));
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, packageRoot));
+        registry.registerPackage(packageRoot, evidence, oldGrant);
+        registry.registerPackage(
+            packageRoot, evidence, _attestation(signer1, packageRoot, evidence)
+        );
+        (IPackageRegistry.PackageStatus status,,) = registry.packageOf(packageRoot);
+        assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.APPROVED));
     }
 }

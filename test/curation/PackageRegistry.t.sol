@@ -1363,7 +1363,8 @@ contract PackageRegistryTest is CurationBase {
         bytes memory oldAtt = _attestation(signerKey1, root, EVIDENCE);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, root));
         registry.registerPackage(root, EVIDENCE, oldAtt);
-        bytes memory sig = _sig(signerKey1, next.approvalDigest(root, EVIDENCE));
+        bytes memory sig =
+            _sig(signerKey1, next.approvalDigest(root, EVIDENCE, next.signerEpoch(signer1)));
         registry.registerPackage(root, EVIDENCE, abi.encode(signer1, sig));
     }
 

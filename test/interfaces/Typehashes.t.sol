@@ -32,7 +32,7 @@ contract TypehashesTest is Test {
         );
         assertEq(
             Typehashes.PACKAGE_APPROVAL,
-            0x042a3f421b5117b21363cb14bb213061c468e91b1af5d8d925a04a5d0a6648c9
+            0xbf131d47e2ddcf4bd120061a8a3c2841ef379caa26b7eec0881120e1d8a43cdd
         );
         assertEq(
             Typehashes.RELICENSE, 0x8e6e8db23b02e7536fe205ab2dd4340fc5f4b94ad3878dece0549cff5101996f

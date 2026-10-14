@@ -247,7 +247,9 @@ abstract contract CurationBase is CurationHelpers {
         view
         returns (bytes memory)
     {
-        return abi.encode(vm.addr(key), _sig(key, verifier.approvalDigest(root, evidence)));
+        address signer = vm.addr(key);
+        bytes32 digest = verifier.approvalDigest(root, evidence, verifier.signerEpoch(signer));
+        return abi.encode(signer, _sig(key, digest));
     }
 
     function _register(bytes32 root) internal {

@@ -307,7 +307,7 @@ default when the sale starts".
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days. |
+| Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
 | Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations | Redirect funds or identities; cancel or resume an auction |
 | Storage operator | Set preferred locations among registered, hash-equal locators | Add, remove or change locators; change content hashes |
 | Platform | Create collections; add locators; open edition sales and phases | Change an approved package's prices, currencies, sizes or media; set allowlist prices below the package price without the artist's signed approval |
