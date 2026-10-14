@@ -331,6 +331,43 @@ contract TokenUriBudgetTest is IntegrationBase {
         assertLt(used, TOKEN_URI_BUDGET);
     }
 
+    // ------------------------------------------------------------------ the read caps
+
+    /// @dev The renderer's gas caps for the two satellite reads that grow with a work: the media
+    ///      list (its own cap) and a preferred locator (the small-read cap). Not getters, to save
+    ///      the renderer's bytecode: `RendererHostile.t.sol` checks the media cap's value.
+    uint256 internal constant MEDIA_READ_CAP = 1_000_000;
+    uint256 internal constant SMALL_READ_CAP = 300_000;
+
+    /// @dev The least gas `call` on WorkRecords succeeds with, storage cold, plus EIP-2929's
+    ///      2,500 for the one account it reaches that Foundry cannot cool (the store for
+    ///      `mediaOf`, Stream for `preferredLocator`).
+    function _least(bytes memory call) internal returns (uint256) {
+        uint256 lo = 10_000;
+        uint256 hi = 2_000_000;
+        while (hi - lo > 100) {
+            uint256 mid = (lo + hi) / 2;
+            _coolAll();
+            (bool ok,) = address(records).staticcall{ gas: mid }(call);
+            if (ok) hi = mid;
+            else lo = mid;
+        }
+        return hi + COLD_ACCOUNT_SURCHARGE;
+    }
+
+    /// @dev At every cap (32 files, 16 locators scanned to the last), each read needs a small
+    ///      part of its cap from cold storage: room for a repricing of cold reads.
+    function test_Reads_FarUnderTheirCaps() public {
+        Built memory b = _build(_worstRecord(BEFORE, ZEROS), false, false);
+        uint256 media = _least(abi.encodeCall(records.mediaOf, (b.tokenId)));
+        uint256 locator =
+            _least(abi.encodeCall(records.preferredLocator, (b.tokenId, b.licenseText)));
+        console2.log("mediaOf, 32 files, cold:", media, "of", MEDIA_READ_CAP);
+        console2.log("preferredLocator, 16 scanned, cold:", locator, "of", SMALL_READ_CAP);
+        assertLt(media * 4, MEDIA_READ_CAP, "mediaOf: a quarter of its cap at most");
+        assertLt(locator * 2, SMALL_READ_CAP, "preferredLocator: half of its cap at most");
+    }
+
     // ------------------------------------------------------------------ the preview cap
 
     /// @dev `openRecord` refuses a PREVIEW file over the cap, `Identity` counted four times, so

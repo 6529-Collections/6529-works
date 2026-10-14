@@ -204,4 +204,7 @@
 - Records (CONTENT-1): `openRecord` refuses a PREVIEW file over `Limits.MAX_PREVIEW_BYTES`
   (16 KiB stored, `Identity` counted four times). With the content-address locators this
   restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once
-  (`test/integration/TokenUriBudget.t.sol`: at most 7.8M, `Editions.uri` included).
+  (`test/integration/TokenUriBudget.t.sol`: at most 7.7M, `Editions.uri` included).
+- Renderer: the media-list read has its own gas cap (1,000,000; other reads keep 300,000),
+  and `ContentStore.sha256Of` reads one storage word, so `mediaOf` at 32 files needs about a
+  fifth of its cap cold instead of nine tenths of 300,000.

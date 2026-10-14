@@ -352,11 +352,13 @@ Editions, which it recognises by ERC-165 and follows to the master through
 `masterOf`), that Stream's `IWorkRecords` satellite, the content store it was
 deployed with, and optionally the statement log's `latestDisputeOutcome`. Every
 read is a `BoundedCall` with its own gas cap and return-size cap, and a read that
-fails reverts with `RendererReadFailed(target, selector)`: a renderer never
-returns plausible metadata for a token it cannot read, and that includes the
-preferred locator, where a failure would otherwise silently drop the media. A
-hostile `token` can only change what its own call returns, so there is no list of
-tokens.
+fails reverts with `RendererReadFailed(target, selector)`: a renderer never returns
+plausible metadata for a token it cannot read, and that includes the preferred
+locator, where a failure would otherwise silently drop the media. A hostile `token`
+can only change what its own call returns, so there is no list of tokens. The gas
+caps are 300,000 for most reads and 1,000,000 for the media list, which the satellite
+builds with a content-store read per file: 195,000 gas fully cold at 32 files, so a
+repricing of cold reads leaves room (a finalized work pins its renderer).
 
 **Records that are not usable.** `openRecord` is permissionless and runs after the
 auction starts, and every satellite view reverts until it has. So the renderer
@@ -630,12 +632,12 @@ and a dispute statement:
 
 | Row | Gas |
 | --- | --- |
-| white space before each attribute, an array of zeros (the dearest) | 7.75M |
-| the same, rendered as the edition of its master (`Editions.uri`) | 7.76M |
-| the same, the preview as 16 KiB of `Base64` | 7.66M |
-| white space after every token, an array of zeros | 7.73M |
-| white space before each attribute, top-level members | 7.73M |
-| `aa` and a 2-byte sequence, an array of zeros | 7.39M |
+| white space before each attribute, an array of zeros (the dearest) | 7.69M |
+| the same, rendered as the edition of its master (`Editions.uri`) | 7.70M |
+| the same, the preview as 16 KiB of `Base64` | 7.60M |
+| white space after every token, an array of zeros | 7.67M |
+| white space before each attribute, top-level members | 7.66M |
+| `aa` and a 2-byte sequence, an array of zeros | 7.33M |
 
 The WorkRecords caps are what make it hold. Without them the same work cost up to
 9.8M: a locator could be 2 KiB of `%` (each escaped at about 470 gas), and a preview

@@ -53,7 +53,8 @@ import { JsonScan } from "./JsonScan.sol";
 ///      string or number `value`, or whose name has a backslash or is one the renderer writes
 ///      itself. These bounds are chosen together, so that a record at every one of them at once
 ///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class
-///      of byte, and the budget proof, every cap at once).
+///      of byte, and every cap at once; `TokenUriBudget.t.sol`: the budget proof on the real
+///      stack, with the records satellite's caps).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is
@@ -116,8 +117,12 @@ contract Renderer is IRenderer {
     uint256 public immutable inlineThreshold;
 
     /// @dev Gas caps per read. A read gets exactly its cap (BoundedCall), so these bound the
-    ///      cost of a hostile or broken target; they are ceilings, not estimates.
+    ///      cost of a hostile or broken target; they are ceilings, not estimates. The media list
+    ///      has its own: the satellite reads the store once per file, under 200,000 gas fully
+    ///      cold at 32 files, and its cap leaves room for a repricing of cold reads, which would
+    ///      otherwise break every large work's `tokenURI` (a finalized work pins its renderer).
     uint256 private constant SMALL_GAS = 300_000;
+    uint256 private constant MEDIA_GAS = 1_000_000;
     uint256 private constant CHUNK_GAS = 300_000;
     uint256 private constant COMPLETE_GAS = 700_000;
     /// @dev Gas the renderer needs after any one read returns (checked before the read).
@@ -320,7 +325,7 @@ contract Renderer is IRenderer {
                 c.records,
                 IWorkRecords.mediaOf.selector,
                 c.workId,
-                SMALL_GAS,
+                MEDIA_GAS,
                 64 + 96 * Limits.MAX_MEDIA_FILES
             ),
             (MediaFile[])
