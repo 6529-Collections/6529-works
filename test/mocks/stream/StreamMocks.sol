@@ -160,9 +160,14 @@ contract MockArtistRegistry is Supports165 {
         artistIdOf[authority] = artistId;
     }
 
-    function authorityOf(uint256 artistId) external view returns (address authority) {
+    function authorityOf(uint256 artistId) public view returns (address authority) {
         authority = _authority[artistId];
         if (authority == address(0)) revert UnknownArtist(artistId);
+    }
+
+    /// @dev No recovery override is modelled: the active authority is the authority.
+    function activeAuthorityOf(uint256 artistId) external view returns (address) {
+        return authorityOf(artistId);
     }
 }
 
@@ -173,6 +178,10 @@ contract ConstantArtists is Supports165 {
     }
 
     function authorityOf(uint256 artistId) external pure returns (address) {
+        return address(uint160(artistId));
+    }
+
+    function activeAuthorityOf(uint256 artistId) external pure returns (address) {
         return address(uint160(artistId));
     }
 

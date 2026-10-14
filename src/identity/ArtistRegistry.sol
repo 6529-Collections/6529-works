@@ -84,6 +84,15 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      recognised by ERC-165 through `ProtocolContracts`). A predicted, undeployed CREATE2
 ///      wallet is undetectable.
 ///
+///      Restrained authority (owner decision on IDENTITY-1). While a pending, unlapsed override
+///      would move the authority, {activeAuthorityOf} returns zero: nobody acts as the artist.
+///      The consumers that treat the authority as the artist acting (sale `creator`, move and
+///      acceptance signers, record amendments, ARTIST statements through {isArtist}) read it, so
+///      the key being recovered from loses those powers and the reserved new key gains none
+///      until the override executes. {authorityOf} keeps identifying the artist. A STANDARD
+///      change or a payout-only override restrains nothing; identity calls ({heartbeat},
+///      {revokeNonce}) are not creator powers and stay with the authority.
+///
 ///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
 ///      (which restarts the clock for the identity it installs). Overrides and vetoes never do.
@@ -419,7 +428,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRoleResolver
     /// @dev Resolves a 6529 Stream work (`IStream.artistOf`), or a 6529 Editions edition through
-    ///      its master, to the lead artist's current authority. Any other subject returns false.
+    ///      its master, to the lead artist's active authority ({activeAuthorityOf}). Any other
+    ///      subject returns false.
     function isArtist(address token, uint256 id, address account) external view returns (bool) {
         address s = stream;
         if (s == address(0) || token == address(0) || account == address(0)) return false;
@@ -436,7 +446,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             }
         }
         try IStream(s).artistOf(id) returns (uint256 artistId) {
-            return _artists[artistId].identity.authority == account;
+            return _active(artistId) == account;
         } catch {
             return false;
         }
@@ -472,6 +482,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     function authorityOf(uint256 artistId) external view returns (address) {
         return _artist(artistId).identity.authority;
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function activeAuthorityOf(uint256 artistId) external view returns (address) {
+        _artist(artistId);
+        return _active(artistId);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -571,7 +587,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      (of another artist, or a previous one of this artist), or another artist's pending
     ///      change reserves it. The current authority itself is never taken. Refusing a return to
     ///      a previous authority (A, then B, then A) keeps the signatures A left unused dead: every
-    ///      consumer verifies against the current authority, which A never is again.
+    ///      consumer verifies against the active authority, which A never is again.
     function _taken(uint256 artistId, address account) private view returns (bool) {
         if (account == _artists[artistId].identity.authority) return false;
         uint256 reserved = reservedFor[account];
@@ -769,6 +785,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         address log = statementLog;
         if (log == address(0)) return bytes32(0);
         return IStatementLog(log).latestDisputeOutcome(address(this), artistId);
+    }
+
+    /// @dev The authority, or zero while a pending, unlapsed override would move it (owner
+    ///      decision on IDENTITY-1, 14 October 2026): nobody acts as the artist until it ends.
+    function _active(uint256 artistId) private view returns (address current) {
+        current = _artists[artistId].identity.authority;
+        PendingChange storage p = _pending[artistId];
+        if (p.kind > ChangeKind.STANDARD && p.next.authority != current && !_lapsed(p)) {
+            current = address(0);
+        }
     }
 
     /// @dev Whether `p` is a contest nobody resolved within {CONTEST_TIMEOUT}.

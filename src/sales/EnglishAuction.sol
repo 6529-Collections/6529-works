@@ -289,13 +289,14 @@ contract EnglishAuction is
     // -------------------------------------------------------------------------- settlement
 
     /// @inheritdoc IEnglishAuction
-    /// @dev Reads the seller, the fee terms and the artist's current authority back from the
+    /// @dev Reads the seller, the fee terms and the artist's active authority back from the
     ///      token. With no bids the artist is recorded as the recipient. Marks the token's primary
     ///      sale settled (`IMintTarget.markPrimarySettled`, E11) while the token is still in custody,
     ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold
-    ///      up the edition. With no bids and no resolvable artist (the token reports a zero
-    ///      creator) it reverts with `InvalidRecipient(address(0))` and moves nothing; anyone may
-    ///      retry once the artist registry resolves the artist again.
+    ///      up the edition. With no bids and no active artist (the token reports a zero creator
+    ///      while a recovery override is pending) it reverts with `InvalidRecipient(address(0))`
+    ///      and moves nothing, the token staying in custody; anyone may retry once the override
+    ///      executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         s.status = AuctionState.SETTLED;

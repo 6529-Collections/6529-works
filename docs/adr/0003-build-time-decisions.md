@@ -240,8 +240,8 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   B, then A) reverts with `AccountTaken`, for STANDARD changes and overrides.
   - Why it suffices: every consumer of an artist's signature (move
     authorizations, package acceptances, fixed-price consents, record consents,
-    signed ARTIST statements) checks it against the current authority when it
-    is used. A key the artist rotated away from is never that again, so the
+    signed ARTIST statements) checks it against the artist's active authority
+    (owner decision 6) when it is used. A key the artist rotated away from is never that again, so the
     signatures it left unused never verify again. No typehash binds an
     authority epoch.
   - The trade-off: an artist can never return to an earlier key or wallet, not
@@ -441,6 +441,22 @@ three.
 
 **5. The CC0 legal text is a test fixture.** The official file (7,048 bytes,
 SHA-256 `a2010f34…0499`) is committed, so tests and dry runs use the real text.
+
+**6. Nobody acts as the artist while a recovery override is pending (14 October
+2026, option A).** From the staging of an override that would move the
+authority until it executes, is cancelled, vetoed or voided, or its contest
+lapses, `IArtistRegistry.activeAuthorityOf` is zero. Every consumer that treats
+the authority as the artist acting reads it: the sale `creator` (opening,
+consenting to and closing sales, a no-bid auction's token), move and acceptance
+signatures, record amendments and party consents, and ARTIST statements. The key
+being recovered from loses those powers and the reserved new key gains none
+until execution, as the payout freeze already does for money. A no-bid
+settlement waits for the outcome; sales and auctions already running continue
+with their artist share frozen. `authorityOf` still identifies the artist, and a
+STANDARD change or a payout-only override restrains nothing. The trade-off
+accepted: a network that abused the recovery path would also freeze the real
+artist, until a guardian veto, a captured wallet's contest decided by the vote,
+or the lapse.
 
 ## Open items
 

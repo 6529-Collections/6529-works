@@ -478,7 +478,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             seller: e.seller,
             feeRecipient: e.feeRecipient,
             feeShare: e.feeShare,
-            creator: artistRegistry.authorityOf(_records[id].artistId)
+            creator: artistRegistry.activeAuthorityOf(_records[id].artistId)
         });
     }
 }

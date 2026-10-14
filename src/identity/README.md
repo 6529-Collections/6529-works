@@ -106,7 +106,7 @@ authority still maps to the artist ID (a package naming it resolves), but the
 artist can never rotate back to it: A, then B, then A reverts with
 `AccountTaken(A)`, for a STANDARD change and for an override. The move,
 fixed-price consent and acceptance signatures a key left unused are checked
-against the current authority, so they never verify again once it rotates
+against the active authority, so they never verify again once it rotates
 away (`test_RotationBackToAPreviousAuthorityIsRefused`). Rotating to a
 temporary key and back is therefore not possible: rotate to a fresh key.
 Recovery likewise installs a fresh key. Changes that keep the current
@@ -207,6 +207,56 @@ pending. Someone holding the key can re-freeze them by staging again after
 each cancel; the guardian veto and the override path end that. Artist-resolved
 split payees are pull-only (economics lane): only the current
 `payoutAddress`, or a signature from it, can release.
+
+## Restrained authority during a recovery override
+
+Owner decision on IDENTITY-1 (14 October 2026, ADR 0003 owner decision 6):
+while a recovery override that would move the authority is pending, nobody
+acts as the artist. `activeAuthorityOf(artistId)` returns zero from the
+override's staging until it executes, is vetoed or voided, or its contest
+lapses (a lapsed contest stops restraining at once, as it stops freezing).
+Otherwise it returns the authority. `authorityOf` keeps identifying the
+artist.
+
+What reads the active authority:
+
+| Power | Where | While restrained |
+| --- | --- | --- |
+| Sale `creator` | `primaryTerms` in 6529 Stream and 6529 Editions | zero |
+| Open, consent to or close an edition sale as the artist | FixedPriceSale, DutchSale, MintSaleBase | `NotSaleManager`, `InvalidArtistConsent`; PLATFORM still manages sales at the package terms |
+| Move a work to Stream, revoke a move nonce | PackageRegistry | `InvalidSignature`, `NotAuthority` |
+| Accept a package for the artist's ID | PackageRegistry | `InvalidSignature` |
+| A no-bid auction's token | EnglishAuction `settle` | reverts with `InvalidRecipient(0)` and moves nothing; anyone retries after the outcome |
+| Set, finalize or add the artist's locators to a record; party consents | WorkRecords | `NotWorkArtist`, the AccessManager check, `InvalidConsent` |
+| ARTIST statements | `isArtist`, read by the statement log | `NotAuthorized` |
+
+The key being recovered from loses these powers, and the reserved new key
+gains none until execution. Identity calls (`heartbeat`, `revokeNonce`) are not
+creator powers and are unchanged. A STANDARD change, or an override that keeps
+the authority (a payout-only override), restrains nothing.
+
+**What is already running continues.** A restraint never reaches back:
+- An auction with a bid settles as usual. The bidder gets the work, and the
+  artist's share of the proceeds waits in the seller wallet under the payout
+  freeze (`test_AuctionWithABidRunningAtStagingSettlesNormally`).
+- A no-bid auction's `settle` waits until the outcome: the token stays in the
+  auction's custody and is delivered to the new authority after execution, or
+  to the old one after a veto, void or lapse
+  (`test_NoBidAuctionRunningAtStagingWaitsForTheOutcome`,
+  `test_NoBidAuctionSettlesToTheOldAuthorityAfterAVeto`).
+- An open edition sale keeps selling, its artist share frozen. PLATFORM can
+  close it; the artist's keys cannot.
+- A delivery recorded for the old authority before the staging can still be
+  claimed by it.
+
+Nothing waits forever. An uncontested override is executable by anyone after
+180 days, and a contested one is resolved by the vote, vetoed, or lapses 365
+days after the contest.
+
+**Trade-off.** A network that abused the recovery path would also freeze the
+real artist, until a guardian veto, a captured wallet's contest decided by the
+vote, or the lapse. `test/integration/RecoveryRestraint.t.sol` covers the
+flows on the real contracts.
 
 ## Payout validation
 
@@ -341,7 +391,8 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   against 6529 profiles.
 - **Stolen key.** By design (ADR §11), the old key can cancel a 7-day
   STANDARD change. A stolen key therefore forces the 180-day CONTESTED route,
-  which the old key cannot cancel.
+  which the old key cannot cancel. From its staging, the override restrains
+  the stolen key's creator powers as well as the payout.
 - **The old key after a rotation.** After a rotation A to N, if A and N are
   still consolidated, A is an established wallet of N. A is then captured as an
   override canceller (`test_PoC8_OldKeyConsolidatedWithTheNewAuthorityIsCaptured`).

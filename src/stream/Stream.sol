@@ -207,8 +207,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev For a minted token, only the sale kind, seller, fee terms and the creator (resolved
-    ///      now): the auction reads them at settlement and owns the currency. For `id` 0, a
+    /// @dev For a minted token, only the sale kind, seller, fee terms and the creator (the lead
+    ///      artist's active authority, resolved now: zero while a recovery override is pending):
+    ///      the auction reads them at settlement and owns the currency. For `id` 0, a
     ///      preview from `data`; it resolves the lead artist through `artistIdOf`, so it reverts
     ///      while the lead artist has no identity.
     function primaryTerms(uint256 id, bytes calldata data)
@@ -222,7 +223,7 @@ contract Stream is ERC721, AccessManaged, IStream {
             terms.seller = t.seller;
             terms.feeRecipient = _feeRecipients[t.feeRecipientId - 1];
             terms.feeShare = t.feeShare;
-            terms.creator = IArtistRegistry(artistRegistry).authorityOf(t.artistId);
+            terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(t.artistId);
             return terms;
         }
         StreamMintRequest calldata req = _request(data);
@@ -624,7 +625,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         terms.seller = w.seller;
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;
-        terms.creator = IArtistRegistry(artistRegistry).authorityOf(artistId);
+        terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(artistId);
     }
 
     /// @dev Assigns the next token ID and collection serial and writes the three work words.

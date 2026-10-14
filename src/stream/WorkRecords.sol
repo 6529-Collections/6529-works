@@ -36,7 +36,7 @@ import { SpdxId } from "./SpdxId.sol";
 ///      for ARTIST works.
 ///
 ///      Consents are EIP-712 signatures in this contract's domain (`Typehashes`), each by a
-///      party's current authority and bound to the work's state hash. Every applied change bumps
+///      party's active authority and bound to the work's state hash. Every applied change bumps
 ///      the version, so a consent can never apply twice or to a state its signers did not see;
 ///      a governed action carrying consents is scheduled through AccessManager, so its deadline
 ///      must cover the delay. Royalty-rate changes are applied in the core (and a linked edition)
@@ -86,7 +86,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     address public immutable stream;
-    /// @notice The artist registry resolving every party's current authority (the core's).
+    /// @notice The artist registry resolving every party's active authority (the core's).
     address public immutable artistRegistry;
     /// @notice The VRF entropy module (the core's), or zero.
     address public immutable entropyModule;
@@ -634,10 +634,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (state != expected) revert StateHashMismatch(expected, state);
     }
 
-    /// @dev The lead artist's current authority; reverts with the core's `UnknownWork` for a
-    ///      burned token.
+    /// @dev The lead artist's active authority (zero while a recovery override is pending);
+    ///      reverts with the core's `UnknownWork` for a burned token.
     function _artistOf(uint256 tokenId) private view returns (address) {
-        return IArtistRegistry(artistRegistry).authorityOf(IStream(stream).artistOf(tokenId));
+        return IArtistRegistry(artistRegistry).activeAuthorityOf(IStream(stream).artistOf(tokenId));
     }
 
     function _isArtist(uint256 tokenId, address account) private view returns (bool) {
@@ -648,7 +648,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (!_isArtist(tokenId, msg.sender)) revert NotWorkArtist(tokenId, msg.sender);
     }
 
-    /// @dev Every party of the work's item consents, in order, each by its current authority
+    /// @dev Every party of the work's item consents, in order, each by its active authority
     ///      (artist ID `artistIdOf(account)`, else `uint160(account)`). A wrong count or a passed
     ///      deadline reports the party index `signatures.length`.
     function _checkConsents(
@@ -672,7 +672,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             address account = item.parties[i].account;
             uint256 artistId = registry.artistIdOf(account);
             if (artistId == 0) artistId = uint256(uint160(account));
-            if (!SignatureVerifier.isValid(registry.authorityOf(artistId), digest, signatures[i])) {
+            if (!SignatureVerifier.isValid(
+                    registry.activeAuthorityOf(artistId), digest, signatures[i]
+                )) {
                 revert InvalidConsent(tokenId, i);
             }
         }

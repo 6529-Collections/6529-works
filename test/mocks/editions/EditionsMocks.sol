@@ -161,10 +161,15 @@ contract EditionsArtistsMock {
         _recovered[artistId] = next;
     }
 
-    function authorityOf(uint256 artistId) external view returns (address a) {
+    function authorityOf(uint256 artistId) public view returns (address a) {
         if (artistId == 0) revert IArtistRegistry.UnknownArtist(artistId);
         a = _recovered[artistId];
         if (a == address(0)) a = address(uint160(artistId));
+    }
+
+    /// @dev No recovery override is modelled: the active authority is the authority.
+    function activeAuthorityOf(uint256 artistId) external view returns (address) {
+        return authorityOf(artistId);
     }
 }
 

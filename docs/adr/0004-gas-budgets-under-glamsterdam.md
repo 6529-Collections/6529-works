@@ -134,7 +134,7 @@ no ceiling, or not run on Sepolia.
 | `bid` that outbids | 73,348 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 158,414 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 133,414 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 94,043 | 96,000 (regression) | 1 | 0 | part of `start` |
+| `consume`, as Stream calls it | 96,454 | 99,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
 | `openSale` (one public phase) | 286,584 | 293,000 (regression) | 8 | 0 | 993,668 |
 | `purchase`, the first copy, new holder | 190,597 | 195,000 (regression) | 3 | 0 | 468,086 |

@@ -1120,6 +1120,53 @@ contract ArtistRegistryTest is IdentityFixture {
         assertFalse(registry.isArtist(address(stream), 1, artist));
     }
 
+    // ----------------------------------------------------------------- active authority
+
+    /// @dev IDENTITY-1 (owner decision A): from its staging until it executes, an override that
+    ///      would move the authority leaves the artist without an active authority, so nobody
+    ///      acts as the artist (`isArtist` is false for both keys); `authorityOf` keeps
+    ///      identifying it. After execution the new authority is active.
+    function test_ActiveAuthority_RestrainedUntilTheOverrideExecutes() public {
+        (StreamWorksMock stream,) = _wireStream();
+        assertEq(registry.activeAuthorityOf(artistId), artist);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertEq(registry.activeAuthorityOf(artistId), address(0), "restrained");
+        assertEq(registry.authorityOf(artistId), artist, "still identified");
+        assertFalse(registry.isArtist(address(stream), 1, artist));
+        assertFalse(registry.isArtist(address(stream), 1, newAuthority));
+
+        vm.warp(block.timestamp + 180 days);
+        assertEq(registry.activeAuthorityOf(artistId), address(0), "until it executes");
+        registry.executeChange(artistId);
+        assertEq(registry.activeAuthorityOf(artistId), newAuthority);
+        assertTrue(registry.isArtist(address(stream), 1, newAuthority));
+    }
+
+    /// @dev A STANDARD change, even one moving the authority, and an override that keeps the
+    ///      authority restrain nothing; a veto lifts the restraint at once.
+    function test_ActiveAuthority_OnlyAnAuthorityMovingOverrideRestrains() public {
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        assertEq(registry.activeAuthorityOf(artistId), artist, "a STANDARD change");
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(artist, payout), 0);
+        assertEq(registry.payoutAddress(artistId), address(0), "the payout is frozen");
+        assertEq(registry.activeAuthorityOf(artistId), artist, "a payout-only override");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertEq(registry.activeAuthorityOf(artistId), address(0));
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        assertEq(registry.activeAuthorityOf(artistId), artist, "restored by the veto");
+    }
+
+    function test_ActiveAuthority_RevertsForAnUnknownArtist() public {
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 7));
+        registry.activeAuthorityOf(7);
+    }
+
     /// @dev The statement log accepts the registry as its artist resolver (ERC-165 at install).
     function test_IsArtist_InstallsAsTheStatementLogResolver() public {
         StatementLog log =

@@ -241,3 +241,9 @@
 - Renderer: the media-list read has its own gas cap (1,000,000; other reads keep 300,000),
   and `ContentStore.sha256Of` reads one storage word, so `mediaOf` at 32 files needs about a
   fifth of its cap cold instead of nine tenths of 300,000.
+- Identity, IDENTITY-1 (ADR 0003 owner decision 6): while a recovery override that would move
+  the authority is pending, nobody acts as the artist. `IArtistRegistry.activeAuthorityOf` is
+  zero until the override executes, is vetoed or voided, or lapses; 6529 Stream and 6529 Editions
+  report it as the sale `creator`, and the package registry (acceptances, moves, move
+  revocations), the work records (artist actions and party consents) and `isArtist` (ARTIST
+  statements) read it. A no-bid auction settlement waits for the outcome.

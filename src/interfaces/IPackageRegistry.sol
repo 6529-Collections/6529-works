@@ -90,7 +90,7 @@ interface IPackageRegistry is IERC165 {
     error InvalidItem(bytes32 itemHash);
     /// @notice A signature is expired, malformed or from the wrong signer.
     error InvalidSignature();
-    /// @notice The caller is not the current authority of `artistId`.
+    /// @notice The caller is not the active authority of `artistId`.
     error NotAuthority(uint256 artistId, address caller);
     /// @notice The move nonce was used or revoked.
     error MoveNonceUsed(uint256 artistId, uint256 nonce);

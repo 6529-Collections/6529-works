@@ -63,6 +63,16 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), frozen ? address(0) : handler.ghostPayout());
     }
 
+    /// @dev IDENTITY-1: the active authority is zero exactly while a pending, unlapsed override
+    ///      would move the authority, and the authority otherwise.
+    function invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride() public view {
+        PendingChange memory p = registry.pendingChange(artistId);
+        address current = handler.ghostAuthority();
+        bool lapsed = p.contestedAt != 0 && block.timestamp >= uint256(p.contestedAt) + 365 days;
+        bool restrained = p.kind > ChangeKind.STANDARD && p.next.authority != current && !lapsed;
+        assertEq(registry.activeAuthorityOf(artistId), restrained ? address(0) : current);
+    }
+
     /// @dev Dormancy counts only the artist's own activity and executions (never overrides,
     ///      vetoes or refreshes), and the nonce moves only with stagings and revocations.
     function invariant_ActivityAndNonceMatchTheModel() public view {

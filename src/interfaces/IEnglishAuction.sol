@@ -20,7 +20,8 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      `extensionWindow` seconds moves the end to `extensionWindow` seconds after it. Outbid
 ///      bidders are credited (pull). Settlement is permissionless after the end and never depends
 ///      on the winner accepting the token: a failed delivery leaves a pending claim. With no bids
-///      the token goes to the artist's current authority, resolved at settlement.
+///      the token goes to the artist's active authority, resolved at settlement; while a recovery
+///      override is pending there is none, and settlement waits for its outcome.
 ///
 ///      Disputes: the guardian may pause a live auction for at most 7 days in total; bidders may
 ///      withdraw while it is paused; an upheld dispute cancels it, refunds the bid and burns the

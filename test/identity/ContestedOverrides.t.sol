@@ -87,10 +87,12 @@ contract ContestedOverridesTest is IdentityFixture {
         _resolve(true, VOTE);
 
         vm.warp(p.executableAt);
+        assertEq(registry.activeAuthorityOf(artistId), address(0), "restrained while contested");
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ContestResolved(artistId, true, true, VOTE);
         _resolve(true, VOTE);
         assertEq(registry.authorityOf(artistId), newAuthority);
+        assertEq(registry.activeAuthorityOf(artistId), newAuthority);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
         (, uint64 last) = registry.artist(artistId);
         assertEq(last, block.timestamp, "the installed identity's clock restarts");
@@ -111,6 +113,7 @@ contract ContestedOverridesTest is IdentityFixture {
         _resolve(false, VOTE);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
         assertEq(registry.payoutAddress(artistId), artist);
+        assertEq(registry.activeAuthorityOf(artistId), artist, "a void lifts the restraint");
         assertEq(registry.reservedFor(newAuthority), 0, "a void releases the reservation");
         (, uint64 last) = registry.artist(artistId);
         assertEq(last, before, "a governed void is not artist activity");
@@ -129,6 +132,7 @@ contract ContestedOverridesTest is IdentityFixture {
         uint64 expiresAt = p.contestedAt + 365 days;
         vm.warp(expiresAt - 1);
         assertEq(registry.payoutAddress(artistId), address(0));
+        assertEq(registry.activeAuthorityOf(artistId), address(0));
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.ContestNotExpired.selector, artistId, expiresAt)
         );
@@ -136,6 +140,7 @@ contract ContestedOverridesTest is IdentityFixture {
 
         vm.warp(expiresAt);
         assertEq(registry.payoutAddress(artistId), artist, "a lapsed contest no longer freezes");
+        assertEq(registry.activeAuthorityOf(artistId), artist, "nor restrains");
         outcomes.setOutcome(address(registry), artistId, VOTE);
         vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.NotContested.selector, artistId));
         _resolve(false, VOTE);

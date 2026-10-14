@@ -45,10 +45,10 @@ interface IConsolidationSource is IERC165 {
 ///      before any transaction, are the same on every chain, fit in 160 bits, and never change
 ///      when the authority does. Every account that has been an artist's authority maps to that
 ///      ID forever, so a package naming an old address still resolves to the identity, while
-///      only the current authority can sign. An account the artist rotated away from never
-///      becomes its authority again (A, then B, then A is refused with `AccountTaken`), so the
-///      move, consent and acceptance signatures it left unused, which every consumer checks
-///      against the current authority, never verify again. `profileId` is the artist's
+///      only the active authority (`activeAuthorityOf`) can sign. An account the artist rotated
+///      away from never becomes its authority again (A, then B, then A is refused with
+///      `AccountTaken`), so the move, consent and acceptance signatures it left unused, which
+///      every consumer checks against the active authority, never verify again. `profileId` is the artist's
 ///      unverified claim of a 6529 profile; the profile document hash is what the artist signed.
 ///
 ///      Every change of authority, payout or profile is staged, waits, and can be cancelled. At
@@ -94,12 +94,15 @@ interface IConsolidationSource is IERC165 {
 ///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian
 ///      vetoes never count.
 ///
-///      `isArtist(token, id, account)` is true when `account` is the current authority of the
-///      lead artist of 6529 Stream work `id`, or of the master of 6529 Editions edition `id`; it
-///      is false for the pre-mint subject `(address(0), uint256(itemHash))`. It
-///      meets the resolver trust requirement: no governed action changes an answer faster than
-///      the 30-day class (changes take 7 days, overrides 180 days, and the consolidation source
-///      swaps on the 30-day class). It also answers the economics lane's payout question
+///      `isArtist(token, id, account)` is true when `account` is the active authority
+///      (`activeAuthorityOf`) of the lead artist of 6529 Stream work `id`, or of the master of
+///      6529 Editions edition `id`; it is false for the pre-mint subject
+///      `(address(0), uint256(itemHash))`. It meets the resolver trust requirement for granting:
+///      no governed action makes it true for a new account faster than the 30-day class
+///      (changes take 7 days, overrides 180 days, and the consolidation source swaps on the
+///      30-day class). A staged override that would move the authority (48 hours) withholds the
+///      answer until it ends, by the owner decision on IDENTITY-1; it never redirects it, and the
+///      guardian's veto restores it. It also answers the economics lane's payout question
 ///      (`IArtistPayoutResolver`). The package registry, 6529 Stream, the federation registry and
 ///      the split factory are each bound once (`Bound`; ERC-165 checked, not EIP-7702 delegated
 ///      accounts); only the package registry may call `register`, and only the federation
@@ -294,8 +297,15 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice The artist whose pending change would make `account` its new authority, or zero.
     ///         A reserved account cannot be registered or become another artist's authority.
     function reservedFor(address account) external view returns (uint256);
-    /// @notice The current authority. Reverts with `UnknownArtist`.
+    /// @notice The current authority, which identifies the artist. Reverts with `UnknownArtist`.
     function authorityOf(uint256 artistId) external view returns (address);
+    /// @notice The authority that may act as the artist now: the current authority, or zero
+    ///         while a pending override that would move the authority has not executed, been
+    ///         vetoed or voided, or lapsed (owner decision on IDENTITY-1). Sale creator powers,
+    ///         move and acceptance signatures, record amendments and ARTIST statements read it.
+    ///         A STANDARD change or a payout-only override does not restrain. Reverts with
+    ///         `UnknownArtist`.
+    function activeAuthorityOf(uint256 artistId) external view returns (address);
     /// @notice The pending change (kind NONE if none).
     function pendingChange(uint256 artistId) external view returns (PendingChange memory);
     /// @notice The nonce the next signed change must carry.
