@@ -121,11 +121,20 @@ A refresh does three things:
   (`StandingAdded`, with `effectiveAt`). A young one is recorded as pending,
   with `effectiveAt` set to its registration time plus 30 days. A pending entry
   confers no standing before `effectiveAt`.
-- **Marks missing.** A recorded wallet that is no longer consolidated is marked
-  missing (`StandingMissing`) and keeps its standing. Before marking, the
-  registry checks the wallet directly with the source (`effectiveAt`), not only
-  against the bounded scan, so a wallet that is still consolidated is never
-  marked missing.
+- **Marks missing.** An established wallet that is no longer consolidated is
+  marked missing (`StandingMissing`) and keeps its standing. Before marking,
+  the registry checks the wallet directly with the source (`effectiveAt`), not
+  only against the bounded scan, so a wallet that is still consolidated is
+  never marked missing.
+- **Drops ended pending entries.** A pending entry that is no longer
+  consolidated is removed at once (`StandingRemoved`). Its consolidation ended
+  before its 30 days, so it never had standing (ADR 0001 §11), and a later
+  consolidation starts a new 30 days
+  (`test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`).
+  The registry cannot tell when a consolidation ended, only when a refresh
+  observed it. An entry first found missing after its `effectiveAt` is
+  treated as an established wallet gone missing, so an artist who revokes a
+  wallet they did not consolidate should refresh at once.
 - **Removes.** It removes a wallet missing for at least 30 days
   (`StandingRemoved`). Removal needs a refresh that observes the elapsed 30
   days.
@@ -148,8 +157,10 @@ has already removed the rest. That makes at most 16.
 consolidation data. They can revoke the artist's consolidations, reorder the
 delegate list, or add a sub-delegate. None of that strips a recorded wallet of
 standing, even before staging. To do so, the key holder must let a refresh
-record the wallet missing (a public event) and then wait 30 days. These tests
-cover it:
+record the wallet missing (a public event) and then wait 30 days. A wallet
+still pending has no standing yet: revoking its consolidation before its 30
+days end does remove it, as for any consolidation that never reached 30 days.
+These tests cover it:
 - `test_PoC1_RevokeThenStageStillCapturesTheWallet`;
 - `test_PoC2_SwapAndPopCannotDisplaceStanding`;
 - `test_N1_YoungWalletRecordedPendingIsCapturedAfterRevocation`;
@@ -298,12 +309,15 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   cannot map an item hash to its lead artist. ARTIST statements start once a
   work is minted.
 
-## Residual risk: wallets of anyone who holds the key for 30 days
+## Residual risk: wallets planted with the key
 
 **The exposure.** The snapshot records every wallet consolidated with the
-current authority, so anyone who holds the authority key for at least 30 days
-can give wallets of their own standing. Once a refresh has recorded them and
-their consolidations are 30 days old, they are captured as cancellers.
+current authority. Anyone who can send one transaction from the authority key,
+or a use-case-998 sub-delegate of it, can consolidate a wallet of their own
+once a refresh records it. If the consolidation stays live for 30 days, the
+wallet is captured as a canceller. The artist removes it by revoking the
+consolidation and refreshing before those 30 days end: a pending entry found
+no longer consolidated is dropped at once.
 - **Before a hijack.** A thief who quietly holds the artist's key gains wallets
   captured alongside the artist's genuine wallets.
 - **Filling free slots.** A key holder can fill the snapshot's free slots with

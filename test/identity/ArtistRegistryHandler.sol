@@ -340,10 +340,11 @@ contract ArtistRegistryHandler is Test {
         ghostLastActivity = uint64(block.timestamp);
     }
 
-    /// @dev Checks a refresh against the standing model: removals only after the grace, every
-    ///      entry's missing flag matches the live consolidation, new entries are live with the
-    ///      source's `effectiveAt`, and every consolidated key is recorded unless the snapshot is
-    ///      full.
+    /// @dev Checks a refresh against the standing model: removals only after the grace, or at
+    ///      once for a pending entry no longer consolidated (IDENTITY-3), every entry's missing
+    ///      flag matches the live consolidation and only an established entry goes missing, new
+    ///      entries are live with the source's `effectiveAt`, and every consolidated key is
+    ///      recorded unless the snapshot is full.
     function refreshStanding() external {
         Standing[] memory before = registry.standingOf(artistId);
         registry.refreshStanding(artistId);
@@ -351,12 +352,19 @@ contract ArtistRegistryHandler is Test {
         assertLe(next.length, 16);
         for (uint256 i; i < before.length; ++i) {
             if (_find(next, before[i].wallet) != type(uint256).max) continue;
+            assertEq(adapter.effectiveAt(ghostAuthority, before[i].wallet), 0, "removed live");
+            if (before[i].effectiveAt > block.timestamp) continue; // pending: it never had standing
             assertTrue(before[i].missingSince != 0, "removed while not missing");
             assertGe(block.timestamp, uint256(before[i].missingSince) + 30 days, "removed early");
         }
         for (uint256 i; i < next.length; ++i) {
             uint64 due = adapter.effectiveAt(ghostAuthority, next[i].wallet);
             assertEq(next[i].missingSince == 0, due != 0, "missing flag");
+            if (next[i].missingSince != 0) {
+                assertLe(
+                    next[i].effectiveAt, block.timestamp, "only established entries go missing"
+                );
+            }
             if (_find(before, next[i].wallet) == type(uint256).max) {
                 assertEq(next[i].effectiveAt, due, "recorded effectiveAt");
             }

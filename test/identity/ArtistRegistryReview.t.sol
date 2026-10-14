@@ -240,6 +240,67 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         registry.cancelChange(artistId);
     }
 
+    /// @dev IDENTITY-3: a consolidation revoked before its 30 days never gives standing (ADR 0001
+    ///      section 11). One transaction from the key plants a wallet and a refresh records it as
+    ///      pending. The artist revokes it on day 1 and a refresh observes that: the pending entry
+    ///      goes at once, so the wallet is not captured once its recorded `effectiveAt` passes. A
+    ///      re-consolidation starts a new 30 days. (A wallet revoked after its 30 days keeps
+    ///      standing for the grace: N1 and the grace tests.)
+    function test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding() public {
+        address planted = makeAddr("plantedWallet");
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).effectiveAt, t0 + 30 days, "recorded as pending");
+
+        vm.warp(t0 + 1 days);
+        _revoke(artist, planted);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRemoved(artistId, planted);
+        registry.refreshStanding(artistId);
+        assertFalse(_hasStanding(planted), "removed at once: it never had standing");
+
+        vm.warp(t0 + 30 days);
+        assertFalse(adapter.isEstablished(artist, planted));
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        assertFalse(_inCancellers(planted), "a STANDARD change does not capture it");
+        _expectNotAuthorized(planted);
+        vm.prank(planted);
+        registry.cancelChange(artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertFalse(_inCancellers(planted), "nor does an override");
+        _expectNotAuthorized(planted);
+        vm.prank(planted);
+        registry.cancelChange(artistId);
+        assertEq(registry.pendingChange(artistId).contestedAt, 0, "not contested");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        // Consolidated again, it is recorded with the new registration's 30 days.
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).effectiveAt, t0 + 60 days, "a new 30 days");
+        assertEq(_entry(planted).missingSince, 0);
+    }
+
+    /// @dev IDENTITY-3, control: without a refresh observing the revocation before the recorded
+    ///      `effectiveAt`, a refresh after it cannot tell when the consolidation ended, and treats
+    ///      the entry as an established wallet gone missing. The artist's own refresh after
+    ///      revoking (prompted by 6529.io) is what removes a planted wallet in time.
+    function test_Standing_RevocationObservedOnlyAfterTheThirtyDaysKeepsTheGrace() public {
+        address planted = makeAddr("plantedWallet");
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        vm.warp(t0 + 1 days);
+        _revoke(artist, planted);
+        vm.warp(t0 + 30 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingMissing(artistId, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).missingSince, block.timestamp);
+    }
+
     /// @dev N2 inverted: a recorded wallet beyond the bounded scan is checked directly, so a
     ///      wallet that is still established is never marked missing or removed.
     function test_N2_StillEstablishedWalletBeyondTheScanKeepsStanding() public {
@@ -651,19 +712,20 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertTrue(_inCancellers(wallet2), "captured before the young pair's 30 days");
     }
 
-    /// @dev A recorded wallet's clock only moves earlier: a key holder's revoke and re-add cannot
-    ///      push it later.
+    /// @dev An established wallet's clock only moves earlier: a key holder's revoke and re-add
+    ///      cannot push it later. (A pending wallet's revocation ends it: IDENTITY-3.)
     function test_Standing_ReConsolidationCannotResetTheClock() public {
         uint256 first = block.timestamp;
         _consolidate(artist, wallet2);
         registry.refreshStanding(artistId);
         assertEq(_entry(wallet2).effectiveAt, first + 30 days);
-        vm.warp(first + 10 days);
+        vm.warp(first + 40 days);
         _revoke(artist, wallet2);
         registry.refreshStanding(artistId);
-        vm.warp(first + 20 days);
+        assertEq(_entry(wallet2).missingSince, block.timestamp, "missing, within the grace");
+        vm.warp(first + 50 days);
         _delegate(artist, wallet2, FAR);
-        assertEq(adapter.effectiveAt(artist, wallet2), first + 50 days);
+        assertEq(adapter.effectiveAt(artist, wallet2), first + 80 days);
         registry.refreshStanding(artistId);
         assertEq(_entry(wallet2).effectiveAt, first + 30 days, "pinned");
         assertEq(_entry(wallet2).missingSince, 0);

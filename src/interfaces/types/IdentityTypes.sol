@@ -30,8 +30,9 @@ enum ChangeKind {
 ///         "Canceller set captured at staging").
 /// @dev `effectiveAt` is when the wallet's consolidation became (or becomes) at least 30 days
 ///      old; before then the entry is pending and confers no standing. `missingSince` is when a
-///      refresh first found the wallet no longer consolidated, or zero. A missing wallet keeps
-///      standing until a refresh at least `STANDING_GRACE` later removes it. One storage slot.
+///      refresh first found the established wallet no longer consolidated, or zero. A missing
+///      wallet keeps standing until a refresh at least `STANDING_GRACE` later removes it; a
+///      pending entry found no longer consolidated is removed at once. One storage slot.
 struct Standing {
     address wallet;
     uint48 effectiveAt;

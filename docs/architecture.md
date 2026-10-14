@@ -240,10 +240,11 @@ default when the sale starts".
 2. The registry captures cancellers at staging: the effective wallets in the
    artist's sticky standing snapshot. A refresh records every two-way
    consolidation, a young one as pending until it is 30 days old; a keeper or
-   the 6529.io UI refreshes after consolidation events. A wallet that is no
-   longer consolidated keeps standing until a refresh at least 30 days after it
-   went missing, so revoking the artist's consolidations cannot strip their
-   standing. An authority can also burn its current change nonce
+   the 6529.io UI refreshes after consolidation events. An established wallet
+   that is no longer consolidated keeps standing until a refresh at least 30
+   days after it went missing, so revoking the artist's consolidations cannot
+   strip their standing. A pending one found no longer consolidated is dropped
+   at once: a consolidation that ended before its 30 days never counts. An authority can also burn its current change nonce
    (`revokeNonce`) so that a change it pre-signed can never be staged.
    - For 7 days, the previous authority or any captured wallet can cancel.
    - The guardian can veto (`vetoChange`), which blocks a change but never

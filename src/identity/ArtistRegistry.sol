@@ -58,12 +58,15 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      events). A refresh records every live two-way consolidation, a young one as pending
 ///      until its `effectiveAt` (registration plus 30 days). A recorded wallet that is no longer
 ///      consolidated (checked directly, not only against the bounded scan) is marked missing but
-///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. When the
+///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. A pending
+///      entry found no longer consolidated is removed at once: a consolidation that ended before
+///      its 30 days never gives standing (ADR 0001 section 11). When the
 ///      snapshot is full nothing is evicted early: established wallets take free slots before
 ///      pending ones, and slots free up only as missing entries age out. The cancellers
 ///      captured at staging are the snapshot's entries whose `effectiveAt` has passed, so a key
 ///      holder who revokes or reorders the artist's consolidations cannot strip their standing:
-///      one refresh any time after consolidating suffices.
+///      one refresh any time after consolidating suffices (a consolidation revoked before its 30
+///      days never had standing to strip).
 ///      After a rotation the previous authority's wallets stay in the snapshot as missing for the
 ///      grace, so a full snapshot admits the new authority's wallets only as they age out.
 ///
@@ -632,8 +635,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev Updates recorded entries (a wallet absent from the bounded scan is checked directly
-    ///      before it is marked missing), removes those missing for {STANDING_GRACE}, then records
-    ///      new consolidations in free slots, established before pending. Nothing is evicted.
+    ///      before it is marked missing), removes those missing for {STANDING_GRACE} and pending
+    ///      ones found missing (they never had standing), then records new consolidations in free
+    ///      slots, established before pending. Nothing is evicted.
     function _refresh(uint256 artistId, address authority) private {
         IConsolidationSource source = consolidationSource;
         (address[] memory live, uint64[] memory times) = source.consolidations(authority);
@@ -653,12 +657,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                     e.missingSince = 0;
                     emit StandingAdded(artistId, wallet, e.effectiveAt);
                 }
-            } else if (e.missingSince == 0) {
+                // forge-lint: disable-next-line(block-timestamp)
+            } else if (e.missingSince == 0 && e.effectiveAt <= block.timestamp) {
                 // forge-lint: disable-next-line(unsafe-typecast)
                 e.missingSince = uint48(block.timestamp);
                 emit StandingMissing(artistId, wallet);
+                // A pending entry found missing never had standing: its consolidation ended
+                // before its 30 days, so it goes at once (ADR 0001 section 11).
+            } else if (
                 // forge-lint: disable-next-line(block-timestamp)
-            } else if (block.timestamp >= uint256(e.missingSince) + STANDING_GRACE) {
+                e.missingSince == 0 || block.timestamp >= uint256(e.missingSince) + STANDING_GRACE
+            ) {
                 s[i - 1] = s[s.length - 1];
                 s.pop();
                 emit StandingRemoved(artistId, wallet);

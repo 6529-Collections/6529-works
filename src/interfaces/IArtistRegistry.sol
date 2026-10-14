@@ -69,12 +69,15 @@ interface IConsolidationSource is IERC165 {
 ///      events). A refresh records every live two-way consolidation, a young one as pending
 ///      until its `effectiveAt` (registration plus 30 days). A recorded wallet that is no longer
 ///      consolidated (checked directly, not only against the bounded scan) is marked missing but
-///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. When the
+///      keeps standing; only a refresh at least `STANDING_GRACE` later removes it. A pending
+///      entry found no longer consolidated is removed at once: a consolidation that ended before
+///      its 30 days never gives standing (ADR 0001 section 11). When the
 ///      snapshot is full nothing is evicted early: established wallets take free slots before
 ///      pending ones, and slots free up only as missing entries age out. The cancellers
 ///      captured at staging are the snapshot's entries whose `effectiveAt` has passed, so a key
 ///      holder who revokes or reorders the artist's consolidations cannot strip their standing:
-///      one refresh any time after consolidating suffices.
+///      one refresh any time after consolidating suffices (a consolidation revoked before its 30
+///      days never had standing to strip).
 ///      Dormancy counts the artist's own activity only: registration (the first package
 ///      acceptance), a staged change, a heartbeat, a cancellation by the old key or a captured
 ///      wallet, a nonce revocation, and a change's execution. Governed overrides and guardian

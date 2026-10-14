@@ -84,4 +84,5 @@
 - Identity review fixes. IDENTITY-2: a staged change that moves the authority reserves the
   new one for the artist (`IArtistRegistry.reservedFor`, one storage slot while it waits) until
   it executes or ends; `register` and other artists' changes refuse a reserved account with
-  `AccountTaken`.
+  `AccountTaken`. IDENTITY-3: a refresh removes a pending standing entry that is no longer
+  consolidated at once, so a consolidation revoked before its 30 days never gives standing.

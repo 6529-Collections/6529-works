@@ -341,9 +341,12 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - A hostile approved package can spend one randomness draw per VRF item until
     a guardian revokes it.
   - Zero-price artist-approved allowlist entries pay no network fee.
-  - Anyone who holds an artist's key for 30 days or more can establish their
-    own consolidated wallets, before or after a hijack. Those wallets can
-    contest recovery overrides and can fill the standing snapshot's free slots.
+  - Anyone who can send one transaction from an artist's key, or from a
+    use-case-998 sub-delegate of it, can consolidate their own wallets, before
+    or after a hijack. Once a refresh records them and their consolidations
+    stay live for 30 days, those wallets can contest recovery overrides; they
+    can fill the standing snapshot's free slots at once. Revoking such a
+    consolidation and refreshing before its 30 days end removes it.
     A contested override no longer stalls: a TDH vote decides it (see
     [Owner decisions](#owner-decisions-11-october-2026)).
   - Standing protects only wallets that a refresh has recorded. Artists call
