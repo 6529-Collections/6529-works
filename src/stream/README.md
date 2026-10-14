@@ -100,7 +100,12 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   record and license text are therefore permanent and readable on-chain.
 - **Locators.** Append-only ARWEAVE and IPFS copies of media files: at most 8
   per file added by the artist and 8 by the platform, so neither can exhaust
-  the other's. A URI already registered for the file is refused, compared as
+  the other's. Each URI is a content address with nothing after it, so the
+  content it names cannot be repointed: `ar://` and a 43-character base64url
+  transaction ID (an ArNS name is never 43 characters long), or `ipfs://` and a
+  base32 CIDv1 with a sha2-256 multihash, a raw leaf (`bafkrei...`) or a dag-pb
+  root (`bafybei...`), 59 characters. No path, query or fragment, so no `%` or
+  `#` either. A URI already registered for the file is refused, compared as
   exact bytes, so a different spelling of the same content counts as new. The
   set of registered URIs is shared, so whichever side adds a URI first holds it
   against its own quota, and the URI is listed either way. Preferred location:
@@ -111,3 +116,10 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   (kind NONE). Locators are not verified on-chain: each is registered as a copy
   of that one file, and the storage operator chooses only among the copies
   registered for it.
+- **Held locators.** "Final" fixes the content, so after finalize an artist's
+  new locator does not change what a work shows by itself. It is held: listed
+  and emitted like any other, but skipped by the kinds and the first-registered
+  fallback, so it is served only while the storage operator selects it with
+  `setFilePreference` (after checking that it names the committed bytes). The
+  platform's locators, and the artist's from before finalize, are served as
+  usual.

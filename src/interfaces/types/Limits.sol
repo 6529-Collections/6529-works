@@ -24,7 +24,8 @@ library Limits {
     uint256 internal constant MAX_LICENSE_ID_BYTES = 64;
     /// @notice Locators per file of a work.
     uint256 internal constant MAX_LOCATORS_PER_FILE = 16;
-    /// @notice Bytes per locator URI (the statement log uses the same bound).
+    /// @notice Bytes per URI, the statement log's bound. A locator URI is a content address of
+    ///         at most 66 bytes (`Locator`), well inside it.
     uint256 internal constant MAX_URI_BYTES = 2_048;
     /// @notice Phases per fixed-price sale.
     uint256 internal constant MAX_PHASES = 16;

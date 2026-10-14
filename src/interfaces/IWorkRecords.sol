@@ -109,9 +109,10 @@ interface IWorkRecords {
     error LicenseIrrevocable(uint256 tokenId);
     /// @notice The file is not one of the work's media files.
     error FileNotInWork(uint256 tokenId, bytes32 fileId);
-    /// @notice The locator kind is NONE or ONCHAIN, the URI is malformed or already registered for
-    ///         the file, or the caller's quota for the file (the artist's or the platform's half
-    ///         of `Limits.MAX_LOCATORS_PER_FILE`) is used up.
+    /// @notice The locator kind is NONE or ONCHAIN, the URI is not a content address of its kind
+    ///         (see `Locator`) or is already registered for the file, or the caller's quota for
+    ///         the file (the artist's or the platform's half of `Limits.MAX_LOCATORS_PER_FILE`)
+    ///         is used up.
     error InvalidLocator();
     /// @notice A media file still lacks chunks in the content store.
     error NotOnChainComplete(uint256 tokenId);
@@ -224,10 +225,14 @@ interface IWorkRecords {
 
     /// @notice Appends an ARWEAVE or IPFS locator for one of the work's media files. Callable by
     ///         the artist or the PLATFORM role, also after finalize (delivery routing stays
-    ///         operable). At most `Limits.MAX_URI_BYTES` per URI. Each file takes at most half
-    ///         of `Limits.MAX_LOCATORS_PER_FILE` (8) from the artist and half from the platform,
-    ///         so neither can exhaust the other's, and a URI already registered for the file is
-    ///         refused (`InvalidLocator`).
+    ///         operable). The URI must be a content address with nothing after it: `ar://` and
+    ///         a 43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile (see
+    ///         `Locator`). Each file takes at most half of `Limits.MAX_LOCATORS_PER_FILE` (8)
+    ///         from the artist and half from the platform, so neither can exhaust the other's,
+    ///         and a URI already registered for the file is refused (`InvalidLocator`). A
+    ///         locator the artist adds after finalize is held: it is listed, but
+    ///         `preferredLocator` serves it only while the storage operator selects it with
+    ///         `setFilePreference`, since the content it names is not verified on-chain.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
     /// @notice A file's registered locators, in registration order.
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);
@@ -236,7 +241,9 @@ interface IWorkRecords {
     ///         preferred kind, then the first registered locator, then the implicit ONCHAIN copy.
     ///         A kind matches only if the file has a locator of that kind, and then its first
     ///         such locator is used; ONCHAIN matches only a work `syncOnChain` marked on-chain
-    ///         complete (the stored flag, never a content-store scan). Returns an empty locator
+    ///         complete (the stored flag, never a content-store scan). Held locators (added by
+    ///         the artist after finalize) are skipped by the kinds and the first-registered
+    ///         fallback, so only the file's preferred index serves them. Returns an empty locator
     ///         (kind NONE) when nothing matches.
     /// @return locator The chosen locator.
     /// @return index Its registration index, or `type(uint256).max` for the implicit ONCHAIN one

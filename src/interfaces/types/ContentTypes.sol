@@ -34,6 +34,11 @@ struct MediaFile {
 
 /// @notice A registered copy of a file: `ar://<txid>` for ARWEAVE, `ipfs://<CIDv1>` under the fixed
 ///         CID profile for IPFS. Locators are append-only.
+/// @dev Each URI is a content address with nothing after it (no path, query or fragment), so
+///      what it names cannot be repointed: ARWEAVE is `ar://` and a 43-character base64url
+///      transaction ID (`[A-Za-z0-9_-]`; ArNS names are never 43 characters long), 48 bytes;
+///      IPFS is `ipfs://` and a base32 CIDv1 with a sha2-256 multihash, a raw leaf (`bafkrei`)
+///      or a dag-pb root (`bafybei`), 66 bytes.
 struct Locator {
     LocatorKind kind;
     string uri;

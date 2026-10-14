@@ -8,6 +8,7 @@ import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/
 import { License, PackageItem, Party, PartyRole } from "src/interfaces/types/PackageTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice Worst-case transactions against the EIP-7825 (Fusaka) cap of 16,777,216 gas. Foundry
@@ -136,13 +137,13 @@ contract StreamTxCapTest is RecordsFixture {
         _call(address(records), governor, callData, "relicense, 16 consents:");
     }
 
+    /// @dev The longest URI a locator can have: `ipfs://` and a 59-character CID.
     function test_txCap_addLocatorLongestUri() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = records.mediaOf(tokenId)[0].fileId;
-        Locator memory locator =
-            Locator(LocatorKind.IPFS, string.concat("ipfs://", string(_repeat("b", 2041))));
+        Locator memory locator = CA.ipfsLocator("longest");
         bytes memory callData = abi.encodeCall(records.addLocator, (tokenId, file, locator));
-        _call(address(records), platform, callData, "addLocator, 2,048-byte URI:");
+        _call(address(records), platform, callData, "addLocator, 66-byte URI:");
     }
 
     function test_txCap_preferredLocatorScansSixteen() public {
@@ -151,9 +152,7 @@ contract StreamTxCapTest is RecordsFixture {
         // The platform's 8 and the artist's 8: the most a file can hold.
         for (uint256 i; i < 16; ++i) {
             vm.prank(i < 8 ? platform : artist);
-            records.addLocator(
-                tokenId, file, Locator(LocatorKind.ARWEAVE, string.concat("ar://", vm.toString(i)))
-            );
+            records.addLocator(tokenId, file, CA.ar(vm.toString(i)));
         }
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);

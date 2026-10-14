@@ -47,6 +47,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
     /// @dev Locators per file the artist may add, and separately the platform (16 in all).
     uint256 private constant LOCATOR_QUOTA = Limits.MAX_LOCATORS_PER_FILE / 2;
+    /// @dev The characters of an Arweave transaction ID (base64url: `A-Z a-z 0-9 - _`) and of a
+    ///      base32 CID (`a-z 2-7`), as bit sets over ASCII.
+    uint256 private constant TXID_CHARS = 0x07fffffe87fffffe03ff200000000000;
+    uint256 private constant CID_CHARS = 0x07fffffe0000000000fc000000000000;
 
     /// @dev Word 0: the pin, version, media count and flags. `roles` packs each file's role in
     ///      eight bits, file `i` at bits `8i`.
@@ -63,10 +67,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         uint256 roles;
     }
 
-    /// @dev How many of a file's locators the artist and the platform each added.
+    /// @dev How many of a file's locators the artist and the platform each added, and which
+    ///      the artist added after finalize (bit `i` for locator `i`): those are held, served
+    ///      only when the storage operator selects them.
     struct LocatorCounts {
         uint8 artist;
         uint8 platform;
+        uint16 held;
     }
 
     /// @inheritdoc IWorkRecords
@@ -413,9 +420,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev The artist and the platform each have a quota of `MAX_LOCATORS_PER_FILE / 2` (8)
     ///      locators per file, so neither can exhaust the other's. A URI already registered for
     ///      the file is refused, compared as exact bytes; the set is shared, so whichever side
-    ///      adds a URI first holds it (it is listed either way).
+    ///      adds a URI first holds it (it is listed either way). A locator the artist adds after
+    ///      finalize is held: listed, but served only when the storage operator selects it.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
-        _open(tokenId);
+        bool finalized = _open(tokenId).finalized;
         bool byArtist = _isArtist(tokenId, msg.sender);
         if (!byArtist) _checkCanCall(msg.sender, _msgData());
         _requireMedia(tokenId, fileId);
@@ -427,10 +435,16 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             revert InvalidLocator();
         }
         seen[uriHash] = true;
-        if (byArtist) ++counts.artist;
-        else ++counts.platform;
         Locator[] storage list = _locators[tokenId][fileId];
         uint256 index = list.length;
+        if (!byArtist) {
+            ++counts.platform;
+        } else {
+            ++counts.artist;
+            // At most 16 locators per file (the two quotas), so the bit fits in 16 bits.
+            // forge-lint: disable-next-line(unsafe-typecast, incorrect-shift)
+            if (finalized) counts.held |= uint16(1 << index);
+        }
         list.push(locator);
         emit LocatorAdded(tokenId, fileId, index, locator);
         _refresh(tokenId);
@@ -447,9 +461,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      not verified on-chain, so the storage operator chooses only among the copies
     ///      registered for the file. ONCHAIN matches on the work's stored
     ///      `onChainComplete` flag (`syncOnChain`), never on a content-store completeness scan,
-    ///      which costs a read per chunk. With no registered locator, a synced work's file
-    ///      resolves to the implicit ONCHAIN copy; otherwise the result is the empty locator
-    ///      (kind NONE, index `type(uint256).max`).
+    ///      which costs a read per chunk. A held locator (the artist's, added after finalize)
+    ///      is skipped by the kinds and the fallback, so only the file preference serves it.
+    ///      With no other locator, a synced work's file resolves to the implicit ONCHAIN copy;
+    ///      otherwise the result is the empty locator (kind NONE, index `type(uint256).max`).
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view
@@ -458,15 +473,18 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bool onChain = _open(tokenId).onChainComplete;
         _requireMedia(tokenId, fileId);
         Locator[] storage list = _locators[tokenId][fileId];
+        uint256 held = _locatorCounts[tokenId][fileId].held;
         index = _filePrefs[tokenId][fileId];
         bool found = index != 0;
         if (found) index -= 1;
         if (!found) {
             (,, uint256 collectionId,,,) = _core(tokenId);
-            (found, index) = _firstOfKind(list, onChain, _collectionKinds[collectionId]);
+            (found, index) = _firstOfKind(list, held, onChain, _collectionKinds[collectionId]);
         }
-        if (!found) (found, index) = _firstOfKind(list, onChain, preferredKind);
-        if (!found && list.length != 0) (found, index) = (true, 0);
+        if (!found) (found, index) = _firstOfKind(list, held, onChain, preferredKind);
+        for (uint256 i; !found && i < list.length; ++i) {
+            if ((held >> i) & 1 == 0) (found, index) = (true, i);
+        }
         if (!found && onChain) (found, index) = (true, NONE);
         if (!found) return (Locator(LocatorKind.NONE, ""), NONE);
         locator = index == NONE ? Locator(LocatorKind.ONCHAIN, "") : list[index];
@@ -702,30 +720,34 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         revert FileNotInWork(tokenId, fileId);
     }
 
-    /// @dev Locator URIs are printable ASCII without quotes, backslashes or angle brackets,
-    ///      after the kind's scheme: `ar://` or `ipfs://` (D11).
+    /// @dev A locator URI is a content address, so what it names cannot change (D11, ADR 0003
+    ///      "Locator kinds"), with nothing after it (no path, query or fragment):
+    ///      - ARWEAVE: `ar://` and a 43-character transaction ID in base64url. An ArNS name,
+    ///        which its owner can repoint, is never 43 characters long.
+    ///      - IPFS: `ipfs://` and a CIDv1 of the fixed profile (ADR 0001 section 8): base32
+    ///        (`b`), sha2-256, a raw leaf or a dag-pb root (`bafkrei` or `bafybei`), 59
+    ///        characters in all.
     function _checkUri(Locator calldata locator) private pure {
         bytes calldata uri = bytes(locator.uri);
+        uint256 chars = 0;
         uint256 start = 0;
-        if (locator.kind == LocatorKind.ARWEAVE && uri.length > 5 && bytes5(uri[:5]) == "ar://") {
-            start = 5;
-        } else if (
-            locator.kind == LocatorKind.IPFS && uri.length > 7 && bytes7(uri[:7]) == "ipfs://"
-        ) {
-            start = 7;
-        }
-        if (start == 0 || uri.length > Limits.MAX_URI_BYTES) revert InvalidLocator();
-        for (uint256 i = start; i < uri.length; ++i) {
-            bytes1 c = uri[i];
-            if (c < 0x21 || c > 0x7e || c == '"' || c == "\\" || c == "<" || c == ">") {
-                revert InvalidLocator();
+        if (locator.kind == LocatorKind.ARWEAVE) {
+            if (uri.length == 48 && bytes5(uri[:5]) == "ar://") (chars, start) = (TXID_CHARS, 5);
+        } else if (locator.kind == LocatorKind.IPFS && uri.length == 66) {
+            bytes14 head = bytes14(uri[:14]);
+            if (head == "ipfs://bafkrei" || head == "ipfs://bafybei") {
+                (chars, start) = (CID_CHARS, 14);
             }
+        }
+        if (chars == 0) revert InvalidLocator();
+        for (uint256 i = start; i < uri.length; ++i) {
+            if ((chars >> uint8(uri[i])) & 1 == 0) revert InvalidLocator();
         }
     }
 
-    /// @dev The first locator of `kind`, or the implicit ONCHAIN one (`NONE`) when the work is
-    ///      on-chain complete. NONE as a kind never matches.
-    function _firstOfKind(Locator[] storage list, bool onChain, LocatorKind kind)
+    /// @dev The first locator of `kind` that is not held, or the implicit ONCHAIN one (`NONE`)
+    ///      when the work is on-chain complete. NONE as a kind never matches.
+    function _firstOfKind(Locator[] storage list, uint256 held, bool onChain, LocatorKind kind)
         private
         view
         returns (bool, uint256)
@@ -733,7 +755,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (kind == LocatorKind.NONE) return (false, 0);
         if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
         for (uint256 i; i < list.length; ++i) {
-            if (list[i].kind == kind) return (true, i);
+            if ((held >> i) & 1 == 0 && list[i].kind == kind) return (true, i);
         }
         return (false, 0);
     }

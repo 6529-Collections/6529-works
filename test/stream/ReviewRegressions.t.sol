@@ -15,6 +15,7 @@ import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { MockEditions, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 import { console2 } from "forge-std/Test.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice The PR #22 reviews' proofs of concept (rounds 1 and 2), inverted into regressions:
@@ -406,7 +407,7 @@ contract ReviewRegressionsTest is RecordsFixture {
     }
 
     function _ipfs(string memory s) internal pure returns (Locator memory) {
-        return Locator(LocatorKind.IPFS, string.concat("ipfs://", s));
+        return CA.ipfsLocator(s);
     }
 
     /// @dev Locators: the quotas are independent; the duplicate set is shared, so either side
@@ -426,8 +427,9 @@ contract ReviewRegressionsTest is RecordsFixture {
         vm.prank(platform);
         vm.expectRevert(IWorkRecords.InvalidLocator.selector);
         records.addLocator(tokenId, fileId, _ipfs("0"));
+        // The same CID as a dag-pb root is another spelling, so another URI.
         vm.prank(platform);
-        records.addLocator(tokenId, fileId, _ipfs("0?"));
+        records.addLocator(tokenId, fileId, Locator(LocatorKind.IPFS, CA.ipfsRoot("0")));
         assertEq(records.locators(tokenId, fileId).length, 10);
     }
 

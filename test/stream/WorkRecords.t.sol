@@ -13,6 +13,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 contract WorkRecordsTest is RecordsFixture {
@@ -1010,12 +1011,13 @@ contract WorkRecordsTest is RecordsFixture {
 
     // --------------------------------------------------------------------------- locators
 
+    /// @dev A well-formed locator derived from `id` (`ContentAddresses`).
     function _ar(string memory id) internal pure returns (Locator memory) {
-        return Locator(LocatorKind.ARWEAVE, string.concat("ar://", id));
+        return CA.ar(id);
     }
 
     function _ipfs(string memory id) internal pure returns (Locator memory) {
-        return Locator(LocatorKind.IPFS, string.concat("ipfs://", id));
+        return CA.ipfsLocator(id);
     }
 
     function _primary(uint256 tokenId) internal view returns (bytes32) {
@@ -1036,7 +1038,7 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(tokenId, file, _ipfs("bafy1"));
         Locator[] memory list = records.locators(tokenId, file);
         assertEq(list.length, 2);
-        assertEq(list[1].uri, "ipfs://bafy1");
+        assertEq(list[1].uri, CA.ipfs("bafy1"));
         assertEq(records.workStateHash(tokenId), state);
 
         vm.prank(artist);
@@ -1060,24 +1062,38 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, keccak256("x"))
         );
         records.addLocator(tokenId, keccak256("x"), _ar("tx"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.ONCHAIN, "ar://tx"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.NONE, "ar://tx"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, "ipfs://cid"));
+        string memory txid = CA.arweave("tx");
+        string memory cid = CA.ipfs("cid");
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ONCHAIN, txid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.NONE, txid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, cid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, txid));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://"));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs:/"));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "https://example.com"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://a b"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, 'ipfs://a"b'));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://a<b"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://a\\b"));
+        // One byte changed, in each position class: the scheme, the profile prefix, the
+        // address, and a byte added or removed at the end.
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 2, "/")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 5, "=")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 47, "+")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string.concat(txid, "A")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 9, "y")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 14, "1")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 65, "A")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, string.concat(cid, "a")));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, unicode"ipfs://é"));
-        _expectBadLocator(
-            tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", _repeat(2042)))
-        );
-        records.addLocator(
-            tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", _repeat(2041)))
-        );
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 30, hex"ff")));
+        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, txid));
+        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, cid));
+        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfsRoot("cid")));
         vm.stopPrank();
+    }
+
+    /// @dev `s` with byte `i` replaced by `b`.
+    function _with(string memory s, uint256 i, bytes1 b) internal pure returns (string memory) {
+        bytes memory out = bytes(string.concat(s));
+        out[i] = b;
+        return string(out);
     }
 
     /// @dev The artist and the platform each add at most 8 locators per file, so neither can
@@ -1125,14 +1141,6 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(tokenId, file, locator);
     }
 
-    function _repeat(uint256 n) internal pure returns (string memory) {
-        bytes memory out = new bytes(n);
-        for (uint256 i; i < n; ++i) {
-            out[i] = "a";
-        }
-        return string(out);
-    }
-
     function test_preferredLocator_mostSpecificWins() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
@@ -1142,19 +1150,19 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(tokenId, file, _ar("a2"));
         vm.stopPrank();
 
-        _expectPreferred(tokenId, file, 0, "ar://a0");
+        _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         vm.startPrank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
-        _expectPreferred(tokenId, file, 1, "ipfs://i1");
+        _expectPreferred(tokenId, file, 1, CA.ipfs("i1"));
         records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
-        _expectPreferred(tokenId, file, 0, "ar://a0");
+        _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         records.setFilePreference(tokenId, file, 2);
-        _expectPreferred(tokenId, file, 2, "ar://a2");
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         records.setCollectionPreferredKind(collectionId, LocatorKind.ONCHAIN);
-        _expectPreferred(tokenId, file, 2, "ar://a2");
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         records.setFilePreference(tokenId, file, NONE);
         // The media is stored but the work is not synced, so ONCHAIN falls through to IPFS.
-        _expectPreferred(tokenId, file, 1, "ipfs://i1");
+        _expectPreferred(tokenId, file, 1, CA.ipfs("i1"));
         vm.stopPrank();
         records.syncOnChain(tokenId);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
@@ -1173,9 +1181,9 @@ contract WorkRecordsTest is RecordsFixture {
         records.setPreferredKind(LocatorKind.ONCHAIN);
         vm.prank(platform);
         records.addLocator(tokenId, file, _ipfs("i0"));
-        _expectPreferred(tokenId, file, 0, "ipfs://i0");
+        _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
         _upload(1);
-        _expectPreferred(tokenId, file, 0, "ipfs://i0");
+        _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
         records.syncOnChain(tokenId);
         vm.expectCall(address(store), abi.encodeWithSelector(IContentStore.isComplete.selector), 0);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);

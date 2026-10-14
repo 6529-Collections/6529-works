@@ -220,10 +220,14 @@ default when the sale starts".
    (`setRecord`, bound to the state hash). Media never changes.
    - The version bumps only on a real change: the record pointer, license,
      royalty rate or renderer pin. An identical re-publish is a no-op.
-2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators.
+2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators. Each is a
+   content address: `ar://` and a 43-character transaction ID, or `ipfs://` and
+   a CIDv1 of the fixed profile, with no path.
    - The STORAGE_OPERATOR role sets preferences. The most specific one wins:
      the file index, then the collection kind, then the global kind, then the
      first registered locator. A file with no locator yields an empty one.
+   - A locator the artist adds after finalize is held: only the file index
+     serves it, so it shows once the storage operator selects it.
    - It cannot add, remove or alter locators.
 3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
    is on-chain complete: the record becomes immutable and Stream's default

@@ -197,3 +197,7 @@
   module, at every request and delivery) and the artist resolver (statement log, at every
   ARTIST authorization) are checked against their pinned code hash at every use, not only at
   install.
+- Records (CONTENT-3, LIFECYCLE-3): a locator URI must be a content address with nothing
+  after it, `ar://` and a 43-character transaction ID or `ipfs://` and a CIDv1 of the fixed
+  profile (`bafkrei`/`bafybei`, 59 characters). A locator the artist adds after finalize is
+  held: `preferredLocator` serves it only through the storage operator's file preference.

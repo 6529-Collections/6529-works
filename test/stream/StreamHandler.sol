@@ -17,6 +17,7 @@ import {
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { MockEconomics, MockRenderer, MockSaleAdapter } from "../mocks/stream/StreamMocks.sol";
 
 /// @notice Drives 6529 Stream and its records satellite through random sequences of mints
@@ -337,9 +338,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         // The platform's quota is 8 per file.
         if (n >= 8) return;
         vm.prank(platform);
-        records.addLocator(
-            tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", vm.toString(n)))
-        );
+        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfs(vm.toString(n))));
     }
 
     function warp(uint256 secondsAhead) external {
