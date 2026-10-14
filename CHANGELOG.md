@@ -117,3 +117,7 @@
   costs far more than the Prague-sized minimums) is paid, instead of settling where it fails
   silently. A target that burns all its gas now reverts the batch instead of being skipped.
   The NatSpec, the economics README and ADR 0004 restate the minimums and batch sizes.
+- Tests: the integration gas report measures the split-wallet operations (`createWallet`
+  for a seller wallet, an artist's first ETH `release`, and a first and a later signed
+  release through the claim router), with exact counts and regression ceilings, also in
+  ADR 0004's table.
