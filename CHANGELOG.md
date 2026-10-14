@@ -106,3 +106,8 @@
   and any contract declaring the revenue escrow, claim router, sale adapter or mint target
   interface. Works lock the recipient at mint, so such a recipient made their sales
   unsettleable.
+- Economics (MONEY-2): an escrow credit owed to an account that is not a split wallet,
+  such as the network fee recipient's Safe when a token blocks it, can be recovered. The
+  account names its replacement with `RevenueEscrow.consentToRecovery`, and the governed
+  `recover` (14 days) moves the credit only there. The fee recipient's share in existing
+  royalty wallets is released with `releaseTo`; the economics README and ADR 0003 say how.

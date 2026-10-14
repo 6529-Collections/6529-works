@@ -285,15 +285,149 @@ contract RevenueEscrowTest is EconomicsBase {
             );
             escrow.recover(address(wallet), bad[i], ETH);
         }
+        // An account that is not a factory wallet needs its own consent (MONEY-2).
         vm.prank(depositor);
         escrow.depositETH{ value: 1 ether }(alice);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IRevenueEscrow.NotEquivalentWallet.selector, alice, address(wallet)
+                IRevenueEscrow.RecoveryNotConsented.selector, alice, address(wallet)
             )
         );
         escrow.recover(alice, address(wallet), ETH);
         assertEq(escrow.owed(address(wallet), ETH), 1 ether);
+    }
+
+    // ------------------------------------------------------------------ consented recovery (MONEY-2)
+
+    function test_ConsentToRecoveryRecordsChangesAndWithdraws() public {
+        vm.expectEmit(true, true, false, false, address(escrow));
+        emit IRevenueEscrow.RecoveryConsentSet(alice, bob);
+        vm.prank(alice);
+        escrow.consentToRecovery(bob);
+        assertEq(escrow.recoveryConsent(alice), bob);
+
+        vm.prank(alice);
+        escrow.consentToRecovery(keeper);
+        assertEq(escrow.recoveryConsent(alice), keeper);
+
+        vm.expectEmit(true, true, false, false, address(escrow));
+        emit IRevenueEscrow.RecoveryConsentSet(alice, address(0));
+        vm.prank(alice);
+        escrow.consentToRecovery(address(0));
+        assertEq(escrow.recoveryConsent(alice), address(0));
+        assertEq(escrow.recoveryConsent(bob), address(0), "consent is per account");
+    }
+
+    function test_ConsentToRecoveryRejectsTheEscrowAndTheCaller() public {
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, address(escrow))
+        );
+        escrow.consentToRecovery(address(escrow));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, alice));
+        escrow.consentToRecovery(alice);
+        assertEq(escrow.recoveryConsent(alice), address(0));
+    }
+
+    /// @dev A blocked account that is not a split wallet (a fee recipient's Safe) names its
+    ///      replacement, and governance moves every asset's credit there, adding to any credit
+    ///      the replacement already holds.
+    function test_RecoverMovesAnAccountsCreditToTheReplacementItNamed() public {
+        BlocklistToken usdc = new BlocklistToken();
+        usdc.setBlocked(alice, true);
+        usdc.mint(address(payer), 1000);
+        assertTrue(payer.payERC20(alice, address(usdc), 1000));
+        vm.startPrank(depositor);
+        escrow.depositETH{ value: 1 ether }(alice);
+        escrow.depositETH{ value: 2 ether }(bob);
+        vm.stopPrank();
+
+        vm.prank(alice);
+        escrow.consentToRecovery(bob);
+        vm.expectEmit(true, true, true, true, address(escrow));
+        emit IRevenueEscrow.Recovered(alice, bob, address(usdc), 1000, 1000);
+        escrow.recover(alice, bob, address(usdc));
+        vm.expectEmit(true, true, true, true, address(escrow));
+        emit IRevenueEscrow.Recovered(alice, bob, ETH, 1 ether, 3 ether);
+        escrow.recover(alice, bob, ETH);
+
+        assertEq(escrow.owed(alice, address(usdc)), 0);
+        assertEq(escrow.owed(alice, ETH), 0);
+        assertEq(escrow.owed(bob, address(usdc)), 1000);
+        assertEq(escrow.owed(bob, ETH), 3 ether);
+        assertEq(escrow.totalOwed(ETH), 3 ether);
+        assertEq(escrow.totalOwed(address(usdc)), 1000);
+        vm.prank(keeper);
+        escrow.flush(bob, address(usdc));
+        assertEq(usdc.balanceOf(bob), 1000);
+    }
+
+    function test_RecoverRefusesAnAccountsCreditWithoutMatchingConsent() public {
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(alice);
+        address replacement = factory.createWallet(wallet.payees(), bytes32(uint256(1)));
+        address[3] memory targets = [bob, replacement, address(0)];
+        for (uint256 i; i < targets.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IRevenueEscrow.RecoveryNotConsented.selector, alice, targets[i]
+                )
+            );
+            escrow.recover(alice, targets[i], ETH);
+        }
+        vm.prank(alice);
+        escrow.consentToRecovery(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.RecoveryNotConsented.selector, alice, bob)
+        );
+        escrow.recover(alice, bob, ETH);
+        // A withdrawn consent moves nothing.
+        vm.prank(alice);
+        escrow.consentToRecovery(address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.RecoveryNotConsented.selector, alice, address(0))
+        );
+        escrow.recover(alice, address(0), ETH);
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.RecoveryNotConsented.selector, alice, keeper)
+        );
+        escrow.recover(alice, keeper, ETH);
+        assertEq(escrow.owed(alice, ETH), 1 ether);
+    }
+
+    /// @dev A split wallet's credit follows the identical-payees rule whatever consent is
+    ///      recorded for its address (a wallet cannot call `consentToRecovery`; the prank only
+    ///      proves the rule), and a predicted wallet's credit cannot move at all until the wallet
+    ///      is deployed, since no key controls its address.
+    function test_WalletCreditsIgnoreConsent() public {
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(address(wallet));
+        vm.prank(address(wallet));
+        escrow.consentToRecovery(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.NotEquivalentWallet.selector, address(wallet), keeper
+            )
+        );
+        escrow.recover(address(wallet), keeper, ETH);
+
+        address predicted = factory.walletFor(wallet.payees(), bytes32(uint256(9)));
+        vm.prank(depositor);
+        escrow.depositETH{ value: 1 ether }(predicted);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRevenueEscrow.RecoveryNotConsented.selector, predicted, address(wallet)
+            )
+        );
+        escrow.recover(predicted, address(wallet), ETH);
+    }
+
+    function test_ConsentToRecoveryIsNonPayable() public {
+        (bool ok,) = address(escrow).call{ value: 1 }(
+            abi.encodeCall(IRevenueEscrow.consentToRecovery, (bob))
+        );
+        assertFalse(ok);
     }
 
     /// @dev A replacement with no factory configuration (a contract or an address the factory

@@ -13,7 +13,7 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 | `SplitWallet` | Immutable pull-payment wallet for ETH (`address(0)`) and any ERC-20. Payee `i` may release `floor(observed × share / 100,000) − released`, where `observed` is the balance plus everything released. Fixed payees name an account. Artist-resolved payees name an `artistId` and are paid at the resolver's current address. |
 | `ReleaseVerifier` | The singleton for signed releases (EIP-712, ERC-1271, EIP-7702 through the shared `SignatureVerifier`). An authorization binds wallet, asset, payee, account, recipient, amount, nonce and deadline; the domain binds the chain. Nonces are unordered, single use, per account across all wallets, and revocable. |
 | `AssetAllowlist` | Governed currency allowlist: a status per asset (`Active`, `Deprecated`), a per-currency increment floor and a default currency per product. ETH is admitted at deployment. Admission is compare-and-set on status and floor. |
-| `RevenueEscrow` | Credits a wallet when a payment to it fails. Anyone flushes a credit to its wallet. Governed `recover` moves a credit only to an equivalent replacement wallet. |
+| `RevenueEscrow` | Credits a wallet when a payment to it fails. Anyone flushes a credit to its wallet. Governed `recover` moves a split wallet's credit only to an equivalent replacement wallet, and any other account's only to the replacement that account named (`consentToRecovery`). |
 | `EconomicsResolver` | Implements `IEconomicsResolver`: governed per-product economics for new works (Stream and Editions 75/25, Federated 90/10, royalty 6.529%), the network fee recipient, the default license (CC0), `newWorkTerms` (predicted seller and royalty wallets) and `resolveCurrency` through the allowlist. Changes apply to new works only: works lock their terms at mint. |
 | `RevenuePayment` | Internal library for payers: pay the wallet, else credit the escrow. |
 | `ClaimRouter` | Stateless batch claims: up to 50 plain items (fixed payees) or 20 signed items (any payee). |
@@ -71,12 +71,28 @@ and cannot flush. Governance deploys an equivalent replacement: the same payee
 list with another salt. It then calls `recover(wallet, replacement, asset)` to
 move the credit, after which anyone flushes it to the replacement.
 
-- `recover` deviates from ADR 0001 §7's consent wording; consent is trivially
-  satisfied because payees are identical. Recorded in ADR 0003.
+- ADR 0001 §7 requires the affected accounts' consent. For a split wallet it is
+  trivially satisfied because payees are identical. Recorded in ADR 0003.
 - A credit the replacement already holds is added to, never overwritten.
 - The original wallet must be deployed first; anyone can deploy it.
 - Recovery reaches only escrow credits. The blocked wallet's own balance stays
   stuck until the token unblocks it.
+
+**The network fee recipient, and any other account that is not a split
+wallet.** A token can block the fee recipient's Safe too. Every fee in that
+token is then credited to the escrow under the Safe, and every existing work's
+royalty wallet keeps the Safe as a fixed payee (works lock their terms at
+mint, so rotating the fee recipient with `setFeeTerms` only helps new works).
+- **Escrow credits.** The Safe names its replacement on the escrow with
+  `consentToRecovery(replacement)`: that is its consent. Governance then calls
+  `recover(safe, replacement, asset)` in the funds class (14 days), and anyone
+  flushes the credit to the replacement. Without that consent, or to any other
+  address, `recover` reverts (`RecoveryNotConsented`). The consent covers every
+  asset until the Safe names another replacement or withdraws it with zero.
+- **Royalty shares.** A blocked fixed payee's share stays in the royalty
+  wallet, not the escrow. The Safe releases it to any account itself with
+  `releaseTo(asset, index, recipient)`. Split wallets have no governance, so
+  nobody else can, and a lost Safe's share stays where it is.
 
 ## Batch claims and gas
 
