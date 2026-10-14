@@ -65,6 +65,16 @@ interface IAssetAllowlist {
         view
         returns (Status status, uint256 floor, uint64 revision);
 
+    /// @notice When `asset`'s status last changed (its latest admission or deprecation) and the
+    ///         seconds it spent deprecated in earlier, closed deprecations, without reverting.
+    /// @dev Sale adapters stop their clocks while their currency is deprecated (MARKET-1,
+    ///      MARKET-2): the time deprecated so far is `inactiveTotal`, plus
+    ///      `block.timestamp - since` while the asset is deprecated now.
+    function statusClock(address asset)
+        external
+        view
+        returns (Status status, uint256 since, uint256 inactiveTotal);
+
     /// @notice The default currency of `product`; reverts unless it is configured and active.
     function defaultCurrency(bytes32 product) external view returns (address);
 

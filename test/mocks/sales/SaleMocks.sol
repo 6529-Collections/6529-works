@@ -121,8 +121,22 @@ contract MockAssetAllowlist {
     mapping(bytes32 product => address) internal _defaults;
     mapping(bytes32 product => bool) internal _configured;
 
+    /// @dev `statusClock`: when the status last changed and the seconds deprecated before.
+    mapping(address asset => uint256) internal _since;
+    mapping(address asset => uint256) internal _inactiveTotal;
+
     function set(address asset, bool active) external {
+        if (isActive[asset] != active) {
+            if (active && _since[asset] != 0) {
+                _inactiveTotal[asset] += block.timestamp - _since[asset];
+            }
+            _since[asset] = block.timestamp;
+        }
         isActive[asset] = active;
+    }
+
+    function statusClock(address asset) external view returns (uint8, uint256, uint256) {
+        return (isActive[asset] ? 1 : 2, _since[asset], _inactiveTotal[asset]);
     }
 
     function setDefault(bytes32 product, address asset) external {

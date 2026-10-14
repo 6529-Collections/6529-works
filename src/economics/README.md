@@ -161,7 +161,10 @@ recorded in ADR 0003. Every allowlist setter is compare-and-set on a per-asset
 
 Withdrawals never read the allowlist: a deprecated or never-admitted asset
 stays withdrawable from wallets and the escrow (fixes RC1 Medium M-3).
-Deprecation is reversible only through a compare-and-set re-admission.
+Deprecation is reversible only through a compare-and-set re-admission. The
+allowlist also records when each asset's status last changed and the total time
+of its earlier deprecations (`statusClock`, in the status word, so no new slot):
+sale adapters use it to stop a sale's clock while its currency is deprecated.
 
 A work locks its network fee recipient at mint, so `setFeeTerms` (and the
 launch configuration) refuses a recipient that could never be paid: the
