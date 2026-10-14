@@ -130,3 +130,7 @@
   `recordedObserved(address(0))` is now always zero. A wallet's first ETH release writes 2
   new slots instead of 3 (about 111,000 less gas on Sepolia's Glamsterdam), and later ETH
   releases skip the mark's read and write. ERC-20s keep the mark.
+- Economics: `ReleaseVerifier` keeps release nonces in a bitmap, 256 to a storage word, like
+  the statement log. A payee signing nonces in order writes one new slot per 256 signed
+  releases instead of one each (a later signed release: 1 new slot to 0, about 111,000 less
+  gas on Sepolia's Glamsterdam). `nonceUsed(account, nonce)` is unchanged.

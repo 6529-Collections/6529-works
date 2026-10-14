@@ -81,7 +81,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant CREATE_WALLET_CEILING = 1_263_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
-    uint256 internal constant SIGNED_LATER_CEILING = 110_000;
+    uint256 internal constant SIGNED_LATER_CEILING = 92_000;
     /// @dev The edition master's terms, as on the Sepolia rehearsal (flows.md, section 3).
     uint64 internal constant EDITION_SIZE = 10;
     uint256 internal constant EDITION_PRICE = 0.0001 ether;
@@ -824,7 +824,8 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 3, 0);
     }
 
-    /// @dev The artist's next signed release, with the next nonce, after more revenue arrived.
+    /// @dev The artist's next signed release, with the next nonce, after more revenue arrived. The
+    ///      nonce shares its bitmap word with the first, so nothing new is written.
     function _rowSignedLater() internal returns (Row memory r) {
         address wallet = _fundedWallet();
         vm.prank(makeAddr("relayer"));
@@ -839,7 +840,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, SIGNED_LATER_CEILING, "regression ceiling");
-        _growthIs(r, 1, 0);
+        _growthIs(r, 0, 0);
     }
 
     // ------------------------------------------------------------------ views

@@ -145,8 +145,8 @@ no ceiling, or not run on Sepolia.
 | `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,238,234 | 1,263,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,368 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,414 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 107,218 | 110,000 (regression) | 1 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,360 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,052 | 92,000 (regression) | 0 | 0 | — |
 
 - **The split-wallet rows** were added after this ADR was accepted (the review of
   14 October 2026), measured on the same harness. A wallet's deployment is

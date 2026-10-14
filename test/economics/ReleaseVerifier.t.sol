@@ -158,6 +158,58 @@ contract ReleaseVerifierTest is EconomicsBase {
         assertEq(recipient.balance, 1 ether);
     }
 
+    /// @dev Nonces live in a bitmap, 256 to a word: each nonce is independent of its neighbours
+    ///      in the same word, and the word boundaries (255/256) and the extremes work.
+    function test_NonceBitmapKeepsEveryNonceIndependent() public {
+        uint256[6] memory nonces = [uint256(0), 1, 255, 256, 257, type(uint256).max];
+        for (uint256 i; i < nonces.length; ++i) {
+            assertFalse(verifier.nonceUsed(alice, nonces[i]));
+            vm.expectEmit(true, true, false, true, address(verifier));
+            emit IReleaseVerifier.NonceUsed(alice, nonces[i], true);
+            vm.prank(alice);
+            verifier.revokeNonce(nonces[i]);
+            for (uint256 j; j < nonces.length; ++j) {
+                assertEq(verifier.nonceUsed(alice, nonces[j]), j <= i, "only the used nonces");
+            }
+            assertFalse(verifier.nonceUsed(bob, nonces[i]), "per account");
+        }
+        assertFalse(verifier.nonceUsed(alice, 2));
+        assertFalse(verifier.nonceUsed(alice, 254));
+        assertFalse(verifier.nonceUsed(alice, 258));
+        assertFalse(verifier.nonceUsed(alice, type(uint256).max - 1));
+
+        // A signed release with the next nonce in a used word still works, and only once.
+        IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 2);
+        bytes memory sig = _sign(alicePk, a);
+        wallet.releaseWithAuthorization(a, sig);
+        assertTrue(verifier.nonceUsed(alice, 2));
+        vm.expectRevert(
+            abi.encodeWithSelector(IReleaseVerifier.NonceAlreadyUsed.selector, alice, 2)
+        );
+        wallet.releaseWithAuthorization(a, sig);
+        assertEq(recipient.balance, 1 ether);
+    }
+
+    /// @dev Sequential nonces share a word: only the first in each 256 writes a new slot.
+    function test_SequentialNoncesShareAStorageWord() public {
+        vm.startPrank(alice);
+        vm.record();
+        verifier.revokeNonce(0);
+        (, bytes32[] memory first) = vm.accesses(address(verifier));
+        vm.record();
+        verifier.revokeNonce(1);
+        (, bytes32[] memory second) = vm.accesses(address(verifier));
+        vm.record();
+        verifier.revokeNonce(256);
+        (, bytes32[] memory third) = vm.accesses(address(verifier));
+        vm.stopPrank();
+        assertEq(first.length, 1);
+        assertEq(second.length, 1);
+        assertEq(third.length, 1);
+        assertEq(first[0], second[0], "nonces 0 and 1 share a word");
+        assertTrue(first[0] != third[0], "nonce 256 starts the next word");
+    }
+
     function test_OneRevocationCoversEveryWallet() public {
         SplitWallet other = _wallet(_list(_fixed(alice, 50_000), _fixed(bob, 50_000)));
         vm.deal(address(other), 10 ether);
