@@ -96,3 +96,8 @@
   execution skip their standing refresh when the source cannot read (`StandingRefreshSkipped`),
   while staging, heartbeats and `refreshStanding` still fail closed; `DelegationReadFailed`
   moves to `IConsolidationSource`.
+- Identity (MONEY-4): an artist's payout address may no longer be the claim router, the
+  revenue escrow, a sale adapter or a mint target. These declare their interfaces through
+  ERC-165 (the escrow and the router now do too), and `ArtistRegistry` refuses them at
+  registration, staging and execution (`src/libraries/ProtocolContracts.sol`). A split
+  wallet's predicted address is still refused only once deployed.

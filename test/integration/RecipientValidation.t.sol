@@ -1,0 +1,168 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { Vm } from "forge-std/Vm.sol";
+import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
+import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { Splits } from "src/economics/Splits.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
+import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
+import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import { Mock1271Account } from "../mocks/EconomicsMocks.sol";
+import { IntegrationBase } from "./IntegrationBase.sol";
+
+/// @notice Who may receive money, on the real deployment. An artist's payout address must be
+///         able to pull (artist-resolved payees are pull-only), so the registry refuses the
+///         protocol contracts that cannot (MONEY-4).
+contract RecipientValidationTest is IntegrationBase {
+    address internal artist;
+    address internal bidder = makeAddr("recipientBidder");
+    address internal stranger = makeAddr("recipientStranger");
+    uint256 internal artistId;
+
+    function setUp() public override {
+        super.setUp();
+        artist = _actor("recipientArtist");
+        _govern(
+            hotAdmin,
+            address(allowlist),
+            abi.encodeCall(allowlist.admitAsset, (address(usd), 0, 1e16))
+        );
+    }
+
+    /// @dev The artist's next identity with `payout`, staged by the artist's own signature.
+    function _stagePayout(address payout) internal {
+        (ArtistIdentity memory id,) = artists.artist(artistId);
+        id.payout = payout;
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes32 digest = artists.changeDigest(artistId, id, artists.changeNonce(artistId), deadline);
+        artists.stageChange(artistId, id, artist, deadline, _sign(artist, digest), "");
+    }
+
+    /// @dev A work by the artist sold for 1,000 USD, its seller wallet deployed.
+    function _soldInUsd() internal returns (address seller) {
+        Work memory w = _work(artist, collectionId);
+        w.item.sale.currency = address(usd);
+        Work[] memory works = _one(w);
+        bytes32 root = _publish(works);
+        artistId = artists.artistIdOf(artist);
+        (uint256 saleId,) = _start(root, works, 0);
+        usd.mint(bidder, 1000e18);
+        vm.startPrank(bidder);
+        usd.approve(address(auction), 1000e18);
+        auction.bid(saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, 1000e18, 0, 0, ""));
+        vm.stopPrank();
+        _settleAtEnd(saleId);
+        WorkTerms memory t = economics.newWorkTerms(PRODUCT_STREAM, w.item.payees);
+        seller = splitFactory.createWallet(w.item.payees, bytes32(0));
+        assertEq(seller, t.seller);
+    }
+
+    // ------------------------------------------------------------------ MONEY-4
+
+    /// @dev MONEY-4 regression: the claim router, the revenue escrow and every sale adapter
+    ///      cannot call `release`, so none may become an artist's payout address.
+    function test_PayoutRefusesProtocolContractsThatCannotPull() public {
+        _soldInUsd();
+        address[5] memory refused = [
+            address(claimRouter),
+            address(escrow),
+            address(auction),
+            address(fixedSale),
+            address(dutchSale)
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+            this.stagePayout(refused[i]);
+        }
+        // Still refused as before: Stream, Editions and a deployed split wallet.
+        address[3] memory before = [address(stream), address(editions), _otherWallet(true)];
+        for (uint256 i; i < before.length; ++i) {
+            vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+            this.stagePayout(before[i]);
+        }
+        assertEq(artists.payoutAddress(artistId), artist);
+    }
+
+    /// @dev MONEY-4 regression, the PoC's path: with the router refused as the payout, a stranger
+    ///      batching the artist's index gets `NotPayoutAddress`, and the artist's share stays in
+    ///      the wallet for the artist alone.
+    function test_StrangerCannotMoveTheArtistShareThroughTheRouter() public {
+        address seller = _soldInUsd();
+        vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
+        this.stagePayout(address(claimRouter));
+
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](1);
+        claims[0] = IClaimRouter.Claim(seller, address(usd), 0);
+        bytes memory reason = abi.encodeWithSelector(
+            ISplitWallet.NotPayoutAddress.selector, address(claimRouter), artist
+        );
+        vm.prank(stranger);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IClaimRouter.ClaimCallFailed.selector, 0, seller, reason.length, reason
+            )
+        );
+        claimRouter.claim(claims, false);
+        assertEq(usd.balanceOf(address(claimRouter)), 0);
+        assertEq(ISplitWallet(seller).releasable(address(usd), 0), 750e18);
+        vm.prank(artist);
+        assertEq(ISplitWallet(seller).release(address(usd), 0), 750e18);
+        assertEq(usd.balanceOf(artist), 750e18);
+    }
+
+    /// @dev Accounts that can pull stay allowed: an EOA and a smart account (here an ERC-1271
+    ///      wallet, which declares none of the protocol interfaces). The change is staged and
+    ///      announced, and applies after the delay.
+    function test_PayoutAcceptsAccountsThatCanPull() public {
+        _soldInUsd();
+        Mock1271Account smart = new Mock1271Account();
+        address[2] memory allowed = [makeAddr("artistVault"), address(smart)];
+        for (uint256 i; i < allowed.length; ++i) {
+            vm.recordLogs();
+            _stagePayout(allowed[i]);
+            assertTrue(_logged(IArtistRegistry.ChangeStaged.selector), "ChangeStaged");
+            vm.warp(block.timestamp + artists.CHANGE_DELAY());
+            artists.executeChange(artistId);
+            assertEq(artists.payoutAddress(artistId), allowed[i]);
+        }
+    }
+
+    /// @dev The documented limit: a split wallet's predicted address has no code until someone
+    ///      deploys it, so it cannot be told apart from an empty account at staging. Deployed
+    ///      while the change waits, it is caught at execution and the change is cleared.
+    function test_PredictedWalletIsCaughtOnlyOnceDeployed() public {
+        _soldInUsd();
+        address predicted = _otherWallet(false);
+        _stagePayout(predicted);
+        _otherWallet(true);
+        vm.warp(block.timestamp + artists.CHANGE_DELAY());
+        vm.expectEmit(address(artists));
+        emit IArtistRegistry.ChangeCancelled(artistId, address(artists), false);
+        artists.executeChange(artistId);
+        assertEq(artists.payoutAddress(artistId), artist);
+    }
+
+    /// @dev External, so `vm.expectRevert` sees the registry's revert at this call depth.
+    function stagePayout(address payout) external {
+        _stagePayout(payout);
+    }
+
+    function _logged(bytes32 topic) internal returns (bool) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(artists) && logs[i].topics[0] == topic) return true;
+        }
+        return false;
+    }
+
+    /// @dev Someone else's single-payee wallet, deployed when `deploy`.
+    function _otherWallet(bool deploy) internal returns (address) {
+        ISplitWallet.Payee[] memory other = new ISplitWallet.Payee[](1);
+        other[0] = ISplitWallet.Payee(0, makeAddr("someoneElse"), Splits.DENOMINATOR);
+        return deploy
+            ? splitFactory.createWallet(other, bytes32(uint256(1)))
+            : splitFactory.walletFor(other, bytes32(uint256(1)));
+    }
+}

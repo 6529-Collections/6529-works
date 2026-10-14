@@ -30,9 +30,15 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
   redirects it.
 - **A split wallet cannot be an artist's payout address**, because it cannot
   pull. An artist who wants revenue to flow into another split should name that
-  wallet as a fixed payee instead. More generally, a payout address must never
-  be a protocol contract (the claim router, the escrow, a split wallet); the
-  identity lane validates this.
+  wallet as a fixed payee instead. More generally, a payout address must be an
+  account that can call `release` itself, never a protocol contract. The artist
+  registry refuses the claim router, the escrow, the sale adapters, 6529 Stream
+  and 6529 Editions (each declares its interface through ERC-165,
+  `src/libraries/ProtocolContracts.sol`) and every deployed split wallet, at
+  registration, staging and execution. A split wallet's predicted address has no
+  code before deployment, so it cannot be told apart from an empty account: the
+  re-check at execution catches a wallet deployed while the change waits, and
+  tools should check `walletFor` off-chain.
 - **Rotating a payout address does not revoke its signatures.** A key the
   payout moved away from cannot release, but if the payout returns to it
   (A, then B, then A), its unexpired authorizations work again. Revoke

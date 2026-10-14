@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { ISplitFactory } from "./ISplitFactory.sol";
 
 /// @title IRevenueEscrow
 /// @notice Holds payments a payer could not deliver to a wallet (ADR 0001 sections 5 and 7), keyed
 ///         by `(wallet, asset)`. Anyone may flush a credit to its wallet. Governance may move a
 ///         credit only to an equivalent replacement wallet (same factory, identical payees).
-interface IRevenueEscrow {
+/// @dev Declares itself through ERC-165, so the artist registry and the economics resolver can
+///      refuse the escrow as a payout or fee recipient (`ProtocolContracts`).
+interface IRevenueEscrow is IERC165 {
     /// @notice `payer` credited `amount` of `asset` to `wallet`, which is now owed `owed`.
     event Credited(
         address indexed wallet,

@@ -10,6 +10,8 @@ import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -379,6 +381,15 @@ contract RevenueEscrowTest is EconomicsBase {
             abi.encodeCall(IRevenueEscrow.recover, (address(wallet), address(wallet), ETH))
         );
         assertFalse(ok);
+    }
+
+    /// @dev The escrow declares itself (ERC-165), so the registry and the resolver can refuse it
+    ///      as a payout or fee recipient (MONEY-4, CALLS-1).
+    function test_SupportsInterface() public view {
+        assertTrue(escrow.supportsInterface(type(IRevenueEscrow).interfaceId));
+        assertTrue(escrow.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(escrow.supportsInterface(0xffffffff));
+        assertFalse(escrow.supportsInterface(type(IClaimRouter).interfaceId));
     }
 
     /// @dev Ported from the review: force-sent ETH (or tokens sent without a deposit) is never

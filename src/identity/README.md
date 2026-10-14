@@ -216,13 +216,15 @@ These are rejected at registration, at staging, and again at execution:
 - this registry;
 - the bound package registry;
 - 6529 Stream and its Editions;
-- any split wallet the bound split factory deployed (`ISplitFactory.isWallet`).
+- any split wallet the bound split factory deployed (`ISplitFactory.isWallet`);
+- any contract that declares, through ERC-165, the interface of the revenue
+  escrow, the claim router, a sale adapter or a mint target
+  (`src/libraries/ProtocolContracts.sol`). None of these can call `release`.
 
 Limitations:
 - A split wallet's predicted CREATE2 address cannot be detected on-chain before
   deployment. The re-check at execution catches one deployed while a change
   waits. Tools should also check `walletFor` off-chain.
-- Other routers, such as the claim router, are not bound and are not checked.
 
 ## Who may call what
 

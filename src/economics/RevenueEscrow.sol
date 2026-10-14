@@ -5,6 +5,7 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
@@ -86,6 +87,13 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
         uint256 balance = owed[replacement][asset] + amount;
         owed[replacement][asset] = balance;
         emit Recovered(wallet, replacement, asset, amount, balance);
+    }
+
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IRevenueEscrow).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
     }
 
     function _credit(address wallet, address asset, uint256 amount) private {

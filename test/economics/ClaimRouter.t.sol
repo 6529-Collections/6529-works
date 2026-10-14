@@ -5,7 +5,9 @@ import { Vm } from "forge-std/Vm.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
+import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -58,6 +60,15 @@ contract ClaimRouterTest is EconomicsBase {
         claims = new IClaimRouter.Claim[](2);
         claims[0] = IClaimRouter.Claim(first, ETH, firstPayee);
         claims[1] = IClaimRouter.Claim(second, ETH, secondPayee);
+    }
+
+    /// @dev The router declares itself (ERC-165), so the registry and the resolver can refuse it
+    ///      as a payout or fee recipient (MONEY-4, CALLS-1).
+    function test_SupportsInterface() public view {
+        assertTrue(router.supportsInterface(type(IClaimRouter).interfaceId));
+        assertTrue(router.supportsInterface(type(IERC165).interfaceId));
+        assertFalse(router.supportsInterface(0xffffffff));
+        assertFalse(router.supportsInterface(type(IRevenueEscrow).interfaceId));
     }
 
     function test_ExactSelectorAndEmptyBatches() public {

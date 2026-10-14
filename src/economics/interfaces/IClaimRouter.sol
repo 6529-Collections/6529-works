@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IReleaseVerifier } from "./IReleaseVerifier.sol";
 
 /// @title IClaimRouter
@@ -13,7 +14,9 @@ import { IReleaseVerifier } from "./IReleaseVerifier.sol";
 /// @dev Continue mode reverts unless every item can be offered its minimum gas, so gas estimation
 ///      cannot settle on a limit where every item silently runs dry. An item that needs more than
 ///      that minimum can still fail at the estimated limit; submit with more gas, or atomically.
-interface IClaimRouter {
+///      Declares itself through ERC-165, so the artist registry and the economics resolver can
+///      refuse the router as a payout or fee recipient (`ProtocolContracts`).
+interface IClaimRouter is IERC165 {
     /// @notice One plain release: payee `payee` of `wallet`, in `asset`.
     struct Claim {
         address wallet;

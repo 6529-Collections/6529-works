@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IClaimRouter } from "./interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
@@ -75,6 +76,13 @@ contract ClaimRouter is IClaimRouter {
                 abi.encodeCall(ISplitWallet.releaseWithAuthorization, (a, claims[i].signature))
             );
         }
+    }
+
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IClaimRouter).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
     }
 
     function _call(Item memory item, bytes memory input) private returns (uint256 amount) {
