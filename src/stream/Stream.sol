@@ -248,14 +248,20 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev Not part of `burn`: Stream stores the item hash, not the content hash (D3), and
-    ///      storing it would cost every start a word for a rare dispute path. The content hash
-    ///      is public in `WorkMinted`, the registry's `ItemConsumed` and the package.
-    function releaseContent(uint256 tokenId, bytes32 contentHash) external {
+    /// @dev PARAMETER_SETTER role, 48 hours: the upheld-dispute class of the auction's `cancel`,
+    ///      so both are scheduled together and a guardian can veto either. Not part of `burn`:
+    ///      Stream stores the item hash, not the content hash (D3), and storing it would cost
+    ///      every start a word for a rare dispute path. The content hash is public in
+    ///      `WorkMinted`, the registry's `ItemConsumed` and the package.
+    function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary)
+        external
+        restricted
+    {
         if (tokenId == 0 || tokenId > _counts.minted || _ownerOf(tokenId) != address(0)) {
             revert NotBurned(tokenId);
         }
-        IPackageRegistry(packageRegistry).releaseContent(contentHash, _tokens[tokenId].itemHash);
+        IPackageRegistry(packageRegistry)
+            .releaseContent(contentHash, _tokens[tokenId].itemHash, beneficiary);
     }
 
     /// @inheritdoc IMintTarget

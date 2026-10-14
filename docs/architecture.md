@@ -286,10 +286,18 @@ default when the sale starts".
    auction is still paused.
    - `outcomeRef` must equal `latestDisputeOutcome`.
    - The window is inclusive (`block.timestamp <= pausedUntil`).
-   - The bid is credited back and the token is burned. Anyone then calls
-     `IStream.releaseContent(tokenId, contentHash)`, which passes the burned
-     work's item hash to `IPackageRegistry.releaseContent`: the content hash is
-     freed for its rightful artist and the item is tombstoned.
+   - The bid is credited back and the token is burned.
+   - **Before the cancel executes, the guardian revokes every approved root
+     that lists the copier's items** (`revokePackage`): any other copy of the
+     content, and the copier's other works in those packages. Revocation is
+     per root, and the cancel tombstones only the burned item.
+   - PARAMETER_SETTER then calls `IStream.releaseContent(tokenId, contentHash,
+     beneficiary)` (48 hours; schedule it with the cancel, to execute after
+     it), naming the rightful artist's ID from the outcome. Stream passes the
+     burned work's item hash to `IPackageRegistry.releaseContent`: the content
+     hash is reserved for items whose lead artist is the beneficiary, and the
+     burned item is tombstoned. A release happens once per burned work, so the
+     guardians check the beneficiary during the delay.
 4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
    ends by itself when the allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
@@ -329,7 +337,7 @@ interfaces name the role each governed selector is meant to map to:
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
+| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
 | SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
 

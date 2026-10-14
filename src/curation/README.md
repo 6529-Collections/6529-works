@@ -14,8 +14,12 @@ with the linked-pair exception from §6.
   "move to Stream" signature (a deadline and a per-artist nonce bitmap). The
   bound 6529 Editions claims an edition's content hash, which must be the hash
   its master item consumed on Stream. When an upheld dispute burns a work during
-  its auction, Stream calls `releaseContent`: the hash becomes free for its
-  rightful artist, and the burned item is tombstoned for good.
+  its auction, Stream's governed `releaseContent` (PARAMETER_SETTER, 48 hours)
+  names the rightful artist the dispute outcome identifies: the hash is reserved
+  for that artist, so only an item whose lead artist it is may consume it
+  (`ContentReserved` otherwise), and the burned item is tombstoned for good.
+  The release happens once per burned item; `releasedTo` reads the
+  beneficiary.
 - **`Eip712CurationVerifier`.** It accepts a `PackageApproval(packageRoot,
   evidenceHash)` EIP-712 signature by an active curation signer, encoded exactly
   as `abi.encode(signer, signature)`, and reports that signer. A signer is

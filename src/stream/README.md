@@ -31,8 +31,10 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   every item before attesting it. This is a trust obligation, not an on-chain
   check.
 - **IDs.** One chronological global counter from 1; collections keep their own
-  serials from 1. A burn leaves a gap; IDs are never reused. `releaseContent`
-  then frees the burned work's content hash.
+  serials from 1. A burn leaves a gap; IDs are never reused. The governed
+  `releaseContent(tokenId, contentHash, beneficiary)` (PARAMETER_SETTER, 48
+  hours) then reserves the burned work's content hash for the rightful artist
+  the dispute outcome names.
 - **Burns.** Only the adapter that minted a token can burn it, while it holds
   the token and before the primary sale settles: the auction's cancel after an
   upheld dispute. The gate is the minting adapter's index, not current

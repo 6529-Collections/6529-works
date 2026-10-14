@@ -41,7 +41,9 @@ contract MockPackageRegistry is Supports165 {
     error NotBoundCaller(address caller);
     error NotConsumedBy(bytes32 contentHash, bytes32 itemHash);
 
-    event ContentReleased(bytes32 indexed contentHash, bytes32 indexed itemHash);
+    event ContentReleased(
+        bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary
+    );
 
     mapping(bytes32 => bool) public isConsumed;
     mapping(bytes32 => bool) public isTombstoned;
@@ -71,14 +73,14 @@ contract MockPackageRegistry is Supports165 {
     }
 
     /// @dev Mirrors the requested registry semantics: bound Stream only, for the exact pair.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash) external {
+    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
         if (msg.sender != stream) revert NotBoundCaller(msg.sender);
         if (consumedItemOf[contentHash] != itemHash || itemHash == 0) {
             revert NotConsumedBy(contentHash, itemHash);
         }
         delete consumedItemOf[contentHash];
         isTombstoned[itemHash] = true;
-        emit ContentReleased(contentHash, itemHash);
+        emit ContentReleased(contentHash, itemHash, beneficiary);
     }
 
     function setArtistOverride(uint256 artistId) external {

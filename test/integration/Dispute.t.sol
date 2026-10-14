@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -15,10 +17,10 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 /// @notice Flow 5 (integration brief, lane B): a dispute on the real contracts. A copier's
 ///         package reaches auction; a guardian pauses it; PLATFORM appends the
 ///         `DISPUTE_OUTCOME` statement, which the renderer shows; PARAMETER_SETTER's governed
-///         `cancel` runs after its 48-hour delay, refunding the bid and burning the token; anyone
-///         calls `releaseContent`; and the rightful artist's item with the same content then
-///         consumes. A rejected dispute resumes the auction, and a dispute after a sale only adds
-///         a statement.
+///         `cancel` runs after its 48-hour delay, refunding the bid and burning the token; the
+///         governed `releaseContent` reserves the content for the rightful artist the outcome
+///         names; and only that artist's item with the same content then consumes. A rejected
+///         dispute resumes the auction, and a dispute after a sale only adds a statement.
 contract DisputeFlowTest is IntegrationBase {
     address internal rightful;
     address internal copier;
@@ -117,11 +119,11 @@ contract DisputeFlowTest is IntegrationBase {
         auction.claim(CURRENCY_ETH, bidder);
         assertEq(bidder.balance - before, 1 ether);
 
-        // Anyone releases the content hash; the copier's item is tombstoned.
+        // The governed release names the rightful artist; the copier's item is tombstoned.
         bytes32 copierItem = WorksHashing.itemHash(_package(copierRoot)[0].item);
-        vm.prank(makeAddr("anyone"));
-        stream.releaseContent(tokenId, contentHash);
+        _release(tokenId);
         assertEq(registry.consumedItemOf(contentHash), bytes32(0));
+        assertEq(registry.releasedTo(contentHash), artists.artistIdOf(rightful));
         assertTrue(registry.isReleased(copierItem));
 
         // The rightful artist's item with the same content now consumes.
@@ -211,6 +213,130 @@ contract DisputeFlowTest is IntegrationBase {
         _ethBid(saleId, bidder, 1 ether);
         _govern(hotAdmin, address(auction), abi.encodeCall(auction.unpause, ()));
         auction.start(address(stream), data);
+    }
+
+    /// @dev The upheld path up to the burn of the copier's work.
+    function _upheldBurn() internal returns (uint256 tokenId) {
+        uint256 saleId;
+        (saleId, tokenId) = _pauseCopy();
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://dispute-upheld"
+        );
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
+    }
+
+    /// @dev PARAMETER_SETTER's governed release (48 hours, like the cancel) to the rightful artist.
+    function _release(uint256 tokenId) internal {
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(
+                stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(rightful))
+            )
+        );
+    }
+
+    /// @dev SIGS-1 / LIFECYCLE-2: the copier holds a second approved copy of the content (same
+    ///      media, another record). Once the upheld dispute burns the first, the release reserves
+    ///      the content for the rightful artist the outcome names, so the copy cannot take it in
+    ///      the same block, while the rightful artist's item consumes.
+    function test_ReleasedContentIsReservedForTheNamedArtist() public {
+        Work memory sibling = _work(copier, collectionId);
+        Work memory original = _package(rightfulRoot)[0];
+        sibling.media = original.media;
+        sibling.item.contentHash = contentHash;
+        sibling.item.mediaHash = original.item.mediaHash;
+        bytes32 siblingRoot = _publish(_one(sibling));
+        uint256 tokenId = _upheldBurn();
+        _release(tokenId);
+
+        uint256 rightfulId = artists.artistIdOf(rightful);
+        bytes memory copy = _mintData(siblingRoot, _one(sibling), 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentReserved.selector, contentHash, rightfulId
+            )
+        );
+        auction.start(address(stream), copy);
+
+        (, uint256 rightfulToken) = _start(rightfulRoot, _package(rightfulRoot), 0);
+        assertEq(stream.artistOf(rightfulToken), rightfulId);
+        assertEq(
+            registry.consumedItemOf(contentHash),
+            WorksHashing.itemHash(original.item),
+            "the rightful artist's item holds the content"
+        );
+    }
+
+    /// @dev The release is a governed action, not first come: nobody else may call it, it must
+    ///      name an artist, and it happens once per burned token.
+    function test_ReleaseIsGovernedNamesAnArtistAndHappensOnce() public {
+        uint256 tokenId = _upheldBurn();
+        uint256 rightfulId = artists.artistIdOf(rightful);
+        address[2] memory strangers = [copier, makeAddr("anyone")];
+        for (uint256 i; i < strangers.length; ++i) {
+            vm.prank(strangers[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManaged.AccessManagedUnauthorized.selector, strangers[i]
+                )
+            );
+            stream.releaseContent(tokenId, contentHash, rightfulId);
+        }
+        (, uint32 delay) =
+            manager.canCall(hotAdmin, address(stream), stream.releaseContent.selector);
+        assertEq(delay, 48 hours, "the upheld-dispute class");
+
+        bytes memory unnamed = abi.encodeCall(stream.releaseContent, (tokenId, contentHash, 0));
+        _schedule(hotAdmin, address(stream), unnamed);
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(hotAdmin);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidBeneficiary.selector, 0));
+        manager.execute(address(stream), unnamed);
+
+        bytes memory named =
+            abi.encodeCall(stream.releaseContent, (tokenId, contentHash, rightfulId));
+        _schedule(hotAdmin, address(stream), named);
+        vm.warp(block.timestamp + 48 hours);
+        vm.expectEmit(true, true, true, true, address(registry));
+        emit IPackageRegistry.ContentReleased(
+            contentHash, WorksHashing.itemHash(_package(copierRoot)[0].item), rightfulId
+        );
+        vm.prank(hotAdmin);
+        manager.execute(address(stream), named);
+
+        bytes memory again = abi.encodeCall(
+            stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(copier))
+        );
+        _schedule(hotAdmin, address(stream), again);
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, contentHash
+            )
+        );
+        manager.execute(address(stream), again);
+        assertEq(registry.releasedTo(contentHash), rightfulId, "the first release stands");
+    }
+
+    /// @dev A guardian vetoes a mistaken release during its delay.
+    function test_AGuardianCancelsAPendingRelease() public {
+        uint256 tokenId = _upheldBurn();
+        bytes memory wrong = abi.encodeCall(
+            stream.releaseContent, (tokenId, contentHash, artists.artistIdOf(copier))
+        );
+        _schedule(hotAdmin, address(stream), wrong);
+        vm.prank(guardian1);
+        manager.cancel(hotAdmin, address(stream), wrong);
+        vm.warp(block.timestamp + 48 hours);
+        bytes32 operation = manager.hashOperation(hotAdmin, address(stream), wrong);
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManager.AccessManagerNotScheduled.selector, operation)
+        );
+        manager.execute(address(stream), wrong);
+        assertEq(registry.releasedTo(contentHash), 0);
     }
 
     function _payment(uint256 amount) internal view returns (Payment memory) {

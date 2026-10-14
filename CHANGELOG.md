@@ -168,3 +168,8 @@
   never below the floor, in the 30-day SUCCESSOR_SETTER class (new genesis selector), so the
   module can follow a coordinator whose maximum Chainlink lowered below the limit. `setConfig`
   stays raise-only.
+- Curation (SIGS-1): `IStream.releaseContent(tokenId, contentHash, beneficiary)` is governed
+  (PARAMETER_SETTER, 48 hours, new genesis selector) and names the rightful artist from the
+  dispute outcome. The package registry reserves the released content hash for that artist
+  (`releasedTo`, `ContentReserved`); `ContentReleased` carries the beneficiary. The dispute
+  runbook adds the guardian's revocation of the copier's roots before the cancel executes.

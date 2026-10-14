@@ -53,9 +53,12 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      declared SHA-256 against the decoded bytes before attesting, and the evidence hash covers
 ///      that check. The one cross-product reuse, the linked pair, is enforced from the Editions
 ///      side: an edition may claim only the content hash its master item consumed on Stream.
-///      When an upheld dispute burns a work during its auction, Stream calls `releaseContent`:
-///      the content hash becomes available to its rightful artist, and the burned item is
-///      tombstoned so it can never be consumed again, through any root.
+///      When an upheld dispute burns a work during its auction, the governed
+///      `IStream.releaseContent` passes on the rightful artist the dispute outcome names: the
+///      content hash is reserved for that artist, so only an item whose lead artist it is may
+///      consume it, and the burned item is tombstoned so it can never be consumed again,
+///      through any root. The reservation is checked only on a released slot, so a fresh
+///      consume pays nothing for it.
 ///
 ///      Approvals are per root, not per item: revoking a root stops only that root, so an item
 ///      also listed in another approved root stays consumable there; the guardian revokes every
@@ -96,6 +99,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     mapping(bytes32 contentHash => bytes32 itemHash) private _editionItems;
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
     mapping(bytes32 itemHash => bool) private _released;
+    mapping(bytes32 contentHash => uint256 artistId) private _releasedTo;
 
     /// @param authority_ The AccessManager that governs this registry.
     /// @param verifier_ The initial curation verifier.
@@ -221,7 +225,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     ///      every party accepted the root and is a distinct artist; the payee list is canonical
     ///      and covered by the parties; the lead's current authority signed the move, unexpired,
     ///      on an unused nonce. A second consume of the same item, or of an item burned and
-    ///      released, reverts with `ContentUsed` naming the item itself.
+    ///      released, reverts with `ContentUsed` naming the item itself. A released content hash
+    ///      is consumed only by an item whose lead artist is the release's beneficiary
+    ///      (`ContentReserved` otherwise).
     function consume(
         bytes32 packageRoot,
         PackageItem calldata item,
@@ -245,6 +251,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         }
         _checkTerms(item, itemHash);
         artistId = _checkParties(packageRoot, item, itemHash);
+        if (prior == RELEASED && artistId != _releasedTo[contentHash]) {
+            revert ContentReserved(contentHash, _releasedTo[contentHash]);
+        }
         _useMove(packageRoot, itemHash, artistId, move);
         _streamItems[contentHash] = itemHash;
         emit ItemConsumed(packageRoot, itemHash, artistId, contentHash);
@@ -266,17 +275,22 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IPackageRegistry
     /// @dev Reverts with `ClaimNotAllowed(PRODUCT_STREAM, contentHash)` unless `itemHash` holds
-    ///      the slot. Editions are created only after a master's sale settles, so a burned work
-    ///      never has an edition claim to release; the Editions slot is left untouched.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash) external {
+    ///      the slot, so a release happens once per burned item, and with `InvalidBeneficiary`
+    ///      for a zero artist ID. The beneficiary need not have an identity yet: an artist's ID
+    ///      is fixed by its first account (`uint160(account)`). Editions are created only after a
+    ///      master's sale settles, so a burned work never has an edition claim to release; the
+    ///      Editions slot is left untouched.
+    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
         if (msg.sender != stream) revert UnboundCaller(msg.sender);
         // Zero (never consumed) and the release marker are not item hashes.
         if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
             revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
         }
+        if (beneficiary == 0) revert InvalidBeneficiary(beneficiary);
         _streamItems[contentHash] = RELEASED;
         _released[itemHash] = true;
-        emit ContentReleased(contentHash, itemHash);
+        _releasedTo[contentHash] = beneficiary;
+        emit ContentReleased(contentHash, itemHash, beneficiary);
     }
 
     /// @inheritdoc IPackageRegistry
@@ -335,6 +349,11 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @notice Whether `itemHash` was burned and released, so it can never be consumed again.
     function isReleased(bytes32 itemHash) external view returns (bool) {
         return _released[itemHash];
+    }
+
+    /// @inheritdoc IPackageRegistry
+    function releasedTo(bytes32 contentHash) external view returns (uint256 artistId) {
+        return _releasedTo[contentHash];
     }
 
     /// @inheritdoc IPackageRegistry

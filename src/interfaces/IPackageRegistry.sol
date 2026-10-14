@@ -57,8 +57,11 @@ interface IPackageRegistry is IERC165 {
     );
     /// @notice 6529 Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
     event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
-    /// @notice An upheld-dispute burn released a content hash; `itemHash` is tombstoned.
-    event ContentReleased(bytes32 indexed contentHash, bytes32 indexed itemHash);
+    /// @notice An upheld-dispute burn released a content hash to the artist `beneficiary`;
+    ///         `itemHash` is tombstoned.
+    event ContentReleased(
+        bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary
+    );
     /// @notice An artist revoked an unused move nonce.
     event MoveRevoked(uint256 indexed artistId, uint256 indexed nonce);
     /// @notice The curation verifier changed; `codeHash` is the pinned code hash of `next`.
@@ -79,6 +82,10 @@ interface IPackageRegistry is IERC165 {
     /// @notice The claim is not allowed: an edition may only claim the content hash its master
     ///         item consumed on 6529 Stream.
     error ClaimNotAllowed(bytes32 product, bytes32 contentHash);
+    /// @notice A released content hash is reserved for the item of artist `beneficiary`.
+    error ContentReserved(bytes32 contentHash, uint256 beneficiary);
+    /// @notice A release must name a nonzero artist ID.
+    error InvalidBeneficiary(uint256 beneficiary);
     /// @notice A listed party has not accepted the package root.
     error PartyNotAccepted(bytes32 packageRoot, address account);
     /// @notice The parties, payees, kind, seed or edition fields are inconsistent.
@@ -136,11 +143,12 @@ interface IPackageRegistry is IERC165 {
         bytes32[] calldata proof,
         MoveAuthorization calldata move
     ) external returns (bytes32 itemHash, uint256 artistId);
-    /// @notice Releases `contentHash` after an upheld-dispute burn: checks that `itemHash`
-    ///         consumed it, clears its `PRODUCT_STREAM` claim, and tombstones `itemHash` so it can
-    ///         never be consumed again. Bound 6529 Stream only, through
-    ///         `IStream.releaseContent` for a burned token.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash) external;
+    /// @notice Releases `contentHash` after an upheld-dispute burn to the artist `beneficiary`
+    ///         the dispute outcome names: checks that `itemHash` consumed it, clears its
+    ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,
+    ///         and tombstones `itemHash` so it can never be consumed again. Once per burned item.
+    ///         Bound 6529 Stream only, through the governed `IStream.releaseContent`.
+    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external;
     /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
     ///         already record `itemHash` for it. Bound 6529 Editions only.
     function claimContent(bytes32 contentHash, bytes32 itemHash) external;
@@ -171,6 +179,10 @@ interface IPackageRegistry is IERC165 {
     /// @notice The item that consumed `contentHash` on 6529 Stream, or zero. Tools derive an
     ///         item's content hash from the item itself.
     function consumedItemOf(bytes32 contentHash) external view returns (bytes32 itemHash);
+    /// @notice The artist a released content hash is reserved for, or zero if never released.
+    ///         It binds only while the content is released: once its item consumes, the
+    ///         content is used again.
+    function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
     /// @notice The master item whose content hash 6529 Editions claimed, or zero.
     function editionClaimOf(bytes32 contentHash) external view returns (bytes32 itemHash);
     /// @notice Whether an artist's move nonce is used or revoked.

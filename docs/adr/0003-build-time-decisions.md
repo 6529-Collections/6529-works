@@ -43,9 +43,11 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     simulate `openRecord` before attesting.
   - Base64 is decoded strictly.
 - **Releasing content after a dispute.**
-  - After an upheld dispute burns a token, anyone may call
-    `IStream.releaseContent`.
-  - That frees the content hash for its rightful artist and tombstones the
+  - After an upheld dispute burns a token, PARAMETER_SETTER calls
+    `IStream.releaseContent` (48 hours), naming the rightful artist the
+    dispute outcome identifies. (Amended by the 14 October 2026 review,
+    SIGS-1; the release was first permissionless.)
+  - That reserves the content hash for that artist's items and tombstones the
     copier's item, so it can never be consumed again.
 - **Guardian controls over curation.**
   - The guardian can revoke a package before it is registered.

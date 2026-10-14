@@ -35,7 +35,7 @@ import { Limits } from "../../src/interfaces/types/Limits.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x4b62279d), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0x6d0d5203), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xa5bd946e), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
@@ -46,7 +46,7 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0xb7ab1d96), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xc0f6f835), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe69cc8c7), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0x3f437f81), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
