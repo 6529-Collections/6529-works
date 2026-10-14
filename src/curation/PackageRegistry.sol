@@ -406,7 +406,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @dev Content, seed and edition fields: a nonzero content hash; an artist seed exactly
     ///      under `SeedPolicy.ARTIST`; an ORIGINAL with empty edition terms; an EDITION_MASTER
     ///      with edition terms `EditionRules.isValid` accepts, the same rule 6529 Editions applies
-    ///      at `createEdition`, so a master that mints can always get its edition.
+    ///      at `createEdition`, so a master that mints can always get its edition (a later
+    ///      revocation of its root does not stop that either).
     function _checkTerms(PackageItem calldata item, bytes32 itemHash) private pure {
         EditionTerms calldata e = item.edition;
         bool fixedSize = e.format == EditionFormat.FIXED;

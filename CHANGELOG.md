@@ -178,3 +178,6 @@
   signer's CURATION_SIGNER grant took effect with a count of its disables and enables
   (`signerEpoch`), so re-enabling a signer or granting its role again never revives an older
   approval. `approvalDigest` takes the epoch.
+- Editions (SIGS-4): `createEdition` accepts a package root the registry registered, even if it
+  was revoked since. A revocation stops a package's unconsumed items; it no longer strands the
+  edition of a master already sold from the root.
