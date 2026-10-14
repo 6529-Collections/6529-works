@@ -209,6 +209,10 @@
   1,024 chunks (about 8.3M gas cold), keeps its place in the record's first word and emits
   `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete
   over calls that each fit the EIP-7825 cap.
+- Renderer (CONTENT-5): a record's `trait_type` must be printable ASCII with no backslash
+  and no two spaces in a row, and the renderer's own trait names are refused in any case and
+  with or without spaces, so a record cannot show a look-alike of a trait the renderer
+  vouches for. The check reads names a word at a time and is smaller than the one it replaces.
 - Renderer: the media-list read has its own gas cap (1,000,000; other reads keep 300,000),
   and `ContentStore.sha256Of` reads one storage word, so `mediaOf` at 32 files needs about a
   fifth of its cap cold instead of nine tenths of 300,000.

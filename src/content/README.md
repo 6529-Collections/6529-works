@@ -398,7 +398,7 @@ and copies validated JSON text, never decoded text:
 | `artists` (non-empty strings, at most 16) | one `Artist` trait each |
 | `year` (an integer, at most six digits) | the `Year` trait |
 | `medium`, `dimensions` (strings) | the `Medium` and `Dimensions` traits |
-| `attributes` (at most 32 objects, each with only the keys `trait_type`, `value`, `display_type` and `max_value`, each at most once, a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
+| `attributes` (at most 32 objects, each with only the keys `trait_type`, `value`, `display_type` and `max_value`, each at most once, a printable ASCII `trait_type` without a backslash or two spaces in a row, and a string or number `value`) | its elements, as they are, after the renderer's own traits |
 | `dependencies` | validated; a script whose record declares any is not wrapped in the page. Anything but exactly `[]` counts as declaring one (so `[ ]` with a space is read as having dependencies): that fails safe, the script is served by locator |
 | any other member (`files`, ...) | validated and ignored |
 
@@ -431,12 +431,20 @@ nothing is guessed):
   `trait_type` and a string or number `value`, an attribute with a key other than
   `trait_type`, `value`, `display_type` and `max_value` (the keys OpenSea documents,
   so an attribute has at most four members) or with the same key twice (so
-  `display_type` cannot be said twice and read two ways), or a `trait_type` with a
-  backslash or that is one of the names the
-  renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`, `Dimensions`,
-  `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`): those traits
-  are the only ones the renderer vouches for, and a name with a backslash could be
-  one of them spelled with an escape;
+  `display_type` cannot be said twice and read two ways), or a `trait_type` that is
+  not printable ASCII, has a backslash or two spaces in a row, or is one of the names
+  the renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`, `Dimensions`,
+  `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`) in any case and
+  with or without spaces (`SEED`, `Serial `, `ArtistID` included). Those traits are
+  the only ones the renderer vouches for, so a record may not show a look-alike:
+  - an escape could spell any name, so no backslash;
+  - a letter of another script (a Cyrillic `е`), an invisible character (U+200B) or
+    a no-break space displays like Latin text, so names are printable ASCII (values
+    may be any UTF-8);
+  - what is left is case and spacing, which the comparison ignores, and displays
+    collapse runs of spaces, so two in a row are refused. ASCII letters that only
+    some fonts draw alike (`l` and `I`, `0` and `O`) remain: the renderer's own
+    traits come first in the list, and the record is the artist's own;
 - more than 512 `%` and `#` characters (`MAX_ESCAPES`).
 
 **Why these bounds.** The cost of a record has to be bounded whatever its bytes,
@@ -456,7 +464,7 @@ Measured on a record of 12 KiB of one kind of byte (the bytes, not the media):
 | a unit (value, key or escape), top-level members dearest | 1,000 to 1,500 | 1,024 together |
 | a `%` or `#` | 470 | 512 |
 | an attribute (its nine units, and a second walk over it) | 27,000 | 32 |
-| a byte of an attribute name (read once, for a backslash) | 3 | the size |
+| a byte of an attribute name (read a word at a time; a name of at most 33 bytes is also read byte by byte to compare it, about 100 gas a byte) | 3 | the size |
 
 A record is validated once, and the pieces the renderer needs are found by walking
 it again without checking. The caps are chosen together, not one at a time: a
@@ -687,10 +695,8 @@ KiB of `Base64` or the script of `</script` (asserted at most 8M by
 | 1,024 units, in an array of zeros | 4.8M | 3.5M |
 | 340 top-level members | 4.7M | 3.5M |
 | 32 attributes of four members and 727 more units | 5.6M | 4.3M |
-| 32 attributes with 132-byte names | 4.6M | 3.3M |
-| the same, 16 `%` in each name | 4.9M | 3.5M |
-| the same, names of 2-byte UTF-8 | 5.0M | 3.7M |
-| the same, 2-byte UTF-8 and 16 `%` in each name | 5.3M | 3.9M |
+| 32 attributes with 132-byte names | 4.7M | 3.3M |
+| the same, 16 `%` in each name | 5.0M | 3.6M |
 | 512 `%`, one every sixth byte | 4.7M | 3.2M |
 | 1,018 `\\` escapes in 12 KiB of text | 4.8M | 3.3M |
 | 1,018 `\u00e9` escapes in 12 KiB of text | 5.6M | 4.1M |
@@ -701,7 +707,8 @@ KiB of `Base64` or the script of `</script` (asserted at most 8M by
 and refused records stay cheap, since the scan stops at the first fault: 12 KiB of
 escapes (over the budget) 1.2M to 2.0M, of `\u0000` 0.6M, of `%` past the cap 0.6M,
 arrays of zeros or `[]` 1.5M to 1.7M, empty or tiny members 1.5M to 1.6M, 33
-attributes 0.9M, attribute names with a backslash 1.1M, and an attribute with a
+attributes 0.9M, attribute names with a backslash 1.1M, names of 2-byte UTF-8 (not
+ASCII) 1.6M, or with 16 `%` each as well 1.8M, and an attribute with a
 fifth key found only at the last of 32 (the check, then the walk to the end, with the
 record full of white space) 2.6M. Every figure includes
 the mocks' own reads.
@@ -720,6 +727,7 @@ the mocks' own reads.
 - **Core-only metadata** (a record that is not usable) has no ARTIST seed, because
   that seed is stored when the record opens.
 - **Records are bounded**: 12 KiB, 1,024 units (values, keys and escapes), 32
-  attributes with only the four OpenSea keys, 512 `%` or `#`, numbers of 24 bytes. A work
+  attributes with only the four OpenSea keys and printable ASCII names, 512 `%` or
+  `#`, numbers of 24 bytes. A work
   whose record needs more should keep the rest in the files the record points to,
   and write non-ASCII text as UTF-8 rather than `\uXXXX` escapes.

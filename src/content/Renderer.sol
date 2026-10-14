@@ -50,8 +50,8 @@ import { JsonScan } from "./JsonScan.sol";
 ///      `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an integer of at most six digits,
 ///      or has an attribute that is not an object whose members are only `trait_type`, `value`,
 ///      `display_type` and `max_value`, each at most once, with a string `trait_type` and a
-///      string or number `value`, or whose name has a backslash or is one the renderer writes
-///      itself. These bounds are chosen together, so that a record at every one of them at once
+///      string or number `value`, or whose name is not printable ASCII, has a backslash or is
+///      one the renderer writes itself in any case or spacing. These bounds are chosen together, so that a record at every one of them at once
 ///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class
 ///      of byte, and every cap at once; `TokenUriBudget.t.sol`: the budget proof on the real
 ///      stack, with the records satellite's caps).
@@ -415,8 +415,9 @@ contract Renderer is IRenderer {
 
     /// @dev The inside of the record's `attributes` array, if every element is an object of the
     ///      OpenSea attribute keys only (`trait_type`, `value`, `display_type`, `max_value`, each
-    ///      at most once), with a string `trait_type` that is not one of the renderer's own and a
-    ///      string or number `value`. The renderer's traits are the only ones it vouches for.
+    ///      at most once), with a printable ASCII `trait_type` that is not one of the renderer's
+    ///      own (`_reserved`) and a string or number `value`. The renderer's traits are the only
+    ///      ones it vouches for.
     function _attributes(bytes memory j, uint256 span) private pure returns (bool, bytes memory) {
         bytes32[] memory keys = new bytes32[](4);
         bytes32 k0 = keccak256("trait_type");
@@ -443,41 +444,80 @@ contract Renderer is IRenderer {
         return (ok, a.length == 0 ? bytes("") : JsonScan.slice(j, (start << 128) | end));
     }
 
-    /// @dev Whether the quoted trait name `t` (a span, so never empty) is not a string, holds a
-    ///      backslash (as a key may not: an escape could spell a reserved name), or is one of the
-    ///      names the renderer uses itself, by the first four bytes of its hash. Those are all at
-    ///      most 19 bytes with their quotes, so only a name that short is hashed: the cost is one
-    ///      pass over the bytes a word at a time (about 3 gas a byte), not a read per byte. A
-    ///      clash with another name only makes that record render core-only, so four bytes are
-    ///      enough.
+    /// @dev Whether the quoted trait name `t` (a span, so never empty) is unacceptable: not a
+    ///      string; not printable ASCII (a letter of another script, an invisible character or a
+    ///      no-break space can make a name display like another); a backslash (an escape could
+    ///      spell any name); two spaces in a row (displays collapse them); or one of the names
+    ///      the renderer writes itself, in any case and with any spaces (so `SEED`, `Serial `
+    ///      and `ArtistID` are refused). With the rest refused, case and spacing are the only
+    ///      ways left for a name to look like a reserved one.
+    ///
+    ///      The bytes are checked a word at a time (a few gas a byte): with `x = word ^ (b *
+    ///      ones)`, `~(((x & 0x7f..) + 0x7f..) | x) & 0x80..` marks the top bit of exactly the
+    ///      bytes equal to `b`. A name of more than 33 bytes holds at least 17 other characters
+    ///      than spaces (no two spaces in a row), more than any reserved name, so only a shorter
+    ///      one is compared: its characters other than spaces, lowered (OR 0x20 lowers a letter
+    ///      and turns no other printable byte into one), by the first four bytes of their hash.
+    ///      A clash with another name only makes that record render core-only, so four bytes
+    ///      are enough.
     function _reserved(bytes memory t) private pure returns (bool bad) {
-        uint256 n = t.length;
         assembly ("memory-safe") {
             let p := add(t, 0x20)
-            bad := iszero(eq(byte(0, mload(p)), 0x22))
-            // A word at a time: x has a zero byte exactly at each backslash, and
-            // ((x & 0x7f..) + 0x7f..) | x has the top bit set in every other byte.
+            let e := add(p, mload(t))
             let ones := div(not(0), 255)
-            for { let e := add(p, n) } lt(p, e) { p := add(p, 32) } {
-                let x := xor(mload(p), mul(ones, 0x5c))
-                let z :=
-                    and(not(or(add(and(x, mul(ones, 0x7f)), mul(ones, 0x7f)), x)), shl(7, ones))
+            let high := shl(7, ones)
+            let low := mul(ones, 0x7f)
+            bad := iszero(eq(byte(0, mload(p)), 0x22))
+            let spaces := 0
+            for { let q := p } and(iszero(bad), lt(q, e)) { q := add(q, 32) } {
+                let w := mload(q)
+                let x := xor(w, mul(ones, 0x20))
+                let s := and(not(or(add(and(x, low), low), x)), high)
+                // Two spaces in a row, in this word or across from the last word's last byte.
+                let z := and(s, or(shl(8, s), shl(248, spaces)))
+                spaces := s
+                // A byte of 0x80 or more, a backslash or DEL.
+                x := xor(w, mul(ones, 0x5c))
+                let y := xor(w, low)
+                z := or(
+                    or(z, and(w, high)),
+                    and(not(and(or(add(and(x, low), low), x), or(add(and(y, low), low), y))), high)
+                )
                 // The bytes at and after `e` are not part of the name.
-                if lt(sub(e, p), 32) { z := and(z, not(shr(shl(3, sub(e, p)), not(0)))) }
-                if z {
-                    bad := 1
-                    break
+                if lt(sub(e, q), 32) { z := and(z, not(shr(shl(3, sub(e, q)), not(0)))) }
+                bad := iszero(iszero(z))
+            }
+            if and(iszero(bad), lt(mload(t), 36)) {
+                // Scratch space holds the lowered letters.
+                let k := 0
+                for { let q := add(p, 1) } lt(q, sub(e, 1)) { q := add(q, 1) } {
+                    let c := byte(0, mload(q))
+                    if xor(c, 0x20) {
+                        mstore8(k, or(c, 0x20))
+                        k := add(k, 1)
+                    }
+                }
+                if lt(k, 17) {
+                    // `bytes4(keccak256(name))` of each name the renderer writes, lowered and
+                    // without spaces: "artist", "artistid", "year", "medium", "dimensions",
+                    // "collection", "serial", "editionof", "seed", "disputestatement". (A test
+                    // checks every one.)
+                    let h := shr(224, keccak256(0, k))
+                    bad := or(
+                        or(
+                            or(
+                                or(eq(h, 0xf8c87671), eq(h, 0x0dda829c)),
+                                or(eq(h, 0xb4c11afb), eq(h, 0x3ab0b674))
+                            ),
+                            or(
+                                or(eq(h, 0xd59243b9), eq(h, 0xa77d3cda)),
+                                or(eq(h, 0x077e5ff4), eq(h, 0x63553a94))
+                            )
+                        ),
+                        or(eq(h, 0x66a80b61), eq(h, 0xad290f14))
+                    )
                 }
             }
-        }
-        if (!bad && n <= 19) {
-            // `bytes4(keccak256(name))` of each quoted trait name the renderer writes itself:
-            // "Artist", "Artist ID", "Year", "Medium", "Dimensions", "Collection", "Serial",
-            // "Edition of", "Seed", "Dispute statement". (A test checks every one.)
-            bytes4 h = bytes4(keccak256(t));
-            bad = h == 0xa685b276 || h == 0x4efd9a81 || h == 0x2b90e9a0 || h == 0x48d25b09
-                || h == 0xc1703126 || h == 0x3b9b07f9 || h == 0xe7eb4234 || h == 0xfc75eca5
-                || h == 0x8781d344 || h == 0x46a5ab8c;
         }
     }
 

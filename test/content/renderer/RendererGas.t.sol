@@ -240,8 +240,9 @@ contract RendererGasAdversarialTest is RendererBase {
     uint256 internal constant K_NAMES = 13; // attributes with 132-byte ASCII names
     uint256 internal constant K_NAMES_PCT = 14; // the same, with 16 `%` in each
     uint256 internal constant K_NAMES_BS = 15; // names of `\\` escapes (refused: no backslash in a name)
-    uint256 internal constant K_NAMES_UTF8 = 16; // attributes with names of 2-byte UTF-8
-    // The dearest mix: names of 2-byte UTF-8 that also hold as many `%` as the cap allows.
+    // Names of 2-byte UTF-8, and the same with as many `%` as the cap allows (refused: a trait
+    // name is printable ASCII).
+    uint256 internal constant K_NAMES_UTF8 = 16;
     uint256 internal constant K_NAMES_MIX = 21;
     // The three escape classes again, with as many escapes as the budget takes (accepted).
     uint256 internal constant K_BACKSLASH_CAP = 17;
@@ -685,25 +686,31 @@ contract RendererGasAdversarialTest is RendererBase {
     }
 
     function test_Gas_LongNamesOfUtf8_Html() public {
-        _row(
-            "130-byte attribute names of 2-byte UTF-8 + 256 KiB b64 + preview",
+        _refusedRow(
+            "130-byte attribute names of 2-byte UTF-8 (refused) + 256 KiB b64 + preview",
             10 * K_NAMES_UTF8 + 1
         );
     }
 
     function test_Gas_LongNamesOfUtf8_Script() public {
-        _row("130-byte attribute names of 2-byte UTF-8 + script + preview", 10 * K_NAMES_UTF8 + 2);
+        _refusedRow(
+            "130-byte attribute names of 2-byte UTF-8 (refused) + script + preview",
+            10 * K_NAMES_UTF8 + 2
+        );
     }
 
     function test_Gas_LongNamesOfUtf8WithPercent_Html() public {
-        _row(
-            "130-byte names of 2-byte UTF-8, 16 % each + 256 KiB b64 + preview",
+        _refusedRow(
+            "130-byte names of 2-byte UTF-8, 16 % each (refused) + 256 KiB b64 + preview",
             10 * K_NAMES_MIX + 1
         );
     }
 
     function test_Gas_LongNamesOfUtf8WithPercent_Script() public {
-        _row("130-byte names of 2-byte UTF-8, 16 % each + script + preview", 10 * K_NAMES_MIX + 2);
+        _refusedRow(
+            "130-byte names of 2-byte UTF-8, 16 % each (refused) + script + preview",
+            10 * K_NAMES_MIX + 2
+        );
     }
 
     // ---------------------------------------------------------------- refused records
