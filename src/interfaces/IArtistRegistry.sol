@@ -13,7 +13,9 @@ import { ArtistIdentity, ChangeKind, PendingChange, Standing } from "./types/Ide
 ///      (`0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`, use case 999) and walks registration and
 ///      expiry dates directly: a wallet counts only if its consolidation with `account` is at
 ///      least 30 days old and not expired. Use case 997 (primary address) is never used as a
-///      payout. A 6529-chain source replaces it through a 30-day governed swap.
+///      payout. A 6529-chain source replaces it through a 30-day governed swap. A source must
+///      fail closed: when it cannot read its data, it reverts instead of answering "not
+///      consolidated", which would strip recorded standing.
 interface IConsolidationSource is IERC165 {
     /// @notice `account`'s established consolidated wallets, at most `Limits.MAX_CANCELLERS`.
     function establishedWallets(address account) external view returns (address[] memory);

@@ -86,3 +86,6 @@
   it executes or ends; `register` and other artists' changes refuse a reserved account with
   `AccountTaken`. IDENTITY-3: a refresh removes a pending standing entry that is no longer
   consolidated at once, so a consolidation revoked before its 30 days never gives standing.
+  IDENTITY-4: the consolidation adapter's reads fail closed. Only a getter's no-data revert
+  past the end of an array ends a walk; a read that runs out of gas, reverts with data or
+  returns too much reverts with `DelegationReadFailed`. `READ_GAS` rises from 50,000 to 200,000.

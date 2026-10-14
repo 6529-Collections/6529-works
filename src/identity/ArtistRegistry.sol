@@ -68,7 +68,9 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      one refresh any time after consolidating suffices (a consolidation revoked before its 30
 ///      days never had standing to strip).
 ///      After a rotation the previous authority's wallets stay in the snapshot as missing for the
-///      grace, so a full snapshot admits the new authority's wallets only as they age out.
+///      grace, so a full snapshot admits the new authority's wallets only as they age out. A
+///      source that cannot read reverts, so every call that reads it fails closed instead of
+///      marking recorded wallets missing.
 ///
 ///      Payout freeze. While a pending change would move the payout, {payoutAddress} returns
 ///      zero, so split wallets hold accrued balances until the outcome; the artist's own pulls

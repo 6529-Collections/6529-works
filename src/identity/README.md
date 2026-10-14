@@ -254,10 +254,21 @@ The walks are bounded:
 - 4 registrations read per direction;
 - at most 16 wallets returned.
 
-Each getter call forwards a fixed 50,000 gas through `BoundedCall`, and reverts
-if the caller cannot supply it, so a gas-starved transaction cannot truncate a
-walk. The getters cost at most about 16,000 gas cold (a registration read is
-seven cold slots). The 50,000 stipend assumes no repricing triples that.
+Each getter call forwards a fixed 200,000 gas, and reverts if the caller cannot
+supply it (the `BoundedCall` gas check), so a gas-starved transaction cannot
+truncate a walk. The getters cost at most about 16,000 gas cold (a
+registration read is seven cold slots), and only the gas used is paid.
+
+**Reads fail closed.** A getter past the end of its array reverts at once with
+no revert data: the deployed contract is compiled with solc 0.8.18, and
+Solidity's array getters revert without a `Panic` code. That, and only that,
+ends a walk. A read that spends the whole stipend (out of gas), reverts with
+data, or returns more than expected reverts with `DelegationReadFailed`. A
+repricing or a broken source therefore makes registration, staging, execution,
+heartbeats and refreshes revert until the source is fixed or swapped
+(`setConsolidationSource`, 30 days). It never reads as "not consolidated",
+which would mark every recorded wallet missing and remove it after the grace
+(`test_SourceReadFailure_FailsClosed`).
 
 `consolidations` returns every consolidated wallet the 32-entry scan sees, with
 its `effectiveAt`. `effectiveAt(account, wallet)` checks one pair directly.
@@ -288,7 +299,8 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   cancels it or the guardian vetoes it.
 - **Consolidation source.** `setConsolidationSource` is a full-trust path on
   the 30-day class. The source decides who has standing, so a malicious source
-  could grant or deny it.
+  could grant or deny it. A source that cannot read halts identity calls (they
+  revert) rather than stripping standing.
 - **Profile fields.** The profile ID and profile document hash are the
   artist's unverified claims. They are bound into signatures but not checked
   against 6529 profiles.

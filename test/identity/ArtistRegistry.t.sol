@@ -9,7 +9,12 @@ import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutRes
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
-import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
+import {
+    ArtistIdentity,
+    ChangeKind,
+    PendingChange,
+    Standing
+} from "src/interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
 import {
@@ -21,6 +26,7 @@ import {
     SplitFactoryWalletsMock,
     StreamWorksMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 
 /// @notice Unit and attack-path tests for the artist registry (ADR 0001 section 11).
@@ -856,6 +862,50 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         _armRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(bad)));
         _stage(artistKey, _identity(artist, payout), 0);
+    }
+
+    /// @dev IDENTITY-4: a repriced read within the stipend's headroom changes nothing, and a read
+    ///      that exhausts it makes every identity call that reads the source revert instead of
+    ///      reading "not consolidated". The recorded wallet is never marked missing, and its
+    ///      standing is intact once reads work again.
+    function test_SourceReadFailure_FailsClosed() public {
+        RepricedDelegationMock repriced = new RepricedDelegationMock(delegation);
+        ConsolidationAdapter source =
+            new ConsolidationAdapter(IDelegationManagement(address(repriced)));
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(adapter, source, address(source).codehash);
+
+        // Cold reads repriced by 35K, beyond the former 50K stipend: nothing changes.
+        repriced.setExtraGas(35_000);
+        vm.cool(address(delegation));
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0, "not marked missing");
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+
+        // Reads that exhaust their gas: every call that reads the source reverts.
+        repriced.setExtraGas(type(uint256).max);
+        bytes memory err = abi.encodeWithSelector(
+            ConsolidationAdapter.DelegationReadFailed.selector, address(repriced)
+        );
+        vm.expectRevert(err);
+        registry.refreshStanding(artistId);
+        vm.expectRevert(err);
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+        _armRevert(err);
+        _stage(artistKey, _identity(artist, payout), 0);
+        vm.expectRevert(err);
+        _register(stranger);
+
+        repriced.setExtraGas(0);
+        registry.refreshStanding(artistId);
+        Standing[] memory s = registry.standingOf(artistId);
+        assertEq(s.length, 1);
+        assertEq(s[0].wallet, wallet);
+        assertEq(s[0].missingSince, 0, "standing intact");
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
     }
 
     function test_Bindings_AreOneShot() public {
