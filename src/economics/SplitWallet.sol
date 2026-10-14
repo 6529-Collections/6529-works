@@ -6,6 +6,7 @@ import {
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
 import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
+import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 import { Splits } from "./Splits.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -47,19 +48,19 @@ contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
     /// @inheritdoc ISplitWallet
     mapping(address asset => uint256) public recordedObserved;
 
-    /// @param resolver_ The resolver for artist-resolved payees; its code hash is pinned.
-    /// @param verifier_ The verifier for signed releases.
-    /// @param payees_ A canonical payee list (see {Splits.validate}).
-    constructor(
-        IArtistPayoutResolver resolver_,
-        IReleaseVerifier verifier_,
-        Payee[] memory payees_
-    ) {
+    /// @notice Deployed only by the split factory, which supplies the canonical payee list
+    ///         (see {Splits.validate}) through `pendingPayees`, its resolver (whose code hash is
+    ///         pinned here) and its verifier. The constructor takes no arguments, so every wallet
+    ///         has the same init code and the factory predicts addresses cheaply.
+    constructor() {
+        ISplitFactory factory_ = ISplitFactory(msg.sender);
+        Payee[] memory payees_ = factory_.pendingPayees();
         Splits.validate(payees_);
         factory = msg.sender;
+        IArtistPayoutResolver resolver_ = factory_.resolver();
         resolver = resolver_;
         resolverCodeHash = address(resolver_).codehash;
-        verifier = verifier_;
+        verifier = factory_.verifier();
         for (uint256 i; i < payees_.length; ++i) {
             _payees.push(payees_[i]);
         }

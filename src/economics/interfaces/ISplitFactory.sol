@@ -10,6 +10,9 @@ import { ISplitWallet } from "./ISplitWallet.sol";
 ///         salt. Sale adapters use salt zero, so a payee list maps to one wallet, before or after
 ///         deployment. Another salt gives an equivalent replacement wallet, which the revenue
 ///         escrow can recover credits to when a token blocks the original.
+/// @dev A wallet's address is `CREATE2(factory, keccak256(abi.encode(configHash, salt)),
+///      walletInitCodeHash)`, with `configHash = keccak256(abi.encode(payees))`: every wallet has
+///      the same init code, and its constructor reads the payee list back from the factory.
 interface ISplitFactory {
     /// @notice A wallet for `payees` was deployed at `wallet` with `salt`; `configHash` is
     ///         `keccak256(abi.encode(payees))` and is the same for every salt.
@@ -36,6 +39,13 @@ interface ISplitFactory {
 
     /// @notice The verifier's code hash, pinned at installation.
     function verifierCodeHash() external view returns (bytes32);
+
+    /// @notice The keccak256 of the split wallets' init code, the same for every wallet.
+    function walletInitCodeHash() external view returns (bytes32);
+
+    /// @notice The payee list of the wallet {createWallet} is deploying, which the wallet's
+    ///         constructor reads; empty at any other time.
+    function pendingPayees() external view returns (ISplitWallet.Payee[] memory);
 
     /// @notice The payee configuration hash of a wallet this factory deployed, or zero.
     function configOf(address wallet) external view returns (bytes32);

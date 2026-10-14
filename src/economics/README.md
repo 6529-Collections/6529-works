@@ -9,7 +9,7 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 
 | Contract | Role |
 | --- | --- |
-| `SplitFactory` | Permissionless, unowned. Deploys `SplitWallet`s at CREATE2 addresses that commit to the resolver, the verifier, the canonical payee list and a salt. Pins the resolver and verifier at installation (code present, not EIP-7702 delegated, code hash recorded). Records each wallet's payee configuration hash. |
+| `SplitFactory` | Permissionless, unowned. Deploys `SplitWallet`s at CREATE2 addresses that commit to the factory (and so its resolver and verifier), the canonical payee list and a salt: `CREATE2(factory, keccak256(abi.encode(keccak256(abi.encode(payees)), salt)), walletInitCodeHash)`. Every wallet has the same init code; its constructor reads the payee list back from the factory (`pendingPayees`, transient storage during `createWallet`), so predicting an address hashes a few words, not the wallet's code. Pins the resolver and verifier at installation (code present, not EIP-7702 delegated, code hash recorded). Records each wallet's payee configuration hash. |
 | `SplitWallet` | Immutable pull-payment wallet for ETH (`address(0)`) and any ERC-20. Payee `i` may release `floor(observed × share / 100,000) − released`, where `observed` is the balance plus everything released. Fixed payees name an account. Artist-resolved payees name an `artistId` and are paid at the resolver's current address. |
 | `ReleaseVerifier` | The singleton for signed releases (EIP-712, ERC-1271, EIP-7702 through the shared `SignatureVerifier`). An authorization binds wallet, asset, payee, account, recipient, amount, nonce and deadline; the domain binds the chain. Nonces are unordered, single use, per account across all wallets, and revocable; a bitmap keeps 256 to a storage word, so nonces signed in order write one new slot per 256 releases. |
 | `AssetAllowlist` | Governed currency allowlist: a status per asset (`Active`, `Deprecated`), a per-currency increment floor and a default currency per product. ETH is admitted at deployment. Admission is compare-and-set on status and floor. |
@@ -60,7 +60,11 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
 - Pay `factory.walletFor(payees, bytes32(0))` with `RevenuePayment.payETH` or
   `RevenuePayment.payERC20`. The wallet need not be deployed yet: funds sent to
   the address are split once anyone calls `createWallet`. Deployment costs
-  about 1.26M gas for two payees, so keep it off the auction-start path.
+  about 1.24M Prague gas for one payee, mostly the wallet's code (about 5,350
+  bytes), and about 9M on Sepolia's Glamsterdam, so keep it off the
+  auction-start path. One seller wallet serves every work with the same payees
+  (one per solo artist), and one royalty wallet every work with the same seller
+  and fee terms.
 - Read `AssetAllowlist.defaultCurrency(product)` and `incrementFloor(asset)` when
   a sale starts, and lock both for that sale.
 

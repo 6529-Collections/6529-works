@@ -143,15 +143,20 @@ no ceiling, or not run on Sepolia.
 | `refreshStanding`, a further wallet | 156,864 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 45,853 | 50,000 of execution | 0 | 0 | 40,667 |
 | `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
-| `createWallet`, a seller wallet (one artist payee) | 1,238,234 | 1,263,000 (regression) | 4 | 1 | — |
+| `createWallet`, a seller wallet (one artist payee) | 1,236,366 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,368 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,360 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,052 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,340 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,048 | 92,000 (regression) | 0 | 0 | — |
 
 - **The split-wallet rows** were added after this ADR was accepted (the review of
   14 October 2026), measured on the same harness. A wallet's deployment is
-  mostly code: about 5,300 bytes, which Glamsterdam prices at about 1,542 gas
+  mostly code: about 5,350 bytes, which Glamsterdam prices at about 1,542 gas
   each on Sepolia.
+- **Split wallets have a constant init code** since the same review. Predicting
+  a wallet's address no longer hashes its creation code, which lowers every
+  start by about 4,400 Prague gas, `royaltyInfo` by about 4,400 and
+  `createEdition` by about 9,000 below the figures in the table. The two-party
+  `startWithBid` measures 338,367 with it.
 - **The two-party `startWithBid` is tight:** 342,901, about 7K under 350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 379,456**, about 45K more
   than in ETH, because of the Permit2 transfer path. That path adds:

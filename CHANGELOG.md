@@ -134,3 +134,9 @@
   the statement log. A payee signing nonces in order writes one new slot per 256 signed
   releases instead of one each (a later signed release: 1 new slot to 0, about 111,000 less
   gas on Sepolia's Glamsterdam). `nonceUsed(account, nonce)` is unchanged.
+- Economics (QUALITY-12): split wallets have a constant init code. The wallet's constructor
+  reads its payee list back from the factory (`pendingPayees`, transient storage during
+  `createWallet`), and the CREATE2 salt commits to the payee configuration hash and the
+  caller's salt. `walletFor` no longer hashes the wallet's 6.6 KB creation code: about
+  4,400 Prague gas less per `start` and per `royaltyInfo`, and about 9,000 less per
+  `createEdition`. Every predicted wallet address changes.

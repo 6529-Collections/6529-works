@@ -78,7 +78,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PURCHASE_LATER_CEILING = 177_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
-    uint256 internal constant CREATE_WALLET_CEILING = 1_263_000;
+    uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
     uint256 internal constant SIGNED_LATER_CEILING = 92_000;

@@ -11,14 +11,20 @@ import { SplitWallet } from "./SplitWallet.sol";
 import { Splits } from "./Splits.sol";
 
 /// @title SplitFactory
-/// @notice Deploys immutable split wallets (ADR 0001 section 7). The CREATE2 init code carries the
-///         resolver, the verifier and the canonical payee list as constructor arguments, so the
-///         address commits to the whole configuration: no initializer, nothing to front-run, and
-///         funds sent to the address before deployment are split once the wallet exists.
+/// @notice Deploys immutable split wallets (ADR 0001 section 7). Every wallet has the same CREATE2
+///         init code (`walletInitCodeHash`); the CREATE2 salt is
+///         `keccak256(abi.encode(keccak256(abi.encode(payees)), salt))`, and the factory fixes the
+///         resolver and verifier. So the address commits to the whole configuration: no
+///         initializer, nothing to front-run, and funds sent to the address before deployment are
+///         split once the wallet exists.
 /// @dev Permissionless and unowned. Code at a predicted address can only be a wallet this factory
-///      deployed with exactly those arguments, because only this factory can CREATE2 there. The
-///      resolver and verifier are pinned at installation (code present, not EIP-7702 delegated,
-///      code hash recorded) and rechecked before every deployment (ADR 0001 section 13.6).
+///      deployed with exactly that payee list, because only this factory can CREATE2 there and it
+///      derives the salt from the list it deploys. The wallet's constructor reads the list back
+///      with {pendingPayees}, which the factory holds in transient storage during {createWallet}
+///      only. A constant init code keeps prediction cheap: {walletFor} hashes a few words, not the
+///      wallet's creation code, on every start and every `royaltyInfo`. The resolver and verifier
+///      are pinned at installation (code present, not EIP-7702 delegated, code hash recorded) and
+///      rechecked before every deployment (ADR 0001 section 13.6).
 contract SplitFactory is ISplitFactory {
     /// @inheritdoc ISplitFactory
     IArtistPayoutResolver public immutable resolver;
@@ -30,7 +36,16 @@ contract SplitFactory is ISplitFactory {
     bytes32 public immutable verifierCodeHash;
 
     /// @inheritdoc ISplitFactory
+    bytes32 public immutable walletInitCodeHash;
+
+    /// @inheritdoc ISplitFactory
     mapping(address wallet => bytes32) public configOf;
+
+    /// @dev The transient slot holding the pending payee count; payee `i`'s `artistId` and its
+    ///      packed `account | share << 160` follow at `+ 1 + 2i` and `+ 2 + 2i`.
+    ///      `keccak256("6529works.SplitFactory.pendingPayees")`.
+    bytes32 private constant _PENDING =
+        0x602a15ccc3efeba81089c44d5e87274e38b694ed83abb516822d4adb6c4f57d5;
 
     /// @param resolver_ The artist payout resolver (the artist registry).
     /// @param verifier_ The singleton release verifier.
@@ -39,6 +54,7 @@ contract SplitFactory is ISplitFactory {
         resolverCodeHash = _pin(address(resolver_));
         verifier = verifier_;
         verifierCodeHash = _pin(address(verifier_));
+        walletInitCodeHash = keccak256(type(SplitWallet).creationCode);
     }
 
     /// @inheritdoc ISplitFactory
@@ -47,7 +63,9 @@ contract SplitFactory is ISplitFactory {
         external
         returns (address wallet)
     {
-        wallet = _predict(payees, salt);
+        bytes32 configHash = keccak256(abi.encode(payees));
+        bytes32 walletSalt = _walletSalt(configHash, salt);
+        wallet = Create2.computeAddress(walletSalt, walletInitCodeHash);
         if (wallet.code.length != 0) return wallet;
         if (address(resolver).codehash != resolverCodeHash) {
             revert DependencyCodeChanged(address(resolver));
@@ -55,10 +73,33 @@ contract SplitFactory is ISplitFactory {
         if (address(verifier).codehash != verifierCodeHash) {
             revert DependencyCodeChanged(address(verifier));
         }
-        new SplitWallet{ salt: salt }(resolver, verifier, payees);
-        bytes32 configHash = keccak256(abi.encode(payees));
+        _setPending(payees);
+        new SplitWallet{ salt: walletSalt }();
+        assembly ("memory-safe") {
+            tstore(_PENDING, 0)
+        }
         configOf[wallet] = configHash;
         emit WalletCreated(wallet, configHash, salt, payees);
+    }
+
+    /// @inheritdoc ISplitFactory
+    function pendingPayees() external view returns (ISplitWallet.Payee[] memory payees) {
+        uint256 count;
+        assembly ("memory-safe") {
+            count := tload(_PENDING)
+        }
+        payees = new ISplitWallet.Payee[](count);
+        for (uint256 i; i < count; ++i) {
+            uint256 artistId;
+            uint256 packed;
+            assembly ("memory-safe") {
+                let slot := add(_PENDING, add(1, mul(2, i)))
+                artistId := tload(slot)
+                packed := tload(add(slot, 1))
+            }
+            payees[i] =
+                ISplitWallet.Payee(artistId, address(uint160(packed)), uint32(packed >> 160));
+        }
     }
 
     /// @inheritdoc ISplitFactory
@@ -73,18 +114,32 @@ contract SplitFactory is ISplitFactory {
         returns (address)
     {
         Splits.validate(payees);
-        return _predict(payees, salt);
+        return Create2.computeAddress(
+            _walletSalt(keccak256(abi.encode(payees)), salt), walletInitCodeHash
+        );
     }
 
-    function _predict(ISplitWallet.Payee[] calldata payees, bytes32 salt)
-        private
-        view
-        returns (address)
-    {
-        bytes32 initCodeHash = keccak256(
-            abi.encodePacked(type(SplitWallet).creationCode, abi.encode(resolver, verifier, payees))
-        );
-        return Create2.computeAddress(salt, initCodeHash);
+    /// @dev The CREATE2 salt: the payee configuration hash and the caller's salt.
+    function _walletSalt(bytes32 configHash, bytes32 salt) private pure returns (bytes32) {
+        return keccak256(abi.encode(configHash, salt));
+    }
+
+    /// @dev Holds `payees` in transient storage for the wallet's constructor ({pendingPayees}).
+    function _setPending(ISplitWallet.Payee[] calldata payees) private {
+        uint256 count = payees.length;
+        assembly ("memory-safe") {
+            tstore(_PENDING, count)
+        }
+        for (uint256 i; i < count; ++i) {
+            ISplitWallet.Payee calldata p = payees[i];
+            uint256 artistId = p.artistId;
+            uint256 packed = uint256(uint160(p.account)) | (uint256(p.share) << 160);
+            assembly ("memory-safe") {
+                let slot := add(_PENDING, add(1, mul(2, i)))
+                tstore(slot, artistId)
+                tstore(add(slot, 1), packed)
+            }
+        }
     }
 
     function _pin(address dependency) private view returns (bytes32) {
