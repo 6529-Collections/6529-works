@@ -14,6 +14,7 @@ import { Utf8 } from "../libraries/Utf8.sol";
 import { isKnownHashAlgorithm } from "../interfaces/types/HashRef.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IStatementLog, Role, Statement } from "../interfaces/IStatementLog.sol";
+import { IStream } from "../interfaces/IStream.sol";
 import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 
 /// @title StatementLog
@@ -25,6 +26,14 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      would cost one more storage write per entry; readers verify it against the chain rebuilt
 ///      from events. The log does not link a work-ID subject to the token-ID subject it later
 ///      becomes: the Stream or the package registry holds that link.
+///
+///      Dispute outcomes. A DISPUTE_OUTCOME about a token must name one that exists when it is
+///      recorded; an edition's outcome is recorded on its master, which the edition's metadata
+///      shows. Other subjects
+///      (an item before its mint, a work ID, an artist in the artist registry) are not checked.
+///      {latestDisputeOutcome} answers for a work: the latest outcome about the token, or, while
+///      it has none, the latest about the package item it was minted from (read from the token's
+///      `IStream.coreOf`).
 ///
 ///      Authorization per role:
 ///      - ARTIST: the pluggable {IArtistRoleResolver} says the signer is an artist of the subject.
@@ -186,8 +195,22 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    function latestDisputeOutcome(address token, uint256 id) external view returns (bytes32) {
-        return _latestDispute[subjectKey(token, id)];
+    /// @dev The item fallback is one bounded read of `coreOf(id)` on `token`; any other answer
+    ///      (not a Stream, a burned or unminted token) leaves the token's own result, zero.
+    function latestDisputeOutcome(address token, uint256 id)
+        external
+        view
+        returns (bytes32 entryHash)
+    {
+        entryHash = _latestDispute[subjectKey(token, id)];
+        if (entryHash != 0 || token == address(0)) return entryHash;
+        (bool ok, bytes memory core) = BoundedCall.tryRead(
+            token, abi.encodeCall(IStream.coreOf, (id)), OWNER_READ_GAS, 192, 0
+        );
+        if (ok && core.length == 192) {
+            bytes32 itemHash = abi.decode(core, (bytes32));
+            entryHash = _latestDispute[subjectKey(address(0), uint256(itemHash))];
+        }
     }
 
     /// @notice Returns the EIP-712 digest `signer` must sign for {appendSigned}.
@@ -238,6 +261,9 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
             entryHash: 0,
             head: 0
         });
+        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) {
+            _checkDisputeSubject(statement.token, statement.id);
+        }
         Chain storage chain = _chains[e.key];
         e.index = chain.count;
         // Every word is static, so two encodings joined equal one `abi.encode` of all ten.
@@ -284,6 +310,24 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         if (hasUri && (bytes(s.uri).length > MAX_URI_BYTES || !Utf8.isValid(bytes(s.uri)))) {
             revert InvalidUri();
         }
+    }
+
+    /// @dev A DISPUTE_OUTCOME's token subject (see the contract notes): an ERC-721 (by ERC-165)
+    ///      must own the ID now, and an ERC-1155 is refused. Each read is bounded.
+    function _checkDisputeSubject(address token, uint256 id) private view {
+        if (token == address(0)) return;
+        bytes4[] memory kinds = new bytes4[](2);
+        kinds[0] = type(IERC721).interfaceId;
+        kinds[1] = type(IERC1155).interfaceId;
+        bool[] memory supported = ERC165Checker.getSupportedInterfaces(token, kinds);
+        if (!supported[0] && !supported[1]) return;
+        if (!supported[1]) {
+            (bool ok, bytes memory owner) = BoundedCall.tryRead(
+                token, abi.encodeCall(IERC721.ownerOf, (id)), OWNER_READ_GAS, 32, 0
+            );
+            if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) return;
+        }
+        revert UnknownDisputeSubject(token, id);
     }
 
     function _isAuthorized(Role role, Statement calldata s, address who)

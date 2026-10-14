@@ -7,6 +7,10 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
+import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
+import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
@@ -337,6 +341,93 @@ contract DisputeFlowTest is IntegrationBase {
         );
         manager.execute(address(stream), wrong);
         assertEq(registry.releasedTo(contentHash), 0);
+    }
+
+    /// @dev A PLATFORM dispute outcome on `(token, id)`, as `_platformStatement` builds it.
+    function _outcome(address token, uint256 id) internal pure returns (Statement memory) {
+        return Statement(
+            token,
+            id,
+            StatementKinds.DISPUTE_OUTCOME,
+            keccak256("6529-works/dispute-outcome/1"),
+            HashRef(HASH_SHA256, keccak256("outcome")),
+            "ar://outcome",
+            bytes32(0),
+            bytes32(0)
+        );
+    }
+
+    function _shows(string memory metadata, bytes32 entry) internal pure returns (bool) {
+        return _contains(
+            metadata,
+            string.concat(
+                '{"trait_type":"Dispute statement","value":"',
+                Strings.toHexString(uint256(entry), 32),
+                '"}'
+            )
+        );
+    }
+
+    /// @dev LIFECYCLE-4: an outcome can name only a token that exists (not one not yet minted,
+    ///      nor a burned one), and an edition's outcome goes on its master.
+    function test_ADisputeOutcomeNamesAnExistingToken() public {
+        uint256 nextId = stream.totalMinted() + 1;
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStatementLog.UnknownDisputeSubject.selector, address(stream), nextId
+            )
+        );
+        statements.appendPlatform(_outcome(address(stream), nextId));
+
+        uint256 burned = _upheldBurn();
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStatementLog.UnknownDisputeSubject.selector, address(stream), burned
+            )
+        );
+        statements.appendPlatform(_outcome(address(stream), burned));
+
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStatementLog.UnknownDisputeSubject.selector, address(editions), burned + 1
+            )
+        );
+        statements.appendPlatform(_outcome(address(editions), burned + 1));
+    }
+
+    /// @dev LIFECYCLE-4 (a) and (b), inverted: an outcome recorded about an item before its
+    ///      mint (subject `(address(0), itemHash)`) is shown on the work minted from it and on
+    ///      that work's edition, until an outcome about the token itself takes precedence.
+    function test_APreMintOutcomeShowsOnTheWorkAndItsEdition() public {
+        Work memory w = _work(rightful, collectionId);
+        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.edition = EditionTerms(
+            EditionFormat.FIXED, 10, 0, 0.01 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
+        );
+        bytes32 masterRoot = _publish(_one(w));
+        bytes32 preMint = _platformStatement(
+            address(0),
+            uint256(WorksHashing.itemHash(w.item)),
+            StatementKinds.DISPUTE_OUTCOME,
+            "ar://pre-mint-outcome"
+        );
+        uint256 tokenId = _sell(masterRoot, _one(w), 0, bidder, 1 ether);
+        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), preMint);
+        assertTrue(_shows(stream.tokenURI(tokenId), preMint), "(a) on the work");
+        editions.createEdition(tokenId, w.item, masterRoot, _proofOf(_one(w), 0));
+        assertTrue(_shows(editions.uri(tokenId), preMint), "(b) on its edition");
+
+        // An outcome about the token is the work's current status from then on.
+        bytes32 later = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://token-outcome"
+        );
+        assertEq(statements.latestDisputeOutcome(address(stream), tokenId), later);
+        assertTrue(_shows(stream.tokenURI(tokenId), later));
+        assertTrue(_shows(editions.uri(tokenId), later));
+        assertFalse(_shows(stream.tokenURI(tokenId), preMint));
     }
 
     function _payment(uint256 amount) internal view returns (Payment memory) {

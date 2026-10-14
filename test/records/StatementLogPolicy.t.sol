@@ -9,7 +9,12 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
-import { ArtistResolverMock, ERC1155BalanceMock } from "../mocks/RecordsMocks.sol";
+import {
+    ArtistResolverMock,
+    ERC1155BalanceMock,
+    OZERC1155Mock,
+    OZERC721Mock
+} from "../mocks/RecordsMocks.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/RecordsResolvers.sol";
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
@@ -222,6 +227,47 @@ contract StatementLogPolicyTest is StatementLogFixture {
         // Per subject.
         assertEq(stmtLog.latestDisputeOutcome(address(nft), 2), bytes32(0));
         assertEq(stmtLog.latestDisputeOutcome(address(0), 1), bytes32(0));
+    }
+
+    /// @dev LIFECYCLE-4: an outcome about an ERC-721 token needs the token to exist now; an
+    ///      ERC-1155 subject is refused (an edition's outcome goes on its master); subjects that
+    ///      are not tokens, such as an item or an artist ID, are not checked.
+    function test_DisputeOutcome_SubjectRules() public {
+        OZERC721Mock works = new OZERC721Mock();
+        OZERC1155Mock copies = new OZERC1155Mock();
+        works.mint(tokenOwner, 1);
+        copies.mint(tokenOwner, 1, 1);
+        Statement memory dispute = _statement();
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+
+        (dispute.token, dispute.id) = (address(works), 1);
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
+        dispute.id = 2;
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.UnknownDisputeSubject.selector, address(works), 2)
+        );
+        stmtLog.appendPlatform(dispute);
+
+        (dispute.token, dispute.id) = (address(copies), 1);
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.UnknownDisputeSubject.selector, address(copies), 1)
+        );
+        stmtLog.appendPlatform(dispute);
+
+        // Other kinds about the same subjects, and outcomes about non-token subjects, pass.
+        dispute.kind = keccak256("SOME_PLATFORM_NOTE");
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        (dispute.token, dispute.id) = (address(0), uint256(keccak256("an item")));
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
+        (dispute.token, dispute.id) = (address(stmtLog), 7); // a contract that is no token
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
     }
 
     function test_LatestDisputeOutcome_IsTheEntryHashInTheEvent() public {

@@ -52,6 +52,25 @@ written under any role, so consumers read `kind` together with `role`. The log k
 (`latestDisputeOutcome(token, id)`, one slot, written only for that kind), so a
 renderer can show dispute status (ADR 0001 §12) without scanning events.
 
+**Dispute outcomes.**
+- **Subjects.** A `DISPUTE_OUTCOME` about an ERC-721 token (by ERC-165) needs
+  the token to exist when it is recorded (`UnknownDisputeSubject` otherwise):
+  not yet minted or burned tokens are refused. An ERC-1155 subject is refused: an edition's outcome is
+  recorded on its master, which the edition's metadata shows. Subjects that
+  are not tokens (an item before its mint, `(address(0), uint256(itemHash))`; a
+  work ID; an artist in the artist registry) are not checked.
+- **What `latestDisputeOutcome` answers.** For a 6529 Stream token with no
+  outcome of its own, it answers the latest outcome about the package item the
+  token was minted from (one bounded `coreOf` read), so a pre-mint outcome is
+  shown on the work and its edition, and is what the auction's `cancel` cites.
+- **Precedence.** The latest outcome about the token is the work's current
+  dispute status: it replaces every earlier outcome, about the token or about
+  its item, in that answer and in the metadata. Earlier outcomes stay in the
+  chain and its events. So each `DISPUTE_OUTCOME` document must state the
+  status of every earlier dispute it keeps in force (a rejected second
+  dispute restates an upheld first one) and cite the outcome it replaces in
+  `supersedes`.
+
 **Entry hash** (the identity other entries cite), all words ABI-encoded:
 
 ```

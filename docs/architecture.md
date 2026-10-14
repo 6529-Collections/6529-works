@@ -281,9 +281,11 @@ default when the sale starts".
 1. A dispute is filed in the 6529 disputes wave. The GUARDIAN role calls
    `IEnglishAuction.pause`; the pause allowance is 7 days in total.
 2. While paused, the high bidder may `withdrawBid`.
-3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement. The
-   PARAMETER_SETTER role then calls `cancel(saleId, outcomeRef)` while the
-   auction is still paused.
+3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement about the
+   token (it must exist; an outcome recorded about the item before its mint is
+   also shown, until one about the token replaces it). The PARAMETER_SETTER
+   role then calls `cancel(saleId, outcomeRef)` while the auction is still
+   paused.
    - `outcomeRef` must equal `latestDisputeOutcome`.
    - The window is inclusive (`block.timestamp <= pausedUntil`).
    - The bid is credited back and the token is burned.
@@ -301,7 +303,10 @@ default when the sale starts".
 4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
    ends by itself when the allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
-   it through `latestDisputeOutcome`.
+   it through `latestDisputeOutcome`, on the work and on its edition. The
+   latest outcome about a work is its current dispute status, so each outcome
+   document restates the earlier outcomes it keeps in force and cites the one
+   it replaces in `supersedes`.
 
 ## Trust boundaries
 
