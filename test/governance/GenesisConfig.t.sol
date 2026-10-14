@@ -452,7 +452,23 @@ contract GenesisConfigTest is Test {
             assertEq(grant, Roles.grantDelay(id), name);
             assertEq(exec, _classDelay(_str(string.concat(r, ".executionClass"))), name);
             assertEq(grant, _classDelay(_str(string.concat(r, ".grantClass"))), name);
+            assertEq(
+                vm.parseJsonBool(json, string.concat(r, ".suspendable")),
+                Roles.isSuspendable(id),
+                name
+            );
         }
+    }
+
+    /// @dev The manager's own guardian function and view (GOV-2), beyond its OpenZeppelin base.
+    function test_ManagerSectionMatchesWorksAccessManager() public view {
+        assertEq(_count(".manager.functions"), 1, "suspend");
+        assertEq(_str(".manager.functions[0].signature"), "suspend(uint64,address)");
+        assertEq(_selector(".manager.functions[0].selector"), WorksAccessManager.suspend.selector);
+        assertEq(_roleId(_str(".manager.functions[0].role")), Roles.GUARDIAN);
+        assertEq(vm.parseJsonUint(json, ".manager.functions[0].delay"), Roles.IMMEDIATE);
+        assertEq(_count(".manager.views"), 1, "isSuspended");
+        assertEq(_selector(".manager.views[0].selector"), WorksAccessManager.isSuspended.selector);
     }
 
     function test_EveryEntryMatchesItsSignatureAndClassDelay() public view {

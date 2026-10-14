@@ -2,7 +2,19 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
+import { IDutchSale } from "src/interfaces/IDutchSale.sol";
+import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { Statement } from "src/interfaces/IStatementLog.sol";
+import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
+import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
+import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
+import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Governance recovery on the real genesis deployment (ADR 0002 decision 5, owner
@@ -142,5 +154,184 @@ contract GovernanceRecoveryTest is IntegrationBase {
         vm.prank(coldAdmin);
         manager.cancel(hotAdmin, address(manager), grab);
         assertEq(manager.getSchedule(id), 0, "admin cancels a grant");
+    }
+
+    // ------------------------------------------------- GOV-2: guardian suspension
+
+    function _statement(address token, uint256 id) internal pure returns (Statement memory) {
+        string memory uri = "ar://platform-statement";
+        return Statement(
+            token,
+            id,
+            StatementKinds.DISPUTE_OUTCOME,
+            keccak256("6529-works/dispute-outcome/1"),
+            HashRef(HASH_SHA256, keccak256(bytes(uri))),
+            uri,
+            bytes32(0),
+            bytes32(0)
+        );
+    }
+
+    function _suspend(address guardian, uint64 role, address account) internal {
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.RoleSuspended(role, account, guardian);
+        vm.prank(guardian);
+        manager.suspend(role, account);
+        assertTrue(manager.isSuspended(role, account), "suspended");
+        assertFalse(_has(role, account), "no longer acts for the role");
+        (uint48 since,,,) = manager.getAccess(role, account);
+        assertTrue(since != 0, "still on record until revoked");
+    }
+
+    function _closed(address caller, address target, bytes4 selector) internal view {
+        (bool immediate, uint32 delay) = manager.canCall(caller, target, selector);
+        assertFalse(immediate, "immediate path open");
+        assertEq(delay, 0, "no delayed path either");
+    }
+
+    /// @dev A sold, open Stream work (for locators and statements) and a sold Dutch edition
+    ///      master with its edition created (for the adapters' PLATFORM path).
+    function _soldWorkAndEdition(address artist)
+        internal
+        returns (uint256 tokenId, bytes32 fileId, uint256 editionId)
+    {
+        Work[] memory works = new Work[](2);
+        works[0] = _work(artist, collectionId);
+        works[1] = _work(artist, collectionId);
+        works[1].item.kind = ItemKind.EDITION_MASTER;
+        works[1].item.edition = EditionTerms(
+            EditionFormat.FIXED,
+            20,
+            0,
+            0.1 ether,
+            CURRENCY_ETH,
+            SaleKind.DUTCH,
+            abi.encode(DutchParams(0.01 ether, 1 hours, 0))
+        );
+        bytes32 root = _publish(works);
+        tokenId = _sell(root, works, 0, makeAddr("collectorA"), 1 ether);
+        records.openRecord(tokenId, works[0].item, works[0].media);
+        fileId = works[0].media[0].fileId;
+        editionId = _sell(root, works, 1, makeAddr("collectorB"), 1 ether);
+        editions.createEdition(editionId, works[1].item, root, _proofOf(works, 1));
+    }
+
+    /// @dev A guardian suspends the PLATFORM key and every platform path closes in the same
+    ///      block: `canCall` and the manual checks that consult it. The creator path, which
+    ///      needs no role, stays open.
+    function test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce() public {
+        address artist = _actor("suspensionArtist");
+        (uint256 tokenId, bytes32 fileId, uint256 editionId) = _soldWorkAndEdition(artist);
+
+        _suspend(guardian2, Roles.PLATFORM, platform);
+        _closed(platform, address(fixedSale), IFixedPriceSale.openSale.selector);
+        _closed(platform, address(fixedSale), IFixedPriceSale.closeSale.selector);
+        _closed(platform, address(dutchSale), IDutchSale.openSale.selector);
+        _closed(platform, address(dutchSale), IDutchSale.closeSale.selector);
+        _closed(platform, address(records), records.addLocator.selector);
+        _closed(platform, address(statements), statements.appendPlatform.selector);
+        _closed(platform, address(stream), stream.createCollection.selector);
+
+        vm.startPrank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
+        );
+        statements.appendPlatform(_statement(address(stream), tokenId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
+        );
+        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, "ar://mirror"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
+        );
+        stream.createCollection("Another", keccak256("another"));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        dutchSale.openSale(address(editions), editionId, uint64(block.timestamp));
+        vm.stopPrank();
+
+        // The artist still opens its own sale; the suspended key cannot close it.
+        vm.prank(artist);
+        uint256 saleId = dutchSale.openSale(address(editions), editionId, uint64(block.timestamp));
+        vm.prank(platform);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        dutchSale.closeSale(saleId);
+        vm.prank(artist);
+        dutchSale.closeSale(saleId);
+
+        // Lifting it is an ADMIN action in the 30-day class, which a guardian may veto.
+        bytes memory lift = abi.encodeCall(IAccessManager.grantRole, (Roles.PLATFORM, platform, 0));
+        _schedule(hotAdmin, address(manager), lift);
+        vm.warp(block.timestamp + META_DELAY);
+        vm.expectEmit(address(manager));
+        emit WorksAccessManager.RoleSuspensionLifted(Roles.PLATFORM, platform);
+        vm.prank(hotAdmin);
+        manager.execute(address(manager), lift);
+        assertFalse(manager.isSuspended(Roles.PLATFORM, platform));
+        vm.prank(platform);
+        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, "ar://mirror"));
+    }
+
+    /// @dev The other zero-delay operational roles close the same way; nobody but a guardian
+    ///      suspends, and only these roles can be suspended.
+    function test_GOV2_EveryOperationalRoleCanBeSuspended() public {
+        _suspend(guardian1, Roles.STORAGE_OPERATOR, storageOperator);
+        vm.prank(storageOperator);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManaged.AccessManagedUnauthorized.selector, storageOperator
+            )
+        );
+        records.setPreferredKind(LocatorKind.IPFS);
+
+        _suspend(guardian3, Roles.CURATOR, curator);
+        vm.prank(curator);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, curator)
+        );
+        statements.appendCurator(_statement(address(stream), 1));
+
+        assertTrue(verifier.isSignerActive(signer1));
+        _suspend(guardian1, Roles.CURATION_SIGNER, signer1);
+        assertFalse(verifier.isSignerActive(signer1), "signer 1 no longer approves");
+        assertTrue(verifier.isSignerActive(signer2), "signer 2 still does");
+
+        // Admins and keys cannot suspend; guardians cannot suspend a governance role.
+        address[3] memory others = [hotAdmin, coldAdmin, platform];
+        for (uint256 i; i < others.length; ++i) {
+            vm.prank(others[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IAccessManager.AccessManagerUnauthorizedAccount.selector,
+                    others[i],
+                    Roles.GUARDIAN
+                )
+            );
+            manager.suspend(Roles.PLATFORM, platform);
+        }
+        vm.prank(guardian1);
+        vm.expectRevert(
+            abi.encodeWithSelector(WorksAccessManager.RoleNotSuspendable.selector, Roles.ADMIN)
+        );
+        manager.suspend(Roles.ADMIN, hotAdmin);
+    }
+
+    /// @dev Revocation and a new grant also clear it: the replacement key is never suspended.
+    function test_GOV2_ReplacingASuspendedKey() public {
+        _suspend(guardian1, Roles.PLATFORM, platform);
+        address newPlatform = makeAddr("newPlatformKey");
+        bytes memory revoke = _revoke(Roles.PLATFORM, platform);
+        bytes memory grant =
+            abi.encodeCall(IAccessManager.grantRole, (Roles.PLATFORM, newPlatform, 0));
+        _schedule(hotAdmin, address(manager), revoke);
+        _schedule(hotAdmin, address(manager), grant);
+        vm.warp(block.timestamp + META_DELAY);
+        vm.startPrank(hotAdmin);
+        manager.execute(address(manager), revoke);
+        manager.execute(address(manager), grant);
+        vm.stopPrank();
+        assertFalse(manager.isSuspended(Roles.PLATFORM, platform), "cleared by the revocation");
+        vm.warp(block.timestamp + Roles.grantDelay(Roles.PLATFORM));
+        vm.prank(newPlatform);
+        stream.createCollection("Replacement", keccak256("replacement"));
     }
 }

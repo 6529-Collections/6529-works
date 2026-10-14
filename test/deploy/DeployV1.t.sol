@@ -358,7 +358,8 @@ contract DeployV1Test is Test {
         string memory curator = string.concat(
             "    },\n    {\n      \"name\": \"CURATOR\",\n      \"id\": 12,\n",
             "      \"executionClass\": \"immediate\",\n      \"executionDelay\": 0,\n",
-            "      \"grantClass\": \"successor\",\n      \"grantDelay\": 2592000\n    }\n  ],"
+            "      \"grantClass\": \"successor\",\n      \"grantDelay\": 2592000,\n",
+            "      \"suspendable\": true\n    }\n  ],"
         );
         string memory missing = vm.replace(json, curator, "    }\n  ],");
         assertTrue(keccak256(bytes(missing)) != keccak256(bytes(json)), "edited");
@@ -486,6 +487,25 @@ contract DeployV1Test is Test {
             )
         );
         this.checkPlatformPathExternal(d, cfg);
+    }
+
+    /// @dev GOV-2: a holder a guardian suspended fails readback by name, not as a missing
+    ///      member.
+    function test_ReadbackRejectsASuspendedHolder() public {
+        (
+            DeployV1.Deployment memory d,
+            GovernanceConfig.Config memory cfg,
+            GovernanceConfig.Call[] memory calls
+        ) = _genesis(_params());
+        _settle(d);
+        this.checkExternal(d, cfg, calls);
+        address platform = address(0xB051);
+        vm.prank(GUARDIAN);
+        d.manager.suspend(Roles.PLATFORM, platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.HolderSuspended.selector, Roles.PLATFORM, platform)
+        );
+        this.checkExternal(d, cfg, calls);
     }
 
     function test_ReadbackCatchesARoleGrantedToTheConfigurator() public {

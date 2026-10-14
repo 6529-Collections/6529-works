@@ -26,8 +26,9 @@ library Roles {
     ///         30-day execution delay. Also the manager's own admin functions.
     uint64 internal constant ADMIN = 0;
     /// @notice Guardian Safes (at least two; three by default): `WorksAccessManager` lets them
-    ///         cancel any scheduled operation. Mapped to immediate vetoes: dispute pause,
-    ///         identity-change veto, curation `disableSigner`. Holds nothing but `PAUSER`.
+    ///         cancel any scheduled operation and suspend a holder of a suspendable role
+    ///         ({isSuspendable}). Mapped to immediate vetoes: dispute pause, identity-change
+    ///         veto, curation `disableSigner`. Holds nothing but `PAUSER`.
     uint64 internal constant GUARDIAN = 1;
     /// @notice Immediate `pause` selectors. Held by the guardian Safes, never by an unpauser.
     uint64 internal constant PAUSER = 2;
@@ -86,6 +87,15 @@ library Roles {
         ) return SUCCESSOR;
         if (role == FUNDS_SETTER) return FUNDS;
         return STANDARD;
+    }
+
+    /// @notice Whether a guardian may suspend a holder of `role` at once
+    ///         (`WorksAccessManager.suspend`): the zero-delay operational roles whose holders
+    ///         are single keys. Never a governance role, a pause role or `MINTER`.
+    function isSuspendable(uint64 role) internal pure returns (bool) {
+        return
+            role == PLATFORM || role == CURATOR || role == STORAGE_OPERATOR
+                || role == CURATION_SIGNER;
     }
 
     /// @notice The label emitted for `role` at configuration. `ADMIN` cannot be labelled.

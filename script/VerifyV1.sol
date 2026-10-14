@@ -42,6 +42,8 @@ library VerifyV1 {
     error AddressMismatch(string name, address predicted, address recorded);
     /// @notice The default license text is inconsistent: `what` names the failing check.
     error Cc0Mismatch(string what);
+    /// @notice A guardian suspended this configured holder (`WorksAccessManager.suspend`).
+    error HolderSuspended(uint64 role, address account);
 
     /// @notice Every contract in `recorded` is at the address `predicted` computes
     ///         (`DeployV1.predict` from the recorded constructor parameters), and nothing is
@@ -89,6 +91,14 @@ library VerifyV1 {
             address authority = IAccessManaged(cfg.targets[i].target).authority();
             if (authority != address(d.manager)) {
                 revert WrongAuthority(cfg.targets[i].target, authority);
+            }
+        }
+        // No configured holder is suspended (the readback below would only see a missing
+        // member).
+        for (uint256 i; i < cfg.grants.length; ++i) {
+            GovernanceConfig.Grant memory g = cfg.grants[i];
+            if (d.manager.isSuspended(g.role, g.account)) {
+                revert HolderSuspended(g.role, g.account);
             }
         }
         // Roles, delays, holders and selectors; the configurator renounced ADMIN.

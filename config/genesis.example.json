@@ -14,7 +14,8 @@
       "executionClass": "successor",
       "executionDelay": 2592000,
       "grantClass": "successor",
-      "grantDelay": 2592000
+      "grantDelay": 2592000,
+      "suspendable": false
     },
     {
       "name": "GUARDIAN",
@@ -22,7 +23,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "successor",
-      "grantDelay": 2592000
+      "grantDelay": 2592000,
+      "suspendable": false
     },
     {
       "name": "PAUSER",
@@ -30,7 +32,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "standard",
-      "grantDelay": 172800
+      "grantDelay": 172800,
+      "suspendable": false
     },
     {
       "name": "UNPAUSER",
@@ -38,7 +41,8 @@
       "executionClass": "standard",
       "executionDelay": 172800,
       "grantClass": "standard",
-      "grantDelay": 172800
+      "grantDelay": 172800,
+      "suspendable": false
     },
     {
       "name": "CURATION_SIGNER",
@@ -46,7 +50,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "successor",
-      "grantDelay": 2592000
+      "grantDelay": 2592000,
+      "suspendable": true
     },
     {
       "name": "STORAGE_OPERATOR",
@@ -54,7 +59,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "standard",
-      "grantDelay": 172800
+      "grantDelay": 172800,
+      "suspendable": true
     },
     {
       "name": "MINTER",
@@ -62,7 +68,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "successor",
-      "grantDelay": 2592000
+      "grantDelay": 2592000,
+      "suspendable": false
     },
     {
       "name": "KEEPER",
@@ -70,7 +77,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "standard",
-      "grantDelay": 172800
+      "grantDelay": 172800,
+      "suspendable": false
     },
     {
       "name": "PLATFORM",
@@ -78,7 +86,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "standard",
-      "grantDelay": 172800
+      "grantDelay": 172800,
+      "suspendable": true
     },
     {
       "name": "PARAMETER_SETTER",
@@ -86,7 +95,8 @@
       "executionClass": "standard",
       "executionDelay": 172800,
       "grantClass": "standard",
-      "grantDelay": 172800
+      "grantDelay": 172800,
+      "suspendable": false
     },
     {
       "name": "FUNDS_SETTER",
@@ -94,7 +104,8 @@
       "executionClass": "funds",
       "executionDelay": 1209600,
       "grantClass": "funds",
-      "grantDelay": 1209600
+      "grantDelay": 1209600,
+      "suspendable": false
     },
     {
       "name": "SUCCESSOR_SETTER",
@@ -102,7 +113,8 @@
       "executionClass": "successor",
       "executionDelay": 2592000,
       "grantClass": "successor",
-      "grantDelay": 2592000
+      "grantDelay": 2592000,
+      "suspendable": false
     },
     {
       "name": "CURATOR",
@@ -110,7 +122,8 @@
       "executionClass": "immediate",
       "executionDelay": 0,
       "grantClass": "successor",
-      "grantDelay": 2592000
+      "grantDelay": 2592000,
+      "suspendable": true
     }
   ],
   "holders": [
@@ -212,6 +225,28 @@
       "note": "configurator.worksManager(); the subject of the epoch-0 manifest"
     }
   ],
+  "manager": {
+    "name": "WorksAccessManager",
+    "artifact": "src/governance/WorksAccessManager.sol:WorksAccessManager",
+    "base": "lib/openzeppelin-contracts/contracts/access/manager/AccessManager.sol:AccessManager",
+    "note": "Never a configured target. Its functions beyond the OpenZeppelin base check the caller's role themselves; tools/check_genesis.py requires every one to be listed here.",
+    "functions": [
+      {
+        "signature": "suspend(uint64,address)",
+        "selector": "0x64bf6e5d",
+        "role": "GUARDIAN",
+        "class": "immediate",
+        "delay": 0,
+        "note": "One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it"
+      }
+    ],
+    "views": [
+      {
+        "signature": "isSuspended(uint64,address)",
+        "selector": "0xbd2e6ac3"
+      }
+    ]
+  },
   "contracts": [
     {
       "name": "Stream",

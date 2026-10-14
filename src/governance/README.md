@@ -9,7 +9,7 @@ executor, policy or registry contracts.
 | File | Purpose |
 | --- | --- |
 | `Roles.sol` | Canonical role IDs, delay classes, execution delays and grant delays. Every lane imports it. |
-| `WorksAccessManager.sol` | The stock manager plus three cancellation rules (below). |
+| `WorksAccessManager.sol` | The stock manager plus three cancellation rules and the guardians' `suspend` (below). |
 | `GovernanceConfig.sol` | Internal library: `validate`, `install`, `verify` (readback) and `hasRecord`. |
 | `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, configures it in one transaction, renounces, and verifies it. |
 | `BoundedParameter.sol` | Raise-only parameters: at most 2× per step, with an absolute ceiling (§13.9). |
@@ -25,7 +25,7 @@ a wrong delay.
 | Role | ID | Holder | Execution delay | Grant delay | Map to it |
 | --- | --- | --- | --- | --- | --- |
 | `ADMIN` | 0 | Hot admin Safe and cold recovery admin Safe (distinct signers) | 30 days | 30 days | Nothing explicitly. The manager's own admin functions and unmapped selectors fall back to it. |
-| `GUARDIAN` | 1 | Guardian Safes: at least two, three by default | immediate | 30 days | Immediate vetoes: dispute pause (§12), identity-change veto (§11), curation `disableSigner` |
+| `GUARDIAN` | 1 | Guardian Safes: at least two, three by default | immediate | 30 days | Immediate vetoes: dispute pause (§12), identity-change veto (§11), curation `disableSigner`. Also the manager's own `suspend` (below) |
 | `PAUSER` | 2 | Guardian Safes | immediate | 48 hours | `pause` |
 | `UNPAUSER` | 3 | Hot admin Safe (never a pauser) | 48 hours | 48 hours | `unpause` |
 | `CURATION_SIGNER` | 4 | Curation signer keys, at least two at genesis | — | 30 days | Nothing: a signer registry, not a caller |
@@ -47,6 +47,9 @@ a wrong delay.
 - **Contract-to-contract calls use no role.** They go through per-pair, one-shot
   caller bindings inside the target contracts, set once at genesis and locked forever.
   A shared contract role would let any holder call every hook.
+
+**Suspendable roles:** `PLATFORM`, `CURATOR`, `STORAGE_OPERATOR` and
+`CURATION_SIGNER` (`Roles.isSuspendable`), the zero-delay roles held by single keys.
 
 **Delay classes:**
 - immediate: tightening actions and pauses;
@@ -100,6 +103,30 @@ Why both rules, from what OZ 5.7.0's source does:
   `ADMIN` membership and execution delay, so every admin sees `(false, 30 days)`.
   The authoritative check is `_getAdminRestrictions`: `grantRole` and `revokeRole`
   consult the role's admin, which is `ADMIN` for every role.
+
+## Suspending an operational key
+
+`suspend(roleId, account)` lets any guardian stop a holder of a suspendable role at
+once, for example a stolen platform key:
+
+- **Effect.** The holder fails `hasRole` for that role, so it fails `canCall` and every
+  check built on them in the same block: `restricted` functions, the sale adapters' and
+  `StatementLog`'s manual PLATFORM and CURATOR checks, `WorkRecords.addLocator`'s
+  platform path, and the curation verifier's `isSignerActive`. Its record stays, so
+  `getAccess` still shows it.
+- **One way for the guardians.** No guardian can lift it. A grant or a revocation of
+  that role to that account clears it; both are ADMIN operations in the 30-day class
+  that any guardian can cancel. A grant to an existing member has no grant delay.
+  Replacing the key (revoke, then grant a new one) clears it too.
+- **Refused:** a caller that is not an active guardian, a role that is not suspendable
+  (`RoleNotSuspendable`), an account with no record for the role or already suspended
+  (`NotSuspendable`). Inside `execute`, the manager is the sender and is refused.
+- **Events:** `RoleSuspended(roleId, account, guardian)` and
+  `RoleSuspensionLifted(roleId, account)`.
+- **Readback** names a suspended configured holder (`VerifyV1.HolderSuspended`).
+
+`config/genesis.example.json` lists it under `manager.functions` and marks each role
+`suspendable`; `tools/check_genesis.py` checks both against the build.
 
 ## Deploying and configuring
 
@@ -229,8 +256,10 @@ therefore executes them itself:
 - **Emergencies.**
   - Pausing is immediate (`PAUSER`).
   - Unpausing waits 48 hours, during which any guardian can cancel it.
-  - Revoking a role is a meta action and waits 30 days, so pause the affected
-    target while a revocation matures.
+  - Revoking a role is a meta action and waits 30 days. A compromised
+    zero-delay key (`PLATFORM`, `CURATOR`, `STORAGE_OPERATOR`, `CURATION_SIGNER`)
+    is suspended at once by any guardian while its revocation matures; pause the
+    affected target as well where it has a pause.
   - A compromised curation signer is cut off immediately by the curation verifier's
     one-way `disableSigner` (mapped to `GUARDIAN`). Re-enabling a signer is in the
     30-day class.
@@ -337,6 +366,7 @@ therefore executes them itself:
   (`test_Residual_ColludingGuardiansCanShieldEachOther`). The mitigation is
   guardian independence.
 - **One dishonest guardian** can, until its removal executes (30 days), cancel
-  every operation, keep paused targets paused by cancelling each unpause, and veto
-  identity changes. Rule 3 bounds this to one recovery round.
+  every operation, keep paused targets paused by cancelling each unpause, suspend
+  operational keys, and veto identity changes. Rule 3 bounds this to one recovery
+  round.
 - **Guardian liveness**, as described under Operating procedures.

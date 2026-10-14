@@ -145,6 +145,10 @@ independent of the admins they check:
   `settle` after the re-admission reopens each auction for at least the governed duration.
   After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
   the bidder and the work goes to the artist.
+- **A compromised operational key.** Any guardian Safe calls
+  `manager.suspend(role, key)` for a PLATFORM, CURATOR, STORAGE_OPERATOR or CURATION_SIGNER
+  key; the key stops at once. The hot admin then schedules `revokeRole(role, key)` and the
+  grant of a replacement key (30 days, then the role's grant delay).
 
 #### The network fee recipient must exist
 
