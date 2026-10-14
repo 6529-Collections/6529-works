@@ -32,6 +32,7 @@ import {
     PaymentMethod,
     PrimaryTerms
 } from "../interfaces/types/SaleTypes.sol";
+import { Roles } from "../governance/Roles.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 
@@ -96,6 +97,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     bytes32 public federationRegistryCodeHash;
     /// @inheritdoc ISaleAdapter
     bool public paused;
+    /// @notice When the current pause began; zero while not paused.
+    uint40 public pausedAt;
 
     mapping(uint256 saleId => Listing) internal _listings;
     mapping(address token => mapping(uint256 id => uint256 saleId)) internal _openSales;
@@ -187,15 +190,20 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     /// @dev Reverts with `SalePaused` when already paused.
     function pause() external restricted {
         if (paused) revert SalePaused();
-        paused = true;
+        (paused, pausedAt) = (true, uint40(block.timestamp));
         emit Paused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
-    /// @dev Reverts with `NotPaused` when not paused.
+    /// @dev Reverts with `NotPaused` when not paused, and with `UnpauseTooEarly` before
+    ///      `pausedAt + Roles.STANDARD` (GOV-5: AccessManager counts the UNPAUSER delay from
+    ///      scheduling, so only the target can count it from the pause).
     function unpause() external restricted {
         if (!paused) revert NotPaused();
-        paused = false;
+        uint256 allowedAt = uint256(pausedAt) + Roles.STANDARD;
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
+        (paused, pausedAt) = (false, 0);
         emit Unpaused(msg.sender);
     }
 

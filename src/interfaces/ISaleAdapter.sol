@@ -81,6 +81,9 @@ interface ISaleAdapter is IERC165 {
     error SalePaused();
     /// @notice `unpause` was called while the adapter is not paused.
     error NotPaused();
+    /// @notice An unpause (or an auction's `resume`) before `allowedAt`, which is 48 hours
+    ///         (`Roles.STANDARD`) after the pause it would end.
+    error UnpauseTooEarly(uint256 allowedAt);
     /// @notice The address cannot receive the token or the credit (for `claim`, zero).
     error InvalidRecipient(address recipient);
     /// @notice An ETH claim could not be delivered to `to`; the credit is kept.
@@ -98,7 +101,9 @@ interface ISaleAdapter is IERC165 {
     ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role
     ///         (immediate).
     function pause() external;
-    /// @notice Unpauses the adapter. UNPAUSER role.
+    /// @notice Unpauses the adapter. UNPAUSER role. Refused until 48 hours (`Roles.STANDARD`)
+    ///         after the pause, so the guardians always have the standard delay to cancel an
+    ///         unpause, even one scheduled before the pause.
     function unpause() external;
     /// @notice Whether the adapter is paused.
     function paused() external view returns (bool);

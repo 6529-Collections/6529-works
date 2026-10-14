@@ -8,6 +8,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
@@ -350,6 +351,15 @@ contract DutchSaleTest is DutchBase {
         assertEq(dutch.claim(CURRENCY_ETH, alice), 1 ether);
         vm.prank(platform);
         dutch.closeSale(saleId);
+        // GOV-5: not before 48 hours after the pause.
+        vm.prank(unpauser);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+            )
+        );
+        dutch.unpause();
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         dutch.unpause();
         _openNow(LINEAR);

@@ -81,7 +81,12 @@ emergency tightening. Claims are never blocked.
 `purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
 resumes them. `closeSale` and `claim` always work. As on the auction, pausing a
 paused adapter reverts with `SalePaused`, and unpausing one that is not paused
-reverts with `NotPaused`.
+reverts with `NotPaused`. An unpause is refused with `UnpauseTooEarly` until 48
+hours (`Roles.STANDARD`) after the pause: AccessManager counts the UNPAUSER delay
+from scheduling, so an unpause scheduled before the pause could otherwise undo it
+in the same block. The adapter counts the delay from the pause, so the guardians
+always have that window to cancel it. The auction's `unpause` and its per-auction
+`resume` follow the same rule.
 
 ### Allowlists
 

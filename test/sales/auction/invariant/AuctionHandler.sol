@@ -4,7 +4,9 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
@@ -79,6 +81,8 @@ contract AuctionHandler is Test {
     mapping(uint256 saleId => uint256) public ghostSettlements;
     mapping(uint256 saleId => uint256) public ghostCancellations;
     mapping(uint256 saleId => bool) internal _paused;
+    /// @dev When the emergency start pause began (GOV-5: unpausing waits 48 hours from it).
+    uint256 internal startPausedAt;
     /// @dev How often each path really ran, for coverage checks.
     mapping(bytes32 path => uint256) public hits;
 
@@ -231,11 +235,21 @@ contract AuctionHandler is Test {
         if (saleId != 0) _withdraw(saleId);
     }
 
+    /// @dev GOV-5: a resume earlier than 48 hours after the pause is refused.
     function resume(uint256 saleSeed) external {
         if (sales.length == 0) return;
         uint256 saleId = _sale(saleSeed);
-        if (auction.auction(saleId).state != IEnglishAuction.AuctionState.PAUSED) return;
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
+        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
         vm.prank(unpauser);
+        if (block.timestamp < allowedAt) {
+            vm.expectRevert(
+                abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
+            );
+            auction.resume(saleId);
+            return;
+        }
         auction.resume(saleId);
         ++hits["resume"];
     }
@@ -305,11 +319,20 @@ contract AuctionHandler is Test {
     /// @dev The emergency pause stops only new starts; live auctions must carry on.
     function toggleStartPause() external {
         if (auction.paused()) {
+            uint256 allowedAt = startPausedAt + Roles.STANDARD;
             vm.prank(unpauser);
+            if (block.timestamp < allowedAt) {
+                vm.expectRevert(
+                    abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
+                );
+                auction.unpause();
+                return;
+            }
             auction.unpause();
         } else {
             vm.prank(pauser);
             auction.pause();
+            startPausedAt = block.timestamp;
         }
         ++hits["startPause"];
     }

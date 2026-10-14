@@ -132,8 +132,10 @@ interface IEnglishAuction is ISaleAdapter {
     /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
     function pause(uint256 saleId, bytes32 disputeRef) external;
     /// @notice Resumes a paused auction with its remaining time after a rejected dispute.
-    ///         UNPAUSER role (pause and unpause have separate holders). A pause also ends by itself
-    ///         once the 7-day allowance runs out, without any call.
+    ///         UNPAUSER role (pause and unpause have separate holders). Refused until 48 hours
+    ///         (`Roles.STANDARD`) after the pause, so the guardians can always cancel a resume,
+    ///         even one scheduled before the pause. A pause also ends by itself once the 7-day
+    ///         allowance runs out, without any call.
     function resume(uint256 saleId) external;
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
     ///         burns the token. PARAMETER_SETTER role, while paused: the window is inclusive,

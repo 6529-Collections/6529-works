@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
@@ -243,6 +244,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
 
         uint256 other = _start();
         _pause(other);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(other);
         vm.prank(guardian);
@@ -423,6 +425,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
     function test_PR33_ClearingTheRecipientKeepsThePauseUsed() public {
         uint256 saleId = _start();
         _pause(saleId);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
         _bidFor(saleId, alice, carol, 1 ether);
@@ -442,6 +445,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         vm.prank(alice);
         auction.withdrawBid(saleId);
         _setFloor(ETH, 0.5 ether);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
         assertEq(auction.minimumBid(saleId), 1, "no bid: the opening bid, at least 1");

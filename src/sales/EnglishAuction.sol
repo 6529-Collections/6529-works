@@ -37,6 +37,7 @@ import {
     SaleKind
 } from "../interfaces/types/SaleTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
+import { Roles } from "../governance/Roles.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 
@@ -117,12 +118,13 @@ contract EnglishAuction is
         uint24 pausedTotal;
     }
 
-    /// @dev The governed parameters and the emergency start pause: one slot, read once per start.
+    /// @dev The governed parameters and the emergency start pause (when it began, zero while
+    ///      not paused): one slot, read once per start.
     struct Settings {
         uint32 duration;
         uint32 extensionWindow;
         uint32 incrementShare;
-        bool paused;
+        uint40 pausedAt;
     }
 
     /// @dev The values a sale locks, shared by every sale that locked the same ones. A start
@@ -352,9 +354,12 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function resume(uint256 saleId) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
-        _endPause(saleId, s, block.timestamp - s.pausedAt);
+        uint256 pausedAt = s.pausedAt;
+        _requireUnpausable(pausedAt);
+        _endPause(saleId, s, block.timestamp - pausedAt);
     }
 
     /// @inheritdoc IEnglishAuction
@@ -407,21 +412,24 @@ contract EnglishAuction is
     ///      because stopping a live auction near its end would distort its outcome. The
     ///      per-auction dispute pause, `pause(saleId, disputeRef)`, is separate.
     function pause() external restricted {
-        if (_settings.paused) revert SalePaused();
-        _settings.paused = true;
+        if (_settings.pausedAt != 0) revert SalePaused();
+        _settings.pausedAt = uint40(block.timestamp);
         emit Paused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function unpause() external restricted {
-        if (!_settings.paused) revert NotPaused();
-        _settings.paused = false;
+        uint256 pausedAt = _settings.pausedAt;
+        if (pausedAt == 0) revert NotPaused();
+        _requireUnpausable(pausedAt);
+        _settings.pausedAt = 0;
         emit Unpaused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
     function paused() external view returns (bool) {
-        return _settings.paused;
+        return _settings.pausedAt != 0;
     }
 
     /// @inheritdoc ISaleAdapter
@@ -565,7 +573,7 @@ contract EnglishAuction is
 
     function _start(address token, bytes calldata mintData) private returns (uint256 saleId) {
         Settings memory c = _settings;
-        if (c.paused) revert SalePaused();
+        if (c.pausedAt != 0) revert SalePaused();
         bool listed = _listed[token];
         if (!listed && !isTarget(token)) revert TargetNotAllowed(token);
         (uint256 tokenId, PrimaryTerms memory terms) =
@@ -912,6 +920,13 @@ contract EnglishAuction is
     function _resumedEnd(Sale storage s, uint256 length) private view returns (uint256) {
         uint256 pausedAt = s.pausedAt;
         return pausedAt + length + Math.max(s.endTime - pausedAt, _terms[s.termsId].extensionWindow);
+    }
+
+    /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.STANDARD` later.
+    function _requireUnpausable(uint256 pausedAt) private view {
+        uint256 allowedAt = pausedAt + Roles.STANDARD;
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
     }
 
     /// @dev The token's recipient: the stored one, or the bidder when none is stored.

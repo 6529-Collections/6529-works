@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { Vm } from "forge-std/Vm.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
     CURRENCY_DEFAULT,
@@ -478,6 +479,15 @@ contract ReviewRegressionsTest is FixedPriceBase {
         fixedSale.closeSale(saleId);
         vm.expectEmit(address(fixedSale));
         emit ISaleAdapter.Unpaused(unpauser);
+        // GOV-5: not before 48 hours after the pause.
+        vm.prank(unpauser);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+            )
+        );
+        fixedSale.unpause();
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         fixedSale.unpause();
         _openPublic(ETH_ED, 0);

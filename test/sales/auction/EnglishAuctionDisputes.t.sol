@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
@@ -66,6 +67,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(guardian);
         _expectState(saleId, IEnglishAuction.AuctionState.PAUSED);
         auction.pause(saleId, bytes32(0));
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
         vm.prank(guardian);
@@ -144,6 +146,15 @@ contract EnglishAuctionDisputesTest is AuctionBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
         );
         auction.resume(saleId);
+        // GOV-5: not before 48 hours after the pause, whoever scheduled it when.
+        uint256 allowedAt = block.timestamp + Roles.STANDARD;
+        vm.warp(allowedAt - 1);
+        vm.prank(unpauser);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt));
+        auction.resume(saleId);
+        vm.warp(allowedAt);
+        vm.prank(unpauser);
+        auction.resume(saleId);
     }
 
     function test_Pause_EndsByItselfAfterSevenDays() public {
@@ -217,7 +228,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 otherEnd = auction.auction(other).endTime;
         vm.warp(otherEnd - 5 minutes);
         _pause(other);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.expectEmit(address(auction));
         emit IEnglishAuction.AuctionResumed(other, uint64(block.timestamp + WINDOW));
         vm.prank(unpauser);

@@ -5,6 +5,7 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -996,12 +997,21 @@ contract EnglishAuctionTest is AuctionBase {
         vm.prank(alice);
         auction.claim(ETH, alice);
         _pause(quiet);
+        // GOV-5: the start pause ends no earlier than 48 hours after it began.
         vm.prank(unpauser);
-        auction.resume(quiet);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+            )
+        );
+        auction.unpause();
         _end(live);
         auction.settle(live);
         assertEq(stream.ownerOf(_tokenIdOf(live)), bob);
         assertEq(seller.balance, 1.5 ether);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(unpauser);
+        auction.resume(quiet);
 
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Unpaused(unpauser);

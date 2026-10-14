@@ -258,3 +258,6 @@
     reverts (`SalePaused`, `NotPaused`); EIP-2612 takes only the 65-byte signature; a
     misreported payer balance around Permit2 reverts with `TokenBalanceMismatch`. The
     fixed-price and Dutch payout allowance is renamed `PAYOUT_GAS`, as on the auction.
+  - GOV-5: an adapter's `unpause`, and the auction's `resume(saleId)`, are refused with
+    `UnpauseTooEarly` until 48 hours after the pause they end, so a guardian can always
+    cancel them, including one scheduled before the pause. The adapters record `pausedAt`.

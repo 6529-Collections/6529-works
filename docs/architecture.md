@@ -317,8 +317,11 @@ default when the sale starts".
      whose lead artist is the beneficiary, and the burned item is tombstoned. A
      release happens once per burned work, so the guardians check the
      beneficiary during the delay.
-4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
-   ends by itself when the allowance runs out.
+4. **Rejected.** The UNPAUSER role calls `resume`, no earlier than 48 hours
+   after the pause (the auction refuses an earlier one, even if it was
+   scheduled before the pause, so the guardians always have the standard
+   window to cancel it). With no outcome, the pause ends by itself when the
+   allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
    it through `latestDisputeOutcome`, on the work and on its edition. The
    latest outcome about a work is its current dispute status, so each outcome
