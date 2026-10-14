@@ -9,7 +9,7 @@ executor, policy or registry contracts.
 | File | Purpose |
 | --- | --- |
 | `Roles.sol` | Canonical role IDs, delay classes, execution delays and grant delays. Every lane imports it. |
-| `WorksAccessManager.sol` | The stock manager plus two cancellation rules (below). |
+| `WorksAccessManager.sol` | The stock manager plus three cancellation rules (below). |
 | `GovernanceConfig.sol` | Internal library: `validate`, `install`, `verify` (readback) and `hasRecord`. |
 | `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, configures it in one transaction, renounces, and verifies it. |
 | `BoundedParameter.sol` | Raise-only parameters: at most 2× per step, with an absolute ceiling (§13.9). |
@@ -64,6 +64,10 @@ a wrong delay.
 2. **Nobody but its scheduler can cancel an operation that revokes one of the
    canceller's own roles.** No guardian, and no admin, can veto its own removal.
    A scheduler may still withdraw its own proposal, even one that removes itself.
+3. **Only a guardian, or its scheduler, can cancel a role revocation on the
+   manager.** No admin can veto another account's removal. Every other
+   operation keeps the stock rules, so an admin still cancels another admin's
+   grants, remaps and authority moves.
 
 Why both rules, from what OZ 5.7.0's source does:
 
@@ -82,6 +86,13 @@ Why both rules, from what OZ 5.7.0's source does:
 - **Rule 2 cannot be expressed per selector, because it depends on arguments.**
   It also stops a compromised hot admin from cancelling the cold admin's
   `revokeRole(ADMIN, hot)`. Stock OZ lets any admin cancel any operation.
+- **Rule 3 keeps the cold admin's recovery finite.** A revocation can be vetoed
+  only by the guardians, so the cold admin removes a dishonest guardian in one
+  30-day round and the hot admin in the next, even when the two act together.
+  The trade-off: an admin can no longer defend a guardian against another
+  admin's revocation. That defence rests on the other guardians, which is the
+  documented assumption (`test_GOV1_*` in
+  `test/integration/GovernanceRecovery.t.sol`).
 - **Wrappers cannot smuggle a revocation past Rule 2.** A revocation scheduled
   inside `multicall` or a nested `execute` can never execute, and a scheduled
   `renounceRole` fails its confirmation check. The tests cover all three.
@@ -248,8 +259,12 @@ therefore executes them itself:
      cancelling them.
   2. Guardians cancel the hot admin's counter-moves, such as a
      `revokeRole(ADMIN, cold)`. The cold admin cannot cancel its own removal.
-  3. After 30 days the cold admin executes the revocations.
-  4. Only then does it grant the roles to a new hot Safe. Revocations go first,
+  3. If a guardian cancels those revocations, the cold admin also schedules
+     `revokeRole(GUARDIAN, g)` and `revokeRole(PAUSER, g)` for it. Only the other
+     guardians may cancel them (Rules 2 and 3), so it is removed after 30 days,
+     and the hot admin's revocations are then rescheduled.
+  4. After 30 days the cold admin executes the revocations.
+  5. Only then does it grant the roles to a new hot Safe. Revocations go first,
      because a still-active hot admin can cancel grants to its replacement.
 
   The owner confirms the cold Safe and its signer set at deployment.
@@ -321,4 +336,7 @@ therefore executes them itself:
   cannot tell this apart from defending a guardian against a compromised admin
   (`test_Residual_ColludingGuardiansCanShieldEachOther`). The mitigation is
   guardian independence.
+- **One dishonest guardian** can, until its removal executes (30 days), cancel
+  every operation, keep paused targets paused by cancelling each unpause, and veto
+  identity changes. Rule 3 bounds this to one recovery round.
 - **Guardian liveness**, as described under Operating procedures.

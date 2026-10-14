@@ -150,3 +150,21 @@ ADR 0001 §13:
 - hardening requirement 2 is met by decision 1, not by the two options named;
 - hardening requirement 3 is amended by decision 4;
 - hardening requirement 8 is extended by decision 6.
+
+## Addendum (review of 14 October 2026)
+
+Accepted by the delivery owner. It amends decision 1 and the security impact above.
+
+**Rule 3.** Only a guardian, or the account that scheduled it, may cancel a
+`revokeRole` operation on the manager. No admin can veto another account's
+removal. Every other operation keeps OpenZeppelin's rules, so an admin still
+cancels another admin's grants, remaps and authority moves when the guardians are
+offline.
+- **Why:** the cold admin's recovery (decision 5) must finish even when the hot
+  admin and one guardian act together. With Rule 3 the cold admin removes the
+  guardian in one 30-day round, then the hot admin in the next.
+- **Trade-off:** an admin can no longer defend a guardian against another
+  admin's revocation. That defence rests on the other guardians, which decision 4
+  already assumes.
+- **Residual:** until its removal executes, a dishonest guardian can cancel every
+  operation and keep paused targets paused.

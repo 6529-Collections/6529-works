@@ -31,6 +31,9 @@
   nobody cancels their own revocation), the canonical role and delay-class table
   (`Roles.sol`), a one-shot configurator that owns its manager and reads it back,
   and `BoundedParameter` for raise-only parameters.
+- Governance (GOV-1): only a guardian, or its scheduler, may cancel a role revocation on
+  `WorksAccessManager` (Rule 3, ADR 0002 addendum). Admins keep the stock power to cancel
+  each other's other operations.
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`
