@@ -62,8 +62,9 @@ interface ISplitWallet {
     error NothingToRelease(address asset, uint256 payee);
     /// @notice `amount` exceeds the `releasable` amount.
     error AmountExceedsReleasable(uint256 amount, uint256 releasable);
-    /// @notice `asset` receipts fell below the recorded high-water mark, as a negative rebase or a
-    ///         hostile token would cause. Releases of that asset fail closed until it recovers.
+    /// @notice ERC-20 `asset` receipts fell below the recorded high-water mark, as a negative
+    ///         rebase or a hostile token would cause. Releases of that asset fail closed until it
+    ///         recovers.
     error ObservedDecreased(address asset, uint256 recorded, uint256 current);
     /// @notice Sending `amount` wei to `recipient` failed.
     error ETHTransferFailed(address recipient, uint256 amount);
@@ -95,7 +96,9 @@ interface ISplitWallet {
     /// @notice Cumulative receipts of `asset`: the current balance plus everything released.
     function observed(address asset) external view returns (uint256);
 
-    /// @notice The highest cumulative receipts of `asset` recorded by a release.
+    /// @notice The highest cumulative receipts of ERC-20 `asset` recorded by a release. Always
+    ///         zero for ETH (`address(0)`), whose receipts can never fall: nothing but a release
+    ///         takes ETH out, and a release counts it as released first.
     function recordedObserved(address asset) external view returns (uint256);
 
     /// @notice The amount of `asset` released for payee `index`.

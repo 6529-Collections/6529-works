@@ -78,10 +78,10 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PURCHASE_LATER_CEILING = 177_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
-    uint256 internal constant CREATE_WALLET_CEILING = 1_254_000;
-    uint256 internal constant RELEASE_FIRST_CEILING = 118_000;
-    uint256 internal constant SIGNED_FIRST_CEILING = 167_000;
-    uint256 internal constant SIGNED_LATER_CEILING = 115_000;
+    uint256 internal constant CREATE_WALLET_CEILING = 1_263_000;
+    uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
+    uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
+    uint256 internal constant SIGNED_LATER_CEILING = 110_000;
     /// @dev The edition master's terms, as on the Sepolia rehearsal (flows.md, section 3).
     uint64 internal constant EDITION_SIZE = 10;
     uint256 internal constant EDITION_PRICE = 0.0001 ether;
@@ -795,7 +795,7 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev The artist pulls its first ETH from the seller wallet: the payee's and the wallet's
-    ///      release totals, and the receipts high-water mark.
+    ///      release totals (ETH keeps no receipts high-water mark).
     function _rowReleaseFirst() internal returns (Row memory r) {
         address wallet = _fundedWallet();
         r = _row(
@@ -806,7 +806,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, RELEASE_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 3, 0);
+        _growthIs(r, 2, 0);
     }
 
     /// @dev A relayer submits the artist's first signed release through the claim router: the
@@ -821,7 +821,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, SIGNED_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 4, 0);
+        _growthIs(r, 3, 0);
     }
 
     /// @dev The artist's next signed release, with the next nonce, after more revenue arrived.

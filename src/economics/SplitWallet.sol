@@ -20,8 +20,11 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      never admitted, stays withdrawable (fixes RC1 Medium M-3). Every ERC-20 move is checked by
 ///      exact balance deltas on both sides, so a token that charges fees, rebases with rounding,
 ///      returns nothing or returns `false` fails closed for its own releases only. A recorded
-///      high-water mark of `observed` makes a balance that shrinks (a negative rebase) fail closed
-///      too. All state-changing entry points share one transient reentrancy guard.
+///      high-water mark of each ERC-20's `observed` makes a balance that shrinks (a negative
+///      rebase) fail closed too. ETH needs none: nothing but a release can take ETH out of the
+///      wallet, and a release adds what it sends to `totalReleased` first, so ETH receipts never
+///      fall, and a first ETH release writes one slot fewer. All state-changing entry points
+///      share one transient reentrancy guard.
 ///      Fixed payees are push: anyone may pay them at their own account. Artist-resolved payees
 ///      are pull-only (only the current payout address, directly or by a signature checked by the
 ///      pinned verifier), so nobody can push an accrued balance to a lost key before recovery.
@@ -161,7 +164,9 @@ contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
 
         released[asset][index] += amount;
         totalReleased[asset] += amount;
-        if (current != recordedObserved[asset]) recordedObserved[asset] = current;
+        if (asset != address(0) && current != recordedObserved[asset]) {
+            recordedObserved[asset] = current;
+        }
         emit Released(asset, index, recipient, account, amount, current);
 
         if (asset == address(0)) {
@@ -173,12 +178,15 @@ contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
         }
     }
 
-    /// @dev Reverts if receipts fell below the recorded high-water mark. Otherwise `current` is at
-    ///      least the receipts every earlier release saw, so the cumulative entitlement is at
-    ///      least what was released and the subtraction cannot underflow.
+    /// @dev Reverts if an ERC-20's receipts fell below the recorded high-water mark. Otherwise
+    ///      `current` is at least the receipts every earlier release saw (for ETH always, as
+    ///      its receipts never fall), so the cumulative entitlement is at least what was released
+    ///      and the subtraction cannot underflow.
     function _due(address asset, uint256 index, uint256 current) private view returns (uint256) {
-        uint256 recorded = recordedObserved[asset];
-        if (current < recorded) revert ObservedDecreased(asset, recorded, current);
+        if (asset != address(0)) {
+            uint256 recorded = recordedObserved[asset];
+            if (current < recorded) revert ObservedDecreased(asset, recorded, current);
+        }
         return Splits.entitlement(current, _payee(index).share) - released[asset][index];
     }
 

@@ -138,13 +138,16 @@ contract EconomicsInvariantTest is Test {
     }
 
     /// @notice Per payee: released equals what recipients measurably received, and never exceeds
-    ///         the entitlement at the recorded receipts.
+    ///         the entitlement at the receipts the last release saw: the wallet's recorded mark
+    ///         for an ERC-20, the model's for ETH (which keeps no mark on-chain).
     function invariant_ReleasedWithinEntitlement() public view {
         for (uint256 w; w < wallets.length; ++w) {
             SplitWallet wallet = wallets[w];
             for (uint256 k; k < 4; ++k) {
                 address asset = assets[k];
-                uint256 recorded = wallet.recordedObserved(asset);
+                uint256 recorded = asset == ETH
+                    ? handler.modelHigh(address(wallet), ETH)
+                    : wallet.recordedObserved(asset);
                 for (uint256 i; i < wallet.payeeCount(); ++i) {
                     uint256 released = wallet.released(asset, i);
                     assertEq(released, handler.ghostReleased(address(wallet), asset, i));
@@ -174,10 +177,13 @@ contract EconomicsInvariantTest is Test {
     }
 
     /// @notice The recorded receipts follow the model's high-water mark exactly, so they never go
-    ///         down; outside the rebasing token they never exceed the live receipts either.
+    ///         down; outside the rebasing token they never exceed the live receipts either. ETH
+    ///         records no mark, and its live receipts never fall below the model's mark.
     function invariant_ObservedNeverDecreases() public view {
         for (uint256 w; w < wallets.length; ++w) {
-            for (uint256 k; k < 4; ++k) {
+            assertEq(wallets[w].recordedObserved(ETH), 0, "no ETH mark");
+            assertLe(handler.modelHigh(address(wallets[w]), ETH), wallets[w].observed(ETH));
+            for (uint256 k = 1; k < 4; ++k) {
                 address asset = assets[k];
                 uint256 recorded = wallets[w].recordedObserved(asset);
                 assertEq(recorded, handler.modelHigh(address(wallets[w]), asset));
