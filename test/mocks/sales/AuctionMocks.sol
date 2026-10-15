@@ -6,8 +6,9 @@ import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
-import { PermitToken } from "./SaleMocks.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { MockFederationRegistry, PermitToken } from "./SaleMocks.sol";
 
 /// @notice English-auction mocks: a configurable ERC-721 mint target, a hostile bidder or
 ///         wallet, and EIP-2612 tokens that burn gas or block recipients. The federation
@@ -231,4 +232,110 @@ contract BlockablePermitToken is PermitToken {
         require(!blocked[to], "blocked");
         super._update(from, to, value);
     }
+}
+
+/// @dev A minimal federated template: every `IMintTarget` function, with the settlement hook as a
+///      no-op (as 6529 Editions implements it).
+contract PlainMintTarget is ERC721, IMintTarget {
+    PrimaryTerms internal _terms;
+    mapping(address => bool) public isAdmittedMinter;
+    uint256 public nextId;
+
+    constructor() ERC721("Federated", "FED") { }
+
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+        emit AdmittedMinterSet(adapter, admitted);
+    }
+
+    function setTerms(PrimaryTerms calldata terms) external {
+        _terms = terms;
+    }
+
+    function mint(address to, uint256, uint256, bytes calldata)
+        external
+        returns (uint256 tokenId, PrimaryTerms memory terms)
+    {
+        require(isAdmittedMinter[msg.sender], "minter");
+        tokenId = ++nextId;
+        terms = _terms;
+        _mint(to, tokenId);
+    }
+
+    function primaryTerms(uint256, bytes calldata) external view returns (PrimaryTerms memory t) {
+        t = _terms;
+        t.currency = address(0);
+    }
+
+    function burn(uint256 id, uint256) external {
+        require(isAdmittedMinter[msg.sender], "minter");
+        _burn(id);
+    }
+
+    function markPrimarySettled(uint256) external { }
+}
+
+/// @dev Mints a chosen token ID.
+contract HugeIdTarget is ERC721, IMintTarget {
+    mapping(address => bool) public isAdmittedMinter;
+    uint256 public id;
+
+    constructor() ERC721("Huge", "HUGE") { }
+
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+    }
+
+    function setId(uint256 id_) external {
+        id = id_;
+    }
+
+    function mint(address to, uint256, uint256, bytes calldata)
+        external
+        returns (uint256 tokenId, PrimaryTerms memory terms)
+    {
+        tokenId = id;
+        terms = PrimaryTerms(
+            SaleKind.ENGLISH_AUCTION,
+            address(0),
+            0,
+            "",
+            address(0xB),
+            address(0xC),
+            25_000,
+            address(0xA)
+        );
+        _mint(to, tokenId);
+    }
+
+    function primaryTerms(uint256, bytes calldata) external pure returns (PrimaryTerms memory t) {
+        t.saleKind = SaleKind.ENGLISH_AUCTION;
+    }
+
+    function burn(uint256, uint256) external { }
+
+    function markPrimarySettled(uint256) external { }
+}
+
+/// @dev A registry with different code, for the code-hash pin.
+contract MockFederationRegistryV2 is MockFederationRegistry {
+    function version() external pure returns (uint256) {
+        return 2;
+    }
+}
+
+/// @dev A bidding contract that forwards its refunds with `claim(currency, to)` and accepts ETH
+///      for other reasons, but has no way to move ETH out.
+contract ForwardingBidder {
+    function bid(IEnglishAuction auction, uint256 saleId) external payable {
+        auction.bid{ value: msg.value }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, address(this), msg.value, 0, 0, "")
+        );
+    }
+
+    function claimTo(IEnglishAuction auction, address treasury) external {
+        auction.claim(address(0), treasury);
+    }
+
+    receive() external payable { }
 }

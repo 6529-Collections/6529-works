@@ -9,7 +9,9 @@ import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
+import { Payment, PaymentMethod, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import {
     BlocklistToken,
     CallbackToken,
@@ -283,6 +285,36 @@ contract EnglishAuctionHostileTest is AuctionBase {
         assertFalse(token.lastHookOk());
         assertEq(bytes4(token.lastHookResult()), REENTRY);
         assertEq(auction.auction(saleId).bidder, bob);
+    }
+
+    /// Regression: mutant K1 in the review of #21
+    /// @dev A fee-on-transfer token through Permit2 is caught only by the adapter's own
+    ///      balance-delta check.
+    function test_FeeOnTransferPermit2BidsFailClosed() public {
+        FeeOnTransferToken fot = new FeeOnTransferToken();
+        allowlist.admitAsset(address(fot), 0, 1);
+        stream.setTerms(_terms(address(fot)));
+        uint256 saleId = auction.start(address(stream), "");
+        fot.mint(alice, 100e18);
+        vm.prank(alice);
+        fot.approve(address(permit2), type(uint256).max);
+        ISignatureTransfer.PermitTransferFrom memory permit = ISignatureTransfer.PermitTransferFrom(
+            ISignatureTransfer.TokenPermissions(address(fot), 10e18), 0, block.timestamp + 1 hours
+        );
+        bytes32 witness = keccak256(
+            abi.encode(Typehashes.BID_WITNESS, saleId, alice, uint256(10e18), permit.deadline)
+        );
+        bytes32 digest =
+            permit2.witnessDigest(address(auction), permit, witness, Typehashes.BID_WITNESS_TYPE);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+        Payment memory p = Payment(
+            PaymentMethod.PERMIT2, alice, 10e18, permit.deadline, 0, abi.encodePacked(r, s, v)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(fot))
+        );
+        vm.prank(relayer);
+        auction.bid(saleId, address(0), p);
     }
 
     // --------------------------------------------------------------------- hostile actors

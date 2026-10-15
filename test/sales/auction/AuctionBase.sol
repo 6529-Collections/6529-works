@@ -314,4 +314,14 @@ abstract contract AuctionBase is Test {
         uint256 step = (high * SHARE + 99_999) / 100_000;
         return high + (step > floor ? step : floor);
     }
+
+    function _state(uint256 saleId) internal view returns (IEnglishAuction.AuctionState) {
+        return auction.auction(saleId).state;
+    }
+
+    function _bidFor(uint256 saleId, address payer, address recipient, uint256 amount) internal {
+        vm.deal(payer, payer.balance + amount);
+        vm.prank(payer);
+        auction.bid{ value: amount }(saleId, recipient, _direct(payer, amount));
+    }
 }

@@ -7,26 +7,13 @@ import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import {
-    CURRENCY_DEFAULT,
-    PRODUCT_FEDERATED,
-    PRODUCT_STREAM
-} from "src/interfaces/types/EconomicsTypes.sol";
-import { LockedTerms } from "src/interfaces/types/SaleTypes.sol";
-import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
-import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
+import { PermitToken } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev Dispute pauses, withdrawals, upheld cancellation, resumption, and governed setters.
 contract EnglishAuctionDisputesTest is AuctionBase {
-    function _state(uint256 saleId) internal view returns (IEnglishAuction.AuctionState) {
-        return auction.auction(saleId).state;
-    }
-
     function _expectState(uint256 saleId, IEnglishAuction.AuctionState state) internal {
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.InvalidAuctionState.selector, saleId, state)
@@ -86,6 +73,51 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.pause(_saleIdOf(99), bytes32(0));
     }
 
+    /// Regression: the review of #21 (inverted for the inclusive window)
+    /// @dev Pause boundaries (the inclusive window): `cancel` at exactly
+    ///      `pausedAt + 7 days` lands; the pause cannot be reused on another sale.
+    function test_Pause_Boundaries() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        uint256 end = auction.auction(saleId).endTime;
+        vm.warp(end - 100);
+        _pause(saleId);
+        uint256 p = block.timestamp;
+        bytes32 outcome = _recordOutcome(1);
+        vm.warp(p + 7 days);
+        vm.prank(setter);
+        auction.cancel(saleId, outcome);
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.CANCELLED));
+        assertEq(a.pausedTotal, 7 days);
+
+        uint256 other = _start();
+        _pause(other);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(unpauser);
+        auction.resume(other);
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, other));
+        auction.pause(other, bytes32("again"));
+    }
+
+    /// Regression: the review of #33
+    /// @dev A bid for oneself that clears the stored recipient keeps the record that the one
+    ///      dispute pause was used.
+    function test_Pause_ClearingTheRecipientKeepsThePauseUsed() public {
+        uint256 saleId = _start();
+        _pause(saleId);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(unpauser);
+        auction.resume(saleId);
+        _bidFor(saleId, alice, carol, 1 ether);
+        _bidEth(saleId, bob, 2 ether);
+        assertEq(auction.auction(saleId).recipient, bob);
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, saleId));
+        auction.pause(saleId, keccak256("second dispute"));
+    }
+
     // ------------------------------------------------------------------------ withdrawals
 
     function test_WithdrawBid_WhilePaused() public {
@@ -115,6 +147,52 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NotHighBidder.selector, bob));
         auction.withdrawBid(saleId);
+    }
+
+    /// Regression: the review of #33
+    /// @dev Withdrawing a bid for another clears the recipient but keeps the dispute pause, so
+    ///      no bid lands while it lasts.
+    function test_WithdrawBid_ForAnotherKeepsThePause() public {
+        uint256 saleId = _start();
+        _bidFor(saleId, alice, carol, 1 ether);
+        _pause(saleId);
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.PAUSED), "still paused");
+        assertEq(a.recipient, address(0));
+        vm.deal(bob, 2 ether);
+        vm.prank(bob);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.PAUSED
+            )
+        );
+        auction.bid{ value: 2 ether }(saleId, address(0), _direct(bob, 2 ether));
+    }
+
+    /// Regression: surviving mutant M16 in the review of #33
+    /// @dev The floor locked by a withdrawn first bid still applies to the bids after the
+    ///      withdrawal, even when governance changes the floor meanwhile.
+    function test_WithdrawBid_TheFloorStaysForTheBidsAfterAWithdrawal() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _pause(saleId);
+        vm.prank(alice);
+        auction.withdrawBid(saleId);
+        _setFloor(ETH, 0.5 ether);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(unpauser);
+        auction.resume(saleId);
+        assertEq(auction.minimumBid(saleId), 1 ether, "no bid: the withdrawn bid's reserve");
+        _bidEth(saleId, bob, 1 ether);
+        assertEq(auction.auction(saleId).incrementFloor, ETH_FLOOR, "kept, not relocked");
+        uint256 minimum = _minimumAfter(1 ether, ETH_FLOOR);
+        assertEq(auction.minimumBid(saleId), minimum);
+        _bidEth(saleId, carol, minimum);
+        assertEq(auction.auction(saleId).bidder, carol);
     }
 
     // ----------------------------------------------------------------------------- resume
@@ -238,6 +316,34 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         emit IEnglishAuction.AuctionResumed(other, uint64(block.timestamp + DURATION));
         vm.prank(unpauser);
         auction.resume(other);
+    }
+
+    /// Regression: LIFECYCLE-1 (docs/security/internal-review-2026-10.md); L7 in the review of #57
+    /// @dev The reopening is the governed duration or the sale's locked window, whichever is
+    ///      longer, with or without a withdrawal: a later, shorter duration cannot give a
+    ///      halted sale less than its anti-snipe window.
+    function test_Resume_ReopeningIsNeverShorterThanTheLockedWindow() public {
+        IEnglishAuction.AuctionConfig memory c = auction.config();
+        IEnglishAuction.AuctionConfig memory wide =
+            IEnglishAuction.AuctionConfig(7 days, 1 days, SHARE);
+        vm.prank(setter);
+        auction.setConfig(c, wide);
+        uint256 withdrawn = _start();
+        uint256 standing = _start();
+        _bidEth(withdrawn, alice, 1 ether);
+        _bidEth(standing, bob, 1 ether);
+        vm.warp(block.timestamp + 7 days - 10 minutes);
+        _pause(withdrawn);
+        _pause(standing);
+        uint256 pausedAt = block.timestamp;
+        vm.prank(alice);
+        auction.withdrawBid(withdrawn);
+        vm.prank(setter);
+        auction.setConfig(wide, IEnglishAuction.AuctionConfig(1 hours, 1 minutes, SHARE));
+        vm.warp(pausedAt + auction.MAX_PAUSE() + 1);
+        uint256 resumedAt = pausedAt + auction.MAX_PAUSE();
+        assertEq(auction.auction(withdrawn).endTime, resumedAt + 1 days, "withdrawn: the window");
+        assertEq(auction.auction(standing).endTime, resumedAt + 1 days, "standing: the window");
     }
 
     // ----------------------------------------------------------------------------- cancel
@@ -387,6 +493,40 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         manager.execute(address(auction), late);
     }
 
+    /// Regression: L-3 (PoC F4, inverted) in the review of #21
+    /// @dev An adapter that lost its mint admission while the auction was paused can still
+    ///      enforce an upheld dispute, because the token accepts its minting adapter's burn.
+    function test_Cancel_ADeadmittedAdapterCanStillCancel() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _pause(saleId);
+        bytes32 outcome = _recordOutcome(1);
+        stream.setAdmittedMinter(address(auction), false);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(setter);
+        auction.cancel(saleId, outcome);
+        assertFalse(stream.exists(1), "burned");
+        assertEq(auction.claimable(alice, ETH), 1 ether);
+    }
+
+    /// Regression: N1 (inverted) in the review of #21
+    /// @dev A cancelled sale reports the pause it actually had.
+    function test_Cancel_TheCancelledViewReportsTheActualPause() public {
+        uint256 saleId = _start();
+        uint256 end = auction.auction(saleId).endTime;
+        _pause(saleId);
+        bytes32 outcome = _recordOutcome(1);
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(setter);
+        auction.cancel(saleId, outcome);
+        vm.warp(block.timestamp + 7 days);
+        IEnglishAuction.Auction memory a = auction.auction(saleId);
+        assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.CANCELLED));
+        assertEq(a.pausedTotal, 2 days);
+        assertEq(a.pausedAt, 0);
+        assertEq(a.endTime, end);
+    }
+
     // ------------------------------------------------------------------------- governance
 
     function test_SetConfig_CompareAndSet() public {
@@ -466,6 +606,30 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         }
     }
 
+    /// Regression: a low finding in the review of #33
+    /// @dev The opening bid's ceiling is the 96-bit bid cap, so every opening bid can be met.
+    function test_SetOpeningBid_CappedAtTheLargestBid() public {
+        PermitToken big = new PermitToken();
+        allowlist.admitAsset(address(big), 0, 1e26);
+        uint256 cap = type(uint96).max;
+        vm.startPrank(setter);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEnglishAuction.OpeningBidAboveCeiling.selector, cap + 1, cap)
+        );
+        auction.setOpeningBid(address(big), 0, cap + 1);
+        auction.setOpeningBid(address(big), 0, cap);
+        vm.stopPrank();
+        stream.setTerms(_terms(address(big)));
+        uint256 saleId = auction.start(address(stream), "");
+        assertEq(auction.minimumBid(saleId), cap);
+        big.mint(alice, cap);
+        vm.startPrank(alice);
+        big.approve(address(auction), cap);
+        auction.bid(saleId, address(0), _direct(alice, cap));
+        vm.stopPrank();
+        assertEq(auction.auction(saleId).bid, cap);
+    }
+
     function test_SetTarget_AdmitsAndRemoves() public {
         MockMintTarget other = new MockMintTarget();
         other.setAdmittedMinter(address(auction), true);
@@ -520,110 +684,4 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.stopPrank();
         assertEq(address(manager), auction.authority());
     }
-}
-
-/// @dev Federated targets (D21) and the golden Permit2 witness (D16).
-contract EnglishAuctionFederationTest is AuctionBase {
-    function test_Federation_ActiveContractsSellWithTheRegistryFee() public {
-        MockFederationRegistry registry = new MockFederationRegistry();
-        MockMintTarget federated = new MockMintTarget();
-        federated.setAdmittedMinter(address(auction), true);
-        federated.setTerms(_terms(ETH));
-        assertFalse(auction.isTarget(address(federated)));
-
-        vm.prank(successor);
-        vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
-        auction.setFederationRegistry(alice, address(registry));
-        vm.expectEmit(address(auction));
-        emit ISaleAdapter.FederationRegistrySet(address(0), address(registry));
-        vm.prank(successor);
-        auction.setFederationRegistry(address(0), address(registry));
-        assertEq(auction.federationRegistry(), address(registry));
-
-        IFederationRegistry.Entry memory e = IFederationRegistry.Entry(
-            IFederationRegistry.Form.ERC721,
-            address(0),
-            uint160(artist),
-            1,
-            address(federated).codehash,
-            10_000,
-            IFederationRegistry.Status.ACTIVE
-        );
-        registry.register(address(federated), e);
-        assertTrue(auction.isTarget(address(federated)));
-        uint256 saleId = auction.start(address(federated), "");
-        LockedTerms memory lt = auction.lockedTerms(saleId);
-        assertEq(lt.feeShare, 10_000, "the registry's fee, not the token's");
-        _bidEth(saleId, alice, 1 ether);
-        vm.warp(block.timestamp + DURATION);
-        auction.settle(saleId);
-        // MARKET-3: the registry's fee goes to the network's federated recipient, never to the
-        // recipient the token reports.
-        assertEq(federatedNetwork.balance, 0.1 ether);
-        assertEq(network.balance, 0);
-        assertEq(seller.balance, 0.9 ether);
-
-        registry.setStatus(address(federated), IFederationRegistry.Status.DELISTED, bytes32(0));
-        assertFalse(auction.isTarget(address(federated)));
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(federated))
-        );
-        auction.start(address(federated), "");
-    }
-
-    function test_Federation_SetterIsRestrictedAndChecksCode() public {
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, alice)
-        );
-        auction.setFederationRegistry(address(0), alice);
-        vm.prank(successor);
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
-        auction.setFederationRegistry(address(0), alice);
-        vm.prank(successor);
-        vm.expectRevert(
-            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
-        );
-        auction.setFederationRegistry(address(0), address(escrow));
-    }
-
-    /// @dev A federated token naming `CURRENCY_DEFAULT` locks the Federated product's default.
-    function test_Federation_DefaultCurrencyIsTheFederatedProducts() public {
-        MockFederationRegistry registry = new MockFederationRegistry();
-        MockMintTarget federated = new MockMintTarget();
-        federated.setAdmittedMinter(address(auction), true);
-        federated.setTerms(_terms(CURRENCY_DEFAULT));
-        vm.prank(successor);
-        auction.setFederationRegistry(address(0), address(registry));
-        IFederationRegistry.Entry memory e;
-        e.codeHash = address(federated).codehash;
-        e.status = IFederationRegistry.Status.ACTIVE;
-        e.feeShare = 10_000;
-        registry.register(address(federated), e);
-        _setDefault(PRODUCT_STREAM, ETH);
-        _setDefault(PRODUCT_FEDERATED, address(usd));
-        uint256 saleId = auction.start(address(federated), "");
-        assertEq(auction.auction(saleId).currency, address(usd));
-    }
-
-    /// @dev Golden values computed off-chain with `cast keccak`: the full Permit2 type hashes the
-    ///      auction's PERMIT2 bids are signed under (D16), built from `Typehashes`.
-    function test_Permit2Witness_Golden() public pure {
-        string memory stub =
-            "PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,";
-        assertEq(keccak256(abi.encodePacked(stub, Typehashes.BID_WITNESS_TYPE)), BID_PERMIT_GOLDEN);
-        assertEq(
-            keccak256(abi.encodePacked(stub, Typehashes.START_BID_WITNESS_TYPE)),
-            START_BID_PERMIT_GOLDEN
-        );
-        assertEq(
-            Typehashes.BID_WITNESS,
-            keccak256("Bid(uint256 saleId,address recipient,uint256 amount,uint256 deadline)")
-        );
-    }
-
-    bytes32 internal constant BID_PERMIT_GOLDEN =
-        0x0bfd3d1d308e98f9f0a38b17a9eaaad1118b7813eead91902f6714537c0eb034;
-    bytes32 internal constant START_BID_PERMIT_GOLDEN =
-        0xb44f39960bfdaf0c5fedccb2b3159844117a56c2d506bcf2c35776fe2c346acf;
 }
