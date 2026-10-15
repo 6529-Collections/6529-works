@@ -2,7 +2,9 @@
 
 How the 6529 Works test suite is organised, how to run each part, what CI runs and when,
 and how strong the tests are measured to be. The project is pre-audit: a strong suite is
-evidence for reviewers, not a substitute for an audit.
+evidence for reviewers, not a substitute for an audit. [The test map](../../test/README.md)
+says where the tests for a contract, a function or a review finding live, and how tests and
+mocks are named.
 
 The suite has layers because each one catches a different kind of mistake. Unit tests pin
 the behaviour someone thought of. Fuzz and invariant tests find the inputs and call
@@ -18,7 +20,7 @@ testing shows what the tests reach but do not check.
 | Unit | `test/<module>/*.t.sol` | Every function's happy path, every revert by its exact selector, events, access control, and a regression test for every review finding | `forge test --match-path "test/stream/**"` |
 | Fuzz | `testFuzz_*` beside the unit tests | The same properties over random inputs, 256 runs each | `forge test --match-test testFuzz` |
 | Invariant | `*Invariant*.t.sol`, `*.invariant.t.sol` and `test/*/invariant/`, with their handlers | Stateful properties over random call sequences: 256 runs of depth 128, `fail_on_revert` on; the `deep` profile runs 2,000 of depth 256 | `forge test --match-test invariant_`, and `FOUNDRY_PROFILE=deep forge test --match-test invariant_` |
-| Integration | [`test/integration/`](../../test/integration/README.md) | The real, wired v1 stack, deployed by the deploy library with the committed genesis configuration; only external systems are mocked | `forge test --match-path "test/integration/*"` |
+| Integration | [`test/integration/`](../../test/integration/README.md), and a module's real-stack suites such as `test/sales/auction/Auction*.t.sol` | The real, wired v1 stack, deployed by the deploy library with the committed genesis configuration; only external systems are mocked | `forge test --match-path "test/integration/*"` |
 | Gas and state growth | `test/integration/GasReport.t.sol`, the `*Gas*` and `*GasCap*` tests, [`StateGrowth`](../../test/helpers/StateGrowth.sol) | Prague gas ceilings and the exact new storage slots and accounts of every operation ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md)), and the 16,777,216 transaction cap for worst-case inputs | `forge test --match-test test_Gas_Table -vv` prints the table |
 | Oracles and differential | [`TextOracles`](../../test/helpers/TextOracles.sol), the frozen RC1 code in [`Pr744Utf8`](../../test/helpers/Pr744Utf8.sol) and [`Pr744Escape`](../../test/helpers/Pr744Escape.sol), the vectors in [`test/fixtures/oracles/`](../../test/fixtures/oracles) from [`tools/content/oracles.py`](../../tools/content/oracles.py), and the uploader's golden vectors | Assembly against naive byte loops and against RC1; the JSON scanner against `serde_json` (`vm.parseJsonKeys`) and CPython; the Python uploader against the real `ContentStore` | `forge test --match-path "test/content/**"`, and `python -m unittest discover -s tools/content -t . -p "test_*.py"` |
 | Symbolic | [`test/symbolic/`](../../test/symbolic) | Halmos proofs (`check_*`) for the pure libraries, some for every input and some for every input up to a size ([below](#symbolic-proofs-halmos)) | `FOUNDRY_PROFILE=symbolic halmos` |
@@ -33,9 +35,11 @@ content store; the package registry; the artist registry; the statement log; the
 module; governance; and, on the wired stack, a work's lifecycle and edition sales.
 
 Conventions: forge-std assertions; `vm.expectRevert` with the exact selector and arguments;
-shared mocks in [`test/mocks/`](../../test/mocks), with the adversarial ones (tokens that lie
-about balances, return bombs, gas burners, reentrant recipients) beside them; a review finding
-gets a regression test that names it.
+mocks in [`test/mocks/<module>/`](../../test/mocks), one behaviour per name, with the
+adversarial ones (tokens that lie about balances, return bombs, gas burners, reentrant
+recipients) beside them; a review finding gets a regression test named for the behaviour it
+pins, with the finding's ID in a `/// Regression:` NatSpec line
+([naming](../../test/README.md#naming)).
 
 ## What CI runs
 
@@ -53,8 +57,8 @@ gets a regression test that names it.
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in three parts whose filters together select every test exactly once (2,421
-tests at the time of writing: 2,346, 7 and 68), so the parts run on separate runners. Each
+`forge test` runs in three parts whose filters together select every test exactly once (2,423
+tests at the time of writing: 2,348, 7 and 68), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. Before the split, one Contracts job built and ran everything in 11
 to 13 minutes; split, the longest part (the other invariants, where most suites are) takes

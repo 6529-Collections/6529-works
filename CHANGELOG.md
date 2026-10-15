@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Tests organised by contract and function (F7b). The review-round files (`test/adv/`, the
+  `Review*`, `ReviewRound2` and `FollowUp` suites) are folded into the suites of the contract and
+  function they test, or into real-stack suites named for the behaviour they pin; no test is
+  removed. Test names describe behaviour, and a regression test carries its finding's ID in a
+  `/// Regression:` NatSpec line. Mocks live in `test/mocks/<module>/` with one behaviour per
+  name: the duplicated Permit2, EIP-2612 token and federation registry mocks are merged, and
+  the renderer's and the artist registry's Stream stand-ins are one `StreamMock`.
+  [`test/README.md`](test/README.md) maps the tree.
 - Sepolia rehearsal r3 (15 October 2026): `main` at `e5fe78c` deployed with r1's Safes and keys,
   a new namespace and its own VRF subscription, and every contract verified on Sourcify with an
   exact match ([record](deployments/11155111/README.md#sepolia-r3-15-october-2026-current)).
