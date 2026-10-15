@@ -116,10 +116,20 @@ once, for example a stolen platform key:
   check built on them in the same block: `restricted` functions, the sale adapters' and
   `StatementLog`'s manual PLATFORM and CURATOR checks, and `WorkRecords.addLocator`'s
   platform path. Its record stays, so `getAccess` still shows it.
-- **One way for the guardians.** No guardian can lift it. A grant or a revocation of
-  that role to that account clears it; both are ADMIN operations in the 30-day class
-  that any guardian can cancel. A grant to an existing member has no grant delay.
-  Replacing the key (revoke, then grant a new one) clears it too.
+- **One way for the guardians.** No guardian can lift it, and no other guardian can
+  cancel it: a suspension takes effect at once and is never scheduled. A grant or a
+  revocation of that role to that account clears it; both are ADMIN operations in the
+  30-day class that any guardian can cancel. A grant to an existing member has no grant
+  delay. Replacing the key (revoke, then grant a new one) clears it too.
+- **How long it lasts.** The lift stays in the 30-day class: a faster lift on the
+  manager's own functions would make meta-governance faster than the slowest class
+  (ADR 0001 §13). A suspension therefore lasts:
+  - an honest suspension made by mistake: 30 days, the lift's own delay;
+  - one dishonest guardian: about 60 days. It cancels each lift until its own removal
+    executes (30 days), and the lift then takes another 30 days;
+  - a dishonest guardian acting with a compromised hot admin: about 90 days. The cold
+    admin removes the guardian (30 days), then the hot admin (30 days), then lifts
+    (30 days).
 - **Refused:** a caller that is not an active guardian, a role that is not suspendable
   (`RoleNotSuspendable`), an account with no record for the role or already suspended
   (`NotSuspendable`). Inside `execute`, the manager is the sender and is refused.
@@ -369,7 +379,8 @@ therefore executes them itself:
   (`test_Residual_ColludingGuardiansCanShieldEachOther`). The mitigation is
   guardian independence.
 - **One dishonest guardian** can, until its removal executes (30 days), cancel
-  every operation, keep paused targets paused by cancelling each unpause, suspend
-  operational keys, and veto identity changes. Rule 3 bounds this to one recovery
-  round.
+  every operation, keep paused targets paused by cancelling each unpause, and veto
+  identity changes. Rule 3 bounds these to one recovery round. Its suspensions of
+  operational keys last longer, about 60 days, or about 90 days with a compromised
+  hot admin (see "Suspending an operational key").
 - **Guardian liveness**, as described under Operating procedures.

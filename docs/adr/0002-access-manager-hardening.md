@@ -167,7 +167,8 @@ offline.
   admin's revocation. That defence rests on the other guardians, which decision 4
   already assumes.
 - **Residual:** until its removal executes, a dishonest guardian can cancel every
-  operation and keep paused targets paused.
+  operation and keep paused targets paused. Its suspensions outlast its removal
+  (below).
 
 **Guardian suspension of operational keys.** Any guardian may call
 `WorksAccessManager.suspend(role, account)` for a holder of a zero-delay operational
@@ -177,7 +178,17 @@ role: PLATFORM, CURATOR or STORAGE_OPERATOR.
   most targets of these roles have no pause.
 - **One way:** a tightening action, like a pause. Lifting it is an ADMIN action in
   the 30-day class (a grant of that role to that account), or happens through
-  revocation and a new grant. Guardians still never propose.
+  revocation and a new grant. Guardians still never propose, and no other guardian
+  can cancel a suspension, which is never scheduled.
+- **Duration:** a faster lift on the manager's own functions would make
+  meta-governance faster than the slowest class (ADR 0001 §13), so the lift stays in
+  the 30-day class. A suspension lasts:
+  - an honest suspension made by mistake: 30 days, the lift's own delay;
+  - one dishonest guardian: about 60 days. It cancels each lift until its own removal
+    executes (30 days), and the lift then takes another 30 days;
+  - a dishonest guardian acting with a compromised hot admin: about 90 days. The cold
+    admin removes the guardian (30 days), then the hot admin (30 days), then lifts
+    (30 days).
 - **Not suspendable:** ADMIN, GUARDIAN, PAUSER, UNPAUSER, the setter roles, MINTER,
   KEEPER and CURATION_SIGNER. A curation signer's kill switch is the verifier's
   one-way `disableSigner`, which also ends its approval epoch; a lift by grant would

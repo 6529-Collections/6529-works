@@ -154,6 +154,10 @@ independent of the admins they check:
   stops at once. A curation signer key is cut off with the curation verifier's
   `disableSigner(key)` instead. The hot admin then schedules `revokeRole(role, key)` and the
   grant of a replacement key (30 days, then the role's grant delay).
+- **Suspensions last.** Other guardians cannot cancel a suspension, and only a 30-day ADMIN
+  grant or revocation lifts it. Plan for 30 days after a mistaken suspension, about 60 days
+  if a dishonest guardian suspends keys (it cancels the lifts until its removal executes),
+  and about 90 days if it acts with a compromised hot admin.
 
 #### The network fee recipient must exist
 
