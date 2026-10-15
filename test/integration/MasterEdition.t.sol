@@ -297,9 +297,12 @@ contract MasterEditionFlowTest is IntegrationBase {
         vm.warp(block.timestamp + 2 hours);
         assertEq(dutchSale.currentPrice(saleId), DUTCH_REST, "rests");
         vm.prank(platform);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        dutchSale.closeSale(saleId);
+        vm.prank(artist);
         dutchSale.closeSale(saleId);
         (,, bool closed) = dutchSale.sale(saleId);
-        assertTrue(closed, "the PLATFORM role closes through the manual check");
+        assertTrue(closed, "the artist closes the sale it opened; PLATFORM cannot (MARKET-6)");
     }
 
     // ------------------------------------------------------------------ metadata and royalties

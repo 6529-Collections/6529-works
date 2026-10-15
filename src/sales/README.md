@@ -109,8 +109,9 @@ stopped. The schedule then does not resume where it stopped but rewinds by the
 overlap: a Dutch curve climbs back up (and may show "not open" again), and a
 fixed-price phase that had ended can reopen while the one that was running closes.
 Guardians therefore do not pause an adapter while a currency is deprecated; if they
-must, the creator or PLATFORM closes and reopens the affected sales afterwards
-(see the guardian practice in the [deploy runbook](../../script/README.md)).
+must, the creator (or PLATFORM, for a sale it opened alone) closes and reopens
+the affected sales afterwards (see the guardian practice in the
+[deploy runbook](../../script/README.md)).
 
 **Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
 `purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
@@ -263,8 +264,11 @@ from the token at close time (the artist's active authority), so after a
 recovery the old key loses that power. PLATFORM closes only a sale it opened
 without the artist's approval: a sale the artist approved (opened by the creator,
 or by PLATFORM with the creator's signed configuration) closes by the artist, or
-stops by a guardian pause (MARKET-6). While a recovery override is pending, only
-PLATFORM can close, and only such an unapproved sale. Nothing here is payable
+stops by a guardian pause (MARKET-6). While a recovery override is pending, the
+creator resolves to zero (IDENTITY-1): the artist's keys cannot close any sale,
+and PLATFORM can close every sale, the artist's own included, so a sale opened
+with a key under recovery can be stopped without pausing the adapter
+(`test_PlatformClosesTheArtistsSaleDuringTheNotice`). Nothing here is payable
 except `purchase`.
 
 ### Gas

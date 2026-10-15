@@ -30,8 +30,9 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      bounds the price with `maxUnitPrice`; `Payment.amount` is the most the payer will pay
 ///      (integrator decision D17): an ERC-20 payment pulls exactly the charge, and ETH above it is
 ///      credited to the payer and claimed (pull). `SaleStarted.endTime` is when the curve reaches
-///      its resting price. Governance: map `openSale` and `closeSale` to PLATFORM (the creator
-///      needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to
+///      its resting price. A sale the creator opens is the artist's, which PLATFORM closes only
+///      while the creator resolves to zero (MARKET-6). Governance: map `openSale` and `closeSale`
+///      to PLATFORM (the creator needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to
 ///      PAUSER and `unpause` to UNPAUSER.
 contract DutchSale is IDutchSale, MintSaleBase {
     mapping(uint256 saleId => Schedule) private _schedules;
@@ -69,7 +70,8 @@ contract DutchSale is IDutchSale, MintSaleBase {
         if (!DutchPricing.isValid(t.price, d.restingPrice, d.duration, d.stepSeconds)) {
             revert InvalidSchedule();
         }
-        saleId = _store(token, id, t, false, federated);
+        // A sale the creator opens is the artist's: PLATFORM cannot close it (MARKET-6).
+        saleId = _store(token, id, t, msg.sender == t.creator, federated);
         _schedules[saleId] = Schedule(d.restingPrice, startTime, d.duration, d.stepSeconds);
         emit SaleStarted(
             saleId,

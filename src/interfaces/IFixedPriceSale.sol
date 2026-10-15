@@ -92,8 +92,10 @@ interface IFixedPriceSale is ISaleAdapter {
         Phase[] calldata phases,
         ArtistConsent calldata consent
     ) external returns (uint256 saleId);
-    /// @notice Closes a sale. Callable by the creator or the PLATFORM role at any time, and by
-    ///         anyone once all of its phases have ended.
+    /// @notice Closes a sale. Callable by the creator at any time; by the PLATFORM role for a
+    ///         sale it opened without the artist's approval, or for any sale while the creator
+    ///         resolves to zero (a pending recovery override, MARKET-6); and by anyone once all
+    ///         of its phases have ended.
     function closeSale(uint256 saleId) external;
     /// @notice Buys `p.quantity` copies at the phase's unit price.
     function purchase(Purchase calldata p, bytes32[] calldata proof, Payment calldata payment)

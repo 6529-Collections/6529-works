@@ -206,6 +206,26 @@ contract RecoveryRestraintTest is IntegrationBase {
         fixedSale.openSale(address(editions), masterId, _publicPhase(), none);
     }
 
+    /// @dev MARKET-6 with IDENTITY-1: PLATFORM cannot close a sale the artist opened, but while
+    ///      a recovery override restrains the artist (the creator resolves to zero) it can, so a
+    ///      sale opened with a compromised key is stopped without pausing the adapter.
+    function test_PlatformClosesTheArtistsSaleDuringTheNotice() public {
+        IFixedPriceSale.ArtistConsent memory none;
+        IFixedPriceSale.Phase[] memory phases = _freePhase(thiefWallet);
+        vm.prank(artist);
+        uint256 artistSale = fixedSale.openSale(address(editions), masterId, phases, none);
+        vm.prank(platform);
+        vm.expectRevert(_notManager(platform));
+        fixedSale.closeSale(artistSale);
+
+        _stageRecovery();
+        vm.expectEmit(address(fixedSale));
+        emit IFixedPriceSale.SaleClosed(artistSale);
+        vm.prank(platform);
+        fixedSale.closeSale(artistSale);
+        assertEq(fixedSale.openSaleOf(address(editions), masterId), 0);
+    }
+
     // ------------------------------------------------------------------ moves and auctions
 
     /// @dev IDENTITY-1 (b): neither the restrained key nor the reserved new key can start an

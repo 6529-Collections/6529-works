@@ -319,7 +319,9 @@
     - MONEY-1 (L5): `claimFor` refuses ETH; it serves credited ERC-20 payouts.
     - MARKET-3 (L6): a federated start checks the network's federated fee recipient, not the
       token's own.
-    - MARKET-6: PLATFORM closes only a sale it opened without the artist's approval.
+    - MARKET-6: PLATFORM closes only a sale it opened without the artist's approval. A Dutch
+      sale the creator opens counts as approved, as on fixed price. While the creator
+      resolves to zero (a pending recovery override), PLATFORM may close any sale.
     - Re-admitting a deprecated currency waits 14 days from the deprecation
       (`ReadmissionTooEarly`), so a re-admission scheduled ahead cannot undo it at once.
     - The auction refuses an expired PERMIT or PERMIT2 payment with `PaymentExpired`, as the

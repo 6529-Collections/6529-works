@@ -36,7 +36,9 @@ interface IDutchSale is ISaleAdapter {
     ///         Callable by the creator or the PLATFORM role; PLATFORM only for a listed edition
     ///         of FIXED size (an OPEN edition's one-time window is the artist's, MARKET-6).
     function openSale(address token, uint256 id, uint64 startTime) external returns (uint256 saleId);
-    /// @notice Closes a sale. Callable by the creator or the PLATFORM role.
+    /// @notice Closes a sale. Callable by the creator; by the PLATFORM role for a sale it opened,
+    ///         or for any sale while the creator resolves to zero (a pending recovery override,
+    ///         MARKET-6).
     function closeSale(uint256 saleId) external;
     /// @notice Buys `quantity` copies for `recipient` (the payer when zero) at the current price.
     function purchase(

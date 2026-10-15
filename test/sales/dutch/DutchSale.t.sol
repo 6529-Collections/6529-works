@@ -274,7 +274,7 @@ contract DutchSaleTest is DutchBase {
         dutch.purchase{ value: START }(77, alice, 1, START, _eth(alice, START));
         vm.stopPrank();
         vm.warp(block.timestamp + 10);
-        vm.prank(platform);
+        vm.prank(creator);
         dutch.closeSale(saleId);
         vm.expectRevert(abi.encodeWithSelector(IDutchSale.SaleNotOpen.selector, saleId));
         vm.prank(alice);
@@ -296,10 +296,15 @@ contract DutchSaleTest is DutchBase {
         vm.stopPrank();
     }
 
+    /// @dev MARKET-6: the creator closes a sale it opened, which PLATFORM cannot; PLATFORM closes
+    ///      a sale it opened alone.
     function test_CloseSale_ByCreatorOrPlatformOnly() public {
         uint256 saleId = _openNow(LINEAR);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         vm.prank(stranger);
+        dutch.closeSale(saleId);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.prank(platform);
         dutch.closeSale(saleId);
         vm.expectEmit(address(dutch));
         emit IDutchSale.SaleClosed(saleId);
@@ -310,6 +315,12 @@ contract DutchSaleTest is DutchBase {
         vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
         vm.prank(creator);
         dutch.closeSale(saleId);
+
+        vm.prank(platform);
+        uint256 platformSale = dutch.openSale(address(editions), STEPPED, uint64(block.timestamp));
+        vm.prank(platform);
+        dutch.closeSale(platformSale);
+        assertTrue(_closed(platformSale));
     }
 
     // ------------------------------------------------------------------ claims
@@ -375,7 +386,7 @@ contract DutchSaleTest is DutchBase {
         dutch.purchase{ value: START }(saleId, bob, 1, START, _eth(bob, START));
         vm.prank(alice);
         assertEq(dutch.claim(CURRENCY_ETH, alice), 1 ether);
-        vm.prank(platform);
+        vm.prank(creator);
         dutch.closeSale(saleId);
         // GOV-5: not before 48 hours after the pause.
         vm.prank(unpauser);

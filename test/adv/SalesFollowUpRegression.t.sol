@@ -9,7 +9,8 @@ import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
-import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import { EditionFormat, EditionTerms } from "src/interfaces/types/PackageTypes.sol";
+import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { MarketPoCBase } from "./MarketPoCBase.sol";
 
 /// @notice Follow-ups from the review of the sales fixes, on the real stack: the halt clock's
@@ -242,5 +243,52 @@ contract SalesFollowUpRegressionTest is MarketPoCBase {
         manager.cancel(hotAdmin, address(allowlist), admit);
         _readmitEth();
         assertTrue(allowlist.isActive(CURRENCY_ETH));
+    }
+
+    // ------------------------------------------- MARKET-6: closing Dutch sales (L-a)
+
+    function _openDutchEdition() internal returns (uint256 openId) {
+        Work[] memory works = new Work[](1);
+        works[0] = _master(
+            _work(artist, collectionId),
+            EditionTerms(
+                EditionFormat.OPEN,
+                0,
+                48 hours,
+                DUTCH_START,
+                CURRENCY_ETH,
+                SaleKind.DUTCH,
+                abi.encode(DutchParams(DUTCH_REST, DUTCH_DECAY, 0))
+            )
+        );
+        bytes32 openRoot = _publish(works);
+        uint256 saleId;
+        (saleId, openId) = _start(openRoot, works, 0);
+        _ethBid(saleId, collector, 1 ether);
+        _settleAtEnd(saleId);
+        editions.createEdition(openId, works[0].item, openRoot, _proofOf(works, 0));
+    }
+
+    /// @dev A Dutch sale the creator opened is the artist's, as on fixed price: PLATFORM cannot
+    ///      close it mid-window; the artist can. PLATFORM still closes a sale it opened alone.
+    function test_MARKET6_PlatformCannotCloseTheArtistsOwnDutchSale() public {
+        uint256 openId = _openDutchEdition();
+        vm.prank(artist);
+        uint256 saleId = dutchSale.openSale(address(editions), openId, uint64(block.timestamp));
+        _dutchBuy(saleId, fan, 1);
+        vm.prank(platform);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        dutchSale.closeSale(saleId);
+        assertEq(dutchSale.openSaleOf(address(editions), openId), saleId);
+        vm.prank(artist);
+        dutchSale.closeSale(saleId);
+
+        uint256 fixedId = _masterAndEdition(0);
+        vm.prank(platform);
+        uint256 platformSale =
+            dutchSale.openSale(address(editions), fixedId, uint64(block.timestamp));
+        vm.prank(platform);
+        dutchSale.closeSale(platformSale);
+        assertEq(dutchSale.openSaleOf(address(editions), fixedId), 0);
     }
 }
