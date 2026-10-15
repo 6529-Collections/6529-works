@@ -90,11 +90,15 @@ or stores a key:
   operator's shell. They never go into a committed file.
 - **Broadcast caches.** Do not commit forge's `broadcast/` output for Sepolia; `.gitignore`
   only covers anvil's. The deployment record is the committed evidence.
-- **Mainnet: use a private RPC.** Every address is predictable from public inputs. Someone who
-  sees the configurator's creation in the public mempool can create the same initcode first.
-  That gains them nothing, because the configurator still only obeys the operator, but the
-  namespace is then spent. The next run stops with `ConfiguratorAddressTaken` and needs a new
-  `DEPLOY_NAMESPACE`. A private transaction endpoint avoids the denial of service.
+- **Mainnet: use a private RPC and a private namespace.** Every address is predictable from
+  public inputs. Someone who sees the configurator's creation in the public mempool can create
+  the same initcode first. ContentStore, ReleaseVerifier and ClaimRouter take no constructor
+  arguments, so their addresses depend on `DEPLOY_NAMESPACE` alone, and anyone who knows the
+  namespace can create them in advance. That gains nothing, because the code is identical and
+  the configurator still only obeys the operator, but the namespace is then spent: the next
+  run stops with `ConfiguratorAddressTaken` or `AddressTaken` and needs a new
+  `DEPLOY_NAMESPACE`. Off anvil the namespace has no default. Choose a fresh one, keep it
+  private until the broadcast, and send through a private transaction endpoint.
 - **Sepolia mirrors mainnet.** Use throwaway signers, but the mainnet structure and thresholds:
   - the same Safes, roles and thresholds as below;
   - the entropy module with a real VRF subscription (step 7), not `NO_VRF`;
@@ -106,7 +110,7 @@ or stores a key:
 
 | Account | Roles | Kind |
 | --- | --- | --- |
-| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH |
+| Deployer (operator) | None after genesis. It is the configurator's `deployer`, and signs every deploy transaction and `configure` | Keystore or Ledger EOA, funded with Sepolia ETH. Not an EIP-7702 delegated account: the script refuses one (`DelegatedDeployer`) |
 | Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER | Safe |
 | Cold recovery admin Safe | ADMIN only. It acts only for [admin recovery](#admin-recovery) | Safe, 3-of-5 recommended. Its signers differ from the hot admin's and the guardians', on hardware wallets kept in separate places |
 | Guardian Safes 1, 2 and 3 | GUARDIAN, PAUSER (at least three off anvil) | Safe, 2-of-3 each |
@@ -115,16 +119,16 @@ or stores a key:
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
-| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it | Safe or EOA |
-| VRF subscription owner | No role; owns the Chainlink subscription | EOA or Safe |
+| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
+| VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
 Delays and responsibilities are in the [role table](../src/governance/README.md).
 
 **Guardians.** They veto any scheduled operation and pause in an emergency, so they must be
 independent of the admins they check:
-- **Signers.** Use signers independent of the admin Safes; the script refuses a signer shared
-  with an admin Safe. Mix team and community members across the three Safes.
+- **Signers.** Use signers independent of the admin Safes and of the other guardian Safes; the
+  script refuses a signer shared between any two admin or guardian Safes. Mix team and community members across the three Safes.
 - **Monitoring.** Alert every guardian on the manager's `OperationScheduled`, `RoleGranted`,
   `RoleGrantDelayChanged` and `TargetAdminDelayUpdated` events. A hostile admin operation
   waits at least its delay class (up to 30 days), and a guardian cancels it in that window.
@@ -145,6 +149,17 @@ independent of the admins they check:
   `settle` after the re-admission reopens each auction for at least the governed duration.
   After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
   the bidder and the work goes to the artist.
+- **A compromised operational key.** Any guardian Safe calls
+  `manager.suspend(role, key)` for a PLATFORM, CURATOR or STORAGE_OPERATOR key; the key
+  stops at once. A curation signer key is cut off with the curation verifier's
+  `disableSigner(key)` instead. The hot admin then schedules `revokeRole(role, key)` and the
+  grant of a replacement key (30 days, then the role's grant delay). If the same key is also
+  the marketplace owner, schedule `setOwner` on Stream and Editions as well (FUNDS_SETTER,
+  14 days).
+- **Suspensions last.** Other guardians cannot cancel a suspension, and only a 30-day ADMIN
+  grant or revocation lifts it. Plan for 30 days after a mistaken suspension, about 60 days
+  if a dishonest guardian suspends keys (it cancels the lifts until its removal executes),
+  and about 90 days if it acts with a compromised hot admin.
 
 #### The network fee recipient must exist
 
@@ -168,10 +183,33 @@ can operate is therefore permanent. Off anvil, the script refuses an ADMIN or GU
 in these cases:
 - it has no code;
 - it is an EIP-7702 delegated EOA;
-- it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list.
+- it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list;
+- its threshold is below 2 (`ThresholdTooLow`);
+- one of its owners has code: an EIP-7702 delegated EOA (`DelegatedOwner`), or a nested
+  Safe, a passkey signer contract or any other contract (`NestedOwner`). Owners must be
+  plain keys, so the script can compare them; passkey signer contracts are refused by
+  design. Verify repeats this check, so a signer that later adds an EIP-7702 delegation
+  makes Verify fail until the delegation is cleared;
+- its proxy (storage slot 0) does not point to a canonical Safe singleton with that
+  singleton's code hash (`NotACanonicalSafe`). The allowed singletons, from
+  safe-global/safe-deployments, with code hashes read on mainnet and Sepolia:
 
-It also requires at least two admin Safes, the hot and the cold, and refuses a signer that two
-admin Safes share, or that an admin Safe shares with a guardian Safe.
+  | Singleton | Address | Runtime code hash |
+  | --- | --- | --- |
+  | Safe 1.3.0 L1 | `0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552`, and the EIP-155 deployment `0x69f4D1788e39c87893C980c06EdF4b7f686e2938` | `0xbba688fb…6304b1c2e` |
+  | Safe 1.3.0 L2 | `0x3E5c63644E683549055b9Be8653de26E0B4CD36E`, and the EIP-155 deployment `0xfb1bffC9d739B8D520DaF37dF666da4C687191EA` | `0x21842597…731023c0f` |
+  | Safe 1.4.1 L1 | `0x41675C099F32341bf84BFc5382aF534df5C7461a` | `0x1fe2df85…6d0c5e1c4` |
+  | Safe 1.4.1 L2 | `0x29fcB43b46531BcA003ddC8FCB67FFE91900C762` | `0xb1f92697…894f81ff` |
+
+  The full hashes are in `script/DeployGuards.sol`;
+- it has an enabled module (`getModulesPaginated(0x1, 1)` is not empty, `SafeHasModules`)
+  or a transaction guard (`SafeHasGuard`): either can act for the Safe or block it without
+  the owners' signatures. Disable both before the run, and keep them disabled: Verify
+  repeats every check.
+
+It also requires at least two admin Safes, the hot and the cold, and refuses a signer that any
+two of the admin and guardian Safes share: two admin Safes, an admin and a guardian Safe, or
+two guardian Safes (owner decision 3: independent guardians).
 
 The script cannot check that the owners are the right people, so check every Safe before the
 run:
@@ -186,7 +224,7 @@ done
 
 - Each Safe is on this chain, with the intended owners and threshold.
 - The hot and cold admin Safes share no signer.
-- Each guardian Safe is separate from the admins.
+- Each guardian Safe is separate from the admins and from the other guardians.
 - At least one owner of each Safe has signed a test transaction on it.
 
 ### 3. The genesis configuration
@@ -325,7 +363,8 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
    | Variable | Value | Bounds |
    | --- | --- | --- |
-   | `VRF_COORDINATOR` | `0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B` | Must have code; its code hash is pinned |
+   | `VRF_COORDINATOR` | `0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B` | Must have code; its code hash is recorded. On mainnet it must be the canonical coordinator, `0xD7f86b4b8Cae7D942340FF628F82735b7a20893a`, with its pinned code hash (`DeployGuards`) |
+   | `VRF_COORDINATOR_CODEHASH` | Optional off mainnet: the coordinator's expected runtime code hash (`cast codehash`) | Must match when set |
    | `VRF_SUBSCRIPTION_ID` | The subscription ID | Nonzero |
    | `VRF_KEY_HASH` | A Sepolia gas lane. 6529Stream's Sepolia instance used `0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae`; confirm it on Chainlink's supported-networks page | Nonzero |
    | `VRF_CALLBACK_GAS_LIMIT` | Default 200,000 | 100,000 to 2,500,000 |
@@ -335,7 +374,21 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 
 3. After the broadcast, add the module (`EntropyModule` in the record) as the subscription's
    only consumer. Requests fail until it is a consumer and the subscription is funded.
-4. Never use Chainlink's subscription `migrate`. The [entropy README](../src/entropy/README.md)
+   Verify, off anvil, requires the module to be the only consumer.
+4. **On mainnet, the subscription owner is the hot admin Safe.** This is an accepted
+   trade-off: if the hot admin is compromised, VRF works stop for about 64 days or more. The
+   hot Safe can cancel the subscription at once. The cold admin removes it (30 days), then
+   appoints a new hot Safe (30 days, then PARAMETER_SETTER's 48-hour grant delay), which
+   moves the module to a new subscription (`setConfig`, 48 hours). A guardian acting with
+   the hot Safe adds another 30 days ([admin recovery](#admin-recovery)). Create the subscription
+   from it, or transfer it (`requestSubscriptionOwnerTransfer`, then the Safe's
+   `acceptSubscriptionOwnerTransfer`) before Verify. The owner can cancel the subscription
+   and take its balance, or remove the consumer, at once and outside governance; the
+   module's recovery is a 48-hour `setConfig`. Verify reads `getSubscription` and requires
+   the owner to hold ADMIN and PARAMETER_SETTER. Keep the balance small, and alert the
+   guardians on the coordinator's `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and
+   `SubscriptionOwnerTransferRequested` for the subscription ID.
+5. Never use Chainlink's subscription `migrate`. The [entropy README](../src/entropy/README.md)
    describes the coordinator-change procedure.
 
 ### 8. Default currencies
@@ -410,15 +463,17 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 - **Everything is checked before anything is sent.** Forge simulates the whole run first, so
   any failed check aborts it with nothing broadcast. The checks:
   - the RPC's `eth_chainId` is the chain the script runs on;
-  - `--sender` was given and is the signer;
-  - every input above (steps 2 to 9);
-  - the configurator's CREATE2 address is free;
+  - `--sender` was given and is the signer, and is not an EIP-7702 delegated EOA;
+  - every input above (steps 2 to 9), and `DEPLOY_NAMESPACE`;
+  - the configurator's CREATE2 address is free, and so is every other address that can be
+    predicted before the broadcast (`AddressTaken`);
   - after the contracts are simulated and before `configure`: nothing the genesis names is
     missing, the policy is the committed one, and no holder is a contract of the deployment.
 - **The sender is the deployer.** It becomes the configurator's `deployer`, the only account
   that can call `configure`.
-- **Addresses are predictable.** They depend on the deployer and `DEPLOY_NAMESPACE`. To repeat
-  a rehearsal from the same deployer, use a new `DEPLOY_NAMESPACE`.
+- **Addresses are predictable.** Most depend on the deployer and `DEPLOY_NAMESPACE`;
+  ContentStore, ReleaseVerifier and ClaimRouter depend on `DEPLOY_NAMESPACE` alone. To repeat a
+  rehearsal, use a new `DEPLOY_NAMESPACE`.
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.**
@@ -463,16 +518,39 @@ The record is only an index; each check is made against the chain or the committ
 - the CC0 text: WorkRecords and every product's default name the recorded file, which is
   complete and hashes to the pinned canonical digest;
 - the manifest file hashes to the recorded digest;
+- on mainnet, the recorded VRF coordinator, the entropy module's live `coordinator()`,
+  Permit2 and the delegation contract are the canonical contracts with their pinned code, and
+  the delegation contract is no mock;
 - off anvil, the genesis file still matches the committed policy and names nothing the
   deployment lacks;
+- off anvil, the holders still pass the deploy's holder guards against the chain as it is
+  now: admin and guardian Safes with their current owners and thresholds, no shared signer,
+  and no contract of the deployment as a holder. A Safe owner change after genesis that the
+  deploy would refuse fails the readback;
 - the configurator's own `verify` (roles, delays and selector map), no role left with the
   configurator, and every target's authority;
 - every wired getter and default currency, the epoch-0 manifest, and PLATFORM's immediate
   path into the sale adapters;
+- off anvil, the entropy module is its VRF subscription's only consumer, read from its
+  current coordinator; on mainnet the subscription's owner is the hot admin Safe. A read
+  that fails (for example `InvalidSubscription`) fails the run; only off mainnet, a
+  coordinator without `getSubscription` (an empty revert) is skipped;
 - the `GovernanceConfigured` hashes match the configuration and wiring recomputed from the
   JSON;
 - no other grant-delay or admin-delay change is pending;
-- no account outside the configuration was granted a role.
+- no account outside the configuration was granted a role;
+- no operation scheduled on the manager since genesis is still pending. Each one fails the
+  run with its ID, caller, target, selector and ready time. After reviewing them, set
+  `ALLOW_PENDING_OPERATIONS=1` to log them instead.
+
+Verify checks the genesis configuration. After a governance change, such as an
+[admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
+`GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
+readback stays genesis readback, so a later default-currency change still fails it. Epoch
+mode logs every grant it accepts for an account that no longer holds the role. When the
+epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requires its
+SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
+its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.
 
 ### 12. Standing refresh: `refreshStanding`
 
@@ -511,24 +589,47 @@ re-measure it on Sepolia before relying on that figure.
 The cold recovery admin Safe holds ADMIN only and stays offline. It acts in one case: the hot
 admin Safe is lost or compromised (owner decision 2).
 
-1. **Pause if needed.** A guardian pauses the affected contracts while the recovery runs.
+1. **Pause and suspend if needed.** A guardian pauses the affected contracts while the
+   recovery runs, and suspends any operational key the hot Safe could have reached
+   (`manager.suspend`).
 2. **Schedule the removal.** The cold Safe schedules `revokeRole(role, hotSafe)` on the
    manager for each of the hot Safe's roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
    SUCCESSOR_SETTER. In the Safe transaction builder, each is
    `manager.schedule(manager, revokeRole(role, hotSafe), 0)`. ADMIN's 30-day execution delay
-   applies to each.
+   applies to each. Schedule nothing else yet.
    - **The hot Safe cannot cancel its own removal.** `WorksAccessManager` lets no one but the
-     scheduler cancel the revocation of their own role.
+     scheduler cancel the revocation of their own role, and no admin cancel another
+     account's revocation (Rules 2 and 3).
    - **The guardians can cancel any operation.** They must know of the recovery and let these
      through, and keep cancelling anything the compromised hot Safe schedules.
-3. **Appoint the new hot Safe.** In the same batch, schedule
-   `grantRole(role, newHotSafe, Roles.executionDelay(role))` for the same five roles.
-4. **Execute after 30 days.** The cold Safe calls `manager.execute` for each operation. The old
-   hot Safe loses its roles at once. The new one holds each role after that role's grant
-   delay: 48 hours for UNPAUSER and PARAMETER_SETTER, 14 days for FUNDS_SETTER, and 30 days for
-   SUCCESSOR_SETTER and ADMIN.
-5. **Re-verify.** Run `Verify.s.sol` against a genesis file with the new holder, after the
-   setback. Publish the change as a governance manifest (`appendGovernanceManifest`).
+3. **If a guardian cancels the removal,** treat that guardian as compromised too. The cold
+   Safe schedules `revokeRole(GUARDIAN, guardian)` and `revokeRole(PAUSER, guardian)`. Only
+   the other guardians may cancel those. After 30 days it executes them, then schedules the
+   hot Safe's revocations again (step 2).
+4. **Execute after 30 days.** The cold Safe calls `manager.execute` for each revocation. The old
+   hot Safe loses its roles at once.
+5. **Only then appoint the new hot Safe.** Schedule
+   `grantRole(role, newHotSafe, Roles.executionDelay(role))` for the same five roles, and
+   execute them after 30 days. Revocations go first: a hot Safe that still holds ADMIN can
+   cancel any grant scheduled before its removal executes. The new Safe holds each role after
+   that role's grant delay: 48 hours for UNPAUSER and PARAMETER_SETTER, 14 days for
+   FUNDS_SETTER, and 30 days for SUCCESSOR_SETTER and ADMIN.
+6. **Move the VRF subscription.** On mainnet the hot Safe owns it ([step 7](#7-chainlink-vrf-the-entropy-module)),
+   and governance cannot take it over. Create a subscription owned by the new hot Safe, fund
+   it, add the module as its only consumer, and have the new Safe schedule the module's
+   `setConfig` to it (PARAMETER_SETTER, 48 hours).
+7. **Re-verify in epoch mode.** Copy the genesis file, replace the old hot Safe's entries with
+   the new one, and run Verify with `GOVERNANCE_CONFIG` set to the copy, after the last grant
+   delay:
+
+   ```bash
+   DEPLOYMENT=deployments/<chainId>/<timestamp>.json GOVERNANCE_CONFIG=config/<epoch file> \
+     forge script script/Verify.s.sol --rpc-url "$RPC_URL"
+   ```
+
+   The current-state checks use the copy. The genesis event checks keep the recorded genesis
+   file, and every genesis holder the copy drops must hold no record any more. Publish the
+   change as a governance manifest (`appendGovernanceManifest`).
 
 **Rehearse this once on Sepolia** with the throwaway Safes, end to end, before mainnet.
 
@@ -539,7 +640,7 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | Variable | Anvil default | Off anvil |
 | --- | --- | --- |
 | `GENESIS_CONFIG` | `config/genesis.example.json` | Required; the committed policy with reachable holders (step 3) |
-| `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Optional; changes every address |
+| `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Required; changes every address. Use a fresh one, kept private until the broadcast |
 | `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required; must exist: code, a balance or a nonce |
 | `MARKETPLACE_OWNER` | Placeholder `0xC002` | Required |
 | `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet. Default on Sepolia: the official deployment |
@@ -553,6 +654,10 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `AUCTION_INCREMENT_SHARE` | 5,000 (5% of 100,000) | Optional |
 | `VRF_COORDINATOR`, `VRF_SUBSCRIPTION_ID`, `VRF_KEY_HASH` | Unset: no entropy module | Required unless `NO_VRF=1` (step 7) |
 | `VRF_CALLBACK_GAS_LIMIT`, `VRF_CONFIRMATIONS`, `VRF_NATIVE_PAYMENT`, `VRF_RETRY_DELAY` | Defaults in step 7 | Optional |
+| `VRF_COORDINATOR_CODEHASH` | Unset | Optional off mainnet; must match the coordinator's code. On mainnet the canonical coordinator and its code hash are pinned |
 | `NO_VRF` | `0` | `1` declines the entropy module explicitly |
 | `DEPLOYMENT` | (Verify) | The record to verify |
+| `GOVERNANCE_CONFIG` | (Verify) unset: the genesis file | Epoch mode: a copy of the genesis file with the current holders, for readback after a governance change |
+| `GOVERNANCE_MANIFEST_PATH` | (Verify) unset | Epoch mode: the epoch's manifest file; it must be recorded on chain and name the `GOVERNANCE_CONFIG` file's SHA-256 |
+| `ALLOW_PENDING_OPERATIONS` | (Verify) `0` | `1` logs pending manager operations instead of failing on the first |
 | `MANIFEST_PATH` | (Verify) the recorded path | The manifest file to hash again |

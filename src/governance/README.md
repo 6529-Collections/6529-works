@@ -9,7 +9,7 @@ executor, policy or registry contracts.
 | File | Purpose |
 | --- | --- |
 | `Roles.sol` | Canonical role IDs, delay classes, execution delays and grant delays. Every lane imports it. |
-| `WorksAccessManager.sol` | The stock manager plus two cancellation rules (below). |
+| `WorksAccessManager.sol` | The stock manager plus three cancellation rules and the guardians' `suspend` (below). |
 | `GovernanceConfig.sol` | Internal library: `validate`, `install`, `verify` (readback) and `hasRecord`. |
 | `GovernanceConfigurator.sol` | Deploys its own `WorksAccessManager`, configures it in one transaction, renounces, and verifies it. |
 | `BoundedParameter.sol` | Raise-only parameters: at most 2× per step, with an absolute ceiling (§13.9). |
@@ -25,7 +25,7 @@ a wrong delay.
 | Role | ID | Holder | Execution delay | Grant delay | Map to it |
 | --- | --- | --- | --- | --- | --- |
 | `ADMIN` | 0 | Hot admin Safe and cold recovery admin Safe (distinct signers) | 30 days | 30 days | Nothing explicitly. The manager's own admin functions and unmapped selectors fall back to it. |
-| `GUARDIAN` | 1 | Guardian Safes: at least two, three by default | immediate | 30 days | Immediate vetoes: dispute pause (§12), identity-change veto (§11), curation `disableSigner` |
+| `GUARDIAN` | 1 | Guardian Safes: at least two, three by default | immediate | 30 days | Immediate vetoes: dispute pause (§12), identity-change veto (§11), curation `disableSigner`. Also the manager's own `suspend` (below) |
 | `PAUSER` | 2 | Guardian Safes | immediate | 48 hours | `pause` |
 | `UNPAUSER` | 3 | Hot admin Safe (never a pauser) | 48 hours | 48 hours | `unpause` |
 | `CURATION_SIGNER` | 4 | Curation signer keys, at least two at genesis | — | 30 days | Nothing: a signer registry, not a caller |
@@ -48,6 +48,12 @@ a wrong delay.
   caller bindings inside the target contracts, set once at genesis and locked forever.
   A shared contract role would let any holder call every hook.
 
+**Suspendable roles:** `PLATFORM`, `CURATOR` and `STORAGE_OPERATOR`
+(`Roles.isSuspendable`), the zero-delay roles held by single keys that call contracts.
+`CURATION_SIGNER` is not: the curation verifier's one-way `disableSigner` is its
+immediate kill switch, and it also ends the signer's approval epoch, which a lift by
+grant would not.
+
 **Delay classes:**
 - immediate: tightening actions and pauses;
 - 48 hours: standard actions;
@@ -64,8 +70,12 @@ a wrong delay.
 2. **Nobody but its scheduler can cancel an operation that revokes one of the
    canceller's own roles.** No guardian, and no admin, can veto its own removal.
    A scheduler may still withdraw its own proposal, even one that removes itself.
+3. **Only a guardian, or its scheduler, can cancel a role revocation on the
+   manager.** No admin can veto another account's removal. Every other
+   operation keeps the stock rules, so an admin still cancels another admin's
+   grants, remaps and authority moves.
 
-Why both rules, from what OZ 5.7.0's source does:
+Why three rules, from what OZ 5.7.0's source does:
 
 - **Stock cancellation is selector-scoped:** the scheduler, any admin, or the
   guardian of `getTargetFunctionRole(target, selector)`. `ADMIN_ROLE`'s guardian
@@ -82,6 +92,13 @@ Why both rules, from what OZ 5.7.0's source does:
 - **Rule 2 cannot be expressed per selector, because it depends on arguments.**
   It also stops a compromised hot admin from cancelling the cold admin's
   `revokeRole(ADMIN, hot)`. Stock OZ lets any admin cancel any operation.
+- **Rule 3 keeps the cold admin's recovery finite.** A revocation can be vetoed
+  only by the guardians, so the cold admin removes a dishonest guardian in one
+  30-day round and the hot admin in the next, even when the two act together.
+  The trade-off: an admin can no longer defend a guardian against another
+  admin's revocation. That defence rests on the other guardians, which is the
+  documented assumption (`test_GOV1_*` in
+  `test/integration/GovernanceRecovery.t.sol`).
 - **Wrappers cannot smuggle a revocation past Rule 2.** A revocation scheduled
   inside `multicall` or a nested `execute` can never execute, and a scheduled
   `renounceRole` fails its confirmation check. The tests cover all three.
@@ -89,6 +106,39 @@ Why both rules, from what OZ 5.7.0's source does:
   `ADMIN` membership and execution delay, so every admin sees `(false, 30 days)`.
   The authoritative check is `_getAdminRestrictions`: `grantRole` and `revokeRole`
   consult the role's admin, which is `ADMIN` for every role.
+
+## Suspending an operational key
+
+`suspend(roleId, account)` lets any guardian stop a holder of a suspendable role at
+once, for example a stolen platform key:
+
+- **Effect.** The holder fails `hasRole` for that role, so it fails `canCall` and every
+  check built on them in the same block: `restricted` functions, the sale adapters' and
+  `StatementLog`'s manual PLATFORM and CURATOR checks, and `WorkRecords.addLocator`'s
+  platform path. Its record stays, so `getAccess` still shows it.
+- **One way for the guardians.** No guardian can lift it, and no other guardian can
+  cancel it: a suspension takes effect at once and is never scheduled. A grant or a
+  revocation of that role to that account clears it; both are ADMIN operations in the
+  30-day class that any guardian can cancel. A grant to an existing member has no grant
+  delay. Replacing the key (revoke, then grant a new one) clears it too.
+- **How long it lasts.** The lift stays in the 30-day class: a faster lift on the
+  manager's own functions would make meta-governance faster than the slowest class
+  (ADR 0001 §13). A suspension therefore lasts:
+  - an honest suspension made by mistake: 30 days, the lift's own delay;
+  - one dishonest guardian: about 60 days. It cancels each lift until its own removal
+    executes (30 days), and the lift then takes another 30 days;
+  - a dishonest guardian acting with a compromised hot admin: about 90 days. The cold
+    admin removes the guardian (30 days), then the hot admin (30 days), then lifts
+    (30 days).
+- **Refused:** a caller that is not an active guardian, a role that is not suspendable
+  (`RoleNotSuspendable`), an account with no record for the role or already suspended
+  (`NotSuspendable`). Inside `execute`, the manager is the sender and is refused.
+- **Events:** `RoleSuspended(roleId, account, guardian)` and
+  `RoleSuspensionLifted(roleId, account)`.
+- **Readback** names a suspended configured holder (`VerifyV1.HolderSuspended`).
+
+`config/genesis.example.json` lists it under `manager.functions` and marks each role
+`suspendable`; `tools/check_genesis.py` checks both against the build.
 
 ## Deploying and configuring
 
@@ -218,8 +268,10 @@ therefore executes them itself:
 - **Emergencies.**
   - Pausing is immediate (`PAUSER`).
   - Unpausing waits 48 hours, during which any guardian can cancel it.
-  - Revoking a role is a meta action and waits 30 days, so pause the affected
-    target while a revocation matures.
+  - Revoking a role is a meta action and waits 30 days. A compromised
+    zero-delay key (`PLATFORM`, `CURATOR`, `STORAGE_OPERATOR`) is suspended at once
+    by any guardian while its revocation matures; pause the affected target as well
+    where it has a pause. A curation signer is disabled with `disableSigner`.
   - A compromised curation signer is cut off immediately by the curation verifier's
     one-way `disableSigner` (mapped to `GUARDIAN`). Re-enabling a signer is in the
     30-day class.
@@ -248,9 +300,14 @@ therefore executes them itself:
      cancelling them.
   2. Guardians cancel the hot admin's counter-moves, such as a
      `revokeRole(ADMIN, cold)`. The cold admin cannot cancel its own removal.
-  3. After 30 days the cold admin executes the revocations.
-  4. Only then does it grant the roles to a new hot Safe. Revocations go first,
+  3. If a guardian cancels those revocations, the cold admin also schedules
+     `revokeRole(GUARDIAN, g)` and `revokeRole(PAUSER, g)` for it. Only the other
+     guardians may cancel them (Rules 2 and 3), so it is removed after 30 days,
+     and the hot admin's revocations are then rescheduled.
+  4. After 30 days the cold admin executes the revocations.
+  5. Only then does it grant the roles to a new hot Safe. Revocations go first,
      because a still-active hot admin can cancel grants to its replacement.
+  6. Readback then runs in epoch mode (`GOVERNANCE_CONFIG`, script/README.md).
 
   The owner confirms the cold Safe and its signer set at deployment.
 - **Onboarding a target after genesis:**
@@ -321,4 +378,9 @@ therefore executes them itself:
   cannot tell this apart from defending a guardian against a compromised admin
   (`test_Residual_ColludingGuardiansCanShieldEachOther`). The mitigation is
   guardian independence.
+- **One dishonest guardian** can, until its removal executes (30 days), cancel
+  every operation, keep paused targets paused by cancelling each unpause, and veto
+  identity changes. Rule 3 bounds these to one recovery round. Its suspensions of
+  operational keys last longer, about 60 days, or about 90 days with a compromised
+  hot admin (see "Suspending an operational key").
 - **Guardian liveness**, as described under Operating procedures.

@@ -31,6 +31,41 @@
   nobody cancels their own revocation), the canonical role and delay-class table
   (`Roles.sol`), a one-shot configurator that owns its manager and reads it back,
   and `BoundedParameter` for raise-only parameters.
+- Governance (GOV-1): only a guardian, or its scheduler, may cancel a role revocation on
+  `WorksAccessManager` (Rule 3, ADR 0002 addendum). Admins keep the stock power to cancel
+  each other's other operations.
+- Governance (GOV-2): any guardian may suspend a holder of a zero-delay operational role
+  (PLATFORM, CURATOR, STORAGE_OPERATOR) at once with
+  `WorksAccessManager.suspend`; the holder fails `hasRole`, `canCall` and the manual checks
+  built on them. Only an ADMIN grant or revocation (30 days) lifts it. The genesis example
+  marks the suspendable roles and lists the manager's own functions, and
+  `tools/check_genesis.py` checks both; readback names a suspended holder.
+- Deployment (GOV-3): off anvil, `Verify.s.sol` repeats the deploy's holder guards
+  (`DeployGuards.checkHolders` and `checkHoldersAgainst`) against the chain as it is now.
+- Deployment (GOV-4): off anvil, every admin and guardian Safe needs a threshold of at least 2
+  (`ThresholdTooLow`) and owners without code (`NestedOwner`, or `DelegatedOwner` for an
+  EIP-7702 delegated owner), and no two of the admin and
+  guardian Safes may share a signer, guardians included (`SharedSigner`). Each must run a
+  canonical Safe 1.3.0 or 1.4.1 singleton (`NotACanonicalSafe`) with no enabled module
+  (`SafeHasModules`) and no transaction guard (`SafeHasGuard`).
+- Deployment (DEPS-3): on mainnet the VRF coordinator must be the canonical Chainlink v2.5
+  coordinator with its pinned code hash; off mainnet `VRF_COORDINATOR_CODEHASH` optionally
+  pins it. On mainnet, `Verify.s.sol` requires the canonical coordinator (recorded and the
+  module's live one), Permit2 and delegation contract with their pinned code, and no
+  delegation mock.
+- Deployment (DEPS-4): off anvil, `Verify.s.sol` requires the entropy module to be its VRF
+  subscription's only consumer; on mainnet the subscription owner must be the hot admin Safe.
+  A subscription read that fails fails Verify, except off mainnet for a coordinator without
+  `getSubscription`.
+  The runbook makes that the mainnet setup and lists the coordinator events guardians watch.
+- Deployment: `Verify.s.sol` gains an epoch mode (`GOVERNANCE_CONFIG`) so readback passes
+  after a governance change such as an admin recovery, and fails on any operation still
+  pending on the manager unless `ALLOW_PENDING_OPERATIONS=1`. The admin-recovery runbook
+  revokes first and grants after, covers a guardian that cancels the recovery, moves the VRF
+  subscription, and re-verifies in epoch mode.
+- Deployment: `Deploy.s.sol` refuses an EIP-7702 delegated sender (`DelegatedDeployer`),
+  requires an explicit `DEPLOY_NAMESPACE` off anvil, and stops before the broadcast when any
+  predictable address under the namespace is taken (`AddressTaken`).
 - Governance: a genesis wiring phase. `GovernanceConfigurator.configure` executes an
   allow-list of genesis calls (one-shot binds, admitted minters, sale targets and the
   epoch-0 manifest) as zero-delay admin before renouncing. `config/genesis.example.json`

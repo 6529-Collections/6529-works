@@ -364,6 +364,64 @@ contract GuardianCancelTest is GovernanceFixture {
         assertFalse(isAdmin);
     }
 
+    // -------------------------------------------- Rule 3: only guardians veto removals
+
+    function test_AdminCannotCancelAnotherAccountsRevocation() public {
+        // The cold admin removes a guardian; the hot admin cannot veto it, a guardian can.
+        bytes memory data = _revoke(Roles.GUARDIAN, guardianA);
+        bytes32 id = _schedule(coldAdmin, address(manager), data);
+        _expectUnauthorizedCancel(adminSafe, coldAdmin, data);
+        _expectUnauthorizedCancel(guardianA, coldAdmin, data);
+        vm.expectEmit(address(manager));
+        emit IAccessManager.OperationCanceled(id, 1);
+        _cancelAs(guardianB, coldAdmin, address(manager), data);
+        assertEq(manager.getSchedule(id), 0);
+    }
+
+    function test_AdminCannotCancelAnotherAdminsRevocationOfAKey() public {
+        bytes memory data = _revoke(Roles.PLATFORM, platform);
+        _schedule(adminSafe, address(manager), data);
+        _expectUnauthorizedCancel(coldAdmin, adminSafe, data);
+        _expectUnauthorizedCancel(platform, adminSafe, data);
+        _cancelAs(guardianC, adminSafe, address(manager), data);
+    }
+
+    function test_AdminStillCancelsAnotherAdminsOtherOperations() public {
+        bytes[] memory calls = _hostileAdminCalls();
+        for (uint256 i; i < calls.length; ++i) {
+            if (bytes4(calls[i]) == IAccessManager.revokeRole.selector) continue;
+            bytes32 id = _schedule(adminSafe, address(manager), calls[i]);
+            _cancelAs(coldAdmin, adminSafe, address(manager), calls[i]);
+            assertEq(manager.getSchedule(id), 0);
+        }
+        // ...and a revocation scheduled on another target is not a role revocation.
+        SelectorCollisionMock other = new SelectorCollisionMock(address(manager));
+        bytes memory data =
+            abi.encodeCall(SelectorCollisionMock.revokeRole, (Roles.GUARDIAN, guardianA));
+        _schedule(adminSafe, address(other), data);
+        _cancelAs(coldAdmin, adminSafe, address(other), data);
+    }
+
+    function testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation(
+        uint64 role,
+        uint8 victimPick,
+        uint8 cancellerPick
+    ) public {
+        role = uint64(bound(role, 0, Roles.COUNT - 1));
+        address[6] memory accounts = [guardianA, guardianB, guardianC, coldAdmin, keeper, platform];
+        address victim = accounts[victimPick % 6];
+        address canceller = accounts[cancellerPick % 6];
+        bytes memory data = _revoke(role, victim);
+        bytes32 id = _schedule(adminSafe, address(manager), data);
+        bool guardian = canceller == guardianA || canceller == guardianB || canceller == guardianC;
+        if (guardian && canceller != victim) {
+            _cancelAs(canceller, adminSafe, address(manager), data);
+            assertEq(manager.getSchedule(id), 0);
+        } else {
+            _expectUnauthorizedCancel(canceller, adminSafe, data);
+        }
+    }
+
     function testFuzz_NobodyCancelsTheirOwnRevocation(uint64 role, uint8 pick) public {
         role = uint64(bound(role, 0, Roles.COUNT - 1));
         address[5] memory victims = [guardianA, guardianB, guardianC, keeper, coldAdmin];

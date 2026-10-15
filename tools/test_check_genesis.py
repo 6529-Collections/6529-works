@@ -489,6 +489,75 @@ class CheckGenesisTest(unittest.TestCase):
             self.repo.problems()
         self.assertIn("run forge build", str(raised.exception))
 
+    # -- the manager's own functions and suspendable roles (checks 7 and 8) ----------------------
+
+    def _manager(self) -> dict:
+        self.repo.config["roles"] += [
+            {"name": "GUARDIAN", "executionDelay": 0, "suspendable": False},
+            {"name": "PLATFORM", "executionDelay": 0, "suspendable": True},
+        ]
+        self.repo.artifact("Base.sol", "Base", {"cancel(address)": "aaaaaaaa"})
+        self.repo.artifact("Manager.sol", "Manager", {"cancel(address)": "aaaaaaaa",
+                                                      "suspend(uint64,address)": "64bf6e5d",
+                                                      "isSuspended(uint64,address)": "bd2e6ac3"})
+        manager = {
+            "artifact": "src/g/Manager.sol:Manager",
+            "base": "lib/oz/Base.sol:Base",
+            "functions": [{"signature": "suspend(uint64,address)", "selector": "0x64bf6e5d",
+                           "role": "GUARDIAN", "class": "immediate", "delay": 0}],
+            "views": [{"signature": "isSuspended(uint64,address)", "selector": "0xbd2e6ac3"}],
+        }
+        self.repo.config["manager"] = manager
+        return manager
+
+    def test_manager_functions_pass_when_listed(self) -> None:
+        self._manager()
+        self.assertEqual(self.repo.problems(), [])
+
+    def test_manager_function_added_to_the_base_must_be_listed(self) -> None:
+        self._manager()["views"] = []
+        self.assertEqual(
+            self.repo.problems(),
+            ["manager: isSuspended(uint64,address) is added to the OpenZeppelin base but not "
+             "listed in manager.functions or manager.views"],
+        )
+
+    def test_manager_function_selector_role_and_base_are_checked(self) -> None:
+        manager = self._manager()
+        manager["functions"][0]["selector"] = "0x11111111"
+        manager["functions"][0]["delay"] = 172800
+        manager["views"].append({"signature": "cancel(address)", "selector": "0xaaaaaaaa"})
+        problems = self.repo.problems()
+        self.assertIn(
+            "manager: functions suspend(uint64,address) selector 0x11111111 != compiled 0x64bf6e5d",
+            problems,
+        )
+        self.assertTrue(any("does not match GUARDIAN" in p for p in problems), problems)
+        self.assertIn("manager: views cancel(address) is a method of the base "
+                      "lib/oz/Base.sol:Base", problems)
+
+    def test_only_zero_delay_operational_roles_are_suspendable(self) -> None:
+        self._manager()
+        roles = {r["name"]: r for r in self.repo.config["roles"]}
+        roles["GUARDIAN"]["suspendable"] = True
+        roles["PARAMETER_SETTER"]["suspendable"] = True
+        self.repo.config["roles"].append(
+            {"name": "CURATION_SIGNER", "executionDelay": 0, "suspendable": True}
+        )
+        roles["PLATFORM"]["suspendable"] = "yes"
+        problems = self.repo.problems()
+        self.assertIn(
+            "roles: GUARDIAN is suspendable but not a zero-delay operational role", problems
+        )
+        self.assertIn(
+            "roles: PARAMETER_SETTER is suspendable but not a zero-delay operational role",
+            problems,
+        )
+        self.assertIn("roles: PLATFORM suspendable is not a boolean", problems)
+        self.assertIn(
+            "roles: CURATION_SIGNER is suspendable but not a zero-delay operational role", problems
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
+import { DelegatedEOA } from "src/libraries/DelegatedEOA.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
 import { DeployGuards } from "./DeployGuards.sol";
 import { DeployV1 } from "./DeployV1.sol";
@@ -22,12 +23,16 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      (script/README.md). The whole run is simulated before anything is sent, so every check
 ///      below aborts the run with nothing broadcast. Off anvil:
 ///      - the RPC's chain ID must match (`ChainIdMismatch`);
+///      - the sender must not be an EIP-7702 delegated EOA (`DelegatedDeployer`, on anvil too);
+///      - `DEPLOY_NAMESPACE` must be given, and no contract's address under it may be taken
+///        (`AddressTaken`);
 ///      - every placeholder is refused, and every required input must be given;
 ///      - the network fee recipient must already exist (`AccountDoesNotExist`);
 ///      - the genesis file must name reachable holders and the committed policy
 ///        (`DeployGuards`);
 ///      - the CC0 text must hash to `DeployV1.CC0_LEGALCODE_SHA256`;
 ///      - Permit2 and the delegation contract must have code, and be canonical on mainnet;
+///      - on mainnet the VRF coordinator must be the canonical one with its pinned code hash;
 ///      - the entropy module is required unless declined with `NO_VRF=1`;
 ///      - nothing the genesis names may be left out.
 ///      On anvil, when the delegation contract has no code, a `DelegationManagementMock` is
@@ -50,6 +55,10 @@ contract Deploy is ScriptIO {
     error ConflictingParameters(string a, string b);
     error NoCode(string name, address account);
     error NonCanonicalOnMainnet(string name, address account);
+    /// @notice On mainnet, the canonical address holds code other than the pinned code.
+    error NonCanonicalCode(string name, address account, bytes32 codehash);
+    /// @notice The code hash differs from the one the operator pinned (`VRF_COORDINATOR_CODEHASH`).
+    error UnexpectedCodeHash(string name, bytes32 expected, bytes32 actual);
     /// @notice The account has no code, a zero balance and a zero nonce. The first payout to it
     ///         would create it, which under Glamsterdam costs whoever settles about 184K more
     ///         gas (ADR 0004). Fund it, or name a Safe.
@@ -64,6 +73,12 @@ contract Deploy is ScriptIO {
     ///         operator's own initcode under this namespace first. Use a new DEPLOY_NAMESPACE
     ///         (and a private RPC on mainnet).
     error ConfiguratorAddressTaken(address configurator);
+    /// @notice The sender is an EIP-7702 delegated EOA. Until genesis completes the deployer
+    ///         alone may call `configure`, so no wallet code may act for it. Sign from a plain key.
+    error DelegatedDeployer(address deployer);
+    /// @notice Contract `name`'s CREATE2 address under this namespace already has code. Use a new
+    ///         DEPLOY_NAMESPACE, kept private until the broadcast.
+    error AddressTaken(string name, address account);
 
     /// @notice The last run's record, also written to `deployments/` when broadcasting.
     string public lastRecord;
@@ -117,14 +132,19 @@ contract Deploy is ScriptIO {
         r.local = block.chainid == DeployV1.LOCAL_CHAIN_ID;
         checkChain();
         if (msg.sender == DEFAULT_SENDER) revert SenderNotSet();
+        if (DelegatedEOA.isDelegated(msg.sender)) revert DelegatedDeployer(msg.sender);
         r.genesisPath = _envString("GENESIS_CONFIG", r.local ? EXAMPLE_GENESIS : "");
         if (bytes(r.genesisPath).length == 0) revert MissingParameter("GENESIS_CONFIG");
         r.json = _read(r.genesisPath);
-        if (!r.local) DeployGuards.checkHolders(r.json, _read(EXAMPLE_GENESIS));
+        if (!r.local) {
+            (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
+            DeployGuards.checkHolders(r.json, _read(EXAMPLE_GENESIS), singletons, codehashes);
+        }
         r.p = params(r.local);
         r.p.deployer = msg.sender;
         (r.manifest, r.manifestPath) = manifest(r.local);
         checkConfiguratorSlot(r.p);
+        checkAddressesFree(r.p);
     }
 
     /// @notice Off-anvil checks against the deployed contracts, before `configure`: nothing the
@@ -154,9 +174,27 @@ contract Deploy is ScriptIO {
         if (configurator.code.length != 0) revert ConfiguratorAddressTaken(configurator);
     }
 
+    /// @notice No contract's predicted CREATE2 address has code. Exact for every contract whose
+    ///         constructor arguments are known before the broadcast, in particular those with
+    ///         none (ContentStore, ReleaseVerifier, ClaimRouter), whose address depends on the
+    ///         namespace alone; a contract that pins an earlier one's code hash is predicted
+    ///         before that code exists, so it is only caught by the simulation.
+    function checkAddressesFree(DeployV1.Params memory p) public view {
+        DeployV1.Deployment memory d = DeployV1.predict(p, bytes32(0), DeployGuards.CREATE2_FACTORY);
+        string[] memory list = DeployV1.order(p);
+        for (uint256 i; i < list.length; ++i) {
+            address a = DeployV1.addressOf(d, list[i]);
+            if (a.code.length != 0) revert AddressTaken(list[i], a);
+        }
+    }
+
     /// @notice Deployment parameters from the environment, with anvil defaults.
     function params(bool local) public view returns (DeployV1.Params memory p) {
-        p.namespace = _envBytes32("DEPLOY_NAMESPACE", keccak256("6529-works/v1"));
+        // Off anvil the namespace is explicit: under a default one, anyone could create the
+        // contracts whose address depends on the namespace alone before the first run.
+        p.namespace =
+            _envBytes32("DEPLOY_NAMESPACE", local ? keccak256("6529-works/v1") : bytes32(0));
+        if (p.namespace == bytes32(0)) revert MissingParameter("DEPLOY_NAMESPACE");
         p.feeRecipient =
             _envAddress("NETWORK_FEE_RECIPIENT", local ? PLACEHOLDER_FEE_RECIPIENT : address(0));
         if (p.feeRecipient == address(0)) revert MissingParameter("NETWORK_FEE_RECIPIENT");
@@ -207,7 +245,9 @@ contract Deploy is ScriptIO {
     }
 
     /// @dev The entropy module's parameters. Off anvil a VRF coordinator is required unless
-    ///      `NO_VRF=1` declines the module explicitly (6529 Stream pins it immutably).
+    ///      `NO_VRF=1` declines the module explicitly (6529 Stream pins it immutably). On mainnet
+    ///      it must be the canonical coordinator with its pinned code; elsewhere
+    ///      `VRF_COORDINATOR_CODEHASH`, when set, must match the coordinator's code.
     function _vrf(DeployV1.Params memory p, bool local) internal view {
         p.vrfCoordinator = _envAddress("VRF_COORDINATOR", address(0));
         uint256 declined = _envUint("NO_VRF", 0);
@@ -221,6 +261,20 @@ contract Deploy is ScriptIO {
         if (declined == 1) revert ConflictingParameters("VRF_COORDINATOR", "NO_VRF");
         if (p.vrfCoordinator.code.length == 0) revert NoCode("VRF_COORDINATOR", p.vrfCoordinator);
         p.vrfCoordinatorCodeHash = p.vrfCoordinator.codehash;
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            if (p.vrfCoordinator != DeployGuards.CANONICAL_VRF_COORDINATOR) {
+                revert NonCanonicalOnMainnet("VRF_COORDINATOR", p.vrfCoordinator);
+            }
+            if (p.vrfCoordinatorCodeHash != DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH) {
+                revert NonCanonicalCode(
+                    "VRF_COORDINATOR", p.vrfCoordinator, p.vrfCoordinatorCodeHash
+                );
+            }
+        }
+        bytes32 pinned = _envBytes32("VRF_COORDINATOR_CODEHASH", bytes32(0));
+        if (pinned != bytes32(0) && pinned != p.vrfCoordinatorCodeHash) {
+            revert UnexpectedCodeHash("VRF_COORDINATOR", pinned, p.vrfCoordinatorCodeHash);
+        }
         uint256 subscription = _envUint("VRF_SUBSCRIPTION_ID", 0);
         if (subscription == 0) revert MissingParameter("VRF_SUBSCRIPTION_ID");
         bytes32 keyHash = _envBytes32("VRF_KEY_HASH", bytes32(0));

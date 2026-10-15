@@ -17,7 +17,12 @@ Checks `config/genesis.example.json`:
   6. a configuration given with `--config` (a deployment's copy) keeps the committed policy: it
      may differ from `config/genesis.example.json` only in its holders, its description, and the
      `address` and `calldata` fields that encode addresses (`policy_differences`). The deploy
-     script enforces the same rule on chain (`DeployGuards.checkPolicy`).
+     script enforces the same rule on chain (`DeployGuards.checkPolicy`);
+  7. the manager's own functions beyond its OpenZeppelin base (`manager`): each listed one is a
+     method of the compiled manager with the listed selector, a mapped one names a role whose
+     delay and class match, and every added method is listed (`check_manager`);
+  8. every role's `suspendable` flag is a boolean, and only zero-delay roles other than GUARDIAN,
+     PAUSER and CURATION_SIGNER are suspendable.
 
 A configured contract whose artifact source is not in the repository yet (a lane that has
 not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
@@ -47,6 +52,10 @@ GENESIS_FUNCTIONS = frozenset({
     "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
     "setDefaultCurrency", "appendGovernanceManifest",
 })
+
+# Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation
+# signer, whose kill switch is the verifier's `disableSigner` (it also ends the signer's epoch).
+NEVER_SUSPENDABLE = frozenset({"GUARDIAN", "PAUSER", "CURATION_SIGNER"})
 
 # What a deployment's copy of the configuration may change (check 6).
 DEPLOYMENT_KEYS = frozenset({"holders", "description"})
@@ -234,8 +243,10 @@ def forge_inspect(root: Path) -> MethodIds:
     def ids(ref: str) -> dict:
         ref = _check_ref(ref)
         if ref not in cache:
+            # forge resolves a dependency under lib/ by its contract name only.
+            target = ref.split(":")[1] if ref.startswith("lib/") else ref
             result = subprocess.run(
-                ["forge", "inspect", ref, "methodIdentifiers", "--json"],
+                ["forge", "inspect", target, "methodIdentifiers", "--json"],
                 cwd=root, capture_output=True, text=True, encoding="utf-8",
             )
             if result.returncode != 0:
@@ -365,6 +376,8 @@ def check(
         if ref not in implemented:
             problems.append(f"{ref} has restricted functions but no contract in the configuration")
 
+    problems += check_manager(config, ids, present)
+
     wired: set[tuple[str, str]] = set()
     for i, w in enumerate(config.get("wiring", [])):
         name, sig = w["contract"], w["signature"]
@@ -396,6 +409,57 @@ def check(
         for e in c.get("deferred", []):
             if (name, e["signature"]) in wired:
                 problems.append(f"{name}: deferred {e['signature']} is wired")
+    return problems
+
+
+def check_manager(config: dict, ids: MethodIds, present: Present = lambda ref: True) -> list[str]:
+    """Checks 7 and 8: the manager's own functions and the roles' `suspendable` flags."""
+    problems: list[str] = []
+    roles = {r["name"]: r for r in config.get("roles", [])}
+    for name, role in roles.items():
+        if "suspendable" not in role:
+            continue
+        flag = role["suspendable"]
+        if not isinstance(flag, bool):
+            problems.append(f"roles: {name} suspendable is not a boolean")
+        elif flag and (role["executionDelay"] != 0 or name in NEVER_SUSPENDABLE):
+            problems.append(f"roles: {name} is suspendable but not a zero-delay operational role")
+    manager = config.get("manager")
+    if manager is None:
+        return problems
+    artifact, base = manager["artifact"], manager["base"]
+    if not (present(artifact) and present(base)):
+        return problems
+    methods, base_methods = ids(artifact), ids(base)
+    listed: set[str] = set()
+    for group in ("functions", "views"):
+        for e in manager.get(group, []):
+            sig = e["signature"]
+            listed.add(sig)
+            if sig not in methods:
+                problems.append(f"manager: {group} {sig} is not a method of {artifact}")
+            elif methods[sig] != _selector(e):
+                problems.append(
+                    f"manager: {group} {sig} selector 0x{_selector(e)} != compiled 0x{methods[sig]}"
+                )
+            if sig in base_methods:
+                problems.append(f"manager: {group} {sig} is a method of the base {base}")
+    for e in manager.get("functions", []):
+        role = roles.get(e.get("role"))
+        if role is None:
+            problems.append(f"manager: {e['signature']} has unknown role {e.get('role')}")
+            continue
+        delay = e.get("delay")
+        if delay != role["executionDelay"] or delay != CLASS_DELAY.get(e.get("class")):
+            problems.append(
+                f"manager: {e['signature']} delay {delay} / class {e.get('class')} does not "
+                f"match {e['role']} ({role['executionDelay']})"
+            )
+    for sig in sorted(set(methods) - set(base_methods) - listed):
+        problems.append(
+            f"manager: {sig} is added to the OpenZeppelin base but not listed in manager.functions "
+            f"or manager.views"
+        )
     return problems
 
 

@@ -2,10 +2,12 @@
 pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
+import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Deploy } from "script/Deploy.s.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { Verify } from "script/Verify.s.sol";
+import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 
 /// @notice The scripts' outside inputs, set by the test instead of read from the process:
 ///         environment variables, files (falling back to the real ./config and ./deployments),
@@ -18,6 +20,9 @@ abstract contract ScriptInputs is ScriptIO {
     bool internal _rpcSet;
     bytes32 internal _cc0Digest;
     bool internal _cc0Set;
+    address[] internal _singletons;
+    bytes32[] internal _singletonHashes;
+    bool internal _singletonsSet;
 
     function setEnv(string memory name, string memory value) external {
         _envs[name] = value;
@@ -36,6 +41,25 @@ abstract contract ScriptInputs is ScriptIO {
     function setCc0Digest(bytes32 digest) external {
         _cc0Digest = digest;
         _cc0Set = true;
+    }
+
+    /// @dev Replaces the canonical Safe singletons (whose code a test cannot reproduce).
+    function setSafeSingletons(address[] calldata singletons, bytes32[] calldata codehashes)
+        external
+    {
+        _singletons = singletons;
+        _singletonHashes = codehashes;
+        _singletonsSet = true;
+    }
+
+    function safeSingletons()
+        public
+        view
+        virtual
+        override
+        returns (address[] memory, bytes32[] memory)
+    {
+        return _singletonsSet ? (_singletons, _singletonHashes) : super.safeSingletons();
     }
 
     function rpcChainId() public view virtual override returns (uint256) {
@@ -63,6 +87,15 @@ abstract contract ScriptInputs is ScriptIO {
 contract DeployHarness is Deploy, ScriptInputs {
     function rpcChainId() public view override(ScriptIO, ScriptInputs) returns (uint256) {
         return ScriptInputs.rpcChainId();
+    }
+
+    function safeSingletons()
+        public
+        view
+        override(ScriptIO, ScriptInputs)
+        returns (address[] memory, bytes32[] memory)
+    {
+        return ScriptInputs.safeSingletons();
     }
 
     function cc0Digest() public view override(ScriptIO, ScriptInputs) returns (bytes32) {
@@ -113,6 +146,14 @@ contract VerifyHarness is Verify, ScriptInputs {
         view
     {
         _checkCc0(d, record, local);
+    }
+
+    function checkSubscriptionExternal(
+        DeployV1.Deployment memory d,
+        GovernanceConfig.Config memory cfg,
+        bool mainnet
+    ) external view {
+        _checkSubscription(d, cfg, mainnet);
     }
 
     function checkManifestExternal(string memory record, bool local)
@@ -167,6 +208,15 @@ contract VerifyHarness is Verify, ScriptInputs {
         }
     }
 
+    function safeSingletons()
+        public
+        view
+        override(ScriptIO, ScriptInputs)
+        returns (address[] memory, bytes32[] memory)
+    {
+        return ScriptInputs.safeSingletons();
+    }
+
     function _matches(StoredLog storage log, address emitter, bytes32 topic)
         internal
         view
@@ -211,9 +261,29 @@ contract VerifyHarness is Verify, ScriptInputs {
     }
 }
 
+/// @notice What every mock Safe answers like a bare Safe: no enabled module.
+abstract contract MockBareSafe {
+    function getModulesPaginated(address, uint256)
+        external
+        pure
+        returns (address[] memory modules, address next)
+    {
+        modules = new address[](0);
+        next = address(1);
+    }
+}
+
+/// @notice Stands in for a canonical Safe singleton: a test allows its address and code hash
+///         (`ScriptInputs.setSafeSingletons`) and stores its address in each Safe's slot 0.
+contract MockSafeSingleton {
+    function version() external pure returns (string memory) {
+        return "test singleton";
+    }
+}
+
 /// @notice A Safe as the guards see one: code, `getThreshold()` and `getOwners()`. Its three
 ///         owners derive from its own address, so every etched copy has its own signers.
-contract MockSafe {
+contract MockSafe is MockBareSafe {
     function getThreshold() external pure returns (uint256) {
         return 2;
     }
@@ -234,7 +304,7 @@ contract MockZeroThresholdSafe {
 }
 
 /// @notice A Safe whose owners include one fixed signer, `SHARED`, wherever it is etched.
-contract MockSharedSignerSafe {
+contract MockSharedSignerSafe is MockBareSafe {
     address public constant SHARED = address(0x5157);
 
     function getThreshold() external pure returns (uint256) {
@@ -245,6 +315,107 @@ contract MockSharedSignerSafe {
         owners = new address[](2);
         owners[0] = address(uint160(uint256(keccak256(abi.encode(address(this))))));
         owners[1] = SHARED;
+    }
+}
+
+/// @notice A 1-of-1 Safe of one fixed key, wherever it is etched.
+contract MockOneKeySafe is MockBareSafe {
+    address public constant KEY = address(0xBAD0);
+
+    function getThreshold() external pure returns (uint256) {
+        return 1;
+    }
+
+    function getOwners() external pure returns (address[] memory owners) {
+        owners = new address[](1);
+        owners[0] = KEY;
+    }
+}
+
+/// @notice A 2-of-2 Safe of the same two fixed keys, wherever it is etched.
+contract MockTwoKeySafe is MockBareSafe {
+    address public constant KEY_A = address(0xBAD1);
+    address public constant KEY_B = address(0xBAD2);
+
+    function getThreshold() external pure returns (uint256) {
+        return 2;
+    }
+
+    function getOwners() external pure returns (address[] memory owners) {
+        owners = new address[](2);
+        owners[0] = KEY_A;
+        owners[1] = KEY_B;
+    }
+}
+
+/// @notice A 2-of-2 Safe whose owners are another Safe, `INNER`, and a key of its own.
+contract MockNestedOwnerSafe is MockBareSafe {
+    address public constant INNER = address(0x1EE7);
+
+    function getThreshold() external pure returns (uint256) {
+        return 2;
+    }
+
+    function getOwners() external view returns (address[] memory owners) {
+        owners = new address[](2);
+        owners[0] = INNER;
+        owners[1] = address(uint160(uint256(keccak256(abi.encode(address(this))))));
+    }
+}
+
+/// @notice A VRF v2.5 coordinator stand-in that also answers `getSubscription`, as the real one
+///         does: (balance, native balance, request count, owner, consumers).
+contract MockVrfSubscriptions is MockVrfCoordinator {
+    error InvalidSubscription();
+
+    address public subscriptionOwner;
+    address[] internal _consumers;
+    bool public unknown;
+
+    /// @dev Answer as the real coordinator does for a subscription it does not know.
+    function setUnknown(bool value) external {
+        unknown = value;
+    }
+
+    function setSubscription(address owner, address[] calldata consumers) external {
+        subscriptionOwner = owner;
+        _consumers = consumers;
+    }
+
+    function getSubscription(uint256)
+        external
+        view
+        returns (uint96, uint96, uint64, address, address[] memory)
+    {
+        if (unknown) revert InvalidSubscription();
+        return (0, 0, 0, subscriptionOwner, _consumers);
+    }
+}
+
+/// @notice A 2-of-3 Safe of plain keys with one enabled module, which can act without any
+///         owner's signature.
+contract MockModuleSafe {
+    address public constant MODULE = address(0x40D0);
+
+    function getThreshold() external pure returns (uint256) {
+        return 2;
+    }
+
+    function getOwners() external view returns (address[] memory owners) {
+        owners = new address[](3);
+        for (uint256 i; i < owners.length; ++i) {
+            owners[i] = address(uint160(uint256(keccak256(abi.encode(address(this), "m", i)))));
+        }
+    }
+
+    function getModulesPaginated(address, uint256)
+        external
+        pure
+        returns (address[] memory modules, address next)
+    {
+        modules = new address[](1);
+        modules[0] = MODULE;
+        next = address(1);
     }
 }
 

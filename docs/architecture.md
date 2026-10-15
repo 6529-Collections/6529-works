@@ -356,7 +356,7 @@ default when the sale starts".
 | Actor | Can | Cannot |
 | --- | --- | --- |
 | Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
-| Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations | Redirect funds or identities; cancel or resume an auction |
+| Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations; suspend a platform, curator or storage operator key at once (lifted only by a 30-day ADMIN grant or revocation) | Redirect funds or identities; cancel or resume an auction; lift a suspension or grant any role |
 | Storage operator | Set preferred locations among registered, hash-equal locators | Add, remove or change locators; change content hashes |
 | Platform | Create collections; add locators; open edition sales and phases at the package price for FIXED editions | Change an approved package's prices, currencies, sizes or media; set allowlist prices (below or above the package price), or open an OPEN edition's one-time window, without the artist's signed approval |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
@@ -380,7 +380,7 @@ interfaces name the role each governed selector is meant to map to:
 | Role | Selectors |
 | --- | --- |
 | ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords` |
-| GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset` |
+| GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset`; the manager's own `WorksAccessManager.suspend` (checked by the manager, not mapped) |
 | UNPAUSER | `IEnglishAuction.resume` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator) |

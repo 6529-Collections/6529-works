@@ -485,3 +485,21 @@ veto, a captured wallet's contest decided by the vote, or the lapse.
 
 - **Re-measure on Sepolia:** start gas and the `tokenURI` and inline-threshold
   matrix, with the real Chainlink coordinator and the 6529 delegation contract.
+
+## Addendum (review of 14 October 2026)
+
+Accepted by the delivery owner. It extends the deployment guards above.
+
+- **Holder topology (owner decisions 2 and 3).** Off anvil, every admin and guardian
+  Safe needs a threshold of at least 2, and owners that are plain keys (no code, so no
+  nested Safe and no EIP-7702 delegation). No two of the admin and guardian Safes may
+  share a signer, guardians included. Each Safe's proxy must run a canonical Safe
+  singleton (1.3.0 or 1.4.1, L1 or L2, by address and code hash), with no enabled
+  module and no transaction guard, so only its owners' signatures act for it.
+  `Verify.s.sol` repeats these checks against the chain as it is at readback.
+- **Canonical dependencies on mainnet.** The deploy pins the Chainlink VRF v2.5
+  coordinator's address and runtime code hash, as it pins the delegation contract and
+  Permit2. The readback requires all three to be canonical, with their pinned code.
+- **The VRF subscription on mainnet.** Its owner is the hot admin Safe and the module is
+  its only consumer; the readback checks both through the coordinator's
+  `getSubscription`.

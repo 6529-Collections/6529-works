@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
@@ -14,14 +15,21 @@ import { DeployV1 } from "script/DeployV1.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { Verify } from "script/Verify.s.sol";
 import { Editions } from "src/editions/Editions.sol";
+import { ContentStore } from "src/content/ContentStore.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import {
     DeployHarness,
+    MockNestedOwnerSafe,
+    MockOneKeySafe,
     MockSafe,
     MockSafeWithoutOwners,
+    MockModuleSafe,
+    MockSafeSingleton,
     MockSharedSignerSafe,
+    MockTwoKeySafe,
+    MockVrfSubscriptions,
     MockZeroThresholdSafe,
     VerifyHarness
 } from "./ScriptHarness.sol";
@@ -75,10 +83,11 @@ contract DeployScriptTest is Test {
     ///      NO_VRF, the manifest file and URI.
     function _sepolia() internal returns (DelegationManagementMock delegation) {
         vm.chainId(SEPOLIA);
+        _allowTestSingleton();
         bytes memory safe = address(new MockSafe()).code;
         string[5] memory safes = ["01", "02", "11", "12", "13"];
         for (uint256 i; i < safes.length; ++i) {
-            vm.etch(_account(safes[i]), safe);
+            _etchSafe(_account(safes[i]), safe);
         }
         _genesisFile(_filled());
         vm.deal(makeAddr("fee"), 1); // an existing account
@@ -91,6 +100,27 @@ contract DeployScriptTest is Test {
         deployer.setFile("config/manifest.json", MANIFEST);
         deployer.setEnv("MANIFEST_PATH", "config/manifest.json");
         deployer.setEnv("MANIFEST_URI", "ar://epoch-0");
+        deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/script-test")));
+    }
+
+    /// @dev The test singleton: its address and code hash replace the canonical Safe
+    ///      singletons in both scripts (a test cannot reproduce their code).
+    address internal testSingleton;
+
+    function _allowTestSingleton() internal {
+        testSingleton = address(new MockSafeSingleton());
+        address[] memory singletons = new address[](1);
+        bytes32[] memory hashes = new bytes32[](1);
+        singletons[0] = testSingleton;
+        hashes[0] = testSingleton.codehash;
+        deployer.setSafeSingletons(singletons, hashes);
+        verifier.setSafeSingletons(singletons, hashes);
+    }
+
+    /// @dev Etches a mock Safe proxy at `safe`, pointing at the test singleton (slot 0).
+    function _etchSafe(address safe, bytes memory code) internal {
+        vm.etch(safe, code);
+        vm.store(safe, bytes32(0), bytes32(uint256(uint160(testSingleton))));
     }
 
     /// @dev A deployment on anvil with recorded logs, verified-ready (5 days later).
@@ -444,9 +474,16 @@ contract DeployScriptTest is Test {
             )
         );
         deployer.prepare();
-        // Guardians may share signers with each other.
+        // GOV-4: guardian Safes share no signer with each other either.
         vm.etch(_account("02"), address(new MockSafe()).code);
         vm.etch(_account("11"), shared);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector, _account("11"), _account("12"), signer
+            )
+        );
+        deployer.prepare();
+        vm.etch(_account("12"), address(new MockSafe()).code);
         deployer.prepare();
         // A Safe must list its owners.
         vm.etch(_account("02"), address(new MockSafeWithoutOwners()).code);
@@ -454,6 +491,164 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "ADMIN", _account("02"))
         );
         deployer.prepare();
+    }
+
+    /// GOV-4: one key behind every guardian Safe is refused: a 1-of-1 Safe is below the
+    ///        threshold floor, and 2-of-2 Safes of the same two keys share signers.
+    function test_GOV4_OneKeyBehindEveryGuardianSafeIsRefused() public {
+        _sepolia();
+        bytes memory oneKey = address(new MockOneKeySafe()).code;
+        vm.etch(_account("11"), oneKey);
+        vm.etch(_account("12"), oneKey);
+        vm.etch(_account("13"), oneKey);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.ThresholdTooLow.selector, "GUARDIAN", _account("11"), 1
+            )
+        );
+        deployer.prepare();
+        bytes memory twoKeys = address(new MockTwoKeySafe()).code;
+        vm.etch(_account("11"), twoKeys);
+        vm.etch(_account("12"), twoKeys);
+        vm.etch(_account("13"), twoKeys);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector,
+                _account("11"),
+                _account("12"),
+                MockTwoKeySafe(_account("11")).KEY_A()
+            )
+        );
+        deployer.prepare();
+        // The admins need the floor too.
+        _sepolia();
+        vm.etch(_account("01"), oneKey);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.ThresholdTooLow.selector, "ADMIN", _account("01"), 1
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// GOV-4: an owner with code (a nested Safe, any contract or an EIP-7702 delegated EOA) is
+    ///        refused, so it cannot hide a signer shared with another Safe.
+    function test_GOV4_ANestedOwnerIsRefused() public {
+        _sepolia();
+        address inner = MockNestedOwnerSafe(address(new MockNestedOwnerSafe())).INNER();
+        vm.etch(_account("01"), address(new MockNestedOwnerSafe()).code);
+        vm.etch(inner, address(new MockSafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.NestedOwner.selector, _account("01"), inner)
+        );
+        deployer.prepare();
+        // An EIP-7702 delegation on an owner key has its own error, and clears with it.
+        vm.etch(inner, abi.encodePacked(hex"ef0100", makeAddr("delegate")));
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.DelegatedOwner.selector, _account("01"), inner)
+        );
+        deployer.prepare();
+        vm.etch(inner, "");
+        deployer.prepare();
+    }
+
+    /// L1 (review of #52): a Safe with an enabled module is refused; a module acts without the
+    ///     owners' signatures. (The reviewer's PoC, inverted.)
+    function test_ASafeWithAModuleIsRefused() public {
+        _sepolia();
+        bytes memory moduled = address(new MockModuleSafe()).code;
+        _etchSafe(_account("01"), moduled); // hot admin
+        _etchSafe(_account("11"), moduled); // a guardian
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SafeHasModules.selector,
+                "ADMIN",
+                _account("01"),
+                MockModuleSafe(_account("01")).MODULE()
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// L1: a Safe with a transaction guard is refused.
+    function test_ASafeWithAGuardIsRefused() public {
+        _sepolia();
+        address guard = makeAddr("safeGuard");
+        vm.store(_account("12"), DeployGuards.SAFE_GUARD_SLOT, bytes32(uint256(uint160(guard))));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SafeHasGuard.selector, "GUARDIAN", _account("12"), guard
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// L1: a Safe proxy must run a canonical singleton, at its address and with its code.
+    function test_ASafeOnAnotherSingletonIsRefused() public {
+        _sepolia();
+        address other = address(new MockSafeSingleton()); // same code, another address
+        vm.store(_account("02"), bytes32(0), bytes32(uint256(uint160(other))));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("02"), other
+            )
+        );
+        deployer.prepare();
+        // The allowed address with other code.
+        vm.store(_account("02"), bytes32(0), bytes32(uint256(uint160(testSingleton))));
+        vm.etch(testSingleton, address(new MockSafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("01"), testSingleton
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// L1: the canonical singletons both scripts allow by default.
+    function test_TheCanonicalSafeSingletonsArePinned() public {
+        (address[] memory s, bytes32[] memory h) = new Deploy().safeSingletons();
+        assertEq(s.length, 6);
+        assertEq(s[0], 0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552, "1.3.0 L1");
+        assertEq(s[1], 0x69f4D1788e39c87893C980c06EdF4b7f686e2938, "1.3.0 L1, EIP-155");
+        assertEq(s[2], 0x3E5c63644E683549055b9Be8653de26E0B4CD36E, "1.3.0 L2");
+        assertEq(s[3], 0xfb1bffC9d739B8D520DaF37dF666da4C687191EA, "1.3.0 L2, EIP-155");
+        assertEq(s[4], 0x41675C099F32341bf84BFc5382aF534df5C7461a, "1.4.1 L1");
+        assertEq(s[5], 0x29fcB43b46531BcA003ddC8FCB67FFE91900C762, "1.4.1 L2");
+        assertEq(h[0], 0xbba688fbdb21ad2bb58bc320638b43d94e7d100f6f3ebaab0a4e4de6304b1c2e);
+        assertEq(h[1], h[0]);
+        assertEq(h[2], 0x21842597390c4c6e3c1239e434a682b054bd9548eee5e9b1d6a4482731023c0f);
+        assertEq(h[3], h[2]);
+        assertEq(h[4], 0x1fe2df852ba3299d6534ef416eefa406e56ced995bca886ab7a553e6d0c5e1c4);
+        assertEq(h[5], 0xb1f926978a0f44a2c0ec8fe822418ae969bd8c3f18d61e5103100339894f81ff);
+        (address[] memory v,) = new Verify().safeSingletons();
+        assertEq(keccak256(abi.encode(v)), keccak256(abi.encode(s)), "Verify uses the same list");
+        // Without the test singleton, a mock Safe is refused.
+        _sepolia();
+        Deploy plain = new DeployHarness();
+        DeployHarness(address(plain)).setEnv("GENESIS_CONFIG", GENESIS);
+        DeployHarness(address(plain)).setFile(GENESIS, bytes(_filled()));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("01"), testSingleton
+            )
+        );
+        plain.prepare();
+    }
+
+    /// L1: Verify repeats it. A module enabled after genesis fails the readback.
+    function test_VerifyRefusesAModuleEnabledAfterGenesis() public {
+        (string memory record,) = _offAnvilRecord();
+        _etchSafe(_account("13"), address(new MockModuleSafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SafeHasModules.selector,
+                "GUARDIAN",
+                _account("13"),
+                MockModuleSafe(_account("13")).MODULE()
+            )
+        );
+        verifier.verify(record);
     }
 
     function test_OffAnvilNeedsThreeGuardiansAndTwoCurationSigners() public {
@@ -649,6 +844,291 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
+    // ------------------------------------------------------------------ DEPS-3: the coordinator
+
+    /// @dev The off-anvil inputs with a VRF coordinator instead of NO_VRF.
+    function _withVrf(address coordinator) internal {
+        deployer.setEnv("NO_VRF", "");
+        deployer.setEnv("VRF_COORDINATOR", vm.toString(coordinator));
+        deployer.setEnv("VRF_SUBSCRIPTION_ID", "7");
+        deployer.setEnv("VRF_KEY_HASH", vm.toString(keccak256("lane")));
+    }
+
+    /// The Chainlink VRF v2.5 coordinator on Ethereum mainnet (docs.chain.link), and its runtime
+    /// code hash read from mainnet on 14 October 2026.
+    function test_DEPS3_TheMainnetCoordinatorIsPinned() public pure {
+        assertEq(DeployGuards.CANONICAL_VRF_COORDINATOR, 0xD7f86b4b8Cae7D942340FF628F82735b7a20893a);
+        assertEq(
+            DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH,
+            0xbe4ae0321fb1c74c80eea0c14c9c7b28c69ce17df15222e27b1e934cc98f5f61
+        );
+    }
+
+    /// DEPS-3: on mainnet the coordinator must be the canonical one, with its pinned code.
+    function test_DEPS3_MainnetRefusesANonCanonicalCoordinator() public {
+        DelegationManagementMock delegation = _sepolia();
+        vm.chainId(1);
+        vm.etch(DeployGuards.CANONICAL_DELEGATION, address(delegation).code);
+        deployer.setEnv("DELEGATION_CONTRACT", "");
+        MockVrfCoordinator fake = new MockVrfCoordinator();
+        _withVrf(address(fake));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.NonCanonicalOnMainnet.selector, "VRF_COORDINATOR", address(fake)
+            )
+        );
+        deployer.prepare();
+        // The canonical address with other code is refused too.
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        vm.etch(canonical, address(fake).code);
+        _withVrf(canonical);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.NonCanonicalCode.selector, "VRF_COORDINATOR", canonical, canonical.codehash
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// DEPS-3: off mainnet the operator may pin the coordinator's code hash.
+    function test_DEPS3_TheCoordinatorCodeHashCanBePinnedOffMainnet() public {
+        _sepolia();
+        MockVrfCoordinator coordinator = new MockVrfCoordinator();
+        _withVrf(address(coordinator));
+        deployer.setEnv("VRF_COORDINATOR_CODEHASH", vm.toString(keccak256("other code")));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Deploy.UnexpectedCodeHash.selector,
+                "VRF_COORDINATOR",
+                keccak256("other code"),
+                address(coordinator).codehash
+            )
+        );
+        deployer.prepare();
+        deployer.setEnv("VRF_COORDINATOR_CODEHASH", vm.toString(address(coordinator).codehash));
+        assertEq(deployer.prepare().p.vrfCoordinator, address(coordinator));
+    }
+
+    /// DEPS-3: Verify refuses a mainnet record whose dependencies are not the canonical
+    /// contracts with their pinned code. (A Sepolia deployment's record, relabelled chain 1.)
+    function test_DEPS3_VerifyRefusesNonCanonicalDependenciesOnMainnet() public {
+        DelegationManagementMock delegation = _sepolia();
+        MockVrfCoordinator fake = new MockVrfCoordinator();
+        _withVrf(address(fake));
+        vm.recordLogs();
+        deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        string memory record = _tamper(deployer.lastRecord(), '"chainId":11155111', '"chainId":1');
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        vm.warp(block.timestamp + 5 days);
+        verifier.verify(deployer.lastRecord());
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalOnMainnet.selector, "VRF_COORDINATOR", address(fake)
+            )
+        );
+        verifier.verify(record);
+        // The canonical address, but the recorded code hash is not the pinned one.
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        string memory moved = _tamper(record, vm.toString(address(fake)), vm.toString(canonical));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector,
+                "params.vrfCoordinatorCodeHash",
+                canonical,
+                address(fake).codehash
+            )
+        );
+        verifier.verify(moved);
+        // Permit2 and the delegation contract, on a record without the module.
+        string memory noVrf = _tamper(
+            _tamper(record, '"entropy":"vrf"', '"entropy":"none"'),
+            vm.toString(address(fake)),
+            vm.toString(address(0))
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalOnMainnet.selector, "DELEGATION_CONTRACT", address(delegation)
+            )
+        );
+        verifier.verify(noVrf);
+        string memory otherPermit2 =
+            _tamper(noVrf, vm.toString(DeployV1.CANONICAL_PERMIT2), vm.toString(address(fake)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.NonCanonicalOnMainnet.selector, "PERMIT2", address(fake))
+        );
+        verifier.verify(otherPermit2);
+        // The canonical delegation address with other code.
+        address canonicalDelegation = DeployGuards.CANONICAL_DELEGATION;
+        vm.etch(canonicalDelegation, address(delegation).code);
+        string memory mockAtCanonical =
+            _tamper(noVrf, vm.toString(address(delegation)), vm.toString(canonicalDelegation));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector,
+                "DELEGATION_CONTRACT",
+                canonicalDelegation,
+                address(delegation).codehash
+            )
+        );
+        verifier.verify(mockAtCanonical);
+        // Permit2 without code.
+        vm.etch(DeployV1.CANONICAL_PERMIT2, "");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector, "PERMIT2", DeployV1.CANONICAL_PERMIT2, bytes32(0)
+            )
+        );
+        verifier.verify(noVrf);
+    }
+
+    // ------------------------------------------------------------------ DEPS-4: the subscription
+
+    function _vrfRecord(MockVrfSubscriptions coordinator)
+        internal
+        returns (string memory record, DeployV1.Deployment memory d)
+    {
+        _sepolia();
+        _withVrf(address(coordinator));
+        vm.recordLogs();
+        d = deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        vm.warp(block.timestamp + 5 days);
+    }
+
+    function _one(address a) internal pure returns (address[] memory list) {
+        list = new address[](1);
+        list[0] = a;
+    }
+
+    /// DEPS-4: off anvil, Verify requires the module to be the subscription's only consumer.
+    function test_DEPS4_VerifyChecksTheSubscriptionConsumers() public {
+        MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
+        (string memory record, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
+        address module = address(d.entropyModule);
+        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 0));
+        verifier.verify(record);
+        address[] memory two = new address[](2);
+        two[0] = module;
+        two[1] = makeAddr("anotherConsumer");
+        coordinator.setSubscription(address(this), two);
+        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 2));
+        verifier.verify(record);
+        coordinator.setSubscription(address(this), _one(makeAddr("notTheModule")));
+        vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionConsumers.selector, 7, 1));
+        verifier.verify(record);
+        // Off mainnet any owner is accepted (Sepolia r2's is the operator).
+        coordinator.setSubscription(address(this), _one(module));
+        verifier.verify(record);
+        // A coordinator that does not know the subscription fails the run (L5).
+        coordinator.setUnknown(true);
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+        );
+        verifier.verify(record);
+    }
+
+    /// DEPS-4: on mainnet the subscription owner must be the hot admin Safe (ADMIN and
+    /// PARAMETER_SETTER), and a coordinator that cannot report it fails closed.
+    function test_DEPS4_OnMainnetTheSubscriptionOwnerIsTheHotAdminSafe() public {
+        MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
+        (, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
+        GovernanceConfig.Config memory cfg = DeployV1.config(d, _filled());
+        address[] memory consumers = _one(address(d.entropyModule));
+        address[2] memory wrong = [address(this), _account("02")]; // the operator, the cold admin
+        for (uint256 i; i < 2; ++i) {
+            coordinator.setSubscription(wrong[i], consumers);
+            verifier.checkSubscriptionExternal(d, cfg, false);
+            vm.expectRevert(abi.encodeWithSelector(Verify.SubscriptionOwner.selector, wrong[i]));
+            verifier.checkSubscriptionExternal(d, cfg, true);
+        }
+        coordinator.setSubscription(_account("01"), consumers);
+        verifier.checkSubscriptionExternal(d, cfg, true);
+        // A coordinator without `getSubscription`: skipped off mainnet, refused on mainnet.
+        MockVrfCoordinator plain = new MockVrfCoordinator();
+        vm.etch(address(coordinator), address(plain).code);
+        verifier.checkSubscriptionExternal(d, cfg, false);
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+        );
+        verifier.checkSubscriptionExternal(d, cfg, true);
+    }
+
+    /// DEPS-3 (L4): on mainnet the live coordinator (the module's `coordinator()`) and the
+    /// canonical address's code are checked as well as the recorded parameters.
+    function test_DEPS3_VerifyChecksTheLiveCoordinatorAndItsCode() public {
+        // A deployment whose module points at a fake coordinator, its record moved to the
+        // canonical address and pinned hash: the live coordinator is still the fake.
+        _sepolia();
+        MockVrfCoordinator fake = new MockVrfCoordinator();
+        _withVrf(address(fake));
+        vm.recordLogs();
+        deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        bytes32 pin = DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH;
+        string memory record = _tamper(
+            _tamper(
+                _tamper(deployer.lastRecord(), '"chainId":11155111', '"chainId":1'),
+                vm.toString(address(fake)),
+                vm.toString(canonical)
+            ),
+            vm.toString(address(fake).codehash),
+            vm.toString(pin)
+        );
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalOnMainnet.selector, "EntropyModule.coordinator", address(fake)
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// DEPS-3 (L4): a module on the canonical address whose code is not the pinned code.
+    function test_DEPS3_VerifyChecksTheCanonicalCoordinatorsCode() public {
+        _sepolia();
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        vm.etch(canonical, address(new MockVrfCoordinator()).code);
+        _withVrf(canonical);
+        vm.recordLogs();
+        deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        string memory record = _tamper(deployer.lastRecord(), '"chainId":11155111', '"chainId":1');
+        vm.chainId(1);
+        // The recorded hash is the mock's.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector,
+                "params.vrfCoordinatorCodeHash",
+                canonical,
+                canonical.codehash
+            )
+        );
+        verifier.verify(record);
+        // With the pinned hash recorded, the code on chain still differs.
+        string memory pinned = _tamper(
+            record,
+            vm.toString(canonical.codehash),
+            vm.toString(DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector, "VRF_COORDINATOR", canonical, canonical.codehash
+            )
+        );
+        verifier.verify(pinned);
+    }
+
     function test_EnvironmentNumbersAreCheckedCasts() public {
         _sepolia();
         deployer.setEnv("AUCTION_DURATION", vm.toString(uint256(type(uint32).max) + 1));
@@ -700,6 +1180,56 @@ contract DeployScriptTest is Test {
         vm.expectRevert(abi.encodeWithSelector(Deploy.ConfiguratorAddressTaken.selector, predicted));
         deployer.prepare();
         deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/v1-retry")));
+        deployer.prepare();
+    }
+
+    // ------------------------------------------------------------------ deployer and namespace
+
+    /// Improvement (DEPS): an EIP-7702 delegated deployer is refused. It alone may call
+    /// `configure` until genesis completes, so wallet code driving it must not be in play.
+    function test_ADelegatedDeployerIsRefused() public {
+        _sepolia();
+        address operator = makeAddr("delegatedOperator");
+        vm.etch(operator, abi.encodePacked(hex"ef0100", makeAddr("walletCode")));
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Deploy.DelegatedDeployer.selector, operator));
+        deployer.prepare();
+        // On anvil too.
+        vm.chainId(DeployV1.LOCAL_CHAIN_ID);
+        deployer.setRpcChainId(DeployV1.LOCAL_CHAIN_ID);
+        vm.prank(operator);
+        vm.expectRevert(abi.encodeWithSelector(Deploy.DelegatedDeployer.selector, operator));
+        deployer.prepare();
+    }
+
+    /// Improvement (DEPS): off anvil the namespace must be explicit, so no address can be taken
+    /// in advance under the default one.
+    function test_OffAnvilTheNamespaceIsExplicit() public {
+        _sepolia();
+        deployer.setEnv("DEPLOY_NAMESPACE", "");
+        vm.expectRevert(
+            abi.encodeWithSelector(Deploy.MissingParameter.selector, "DEPLOY_NAMESPACE")
+        );
+        deployer.prepare();
+    }
+
+    /// Improvement (DEPS): a contract whose address depends only on the namespace (no
+    /// constructor arguments) can be created by anyone who knows the namespace. A taken address
+    /// stops the run before anything is broadcast, with its name.
+    function test_ATakenAddressIsRefusedBeforeTheBroadcast() public {
+        _sepolia();
+        DeployV1.Params memory p = deployer.params(false);
+        bytes32 s = DeployV1.salt(p, "ContentStore");
+        vm.prank(makeAddr("squatter"));
+        (bool ok,) =
+            DeployGuards.CREATE2_FACTORY.call(abi.encodePacked(s, type(ContentStore).creationCode));
+        assertTrue(ok);
+        address taken = vm.computeCreate2Address(
+            s, keccak256(type(ContentStore).creationCode), DeployGuards.CREATE2_FACTORY
+        );
+        vm.expectRevert(abi.encodeWithSelector(Deploy.AddressTaken.selector, "ContentStore", taken));
+        deployer.prepare();
+        deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/fresh")));
         deployer.prepare();
     }
 
@@ -951,6 +1481,280 @@ contract DeployScriptTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(Verify.UnexpectedGrant.selector, Roles.PLATFORM, stranger)
         );
+        verifier.verify(record);
+    }
+
+    // ------------------------------------------------------------------ GOV-3: holders at readback
+
+    /// @dev An off-anvil deployment, recorded, with Verify's inputs set, 5 days later.
+    function _offAnvilRecord()
+        internal
+        returns (string memory record, DeployV1.Deployment memory d)
+    {
+        _sepolia();
+        vm.recordLogs();
+        d = deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        vm.warp(block.timestamp + 5 days);
+        verifier.verify(record);
+    }
+
+    /// GOV-3: Verify repeats the deploy's holder guards against the chain. After genesis the
+    /// cold admin Safe takes one of the hot admin's signers (an ordinary owner swap), which the
+    /// deploy refuses; the readback now refuses it too.
+    function test_GOV3_VerifyRepeatsTheHolderGuards() public {
+        (string memory record,) = _offAnvilRecord();
+        bytes memory shared = address(new MockSharedSignerSafe()).code;
+        vm.etch(_account("01"), shared);
+        vm.etch(_account("02"), shared);
+        address signer = MockSharedSignerSafe(_account("01")).SHARED();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SharedSigner.selector, _account("01"), _account("02"), signer
+            )
+        );
+        verifier.verify(record);
+        // A guardian Safe that lost its code (or was never a Safe) is refused as well.
+        vm.etch(_account("01"), address(new MockSafe()).code);
+        vm.etch(_account("02"), address(new MockSafe()).code);
+        vm.etch(_account("13"), "");
+        vm.expectRevert(
+            abi.encodeWithSelector(DeployGuards.HolderNotASafe.selector, "GUARDIAN", _account("13"))
+        );
+        verifier.verify(record);
+    }
+
+    /// GOV-3: a genesis file naming a contract of the deployment as a holder fails readback.
+    function test_GOV3_VerifyRefusesADeploymentContractAsAHolder() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        string memory platform = vm.toLowercase(vm.toString(_account("51")));
+        string memory edited = vm.replace(_filled(), platform, vm.toString(address(d.stream)));
+        assertTrue(keccak256(bytes(edited)) != keccak256(bytes(_filled())), "edited");
+        verifier.setFile(GENESIS, bytes(edited));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsADeploymentContract.selector, Roles.PLATFORM, address(d.stream)
+            )
+        );
+        verifier.verify(record);
+    }
+
+    // ------------------------------------------------------------------ re-verify after a change
+
+    /// @dev The cold admin (…b002) replaces the hot admin (…b001) with …b003, by the runbook:
+    ///      the revocations first, the grants once they have executed. Records the logs.
+    function _recoverHotAdmin(DeployV1.Deployment memory d) internal returns (address newHot) {
+        address hot = _account("01");
+        address cold = _account("02");
+        newHot = _account("03");
+        _etchSafe(newHot, address(new MockSharedSignerSafe()).code);
+        uint64[5] memory roles = [
+            Roles.ADMIN,
+            Roles.UNPAUSER,
+            Roles.PARAMETER_SETTER,
+            Roles.FUNDS_SETTER,
+            Roles.SUCCESSOR_SETTER
+        ];
+        vm.recordLogs();
+        vm.startPrank(cold);
+        for (uint256 i; i < 5; ++i) {
+            d.manager
+                .schedule(
+                    address(d.manager),
+                    abi.encodeCall(IAccessManager.revokeRole, (roles[i], hot)),
+                    0
+                );
+        }
+        vm.warp(block.timestamp + 30 days);
+        for (uint256 i; i < 5; ++i) {
+            d.manager
+                .execute(
+                    address(d.manager), abi.encodeCall(IAccessManager.revokeRole, (roles[i], hot))
+                );
+            d.manager
+                .schedule(
+                    address(d.manager),
+                    abi.encodeCall(
+                        IAccessManager.grantRole, (roles[i], newHot, Roles.executionDelay(roles[i]))
+                    ),
+                    0
+                );
+        }
+        vm.warp(block.timestamp + 30 days);
+        for (uint256 i; i < 5; ++i) {
+            d.manager
+                .execute(
+                    address(d.manager),
+                    abi.encodeCall(
+                        IAccessManager.grantRole, (roles[i], newHot, Roles.executionDelay(roles[i]))
+                    )
+                );
+        }
+        vm.stopPrank();
+        verifier.addLogs(vm.getRecordedLogs());
+        vm.warp(block.timestamp + 30 days); // every grant delay has passed
+    }
+
+    /// @dev The genesis copy with the hot admin's entries moved to …b003.
+    function _epochFile() internal view returns (string memory updated) {
+        updated = vm.replace(
+            _filled(),
+            string.concat(
+                '"account": "', FILLED_PREFIX, "01", '",\n      "label": "Hot admin Safe"'
+            ),
+            string.concat(
+                    '"account": "', FILLED_PREFIX, "03", '",\n      "label": "Hot admin Safe"'
+                )
+        );
+        assertTrue(keccak256(bytes(updated)) != keccak256(bytes(_filled())), "edited");
+    }
+
+    /// Improvement (runbook): after an admin recovery, Verify passes in epoch mode against a
+    /// copy of the genesis file with the new holders, while the genesis event checks keep the
+    /// recorded genesis file.
+    function test_ReverifyAfterAdminRecoveryPassesInEpochMode() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address newHot = _recoverHotAdmin(d);
+        // Against the genesis file alone the readback fails: the old holder is gone.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, _account("01")
+            )
+        );
+        verifier.verify(record);
+        // Epoch mode.
+        verifier.setFile("config/epoch-1.json", bytes(_epochFile()));
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        (,, uint256 holders) = verifier.verify(record);
+        assertEq(holders, 17);
+        (bool admin,) = d.manager.hasRole(Roles.ADMIN, newHot);
+        assertTrue(admin);
+    }
+
+    /// Epoch mode with the epoch's manifest: it must be recorded on the manager's statement
+    /// chain and name the epoch file by its SHA-256.
+    function test_EpochModeBindsTheEpochManifest() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address newHot = _recoverHotAdmin(d);
+        bytes memory epoch = bytes(_epochFile());
+        bytes memory manifestFile = abi.encodePacked(
+            '{"schema":"6529-works/governance-manifest/1","epoch":1,"governanceConfig":{"sha256":"',
+            vm.toString(sha256(epoch)),
+            '"}}'
+        );
+        verifier.setFile("config/epoch-1.json", epoch);
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        verifier.setFile("config/manifest-epoch1.json", manifestFile);
+        verifier.setEnv("GOVERNANCE_MANIFEST_PATH", "config/manifest-epoch1.json");
+        // Not recorded yet.
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.ManifestNotRecorded.selector, sha256(manifestFile))
+        );
+        verifier.verify(record);
+        // The new hot admin publishes it (SUCCESSOR_SETTER, 30 days).
+        bytes memory publish = abi.encodeCall(
+            d.statementLog.appendGovernanceManifest,
+            (DeployV1.manifestStatement(d, DeployV1.Manifest(sha256(manifestFile), "ar://epoch-1")))
+        );
+        vm.recordLogs();
+        vm.prank(newHot);
+        d.manager.schedule(address(d.statementLog), publish, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(newHot);
+        d.manager.execute(address(d.statementLog), publish);
+        verifier.addLogs(vm.getRecordedLogs());
+        verifier.verify(record);
+        // A configuration file other than the one the manifest names is refused, even one
+        // with the same holders.
+        bytes memory other = abi.encodePacked(epoch, " ");
+        verifier.setFile("config/epoch-1.json", other);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.ManifestConfigMismatch.selector, sha256(epoch), sha256(other)
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// Epoch mode: a holder the current file drops must be gone from the chain.
+    function test_EpochModeRequiresDroppedHoldersToBeRevoked() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address hot = _account("01");
+        address oldCurator = _account("61");
+        address newCurator = makeAddr("newCurator");
+        bytes memory grant =
+            abi.encodeCall(IAccessManager.grantRole, (Roles.CURATOR, newCurator, 0));
+        vm.recordLogs();
+        vm.prank(hot);
+        d.manager.schedule(address(d.manager), grant, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hot);
+        d.manager.execute(address(d.manager), grant);
+        verifier.addLogs(vm.getRecordedLogs());
+        vm.warp(block.timestamp + Roles.grantDelay(Roles.CURATOR));
+        string memory epoch =
+            _tamper(_filled(), vm.toLowercase(vm.toString(oldCurator)), vm.toString(newCurator));
+        verifier.setFile("config/epoch-1.json", bytes(epoch));
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.HolderNotRemoved.selector, Roles.CURATOR, oldCurator)
+        );
+        verifier.verify(record);
+        // Once the old key is revoked, the epoch verifies.
+        bytes memory revoke = abi.encodeCall(IAccessManager.revokeRole, (Roles.CURATOR, oldCurator));
+        vm.prank(hot);
+        d.manager.schedule(address(d.manager), revoke, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hot);
+        d.manager.execute(address(d.manager), revoke);
+        verifier.verify(record);
+    }
+
+    /// Improvement (runbook): Verify reports operations still pending on the manager.
+    function test_VerifyReportsPendingOperations() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        address hot = address(0xB001);
+        bytes memory data =
+            abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, address(0xB011)));
+        vm.recordLogs();
+        vm.prank(hot);
+        (bytes32 id,) = d.manager.schedule(address(d.manager), data, 0);
+        verifier.addLogs(vm.getRecordedLogs());
+        uint48 readyAt = d.manager.getSchedule(id);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.PendingOperation.selector,
+                id,
+                hot,
+                address(d.manager),
+                IAccessManager.revokeRole.selector,
+                readyAt
+            )
+        );
+        verifier.verify(record);
+        // Reviewed and allowed: it is logged instead.
+        verifier.setEnv("ALLOW_PENDING_OPERATIONS", "1");
+        verifier.verify(record);
+        verifier.setEnv("ALLOW_PENDING_OPERATIONS", "");
+        // A cancelled operation is no longer pending.
+        vm.prank(address(0xB012));
+        d.manager.cancel(hot, address(d.manager), data);
+        verifier.verify(record);
+    }
+
+    /// An operation that expired without executing is not pending either.
+    function test_AnExpiredOperationIsNotPending() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        bytes memory data = abi.encodeCall(IAccessManager.setGrantDelay, (Roles.KEEPER, 2 days));
+        vm.recordLogs();
+        vm.prank(address(0xB001));
+        (bytes32 id,) = d.manager.schedule(address(d.manager), data, 0);
+        verifier.addLogs(vm.getRecordedLogs());
+        vm.warp(d.manager.getSchedule(id) + d.manager.expiration());
+        assertEq(d.manager.getSchedule(id), 0, "expired");
         verifier.verify(record);
     }
 
