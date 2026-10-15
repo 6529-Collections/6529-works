@@ -114,8 +114,9 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     /// @notice A required address is zero.
     error InvalidAddress();
     /// @notice The token's terms are unusable: no seller, no fee recipient for a non-zero fee
-    ///         share, a fee share above the denominator, federated code that differs from its
-    ///         registry entry, or a mint that returned another token ID.
+    ///         share, a fee share above the denominator, the revenue escrow as seller or fee
+    ///         recipient, federated code that differs from its registry entry, or a mint that
+    ///         returned another token ID.
     error InvalidSaleTerms(address token, uint256 id);
     /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
     error PricedDefaultCurrency(address token, uint256 id);
@@ -287,9 +288,12 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             t.feeShare = e.feeShare;
             t.feeRecipient = economicsResolver.networkFeeRecipient(product);
         }
+        // CALLS-1: the escrow refuses to be paid as a wallet, so a sale paying it could never
+        // sell; it is refused at open.
         if (
             t.seller == address(0) || (t.feeShare != 0 && t.feeRecipient == address(0))
-                || t.feeShare > Splits.DENOMINATOR
+                || t.feeShare > Splits.DENOMINATOR || t.seller == address(escrow)
+                || t.feeRecipient == address(escrow)
         ) revert InvalidSaleTerms(token, id);
     }
 

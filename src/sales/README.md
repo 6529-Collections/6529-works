@@ -41,7 +41,10 @@ edition's format with `IEditions.formatOf`. The adapter reads the token's
   exactly the currency the token named unless it named `CURRENCY_DEFAULT`
   (`CurrencyMismatch`);
 - a seller is set, a fee recipient is set unless the fee share is zero, and the
-  fee share is at most 100,000.
+  fee share is at most 100,000;
+- neither the seller nor the fee recipient is the revenue escrow, which refuses
+  to be paid as a wallet (CALLS-1). The auction refuses the same terms at
+  `start`, while nothing is in custody.
 
 The terms are then locked as `LockedTerms`:
 - `CURRENCY_DEFAULT` is resolved once, through `resolveCurrency`. A listed

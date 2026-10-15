@@ -186,6 +186,38 @@ contract EnglishAuctionTest is AuctionBase {
         }
     }
 
+    /// @dev CALLS-1: a work paying the revenue escrow as its seller or fee recipient is refused at
+    ///      start and at start-with-bid, while nothing is in custody, because the escrow refuses
+    ///      to be paid as a wallet and the work could never settle.
+    function test_CALLS1_StartRefusesTheEscrowAsSellerOrFeeRecipient() public {
+        for (uint256 i; i < 2; ++i) {
+            PrimaryTerms memory t = _terms(ETH);
+            if (i == 0) t.feeRecipient = address(escrow);
+            else t.seller = address(escrow);
+            stream.setTerms(t);
+            uint256 next = stream.nextId() + 1;
+            vm.expectRevert(
+                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+            );
+            _start();
+            vm.deal(alice, 1 ether);
+            vm.prank(alice);
+            vm.expectRevert(
+                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+            );
+            auction.startWithBid{ value: 1 ether }(
+                address(stream), "", address(0), _direct(alice, 1 ether)
+            );
+        }
+        // Valid wallets start and settle as usual.
+        stream.setTerms(_terms(ETH));
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), alice);
+    }
+
     function test_Start_RevertsOnBadMintResult() public {
         stream.setMode(MockMintTarget.Mode.ZERO_ID);
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));

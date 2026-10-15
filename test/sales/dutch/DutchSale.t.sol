@@ -12,7 +12,13 @@ import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { LockedTerms, Payment, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    DutchParams,
+    LockedTerms,
+    Payment,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
@@ -97,6 +103,26 @@ contract DutchSaleTest is DutchBase {
         );
         _openNow(LINEAR);
         assertEq(dutch.openSaleOf(address(editions), LINEAR), saleId);
+    }
+
+    /// @dev CALLS-1: terms that pay the revenue escrow as seller or fee recipient are refused at
+    ///      open.
+    function test_CALLS1_OpenSaleRefusesTheEscrowAsSellerOrFeeRecipient() public {
+        for (uint256 i; i < 2; ++i) {
+            PrimaryTerms memory t = _terms(
+                SaleKind.DUTCH, CURRENCY_ETH, START, abi.encode(DutchParams(REST, DURATION, 0))
+            );
+            if (i == 0) t.feeRecipient = address(escrow);
+            else t.seller = address(escrow);
+            editions.setTerms(40 + i, t, SIZE);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 40 + i
+                )
+            );
+            _openNow(40 + i);
+        }
+        _openNow(LINEAR);
     }
 
     function test_OpenSale_RevertsOnInvalidCurve() public {

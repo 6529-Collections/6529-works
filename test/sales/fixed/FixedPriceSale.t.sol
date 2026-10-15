@@ -234,6 +234,27 @@ contract FixedPriceSaleTest is FixedPriceBase {
         }
     }
 
+    /// @dev CALLS-1: terms that pay the revenue escrow as seller or fee recipient are refused at
+    ///      open, since the escrow refuses to be paid as a wallet and no purchase could pay.
+    function test_CALLS1_OpenSaleRefusesTheEscrowAsSellerOrFeeRecipient() public {
+        for (uint256 i; i < 2; ++i) {
+            PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+            if (i == 0) t.feeRecipient = address(escrow);
+            else t.seller = address(escrow);
+            editions.setTerms(30 + i, t, SIZE);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 30 + i
+                )
+            );
+            _openPublic(30 + i, 0);
+        }
+        // Valid wallets open and sell as usual.
+        uint256 saleId = _openPublic(ETH_ED, 0);
+        _buyEth(alice, saleId, 0, alice, 1, PRICE);
+        assertEq(editions.balanceOf(alice, ETH_ED), 1);
+    }
+
     function test_OpenSale_RevertsOnInvalidPhases() public {
         IFixedPriceSale.Phase[] memory tooMany = new IFixedPriceSale.Phase[](17);
         IFixedPriceSale.Phase[] memory sixteen = new IFixedPriceSale.Phase[](16);

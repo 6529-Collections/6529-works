@@ -272,3 +272,7 @@
     token's sale, needs the artist (`ArtistApprovalRequired`): the creator opens it, or
     PLATFORM relays the creator's signed phase configuration (fixed price). `IEditions`
     gains `formatOf(editionId)`. The unreachable `PriceBelowPackage` error is removed.
+  - CALLS-1 (adapter side): the auction's `start` and the fixed-price and Dutch `openSale`
+    refuse terms whose seller or fee recipient is the revenue escrow (`InvalidTerms`,
+    `InvalidSaleTerms`), since the escrow refuses to be paid as a wallet and such a sale
+    could never pay out.

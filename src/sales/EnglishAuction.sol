@@ -167,7 +167,8 @@ contract EnglishAuction is
     error InvalidDependency(address dependency);
     /// @notice A configuration is outside the bounds above.
     error InvalidConfig();
-    /// @notice The token returned an unusable ID, terms or custody for the minted work.
+    /// @notice The token returned an unusable ID, terms (including the revenue escrow as seller
+    ///         or fee recipient) or custody for the minted work.
     error InvalidTerms(address token, uint256 tokenId);
     /// @notice The token contract cannot be listed (no code, delegated, or not ERC-721).
     error InvalidTarget(address token);
@@ -582,8 +583,11 @@ contract EnglishAuction is
             revert IMintTarget.SaleKindMismatch(SaleKind.ENGLISH_AUCTION, terms.saleKind);
         }
         Terms memory t = _lockTerms(token, tokenId, listed, terms.currency, c);
+        // CALLS-1: the escrow refuses to be paid as a wallet, so a work whose seller or fee
+        // recipient is the escrow could never settle; it is refused while nothing is at stake.
         if (
-            tokenId >> 32 != 0 || terms.seller == address(0)
+            tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == escrow
+                || terms.feeRecipient == escrow
                 || (terms.feeRecipient == address(0)
                     && (t.federated ? t.registryFee : terms.feeShare) != 0)
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
