@@ -54,7 +54,9 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - The guardian can disable a curation signer immediately and one way.
     Re-enabling is in the 30-day class.
   - At least two signers are provisioned at genesis.
-- **Allowlist prices below the package price need the artist's consent.**
+- **Allowlist prices other than the package price need the artist's consent.**
+  - Leaf prices below or above the package price, and any sale of an OPEN
+    edition, need the creator to open the sale or sign it (MARKET-6).
   - The signed phase configuration binds the resolved currency, the package
     price and a typed phase list.
 - **Statement subjects before mint.**

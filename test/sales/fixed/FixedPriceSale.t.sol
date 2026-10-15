@@ -370,7 +370,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         IFixedPriceSale.ArtistConsent memory consent =
             _consent(creatorKey, ETH_ED, phases, 1, deadline);
         uint256 saleId = _platformPriced(leaves, consent);
-        vm.prank(platform);
+        // An approved sale closes by its artist (MARKET-6), not by PLATFORM.
+        vm.prank(creator);
         fixedSale.closeSale(saleId);
         // Replaying the same approval for a new sale fails: the nonce is spent.
         vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
@@ -411,9 +412,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     // ------------------------------------------------------------------ closing
 
+    /// @dev The creator closes any sale of its edition; PLATFORM closes only a sale it opened
+    ///      without the artist's approval (MARKET-6).
     function test_CloseSale_ByCreatorOrPlatformStopsPurchases() public {
         uint256 first = _openPublic(ETH_ED, 0);
-        uint256 second = _openPublic(USD_ED, 0);
+        uint256 second = _open(platform, USD_ED, _one(_phase(0, 0, false, false)));
+        vm.prank(platform);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        fixedSale.closeSale(first);
         vm.expectEmit(address(fixedSale));
         emit IFixedPriceSale.SaleClosed(first);
         vm.prank(creator);

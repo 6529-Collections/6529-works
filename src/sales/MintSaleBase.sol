@@ -338,13 +338,14 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         return immediate && delay == 0;
     }
 
-    /// @dev Closes an open sale if `anyone` may, or the caller is PLATFORM or the token's
-    ///      current creator.
+    /// @dev Closes an open sale if `anyone` may, or the caller is the token's current creator,
+    ///      or PLATFORM for a sale it opened without the artist's approval (MARKET-6: a sale the
+    ///      artist configured closes by the artist, or stops by a guardian pause).
     function _close(uint256 saleId, bool anyone) internal returns (bool authorized) {
         Listing storage l = _listing(saleId);
         if (l.closed) revert SaleAlreadyClosed(saleId);
         if (
-            !anyone && !_isPlatform()
+            !anyone && (l.approved || !_isPlatform())
                 && msg.sender != IMintTarget(l.token).primaryTerms(l.id, "").creator
         ) return false;
         l.closed = true;

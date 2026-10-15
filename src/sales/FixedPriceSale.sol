@@ -27,13 +27,15 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      High finding). Anyone may still pay for an allowlisted recipient; the tokens go to that
 ///      recipient and count against its cap. Caps, public phases included, count per
 ///      `(token, id, phase index, keyed wallet)` across sales, so reopening a token with the
-///      same tree never resets them; a fresh drop uses new phase indices. A leaf price below the
-///      package price needs the artist's approval: the creator opens the sale, or signs the
-///      typed `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase),
-///      with a single-use, revocable nonce. Anyone may close a sale whose phases have all
-///      ended. Governance: map `openSale` and `closeSale` to PLATFORM (the creator needs no
-///      role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to PAUSER
-///      and `unpause` to UNPAUSER.
+///      same tree never resets them; a fresh drop uses new phase indices. Any leaf price other
+///      than the package price, and any sale of an OPEN edition, needs the artist's approval
+///      (MARKET-6): the creator opens the sale, or signs the typed
+///      `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase), with a
+///      single-use, revocable nonce. Anyone may close a sale whose phases have all ended;
+///      PLATFORM closes only a sale it opened without that approval. Governance: map `openSale`
+///      and `closeSale` to PLATFORM (the creator needs no role), `setTarget` and
+///      `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to PAUSER and `unpause` to
+///      UNPAUSER.
 contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @notice The EIP-712 struct hashed for {phaseConfigurationDigest} (phases as an array).
     struct Configuration {

@@ -170,7 +170,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         fixedSale.purchase{ value: A_PRICE }(
             _p(first, 0, alice, 1, 1, A_PRICE), _proof(leaves, 0), _eth(alice, A_PRICE)
         );
-        vm.prank(platform);
+        vm.prank(creator);
         fixedSale.closeSale(first);
         vm.prank(platform);
         uint256 second = fixedSale.openSale(address(editions), ETH_ED, phases, c2);
