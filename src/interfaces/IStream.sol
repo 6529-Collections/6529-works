@@ -21,9 +21,11 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      Start-gas budget: 350K Prague gas, and at most 6 new storage slots (7 with a bid), per
 ///      steady-state start transaction (ADR 0003, ADR 0004; the first start in an empty
 ///      collection or custody may cost more, and its measured value is recorded). A
-///      mint stores per token only the item hash, the seller, the lead artist ID and one packed
-///      word of serial, collection, kind, seed policy, royalty rate, fee share, a small fee
-///      recipient index and flags. The royalty receiver is derived, not stored: the split
+///      mint stores per token two words: the seller with the serial, collection, kind, seed
+///      policy, flags and a terms ID; the item hash. The terms (lead artist ID, royalty rate, fee
+///      share, a small fee-recipient index and the minting adapter's index) are one word shared
+///      by every work under the same terms, so only an artist's first start under the current
+///      economics writes it. The royalty receiver is derived, not stored: the split
 ///      factory's `walletFor` over `(seller, feeRecipient, feeShare)`. ARTIST seeds are stored by
 ///      `IWorkRecords` when the record opens. Everything else is in `WorkMinted` and in the
 ///      published package.

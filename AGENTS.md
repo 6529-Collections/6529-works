@@ -24,7 +24,8 @@ Instructions for automated coding agents working in this repository.
 - CI under 15 minutes.
 - Starting an auction in ETH, Stream's launch currency, at steady state costs at most 350K
   Prague gas and writes at most 6 new storage slots, 7 with a bid
-  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)). An ERC-20 start paid by
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)); the artist's later works,
+  which reuse Stream's shared terms word, write 5 and 6. An ERC-20 start paid by
   Permit2 is a supported, non-default path: it has a regression ceiling and exact counts, not
   a budget. Admitting the first ERC-20, or approving a Stream package that names one, must be
   accompanied by a re-measurement and publication of its start cost, in Prague gas and on the

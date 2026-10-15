@@ -101,8 +101,8 @@ budget and the 6 and 7 slot maxima apply to starts in ETH. ADR 0001 §5 says
 Stream launches with ETH and makes ERC-20 payment a governed configuration. It
 also lets a package's sale terms name any currency on the asset allowlist.
 - An ERC-20 start paid by Permit2 is a supported path, not the default. It has
-  a Prague regression ceiling (388,000) and exact counts (7 new slots, no new
-  account), but no budget.
+  a Prague regression ceiling (388,000; 367,000 since the state-growth diet) and
+  exact counts (7 new slots, 6 since the diet, no new account), but no budget.
 - The allowlist is global, so ERC-20 Stream starts can happen without any
   change to the default currency.
 - Admitting the first ERC-20 to the allowlist, or curation approving a Stream
@@ -121,16 +121,17 @@ no ceiling, or not run on Sepolia.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 291,808 | 350,000 | **6** | 0 | 846,963 |
-| `startWithBid`, steady state | 333,883 | 350,000 | **7** | 0 | 982,312 |
-| `start`, two-party work | 300,037 | 350,000 | **6** | 0 | — |
-| `startWithBid`, two-party work | 342,121 | 350,000 | **7** | 0 | — |
-| `start`, VRF work | 299,486 | 350,000 | **6** | 0 | 852,868 |
-| `start`, edition master | 292,448 | 350,000 | **6** | 0 | 847,598 |
-| `startWithBid`, ERC-20 by relayed Permit2 | 378,977 | 388,000 (regression) | 7 | 0 | — |
-| `start`, first work in a new collection | 291,802 | 400,000 | 6 | 0 | 846,977 |
-| `start`, first work ever (one-time) | 440,880 | 452,000 (regression) | 13 | 0 | 1,604,862 |
-| `startWithBid`, first bid under new sale terms (one-time) | 404,032 | 413,000 (regression) | 10 | 0 | — |
+| `start`, steady state | 272,484 | 350,000 | **5** | 0 | 846,963 |
+| `startWithBid`, steady state | 314,559 | 350,000 | **6** | 0 | 982,312 |
+| `start`, two-party work | 280,740 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 322,824 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 280,198 | 350,000 | **5** | 0 | 852,868 |
+| `start`, edition master | 273,147 | 350,000 | **5** | 0 | 847,598 |
+| `start`, an artist's first work | 292,630 | 350,000 | **6** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 359,693 | 367,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 272,522 | 400,000 | 5 | 0 | 846,977 |
+| `start`, first work ever (one-time) | 441,701 | 452,000 (regression) | 13 | 0 | 1,604,862 |
+| `startWithBid`, first bid under new sale terms (one-time) | 384,708 | 393,000 (regression) | 9 | 0 | — |
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 168,063 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
@@ -143,6 +144,7 @@ no ceiling, or not run on Sepolia.
 | `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 370,142 |
 | `openSale`, Dutch | 260,967 | 267,000 (regression) | 7 | 0 | — |
 | `purchase`, Dutch, the first copy, new holder | 124,486 | 127,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 189,877 | 194,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
@@ -206,9 +208,33 @@ no ceiling, or not run on Sepolia.
     a Dutch edition 9 instead of 13 with a stepped curve, and an edition's first
     copy no longer opens the minted counter's word: the first `purchase` writes
     only the holder's balance, 1 slot instead of 2, the same as a later copy.
-- **The two-party `startWithBid` is the tightest:** 341,251, about 8.7K under
+  - QUALITY-6, Stream's token record from four words to three: a token keeps
+    two words, the seller with the serial, collection, flags and a terms ID, and
+    the item hash. The terms (the lead artist ID, royalty rate, fee share,
+    fee-recipient index and minting adapter's index) are one word that every
+    work under the same terms shares. A start under existing terms writes 5 new
+    slots, 6 with a bid, about 19.4K less Prague gas.
+    - The quality review's design looked the terms up through a key-to-ID map:
+      one slot more on each payee list's first start. That start is steady state
+      today, since the artist's acceptance pre-writes the move-nonce word, so it
+      would have raised the maximum. The terms word sits instead at the position
+      its hash names (23 bits), or, when other terms already hold that position,
+      in an overflow range keyed by the full hash. Nothing loops.
+    - An artist's first start under the current economics writes the terms word
+      in place of the old per-token word: 6 slots, as every start wrote before.
+      The 6 and 7 maxima therefore stay, and hold for that start; the exact
+      counts of the other start rows are 5 and 6. Terms are per lead artist, so
+      a new collaboration of an artist who has started before is not a first.
+    - A collision with other terms (about one in 8.4 million per pair) costs that
+      first start one slot more, once.
+    - A re-rate (governed, with every party's consent) moves the token to the
+      terms with its new rate, which writes a word if no work has them yet; it
+      overwrote the token's own word before.
+    - Net: one slot less on every start except an artist's first under the
+      current economics, which is unchanged.
+- **The two-party `startWithBid` is the tightest:** 322,824, about 27.2K under
   350K.
-- **An ERC-20 `startWithBid` paid by Permit2 costs 377,833**, about 45K more
+- **An ERC-20 `startWithBid` paid by Permit2 costs 359,693**, about 45K more
   than in ETH, because of the Permit2 transfer path. That path adds:
   - the signed permit and its witness in the calldata;
   - Permit2's signature check and nonce update;
@@ -221,12 +247,13 @@ no ceiling, or not run on Sepolia.
 - **A rule of thumb on Sepolia's parameters:** a transaction's Glamsterdam gas
   is about its Prague gas, plus about 89,000 per new slot, plus about 184,000
   per new account. It is not a gate.
-- **Where a steady-state start's 6 slots go:**
-  - Stream's three-word token record and the ERC-721 owner;
+- **Where a steady-state start's 5 slots go:**
+  - Stream's two-word token record and the ERC-721 owner;
   - the package registry's consumed-content record;
   - the auction's sale.
 
-  `startWithBid` adds the bid.
+  `startWithBid` adds the bid, and an artist's first start under the current
+  economics adds Stream's shared terms word.
 
 ### CI against the Sepolia replays
 
@@ -371,10 +398,11 @@ mainnet.
   candidate.
   - Stream's per-token words could go from four to three, by storing the
     economics fields as a deduplicated terms ID, as the auction already does.
-    A steady-state start would then cost about 760K on Sepolia.
+    A steady-state start would then cost about 760K on Sepolia. Done by the
+    state-growth diet (QUALITY-6, above).
   - The Editions record and the fixed-price listing with its phase (8 new
     slots each) could be halved, saving about 350K each on `createEdition` and
-    `openSale`.
+    `openSale`. The diet took each down by two slots (QUALITY-4 and -5).
   - The exact counts make any such saving visible and keep it.
 - **C: a redesign for minimal state.** This is rejected. Any design keeps the
   essential records: the owner, the consumed content and the sale. A redesign

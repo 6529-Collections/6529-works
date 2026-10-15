@@ -55,8 +55,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant ITEMS = 8;
     /// @dev ADR 0004 maxima for a steady-state start's new slots, without and with a bid: the
-    ///      token record and its owner, the consumed-content record and the sale; the bid.
-    ///      Raising one needs an ADR.
+    ///      token's two words and its owner, the consumed-content record and the sale; the bid;
+    ///      and Stream's shared terms word when the work is the first under its terms (an
+    ///      artist's first start, QUALITY-6). Raising one needs an ADR.
     uint256 internal constant START_MAX_SLOTS = 6;
     uint256 internal constant START_WITH_BID_MAX_SLOTS = 7;
     /// @dev Test ceilings in Prague gas, kept by ADR 0004.
@@ -68,8 +69,8 @@ contract IntegrationGasReport is IntegrationBase {
     ///      plus about 2%, rounded up to the thousand. They are not budgets. A change that
     ///      crosses one says why in its pull request and moves it.
     uint256 internal constant FIRST_START_CEILING = 452_000;
-    uint256 internal constant NEW_TERMS_CEILING = 413_000;
-    uint256 internal constant PERMIT2_START_CEILING = 388_000;
+    uint256 internal constant NEW_TERMS_CEILING = 393_000;
+    uint256 internal constant PERMIT2_START_CEILING = 367_000;
     uint256 internal constant BID_CEILING = 75_000;
     uint256 internal constant CONSUME_CEILING = 99_000;
     uint256 internal constant CREATE_EDITION_CEILING = 274_000;
@@ -81,6 +82,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PURCHASE_FIRST_CEILING = 127_000;
     uint256 internal constant PURCHASE_LATER_CEILING = 127_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
+    uint256 internal constant RERATE_CEILING = 194_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
@@ -222,9 +224,13 @@ contract IntegrationGasReport is IntegrationBase {
         ISplitWallet.Payee[] memory duo = new ISplitWallet.Payee[](2);
         duo[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
         duo[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
-        address[20] memory extra = [
+        ISplitWallet.Payee[] memory soloC = new ISplitWallet.Payee[](1);
+        soloC[0] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 100_000);
+        address[22] memory extra = [
             artistA,
             artistB,
+            makeAddr("gasArtistC"),
+            economics.newWorkTerms(PRODUCT_STREAM, soloC).seller,
             platform,
             starter,
             bidder,
@@ -300,7 +306,7 @@ contract IntegrationGasReport is IntegrationBase {
         _steadyState();
         r = _row("start, steady state", starter, address(auction), _startData(2), 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -309,7 +315,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data = _startWithBidData(root, _package(root), 2);
         r = _row("startWithBid, steady state", bidder, address(auction), data, 1 ether);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 7, 0);
+        _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
@@ -337,7 +343,7 @@ contract IntegrationGasReport is IntegrationBase {
             abi.encodeCall(auction.start, (address(stream), _mintData(twoRoot, works, 1)));
         r = _row("start, steady state, two-party work", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -353,7 +359,7 @@ contract IntegrationGasReport is IntegrationBase {
             "startWithBid, steady state, two-party work", bidder, address(auction), data, 1 ether
         );
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 7, 0);
+        _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
@@ -369,7 +375,7 @@ contract IntegrationGasReport is IntegrationBase {
             abi.encodeCall(auction.start, (address(stream), _mintData(vrfRoot, works, 0)));
         r = _row("start, steady state, VRF work", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -397,7 +403,7 @@ contract IntegrationGasReport is IntegrationBase {
             abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0)));
         r = _row("start, steady state, edition master", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -472,7 +478,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, PERMIT2_START_CEILING, "regression ceiling");
-        _growthIs(r, 7, 0);
+        _growthIs(r, 6, 0);
     }
 
     function _rowStartNewCollection() internal returns (Row memory r) {
@@ -481,7 +487,26 @@ contract IntegrationGasReport is IntegrationBase {
             "start, first work in a new collection", starter, address(auction), _startData(6), 0
         );
         _gasAtMost(r, FIRST_IN_COLLECTION_CEILING, "400K test ceiling");
+        _growthIs(r, 5, 0);
+    }
+
+    /// @dev An artist's first start, at steady state otherwise (the acceptance pre-wrote the
+    ///      artist's move-nonce word): Stream also writes the shared terms word that the artist's
+    ///      later works reuse (QUALITY-6), so it writes as many slots as every start did before.
+    function _rowStartArtistFirst() internal returns (Row memory r) {
+        _steadyState();
+        address artistC = _actor("gasArtistC");
+        Work[] memory works = new Work[](ITEMS);
+        for (uint256 i; i < ITEMS; ++i) {
+            works[i] = _work(artistC, collectionId);
+        }
+        bytes32 cRoot = _publish(works);
+        bytes memory data =
+            abi.encodeCall(auction.start, (address(stream), _mintData(cRoot, works, 0)));
+        r = _row("start, an artist's first work", starter, address(auction), data, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
         _growthIs(r, 6, 0);
+        _slotsAtMost(r, START_MAX_SLOTS);
     }
 
     /// @dev One-time: the first start on a new deployment (empty custody, the first fee terms
@@ -508,7 +533,7 @@ contract IntegrationGasReport is IntegrationBase {
             1 ether
         );
         _gasAtMost(r, NEW_TERMS_CEILING, "regression ceiling");
-        _growthIs(r, 10, 0);
+        _growthIs(r, 9, 0);
     }
 
     // ------------------------------------------------------------------ bids and settlement
@@ -810,6 +835,47 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 1, 0);
     }
 
+    // ------------------------------------------------------------------ re-rate
+
+    /// @dev A work re-rated to 10% (every party's consent plus FUNDS_SETTER's governed action),
+    ///      executed through the manager: Stream moves the token to the terms with its new rate,
+    ///      which no work has yet, so it writes that terms word (QUALITY-6); before, it overwrote
+    ///      the token's own word.
+    function _rowReRate() internal returns (Row memory r) {
+        uint256 tokenId = auction.auction(_steadyState()).tokenId;
+        Work[] memory works = _package(root);
+        records.openRecord(tokenId, works[0].item, works[0].media);
+        uint32 rate = 10_000;
+        uint64 deadline = uint64(block.timestamp + 30 days);
+        bytes32 state = records.workStateHash(tokenId);
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = _sign(
+            artistA,
+            _typedDigest(
+                address(records),
+                keccak256(
+                    abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline)
+                )
+            )
+        );
+        bytes memory call = abi.encodeCall(
+            records.setRoyaltyRate, (tokenId, rate, works[0].item, state, deadline, sigs)
+        );
+        _schedule(hotAdmin, address(records), call);
+        (, uint32 delay) = manager.canCall(hotAdmin, address(records), bytes4(call));
+        vm.warp(block.timestamp + delay);
+        r = _row(
+            "re-rate a work (governed execute)",
+            hotAdmin,
+            address(manager),
+            abi.encodeCall(manager.execute, (address(records), call)),
+            0
+        );
+        _gasAtMost(r, RERATE_CEILING, "regression ceiling");
+        _growthIs(r, 1, 0);
+        if (pass == Pass.BOTH) assertEq(stream.work(tokenId).royaltyRate, rate);
+    }
+
     // ------------------------------------------------------------------ identity
 
     /// @dev `a` and `b` consolidate each other on the 6529 delegation contract.
@@ -1013,6 +1079,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartNewCollection();
     }
 
+    function test_Gas_Start_ArtistsFirstWork() public {
+        _rowStartArtistFirst();
+    }
+
     function test_Gas_Start_FirstWorkEver() public {
         _rowStartFirstEver();
     }
@@ -1069,6 +1139,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowPurchaseLater();
     }
 
+    function test_Gas_ReRate() public {
+        _rowReRate();
+    }
+
     function test_Gas_RefreshStanding_FirstWallet() public {
         _rowRefreshFirst();
     }
@@ -1108,7 +1182,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[29] memory rows = [
+        function() internal returns (Row memory)[31] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1117,6 +1191,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowStartMaster,
             _rowStartWithPermit2Bid,
             _rowStartNewCollection,
+            _rowStartArtistFirst,
             _rowStartFirstEver,
             _rowStartWithBidNewTerms,
             _rowBid,
@@ -1131,6 +1206,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowPurchaseLater,
             _rowOpenSaleDutch,
             _rowPurchaseDutch,
+            _rowReRate,
             _rowRefreshFirst,
             _rowRefreshFurther,
             _rowRoyaltyInfo,
@@ -1139,7 +1215,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[29] memory measured;
+        Row[31] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }
