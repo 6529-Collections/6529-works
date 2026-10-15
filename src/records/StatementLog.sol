@@ -70,8 +70,11 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     bytes32 private constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
     bytes32 private constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
 
+    /// @dev `disputeIndex` is the chain position of the latest DISPUTE_OUTCOME entry; it shares
+    ///      the count's slot.
     struct Chain {
         uint64 count;
+        uint64 disputeIndex;
         bytes32 head;
     }
 
@@ -199,6 +202,16 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
+    function disputeOutcomeOf(address token, uint256 id)
+        external
+        view
+        returns (bytes32 entryHash, uint64 index)
+    {
+        bytes32 key = subjectKey(token, id);
+        return (_latestDispute[key], _chains[key].disputeIndex);
+    }
+
+    /// @inheritdoc IStatementLog
     /// @dev The item fallback is one bounded read of `coreOf(id)` on `token`; any other answer
     ///      (not a Stream, a burned or unminted token) leaves the token's own result, zero.
     function latestDisputeOutcome(address token, uint256 id)
@@ -280,7 +293,10 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         e.head = keccak256(abi.encode(HEAD_DOMAIN, chain.head, e.entryHash));
         chain.count = e.index + 1;
         chain.head = e.head;
-        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) _latestDispute[e.key] = e.entryHash;
+        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) {
+            chain.disputeIndex = e.index;
+            _latestDispute[e.key] = e.entryHash;
+        }
         emit StatementAppended(
             e.key,
             statement.kind,

@@ -270,6 +270,32 @@ contract StatementLogPolicyTest is StatementLogFixture {
         stmtLog.appendPlatform(dispute);
     }
 
+    /// @dev A subject's own latest outcome and its position in the chain: a caller that read the
+    ///      chain's count earlier tells whether the outcome was recorded since.
+    function test_DisputeOutcomeOf_IsTheOwnLatestOutcomeAndItsPosition() public {
+        (bytes32 none, uint64 noIndex) = stmtLog.disputeOutcomeOf(address(nft), 1);
+        assertEq(none, bytes32(0));
+        assertEq(noIndex, 0);
+        _append(Role.ARTIST, artist, _statement()); // index 0
+        Statement memory dispute = _statement();
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 first = stmtLog.appendPlatform(dispute); // index 1
+        (bytes32 entry, uint64 index) = stmtLog.disputeOutcomeOf(address(nft), 1);
+        assertEq(entry, first);
+        assertEq(index, 1);
+        (uint64 countBefore,) = stmtLog.chainOf(address(nft), 1);
+        _append(Role.OWNER, tokenOwner, _statement()); // index 2: not an outcome
+        (, index) = stmtLog.disputeOutcomeOf(address(nft), 1);
+        assertLt(index, countBefore, "recorded before the count was read");
+        vm.prank(platform);
+        bytes32 second = stmtLog.appendPlatform(dispute); // index 3
+        (entry, index) = stmtLog.disputeOutcomeOf(address(nft), 1);
+        assertEq(entry, second);
+        assertEq(index, 3);
+        assertGe(index, countBefore, "recorded since");
+    }
+
     function test_LatestDisputeOutcome_IsTheEntryHashInTheEvent() public {
         Statement memory dispute = _statement();
         dispute.kind = StatementKinds.DISPUTE_OUTCOME;

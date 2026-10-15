@@ -187,7 +187,9 @@
   when it is recorded, and an ERC-1155 (edition) subject is refused: an edition's outcome is
   recorded on its master (`UnknownDisputeSubject`). `latestDisputeOutcome` of a Stream token
   with no outcome of its own answers the latest outcome about the item it was minted from, so
-  pre-mint outcomes are shown on the work and its edition. The precedence of a later outcome
+  pre-mint outcomes are shown on the work and its edition (the display rule);
+  `disputeOutcomeOf` answers a subject's own latest outcome and its chain position, in the
+  slot of the chain's count. The precedence of a later outcome
   over earlier ones is documented, with the rule that each outcome restates those it keeps in
   force.
 - Pins (DEPS-6): the curation verifier (package registry), the VRF coordinator (entropy

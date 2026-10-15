@@ -477,6 +477,8 @@ contract DisputeFlowTest is IntegrationBase {
         );
         uint256 tokenId = _sell(masterRoot, _one(w), 0, bidder, 1 ether);
         assertEq(statements.latestDisputeOutcome(address(stream), tokenId), preMint);
+        (bytes32 own,) = statements.disputeOutcomeOf(address(stream), tokenId);
+        assertEq(own, bytes32(0), "no outcome about the token itself");
         assertTrue(_shows(stream.tokenURI(tokenId), preMint), "(a) on the work");
         editions.createEdition(tokenId, w.item, masterRoot, _proofOf(_one(w), 0));
         assertTrue(_shows(editions.uri(tokenId), preMint), "(b) on its edition");
@@ -486,6 +488,8 @@ contract DisputeFlowTest is IntegrationBase {
             address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://token-outcome"
         );
         assertEq(statements.latestDisputeOutcome(address(stream), tokenId), later);
+        (own,) = statements.disputeOutcomeOf(address(stream), tokenId);
+        assertEq(own, later);
         assertTrue(_shows(stream.tokenURI(tokenId), later));
         assertTrue(_shows(editions.uri(tokenId), later));
         assertFalse(_shows(stream.tokenURI(tokenId), preMint));

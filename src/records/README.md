@@ -59,10 +59,14 @@ renderer can show dispute status (ADR 0001 §12) without scanning events.
   recorded on its master, which the edition's metadata shows. Subjects that
   are not tokens (an item before its mint, `(address(0), uint256(itemHash))`; a
   work ID; an artist in the artist registry) are not checked.
-- **What `latestDisputeOutcome` answers.** For a 6529 Stream token with no
-  outcome of its own, it answers the latest outcome about the package item the
-  token was minted from (one bounded `coreOf` read), so a pre-mint outcome is
-  shown on the work and its edition, and is what the auction's `cancel` cites.
+- **What `latestDisputeOutcome` answers: the display rule.** For a 6529 Stream
+  token with no outcome of its own, it answers the latest outcome about the
+  package item the token was minted from (one bounded `coreOf` read), so a
+  pre-mint outcome is shown on the work and its edition.
+  `disputeOutcomeOf(token, id)` answers the subject's own latest outcome, with
+  no fallback, and its position in the subject's chain, so a caller that read
+  `chainOf(token, id).count` earlier (when it paused a sale, for example) can
+  tell whether the outcome was recorded since.
 - **Precedence.** The latest outcome about the token is the work's current
   dispute status: it replaces every earlier outcome, about the token or about
   its item, in that answer and in the metadata. Earlier outcomes stay in the
