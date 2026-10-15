@@ -328,7 +328,7 @@ contract EnglishAuction is
         s.status = AuctionState.SETTLED;
         (LockedTerms memory lt, address creator) = _lockedTerms(s);
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
-        uint256 price;
+        uint256 price = 0;
         if (s.bidder == address(0)) {
             if (creator == address(0)) revert InvalidRecipient(creator);
             s.recipient = creator;
