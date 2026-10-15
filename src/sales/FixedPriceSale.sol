@@ -25,9 +25,10 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      payer in a payer-keyed phase, and the payer is always authenticated (`msg.sender`, or
 ///      the Permit2 signer): nobody can spend another wallet's leaf for themselves (PR #744's
 ///      High finding). Anyone may still pay for an allowlisted recipient; the tokens go to that
-///      recipient and count against its cap. Caps, public phases included, count per
+///      recipient and count against its cap. Caps, capped public phases included, count per
 ///      `(token, id, phase index, keyed wallet)` across sales, so reopening a token with the
-///      same tree never resets them; a fresh drop uses new phase indices. Any leaf price other
+///      same tree never resets them; a fresh drop uses new phase indices. An uncapped public
+///      phase (no root, no `walletCap`) counts nothing. Any leaf price other
 ///      than the package price, and any sale of an OPEN edition, needs the artist's approval
 ///      (MARKET-6): the creator opens the sale, or signs the typed
 ///      `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase), with a
@@ -48,10 +49,23 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         uint64 deadline;
     }
 
+    /// @dev A stored phase: its window, cap and flags in one word (QUALITY-4). An allowlist
+    ///      phase keeps its root in `_roots` and sets `allowlisted`, so a public phase is read in
+    ///      one word; the count is the listing's `phaseCount`.
+    struct StoredPhase {
+        uint64 start;
+        uint64 end;
+        uint32 walletCap;
+        bool payerKeyed;
+        bool leafPriced;
+        bool allowlisted;
+    }
+
     /// @notice Domain label of allowlist leaves.
     bytes32 public constant ALLOWLIST_LEAF_DOMAIN = keccak256("6529WORKS_ALLOWLIST_LEAF_V1");
 
-    mapping(uint256 saleId => Phase[]) private _phases;
+    mapping(uint256 saleId => mapping(uint256 index => StoredPhase)) private _phases;
+    mapping(uint256 saleId => mapping(uint256 index => bytes32 root)) private _roots;
     mapping(
         address token
             => mapping(uint256 id => mapping(uint256 phase => mapping(address account => uint256)))
@@ -102,9 +116,21 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
             if (priced) revert PricedLeavesNeedApproval(token, id);
             _requirePlatformMayOpen(token, id, federated);
         }
-        saleId = _store(token, id, t, approved, federated);
+        // `_checkPhases` bounded the count by `Limits.MAX_PHASES` (16).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        saleId = _store(token, id, t, approved, federated, uint8(phases_.length));
         for (uint256 i; i < phases_.length; ++i) {
-            _phases[saleId].push(phases_[i]);
+            Phase calldata phase = phases_[i];
+            bool allowlisted = phase.root != 0;
+            _phases[saleId][i] = StoredPhase(
+                phase.start,
+                phase.end,
+                phase.walletCap,
+                phase.payerKeyed,
+                phase.leafPriced,
+                allowlisted
+            );
+            if (allowlisted) _roots[saleId][i] = phase.root;
         }
         emit SaleStarted(saleId, token, id, SaleKind.FIXED_PRICE, t.currency, t.price, start, end);
         emit PhasesSet(saleId, phases_, approved);
@@ -176,7 +202,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @inheritdoc IFixedPriceSale
-    /// @dev Shared by every sale of `(token, id)` at that phase index.
+    /// @dev Shared by every sale of `(token, id)` at that phase index; an uncapped public phase
+    ///      adds nothing.
     function purchased(address token, uint256 id, uint256 phase, address account)
         external
         view
@@ -186,9 +213,19 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @inheritdoc IFixedPriceSale
-    function phases(uint256 saleId) external view returns (Phase[] memory) {
-        _listing(saleId);
-        return _phases[saleId];
+    function phases(uint256 saleId) external view returns (Phase[] memory list) {
+        list = new Phase[](_listing(saleId).phaseCount);
+        for (uint256 i; i < list.length; ++i) {
+            StoredPhase memory s = _phases[saleId][i];
+            list[i] = Phase(
+                s.start,
+                s.end,
+                s.allowlisted ? _roots[saleId][i] : bytes32(0),
+                s.walletCap,
+                s.payerKeyed,
+                s.leafPriced
+            );
+        }
     }
 
     /// @inheritdoc ISaleAdapter
@@ -272,15 +309,15 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @dev Checks the phase is open (its window moved by the schedule's delay, MARKET-1), the
-    ///      leaf, the price and the caps; counts the purchase; returns the unit price.
+    ///      leaf, the price and the caps; counts the purchase in a capped phase (an allowlist, or
+    ///      a nonzero `walletCap`); returns the unit price.
     function _admit(Purchase calldata p, bytes32[] calldata proof, address payer, address recipient)
         private
         returns (uint256 unit)
     {
-        Phase[] storage list = _phases[p.saleId];
         Listing storage l = _listings[p.saleId];
-        if (p.phase >= list.length || l.closed) revert PhaseNotOpen(p.saleId, p.phase);
-        Phase memory phase = list[p.phase];
+        if (p.phase >= l.phaseCount || l.closed) revert PhaseNotOpen(p.saleId, p.phase);
+        StoredPhase memory phase = _phases[p.saleId][p.phase];
         {
             uint256 delay = _purchaseDelay(l);
             // forge-lint: disable-next-line(block-timestamp)
@@ -291,16 +328,19 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         if (p.quantity == 0) revert InvalidQuantity();
         address account = phase.payerKeyed ? payer : recipient;
         unit = l.price;
-        if (phase.root != 0) {
-            _verifyLeaf(p, proof, phase.root, account, l);
+        if (phase.allowlisted) {
+            _verifyLeaf(p, proof, _roots[p.saleId][p.phase], account, l);
             // Only an approved sale has leaf-priced phases (`openSale`).
             if (phase.leafPriced) unit = p.leafPrice;
         }
+        // An uncapped public phase checks no count, so it records none (QUALITY-1): a per-wallet
+        // cap counts only the purchases made in capped phases.
+        if (!phase.allowlisted && phase.walletCap == 0) return unit;
         address token = l.token;
         uint256 id = l.id;
         uint256 bought = _purchased[token][id][p.phase][account] + p.quantity;
         if (
-            (phase.root != 0 && bought > p.leafCap)
+            (phase.allowlisted && bought > p.leafCap)
                 || (phase.walletCap != 0 && bought > phase.walletCap)
         ) revert WalletCapExceeded(p.saleId, p.phase, account);
         _purchased[token][id][p.phase][account] = bought;
@@ -323,13 +363,13 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @dev Whether every phase of the sale has ended, its windows moved by the schedule's
     ///      delay (an unknown sale has none).
     function _ended(uint256 saleId) private view returns (bool) {
-        Phase[] storage list = _phases[saleId];
-        if (list.length == 0) return true;
         Listing storage l = _listings[saleId];
+        uint256 count = l.phaseCount;
+        if (count == 0) return true;
         uint256 delay = _halted(l.currency) - l.haltedAtOpen;
-        for (uint256 i; i < list.length; ++i) {
+        for (uint256 i; i < count; ++i) {
             // forge-lint: disable-next-line(block-timestamp)
-            if (list[i].end + delay > block.timestamp) return false;
+            if (_phases[saleId][i].end + delay > block.timestamp) return false;
         }
         return true;
     }

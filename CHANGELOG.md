@@ -404,3 +404,35 @@
   `tools/check_docs_facts.py` checks the facts the docs quote from the code (cited test names,
   interface IDs, event topic0 values, nSLOC and bytecode sizes) in the Docs and Contracts
   jobs; `--update` refreshes the figures.
+- Gas, the state-growth diet (lane F8, ADR 0004): under Glamsterdam each new storage slot
+  costs about 111,000 gas on Sepolia, so the hot paths write fewer.
+  - Fixed price (QUALITY-1, integrator decision): an uncapped public phase (no root, no
+    `walletCap`) records no purchase count, so a per-wallet cap counts only the purchases
+    made in capped phases; `purchased` stays zero for such a phase.
+  - 6529 Editions (QUALITY-2): `mint` returns only the sale kind of its terms. The adapters
+    apply the terms they locked from `primaryTerms` when the sale opened.
+  - Fixed-price and Dutch listings (QUALITY-4): each adapter stores a fee recipient once
+    and references it by index, and a phase is one storage word plus its root. `openSale`
+    with one public phase writes 6 new slots instead of 8; the adapter's first sale
+    registers the fee recipient (8 slots; the counter shares `nextSaleId`'s word, which is
+    now a `uint64`). A 65,536th fee recipient fails with `InvalidSaleTerms`.
+  - 6529 Editions (QUALITY-5): the record is packed behind the unchanged `edition` view.
+    `createEdition` writes 7 new slots instead of 9 (a Dutch edition 9 instead of 13), and a
+    purchase writes only the holder's balance.
+  - 6529 Stream (QUALITY-6): a token keeps two words, and the lead artist with the locked
+    economics is one terms word shared by the artist's works, at the position its hash
+    names or in an overflow range. A start under existing terms writes 5 new slots, 6 with
+    a bid. A first start under new terms (an artist's first, or every artist's first after
+    an economics change or through a newly admitted adapter) writes 6, 7 with a bid, as
+    before, so the ADR 0004 maxima stay 6 and 7. Accepted limitation: on a collision of the
+    terms' 23-bit position, which a curated artist can force by grinding an address, that
+    first start writes one slot more and can exceed 350K with a bid. A re-rate writes the
+    terms word for its new rate if no work has it yet.
+  - Identity: `activeAuthorityOf` is one storage read: a `restrained` flag beside the
+    authority marks a pending override that moves it (about 2,200 gas less per creator read).
+  - Tests: the integration gas report adds rows for an artist's first start (with and
+    without a bid, and two-party with a bid, the binding row of the 350K budget), a
+    re-rate, `openSale` at steady state and on the adapter's first sale, and a Dutch
+    `createEdition`, `openSale` and `purchase`, and lowers the counts and ceilings.
+    `StreamTermsInvariant.t.sol` runs 36 real collisions of the terms positions, and
+    `StreamTermsGrind.t.sol` reproduces a ground one.

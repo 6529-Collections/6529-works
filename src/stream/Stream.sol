@@ -42,12 +42,20 @@ import { SpdxId } from "./SpdxId.sol";
 ///      the marketplace metadata, and forwards `tokenURI` to the work's renderer. Records,
 ///      licenses, seeds, finalize and locators live in the bound `IWorkRecords` satellite.
 ///
-///      Storage is shaped by the auction-start budget (350K Prague gas and at most 6 new slots,
-///      7 with a bid, per steady-state start; ADR 0004). A mint writes the ERC-721 owner and
-///      balance, one shared counter word, the collection's counter word and three work words: the
-///      seller, serial, collection, kind, seed policy and flags; the lead artist ID, royalty rate,
-///      fee share, fee-recipient index and minting adapter's index; the item hash. Fee recipients
-///      are stored once each and referenced by index. The ERC-2981 receiver is derived, not stored:
+///      Storage is shaped by the auction-start budget (ADR 0004): 350K Prague gas and at most 6
+///      new slots, 7 with a bid, per steady-state start. A mint writes the ERC-721 owner and
+///      balance, one shared counter word, the collection's counter word and two work words: the
+///      seller, serial, collection, flags and terms ID; the item hash. The terms (the lead artist
+///      ID, royalty rate, fee share, fee-recipient index and minting adapter's index) are one
+///      word shared by every work with the same terms, written by the first of them (QUALITY-6),
+///      so a start under existing terms writes one word fewer: 5 new slots, 6 with a bid. A first
+///      start under new terms (an artist's first, and every artist's first after an economics
+///      change or through a newly admitted adapter) writes the terms word: 6, 7 with a bid. On a
+///      collision of the terms' 23-bit hashed position it writes one more, the overflow word and
+///      its index; a curated artist can force that for another artist by grinding an address,
+///      and with a bid that one first start can exceed 350K (an accepted limitation, ADR 0004).
+///      Fee recipients are stored once each and referenced by index. The ERC-2981 receiver is
+///      derived, not stored:
 ///      the seller itself when the fee share is zero, otherwise the split factory's salt-zero
 ///      wallet for the canonical payee list `(feeRecipient: feeShare, seller: rest)`. `royaltyInfo`
 ///      makes that one plain view call and no other: it can run out of gas and revert, but never
@@ -63,22 +71,38 @@ contract Stream is ERC721, AccessManaged, IStream {
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
 
-    /// @dev A token's three words. `feeRecipientId` and `minterId` index `_feeRecipients` and
-    ///      the admitted minters, both from 1.
+    /// @dev `TokenData.flags`: an EDITION_MASTER, the seed policy (two bits), the primary sale
+    ///      settled, the edition linked.
+    uint8 private constant KIND_MASTER = 1;
+    uint8 private constant SEED_SHIFT = 1;
+    uint8 private constant SEED_MASK = 3;
+    uint8 private constant SETTLED = 8;
+    uint8 private constant LINKED = 16;
+    /// @dev Terms IDs below `OVERFLOW` are the hashed positions; from it, the overflow range.
+    uint24 private constant HASHED = 0x7fffff;
+    uint24 private constant OVERFLOW = 0x800000;
+
+    /// @dev A token's two words (QUALITY-6). `flags` packs the kind (`KIND_MASTER`), the seed
+    ///      policy (`SEED_SHIFT`), the settled primary sale and the edition link; `termsId` names
+    ///      the token's `Terms` in `_terms`.
     struct TokenData {
         address seller;
         uint32 serial;
         uint32 collectionId;
-        ItemKind kind;
-        SeedPolicy seedPolicy;
-        bool primarySaleSettled;
-        bool editionLinked;
+        uint8 flags;
+        uint24 termsId;
+        bytes32 itemHash;
+    }
+
+    /// @dev What works share: the lead artist and the economics locked at mint, one word.
+    ///      `feeRecipientId` and `minterId` index `_feeRecipients` and the admitted minters, both
+    ///      from 1, and `artistId` is never zero, so a zero word is an empty position.
+    struct Terms {
         uint160 artistId;
         uint32 royaltyRate;
         uint32 feeShare;
         uint16 feeRecipientId;
         uint16 minterId;
-        bytes32 itemHash;
     }
 
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
@@ -101,6 +125,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint64 burned;
         uint32 collections;
         uint16 minters;
+        uint24 overflowTerms;
     }
 
     /// @inheritdoc IStream
@@ -131,6 +156,11 @@ contract Stream is ERC721, AccessManaged, IStream {
     mapping(address adapter => Minter) private _minters;
     mapping(uint256 collectionId => CollectionData) private _collections;
     mapping(uint256 tokenId => TokenData) private _tokens;
+    /// @dev Interned terms (QUALITY-6), at the position their hash names or in the overflow range.
+    ///      `_terms` is an ordinary mapping: a "position" is a terms ID, a mapping key, not a
+    ///      storage slot.
+    mapping(uint24 termsId => Terms) private _terms;
+    mapping(bytes32 termsHash => uint24 termsId) private _overflowIds;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param packageRegistry_ The package registry `mint` consumes items from.
@@ -202,7 +232,16 @@ contract Stream is ERC721, AccessManaged, IStream {
         ) revert SeedNotDelivered(itemHash);
         WorkTerms memory w;
         (terms, w) = _quote(item, artistId);
-        tokenId = _store(req, itemHash, artistId, w, minter.id);
+        Terms memory shared = Terms(
+            // `artistId` was checked to fit 160 bits above.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint160(artistId),
+            w.royaltyRate,
+            w.feeShare,
+            _feeRecipientId(w.feeRecipient),
+            minter.id
+        );
+        tokenId = _store(req, itemHash, artistId, w.seller, _termsId(shared));
         _mint(to, tokenId);
     }
 
@@ -218,12 +257,12 @@ contract Stream is ERC721, AccessManaged, IStream {
         returns (PrimaryTerms memory terms)
     {
         if (id != 0) {
-            TokenData storage t = _live(id);
+            (TokenData storage t, Terms memory shared) = _shared(id);
             terms.saleKind = SaleKind.ENGLISH_AUCTION;
             terms.seller = t.seller;
-            terms.feeRecipient = _feeRecipients[t.feeRecipientId - 1];
-            terms.feeShare = t.feeShare;
-            terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(t.artistId);
+            terms.feeRecipient = _feeRecipients[shared.feeRecipientId - 1];
+            terms.feeShare = shared.feeShare;
+            terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(shared.artistId);
             return terms;
         }
         StreamMintRequest calldata req = _request(data);
@@ -245,8 +284,10 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (amount != 1) revert InvalidMintRequest();
         if (holder != msg.sender) revert ERC721IncorrectOwner(msg.sender, id, holder);
         TokenData storage t = _tokens[id];
-        if (_minters[msg.sender].id != t.minterId) revert NotAdmittedMinter(msg.sender);
-        if (t.primarySaleSettled) revert SaleAlreadySettled(id);
+        if (_minters[msg.sender].id != _terms[t.termsId].minterId) {
+            revert NotAdmittedMinter(msg.sender);
+        }
+        if (t.flags & SETTLED != 0) revert SaleAlreadySettled(id);
         ++_counts.burned;
         _burn(id);
     }
@@ -291,9 +332,12 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev A repeat is a no-op.
     function markPrimarySettled(uint256 tokenId) external {
         TokenData storage t = _live(tokenId);
-        if (_minters[msg.sender].id != t.minterId) revert UnboundCaller(msg.sender);
-        if (t.primarySaleSettled) return;
-        t.primarySaleSettled = true;
+        if (_minters[msg.sender].id != _terms[t.termsId].minterId) {
+            revert UnboundCaller(msg.sender);
+        }
+        uint8 flags = t.flags;
+        if (flags & SETTLED != 0) return;
+        t.flags = flags | SETTLED;
         emit PrimarySaleSettled(tokenId);
     }
 
@@ -350,17 +394,18 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @inheritdoc IStream
     function work(uint256 tokenId) external view returns (WorkCore memory) {
-        TokenData storage t = _live(tokenId);
+        (TokenData storage t, Terms memory shared) = _shared(tokenId);
+        uint8 flags = t.flags;
         return WorkCore(
             t.itemHash,
-            t.artistId,
+            shared.artistId,
             t.collectionId,
             t.serial,
-            t.kind,
-            t.seedPolicy,
+            _kind(flags),
+            _seedPolicy(flags),
             t.seller,
-            _royaltyReceiver(t),
-            t.royaltyRate
+            _royaltyReceiver(t.seller, shared),
+            shared.royaltyRate
         );
     }
 
@@ -377,18 +422,27 @@ contract Stream is ERC721, AccessManaged, IStream {
             uint32 royaltyRate
         )
     {
-        TokenData storage t = _live(tokenId);
-        return (t.itemHash, t.artistId, t.collectionId, t.kind, t.seedPolicy, t.royaltyRate);
+        (TokenData storage t, Terms memory shared) = _shared(tokenId);
+        uint8 flags = t.flags;
+        return (
+            t.itemHash,
+            shared.artistId,
+            t.collectionId,
+            _kind(flags),
+            _seedPolicy(flags),
+            shared.royaltyRate
+        );
     }
 
     /// @inheritdoc IStream
     function artistOf(uint256 tokenId) external view returns (uint256) {
-        return _live(tokenId).artistId;
+        (, Terms memory shared) = _shared(tokenId);
+        return shared.artistId;
     }
 
     /// @inheritdoc IStream
     function primarySaleSettled(uint256 tokenId) external view returns (bool) {
-        return _ownerOf(tokenId) != address(0) && _tokens[tokenId].primarySaleSettled;
+        return _ownerOf(tokenId) != address(0) && _tokens[tokenId].flags & SETTLED != 0;
     }
 
     /// @inheritdoc IERC2981
@@ -400,9 +454,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         view
         returns (address receiver, uint256 royaltyAmount)
     {
-        TokenData storage t = _live(tokenId);
-        receiver = _royaltyReceiver(t);
-        uint256 rate = t.royaltyRate;
+        (TokenData storage t, Terms memory shared) = _shared(tokenId);
+        receiver = _royaltyReceiver(t.seller, shared);
+        uint256 rate = shared.royaltyRate;
         unchecked {
             // Exact: the remainder term restores what the first division drops.
             // forge-lint: disable-next-line(divide-before-multiply)
@@ -476,13 +530,15 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
-    /// @dev The payees (and so the receiver) are fixed at mint; only the rate changes (D19).
+    /// @dev The payees (and so the receiver) are fixed at mint; only the rate changes (D19). The
+    ///      token moves to the terms that differ from its own only by the rate, interned if new.
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external {
         _onlyBound(workRecords);
-        TokenData storage t = _live(tokenId);
+        (TokenData storage t, Terms memory shared) = _shared(tokenId);
         if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
-        emit RoyaltyRateChanged(tokenId, t.royaltyRate, rate);
-        t.royaltyRate = rate;
+        emit RoyaltyRateChanged(tokenId, shared.royaltyRate, rate);
+        shared.royaltyRate = rate;
+        t.termsId = _termsId(shared);
     }
 
     /// @inheritdoc IStream
@@ -498,11 +554,12 @@ contract Stream is ERC721, AccessManaged, IStream {
     function linkEdition(uint256 tokenId, uint256 editionId) external {
         _onlyBound(editions);
         TokenData storage t = _live(tokenId);
+        uint8 flags = t.flags;
         if (
-            t.kind != ItemKind.EDITION_MASTER || !t.primarySaleSettled || t.editionLinked
+            flags & KIND_MASTER == 0 || flags & SETTLED == 0 || flags & LINKED != 0
                 || editionId != tokenId
         ) revert EditionLinkInvalid(tokenId);
-        t.editionLinked = true;
+        t.flags = flags | LINKED;
         emit EditionLinked(tokenId, msg.sender, editionId);
         emit MetadataUpdate(tokenId);
     }
@@ -513,7 +570,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         view
         returns (address editionsContract, uint256 editionId)
     {
-        if (_tokens[tokenId].editionLinked) return (editions, tokenId);
+        if (_tokens[tokenId].flags & LINKED != 0) return (editions, tokenId);
     }
 
     // --------------------------------------------------------------------- marketplace metadata
@@ -628,32 +685,26 @@ contract Stream is ERC721, AccessManaged, IStream {
         terms.creator = IArtistRegistry(artistRegistry).activeAuthorityOf(artistId);
     }
 
-    /// @dev Assigns the next token ID and collection serial and writes the three work words.
+    /// @dev Assigns the next token ID and collection serial and writes the two work words.
     function _store(
         StreamMintRequest calldata req,
         bytes32 itemHash,
         uint256 artistId,
-        WorkTerms memory w,
-        uint16 minterId
+        address seller,
+        uint24 termsId
     ) private returns (uint256 tokenId) {
         PackageItem calldata item = req.item;
         tokenId = ++_counts.minted;
         uint32 serial = ++_collections[item.collectionId].minted;
         TokenData storage t = _tokens[tokenId];
-        t.seller = w.seller;
+        t.seller = seller;
         t.serial = serial;
         // The collection exists, so its ID is at most the uint32 collection counter.
         // forge-lint: disable-next-line(unsafe-typecast)
         t.collectionId = uint32(item.collectionId);
-        t.kind = item.kind;
-        t.seedPolicy = item.seedPolicy;
-        // `mint` reverted for an artist ID wider than 160 bits.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        t.artistId = uint160(artistId);
-        t.royaltyRate = w.royaltyRate;
-        t.feeShare = w.feeShare;
-        t.feeRecipientId = _feeRecipientId(w.feeRecipient);
-        t.minterId = minterId;
+        t.flags = (item.kind == ItemKind.EDITION_MASTER ? KIND_MASTER : 0)
+            | (uint8(item.seedPolicy) << SEED_SHIFT);
+        t.termsId = termsId;
         t.itemHash = itemHash;
         emit WorkMinted(
             tokenId,
@@ -685,15 +736,60 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev The seller with no fee; otherwise the split factory's salt-zero wallet for
     ///      `Splits.royaltyPayees`, the canonical list the economics resolver derives the same
     ///      receiver from (fixed payees in address order).
-    function _royaltyReceiver(TokenData storage t) private view returns (address) {
-        address seller = t.seller;
-        uint32 feeShare = t.feeShare;
+    function _royaltyReceiver(address seller, Terms memory shared) private view returns (address) {
+        uint32 feeShare = shared.feeShare;
         if (feeShare == 0) return seller;
         return ISplitFactory(splitFactory)
             .walletFor(
-                Splits.royaltyPayees(seller, _feeRecipients[t.feeRecipientId - 1], feeShare),
+                Splits.royaltyPayees(seller, _feeRecipients[shared.feeRecipientId - 1], feeShare),
                 bytes32(0)
             );
+    }
+
+    /// @dev The ID of `t`, interned on first use (QUALITY-6). `t` lives at the position its hash
+    ///      names, below `OVERFLOW`; if other terms already hold that position, in the overflow
+    ///      range, found again by the full hash. So works under existing terms write no terms
+    ///      word, new terms write one (two in the rare overflow), and nothing loops.
+    function _termsId(Terms memory t) private returns (uint24 id) {
+        bytes32 key = _key(t);
+        id = uint24(uint256(key)) & HASHED;
+        Terms memory held = _terms[id];
+        if (held.artistId == 0) {
+            _terms[id] = t;
+            return id;
+        }
+        if (_key(held) == key) return id;
+        id = _overflowIds[key];
+        if (id == 0) {
+            // The overflow range holds 2^23 - 1 terms: the check reverts at the 2^23rd.
+            uint24 n = ++_counts.overflowTerms;
+            if (n > HASHED) revert InvalidMintRequest();
+            id = OVERFLOW | n;
+            _terms[id] = t;
+            _overflowIds[key] = id;
+        }
+    }
+
+    function _key(Terms memory t) private pure returns (bytes32) {
+        return keccak256(abi.encode(t));
+    }
+
+    /// @dev A live token and the terms it shares.
+    function _shared(uint256 tokenId)
+        private
+        view
+        returns (TokenData storage t, Terms memory shared)
+    {
+        t = _live(tokenId);
+        shared = _terms[t.termsId];
+    }
+
+    function _kind(uint8 flags) private pure returns (ItemKind) {
+        return flags & KIND_MASTER != 0 ? ItemKind.EDITION_MASTER : ItemKind.ORIGINAL;
+    }
+
+    function _seedPolicy(uint8 flags) private pure returns (SeedPolicy) {
+        return SeedPolicy((flags >> SEED_SHIFT) & SEED_MASK);
     }
 
     function _onlyBound(address bound) private view {

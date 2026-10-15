@@ -91,7 +91,11 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      the key being recovered from loses those powers and the reserved new key gains none
 ///      until the override executes. {authorityOf} keeps identifying the artist. A STANDARD
 ///      change or a payout-only override restrains nothing; identity calls ({heartbeat},
-///      {revokeNonce}) are not creator powers and stay with the authority.
+///      {revokeNonce}) are not creator powers and stay with the authority. The artist's
+///      `restrained` flag, in the authority's own storage word, records whether the pending
+///      change is an override that moves the authority: it is set at every staging and cleared
+///      at every end of a change, so {activeAuthorityOf} reads the pending change (for a lapsed
+///      contest) only while it is set.
 ///
 ///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
@@ -112,8 +116,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @dev Gas forwarded to the statement log's `artistResolver()` when it is bound.
     uint256 private constant BIND_READ_GAS = 50_000;
 
+    /// @dev The identity fields with `restrained` beside the authority, so the active authority
+    ///      is one storage read: `restrained` is whether the pending change is an override that
+    ///      moves the authority (`kind > STANDARD`, `next.authority != authority`), lapsed or not.
     struct Artist {
-        ArtistIdentity identity;
+        address authority;
+        bool restrained;
+        address payout;
+        bytes32 profileId;
+        bytes32 profileDocHash;
         uint64 lastActivity;
         uint64 nonce;
     }
@@ -224,7 +235,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (artistIdOf[account] != 0 || reservedFor[account] != 0) revert AccountTaken(account);
         artistId = uint256(uint160(account));
         ArtistIdentity memory identity = ArtistIdentity(account, account, profileId, profileDocHash);
-        _artists[artistId] = Artist(identity, uint64(block.timestamp), 0);
+        _artists[artistId] = Artist(
+            account, false, account, profileId, profileDocHash, uint64(block.timestamp), 0
+        );
         artistIdOf[account] = artistId;
         emit ArtistRegistered(artistId, identity);
         _refresh(artistId, account, true);
@@ -252,7 +265,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             revert InvalidSignature();
         }
         if (
-            next.authority != a.identity.authority
+            next.authority != a.authority
                 && !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance)
         ) revert InvalidSignature();
         _recordActivity(artistId, a);
@@ -278,7 +291,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         if (kind != ChangeKind.CONTESTED && block.timestamp < a.lastActivity + DORMANCY) {
             revert NotDormant(artistId, a.lastActivity);
         }
-        if (next.authority != a.identity.authority) {
+        if (next.authority != a.authority) {
             bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, deadline);
             // forge-lint: disable-next-line(block-timestamp)
             bool expired = block.timestamp > deadline;
@@ -384,9 +397,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             return false;
         }
         Artist storage a = _artists[artistId];
-        ArtistIdentity memory previous = a.identity;
+        ArtistIdentity memory previous = _identity(a);
         artistIdOf[next.authority] = artistId;
-        a.identity = next;
+        // The change ends here, so the authority is no longer restrained.
+        (a.authority, a.restrained, a.payout) = (next.authority, false, next.payout);
+        (a.profileId, a.profileDocHash) = (next.profileId, next.profileDocHash);
         delete reservedFor[next.authority];
         delete _pending[artistId];
         _recordActivity(artistId, a);
@@ -400,21 +415,21 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         Artist storage a = _artist(artistId);
         _requireSigner(artistId, a, msg.sender);
         _recordActivity(artistId, a);
-        _refresh(artistId, a.identity.authority, false);
+        _refresh(artistId, a.authority, false);
     }
 
     /// @inheritdoc IArtistRegistry
     /// @dev The current authority only; records activity.
     function revokeNonce(uint256 artistId) external {
         Artist storage a = _artist(artistId);
-        if (msg.sender != a.identity.authority) revert NotAuthorized(artistId, msg.sender);
+        if (msg.sender != a.authority) revert NotAuthorized(artistId, msg.sender);
         emit NonceRevoked(artistId, a.nonce++);
         _recordActivity(artistId, a);
     }
 
     /// @inheritdoc IArtistRegistry
     function refreshStanding(uint256 artistId) external {
-        _refresh(artistId, _artist(artistId).identity.authority, false);
+        _refresh(artistId, _artist(artistId).authority, false);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -459,7 +474,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistPayoutResolver
     /// @dev Zero for an unknown artist, and while a pending change would move the payout.
     function payoutAddress(uint256 artistId) external view returns (address) {
-        address current = _artists[artistId].identity.payout;
+        address current = _artists[artistId].payout;
         PendingChange storage p = _pending[artistId];
         bool moves = p.kind != ChangeKind.NONE && p.next.payout != current && !_lapsed(p);
         return moves ? address(0) : current;
@@ -480,12 +495,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         returns (ArtistIdentity memory identity, uint64 lastActivity)
     {
         Artist storage a = _artist(artistId);
-        return (a.identity, a.lastActivity);
+        return (_identity(a), a.lastActivity);
     }
 
     /// @inheritdoc IArtistRegistry
     function authorityOf(uint256 artistId) external view returns (address) {
-        return _artist(artistId).identity.authority;
+        return _artist(artistId).authority;
     }
 
     /// @inheritdoc IArtistRegistry
@@ -566,7 +581,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     function _artist(uint256 artistId) private view returns (Artist storage a) {
         a = _artists[artistId];
-        if (a.identity.authority == address(0)) revert UnknownArtist(artistId);
+        if (a.authority == address(0)) revert UnknownArtist(artistId);
     }
 
     function _pendingOf(uint256 artistId) private view returns (PendingChange storage p) {
@@ -576,7 +591,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @dev `account` must be the authority or an established consolidated wallet of it.
     function _requireSigner(uint256 artistId, Artist storage a, address account) private view {
-        address current = a.identity.authority;
+        address current = a.authority;
         if (account != current && !_source().isEstablished(current, account)) {
             revert NotAuthorized(artistId, account);
         }
@@ -593,7 +608,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      a previous authority (A, then B, then A) keeps the signatures A left unused dead: every
     ///      consumer verifies against the active authority, which A never is again.
     function _taken(uint256 artistId, address account) private view returns (bool) {
-        if (account == _artists[artistId].identity.authority) return false;
+        if (account == _artists[artistId].authority) return false;
         uint256 reserved = reservedFor[account];
         return artistIdOf[account] != 0 || (reserved != 0 && reserved != artistId);
     }
@@ -652,7 +667,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         bytes32 evidenceHash,
         uint64 delay
     ) private {
-        address current = a.identity.authority;
+        address current = a.authority;
         _refresh(artistId, current, false);
         Standing[] storage snapshot = _standing[artistId];
         address[] memory cancellers = new address[](snapshot.length);
@@ -673,6 +688,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         p.executableAt = uint64(block.timestamp) + delay;
         p.evidenceHash = evidenceHash;
         p.cancellers = cancellers;
+        a.restrained = kind > ChangeKind.STANDARD && next.authority != current;
         if (next.authority != current) reservedFor[next.authority] = artistId;
         emit ChangeStaged(artistId, p);
     }
@@ -810,12 +826,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @dev The authority, or zero while a pending, unlapsed override would move it (owner
     ///      decision on IDENTITY-1, 14 October 2026): nobody acts as the artist until it ends.
+    ///      `restrained` stands for the pending change's kind and next authority, so the pending
+    ///      change is read only while it is set.
     function _active(uint256 artistId) private view returns (address current) {
-        current = _artists[artistId].identity.authority;
-        PendingChange storage p = _pending[artistId];
-        if (p.kind > ChangeKind.STANDARD && p.next.authority != current && !_lapsed(p)) {
-            current = address(0);
-        }
+        Artist storage a = _artists[artistId];
+        current = a.authority;
+        if (a.restrained && !_lapsed(_pending[artistId])) current = address(0);
     }
 
     /// @dev Whether `p` is a contest nobody resolved within {CONTEST_TIMEOUT}.
@@ -830,7 +846,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     function _clear(uint256 artistId, address by, bool vetoed) private {
         delete reservedFor[_pending[artistId].next.authority];
         delete _pending[artistId];
+        _artists[artistId].restrained = false;
         emit ChangeCancelled(artistId, by, vetoed);
+    }
+
+    function _identity(Artist storage a) private view returns (ArtistIdentity memory) {
+        return ArtistIdentity(a.authority, a.payout, a.profileId, a.profileDocHash);
     }
 
     function _recordActivity(uint256 artistId, Artist storage a) private {

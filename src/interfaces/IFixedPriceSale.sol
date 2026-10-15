@@ -28,7 +28,9 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      the package unit price and every phase as a typed `Phase[]` (single-use revocable nonce).
 ///      Alone, PLATFORM opens unpriced phases of a FIXED edition only. Purchase counts are kept
 ///      per edition `(token, id, phase, account)`, not per sale, so reopening a sale cannot reset
-///      a cap.
+///      a cap. Only capped phases count (an allowlist, or a nonzero `walletCap`): an uncapped
+///      public phase records nothing, so a per-wallet cap counts only the purchases made in
+///      capped phases.
 ///      `saleKind()` is `SaleKind.FIXED_PRICE`; PERMIT2 purchases use
 ///      `Typehashes.PURCHASE_WITNESS`, and `payment.amount` is the exact total.
 interface IFixedPriceSale is ISaleAdapter {
@@ -118,7 +120,8 @@ interface IFixedPriceSale is ISaleAdapter {
     function scheduleDelay(uint256 saleId) external view returns (uint256);
     /// @notice A sale's phases.
     function phases(uint256 saleId) external view returns (Phase[] memory);
-    /// @notice Copies `account` bought of token `id` in phase `phase` (counted against its cap).
+    /// @notice Copies `account` bought of token `id` in phase `phase` (counted against its cap),
+    ///         in capped phases only: an uncapped public phase adds nothing.
     function purchased(address token, uint256 id, uint256 phase, address account)
         external
         view

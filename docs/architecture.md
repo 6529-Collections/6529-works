@@ -159,11 +159,11 @@ default when the sale starts".
    - Stream assigns the token ID and serial and locks the fee terms from
      `IEconomicsResolver.economics` and the predicted seller wallet from
      `ISplitFactory.walletFor` over the item's payees (what `newWorkTerms`
-     returns, without its royalty-receiver derivation). It stores a three-word
-     token record (the seller with the serial, collection and flags; the lead
-     artist with the royalty rate, fee terms and minting adapter; the item hash)
-     beside the ERC-721 owner; the royalty receiver is derived from the seller
-     and fee terms when `royaltyInfo` is called, not stored.
+     returns, without its royalty-receiver derivation). It stores two words per
+     token, the seller with the packed serial, collection, flags and terms ID,
+     and the item hash; the terms (the lead artist and the fee terms) are one
+     word shared by the artist's works. The royalty receiver is derived from the
+     seller and fee terms when `royaltyInfo` is called, not stored.
    - The auction stores its sale and starts the 24-hour clock.
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against
@@ -441,9 +441,12 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   - Glamsterdam prices each new slot at about 111K on Sepolia, so the same start
     costs about 847K there. Every operation in the gas report asserts its exact
     count of new slots and new accounts.
-  - Stream stores a three-word record per token beside the ERC-721 owner, and
-    derives the royalty receiver. The registry stores one word per consumed
-    item.
+  - Stream stores two words per token (the seller with the packed fields and a
+    terms ID; the item hash) and one shared terms word per artist and economics,
+    and derives the royalty receiver. A start under existing terms writes 5 new
+    slots, 6 with a bid; a first start under new terms writes the terms word too
+    (one word more on a hashed-position collision, an accepted limitation). The
+    registry stores one word per consumed item.
   - Mint checks an admitted-minter mapping, not an AccessManager hop.
   - The auction locks the increment floor at the first bid, not at start, and
     reads seller and fee terms back from the token.

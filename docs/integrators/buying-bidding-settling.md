@@ -293,9 +293,11 @@ Errors come from `EnglishAuction` (`SalePaused`, `TargetNotAllowed`, `InvalidTer
 
 ### Gas
 
-A steady-state `start` uses 291,808 Prague gas (AUC-32,
-[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)); the table also lists
-the costlier first-time cases and the ERC-20 Permit2 `startWithBid`.
+A steady-state `start`'s Prague gas and new slots are in the
+[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) (AUC-32), with the
+costlier first-time cases (an artist's first start, with and without a bid, which on a
+collision of its terms' position writes one slot more; LIM-GAS-10) and the ERC-20 Permit2
+`startWithBid`.
 
 ## Bidding
 
@@ -377,8 +379,8 @@ A resumed auction emits `AuctionResumed(saleId, endTime)`; an upheld dispute's c
 ### Events and gas
 
 `BidPlaced`, and the auction's `Credited` for the previous bidder when the bid outbids
-([EnglishAuction](events-and-indexing.md#englishauction)). A bid that outbids uses 73,464 Prague
-gas ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+([EnglishAuction](events-and-indexing.md#englishauction)). A bid that outbids is a row of the
+[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ## Settling
 
@@ -536,8 +538,9 @@ What to get right ([FixedPriceSale.sol](../../src/sales/FixedPriceSale.sol)):
   (ED-17). A zero price is a gift: the amount is zero.
 - **The keyed account** for the allowlist is the recipient, or the payer in a `payerKeyed` phase
   (ED-15). Anyone may pay for an allowlisted recipient, against its cap.
-- **Caps** count per `(token, editionId, phase index, account)` across sales (ED-16); read the count
-  with `purchased(token, id, phase, account)`.
+- **Caps** count per `(token, editionId, phase index, account)` across sales, in capped phases
+  only (ED-16): an uncapped public phase records nothing. Read the count with
+  `purchased(token, id, phase, account)`.
 - **The recipient must accept ERC-1155.** The edition mints inside `purchase`, so a recipient that
   rejects `onERC1155Received` reverts the whole purchase.
 
@@ -669,8 +672,8 @@ a purchase, so `SaleSettled` can follow `SaleClosed`
 
 ### Gas
 
-A purchase that mints an edition's first copy to a new holder uses 193,971 Prague gas
-([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). Worst cases with a
+A purchase's Prague gas and new slots, first copy and later copies, fixed price and Dutch, are
+in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Worst cases with a
 32-node proof and escrowed payouts are in the [sales README](../../src/sales/README.md#gas).
 
 ## Claiming
@@ -721,8 +724,8 @@ predicted CREATE2 addresses (ECO-9).
 
 - **Deploy before you release.** Funds sent to a predicted address wait there (ECO-11). Anyone
   deploys the wallet with `SplitFactory.createWallet(payees, salt)`, with the payees and salt (zero)
-  the address was predicted from. A seller wallet with one payee uses 1,236,339 Prague gas
-  ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)), mostly code, which
+  the address was predicted from. Its cost is in the
+  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table): mostly code, which
   Glamsterdam reprices.
 - **Releasable amount.** `releasable(asset, index)`; ETH is `address(0)` (ECO-13).
 
@@ -789,8 +792,8 @@ Keeper guidance ([economics README](../../src/economics/README.md#batch-claims-a
 - A party to an item (a gas-burning co-payee, a signed release's recipient, a token issuer) can
   make it look short of gas after you estimated. Simulate privately, isolate contract payees and
   unfamiliar tokens, and drop an item whose revert names its index.
-- An artist's first signed release through the router uses 141,370 Prague gas
-  ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- An artist's first signed release through the router is a row of the
+  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ## Royalties for marketplaces
 
@@ -809,8 +812,8 @@ function royaltyInfo(uint256 tokenId, uint256 salePrice)
 | Unknown token | `UnknownWork(tokenId)` | `UnknownEdition(editionId)` |
 | Rate change event | `RoyaltyRateChanged` ([Stream](events-and-indexing.md#stream)) | `RoyaltyRateChanged` and `MetadataUpdate` ([Editions](events-and-indexing.md#editions)) |
 
-- **Gas.** Stream's `royaltyInfo` makes one view call to the split factory and uses 41,325 Prague
-  gas as a whole call ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- **Gas.** Stream's `royaltyInfo` makes one view call to the split factory; its gas as a whole
+  call is in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
   Short of gas it reverts, never returning a zero royalty; supply comfortably more.
 - **Advisory.** Stream and Editions transfer as plain ERC-721 and ERC-1155 tokens and do not enforce
   payment ([ADR 0001 §16](../adr/0001-v1-scope.md#16-6529-stream-federated)).

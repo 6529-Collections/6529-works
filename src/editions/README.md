@@ -33,10 +33,13 @@ since may still burn the copies it holds. FIXED editions stop at `size` copies;
 OPEN editions sell for `window` seconds from the first mint, capped at `size`
 when it is nonzero. A master with an edition has settled and is never burned
 (Stream refuses), so minting reads nothing from Stream. Burned copies still
-count toward the size. The sale adapter owns the currency: `primaryTerms` and
-`mint` return the package's stored currency (possibly `CURRENCY_DEFAULT`, which
-is allowed only with a zero price), and the adapter resolves and locks it when
-it opens a sale. Edition terms follow one rule, `EditionRules.isValid`, which the
+count toward the size. The sale adapter owns the currency: `primaryTerms`
+returns the package's stored currency (possibly `CURRENCY_DEFAULT`, which is
+allowed only with a zero price), and the adapter resolves and locks it when it
+opens a sale. A sale applies the terms it locked then, so `mint` returns only
+the sale kind of its terms: building the full terms would cost every purchase
+the record reads and an artist-registry call, about 19,000 gas (QUALITY-2).
+Edition terms follow one rule, `EditionRules.isValid`, which the
 package registry also applies at `consume`: a master whose edition could not be
 created, or not be sold by its Dutch adapter, never mints. Every copy is sold at
 mint, so `markPrimarySettled` is a no-op that any adapter ever admitted may

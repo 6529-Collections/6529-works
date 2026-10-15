@@ -336,8 +336,8 @@ A revert anywhere in the start, including `SeedNotDelivered`, undoes the consume
   reverts with `NotAuthority`. After execution the new key signs.
 - **Rotated keys.** Unused moves signed by a rotated-away key stay void, unless the new authority
   is an ERC-1271 or EIP-7702 wallet that accepts them (ADR 0003, SIGS-3).
-- **Gas.** `consume` measures 96,456 Prague gas and 1 new slot, under a 99,000 ceiling
-  ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- **Gas.** `consume`'s Prague gas, new slots and regression ceiling are in the
+  [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ### Edition content claim
 

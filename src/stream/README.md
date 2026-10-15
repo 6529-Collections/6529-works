@@ -42,9 +42,24 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   admitted adapter holding the token never can. After a sale nothing is
   confiscated.
 - **Start gas.** A mint writes the ERC-721 owner and balance, one shared counter
-  word, the collection's counter word and three work words: the seller, serial,
-  collection, kind, seed policy and flags; the lead artist ID, royalty rate, fee
-  share, fee-recipient index and minting-adapter index; the item hash.
+  word, the collection's counter word and two work words: the seller, serial,
+  collection, kind, seed policy, flags and a terms ID; the item hash. The terms
+  (the lead artist ID, royalty rate, fee share, fee-recipient index and
+  minting-adapter index) are one word shared by every work with the same terms
+  (QUALITY-6). The word sits at a position its hash names, or, if other terms
+  hold that position, in an overflow range found again by the full hash; nothing
+  loops. A first start under new terms writes it (an artist's first, and every
+  artist's first after an economics change or through a newly admitted adapter,
+  since the terms include the minter index), and every later start reuses it:
+  one new slot fewer per start, about 89,000 gas on Sepolia
+  ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)). A re-rate
+  moves the token to the terms with its new rate, written if new.
+  - **Accepted limitation.** When other terms hold the hashed position, a first
+    start writes the overflow word and its index, one slot more, and each later
+    start under those terms reads the overflow index cold (about 2,100 gas).
+    Collisions are expected once there are a few thousand distinct terms, and a
+    curated artist can force one on another by grinding an address. Views and
+    payouts are unaffected.
   Everything else is in `WorkMinted` and in the published package.
 - **Royalties.** The rate is stored; the receiver is derived. With no fee it is
   the seller; otherwise it is the split factory's salt-zero wallet for the

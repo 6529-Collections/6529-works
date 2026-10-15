@@ -247,10 +247,11 @@ contract ReviewRound2Test is FixedPriceBase {
         vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
         vm.prank(platform);
         fixedSale.closeSale(saleId);
-        // A stranger cannot reopen, and caps carry over.
+        // A stranger cannot reopen. The phase is an uncapped public one, which counts nothing
+        // (QUALITY-1).
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         _open(stranger, ETH_ED, _one(_phase(0, 0, false, false)));
-        assertEq(_bought(saleId, 0, alice), 1);
+        assertEq(_bought(saleId, 0, alice), 0);
     }
 
     // ------------------------------------------------------------------ resolver

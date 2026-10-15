@@ -244,10 +244,16 @@ sequenceDiagram
 - **`consume`** checks the proof, acceptances, payees, the move, single use and content
   uniqueness ([Curation](curation.md)); its errors bubble up unchanged. Media checks do not run
   at mint ([`src/stream/README.md`](../../src/stream/README.md#core-token)).
-- **Effects.** Stream stores per work the seller wallet, serial, collection, item kind, seed
-  policy, the settled and edition-linked flags, the lead artist ID, royalty rate, fee share,
-  indexes of the fee recipient and minting adapter, and the item hash; the rest is in
-  `WorkMinted` and the published package. The auction resolves `CURRENCY_DEFAULT` once, to the
+- **Effects.** Stream stores two words per work: the seller wallet with the serial, collection,
+  a flags byte (item kind, seed policy, settled, edition-linked) and a terms ID; and the item
+  hash. The terms (the lead artist ID, royalty rate, fee share, and the indexes of the fee
+  recipient and minting adapter) are one word that every work under the same terms shares,
+  written by the first start under them (QUALITY-6). It sits at the position its hash names
+  (23 bits), or in an overflow range keyed by the full hash when other terms hold that
+  position; a re-rate moves the token to the terms with its new rate. The rest is in
+  `WorkMinted` and the published package. New slots per start, and the accepted cost of a
+  position collision (LIM-GAS-10), are in
+  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). The auction resolves `CURRENCY_DEFAULT` once, to the
   `PRODUCT_STREAM` default (ETH at launch), or requires the named currency to be active. The
   start never deploys a split wallet.
 - **`startWithBid`** runs the start and then [the bid](#bid-and-outbid) in one transaction. A
@@ -583,7 +589,7 @@ sequenceDiagram
 | AUC-29 | The auction refuses every safe transfer into it except its own mint during a start. | `EnglishAuction.onERC721Received` | [`Calls5Regression.t.sol`](../../test/adv/Calls5Regression.t.sol): `test_CALLS5_SafeTransfersIntoTheAuctionAreRefused`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_OnERC721Received_RejectsUnexpectedTransfers` |
 | AUC-30 | Governed parameters stay within bounds and are compare-and-set. | `EnglishAuction.setConfig`, `setOpeningBid` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Constructor_RejectsConfigOutOfBounds`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetConfig_CompareAndSet`, `test_SetOpeningBid_MovesBothWaysWithinTheCeiling`, `testFuzz_SetOpeningBid_AnyValueUpToTheCeiling`; [`EnglishAuctionReview.t.sol`](../../test/sales/auction/EnglishAuctionReview.t.sol): `test_PR33_OpeningBidCappedAtTheLargestBid` |
 | AUC-31 | No reentrant call reaches a value-moving entry point. | `nonReentrant` on `start`, `startWithBid`, `bid`, `withdrawBid`, `settle`, `claimDelivery`, `claim`, `claimFor`, `pause(saleId)`, `resume`, `cancel` | [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol): `test_ReentrantClaimerIsBlocked`, `test_ReentrantWinnerCannotReenterSettlement`, `test_ReentrantSellerWalletIsBlocked`, `test_CallbackTokenCannotReenter` |
-| AUC-32 | Gas: a steady-state ETH start uses at most 350,000 Prague gas and 6 new slots (7 with a bid). | measured, not enforced on-chain | [`GasReport.t.sol`](../../test/integration/GasReport.t.sol): `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_Table`; [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol): `test_StartGas_SteadyState` |
+| AUC-32 | Gas: a steady-state ETH start uses at most 350,000 Prague gas and 6 new slots (7 with a bid). A first start under new terms is measured separately; it writes one slot more when its terms' hashed position collides (an accepted limitation, LIM-GAS-10). | measured, not enforced on-chain | [`GasReport.t.sol`](../../test/integration/GasReport.t.sol): `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_StartWithBid_ArtistsFirstWork_TwoParty`, `test_Gas_Table`; [`StreamTermsGrind.t.sol`](../../test/stream/StreamTermsGrind.t.sol): `test_GroundCollisionAddsOneSlotToTheFirstStart`; [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol): `test_StartGas_SteadyState` |
 
 ## Events
 
@@ -639,6 +645,7 @@ reopening after a currency freeze.
 | Royalty rate | at most 100,000; 6,529 (6.529%) at launch | `Splits.DENOMINATOR`; `EconomicsResolver.DEFAULT_ROYALTY_RATE` |
 | Network fee share | below 100,000 for Stream works; 25,000 (25%) at launch | `Stream._quote`; `EconomicsResolver.DEFAULT_FEE_SHARE` |
 | Distinct fee recipients, distinct admitted minters | at most 65,535 each | 16-bit indexes in `Stream` |
+| Interned terms | 2^23 hashed positions, and at most 2^23 − 1 terms in the overflow range | `Stream._termsId` |
 | ERC-20 `settle` call gas limit | about 1.11M (uses about 140K) | [ADR 0004, security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact) |
 
 ## Differences from the ADRs

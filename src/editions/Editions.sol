@@ -31,7 +31,7 @@ import {
     License,
     PackageItem
 } from "../interfaces/types/PackageTypes.sol";
-import { PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
+import { DutchParams, PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { EditionRules } from "./EditionRules.sol";
@@ -58,10 +58,11 @@ import { EditionRules } from "./EditionRules.sol";
 ///      ever (burns do not free supply), and for OPEN editions only during `window` seconds from
 ///      the first mint. A master with an edition is never burned (Stream refuses to burn a
 ///      settled token), so minting reads nothing from Stream. The sale adapter owns the currency:
-///      `primaryTerms` and `mint` return the package's stored currency, possibly
-///      `CURRENCY_DEFAULT` (allowed only with a zero price), and the adapter resolves and locks
-///      it when it opens a sale (ADR 0001 section 5). Royalties are read from this contract's
-///      storage with no external call. The receiver is the edition's split (from
+///      `primaryTerms` returns the package's stored currency, possibly `CURRENCY_DEFAULT`
+///      (allowed only with a zero price), and the adapter resolves and locks it when it opens a
+///      sale (ADR 0001 section 5); `mint` returns only the sale kind of its terms. Royalties are
+///      read from this contract's storage with no external call. The receiver is the edition's
+///      split (from
 ///      `PRODUCT_EDITIONS` economics) and never changes; the rate starts at the master's current
 ///      rate, so a consented re-rate of the master before the edition exists carries over, and
 ///      the bound work-records satellite re-rates the edition with its master afterwards (every
@@ -90,10 +91,34 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         uint32 royaltyRate;
     }
 
-    /// @dev An edition plus what it keeps beside the interface's `Edition` view.
+    /// @dev An edition as stored (QUALITY-5), behind the interface's `Edition` view: nine words,
+    ///      of which creating a priced ETH edition with a fee writes six (the content hash, the
+    ///      four packed words and the price) and a Dutch one two more; the first mint writes
+    ///      none, since `minted` shares the artist ID's word. `dutch` stands for the sale kind
+    ///      (FIXED_PRICE or DUTCH, `EditionRules`), and a Dutch edition's params are kept decoded
+    ///      (`abi.encode(DutchParams)` rebuilds them exactly: the rules bound both durations by
+    ///      2^64). `windowStart` is a timestamp, far below 2^48. It shares the fee recipient's
+    ///      word, so an OPEN edition on terms without a fee recipient writes that word at its
+    ///      first mint, one new slot.
     struct Record {
-        Edition edition;
-        uint256 artistId;
+        bytes32 contentHash;
+        address seller;
+        uint64 size;
+        EditionFormat format;
+        bool dutch;
+        address royaltyReceiver;
+        uint64 window;
+        uint32 royaltyRate;
+        uint160 artistId;
+        uint64 minted;
+        uint32 feeShare;
+        address feeRecipient;
+        uint48 windowStart;
+        address currency;
+        uint256 price;
+        uint256 restingPrice;
+        uint64 duration;
+        uint64 stepSeconds;
     }
 
     /// @inheritdoc IEditions
@@ -174,22 +199,34 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         bytes32[] calldata proof
     ) external returns (uint256 editionId) {
         (bytes32 itemHash, Master memory master) = _admit(workId, item, packageRoot, proof);
-        _checkTerms(workId, item.edition);
-        EditionTerms memory terms = item.edition;
+        EditionTerms calldata terms = item.edition;
+        _checkTerms(workId, terms);
         WorkTerms memory w = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
 
         Record storage r = _records[workId];
-        Edition storage e = r.edition;
-        e.contentHash = item.contentHash;
-        e.terms = terms;
-        e.seller = w.seller;
-        e.feeRecipient = w.feeRecipient;
-        e.feeShare = w.feeShare;
-        e.royaltyReceiver = w.royaltyReceiver;
+        r.contentHash = item.contentHash;
+        r.seller = w.seller;
+        r.size = terms.size;
+        r.format = terms.format;
+        r.royaltyReceiver = w.royaltyReceiver;
+        r.window = terms.window;
         // The master's current rate, not the product default: a consented re-rate of the master
         // before the edition exists carries over; later ones arrive through `setRoyaltyRate`.
-        e.royaltyRate = master.royaltyRate;
-        r.artistId = master.artistId;
+        r.royaltyRate = master.royaltyRate;
+        // Stream mints only artist IDs below 2^160.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        r.artistId = uint160(master.artistId);
+        r.feeShare = w.feeShare;
+        r.feeRecipient = w.feeRecipient;
+        r.currency = terms.currency;
+        r.price = terms.price;
+        if (terms.saleKind == SaleKind.DUTCH) {
+            DutchParams memory d = abi.decode(terms.params, (DutchParams));
+            r.dutch = true;
+            r.restingPrice = d.restingPrice;
+            r.duration = d.duration;
+            r.stepSeconds = d.stepSeconds;
+        }
         emit EditionCreated(workId, item.contentHash, terms);
         emit MetadataUpdate(workId);
 
@@ -253,16 +290,25 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (msg.sender != workRecords) revert UnboundCaller(msg.sender);
         if (rate > Splits.DENOMINATOR) revert InvalidRoyaltyRate(rate);
         if (!exists(editionId)) return;
-        Edition storage e = _records[editionId].edition;
-        if (e.royaltyRate == rate) return;
-        emit RoyaltyRateChanged(editionId, e.royaltyRate, rate);
+        Record storage r = _records[editionId];
+        if (r.royaltyRate == rate) return;
+        emit RoyaltyRateChanged(editionId, r.royaltyRate, rate);
         emit MetadataUpdate(editionId);
-        e.royaltyRate = rate;
+        r.royaltyRate = rate;
     }
 
     /// @inheritdoc IEditions
-    function edition(uint256 editionId) external view returns (Edition memory) {
-        return _edition(editionId);
+    function edition(uint256 editionId) external view returns (Edition memory e) {
+        Record storage r = _edition(editionId);
+        e.contentHash = r.contentHash;
+        e.terms = _terms(r);
+        e.minted = r.minted;
+        e.windowStart = r.windowStart;
+        e.seller = r.seller;
+        e.feeRecipient = r.feeRecipient;
+        e.feeShare = r.feeShare;
+        e.royaltyReceiver = r.royaltyReceiver;
+        e.royaltyRate = r.royaltyRate;
     }
 
     /// @inheritdoc IEditions
@@ -276,7 +322,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     function formatOf(uint256 editionId) external view returns (EditionFormat) {
-        return _edition(editionId).terms.format;
+        return _edition(editionId).format;
     }
 
     /// @inheritdoc IEditions
@@ -286,14 +332,16 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     function exists(uint256 editionId) public view returns (bool) {
-        return _records[editionId].edition.contentHash != 0;
+        return _records[editionId].contentHash != 0;
     }
 
     // ----------------------------------------------------------------------- minting
 
     /// @inheritdoc IMintTarget
-    /// @dev `data` must be empty. Effects precede the ERC-1155 acceptance call, so a reentering
-    ///      receiver sees the updated supply.
+    /// @dev `data` must be empty. `terms` carries only the sale kind: the adapters lock the full
+    ///      terms when a sale opens (`primaryTerms`) and never read them from a mint, so a
+    ///      purchase skips the record reads and the artist-registry call (QUALITY-2). Effects
+    ///      precede the ERC-1155 acceptance call, so a reentering receiver sees the updated supply.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
@@ -302,29 +350,32 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             revert NotAdmittedMinter(msg.sender);
         }
         if (amount == 0 || data.length != 0) revert InvalidMintRequest();
-        Edition storage e = _edition(id);
+        Record storage r = _edition(id);
         bytes32 kind = ISaleAdapter(msg.sender).saleKind();
-        if (kind != e.terms.saleKind) revert SaleKindMismatch(e.terms.saleKind, kind);
-        uint256 cap = e.terms.size == 0 ? type(uint64).max : e.terms.size;
-        if (amount > cap - e.minted) revert EditionUnavailable(id);
-        if (e.terms.format == EditionFormat.OPEN) {
-            uint64 start = e.windowStart;
+        bytes32 expected = r.dutch ? SaleKind.DUTCH : SaleKind.FIXED_PRICE;
+        if (kind != expected) revert SaleKindMismatch(expected, kind);
+        uint256 cap = r.size == 0 ? type(uint64).max : r.size;
+        if (amount > cap - r.minted) revert EditionUnavailable(id);
+        if (r.format == EditionFormat.OPEN) {
+            uint64 start = r.windowStart;
             if (start == 0) {
                 start = uint64(block.timestamp);
-                e.windowStart = start;
-                uint256 closesAt = Math.min(uint256(start) + e.terms.window, type(uint64).max);
+                // Safe: a timestamp, far below 2^48.
+                // forge-lint: disable-next-line(unsafe-typecast)
+                r.windowStart = uint48(start);
+                uint256 closesAt = Math.min(uint256(start) + r.window, type(uint64).max);
                 // casting to 'uint64' is safe because closesAt is capped at type(uint64).max
                 // forge-lint: disable-next-line(unsafe-typecast)
                 emit EditionWindowOpened(id, uint64(closesAt));
             }
             // The window is a wall-clock bound by design; validator drift is immaterial.
             // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp >= uint256(start) + e.terms.window) revert EditionUnavailable(id);
+            if (block.timestamp >= uint256(start) + r.window) revert EditionUnavailable(id);
         }
         // casting to 'uint64' is safe because amount <= cap - minted <= type(uint64).max - minted
         // forge-lint: disable-next-line(unsafe-typecast)
-        e.minted += uint64(amount);
-        terms = _primaryTerms(id, e);
+        r.minted += uint64(amount);
+        terms.saleKind = kind;
         _mint(to, id, amount, "");
         return (id, terms);
     }
@@ -333,7 +384,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev The full edition terms; `data` is ignored and the currency is the package's,
     ///      unresolved.
     function primaryTerms(uint256 id, bytes calldata) external view returns (PrimaryTerms memory) {
-        return _primaryTerms(id, _edition(id));
+        return _primaryTerms(_edition(id));
     }
 
     /// @inheritdoc IMintTarget
@@ -365,8 +416,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         view
         returns (address receiver, uint256 royaltyAmount)
     {
-        Edition storage e = _edition(tokenId);
-        return (e.royaltyReceiver, Math.mulDiv(salePrice, e.royaltyRate, Splits.DENOMINATOR));
+        Record storage r = _edition(tokenId);
+        return (r.royaltyReceiver, Math.mulDiv(salePrice, r.royaltyRate, Splits.DENOMINATOR));
     }
 
     /// @inheritdoc IEditions
@@ -458,9 +509,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             && ERC165Checker.supportsInterface(target, interfaceId);
     }
 
-    function _edition(uint256 editionId) private view returns (Edition storage e) {
-        e = _records[editionId].edition;
-        if (e.contentHash == 0) revert UnknownEdition(editionId);
+    function _edition(uint256 editionId) private view returns (Record storage r) {
+        r = _records[editionId];
+        if (r.contentHash == 0) revert UnknownEdition(editionId);
     }
 
     /// @dev The shared rule (`EditionRules.isValid`, also enforced by the package registry at
@@ -470,20 +521,32 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (!EditionRules.isValid(t)) revert InvalidEditionTerms(workId);
     }
 
-    function _primaryTerms(uint256 id, Edition storage e)
-        private
-        view
-        returns (PrimaryTerms memory)
-    {
+    function _primaryTerms(Record storage r) private view returns (PrimaryTerms memory) {
+        EditionTerms memory t = _terms(r);
         return PrimaryTerms({
-            saleKind: e.terms.saleKind,
-            currency: e.terms.currency,
-            price: e.terms.price,
-            params: e.terms.params,
-            seller: e.seller,
-            feeRecipient: e.feeRecipient,
-            feeShare: e.feeShare,
-            creator: artistRegistry.activeAuthorityOf(_records[id].artistId)
+            saleKind: t.saleKind,
+            currency: t.currency,
+            price: t.price,
+            params: t.params,
+            seller: r.seller,
+            feeRecipient: r.feeRecipient,
+            feeShare: r.feeShare,
+            creator: artistRegistry.activeAuthorityOf(r.artistId)
         });
+    }
+
+    /// @dev The edition terms as approved, rebuilt from the packed record.
+    function _terms(Record storage r) private view returns (EditionTerms memory t) {
+        t.format = r.format;
+        t.size = r.size;
+        t.window = r.window;
+        t.price = r.price;
+        t.currency = r.currency;
+        if (r.dutch) {
+            t.saleKind = SaleKind.DUTCH;
+            t.params = abi.encode(DutchParams(r.restingPrice, r.duration, r.stepSeconds));
+        } else {
+            t.saleKind = SaleKind.FIXED_PRICE;
+        }
     }
 }

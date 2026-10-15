@@ -63,6 +63,12 @@ Each measured operation asserts its exact counts, so a slot one change saves
 cannot be spent again unnoticed. A steady-state `start` is also held to a
 maximum of **6** new slots, and `startWithBid` to **7**, in ETH: for one or
 two parties, and for VRF and edition-master works.
+- Since the state-growth diet (see the table's commentary): 6 (7 with a bid) at
+  steady state; an artist's first start under new terms writes one more on a
+  hashed-position collision, which a curated artist can force by grinding an
+  address. The 350K budget is for steady-state starts. First starts are
+  measured and gated separately, and a forced collision can push one first
+  start over 350K: an accepted limitation.
 - When a change lowers a count, the same pull request lowers the test's
   figure, this ADR's table and the figure in `AGENTS.md`. Lowering needs no
   new ADR.
@@ -101,8 +107,8 @@ budget and the 6 and 7 slot maxima apply to starts in ETH. ADR 0001 §5 says
 Stream launches with ETH and makes ERC-20 payment a governed configuration. It
 also lets a package's sale terms name any currency on the asset allowlist.
 - An ERC-20 start paid by Permit2 is a supported path, not the default. It has
-  a Prague regression ceiling (388,000) and exact counts (7 new slots, no new
-  account), but no budget.
+  a Prague regression ceiling (388,000; 365,000 since the state-growth diet) and
+  exact counts (7 new slots, 6 since the diet, no new account), but no budget.
 - The allowlist is global, so ERC-20 Stream starts can happen without any
   change to the default currency.
 - Admitting the first ERC-20 to the allowlist, or curation approving a Stream
@@ -121,32 +127,40 @@ no ceiling, or not run on Sepolia.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 291,808 | 350,000 | **6** | 0 | 846,963 |
-| `startWithBid`, steady state | 333,883 | 350,000 | **7** | 0 | 982,312 |
-| `start`, two-party work | 300,037 | 350,000 | **6** | 0 | — |
-| `startWithBid`, two-party work | 342,121 | 350,000 | **7** | 0 | — |
-| `start`, VRF work | 299,486 | 350,000 | **6** | 0 | 852,868 |
-| `start`, edition master | 292,448 | 350,000 | **6** | 0 | 847,598 |
-| `startWithBid`, ERC-20 by relayed Permit2 | 378,977 | 388,000 (regression) | 7 | 0 | — |
-| `start`, first work in a new collection | 291,802 | 400,000 | 6 | 0 | 846,977 |
-| `start`, first work ever (one-time) | 440,880 | 452,000 (regression) | 13 | 0 | 1,604,862 |
-| `startWithBid`, first bid under new sale terms (one-time) | 404,032 | 413,000 (regression) | 10 | 0 | — |
+| `start`, steady state | 270,108 | 350,000 | **5** | 0 | 846,963 |
+| `startWithBid`, steady state | 312,183 | 350,000 | **6** | 0 | 982,312 |
+| `start`, two-party work | 278,332 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 320,416 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 277,782 | 350,000 | **5** | 0 | 852,868 |
+| `start`, edition master | 270,747 | 350,000 | **5** | 0 | 847,598 |
+| `start`, an artist's first work | 290,202 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 332,277 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 340,518 | 350,000 | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 357,265 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 270,134 | 400,000 | 5 | 0 | 846,977 |
+| `start`, first work ever (one-time) | 439,273 | 449,000 (regression) | 13 | 0 | 1,604,862 |
+| `startWithBid`, first bid under new sale terms (one-time) | 382,332 | 390,000 (regression) | 9 | 0 | — |
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 168,932 |
-| `settle`, first payout to a seller wallet | 168,063 | 400,000 | 1 | 1 | 441,363 |
-| `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
-| `openSale` (one public phase) | 292,853 | 299,000 (regression) | 8 | 0 | 993,668 |
-| `purchase`, the first copy, new holder | 193,971 | 195,000 (regression) | 3 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 176,871 | 181,000 (regression) | 2 | 0 | 370,142 |
+| `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 441,363 |
+| `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 |
+| `consume`, as Stream calls it | 94,252 | 97,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 268,938 | 275,000 (regression) | 7 | 0 | 1,118,699 |
+| `createEdition`, a Dutch edition | 317,127 | 324,000 (regression) | 9 | 0 | — |
+| `openSale` (one public phase) | 241,730 | 247,000 (regression) | 6 | 0 | 993,668 |
+| `openSale`, the adapter's first sale (one-time) | 284,847 | 291,000 (regression) | 8 | 0 | — |
+| `purchase`, the first copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 468,086 |
+| `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 370,142 |
+| `openSale`, Dutch | 259,642 | 265,000 (regression) | 7 | 0 | — |
+| `purchase`, Dutch, the first copy, new holder | 124,486 | 127,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 187,673 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
-| `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
-| `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
+| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 40,667 |
+| `tokenURI` (view, the size matrix) | at most 2,735,330 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,236,339 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,368 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,370 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,074 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,362 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,094 | 92,000 (regression) | 0 | 0 | — |
 
 - **Re-measured after the review of 14 October 2026.** The split-wallet rows
   were added then, on the same harness; a wallet's deployment is mostly code
@@ -173,9 +187,125 @@ no ceiling, or not run on Sepolia.
   (MARKET-1/2). `openSale` (292,853) moved from 293,000 to 299,000 and the
   later `purchase` (176,871) from 177,000 to 181,000: each measured figure plus
   2%, rounded up to the thousand. Slot and account counts stay exact.
-- **The two-party `startWithBid` is the tightest:** 341,251, about 8.7K under
-  350K.
-- **An ERC-20 `startWithBid` paid by Permit2 costs 377,833**, about 45K more
+- **The state-growth diet (lane F8)** lowered these counts. The table is
+  re-measured at its head; each item's figure below is its own saving, measured
+  on this harness when it landed:
+  - QUALITY-1: an uncapped public phase (no root, no wallet cap) records no
+    purchase count, so a new buyer in one writes one slot fewer: `purchase` 3 → 2
+    new slots for the first copy and 2 → 1 for a later copy, about 23K less Prague
+    gas each.
+  - QUALITY-2: `Editions.mint` returns only the sale kind of its terms, which the
+    adapters never read (they apply the terms locked at `openSale`). A purchase
+    no longer reads the rest of the edition record or calls the artist registry:
+    about 21.9K less Prague gas per `purchase`, with no change in slots.
+  - QUALITY-4: a fixed-price or Dutch listing is five words, of which an ETH
+    sale writes four. The fee recipient is stored once per adapter and
+    referenced by a 2-byte index, which shares the seller's word with the phase
+    count. A phase is one word (window, cap and flags), plus its root for an
+    allowlist phase, in place of an array whose length was a slot of its own.
+    `openSale` with one public phase writes 6 new slots instead of 8 (about 46K
+    less Prague gas); an allowlist or capped phase one fewer than before; a Dutch
+    `openSale` 7 instead of 8. The adapter's first sale registers the fee
+    recipient, both directions of its index, with the counter in `nextSaleId`'s
+    word: 8 slots, once per adapter. A purchase reads its phase in one word
+    instead of four (about 6.1K less).
+  - QUALITY-5: the Editions record keeps the `Edition` view but packs its words:
+    the seller with the size, format and kind; the royalty receiver with the
+    window and rate; the artist ID with the minted count and fee share; the fee
+    recipient with the window start; the currency (zero for ETH); the content
+    hash and the price; a Dutch curve decoded into two words instead of `bytes`.
+    `createEdition` writes 7 new slots instead of 9 (about 46K less Prague gas),
+    a Dutch edition 9 instead of 13 with a stepped curve, and an edition's first
+    copy no longer opens the minted counter's word: the first `purchase` writes
+    only the holder's balance, 1 slot instead of 2, the same as a later copy.
+  - QUALITY-6, Stream's token record from four words to three: a token keeps
+    two words, the seller with the serial, collection, flags and a terms ID, and
+    the item hash. The terms (the lead artist ID, royalty rate, fee share,
+    fee-recipient index and minting adapter's index) are one word that every
+    work under the same terms shares. A start under existing terms writes 5 new
+    slots, 6 with a bid, about 19.3K less Prague gas.
+    - The quality review's design looked the terms up through a key-to-ID map:
+      one slot more on each payee list's first start. That start is steady state
+      today, since the artist's acceptance pre-writes the move-nonce word, so it
+      would have raised the maximum. The terms word sits instead at the position
+      its hash names (23 bits), or, when other terms already hold that position,
+      in an overflow range keyed by the full hash. Nothing loops.
+    - A first start under new terms writes the terms word in place of the old
+      per-token word: 6 slots, 7 with a bid, as every start wrote before. It is
+      an artist's first start, and every artist's first after an economics
+      change or through a newly admitted adapter (the terms include the minter
+      index). Terms are per lead artist, so a new collaboration of an artist who
+      has started before is not a first. The maxima stay 6 and 7; the exact
+      counts of the other start rows are 5 and 6. The binding row of the 350K
+      budget is now an artist's first start of a two-party work with a bid.
+    - **Accepted limitation: collisions.** Two terms collide when their 23-bit
+      hashed positions are equal. That is rare per pair (one in about 8.4
+      million) but expected at scale: a few thousand distinct terms make one
+      likely (even odds at about 3,400). A curated artist can also force one on
+      another artist by grinding an address (about 89,000 tries offline). When
+      the colliding terms are interned first, the other artist's first start
+      under its terms writes the overflow word and its index: one slot more, 7,
+      or 8 with a bid (the two-party first start with a bid is then about 365K
+      Prague, over 350K). Each later start under those terms reads the overflow
+      index cold, about 2.1K more. Correctness is unaffected
+      (`test/stream/StreamTermsInvariant.t.sol` runs 36 real collisions;
+      `test/stream/StreamTermsGrind.t.sol` reproduces a ground one).
+    - A re-rate (governed, with every party's consent) moves the token to the
+      terms with its new rate, which writes a word if no work has them yet; it
+      overwrote the token's own word before.
+    - Net: one slot less on every start except a first under new terms, which
+      is unchanged unless its position collides.
+  - The restrained flag: the artist registry keeps, in the authority's storage
+    word, whether the pending change is an override that moves the authority.
+    Every staging sets it and every end of a change clears it, so
+    `activeAuthorityOf` reads the pending change only while the flag is set. That
+    takes back the IDENTITY-1 read: about 2.2K to 2.4K less per `start`,
+    `settle`, `openSale`, `consume` and re-rate, with no change in slots. The
+    identity invariants check the flag against the pending change.
+  - New rows: an artist's first start, with and without a bid and as a
+    two-party work with a bid, a re-rate, `openSale` at steady state (the
+    adapter's fee recipient registered) and on the adapter's first sale, and a
+    Dutch `createEdition`, `openSale` and `purchase`. The artist's first starts
+    are gated by the 350K budget and the 6 and 7 maxima, with exact counts.
+    Regression ceilings of the rows the diet changed are the new figure plus
+    about 2%, rounded up to the thousand.
+
+  **Glamsterdam, re-derived.** Each slot saved is about 89,000 gas on Sepolia
+  on top of its Prague saving (about 111,000 against 22,100). The saving below
+  is the Prague saving plus 89,000 per slot saved; the estimate is the r2
+  receipt minus that saving, so it carries r2's own differences (a Safe as fee
+  recipient, the changes listed above since r2). "Before" is `main` at
+  `46941d6`, measured with the same rows.
+
+  | Operation | Prague before → after | New slots | Sepolia saving | Sepolia estimate (r2) |
+  | --- | ---: | ---: | ---: | ---: |
+  | `start`, steady state | 291,808 → 270,108 | 6 → 5 | about 111K | about 736K (846,963) |
+  | `startWithBid`, steady state | 333,883 → 312,183 | 7 → 6 | about 111K | about 872K (982,312) |
+  | `start`, an artist's first work | 291,821 → 290,202 | 6 → 6 | about 2K | — |
+  | `startWithBid`, first bid under new sale terms | 404,032 → 382,332 | 10 → 9 | about 111K | — |
+  | `consume`, as Stream calls it | 96,456 → 94,252 | 1 → 1 | about 2K | part of `start` |
+  | `settle`, with a bid | 143,063 → 141,585 | 1 → 1 | about 1.5K | about 256K (257,763) |
+  | `createEdition` | 314,734 → 268,938 | 9 → 7 | about 224K | about 895K (1,118,699) |
+  | `createEdition`, a Dutch edition | 404,296 → 317,127 | 13 → 9 | about 443K | — |
+  | `openSale` (one public phase) | 295,361 → 241,730 | 8 → 6 | about 232K | about 762K (993,668) |
+  | `openSale`, the adapter's first sale (once) | 295,361 → 284,847 | 8 → 8 | about 11K | — |
+  | `openSale`, Dutch | 289,068 → 259,642 | 8 → 7 | about 118K | — |
+  | `purchase`, the first copy, new holder | 193,971 → 123,933 | 3 → 1 | about 248K | about 220K (468,086) |
+  | `purchase`, a later copy, new holder | 176,871 → 123,933 | 2 → 1 | about 142K | about 228K (370,142) |
+  | `purchase`, Dutch, the first copy | 171,646 → 124,486 | 2 → 1 | about 136K | — |
+  | re-rate a work (governed) | 162,697 → 187,673 | 0 → 1 | about −114K | — |
+
+  The two-party and VRF starts, the edition-master start, the Permit2 start and
+  the first start in a new collection move as the steady-state `start` does.
+  The first work ever keeps its 13 slots (about 2K less). An artist's first start
+  and the re-rate are where the shared terms word is written (one word more on a
+  collision); the adapter's first `openSale` is where its fee recipient is
+  registered.
+- **The binding row is an artist's first start of a two-party work with a
+  bid:** 340,518, about 9.5K under 350K. The steady-state two-party
+  `startWithBid` is 320,416, about 29.6K under. A forced collision can push
+  that first start over 350K (above).
+- **An ERC-20 `startWithBid` paid by Permit2 costs 357,265**, about 45K more
   than in ETH, because of the Permit2 transfer path. That path adds:
   - the signed permit and its witness in the calldata;
   - Permit2's signature check and nonce update;
@@ -188,12 +318,13 @@ no ceiling, or not run on Sepolia.
 - **A rule of thumb on Sepolia's parameters:** a transaction's Glamsterdam gas
   is about its Prague gas, plus about 89,000 per new slot, plus about 184,000
   per new account. It is not a gate.
-- **Where a steady-state start's 6 slots go:**
-  - Stream's three-word token record and the ERC-721 owner;
+- **Where a steady-state start's 5 slots go:**
+  - Stream's two-word token record and the ERC-721 owner;
   - the package registry's consumed-content record;
   - the auction's sale.
 
-  `startWithBid` adds the bid.
+  `startWithBid` adds the bid, and a first start under new terms adds Stream's
+  shared terms word (and, on a hashed-position collision, the overflow index).
 
 ### CI against the Sepolia replays
 
@@ -262,8 +393,8 @@ check fails if a measured call reached storage the harness does not cool.
 `test/integration/GasHarness.t.sol` checks the correction against the truth.
 A steady-state `start` measured at the very start of a test, where every
 account and slot is cold, must equal the corrected figure measured after the
-test has warmed every account the call reaches. Today they are both 292,455,
-against 274,955 uncorrected: seven accounts at 2,500 each.
+test has warmed every account the call reaches. Today they are both 269,325,
+against 251,825 uncorrected: seven accounts at 2,500 each.
 
 **What CI cannot check.**
 - **Glamsterdam totals.** The Sepolia column is measured by hand on a
@@ -338,10 +469,11 @@ mainnet.
   candidate.
   - Stream's per-token words could go from four to three, by storing the
     economics fields as a deduplicated terms ID, as the auction already does.
-    A steady-state start would then cost about 760K on Sepolia.
+    A steady-state start would then cost about 760K on Sepolia. Done by the
+    state-growth diet (QUALITY-6, above).
   - The Editions record and the fixed-price listing with its phase (8 new
     slots each) could be halved, saving about 350K each on `createEdition` and
-    `openSale`.
+    `openSale`. The diet took each down by two slots (QUALITY-4 and -5).
   - The exact counts make any such saving visible and keep it.
 - **C: a redesign for minimal state.** This is rejected. Any design keeps the
   essential records: the owner, the consumed content and the sale. A redesign

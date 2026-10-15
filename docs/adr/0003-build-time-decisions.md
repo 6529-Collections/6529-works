@@ -169,7 +169,7 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Fixed-price allowlists.**
   - The allowlist leaf binds chain, adapter, token, ID, phase, account, cap and
     price.
-  - Per-wallet counts persist across reopened sales.
+  - Per-wallet counts persist across reopened sales (capped phases only).
   - One sale may be open per edition, and anyone may close a sale whose phases
     have all ended.
 - **Dutch sales** have no clearing price and no rebate.

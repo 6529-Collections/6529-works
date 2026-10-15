@@ -156,6 +156,78 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(keccak256(abi.encode(fixedSale.phases(saleId))), keccak256(abi.encode(phases)));
     }
 
+    /// @dev QUALITY-4: fee recipients are stored once per adapter and referenced by index. Each
+    ///      sale keeps the recipient it locked, a repeated recipient reuses its index (opening
+    ///      writes no registry slot), and purchases pay the locked recipient.
+    function test_OpenSale_FeeRecipientsStoredOnceByIndex() public {
+        address other = makeAddr("otherNetwork");
+        PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+        t.feeRecipient = other;
+        editions.setTerms(40, t, SIZE);
+        editions.setTerms(41, _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, ""), SIZE);
+        uint256 first = _openPublic(ETH_ED, 0);
+        vm.record();
+        uint256 second = _openPublic(40, 0);
+        (, bytes32[] memory registering) = vm.accesses(address(fixedSale));
+        vm.record();
+        uint256 third = _openPublic(41, 0);
+        (, bytes32[] memory registered) = vm.accesses(address(fixedSale));
+        // A new recipient adds the counter and both directions of its index; a registered one
+        // adds no write.
+        assertEq(registering.length, registered.length + 3);
+        assertEq(_locked(first).feeRecipient, network);
+        assertEq(_locked(second).feeRecipient, other);
+        assertEq(_locked(third).feeRecipient, network);
+        _buyEth(alice, second, 0, alice, 1, PRICE);
+        assertEq(other.balance, _fee(PRICE));
+        assertEq(network.balance, 0);
+        _buyEth(alice, third, 0, alice, 1, PRICE);
+        assertEq(network.balance, _fee(PRICE));
+    }
+
+    /// @dev QUALITY-4: the fee-recipient counter shares slot 0 with the AccessManaged authority
+    ///      and `nextSaleId` (bytes 29 and 30). At 65,535 recipients a sale that would register
+    ///      another fails closed with `InvalidSaleTerms`, as Stream's index does, while a
+    ///      registered recipient still opens sales.
+    function test_OpenSale_FeeRecipientLimitFailsClosed() public {
+        uint256 first = _openPublic(ETH_ED, 0); // registers `network` as index 1
+        vm.prank(creator);
+        fixedSale.closeSale(first);
+        uint256 word = uint256(vm.load(address(fixedSale), bytes32(0)));
+        assertEq(address(uint160(word)), address(manager), "slot 0 holds the authority");
+        assertEq(uint64(word >> 168), fixedSale.nextSaleId(), "then nextSaleId");
+        assertEq(uint16(word >> 232), 1, "then the fee-recipient count");
+        vm.store(address(fixedSale), bytes32(0), bytes32(word | uint256(type(uint16).max) << 232));
+        _openPublic(ETH_ED, 0);
+        PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+        t.feeRecipient = makeAddr("oneTooMany");
+        editions.setTerms(42, t, SIZE);
+        vm.expectRevert(
+            abi.encodeWithSelector(MintSaleBase.InvalidSaleTerms.selector, address(editions), 42)
+        );
+        _openPublic(42, 0);
+    }
+
+    /// @dev QUALITY-4: a phase is stored in one word, plus its root for an allowlist phase; the
+    ///      view rebuilds every field, for every phase up to `Limits.MAX_PHASES`.
+    function test_OpenSale_PackedPhasesRoundTrip() public {
+        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](16);
+        uint64 t = uint64(block.timestamp);
+        for (uint256 i; i < phases.length; ++i) {
+            bytes32 root = i % 2 == 0 ? keccak256(abi.encode(i)) : bytes32(0);
+            phases[i] = IFixedPriceSale.Phase(
+                t + uint64(i),
+                type(uint64).max - uint64(i),
+                root,
+                i % 3 == 0 ? type(uint32).max : uint32(i),
+                root != 0 && i % 4 == 0,
+                root != 0 && i % 4 == 2
+            );
+        }
+        uint256 saleId = _open(creator, ETH_ED, phases);
+        assertEq(keccak256(abi.encode(fixedSale.phases(saleId))), keccak256(abi.encode(phases)));
+    }
+
     function test_OpenSale_ByPlatformIsNotArtistApproved() public {
         uint256 saleId = _open(platform, ETH_ED, _one(_phase(0, 2, false, false)));
         assertFalse(_approved(saleId));
@@ -504,14 +576,57 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(seller.balance, total - _fee(total));
         assertEq(network.balance, _fee(total));
         assertEq(address(fixedSale).balance, 0);
-        assertEq(_bought(saleId, 0, bob), 3);
+        // An uncapped public phase counts nothing (QUALITY-1).
+        assertEq(_bought(saleId, 0, bob), 0);
     }
 
     function test_Purchase_RecipientDefaultsToPayer() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         _buyEth(alice, saleId, 0, address(0), 2, PRICE);
         assertEq(editions.balanceOf(alice, ETH_ED), 2);
-        assertEq(_bought(saleId, 0, alice), 2);
+        assertEq(_bought(saleId, 0, alice), 0, "an uncapped public phase counts nothing");
+    }
+
+    /// @dev QUALITY-1 (integrator decision): an uncapped public phase checks no count, so a
+    ///      purchase in it writes no adapter storage at all (the reentrancy guard is transient)
+    ///      and `purchased` stays zero.
+    function test_Purchase_UncappedPublicPhaseRecordsNothing() public {
+        uint256 saleId = _openPublic(ETH_ED, 0);
+        _buyEth(alice, saleId, 0, alice, 1, PRICE);
+        vm.deal(bob, PRICE);
+        vm.record();
+        vm.prank(bob);
+        fixedSale.purchase{ value: PRICE }(
+            _p(saleId, 0, bob, 1, 0, 0), new bytes32[](0), _eth(bob, PRICE)
+        );
+        (, bytes32[] memory writes) = vm.accesses(address(fixedSale));
+        assertEq(writes.length, 0, "no adapter storage written");
+        assertEq(editions.balanceOf(bob, ETH_ED), 1);
+        assertEq(_bought(saleId, 0, bob), 0);
+    }
+
+    /// @dev QUALITY-1: a capped public phase still counts, and its cap holds across reopened
+    ///      sales; purchases made earlier in an uncapped phase at the same index do not count
+    ///      against it.
+    function test_Purchase_CappedPublicPhaseCountsAcrossSales() public {
+        uint256 uncapped = _openPublic(ETH_ED, 0);
+        _buyEth(alice, uncapped, 0, alice, 3, PRICE);
+        vm.prank(creator);
+        fixedSale.closeSale(uncapped);
+        uint256 capped = _openPublic(ETH_ED, 2);
+        _buyEth(alice, capped, 0, alice, 2, PRICE);
+        assertEq(_bought(capped, 0, alice), 2, "only the capped phase's purchases count");
+        vm.prank(creator);
+        fixedSale.closeSale(capped);
+        uint256 again = _openPublic(ETH_ED, 2);
+        vm.deal(alice, PRICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(IFixedPriceSale.WalletCapExceeded.selector, again, 0, alice)
+        );
+        vm.prank(alice);
+        fixedSale.purchase{ value: PRICE }(
+            _p(again, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
+        );
     }
 
     function test_Purchase_PhaseWindowIsHalfOpen() public {

@@ -22,7 +22,7 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -55,8 +55,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant ITEMS = 8;
     /// @dev ADR 0004 maxima for a steady-state start's new slots, without and with a bid: the
-    ///      token record and its owner, the consumed-content record and the sale; the bid.
-    ///      Raising one needs an ADR.
+    ///      token's two words and its owner, the consumed-content record and the sale; the bid;
+    ///      and Stream's shared terms word when the work is the first under its terms (an
+    ///      artist's first start, QUALITY-6). Raising one needs an ADR.
     uint256 internal constant START_MAX_SLOTS = 6;
     uint256 internal constant START_WITH_BID_MAX_SLOTS = 7;
     /// @dev Test ceilings in Prague gas, kept by ADR 0004.
@@ -67,16 +68,21 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev Regression ceilings (ADR 0004), in Prague gas: each row's figure when it was set,
     ///      plus about 2%, rounded up to the thousand. They are not budgets. A change that
     ///      crosses one says why in its pull request and moves it.
-    uint256 internal constant FIRST_START_CEILING = 452_000;
-    uint256 internal constant NEW_TERMS_CEILING = 413_000;
-    uint256 internal constant PERMIT2_START_CEILING = 388_000;
+    uint256 internal constant FIRST_START_CEILING = 449_000;
+    uint256 internal constant NEW_TERMS_CEILING = 390_000;
+    uint256 internal constant PERMIT2_START_CEILING = 365_000;
     uint256 internal constant BID_CEILING = 75_000;
-    uint256 internal constant CONSUME_CEILING = 99_000;
-    uint256 internal constant CREATE_EDITION_CEILING = 331_000;
-    uint256 internal constant OPEN_SALE_CEILING = 299_000;
-    uint256 internal constant PURCHASE_FIRST_CEILING = 195_000;
-    uint256 internal constant PURCHASE_LATER_CEILING = 181_000;
+    uint256 internal constant CONSUME_CEILING = 97_000;
+    uint256 internal constant CREATE_EDITION_CEILING = 275_000;
+    uint256 internal constant CREATE_EDITION_DUTCH_CEILING = 324_000;
+    uint256 internal constant OPEN_SALE_CEILING = 247_000;
+    uint256 internal constant OPEN_SALE_FIRST_CEILING = 291_000;
+    uint256 internal constant OPEN_SALE_DUTCH_CEILING = 265_000;
+    uint256 internal constant PURCHASE_DUTCH_CEILING = 127_000;
+    uint256 internal constant PURCHASE_FIRST_CEILING = 127_000;
+    uint256 internal constant PURCHASE_LATER_CEILING = 127_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
+    uint256 internal constant RERATE_CEILING = 192_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
@@ -218,9 +224,17 @@ contract IntegrationGasReport is IntegrationBase {
         ISplitWallet.Payee[] memory duo = new ISplitWallet.Payee[](2);
         duo[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
         duo[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
-        address[19] memory extra = [
+        ISplitWallet.Payee[] memory soloC = new ISplitWallet.Payee[](1);
+        soloC[0] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 100_000);
+        ISplitWallet.Payee[] memory duoC = new ISplitWallet.Payee[](2);
+        duoC[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
+        duoC[1] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 80_000);
+        address[23] memory extra = [
             artistA,
             artistB,
+            makeAddr("gasArtistC"),
+            economics.newWorkTerms(PRODUCT_STREAM, soloC).seller,
+            economics.newWorkTerms(PRODUCT_STREAM, duoC).seller,
             platform,
             starter,
             bidder,
@@ -230,6 +244,7 @@ contract IntegrationGasReport is IntegrationBase {
             makeAddr("masterCollector"),
             makeAddr("firstCopyBuyer"),
             makeAddr("laterCopyBuyer"),
+            makeAddr("dutchBuyer"),
             makeAddr("gasWallet1"),
             makeAddr("gasWallet2"),
             makeAddr("gasCollaborator"),
@@ -295,7 +310,7 @@ contract IntegrationGasReport is IntegrationBase {
         _steadyState();
         r = _row("start, steady state", starter, address(auction), _startData(2), 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -304,22 +319,30 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data = _startWithBidData(root, _package(root), 2);
         r = _row("startWithBid, steady state", bidder, address(auction), data, 1 ether);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 7, 0);
+        _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
     /// @dev A two-party work: the lead artist and a collaborator who is paid as a fixed payee.
     function _twoPartyPackage() internal returns (bytes32 twoRoot, Work[] memory works) {
+        return _twoPartyPackageOf(artistA);
+    }
+
+    /// @dev Eight works led by `lead`, with the collaborator paid as a fixed payee.
+    function _twoPartyPackageOf(address lead)
+        internal
+        returns (bytes32 twoRoot, Work[] memory works)
+    {
         address collaborator = _actor("gasCollaborator");
         works = new Work[](ITEMS);
         for (uint256 i; i < ITEMS; ++i) {
-            works[i] = _work(artistA, collectionId);
+            works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(artistA, PartyRole.ARTIST);
+            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
             works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
-            works[i].item.payees[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
+            works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
         }
         twoRoot = _publish(works);
     }
@@ -332,7 +355,7 @@ contract IntegrationGasReport is IntegrationBase {
             abi.encodeCall(auction.start, (address(stream), _mintData(twoRoot, works, 1)));
         r = _row("start, steady state, two-party work", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -348,7 +371,7 @@ contract IntegrationGasReport is IntegrationBase {
             "startWithBid, steady state, two-party work", bidder, address(auction), data, 1 ether
         );
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 7, 0);
+        _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
@@ -364,7 +387,7 @@ contract IntegrationGasReport is IntegrationBase {
             abi.encodeCall(auction.start, (address(stream), _mintData(vrfRoot, works, 0)));
         r = _row("start, steady state, VRF work", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -392,7 +415,7 @@ contract IntegrationGasReport is IntegrationBase {
             abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0)));
         r = _row("start, steady state, edition master", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
-        _growthIs(r, 6, 0);
+        _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
 
@@ -467,7 +490,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, PERMIT2_START_CEILING, "regression ceiling");
-        _growthIs(r, 7, 0);
+        _growthIs(r, 6, 0);
     }
 
     function _rowStartNewCollection() internal returns (Row memory r) {
@@ -476,7 +499,66 @@ contract IntegrationGasReport is IntegrationBase {
             "start, first work in a new collection", starter, address(auction), _startData(6), 0
         );
         _gasAtMost(r, FIRST_IN_COLLECTION_CEILING, "400K test ceiling");
+        _growthIs(r, 5, 0);
+    }
+
+    /// @dev Eight single-artist works by artist C, who has never started a work (the acceptance
+    ///      pre-wrote the move-nonce word).
+    function _artistCPackage() internal returns (bytes32 cRoot, Work[] memory works) {
+        address artistC = _actor("gasArtistC");
+        works = new Work[](ITEMS);
+        for (uint256 i; i < ITEMS; ++i) {
+            works[i] = _work(artistC, collectionId);
+        }
+        cRoot = _publish(works);
+    }
+
+    /// @dev An artist's first start, at steady state otherwise: Stream also writes the shared
+    ///      terms word that the artist's later works reuse (QUALITY-6), so it writes as many slots
+    ///      as every start did before. The terms' hashed position is free here; on a collision the
+    ///      first start writes one slot more (`test/stream/StreamTermsGrind.t.sol`).
+    function _rowStartArtistFirst() internal returns (Row memory r) {
+        _steadyState();
+        (bytes32 cRoot, Work[] memory works) = _artistCPackage();
+        bytes memory data =
+            abi.encodeCall(auction.start, (address(stream), _mintData(cRoot, works, 0)));
+        r = _row("start, an artist's first work", starter, address(auction), data, 0);
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
         _growthIs(r, 6, 0);
+        _slotsAtMost(r, START_MAX_SLOTS);
+    }
+
+    /// @dev An artist's first start with a bid: the terms word and the bid.
+    function _rowStartWithBidArtistFirst() internal returns (Row memory r) {
+        _steadyState();
+        (bytes32 cRoot, Work[] memory works) = _artistCPackage();
+        r = _row(
+            "startWithBid, an artist's first work",
+            bidder,
+            address(auction),
+            _startWithBidData(cRoot, works, 0),
+            1 ether
+        );
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
+    /// @dev An artist's first start is a two-party work with a bid: the binding row of the 350K
+    ///      budget (ADR 0004).
+    function _rowStartWithBidArtistFirstTwoParty() internal returns (Row memory r) {
+        _steadyState();
+        (bytes32 twoRoot, Work[] memory works) = _twoPartyPackageOf(_actor("gasArtistC"));
+        r = _row(
+            "startWithBid, an artist's first work, two-party",
+            bidder,
+            address(auction),
+            _startWithBidData(twoRoot, works, 0),
+            1 ether
+        );
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
     /// @dev One-time: the first start on a new deployment (empty custody, the first fee terms
@@ -503,7 +585,7 @@ contract IntegrationGasReport is IntegrationBase {
             1 ether
         );
         _gasAtMost(r, NEW_TERMS_CEILING, "regression ceiling");
-        _growthIs(r, 10, 0);
+        _growthIs(r, 9, 0);
     }
 
     // ------------------------------------------------------------------ bids and settlement
@@ -572,19 +654,34 @@ contract IntegrationGasReport is IntegrationBase {
 
     // ------------------------------------------------------------------ 6529 Editions
 
+    /// @dev A Dutch edition master: a fixed edition of 10 from 0.0001 ETH down to a tenth of it,
+    ///      in hourly steps over a day (every curve word nonzero).
+    function _dutchMasterWorks() internal returns (Work[] memory works) {
+        works = _masterWorks();
+        works[0].item.edition.saleKind = SaleKind.DUTCH;
+        works[0].item.edition.params = abi.encode(DutchParams(EDITION_PRICE / 10, 1 days, 1 hours));
+    }
+
     /// @dev The master package, published, with item 0 started at steady state, bid on and
     ///      settled.
     function _settledMaster()
         internal
         returns (uint256 workId, bytes32 masterRoot, Work[] memory works)
     {
+        return _settledMasterOf(_masterWorks());
+    }
+
+    function _settledMasterOf(Work[] memory works)
+        internal
+        returns (uint256 workId, bytes32 masterRoot, Work[] memory)
+    {
         _steadyState();
-        works = _masterWorks();
         masterRoot = _publish(works);
         uint256 saleId;
         (saleId, workId) = _start(masterRoot, works, 0);
         _ethBid(saleId, makeAddr("masterCollector"), 1 ether);
         _settleAtEnd(saleId);
+        return (workId, masterRoot, works);
     }
 
     function _rowCreateEdition() internal returns (Row memory r) {
@@ -594,6 +691,18 @@ contract IntegrationGasReport is IntegrationBase {
         );
         r = _row("createEdition", starter, address(editions), data, 0);
         _gasAtMost(r, CREATE_EDITION_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev A Dutch edition keeps its curve decoded in two words (QUALITY-5).
+    function _rowCreateEditionDutch() internal returns (Row memory r) {
+        (uint256 workId, bytes32 masterRoot, Work[] memory works) =
+            _settledMasterOf(_dutchMasterWorks());
+        bytes memory data = abi.encodeCall(
+            editions.createEdition, (workId, works[0].item, masterRoot, _proofOf(works, 0))
+        );
+        r = _row("createEdition, a Dutch edition", starter, address(editions), data, 0);
+        _gasAtMost(r, CREATE_EDITION_DUTCH_CEILING, "regression ceiling");
         _growthIs(r, 9, 0);
     }
 
@@ -616,9 +725,14 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev The PLATFORM opens one public phase at the package price, without the artist's
-    ///      consent.
+    ///      consent, at steady state: the adapter has registered the network fee recipient, here
+    ///      by an earlier sale of the same edition that the PLATFORM closed. Four listing words,
+    ///      the open-sale record and the phase word (QUALITY-4).
     function _rowOpenSale() internal returns (Row memory r) {
         uint256 editionId = _createdEdition();
+        uint256 earlier = _platformOpens(editionId);
+        vm.prank(platform);
+        fixedSale.closeSale(earlier);
         r = _row(
             "openSale (PLATFORM, one public phase)",
             platform,
@@ -627,6 +741,22 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, OPEN_SALE_CEILING, "regression ceiling");
+        _growthIs(r, 6, 0);
+    }
+
+    /// @dev One-time: the adapter's first sale also registers the network fee recipient, which
+    ///      later listings reference by index (both directions of the index; the counter shares
+    ///      `nextSaleId`'s word).
+    function _rowOpenSaleFirst() internal returns (Row memory r) {
+        uint256 editionId = _createdEdition();
+        r = _row(
+            "openSale, the adapter's first sale (one-time)",
+            platform,
+            address(fixedSale),
+            _openSaleData(editionId),
+            0
+        );
+        _gasAtMost(r, OPEN_SALE_FIRST_CEILING, "regression ceiling");
         _growthIs(r, 8, 0);
     }
 
@@ -646,14 +776,20 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     function _openEditionSale() internal returns (uint256 saleId) {
-        uint256 editionId = _createdEdition();
+        saleId = _platformOpens(_createdEdition());
+    }
+
+    /// @dev The PLATFORM opens one public phase of `editionId`.
+    function _platformOpens(uint256 editionId) internal returns (uint256 saleId) {
         vm.prank(platform);
         (bool ok, bytes memory ret) = address(fixedSale).call(_openSaleData(editionId));
         _bubble(ok, ret);
         saleId = abi.decode(ret, (uint256));
     }
 
-    /// @dev The edition's first copy, to a new holder: the mint path's one-time records.
+    /// @dev The edition's first copy, to a new holder: only the holder's balance. The phase is
+    ///      public and uncapped, so the adapter records no purchase count (QUALITY-1), and the
+    ///      edition's minted counter shares a word written at creation (QUALITY-5).
     function _rowPurchaseFirst() internal returns (Row memory r) {
         uint256 saleId = _openEditionSale();
         address buyer = makeAddr("firstCopyBuyer");
@@ -665,7 +801,7 @@ contract IntegrationGasReport is IntegrationBase {
             EDITION_PRICE
         );
         _gasAtMost(r, PURCHASE_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 3, 0);
+        _growthIs(r, 1, 0);
     }
 
     function _rowPurchaseLater() internal returns (Row memory r) {
@@ -685,7 +821,112 @@ contract IntegrationGasReport is IntegrationBase {
             EDITION_PRICE
         );
         _gasAtMost(r, PURCHASE_LATER_CEILING, "regression ceiling");
-        _growthIs(r, 2, 0);
+        _growthIs(r, 1, 0);
+    }
+
+    // ------------------------------------------------------------------ 6529 Editions, Dutch
+
+    /// @dev A Dutch master, settled, and its edition created.
+    function _createdDutchEdition() internal returns (uint256 editionId) {
+        (uint256 workId, bytes32 masterRoot, Work[] memory works) =
+            _settledMasterOf(_dutchMasterWorks());
+        editions.createEdition(workId, works[0].item, masterRoot, _proofOf(works, 0));
+        editionId = workId;
+    }
+
+    function _dutchOpenData(uint256 editionId) internal view returns (bytes memory) {
+        return abi.encodeCall(
+            dutchSale.openSale, (address(editions), editionId, uint64(block.timestamp))
+        );
+    }
+
+    /// @dev The PLATFORM opens a sale of a FIXED Dutch edition.
+    function _dutchOpens(uint256 editionId) internal returns (uint256 saleId) {
+        vm.prank(platform);
+        (bool ok, bytes memory ret) = address(dutchSale).call(_dutchOpenData(editionId));
+        _bubble(ok, ret);
+        saleId = abi.decode(ret, (uint256));
+    }
+
+    /// @dev The PLATFORM opens a Dutch sale at steady state: the Dutch adapter has registered
+    ///      the network fee recipient (an earlier sale of the edition, closed). Four listing
+    ///      words, the open-sale record and the two schedule words.
+    function _rowOpenSaleDutch() internal returns (Row memory r) {
+        uint256 editionId = _createdDutchEdition();
+        uint256 earlier = _dutchOpens(editionId);
+        vm.prank(platform);
+        dutchSale.closeSale(earlier);
+        r = _row(
+            "openSale, Dutch (PLATFORM)", platform, address(dutchSale), _dutchOpenData(editionId), 0
+        );
+        _gasAtMost(r, OPEN_SALE_DUTCH_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev The Dutch edition's first copy, to a new holder, at the starting price.
+    function _rowPurchaseDutch() internal returns (Row memory r) {
+        uint256 saleId = _dutchOpens(_createdDutchEdition());
+        address buyer = makeAddr("dutchBuyer");
+        bytes memory data = abi.encodeCall(
+            dutchSale.purchase,
+            (
+                saleId,
+                buyer,
+                1,
+                EDITION_PRICE,
+                Payment(PaymentMethod.DIRECT, buyer, EDITION_PRICE, 0, 0, "")
+            )
+        );
+        r = _row(
+            "purchase, Dutch, first copy (new holder)",
+            buyer,
+            address(dutchSale),
+            data,
+            EDITION_PRICE
+        );
+        _gasAtMost(r, PURCHASE_DUTCH_CEILING, "regression ceiling");
+        _growthIs(r, 1, 0);
+    }
+
+    // ------------------------------------------------------------------ re-rate
+
+    /// @dev A work re-rated to 10% (every party's consent plus FUNDS_SETTER's governed action),
+    ///      executed through the manager: Stream moves the token to the terms with its new rate,
+    ///      which no work has yet, so it writes that terms word (QUALITY-6); before, it overwrote
+    ///      the token's own word.
+    function _rowReRate() internal returns (Row memory r) {
+        uint256 tokenId = auction.auction(_steadyState()).tokenId;
+        Work[] memory works = _package(root);
+        records.openRecord(tokenId, works[0].item, works[0].media);
+        uint32 rate = 10_000;
+        uint64 deadline = uint64(block.timestamp + 30 days);
+        bytes32 state = records.workStateHash(tokenId);
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = _sign(
+            artistA,
+            _typedDigest(
+                address(records),
+                keccak256(
+                    abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline)
+                )
+            )
+        );
+        bytes memory call = abi.encodeCall(
+            records.setRoyaltyRate, (tokenId, rate, works[0].item, state, deadline, sigs)
+        );
+        _schedule(hotAdmin, address(records), call);
+        (, uint32 delay) = manager.canCall(hotAdmin, address(records), bytes4(call));
+        vm.warp(block.timestamp + delay);
+        r = _row(
+            "re-rate a work (governed execute)",
+            hotAdmin,
+            address(manager),
+            abi.encodeCall(manager.execute, (address(records), call)),
+            0
+        );
+        _gasAtMost(r, RERATE_CEILING, "regression ceiling");
+        _growthIs(r, 1, 0);
+        if (pass == Pass.BOTH) assertEq(stream.work(tokenId).royaltyRate, rate);
     }
 
     // ------------------------------------------------------------------ identity
@@ -891,6 +1132,18 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartNewCollection();
     }
 
+    function test_Gas_Start_ArtistsFirstWork() public {
+        _rowStartArtistFirst();
+    }
+
+    function test_Gas_StartWithBid_ArtistsFirstWork() public {
+        _rowStartWithBidArtistFirst();
+    }
+
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty() public {
+        _rowStartWithBidArtistFirstTwoParty();
+    }
+
     function test_Gas_Start_FirstWorkEver() public {
         _rowStartFirstEver();
     }
@@ -919,8 +1172,24 @@ contract IntegrationGasReport is IntegrationBase {
         _rowCreateEdition();
     }
 
+    function test_Gas_CreateEdition_Dutch() public {
+        _rowCreateEditionDutch();
+    }
+
     function test_Gas_OpenSale() public {
         _rowOpenSale();
+    }
+
+    function test_Gas_OpenSale_FirstSale() public {
+        _rowOpenSaleFirst();
+    }
+
+    function test_Gas_OpenSale_Dutch() public {
+        _rowOpenSaleDutch();
+    }
+
+    function test_Gas_Purchase_Dutch() public {
+        _rowPurchaseDutch();
     }
 
     function test_Gas_Purchase_FirstCopy() public {
@@ -929,6 +1198,10 @@ contract IntegrationGasReport is IntegrationBase {
 
     function test_Gas_Purchase_LaterCopy() public {
         _rowPurchaseLater();
+    }
+
+    function test_Gas_ReRate() public {
+        _rowReRate();
     }
 
     function test_Gas_RefreshStanding_FirstWallet() public {
@@ -970,7 +1243,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[25] memory rows = [
+        function() internal returns (Row memory)[33] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -979,6 +1252,9 @@ contract IntegrationGasReport is IntegrationBase {
             _rowStartMaster,
             _rowStartWithPermit2Bid,
             _rowStartNewCollection,
+            _rowStartArtistFirst,
+            _rowStartWithBidArtistFirst,
+            _rowStartWithBidArtistFirstTwoParty,
             _rowStartFirstEver,
             _rowStartWithBidNewTerms,
             _rowBid,
@@ -986,9 +1262,14 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSettle,
             _rowConsume,
             _rowCreateEdition,
+            _rowCreateEditionDutch,
             _rowOpenSale,
+            _rowOpenSaleFirst,
             _rowPurchaseFirst,
             _rowPurchaseLater,
+            _rowOpenSaleDutch,
+            _rowPurchaseDutch,
+            _rowReRate,
             _rowRefreshFirst,
             _rowRefreshFurther,
             _rowRoyaltyInfo,
@@ -997,7 +1278,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[25] memory measured;
+        Row[33] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

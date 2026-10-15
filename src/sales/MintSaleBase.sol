@@ -60,11 +60,16 @@ import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.so
 ///      neither open nor sell; closing and claiming always work. A pause, or a deprecation of a
 ///      sale's currency, also stops the sale's schedule (`scheduleDelay`, MARKET-1).
 abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, ReentrancyGuardTransient {
-    /// @notice A sale's locked terms and state, packed so the flags share the first slot.
+    /// @notice A sale's locked terms and state, packed into five words so that opening an ETH
+    ///         sale writes four (QUALITY-4): the token, fee share, flags and halt clock; the
+    ///         token ID; the price; the seller with the fee recipient's index and the phase
+    ///         count. The currency word stays zero for ETH.
     /// @dev `approved` is the artist's approval of a fixed-price phase configuration;
     ///      `federated` marks a token served through the federation registry; `haltedAtOpen` is
     ///      {_halted} for the sale's currency when it opened, so the schedule's delay is the halt
-    ///      time since (MARKET-1).
+    ///      time since (MARKET-1). `feeRecipientId` indexes the fee recipients this adapter
+    ///      registered, from 1 (zero: none, for terms without a fee recipient). `phaseCount` is
+    ///      the fixed-price adapter's number of phases (zero in a Dutch sale).
     struct Listing {
         address token;
         uint32 feeShare;
@@ -76,7 +81,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         address currency;
         uint256 price;
         address seller;
-        address feeRecipient;
+        uint16 feeRecipientId;
+        uint8 phaseCount;
     }
 
     /// @notice Gas forwarded with an ETH payout; a wallet that needs more is paid in escrow.
@@ -92,7 +98,10 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     IAssetAllowlist public immutable assets;
 
     /// @notice The ID the next sale gets; sale IDs start at 1.
-    uint256 public nextSaleId = 1;
+    uint64 public nextSaleId = 1;
+    /// @dev The number of fee recipients registered (below), in `nextSaleId`'s word so that
+    ///      registering one writes no counter slot of its own.
+    uint16 private _feeRecipientCount;
     /// @notice Whether governance listed `token`.
     mapping(address token => bool) public isListed;
     /// @inheritdoc ISaleAdapter
@@ -110,13 +119,18 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
 
     mapping(uint256 saleId => Listing) internal _listings;
     mapping(address token => mapping(uint256 id => uint256 saleId)) internal _openSales;
+    /// @dev Fee recipients, each stored once and referenced from listings by index (from 1). A
+    ///      new one needs a governed economics change, so there are few; a sale that would
+    ///      register the 65,536th reverts with `InvalidSaleTerms`.
+    mapping(address recipient => uint16 index) private _feeRecipientIds;
+    mapping(uint16 index => address recipient) private _feeRecipients;
 
     /// @notice A required address is zero.
     error InvalidAddress();
     /// @notice The token's terms are unusable: no seller, no fee recipient for a non-zero fee
     ///         share, a fee share above the denominator, the revenue escrow as seller or fee
-    ///         recipient, federated code that differs from its registry entry, or a mint that
-    ///         returned another token ID.
+    ///         recipient, federated code that differs from its registry entry, a mint that
+    ///         returned another token ID, or a new fee recipient past the adapter's 65,535.
     error InvalidSaleTerms(address token, uint256 id);
     /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
     error PricedDefaultCurrency(address token, uint256 id);
@@ -296,12 +310,16 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         ) revert InvalidSaleTerms(token, id);
     }
 
-    /// @dev Locks `t` under a new sale ID as the open sale of `(token, id)`; the caller has
-    ///      checked that none is open.
-    function _store(address token, uint256 id, PrimaryTerms memory t, bool approved, bool federated)
-        internal
-        returns (uint256 saleId)
-    {
+    /// @dev Locks `t` under a new sale ID as the open sale of `(token, id)`, with `phaseCount`
+    ///      fixed-price phases; the caller has checked that none is open.
+    function _store(
+        address token,
+        uint256 id,
+        PrimaryTerms memory t,
+        bool approved,
+        bool federated,
+        uint8 phaseCount
+    ) internal returns (uint256 saleId) {
         saleId = nextSaleId++;
         _openSales[token][id] = saleId;
         _listings[saleId] = Listing(
@@ -317,7 +335,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             t.currency,
             t.price,
             t.seller,
-            t.feeRecipient
+            _feeRecipientId(token, id, t.feeRecipient),
+            phaseCount
         );
     }
 
@@ -443,7 +462,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         (uint256 minted,) = IMintTarget(l.token).mint(recipient, l.id, quantity, "");
         if (minted != l.id) revert InvalidSaleTerms(l.token, l.id);
         uint256 fee = Math.mulDiv(total, l.feeShare, Splits.DENOMINATOR);
-        _pay(l.currency, l.feeRecipient, fee);
+        address feeRecipient = _feeRecipientOf(l);
+        _pay(l.currency, feeRecipient, fee);
         _pay(l.currency, l.seller, total - fee);
         emit SaleSettled(
             saleId,
@@ -456,7 +476,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             total,
             l.seller,
             total - fee,
-            l.feeRecipient,
+            feeRecipient,
             fee
         );
     }
@@ -469,7 +489,33 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
 
     /// @dev The locked terms of an existing sale.
     function _locked(Listing storage l) internal view returns (LockedTerms memory) {
-        return LockedTerms(l.token, l.id, l.currency, l.price, l.seller, l.feeRecipient, l.feeShare);
+        return
+            LockedTerms(
+                l.token, l.id, l.currency, l.price, l.seller, _feeRecipientOf(l), l.feeShare
+            );
+    }
+
+    /// @dev The fee recipient sale `l` locked: zero for index zero (terms without one).
+    function _feeRecipientOf(Listing storage l) internal view returns (address) {
+        uint16 index = l.feeRecipientId;
+        return index == 0 ? address(0) : _feeRecipients[index];
+    }
+
+    /// @dev The index of `recipient`, registered on first use; zero for the zero address. A
+    ///      sale of `(token, id)` that would register the 65,536th fails closed, as Stream's
+    ///      own fee-recipient index does.
+    function _feeRecipientId(address token, uint256 id, address recipient)
+        private
+        returns (uint16 index)
+    {
+        if (recipient == address(0)) return 0;
+        index = _feeRecipientIds[recipient];
+        if (index == 0) {
+            if (_feeRecipientCount == type(uint16).max) revert InvalidSaleTerms(token, id);
+            index = ++_feeRecipientCount;
+            _feeRecipientIds[recipient] = index;
+            _feeRecipients[index] = recipient;
+        }
     }
 
     /// @dev Whether `token` is active in the installed federation registry, with its code

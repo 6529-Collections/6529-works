@@ -235,6 +235,16 @@ gains none until execution. Identity calls (`heartbeat`, `revokeNonce`) are not
 creator powers and are unchanged. A STANDARD change, or an override that keeps
 the authority (a payout-only override), restrains nothing.
 
+**One read.** Each artist keeps a `restrained` flag in the authority's own
+storage word: whether the pending change is an override that moves the
+authority. Every staging sets it, and every end of a change (execution, veto,
+cancel, a voided or expired contest, a failed re-check at execution) clears it.
+`activeAuthorityOf` therefore reads only the authority's word, and the pending
+change only while the flag is set (to see whether its contest has lapsed). This
+saves each creator read about 2,200 gas (`start`, `settle`, `openSale`,
+`consume`, record consents). The identity invariants check the flag against
+the pending change.
+
 **What is already running continues.** A restraint never reaches back:
 - An auction with a bid settles as usual. The bidder gets the work, and the
   artist's share of the proceeds waits in the seller wallet under the payout
