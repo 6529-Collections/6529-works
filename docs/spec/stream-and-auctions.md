@@ -1,12 +1,11 @@
 # Stream and auctions
 
-6529 Stream is one shared ERC-721, `Stream`, that holds every curated 1/1 work, and its only
-primary sale is one shared English auction, `EnglishAuction`. Anyone may start a work's
-auction: the start mints the work into the auction's custody for an approved package item
-that the package registry consumes in the same call, and opens its clock (24 hours at launch).
-Anyone may settle once the clock runs out: the winner receives the work and the seller wallet
-and network fee recipient are paid; with no bid the work goes to the artist. This page
-specifies both contracts for auditors, integrators and contributors.
+6529 Stream is one shared ERC-721, `Stream`, holding every curated 1/1 work; its only primary
+sale is one shared English auction, `EnglishAuction`. Anyone may start a work's auction, which
+mints the work into the auction's custody for a package item consumed in the same call and opens
+its clock (24 hours at launch). Anyone may settle once the clock runs out: the winner receives the
+work and the seller wallet and fee recipient are paid; with no bid the work goes to the artist.
+For auditors, integrators and contributors.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -14,20 +13,16 @@ specifies both contracts for auditors, integrators and contributors.
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol), [`IMintTarget`](../../src/interfaces/IMintTarget.sol); ERC-721, ERC-2981, ERC-4906 | The core token, "6529 Stream" (`STREAM`). Mints a work for each consumed package item, assigns token IDs and collection serials, stores the terms locked at mint, answers `royaltyInfo`, records primary settlement, burns after an upheld dispute, records the edition link, holds the marketplace owner and contract URI, and forwards `tokenURI` to the work's renderer. |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol), [`IMintTarget`](../../src/interfaces/IMintTarget.sol); ERC-721, ERC-2981, ERC-4906 | The core token, "6529 Stream" (`STREAM`): mints a work per consumed item, token IDs and serials, terms locked at mint, `royaltyInfo`, primary settlement, burn after an upheld dispute, the edition link, marketplace owner and contract URI; forwards `tokenURI` to the work's renderer. |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | [`IEnglishAuction`](../../src/interfaces/IEnglishAuction.sol), [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol), `IERC721Receiver` | Permissionless start, bids with an anti-snipe extension, pull credits, settlement with bounded delivery and payouts, the emergency start pause, the per-auction dispute pause, the currency freeze, and the governed auction parameters. |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | none | The license-ID rule Stream applies at mint: 1 to 64 bytes of `[A-Za-z0-9.+-]`. |
 | Sale types | [`src/interfaces/types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | none | `SaleKind`, `PaymentMethod`, `Payment`, `PrimaryTerms`, `LockedTerms`. |
 
-Collaborators are specified on their own pages: `PackageRegistry` (`consume` at every start,
-`releaseContent` after a burn; [Curation](curation.md)); `ArtistRegistry` (`activeAuthorityOf`,
-the creator at start and settlement; [Identity and recovery](identity-and-recovery.md));
-`EconomicsResolver`, `SplitFactory`, `AssetAllowlist` and `RevenueEscrow` (terms at mint,
-wallet addresses, currencies, refused payouts; [Economics and payouts](economics-and-payouts.md));
-`VrfEntropyModule` (`isDelivered` at a VRF start; [Entropy](entropy.md)); `StatementLog`
-(`disputeOutcomeOf` at a dispute pause and cancel;
-[Disputes and statements](disputes-and-statements.md)). `WorkRecords` and `Editions` call
-Stream's `setRoyaltyRate`, `emitMetadataUpdate` and `linkEdition`.
+Collaborators have their own pages: `PackageRegistry` ([Curation](curation.md)); `ArtistRegistry`
+([Identity and recovery](identity-and-recovery.md)); `EconomicsResolver`, `SplitFactory`,
+`AssetAllowlist` and `RevenueEscrow` ([Economics and payouts](economics-and-payouts.md));
+`VrfEntropyModule` ([Entropy](entropy.md)); `StatementLog`
+([Disputes and statements](disputes-and-statements.md)).
 
 ## Concepts
 
@@ -66,10 +61,8 @@ adds:
 
 ### Callers
 
-The AccessManager governs every function not listed here; the role and delay of each selector
-are in the role matrix for [Stream](../audit/roles.md#stream) and
-[EnglishAuction](../audit/roles.md#englishauction). The callers below are checked by the
-contracts themselves.
+The contracts check these callers themselves; the AccessManager governs every other function
+(role matrix: [Stream](../audit/roles.md#stream), [EnglishAuction](../audit/roles.md#englishauction)).
 
 | Function | Contract | Caller |
 | --- | --- | --- |
@@ -248,11 +241,9 @@ sequenceDiagram
   (`SeedNotDelivered`; the seed is requested before the start, see [Entropy](entropy.md)); and
   usable economics (a royalty rate of at most 100,000, a fee share below 100,000, and for a
   nonzero fee share a fee recipient that is neither zero nor the seller wallet).
-- **`consume`** checks the proof, acceptances, payees, the lead artist's move, single use and
-  content uniqueness ([Curation](curation.md)); its errors bubble up unchanged. The curation
-  signer's tooling simulates `openRecord` for every item before attesting it, because its media
-  checks are not visible at mint: a trust obligation, not an on-chain check
-  ([`src/stream/README.md`](../../src/stream/README.md#core-token)).
+- **`consume`** checks the proof, acceptances, payees, the move, single use and content
+  uniqueness ([Curation](curation.md)); its errors bubble up unchanged. Media checks do not run
+  at mint ([`src/stream/README.md`](../../src/stream/README.md#core-token)).
 - **Effects.** Stream stores per work the seller wallet, serial, collection, item kind, seed
   policy, the settled and edition-linked flags, the lead artist ID, royalty rate, fee share,
   indexes of the fee recipient and minting adapter, and the item hash; the rest is in
@@ -263,8 +254,7 @@ sequenceDiagram
   Permit2 bid there signs `Typehashes.START_BID_WITNESS` over the token, the hash of
   `mintData`, the recipient, the amount and the deadline, since no sale ID exists before the
   mint.
-- **Gas.** A steady-state ETH `start` is budgeted at 350,000 Prague gas and at most 6 new
-  storage slots (7 for `startWithBid`); other cases and the Sepolia measurements are in the
+- **Gas.** AUC-32; other cases in the
   [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ### Bid and outbid
@@ -296,12 +286,11 @@ sequenceDiagram
   (LIFECYCLE-1); with a standing bid `high`, `high + max(ceil(high × incrementShare /
   100,000), incrementFloor)`, which at launch in ETH is `max(5%, 0.001 ETH)` above the high
   bid. A bid above `type(uint96).max` base units reverts.
-- **Anti-snipe.** A bid that lands with less than the locked `extensionWindow` left moves the
-  end to its timestamp plus the window (15 minutes at launch). Bids are accepted while
-  `block.timestamp < endTime`.
+- **Anti-snipe** (AUC-17). The locked `extensionWindow` is 15 minutes at launch. Bids are
+  accepted while `block.timestamp < endTime`.
 - **Payment** (`_collect`). The payer is the bidder of record: credits go to it, and only it
-  may withdraw. The bid is recorded before the payment is pulled, and the whole call reverts if
-  the payment does not arrive.
+  may withdraw. The bid is recorded before the pull; the call reverts if the payment does not
+  arrive.
 
   | Currency | Method | Payer | What happens |
   | --- | --- | --- | --- |
@@ -312,13 +301,9 @@ sequenceDiagram
 
   An ERC-20 bid sends no ETH (`InvalidPayment`); a `PERMIT` or `PERMIT2` payment past its
   deadline reverts with `PaymentExpired`.
-- **ERC-20 checks.** Every ERC-20 pull, payout and claim is checked by exact balance delta on
-  both sides, so fee-on-transfer and rebasing tokens fail. The `TokenTransfer` paths (`DIRECT`
-  and `PERMIT` pulls, payouts, claims) also count a token call only when it returns exactly one
-  word holding `true`. The `PERMIT2` pull checks only the balances; the token's return value
-  there is Permit2's business, not the auction's. The real guard against non-standard tokens is
-  governance admitting only standard ERC-20s (`AssetAllowlist.admitAsset`, whose own probe is a
-  sanity check, not proof; LIM-SAL-7 in
+- **ERC-20 checks** (AUC-19). Exact balance deltas make fee-on-transfer and rebasing tokens
+  fail. The real guard against non-standard tokens is governance admitting only standard ERC-20s
+  (`AssetAllowlist.admitAsset`, whose probe is a sanity check, not proof; LIM-SAL-7 in
   [known limitations](../audit/known-limitations.md#sales-and-auctions)).
 - **Claims.** `claim(currency, to)` sends all of the caller's credits in that currency to `to`
   (`NothingToClaim`; `InvalidRecipient` for zero; `ClaimFailed` keeps an ETH credit a
@@ -362,9 +347,8 @@ sequenceDiagram
   [freeze](#currency-freeze-and-recovery)). The caller must forward each bounded call's gas in
   full: a shortfall reverts (`DeliveryInsufficientGas`, `PaymentInsufficientGas`) instead of
   forcing the escrow, credit or pending-delivery route.
-- **Terms.** The seller wallet, fee recipient and fee share are read back from Stream, so a
-  later economics change never reaches a started auction. The fee share is 25,000 (25%) at
-  launch (`EconomicsResolver.DEFAULT_FEE_SHARE`). A zero amount is not paid.
+- **Terms.** Read back from Stream, so a later economics change never reaches a started
+  auction. A zero amount is not paid.
 - **ETH payouts** forward `PAYOUT_GAS` (100,000) to each wallet; a refusing wallet is
   credited in the revenue escrow (`RevenuePayment.payETH`), which anyone flushes to it later.
 - **ERC-20 payouts** (MONEY-1) run in their own 1,000,000-gas frame (`settlePayout`, callable
@@ -378,12 +362,11 @@ sequenceDiagram
   (300,000) and copies no return data. `claimDelivery(saleId, to)` later delivers a pending
   token to any address but zero and the auction (`InvalidRecipient`), with all remaining gas.
   If neither the recipient nor the winning bidder can call it, the token stays in custody.
-- **Keeper gas.** Because the ERC-20 payout frame must be forwardable in full, an ERC-20
-  `settle` needs a call gas limit of about 1.11M although it uses about 140K
+- **Keeper gas.** The ERC-20 payout frame must be forwardable in full, so an ERC-20 `settle`
+  needs a gas limit of about 1.11M although it uses about 140K
   ([ADR 0004, security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact);
   `test_MONEY1_SettlerGasLimitVersusGasUsed` in
   [`EnglishAuctionFollowUp.t.sol`](../../test/sales/auction/EnglishAuctionFollowUp.t.sol)).
-  Keepers set the limit explicitly, or estimate it.
 
 ### Settle with no bid
 
@@ -444,16 +427,13 @@ sequenceDiagram
 
 - **Why.** A deprecation freezes the auction, not just its bids, so a standing low bid cannot
   win while nobody else may bid (MARKET-2; LIM-SAL-3 in
-  [known limitations](../audit/known-limitations.md#sales-and-auctions)). While frozen,
-  nothing settles, and the high bidder may `withdrawBid` at any time, before or after the end.
-- **Re-admission** (`_reopenedAfterFreeze`). `admitAsset` refuses to run earlier than 14 days
-  after the deprecation (`ReadmissionTooEarly`). It has no upper bound, but from day 30 anyone
-  may end the frozen auction unsold, so a re-admission saves the sale only if it comes first.
-  After it, with `since` the re-admission time, the first `settle` reopens the auction only if
-  `since + extensionWindow > endTime`, that is, the currency came back after the end or within
-  the last anti-snipe window: the end moves to now plus the longer of the current governed
-  duration and the locked window, and the call settles nothing. Otherwise `settle` settles
-  normally, as it does for an auction started after the currency's return.
+  [known limitations](../audit/known-limitations.md#sales-and-auctions)). The high bidder may
+  `withdrawBid` at any time, before or after the end.
+- **Re-admission** (`_reopenedAfterFreeze`). `admitAsset` refuses to run before day 14
+  (`ReadmissionTooEarly`); it has no upper bound, but from day 30 anyone may end the auction
+  unsold, so a re-admission saves the sale only if it comes first. A reopening (`since +
+  extensionWindow > endTime`) moves the end to now plus the longer of the current governed
+  duration and the locked window, and settles nothing.
 - Operators follow the runbook's advice before deprecating an auction's currency
   ([`script/README.md`](../../script/README.md)).
 
@@ -481,12 +461,11 @@ sequenceDiagram
 ```
 
 [Disputes and statements](disputes-and-statements.md#upheld-dispute-during-an-auction)
-specifies the dispute process. The auction enforces AUC-26 and AUC-27: one pause per live
-auction, live through `pausedAt + MAX_PAUSE` (7 days) inclusive; a `cancel` that cites the
-token's own latest `DISPUTE_OUTCOME`, recorded after the pause (LIFECYCLE-4), then credits the
-high bid and burns the token; and, on resumption by `resume` or by the lapse, a run of at least
-the longer of the remaining time, the governed duration and the locked window, even with a
-standing bid (LIFECYCLE-1).
+specifies the dispute process; the auction enforces AUC-26 and AUC-27. A pause is live through
+`pausedAt + MAX_PAUSE` inclusive. `cancel` cites the token's own latest `DISPUTE_OUTCOME`
+(LIFECYCLE-4). On resumption, by `resume` or the lapse, the auction runs at least the longer of
+the remaining time, the governed duration and the locked window, even with a standing bid
+(LIFECYCLE-1).
 
 ### Emergency pause and governed settings
 
@@ -668,13 +647,7 @@ See the [register](README.md#differences-from-the-adrs).
 
 ## References
 
-- Code: [`Stream.sol`](../../src/stream/Stream.sol), [`SpdxId.sol`](../../src/stream/SpdxId.sol),
-  [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol),
-  [`IStream.sol`](../../src/interfaces/IStream.sol),
-  [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol),
-  [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol),
-  [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol),
-  [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol),
+- Code: the sources under [Contracts](#contracts),
   [`TokenTransfer.sol`](../../src/economics/TokenTransfer.sol),
   [`RevenuePayment.sol`](../../src/economics/RevenuePayment.sol),
   [`AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol),
@@ -685,12 +658,9 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0002](../adr/0002-access-manager-hardening.md) (selector classes);
   [ADR 0003](../adr/0003-build-time-decisions.md) (sales and auctions, disputes and statements);
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (the table and security impact).
-- Tests: [`test/stream/`](../../test/stream), [`test/sales/auction/`](../../test/sales/auction)
-  (including [`invariant/`](../../test/sales/auction/invariant)), [`test/adv/`](../../test/adv)
-  (`Market2`, `Market3`, `Market5`, `Lifecycle1`, `Lifecycle4Auction`, `Money1`, `Calls5`,
-  `Gov5` regressions), and in [`test/integration/`](../../test/integration): `CuratedSale.t.sol`,
-  `Dispute.t.sol`, `RecoveryRestraint.t.sol`, `VrfWork.t.sol`, `GasReport.t.sol`. How to run
-  them: [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+- Tests: [`test/stream/`](../../test/stream), [`test/sales/auction/`](../../test/sales/auction),
+  and the regression and integration files in the rules table. How to run them:
+  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
 - Measurements: [Sepolia flows, section 2](../../deployments/11155111/flows.md#2-the-curated-stream-sale).
 - Related pages: [Curation](curation.md), [Works and storage](works-and-storage.md),
   [Editions and sales](editions-and-sales.md), [Economics and payouts](economics-and-payouts.md),

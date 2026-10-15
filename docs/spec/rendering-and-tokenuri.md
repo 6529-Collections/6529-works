@@ -1,13 +1,11 @@
 # Rendering and tokenURI
 
-This page specifies how a 6529 Stream work and a 6529 Editions edition get their token
-metadata: which renderer serves a token, what the renderer reads and how it bounds every
-read, how it turns a work's descriptive record and media into a `data:` URI, when media is
-inlined, and when marketplaces are told to refresh. It is written for auditors, contract
-developers and anyone building a renderer. `Stream.tokenURI` and `Editions.uri` forward to
-an immutable, stateless `Renderer`; `WorkRecords` holds the record, media list, license,
-locators and renderer pin it reads; the content store holds the bytes. Integrators who only
-read metadata should start with [Reading a work](../integrators/reading-a-work.md).
+How a 6529 Stream work and a 6529 Editions edition get their token metadata: which renderer
+serves a token, how it bounds every read, how it turns a work's record and media into a `data:`
+URI, when media is inlined, and when marketplaces are told to refresh. For auditors and renderer
+authors. `Stream.tokenURI` and `Editions.uri` forward to an immutable, stateless `Renderer`,
+which reads `WorkRecords`, the content store and the statement log. Integrators who only read
+metadata should start with [Reading a work](../integrators/reading-a-work.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -25,10 +23,6 @@ read metadata should start with [Reading a work](../integrators/reading-a-work.m
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | `tokenURI` forwarding, `rendererOf`, the default renderer and its code-hash pin, ERC-4906 events for works. |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | [`IEditions`](../../src/interfaces/IEditions.sol) | `uri` forwarding to the master's renderer, `masterOf`, ERC-4906 events for editions. |
 
-The renderer also reads `WorkRecords` (record, media, license, seed, locators, the pin; see
-[Works and storage](works-and-storage.md)), the `ContentStore` (manifests, chunks, completeness,
-attestation) and the `StatementLog` (`latestDisputeOutcome`).
-
 ## Concepts
 
 The [record](../glossary.md#record), [record status](../glossary.md#record-status),
@@ -40,20 +34,13 @@ The [record](../glossary.md#record), [record status](../glossary.md#record-statu
 [preferred locator](../glossary.md#preferred-locator) and
 [`fullTokenURI`](../glossary.md#fulltokenuri) are defined in the glossary. What this page adds:
 
-- **Record status.** `not_open` (`openRecord` has not run), `incomplete` (the record file is not
-  registered or not completely uploaded) or `invalid` (the record breaks a rule below).
-- **Core-only metadata** is a name from the collection and serial, a fixed description, a
-  `record_status` field and the traits Stream knows. Never a revert.
-- **Default renderer.** `Stream.defaultRenderer`, installed with a code hash. It serves every
-  work that is not finalized (including works whose record is not open) and their editions. A
-  finalized work is served by its pinned renderer only.
+- **Default renderer.** `Stream.defaultRenderer`, installed with a code hash, serves every
+  unfinalized work and its editions; a finalized work only its pin (RND-1).
 - **Fail closed.** A renderer never returns plausible metadata for a token it cannot read. Every
   external read is bounded; a read that fails reverts the whole call.
 - **Cost-weighted size.** The stored length of a file, with an `Identity` file counted eight
   times, because the renderer must base64-encode it (about 80 gas a byte against about 10 for
   copying text that is already base64, per `Renderer._weight`).
-- **Inline threshold.** `Renderer.inlineThreshold()`, the largest cost-weighted primary file
-  `tokenURI` inlines; the deployment uses `DEFAULT_INLINE_THRESHOLD`, 262,144 (256 KiB).
 
 ## State machine
 
@@ -83,8 +70,6 @@ stateDiagram-v2
 
 - "Refused" and "accepted" are decided on every call, not stored, so a new renderer can move a
   work between `Invalid` and the full states without any record change.
-- A preview image can be inlined in `ByLocator`: it needs only to be complete in the store
-  (`Renderer._preview`).
 - A burn ends every state: `tokenURI` then reverts with `UnknownWork`.
 
 | Transition | Caller (role) | Delay | Function |
@@ -119,7 +104,7 @@ stateDiagram-v2
 | New default renderer | hot admin Safe (SUCCESSOR_SETTER) | successor, 30 days | `Stream.setDefaultRenderer` |
 | Finalize pins the default | the artist | immediate | `WorkRecords.finalize` |
 | Errata repin | hot admin Safe (SUCCESSOR_SETTER) with the artist's `RENDERER_REPIN` signature | successor, 30 days | `WorkRecords.repinRenderer` |
-| Code changes at a renderer address | nobody intended; for example a contract recreated at the same CREATE2 address | n/a | detected by `Stream.rendererOf` and `WorkRecords.pinnedRenderer` (DEPS-6) |
+| Code changes at a renderer address | nobody intended (say, a CREATE2 redeploy) | n/a | detected by `Stream.rendererOf` and `WorkRecords.pinnedRenderer` (DEPS-6) |
 
 Role holders and delays are in [Governance](governance.md) and [roles.md](../audit/roles.md).
 
@@ -148,8 +133,6 @@ sequenceDiagram
     S-->>C: data URI
 ```
 
-- `tokenURI` is a view and creates no state (asserted by `IntegrationBase._tokenUriMatrix` and
-  `TokenUriBudgetTest._cold`). A burned token reverts with `UnknownWork`.
 - `rendererOf` never falls back from a broken pin to the default, or from a broken default to
   anything else: the call reverts (`IStream.InvalidBinding` or `IWorkRecords.InvalidRenderer`).
 
@@ -193,11 +176,10 @@ sequenceDiagram
   call uses.
 - Media bytes are read one store chunk at a time (`readChunk`, at most 24,575 bytes and 300,000
   gas each) straight into the single output buffer.
-- **Gas.** `tokenURI` must stay at or under 8M Prague gas for every work the protocol allows
-  ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table), decision 1). The budget
-  proof, [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol), fills every cap
-  at once on the real stack; the highest figure its review found is 7,796,194 gas, about 2.5%
-  under 8M. The full matrix is in the [content README](../../src/content/README.md#renderer).
+- **Gas.** At most 8M Prague gas for every work the protocol allows (RND-26;
+  [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table), decision 1). With every
+  cap filled at once the highest figure found is 7,796,194; the matrix is in the
+  [content README](../../src/content/README.md#renderer).
 
 ### `Editions.uri`
 
@@ -221,8 +203,8 @@ sequenceDiagram
     E-->>C: data URI
 ```
 
-The edition ID equals the master's Stream token ID, so `rendererOf(id)` is the master's renderer.
-The renderer recognises an edition only by ERC-165 support for `IERC1155` (RND-22).
+The edition ID equals the master's token ID. The renderer recognises an edition only by ERC-165
+support for `IERC1155` (RND-22).
 
 ### `setDefaultRenderer`
 
@@ -245,10 +227,9 @@ sequenceDiagram
 
 - A stale `expected` reverts with `ExpectedValueMismatch`; any failed check is
   `InvalidBinding(next)` (`_requireRenderer`).
-- Every work that is not finalized now renders with `next`; finalized works keep their pin. The
-  state hash of every unfinalized work changes, because it commits to the effective renderer, so
-  a signature over the old state hash (a pending `finalize`, relicense or rate change) no longer
-  applies.
+- The state hash of every unfinalized work changes, because it commits to the effective
+  renderer, so a signature over the old one (a pending `finalize`, relicense or rate change) no
+  longer applies.
 - The batch events are skipped when nothing is minted yet and Editions is not bound
   (`test_setDefaultRenderer_quietBeforeFirstMintAndBinding`).
 
@@ -332,10 +313,8 @@ The three media members are then:
 - Any other primary is the `animation_url` (inline or its locator), and the preview, if any, is
   the `image` (inline or its locator).
 
-A locator is the satellite's `preferredLocator` answer, used as it is. A file whose answer is
-kind NONE (no copy) or ONCHAIN (the implicit on-chain copy) has no URL, and the member is left
-out; the renderer does not look for another copy. A failed or out-of-gas `preferredLocator` read
-reverts the call.
+A locator is the `preferredLocator` answer, used as it is (RND-20): kind NONE (no copy) or
+ONCHAIN (the implicit on-chain copy) leaves the member out, and no other copy is sought.
 
 ### The page around a script
 
@@ -358,11 +337,9 @@ A JavaScript primary is wrapped in a fixed page:
 ### fullTokenURI
 
 `Renderer.fullTokenURI(token, id)` is the same render with the limit raised to
-`MAX_INLINE_BYTES` (1,048,576, cost-weighted: a `Base64` file up to 1 MiB, an `Identity` file
-up to 128 KiB) and no fallback. It reverts with `RendererNotInlineable` for a core-only work,
-and for a primary that is not on-chain complete, not complete, too large, an unattested
-`Base64`, `Gzip` or `GzipBase64`, or a script it cannot wrap. It is not on Stream or Editions:
-call it on `Stream.rendererOf(id)`, with `eth_call`. It has no 8M promise: 1 MiB of `Base64`
+`MAX_INLINE_BYTES` (1,048,576 cost-weighted: a `Base64` file up to 1 MiB, an `Identity` file
+up to 128 KiB) and no fallback: it reverts with `RendererNotInlineable` for a core-only work or a
+primary it cannot inline under those limits. Call it on `Stream.rendererOf(id)`, with `eth_call`. It has no 8M promise: 1 MiB of `Base64`
 costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm_512KiB` in
 [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol)).
 
@@ -467,27 +444,15 @@ See the [register](README.md#differences-from-the-adrs).
 
 ## References
 
-- Code: [`Renderer.sol`](../../src/content/Renderer.sol),
-  [`IRenderer.sol`](../../src/interfaces/IRenderer.sol),
-  [`JsonScan.sol`](../../src/content/JsonScan.sol), [`DataUri.sol`](../../src/content/DataUri.sol),
-  [`HtmlScript.sol`](../../src/content/HtmlScript.sol),
-  [`JsonEscape.sol`](../../src/libraries/JsonEscape.sol), [`Utf8.sol`](../../src/libraries/Utf8.sol),
-  [`BoundedCall.sol`](../../src/libraries/BoundedCall.sol),
-  [`Stream.sol`](../../src/stream/Stream.sol) (`tokenURI`, `rendererOf`, `setDefaultRenderer`),
-  [`WorkRecords.sol`](../../src/stream/WorkRecords.sol) (`finalize`, `pinnedRenderer`,
-  `repinRenderer`, `preferredLocator`, `_refresh`),
-  [`Editions.sol`](../../src/editions/Editions.sol) (`uri`, `masterOf`, `notifyMasterUpdated`,
-  `notifyAllUpdated`), [content README](../../src/content/README.md#renderer).
+- Code: the sources under [Contracts](#contracts),
+  [`WorkRecords.sol`](../../src/stream/WorkRecords.sol),
+  [content README](../../src/content/README.md#renderer).
 - ADRs: [ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage) and
   [§10](../adr/0001-v1-scope.md#10-permanence);
   [ADR 0003](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8);
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-- Tests: [`test/content/renderer/`](../../test/content/renderer),
-  [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol),
-  [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol),
-  [`ContentToTokenURI.t.sol`](../../test/integration/ContentToTokenURI.t.sol),
-  [`MasterEdition.t.sol`](../../test/integration/MasterEdition.t.sol),
-  [`RecordAmendments.t.sol`](../../test/integration/RecordAmendments.t.sol).
+- Tests: [`test/content/renderer/`](../../test/content/renderer), the files in the rules table,
+  and [`RecordAmendments.t.sol`](../../test/integration/RecordAmendments.t.sol).
 - Measurements: [`deployments/11155111/flows.md`](../../deployments/11155111/flows.md)
   (`tokenURI` on Sepolia).
 - Related pages: [Works and storage](works-and-storage.md),

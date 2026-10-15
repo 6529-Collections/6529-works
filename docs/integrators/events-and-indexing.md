@@ -1,11 +1,9 @@
 # Events and indexing
 
-This page is for indexer and integration engineers (marketplaces, 6529.io, analytics and the
-museum tooling) who rebuild 6529 Works state from logs. It lists every event that every
-deployed contract can emit, with its exact signature and topic0, says which functions emit it
-and what it means, shows the event sequences that build each entity, and lists what the
-events do not tell you, so you know when to read the chain instead. The rules behind each
-event are in the [specification](../spec/README.md); this page cites them by rule ID.
+For indexer and integration engineers (marketplaces, 6529.io, analytics and the museum tooling)
+who rebuild 6529 Works state from logs: every event each deployed contract can emit, with its
+signature, topic0, emitters and meaning; the sequences that build each entity; and what the
+events do not tell you. The rules are in the [specification](../spec/README.md), cited by ID.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -35,8 +33,8 @@ event are in the [specification](../spec/README.md); this page cites them by rul
   The canonical signature of every event, with structs expanded to tuples, is in the
   [appendix](#appendix-full-topic0-values).
 - **topic0** in the tables is the first four bytes of `keccak256` of the canonical signature;
-  the appendix gives all 32 bytes. Values were computed with the repository's pure-Python
-  Keccak ([`tools/content/keccak.py`](../../tools/content/keccak.py)) from the compiled ABIs.
+  the appendix gives all 32 bytes, computed from the compiled ABIs
+  ([`tools/content/keccak.py`](../../tools/content/keccak.py)).
 - **Binding names.** The `name` of a `Bound` event is an ASCII string left-aligned in a
   `bytes32` (for example `"WORK_RECORDS"`), not a hash.
 - **Where to start.** Scan from the deployment record's `startBlock`. For Sepolia r2 that is
@@ -84,7 +82,7 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `WorkMinted(uint256 indexed tokenId, uint256 indexed collectionId, bytes32 indexed itemHash, uint64 serial, uint256 artistId, ItemKind kind, bytes32 packageRoot, bytes32 contentHash, bytes32 mediaHash, bytes32 recordFileId)` | `0x2f52e67a…` | `mint`, called by an admitted sale adapter (the English auction's `start` or `startWithBid`) | A curated work exists, in the adapter's custody. `artistId` is the lead artist; `serial` is its number in the collection. The only on-chain join from item hash to token ID. Follows the registry's `ItemConsumed` and precedes `Transfer` from zero to the adapter. No economic terms ([what is not emitted](#what-is-not-emitted)). |
+| `WorkMinted(uint256 indexed tokenId, uint256 indexed collectionId, bytes32 indexed itemHash, uint64 serial, uint256 artistId, ItemKind kind, bytes32 packageRoot, bytes32 contentHash, bytes32 mediaHash, bytes32 recordFileId)` | `0x2f52e67a…` | `mint`, called by an admitted sale adapter (the English auction's `start` or `startWithBid`) | A curated work exists, in the adapter's custody. `artistId` is the lead artist; `serial` is its number in the collection. The only on-chain join from item hash to token ID. No economic terms ([what is not emitted](#what-is-not-emitted)). |
 | `Transfer(address indexed from, address indexed to, uint256 indexed tokenId)` | `0xddf252ad…` | The mint (to the adapter), delivery at `settle` or `claimDelivery`, holder transfers, and the burn in `EnglishAuction.cancel` (to zero) | Ownership. A transfer clears the token's approval without an `Approval` event (OpenZeppelin 5). |
 | `Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)` | `0x8c5be1e5…` | `approve` | Standard ERC-721. |
 | `ApprovalForAll(address indexed owner, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-721. |
@@ -100,7 +98,6 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 | `AdmittedMinterSet(address indexed adapter, bool admitted)` | `0x16c923b1…` | `setAdmittedMinter` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | Emitted on every call, even when nothing changes. Removal stops new mints only ([AUC-9][auc]). |
 | `MetadataUpdate(uint256 _tokenId)` | `0xf8e1a15a…` | `emitMetadataUpdate` (bound work-records satellite only) and `linkEdition` | ERC-4906. The parameter is not indexed. See [ERC-4906 refresh triggers](#erc-4906-refresh-triggers). |
 | `BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId)` | `0x6bd5c950…` | `setDefaultRenderer`, and `emitMetadataUpdate` after a global or collection preferred-kind change | ERC-4906. Always `1` to `totalMinted()`, burned IDs included; not emitted while nothing is minted. With exactly one token minted, a preferred-kind change emits `MetadataUpdate(1)` instead. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### WorkRecords
 
@@ -122,8 +119,6 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | `PreferredKindSet(LocatorKind previous, LocatorKind next)` | `0x0c7addff…` | `setPreferredKind` (STORAGE_OPERATOR, immediate) | The global preferred locator kind. Emitted even when unchanged; refreshes every token and edition. |
 | `CollectionPreferredKindSet(uint256 indexed collectionId, LocatorKind previous, LocatorKind next)` | `0x57ab57ed…` | `setCollectionPreferredKind` (STORAGE_OPERATOR) | A collection's preferred kind. The refresh covers every token, not only the collection's. |
 | `FilePreferenceSet(uint256 indexed tokenId, bytes32 indexed fileId, uint256 previous, uint256 next)` | `0x700a41d4…` | `setFilePreference` (STORAGE_OPERATOR) | A file's preferred locator index; `type(uint256).max` means none. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | |
 
 ### Editions
 
@@ -147,7 +142,6 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | `ContractURISet(string previous, string next)` | `0xd144c591…` | `setContractURI` (PARAMETER_SETTER, 48 hours) | Followed by `ContractURIUpdated`. |
 | `ContractURIUpdated()` | `0xa5d4097e…` | `setContractURI` | ERC-7572. |
 | `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c…` | The constructor (from zero) and `setOwner` (FUNDS_SETTER, 14 days) | The marketplace owner; no on-chain powers. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### PackageRegistry
 
@@ -165,8 +159,6 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | `MoveRevoked(uint256 indexed artistId, uint256 indexed nonce)` | `0x7cfb5149…` | `revokeMove` (the artist's active authority) | An unused move nonce is void. |
 | `VerifierSet(address previous, address next, bytes32 codeHash)` | `0xa3fb3ba5…` | The constructor (`previous` zero) and `setVerifier` (SUCCESSOR_SETTER, 30 days) | The previous verifier is retired for good. Registered approvals are unaffected. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindStream` (`"STREAM"`), `bindEditions` (`"EDITIONS"`), at genesis | Once per name. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | |
 
 ### Eip712CurationVerifier
 
@@ -178,8 +170,6 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | --- | --- | --- | --- |
 | `SignerDisabled(address indexed signer)` | `0xcd7d4157…` | `disableSigner` (GUARDIAN, immediate) | The signer's attestations stop counting at once, and it starts a new epoch, so nothing it signed before counts again ([CUR-17][cur]). Registered packages stay approved. |
 | `SignerEnabled(address indexed signer)` | `0x71b97cfb…` | `enableSigner` (SUCCESSOR_SETTER, 30 days) | The signer counts again, at a new epoch. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | |
 
 Who is a curation signer is decided by the AccessManager: `RoleGranted` and `RoleRevoked`
 for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant, so read
@@ -200,7 +190,7 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | `Claimed(address indexed account, address indexed currency, address indexed to, uint256 amount)` | `0x913c9923…` | `claim` (by the account, to `to`) and `claimFor` (ERC-20 only, to the account itself) | All of the account's credit in that currency was paid out. |
 | `BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount)` | `0x8f861952…` | `withdrawBid`, while the auction is paused or its currency is deprecated | Preceded by `Credited`. The auction has no bidder; `amount` stays as the reserve ([DSP-15][dsp]). |
 | `AuctionPaused(uint256 indexed saleId, bytes32 disputeRef)` | `0xc5ebe769…` | `pause(saleId, disputeRef)` (GUARDIAN, immediate) | A dispute pause, once per auction, at most 7 days ([AUC-26][auc]). |
-| `AuctionResumed(uint256 indexed saleId, uint64 endTime)` | `0xd6998361…` | `resume` (UNPAUSER); the first state-changing call that touches an auction whose pause ran out; `settle` after a late re-admission of the locked currency (MARKET-2), which reopens instead of settling | The auction runs again until `endTime` ([AUC-27][auc]). An expired pause is written down lazily, by whatever call touches the sale next. |
+| `AuctionResumed(uint256 indexed saleId, uint64 endTime)` | `0xd6998361…` | `resume` (UNPAUSER); the first state-changing call that touches an auction whose pause ran out; `settle` after a late re-admission of the locked currency (MARKET-2), which reopens instead of settling | The auction runs again until `endTime` ([AUC-27][auc]). An expired pause is [written down lazily](#event-ordering-within-a-transaction). |
 | `AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef)` | `0x49d67654…` | `cancel` (PARAMETER_SETTER, 48 hours) | An upheld dispute. Preceded by `Credited` (the high bid) and 6529 Stream's `Transfer` to zero. `outcomeRef` is the token's own DISPUTE_OUTCOME entry hash ([DSP-18][dsp]). |
 | `DeliveryPending(uint256 indexed saleId, address indexed recipient)` | `0x96b5b68e…` | `settle`, when the token's transfer to the recipient failed | The token stays in custody until `claimDelivery`. |
 | `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318…` | `claimDelivery` (the recipient, the winning bidder, or with no bids the artist) | `recipient` is the recorded recipient; `to` is where the token went. Preceded by 6529 Stream's `Transfer`. |
@@ -211,7 +201,6 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | No federation registry exists in v1. |
 | `Paused(address account)` | `0x62e78cea…` | `pause()` (PAUSER, immediate) | Adapter-wide pause; on the auction it stops only new starts ([AUC-13][auc]). `account` is the immediate caller: the role holder, or the AccessManager through `execute`. |
 | `Unpaused(address account)` | `0x5db9ee0a…` | `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### FixedPriceSale
 
@@ -233,8 +222,6 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | `Unpaused(address account)` | `0x5db9ee0a…` | `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | |
 | `Credited(…)` | `0xdd0ef63b…` | Never emitted | In the ABI through `ISaleAdapter`; the fixed-price adapter never credits. |
 | `Claimed(…)` | `0x913c9923…` | Never emitted | As `Credited`. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | |
 
 ### DutchSale
 
@@ -250,7 +237,6 @@ adapter.
 | `Claimed(…)` | `0x913c9923…` | `claim` | |
 | `SaleClosed(uint256 indexed saleId)` | `0xcb67f20f…` | `closeSale`: the creator; PLATFORM for a sale it opened, or any sale while the creator resolves to zero | No "anyone" path on the Dutch adapter. |
 | `TargetSet`, `FederationRegistrySet`, `Paused`, `Unpaused` | as on FixedPriceSale | as on FixedPriceSale | Same meaning. A pause or currency deprecation moves the price curve later. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### StatementLog
 
@@ -263,8 +249,6 @@ adapter.
 | `StatementRelayed(bytes32 indexed entryHash, address indexed signer, uint256 nonce)` | `0x080f9921…` | `appendSigned`, right after its `StatementAppended` | Marks the entry as relayed and spends `nonce` of `signer`. |
 | `NonceRevoked(address indexed signer, uint256 indexed nonce)` | `0x22cd1acb…` | `revokeNonce` (the signer) | An unused relay nonce is void. |
 | `ArtistResolverSet(address indexed previous, address indexed next, bytes32 codeHash)` | `0x0923c844…` | The constructor and `setArtistResolver` (SUCCESSOR_SETTER, 30 days) | Who may speak as ARTIST. Zero disables ARTIST statements. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | |
 
 ### ArtistRegistry
 
@@ -289,13 +273,11 @@ adapter.
 | `FederatedContractListed(uint256 indexed artistId, address indexed token)` | `0x4004e60c…` | `listFederatedContract`, callable only by the v1.1 federation registry | Not emitted in v1. |
 | `ConsolidationSourceSet(address previous, address next)` | `0x5b375cc7…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindPackageRegistry` (`"PACKAGE_REGISTRY"`), `bindStream` (`"STREAM"`), `bindFederationRegistry` (`"FEDERATION_REGISTRY"`), `bindSplitFactory` (`"SPLIT_FACTORY"`), `bindStatementLog` (`"STATEMENT_LOG"`) | Once per name. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted | |
 
 ### ContentStore
 
 [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol), interface
-[`IContentStore`](../../src/interfaces/IContentStore.sol). Not governed: no `AuthorityUpdated`.
+[`IContentStore`](../../src/interfaces/IContentStore.sol). Not governed.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
@@ -313,7 +295,6 @@ adapter.
 | --- | --- | --- | --- |
 | `DependencyRegistered(bytes32 indexed name, bytes32 indexed version, bytes32 indexed fileId)` | `0x5e1b96d0…` | `register` (PARAMETER_SETTER, 48 hours) | `(name, version)` maps to `fileId` forever; the file was complete on-chain when registered. `name` and `version` are left-aligned ASCII. |
 | `DependencyDeprecated(bytes32 indexed name, bytes32 indexed version)` | `0x1ec1691a…` | `deprecate` (GUARDIAN, immediate) | A flag only; the version still resolves. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### VrfEntropyModule
 
@@ -327,7 +308,6 @@ record calls it `EntropyModule`), interface [`IEntropyModule`](../../src/interfa
 | `SeedDelivered(bytes32 indexed contentHash, uint256 requestId, bytes32 seed)` | `0x2a1a98d7…` | `rawFulfillRandomWords`, by the VRF coordinator | The first delivery fixes the content's seed; later ones are silent no-ops ([ENT-4][ent]). Join to items through `SeedLinked`. |
 | `CoordinatorSet(address previous, address next, bytes32 codeHash)` | `0x04092dc0…` | The constructor and `setCoordinator` (SUCCESSOR_SETTER, 30 days) | The old coordinator's requests can no longer deliver ([ENT-8][ent]). |
 | `ConfigSet(VrfConfig previous, VrfConfig next)` | `0xc5843e71…` | The constructor, `setConfig` (PARAMETER_SETTER, 48 hours) and `lowerCallbackGasLimit` (SUCCESSOR_SETTER, 30 days) | `VrfConfig` is `(uint256 subscriptionId, bytes32 keyHash, uint32 callbackGasLimit, uint16 confirmations, bool nativePayment)`. Not the auction's `ConfigSet`. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### SplitFactory and SplitWallet
 
@@ -350,7 +330,6 @@ contract at a CREATE2 address.
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `NonceUsed(address indexed account, uint256 indexed nonce, bool revoked)` | `0x4efdf80e…` | `ReleaseVerifier.consume`, called by the wallet inside `releaseWithAuthorization` (`revoked` false), and `revokeNonce` (`revoked` true) | A signed-release nonce is spent. A consumed nonce is followed by the wallet's `Released`. |
-| `EIP712DomainChanged()` | `0x0a6387c9…` | Never emitted (ReleaseVerifier) | |
 | `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the revert data. Successful items appear only as the wallets' `Released`. |
 
 ### RevenueEscrow
@@ -364,7 +343,6 @@ contract at a CREATE2 address.
 | `Flushed(address indexed wallet, address indexed asset, address indexed caller, uint256 amount)` | `0xf5c342af…` | `flush` (anyone) | Everything owed was paid to the wallet; it is owed zero. |
 | `Recovered(address indexed wallet, address indexed replacement, address indexed asset, uint256 amount, uint256 owed)` | `0xc8e2b659…` | `recover` (FUNDS_SETTER, 14 days) | The whole credit moved to `replacement`, now owed `owed`; `wallet` is owed zero. For a non-factory account it uses up the recovery consent ([ECO-28][eco]). |
 | `RecoveryConsentSet(address indexed account, address indexed replacement)` | `0x4d47077d…` | `consentToRecovery` (the account) | Zero withdraws the consent. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | |
 
 ### AssetAllowlist and EconomicsResolver
 
@@ -380,7 +358,6 @@ contract at a CREATE2 address.
 | `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a6334…` | `setDefaultCurrency` (FUNDS_SETTER, 14 days; each product's first at genesis through the wiring) | The currency a sale of `product` locks when its terms say `CURRENCY_DEFAULT`. |
 | `EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next, uint64 revision)` | `0x7b619472…` | The resolver's constructor (once per product, from zeros, revision 1), `setFeeTerms` (FUNDS_SETTER, 14 days) and `setRoyaltyRate` (PARAMETER_SETTER, 48 hours) | `ProductEconomics` is `(address feeRecipient, uint32 feeShare, uint32 royaltyRate)`. Applies to new works and editions only ([ECO-6][eco]). `revision` is the changed setting's own counter: compare `previous` and `next` to tell fee terms from royalty rate. |
 | `DefaultLicenseSet(bytes32 indexed product, License previous, License next, uint64 revision)` | `0x45967214…` | The constructor (once per product) and `setDefaultLicense` (PARAMETER_SETTER, 48 hours) | The default license for new packages. |
-| `AuthorityUpdated(address authority)` | `0x2f658b44…` | See [below](#accessmanaged-and-eip-712-events) | Both contracts. |
 
 ### GovernanceConfigurator and WorksAccessManager
 
@@ -414,6 +391,10 @@ events, `RoleSuspended` and `RoleSuspensionLifted`. Role IDs are in
 
 ### AccessManaged and EIP-712 events
 
+Every governed contract declares `AuthorityUpdated`, and the EIP-712 signers declare
+`EIP712DomainChanged`; the per-contract tables above omit both, and the
+[appendix](#appendix-full-topic0-values) lists the contracts.
+
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `AuthorityUpdated(address authority)` | `0x2f658b44…` | Every governed contract's constructor, and `setAuthority`, which only the current AccessManager can call (`updateAuthority`) | The contract is now governed by `authority`. A change after deployment moves the whole contract to another manager: alert on it. |
@@ -428,12 +409,12 @@ signatures are in the appendix.
 ## Reconstructing state from events
 
 Each subsection lists the events that build one entity, in order, and names the view to read
-where no event carries the value. The rules behind them are cited by ID.
+where no event carries the value.
 
 ### A package
 
-The registry holds a package's approval and per-item use; the items themselves are in the
-published package document, whose root the registry stores.
+The registry holds a root's approval and per-item use; the items are in the published package
+document.
 
 - **Status.** `PackageRegistered` makes the root APPROVED; `PackageRevoked` makes it REVOKED for
   good, and may come first ([CUR-2][cur]).
@@ -488,10 +469,8 @@ Per `saleId`:
 
 - **Bids.** Each `BidPlaced` replaces the high bid and may extend `endTime`; the outbid
   bidder's `Credited` comes just before it.
-- **Paused.** `AuctionPaused`. The pause ends with `resume`'s `AuctionResumed`, with
-  `AuctionCancelled`, or by itself after 7 days ([DSP-14][dsp]); in that case `AuctionResumed`
-  appears only when a later call touches the sale. A withdrawal is `Credited`, then
-  `BidWithdrawn`.
+- **Paused.** `AuctionPaused`, ended by `AuctionResumed`, `AuctionCancelled`, or the 7-day
+  lapse ([DSP-14][dsp]). A withdrawal is `Credited`, then `BidWithdrawn`.
 - **Ended.** Never emitted: read `auction(saleId)`, which also applies an expired pause.
 - **Currency frozen.** An `AssetStatusChanged` to `Deprecated` for the locked currency freezes
   the auction ([AUC-25][auc]). The first `settle` after a late re-admission emits
@@ -554,7 +533,7 @@ Per `saleId`:
   `ContestResolved` (after `ChangeExecuted` or `ChangeCancelled`) or `ContestExpired` (then
   `ChangeCancelled`).
 - **Contested.** `ChangeContested`. The contest lapses 365 days later with no event
-  ([ID-15][id]); `ContestExpired` comes only from `expireContest`.
+  ([ID-15][id]).
 - **Derived answers.** `activeAuthorityOf` ([ID-18][id]) and `payoutAddress` ([ID-16][id])
   depend on the pending change and the clock: read them rather than replay the rules.
 - **Dormancy.** The last activity is the later of the registration block's timestamp and the
@@ -602,12 +581,10 @@ and a head. Also:
   by an immediate role holder show only as the target's own event.
 - **Roles.** Membership is the replay of `RoleGranted` and `RoleRevoked` per
   `(roleId, account)`; a new member is active from `RoleGranted.since`.
-- **Suspensions.** A suspension emits `RoleSuspended`, not `RoleRevoked`, so the membership
-  replay still shows the holder. Track a flag per `(roleId, account)`, set by `RoleSuspended`
-  and cleared by `RoleSuspensionLifted`, or read `isSuspended` (or `hasRole`, which answers
-  false). An admin grant or revocation lifts it when its 30-day operation executes, announced
-  by its `OperationScheduled`; the holder's own `renounceRole` lifts it at once, unannounced
-  ([GV-28][gv]).
+- **Suspensions.** The membership replay still shows a suspended holder. Track a flag per
+  `(roleId, account)`, set by `RoleSuspended` and cleared by `RoleSuspensionLifted`, or read
+  `isSuspended`. A lift by admin operation is announced by its `OperationScheduled`; one by
+  `renounceRole` is not ([GV-28][gv]).
 - **Selectors.** `TargetFunctionRoleUpdated` per `(target, selector)`; `TargetClosed` per
   target.
 - **Blind spots.** The manager has no getter for a pending grant-delay or target-admin-delay
@@ -652,8 +629,7 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
   through `WorkMinted.itemHash`. A package's curation evidence uses
   `(address(0), uint256(packageRoot))`.
 - **Burned tokens leave ID gaps** ([AUC-5][auc]). `totalMinted()` is the highest ID;
-  `totalSupply()` counts live tokens. A burned ID's views revert with `UnknownWork`, and
-  ERC-4906 batch ranges still include it.
+  `totalSupply()` counts live tokens. A burned ID's views revert with `UnknownWork`.
 - **Edition ID equals master token ID.** `EditionCreated`, `EditionLinked`,
   `TransferSingle.id` and an edition sale's `SaleStarted.tokenId` all carry the same number.
 
@@ -663,9 +639,6 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
   manifest lists is written at the length the layout requires ([WS-27][ws]). Derive it from
   `ManifestRegistered` and the `ChunkWritten` events of its chunk hashes (which may come first,
   and may be shared with other files), or read `isComplete(fileId)`.
-- **Time-driven state:** auction ENDED and expired pauses, schedule delays and Dutch prices,
-  and contest lapses are covered in the subsections above.
-
 ### What is not emitted
 
 | Value | Where to read it |
@@ -859,9 +832,6 @@ Not deployed in v1 ([`IFederationRegistry`](../../src/interfaces/IFederationRegi
   [governance](../../src/governance/README.md).
 - ADRs: [ADR 0001](../adr/0001-v1-scope.md) (§12 disputes and the statement log, §15 the
   museum's source data), [ADR 0002](../adr/0002-access-manager-hardening.md).
-- Tests: [`StatementLogGolden.t.sol`](../../test/records/StatementLogGolden.t.sol) (entry hash
-  and head), [`ReviewRegressions.t.sol`](../../test/sales/fixed/ReviewRegressions.t.sol)
-  (event order in a purchase).
 - Related pages: [ABIs and interface IDs](abis-and-interface-ids.md),
   [Addresses](addresses.md), [Reading a work](reading-a-work.md),
   [Buying, bidding and settling](buying-bidding-settling.md), [Storage](storage.md),

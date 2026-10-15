@@ -1,12 +1,11 @@
 # Editions and sales
 
 6529 Editions is the protocol's one shared ERC-1155. Every edition is anchored by a 6529
-Stream work of kind `EDITION_MASTER` (the master): the edition ID is the master's token ID,
-and the edition carries the master's media, record, license and content hash. Copies are
-sold only through two shared mint-sale adapters: fixed price, with optional allowlist phases,
-and Dutch, a descending price. This page specifies how an edition is created and how the
-adapters open, run, halt, pay out and close sales, for auditors, integrators and the operators
-who hold the PLATFORM or guardian roles. The auction that sells masters is specified in
+Stream work of kind `EDITION_MASTER` (the master), whose token ID, media, record, license and
+content hash it shares. Copies are sold only through two shared mint-sale adapters: fixed
+price, with optional allowlist phases, and Dutch, a descending price. This page specifies how
+an edition is created and how the adapters open, run, halt, pay out and close sales, for
+auditors, integrators and PLATFORM or guardian operators. The master's auction is in
 [Stream and auctions](stream-and-auctions.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -30,9 +29,8 @@ the pages under [References](#references).
 **Wiring.** The constructor requires Stream to have code, no EIP-7702 delegation, ERC-165
 `IStream` (`InvalidBinding`) and the reviewed code hash (`CodeHashMismatch`), and reads the
 package registry, economics resolver and artist registry from it as immutables (`ZeroAddress`).
-Genesis binds Editions in Stream and the package registry, calls `Editions.bindWorkRecords` once
-with the satellite Stream bound (ERC-165 `IWorkRecords`, no delegation; `AlreadyBound`), admits
-both adapters on Editions and lists Editions on both
+Genesis binds Editions in Stream and the package registry, calls `Editions.bindWorkRecords`
+once (`AlreadyBound`), admits both adapters on Editions and lists Editions on both
 ([`config/genesis.example.json`](../../config/genesis.example.json), `wiring`).
 `notifyMasterUpdated` and `setRoyaltyRate` accept only that satellite; `notifyAllUpdated`
 accepts it or Stream (`UnboundCaller`).
@@ -50,10 +48,8 @@ The [glossary](../glossary.md) defines [master](../glossary.md#master),
 - A master is auctioned like any other work. Its package item carries `EditionTerms`, fixed
   when the package was approved.
 - The edition ID equals the master's Stream token ID. An edition exists once `createEdition`
-  succeeds (`exists(id)`: its stored content hash is nonzero). The link is written once, in
-  both directions, in that transaction, and no function changes or removes it: `masterOf(id)`
-  returns `(stream, id, contentHash)` and Stream's `editionOf(workId)` returns
-  `(editions, workId)`.
+  succeeds (`exists(id)`); the link is permanent (ED-2): `masterOf(id)` returns
+  `(stream, id, contentHash)` and Stream's `editionOf(workId)` returns `(editions, workId)`.
 - Every copy is minted at purchase, straight to the buyer's recipient. There are no numbered
   editions.
 
@@ -69,14 +65,11 @@ The [glossary](../glossary.md) defines [master](../glossary.md#master),
 | `saleKind` | `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`. Only an adapter reporting this kind may mint. |
 | `params` | Empty for `FIXED_PRICE`; exactly `abi.encode(DutchParams)` (96 bytes) for `DUTCH`. |
 
-`EditionRules.isValid` never reverts, and returns true only when a nonzero price names an
-explicit currency; FIXED has a nonzero `size` and a zero `window`, and OPEN a nonzero `window`;
-`FIXED_PRICE` carries no params and `DUTCH` exactly 96 bytes, with `duration` and `stepSeconds`
-that fit in `uint64` and a schedule `DutchPricing.isValid` accepts; and the sale kind is one of
-the two. The package registry applies it at `consume` (`PackageRegistry._checkTerms`), so a
+`EditionRules.isValid` never reverts and accepts exactly the table above, with Dutch
+`duration` and `stepSeconds` that fit in `uint64` and a schedule `DutchPricing.isValid`
+accepts. The package registry applies it at `consume` (`PackageRegistry._checkTerms`), so a
 master whose edition could not be created or sold never mints; `Editions._checkTerms` applies
-it again at `createEdition`, reporting a priced default currency as
-`PricedDefaultCurrency(workId)`.
+it again at `createEdition` (`PricedDefaultCurrency(workId)`).
 
 ### Terms, the creator and PLATFORM
 
@@ -109,13 +102,13 @@ path, so only the creator opens a Dutch sale of an OPEN edition.
 
 - `royaltyInfo(id, salePrice)` returns the receiver locked at creation and
   `floor(salePrice × royaltyRate / 100,000)` from Editions' own storage, with no external call
-  (`UnknownEdition` otherwise). The rate starts at the master's current rate; afterwards only
-  the work-records satellite changes it, when it re-rates the master (every party's consent
-  plus a FUNDS_SETTER action, 14 days, the funds class). An unknown edition or unchanged rate
-  is a no-op; a rate above 100,000 reverts (`InvalidRoyaltyRate`). A later change to the
-  `PRODUCT_EDITIONS` defaults never touches an existing edition.
+  (`UnknownEdition` otherwise). The rate starts at the master's and follows its consented
+  re-rates through the work-records satellite (ED-7,
+  [works and storage](works-and-storage.md#relicense-royalty-rate-and-errata-repin)); an
+  unknown edition or unchanged rate is a no-op, a rate above 100,000 reverts
+  (`InvalidRoyaltyRate`), and new `PRODUCT_EDITIONS` defaults never touch an existing edition.
 - `licenseOf(id)` returns the master's current license (`UnknownEdition`; `RecordNotOpen`
-  until the master's record is open).
+  until anyone opens the master's record with `openRecord`).
 - `uri(id)` is `IRenderer(IStream.rendererOf(id)).tokenURI(address(editions), id)`: the
   master's renderer builds the edition's metadata from the master's record and content, and
   fails closed with it ([Rendering and tokenURI](rendering-and-tokenuri.md)).
@@ -206,13 +199,12 @@ sale IDs (sequential per adapter, from 1) are never reused.
   Roles.STANDARD` (GOV-5), so an unpause scheduled before the pause cannot undo it at once.
   Unpausing an unpaused adapter reverts with `NotPaused`.
 - **Halts stop the clock** (MARKET-1). A pause or a deprecation of the sale's currency stops
-  purchases and also the sale's schedule. The adapter's halted time for a currency is its
-  closed pauses (`pausedTotal`) plus the running pause, plus the currency's deprecated time
-  from the allowlist's `statusClock`. A sale records that sum when it opens (`haltedAtOpen`);
-  `scheduleDelay(saleId)` is its growth since. Phase windows and the Dutch curve, including a
-  start not yet reached, run `scheduleDelay` seconds later than configured, so a halt never
-  uses up a phase or lets the Dutch price fall, and the permissionless close uses the moved
-  windows. `SaleStarted` and `phases(saleId)` report the configured times.
+  purchases and the sale's schedule. The adapter's halted time for a currency is its pauses
+  (`pausedTotal` plus any running pause) plus the currency's deprecated time from the
+  allowlist's `statusClock`; `scheduleDelay(saleId)` is its growth since the sale opened
+  (`haltedAtOpen`). Phase windows, the Dutch curve and the permissionless close all run
+  `scheduleDelay` seconds late, so a halt never uses up a phase or lets the price fall.
+  `SaleStarted` and `phases(saleId)` report the configured times.
 - **Overlapping halts count twice.** A pause while the sale's currency is deprecated adds
   both, so the schedule then rewinds by the overlap: a Dutch curve climbs back up and an ended
   fixed-price phase can reopen (LIM-SAL-2 in
@@ -288,12 +280,11 @@ Effects:
 - Sets the royalty rate to the master's current rate (from `coreOf`), so a consented re-rate of
   the master before the edition exists carries over, and records the lead artist ID from which
   `creator` is resolved.
-- Emits `EditionCreated` and `MetadataUpdate`, then makes the protocol calls; a reentrant
+- Emits `EditionCreated` and `MetadataUpdate` before the protocol calls, so a reentrant
   `createEdition` hits `EditionExists`. The registry accepts only the item Stream consumed for
-  this content hash, once (`ClaimNotAllowed`, `ContentUsed`). Stream's `linkEdition` requires a
-  settled, unlinked `EDITION_MASTER` and an edition ID equal to the token ID
-  (`EditionLinkInvalid`); Editions reads `editionOf` back and reverts with `LinkFailed` unless it
-  names this contract and ID.
+  this content hash, once (`ClaimNotAllowed`, `ContentUsed`); `linkEdition` refuses anything
+  but a settled, unlinked master at its own ID (`EditionLinkInvalid`); a wrong readback reverts
+  with `LinkFailed`.
 
 Gas for this and the other edition flows is in the
 [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) and
@@ -318,24 +309,18 @@ sequenceDiagram
     Fixed-->>Platform: saleId
 ```
 
-- `MintSaleBase._terms` fails closed unless: the token is a target (`TargetNotAllowed`); the
-  terms' sale kind is the adapter's (`SaleKindMismatch`); a priced sale names its currency
-  (`PricedDefaultCurrency`); the resolver accepts the currency and, unless it was
-  `CURRENCY_DEFAULT`, returns exactly the named one (`CurrencyNotAllowed`, `CurrencyMismatch`);
-  a seller is set, a fee recipient is set unless the fee share is zero, the fee share is at
-  most 100,000, and neither the seller nor the fee recipient is the revenue escrow
-  (`InvalidSaleTerms`, CALLS-1).
+- `MintSaleBase._terms` enforces ED-9: `TargetNotAllowed`, `SaleKindMismatch`,
+  `PricedDefaultCurrency`, `CurrencyNotAllowed` or `CurrencyMismatch` (the resolver must
+  return exactly a named currency), and `InvalidSaleTerms` for the payees (CALLS-1).
 - `_checkPhases` refuses an empty list, more than 16 phases, a phase whose `start` is not
   below its `end`, and `payerKeyed` or `leafPriced` without a root (`InvalidPhases`).
 - Any other caller, or a PLATFORM holder whose grant carries a delay, reverts with
   `NotSaleManager`.
 - **Targets.** An adapter serves a token governance listed (`setTarget`; unlisting stops new
-  sales only), or, from v1.1, one the installed federation registry reports active.
-  `setFederationRegistry` is compare-and-set, checks ERC-165 `IFederationRegistry`, refuses
-  EIP-7702 delegated accounts and pins the code hash (a registry whose code changes is ignored).
-  A federated token must run the code its entry records; its fee share is the entry's, paid to
-  the `PRODUCT_FEDERATED` fee recipient, its default currency resolves under
-  `PRODUCT_FEDERATED`, and every purchase re-checks that it is active.
+  sales only), or, from v1.1, one the installed federation registry reports active (ED-24).
+  `setFederationRegistry` is compare-and-set and pins the registry's code hash. A federated
+  token's fee share is its entry's, paid to the `PRODUCT_FEDERATED` fee recipient, and its
+  default currency resolves under `PRODUCT_FEDERATED`.
 
 The Dutch equivalent is `DutchSale.openSale(token, id, startTime)`: `startTime` must not be in
 the past (`InvalidSchedule`), the same `_terms` checks run, PLATFORM alone needs a listed FIXED
@@ -383,8 +368,6 @@ Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool
   restraint, fails. The nonce is single-use per creator address
   (`isConsentNonceUsed[creator][nonce]`); `revokeConsentNonce(nonce)` voids an unused one. The
   creator may instead open the sale directly, with an empty consent.
-- An approved sale may contain OPEN-edition phases and leaf prices of any level, zero included
-  (gifts). PLATFORM cannot close it while the creator is set.
 
 | `Phase` field | Meaning |
 | --- | --- |
@@ -473,23 +456,17 @@ record; a zero `recipient` means the payer.
   The witness carries `recipient` as given, so a relayed intent with a zero recipient mints to
   the signer. PERMIT and PERMIT2 revert with `PaymentExpired(deadline)` after `deadline`.
   Replay protection is the token's or Permit2's nonce, never signature bytes.
-- **ERC-20 checks.** Every ERC-20 movement is checked by exact balance delta: a token whose
-  balances do not move by exactly the amount fails on every path. `TokenTransfer` (DIRECT and
-  PERMIT pulls, payouts, claims) also counts a token call only when it returns exactly one word
-  holding `true`. Permit2 does not check deltas, so `_permit2` reads both balances around the
-  call and reverts with `TokenBalanceMismatch` unless the adapter gained and the payer lost
-  exactly the charge; that path does not check the token's return value itself. The real guard
-  against non-standard tokens is governance admitting only standard ERC-20s
-  (`AssetAllowlist.admitAsset`; LIM-SAL-7 in
+- **ERC-20 checks.** Every ERC-20 movement is checked by exact balance delta (ED-17).
+  `TokenTransfer` (pulls, payouts, claims) also requires a return of exactly one word holding
+  `true`; the Permit2 path checks only the deltas around the call (`TokenBalanceMismatch`). The
+  real guard is governance admitting only standard ERC-20s (LIM-SAL-7 in
   [known limitations](../audit/known-limitations.md#sales-and-auctions)).
-- **Payouts** (`MintSaleBase._settle`): mint the copies to the recipient (running its ERC-1155
-  hook), pay the fee, `floor(total × feeShare / 100,000)`, then the rest to the seller (the
-  edition's split wallet, a predicted address the adapter never deploys), and emit
-  `SaleSettled`. A zero amount is not paid. An ETH payout forwards exactly `PAYOUT_GAS`
-  (100,000), reverting if the caller cannot forward it in full; an ERC-20 payout gives the
-  token's `transfer` 300,000 gas. A refusing or blocked payee is paid through the escrow. A token
-  that blocks the adapter or the escrow, or misbehaves otherwise, reverts the purchase: the
-  adapters have no fallback frame like the auction's
+- **Payouts** (`MintSaleBase._settle`, ED-19): mint to the recipient (running its ERC-1155
+  hook), pay the fee, then the rest to the seller (the edition's split wallet, a predicted
+  address the adapter never deploys); zero amounts are skipped. An ETH payout forwards exactly
+  `PAYOUT_GAS`, reverting if the caller cannot forward it in full. A refusing or blocked payee
+  is paid through the escrow; a token that blocks the adapter or the escrow reverts the
+  purchase, as the adapters have no fallback frame like the auction's
   ([economics](economics-and-payouts.md#wallet-payments-and-the-escrow)).
 - **Gifts.** A zero package price, or a zero leaf price in an approved `leafPriced` phase,
   pulls nothing and pays no network fee, by design (LIM-SAL-5). A zero-price edition may name
@@ -525,9 +502,7 @@ sequenceDiagram
   With `s = startTime + scheduleDelay(saleId)` and `e = now - s`, `DutchPricing.priceAt` is
   `startPrice` while `now <= s`, `restingPrice` once `e >= duration`, and otherwise
   `startPrice - floor((startPrice - restingPrice) × e' / duration)`, where `e'` is `e` (linear)
-  or `e` rounded down to a multiple of `stepSeconds`. The price never rises, never falls below
-  the exact curve, and stays within `[restingPrice, startPrice]`; after the curve it rests at
-  `restingPrice`. `currentPrice(saleId)` returns it.
+  or `e` rounded down to a multiple of `stepSeconds`; `currentPrice(saleId)` returns it (ED-20).
 - **No clearing price, no rebate.** Each purchase pays its block's unit price, at most
   `maxUnitPrice` (`PriceAboveLimit(price, maxUnitPrice)`).
 - A missing or closed sale, or `now` before `startTime + scheduleDelay`, reverts with
@@ -536,8 +511,7 @@ sequenceDiagram
 - **Credits.** Only Dutch ETH overpayment creates credits (`claimable(account,
   CURRENCY_ETH)`). `claim(currency, to)` sends all of the caller's credit to `to` (not zero),
   zeroing it first; a failed ETH delivery reverts with `ClaimFailed` and keeps the credit.
-  Claims work while paused and while the currency is deprecated. A fixed-price adapter holds no
-  funds between transactions; a Dutch adapter holds exactly its outstanding ETH credits.
+  Claims are never blocked (ED-23).
 
 ### Close a sale
 
@@ -565,9 +539,8 @@ sequenceDiagram
 ```
 
 - A closed sale reverts with `SaleAlreadyClosed`; an unknown one with `UnknownSale`.
-- Nothing closes a sale automatically: a sold-out edition, an elapsed OPEN window or a
-  fixed-price sale past its last phase stays open until someone calls `closeSale`. A Dutch sale
-  has no end, so it has no permissionless close.
+- Nothing closes a sale automatically. A Dutch sale has no end, so it has no permissionless
+  close.
 
 ## Rules and invariants
 
@@ -616,12 +589,11 @@ compare `edition(id).minted` with `terms.size`.
 | A pause overlaps a deprecation | The schedule moves twice (LIM-SAL-2). | The creator, or PLATFORM for its own sale, closes and reopens the affected sales once both halts end. |
 | The creator's key is compromised | It could open or close the artist's sales and sign consents. | Stage a recovery override: the creator resolves to zero, PLATFORM may close any sale, and the new key takes over at execution. A guardian may also pause the adapter. |
 | An edition sells out or its OPEN window ends while its sale is open | `mint` reverts with `EditionUnavailable`, so every purchase reverts. | Close the sale. Fixed price: anyone once its phases end; Dutch: the creator or PLATFORM as allowed. |
-| An artist-approved sale must stop, and the creator does not act | PLATFORM cannot close it while the creator is set. | A guardian pauses the adapter (all its sales). |
+| An artist-approved sale must stop, and the creator does not act | PLATFORM cannot close it. | A guardian pauses the adapter (all its sales). |
 | An adapter is removed | Its purchases revert with `NotAdmittedMinter`. | Close its open sales; reopen on an admitted adapter of the same sale kind. |
 | A token is unlisted, or a federated token delisted or its registry's code changed | New sales (unlisted) or purchases (federated) revert with `TargetNotAllowed`. | Re-list it (30 days), relist through the registry, or install a new registry. |
 | The recipient's ERC-1155 hook reverts, returns the wrong value, or the recipient cannot hold the token | The whole purchase reverts; nothing is paid. | Buy for another recipient. |
 | A consent is stale | `InvalidArtistConsent`: wrong currency, price or phases, expired, nonce used, or signed by a key that is no longer the creator. | The current creator signs a new configuration. |
-| `licenseOf` before the master's record is open | Reverts with `RecordNotOpen`. | Anyone opens the master's record with `openRecord` ([Works and storage](works-and-storage.md)). |
 
 ## Parameters and limits
 

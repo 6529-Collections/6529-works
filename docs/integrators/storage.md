@@ -150,11 +150,26 @@ One canonical spelling also makes the duplicate-URI check meaningful: a raw-leaf
 CID are different addresses, and both may be listed.
 
 **Producing the addresses.** An Arweave transaction ID is the 43-character ID that gateways and
-wallets print. For IPFS, add the file with CIDv1, raw leaves and sha2-256 (with Kubo,
-`ipfs add --cid-version=1 --raw-leaves`; base32 is the CIDv1 default). A file that fits one
-block gets a raw-leaf CID (`bafkrei...`); a larger one gets a dag-pb root (`bafybei...`).
-ADR 0001 §8 fixes the chunker as part of the network's IPFS profile, so match the platform's
-settings if you want the same CID it pins; the on-chain check does not see the chunker.
+wallets print. For IPFS, the network's fixed profile (ADR 0001 §8) is pinned as:
+
+| Setting | Value |
+| --- | --- |
+| CID | CIDv1, sha2-256, lowercase base32 |
+| Leaves | Raw (codec `0x55`) |
+| Chunker | Fixed size, 262,144 bytes |
+| Layout | Balanced UnixFS, at most 174 links per node (dag-pb, codec `0x70`) |
+| Result | One chunk or less: a raw block, `bafkrei...` (the file's SHA-256); larger: a dag-pb root, `bafybei...` |
+
+This is kubo's default import, the output of
+`ipfs add --only-hash --quieter --cid-version=1 --raw-leaves --chunker=size-262144 FILE`. Other
+settings give other CIDs for the same bytes: in particular IPIP-0499's newer `unixfs-v1-2025`
+profile (1 MiB chunks, 1,024 links per node), `--trickle`, `--inline`, or a kubo whose
+`Import.UnixFSChunker` or `Import.UnixFSFileMaxLinks` differs. Never use the last line of
+`ipfs add -w`, which names a wrapping directory. The reference implementation is the uploader's
+`cid` command (`python -m tools.content cid FILE`, added in
+[PR #62](https://github.com/6529-Collections/6529-works/pull/62)), which builds the same DAG
+offline and is tested against kubo and IPIP-0499's fixtures. The on-chain check sees only the
+CID's shape, not the chunker, so pin with these settings to serve the CID you register.
 
 **Quick cross-check for raw-leaf CIDs.** A raw-leaf CID's digest is the SHA-256 of the block's
 bytes. Base32-decode the 58 characters after `b`, drop the first 4 bytes

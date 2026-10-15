@@ -2,12 +2,11 @@
 
 A 6529 Stream work is a token in the Stream core plus everything that describes it: a
 descriptive record, an ordered list of media files, a license, a renderer pin, and the places
-where copies of its bytes live. This page specifies that second half and the storage under it.
-It is written for auditors, artists' and curators' tooling, the platform and storage operator,
-and integrators who read or verify a work's bytes. Three contracts implement it: `WorkRecords`,
-the records satellite of 6529 Stream; `ContentStore`, permissionless content-addressed storage
-in SSTORE2 chunks; and `DependencyRegistry`, the governed map of pinned libraries for generative
-works. How metadata is built from these records is specified in
+where copies of its bytes live. This page specifies that second half and the storage under it,
+for auditors, artist and curator tooling, the platform and storage operator, and integrators
+who verify a work's bytes. `WorkRecords` is the records satellite of 6529 Stream,
+`ContentStore` permissionless content-addressed storage in SSTORE2 chunks, and
+`DependencyRegistry` the governed map of pinned libraries. Metadata is built in
 [Rendering and tokenURI](rendering-and-tokenuri.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
@@ -30,12 +29,10 @@ Shared types and constants: [`ContentTypes.sol`](../../src/interfaces/types/Cont
 
 ### Who calls `WorkRecords`, and what it calls
 
-`WorkRecords` is bound once into 6529 Stream (`IStream.bindWorkRecords`: ERC-165, not EIP-7702
-delegated, and the satellite's `stream()` must be that Stream) and into 6529 Editions
-(`IEditions.bindWorkRecords`: only the satellite Stream bound). Its constructor reads Stream's
-`artistRegistry` and `entropyModule` once. "The artist" below is the lead artist's active
-authority, read through Stream's `artistOf` and the artist registry's `activeAuthorityOf`; a
-governed function first asks the AccessManager's `canCall`.
+`WorkRecords` is bound once into 6529 Stream and 6529 Editions
+([bindings](governance.md#one-shot-bindings-instead-of-a-system-role)); its constructor reads
+Stream's `artistRegistry` and `entropyModule` once. "The artist" below is the lead artist's
+active authority (Stream's `artistOf`, then the artist registry's `activeAuthorityOf`).
 
 | Function | Who may call | Calls out to |
 | --- | --- | --- |
@@ -48,14 +45,12 @@ governed function first asks the AccessManager's `canCall`.
 | `addLocator` | The artist before finalize; anyone else only as the AccessManager allows (PLATFORM, immediate at genesis) | For a caller other than the artist, the AccessManager's `canCall` |
 | `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` | STORAGE_OPERATOR, immediate | `setCollectionPreferredKind`: Stream `collectionCount` |
 | `setAuthority` | The current AccessManager (OpenZeppelin `AccessManaged`) | None |
-| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone. Stream reads `stream` at binding and `isOpen` and `pinnedRenderer` in `rendererOf`; the renderer reads `isOpen`, `record`, `mediaOf`, `preferredLocator`, `licenseOf` and `seedOf`; Editions reads `licenseOf` | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `seedOf` the entropy module's `seedOf` |
+| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `seedOf` the entropy module's `seedOf` |
 
-Per-token functions also read Stream's `coreOf` and `editionOf`. Every change that alters
-metadata ends with Stream `emitMetadataUpdate(id, id)` and, for a master with an edition, Editions
-`notifyMasterUpdated`; a global or collection preference instead reads Stream `totalMinted` and
-`editions` and calls `emitMetadataUpdate(1, totalMinted)` and Editions `notifyAllUpdated`. Stream
-and Editions accept these calls and `setRoyaltyRate` only from the bound `WorkRecords` (Editions
-also takes `notifyAllUpdated` from Stream).
+Per-token functions also read Stream's `coreOf` and `editionOf`. Metadata refreshes follow
+WS-23: `emitMetadataUpdate(id, id)` and `notifyMasterUpdated` per token, or
+`emitMetadataUpdate(1, totalMinted)` and `notifyAllUpdated` for a global or collection
+preference; Stream and Editions accept them only from the bound `WorkRecords`.
 
 ## Concepts
 
@@ -78,8 +73,7 @@ none of it costs the auction start; the record opens later with the permissionle
 **Record file.** A UTF-8 JSON object (RFC 8785 canonical) stored as a content-store file, with
 keys `name`, `description`, `artists`, `year`, `medium`, `dimensions`, `attributes`,
 `dependencies` and `files` (relative paths to media indexes). `WorkRecords` stores only its file
-ID and checks only its structure, in O(1): registered, `Identity`, at most
-`Limits.MAX_RECORD_BYTES` (12,288 bytes, one chunk) and complete. The renderer validates the JSON.
+ID and checks only its structure, in O(1) (WS-8); the renderer validates the JSON.
 
 **Media list.** One to `Limits.MAX_MEDIA_FILES` (32) `MediaFile` entries, each a file ID, the
 SHA-256 of the decoded file, and a role: `PRIMARY` (exactly one, first), `PREVIEW` (a small still
@@ -103,20 +97,15 @@ through ERC-1271 ([`SignatureVerifier`](../../src/libraries/SignatureVerifier.so
 **State hash and version.** `workStateHash(tokenId)` is
 `keccak256(abi.encode(keccak256("6529WORKS_WORK_STATE_V1"), tokenId, version, recordFileId,
 licenseKey, licenseTextFileId, royaltyRate, renderer))`, where `renderer` is the pinned renderer
-once finalized and Stream's current default renderer before. Every applied change bumps the
-version. `setRecord`, `finalize` and every consent bind the state hash, so nothing applies twice
-or to a state its signer did not see. `syncOnChain`, `addLocator` and preference changes never
-change it.
+once finalized and Stream's current default renderer before. `setRecord`, `finalize` and every
+consent bind it, so nothing applies twice or to a state its signer did not see (WS-11).
 
 **License.** An SPDX-style identifier in its original case plus the file ID of the full text,
 compared by license key (`keccak256` of the ASCII-lowercased identifier). The default is CC0
 (`CC0-1.0` with the CC0 legal code as `cc0TextFileId`, both immutable in `WorkRecords`); a license
-is stored per work only when it differs. A CC0 dedication is irrevocable, and a CC0 license always
-names `cc0TextFileId`. The governed default license for new packages is a different setting
+is stored per work only when it differs; CC0 is irrevocable and names that text (WS-5, WS-12).
+The governed default license for new packages is a different setting
 ([Economics and payouts](economics-and-payouts.md)).
-
-**Pin.** `finalize` pins Stream's current default renderer with its code hash (WS-9, WS-16); only
-the errata repin changes a pin.
 
 **On-chain complete and `ONCHAIN`.** The flag covers media only and is one-way, because
 on-chain bytes are permanent. `ONCHAIN` is the content store itself as a copy: implicit for an
@@ -128,9 +117,6 @@ the same chunks and file ID. The encodings are `Identity`, `Gzip` (RFC 1952), `B
 section 4, `=` padding, no line breaks) and `GzipBase64`. The file ID names one encoded stream,
 so the same media as `Identity` and as `Base64` are two files: uniqueness keys on the decoded
 SHA-256, never on the file ID.
-
-**Dependency.** A library such as p5.js, registered once as a `(name, version)` pair of `bytes32`
-labels pointing at a complete content-store file.
 
 ## State machine
 
@@ -164,11 +150,10 @@ stateDiagram-v2
     end note
 ```
 
-A burn (only by the minting adapter, before the primary sale settles, after an upheld dispute)
-ends both machines: every per-token call then reverts with Stream's `UnknownWork`.
+A burn after an upheld dispute ([Disputes](disputes-and-statements.md)) ends both machines:
+every per-token call then reverts with Stream's `UnknownWork`.
 
-A content-store file (its base64 attestation, for a `Base64` or `GzipBase64` file, runs 48
-chunks per `attestBase64` call until it reaches the end, once per file ID):
+A content-store file (base64 attestation, WS-31, is a separate one-time flag):
 
 ```mermaid
 stateDiagram-v2
@@ -184,13 +169,8 @@ stateDiagram-v2
     end note
 ```
 
-A dependency version is registered (PARAMETER_SETTER, 48 hours) and may be deprecated
-(GUARDIAN, immediate): a one-way flag; the version stays resolvable and readable.
-
-Delay classes (immediate, standard 48 hours, funds 14 days, successor 30 days) are mapped in
-[`config/genesis.example.json`](../../config/genesis.example.json); the selector matrix is
-[roles.md](../audit/roles.md). Any GUARDIAN may cancel a scheduled call during its delay
-([Governance](governance.md)).
+Delays are the [governance](governance.md) classes (selectors in [roles.md](../audit/roles.md));
+any GUARDIAN may cancel a scheduled call.
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
@@ -241,8 +221,7 @@ sequenceDiagram
   is emitted, and refuses base64 text that `attestBase64` would reject. For `Gzip`, `Base64` and
   `GzipBase64` files, the encoded stream itself must also be published (Arweave or IPFS): the
   file ID names those exact bytes, and gzip output depends on the compressor.
-- **Gas.** About 1,548 gas per stored byte on Sepolia under Glamsterdam, so one full chunk fits a
-  transaction ([`flows.md`](../../deployments/11155111/flows.md#1-content); the rest in the
+- **Gas.** One full chunk fits a transaction ([Parameters and limits](#parameters-and-limits);
   [content module](../../src/content/README.md#upload-flow)).
 
 ### Open a record
@@ -297,16 +276,13 @@ sequenceDiagram
 - **`setRecord`.** WS-7 and WS-8 (`UnknownRecordFile` for a bad file). Pointing at the current
   file is a no-op.
 - **`finalize`.** It re-applies the record-file bounds (the approved file may never have been
-  checked), requires the license text complete on-chain (the default CC0 text included), and pins
-  the renderer Stream's `rendererOf` returns, which checks the default renderer's code. Because
-  the state hash includes the default renderer before finalize, a new default installed after
-  the artist read the state hash makes `finalize` revert with `StateHashMismatch`: the artist
-  pins only the renderer they saw.
+  checked), requires the license text complete on-chain (CC0 included) and pins the renderer
+  `rendererOf` returns (WS-9). A new default installed after the artist read the state hash
+  makes it revert with `StateHashMismatch`, so the artist pins only the renderer they saw.
 - **Not checked: the JSON.** A record the renderer refuses can be finalized and then shows
   core-only metadata for good. Artist tooling should render the record first.
 - **After finalize.** Delivery routing stays operable: PLATFORM adds locators and
-  STORAGE_OPERATOR chooses among them (ADR 0001 §10 carve-out). Relicensing, re-rating and the
-  errata repin remain possible.
+  STORAGE_OPERATOR chooses among them (ADR 0001 §10 carve-out).
 
 ### Add a locator and switch the preferred location
 
@@ -327,13 +303,19 @@ sequenceDiagram
 ```
 
 - **Rules.** WS-18 to WS-22; after finalize the artist's call fails with
-  `AccessManagedUnauthorized`. The most specific preference wins; `ONCHAIN` matches only an
-  on-chain complete work, read from the stored flag, never from a content-store scan. The storage
-  operator cannot add, remove or change a locator.
-- **Suspension.** A guardian can [suspend](governance.md#suspension-of-operational-keys) the
-  PLATFORM or STORAGE_OPERATOR key at once: its calls then revert with
-  `AccessManagedUnauthorized` in the same block, while the artist's own `addLocator` before
-  finalize stays open. Preferences already set stay in force.
+  `AccessManagedUnauthorized`. `ONCHAIN` matches only an on-chain complete work, read from the
+  stored flag, never from a content-store scan.
+- **Suspension.** A [suspended](governance.md#suspension-of-operational-keys) PLATFORM or
+  STORAGE_OPERATOR key reverts with `AccessManagedUnauthorized` at once; the artist's own
+  `addLocator` before finalize and existing preferences are unaffected.
+- **The IPFS profile.** ADR 0001 §8's fixed profile is pinned as CIDv1, sha2-256, raw leaves, a
+  262,144-byte fixed chunker and the balanced UnixFS layout of at most 174 links per node
+  (kubo's default import): a file of one chunk or less is a raw block (`bafkrei...`), a larger
+  one a dag-pb root (`bafybei...`). IPIP-0499's 1 MiB, 1,024-link profile gives different CIDs
+  for the same bytes. The contract checks only the CID's shape (WS-18); the reference
+  implementation is the uploader's `cid` command (`python -m tools.content cid FILE`, added in
+  [PR #62](https://github.com/6529-Collections/6529-works/pull/62)); see the
+  [storage guide](../integrators/storage.md).
 
 ### Relicense, royalty rate and errata repin
 
@@ -365,8 +347,7 @@ sequenceDiagram
 | `repinRenderer` | The artist only: `RendererRepin(tokenId, renderer, rendererCodeHash, stateHash, deadline)` | A finalized work; the renderer has code, is not EIP-7702 delegated, has the signed code hash and supports `IRenderer` (WS-15, WS-16) |
 
 - Signatures are checked against the active authorities at execution, so the deadline must
-  cover the delay, and an authority that changed or is restrained fails (`InvalidConsent`). The
-  current license, rate or renderer is a no-op.
+  cover the delay (`InvalidConsent`); re-applying the current value is a no-op.
 - Whether a new license is more permissive is not checked: that judgement rests with the parties
   and the governed action. How the rate applies is in
   [Economics and payouts](economics-and-payouts.md).
@@ -463,11 +444,10 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | A `Base64` file is not yet attested | Never inlined; served by locator. | Anyone calls `attestBase64` until it returns true. |
 | Base64 text breaks the strict alphabet | `attestBase64` reverts with `ContentBase64Invalid(fileId, index)` forever. | None for that file ID. Tooling refuses such text before upload. |
 | A pinned renderer's code no longer matches its pinned hash | `pinnedRenderer` reverts with `InvalidRenderer`, so `tokenURI` fails closed. | The errata repin (30 days). An unfinalized work's changed default renderer is replaced by `Stream.setDefaultRenderer` (30 days). |
-| The artist's key is lost | No `setRecord`, `finalize`, repin or artist consent; locators by PLATFORM, preferences and `syncOnChain` still work. | Recover the authority through the artist registry ([Identity and recovery](identity-and-recovery.md)), then sign. While an authority-moving override is pending, nobody acts as the artist. |
+| The artist's key is lost | No `setRecord`, `finalize`, repin or artist consent; locators by PLATFORM, preferences and `syncOnChain` still work. | Recover the authority through the artist registry ([Identity and recovery](identity-and-recovery.md)), then sign. |
 | The state changed between signing and execution, or a consent expired or lost its authority | `StateHashMismatch` or `InvalidConsent(tokenId, partyIndex)` at execution. | Read the new state hash, collect new signatures with a deadline past the delay, schedule again. |
 | A locator names the wrong content or goes dark | Not detected on-chain; `tokenURI` may serve it. | STORAGE_OPERATOR at once prefers another registered copy; the off-chain monitor re-pins or re-uploads. |
 | The PLATFORM or STORAGE_OPERATOR key is compromised | Junk locators (up to its quota) or preferences pointing at a bad copy. | A guardian suspends the key; governance replaces it (30 days, then the 48-hour grant delay); the new operator restores the preferences. |
-| A file's locator quota is used up | `addLocator` reverts with `InvalidLocator`. | Before finalize the other side's quota remains; after finalize PLATFORM may use all 16 slots. |
 | A wrong file was registered as a dependency version | The entry can never change. | GUARDIAN deprecates it at once; PARAMETER_SETTER registers a new version label (48 hours). |
 
 ## Parameters and limits
@@ -486,10 +466,8 @@ completion in the content store has no event: derive it from `ManifestRegistered
 | CC0 license key | `keccak256("cc0-1.0")` | `WorksHashing.CC0_LICENSE_KEY` |
 | CC0 legal code | 7,048 bytes, `text/plain`, SHA-256 `0xa2010f34…0499` | [`script/README.md`](../../script/README.md#6-the-cc0-license-text) (`DeployV1.CC0_LEGALCODE_SHA256`) |
 | Locators per file | 16 in all; 8 by the artist and 8 by the platform before finalize | `Limits.MAX_LOCATORS_PER_FILE`, `WorkRecords.LOCATOR_QUOTA` |
-| Locator URI | 48 bytes (Arweave) or 66 bytes (IPFS) | `WorkRecords._checkUri` |
 | Chunks per `syncOnChain` call | 512, in whole files | `WorkRecords.SYNC_CHUNKS` |
 | EIP-712 domain | `"6529 Works Records"`, version `"1"` | `Typehashes.WORK_RECORDS_NAME`, `DOMAIN_VERSION` |
-| Dependency label | 1 to 32 bytes of `[a-z0-9._-]`, left-aligned, zero-padded | `DependencyRegistry._requireLabel` |
 | Storage cost on Sepolia (Glamsterdam) | About 1,548 gas per stored byte (Prague about 218) | [`flows.md`](../../deployments/11155111/flows.md#1-content), [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences) |
 
 ## Differences from the ADRs
@@ -518,12 +496,8 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0003, token model and storage](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8)
   and [decisions from integration](../adr/0003-build-time-decisions.md#decisions-from-integration-11-october-2026-later);
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) for gas.
-- **Tests:** [`test/stream/`](../../test/stream) (`WorkRecords.t.sol`, `PreferredLocation.t.sol`,
-  `ReviewRegressions.t.sol`), [`test/content/`](../../test/content) (`ContentStore.t.sol`,
-  `Base64Attest.t.sol`, `DependencyRegistry.t.sol`, `tooling/`), and in
-  [`test/integration/`](../../test/integration) `RecordAmendments.t.sol`,
-  `SyncOnChainResume.t.sol`, `ContentReviewRegressions.t.sol`, `ContentToTokenURI.t.sol`,
-  `RendererCodePin.t.sol`, `RecoveryRestraint.t.sol`.
+- **Tests:** [`test/stream/`](../../test/stream), [`test/content/`](../../test/content) and
+  [`test/integration/`](../../test/integration), as cited per rule.
 - **Deployment evidence:** [`deployments/11155111/flows.md`](../../deployments/11155111/flows.md).
 - **Related pages:** [Rendering and tokenURI](rendering-and-tokenuri.md),
   [Curation](curation.md), [Economics and payouts](economics-and-payouts.md),

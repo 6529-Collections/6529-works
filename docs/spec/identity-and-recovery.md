@@ -2,11 +2,10 @@
 
 This area gives every artist a stable artist ID, records which key acts for the artist (the
 authority) and where the artist's money goes (the payout address), and lets an artist recover
-from a lost or stolen key without trusting a single party. Split wallets, the sale adapters, the
-package registry, the work records and the statement log all ask it who the artist is.
-`ArtistRegistry` holds identities, staged changes, overrides, contests and recovery standing;
-`ConsolidationAdapter` reads 6529 consolidations from the 6529 delegation contract. This page is
-for auditors, integrators and whoever operates recovery.
+from a lost or stolen key without trusting a single party; every other module asks it who the
+artist is. `ArtistRegistry` holds identities, staged changes, overrides, contests and recovery
+standing; `ConsolidationAdapter` reads 6529 consolidations from the 6529 delegation contract.
+This page is for auditors, integrators and whoever operates recovery.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -39,8 +38,8 @@ The glossary defines [authority](../glossary.md#authority),
 ### Artist ID, authority and payout
 
 - **[Artist ID](../glossary.md#artist-id).** `uint256(uint160(account))` of the account whose
-  first package acceptance created the identity through `register`, which only the bound package
-  registry calls (anyone may relay the acceptance). The identity starts with the account as
+  first package acceptance created the identity through `register` (ID-1; anyone may relay the
+  acceptance). The identity starts with the account as
   authority and payout, nonce 0 and the block time as its last activity.
 - **`artistIdOf(account)`** is the artist ID of any present or past authority, otherwise zero.
   Consumers take it when nonzero, otherwise `uint160(account)`, so a package naming an old
@@ -112,8 +111,6 @@ OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,
   authority. It binds no nonce, so a key holder cannot void it, and is consumed once by digest
   (`AcceptanceUsed`, ID-12). Its deadline is checked when the scheduled `stageOverride` executes,
   after its 48 hours.
-- Replay never keys on signature bytes, because a 65-byte signature and its ERC-2098 form both
-  verify (ID-6).
 
 ### Signed activity and dormancy
 
@@ -166,14 +163,12 @@ entry is **pending** before `effectiveAt` (no standing), **established** after i
 - **A full snapshot evicts nothing.** Slots free up only as missing entries pass their grace, so
   a key holder cannot push recorded wallets out by consolidating more (ID-20). After a rotation
   the previous authority's wallets stay, missing but with standing, for the grace.
-- **Captured cancellers.** Each staging refreshes, then captures the entries whose `effectiveAt`
-  has passed, missing ones within their grace included, into `PendingChange.cancellers`. The
-  list never changes for the life of that change (ID-23).
-- **What the snapshot protects.** The authority key controls the live consolidation data: it can
-  revoke consolidations, reorder the delegate list or add consolidations through a use-case-998
-  sub-delegate. None of that strips a recorded, established wallet of standing, even before a
-  staging; the key holder must let a refresh record the wallet missing (a public event) and then
-  wait 30 days (ID-21).
+- **Captured cancellers.** Each staging refreshes, then captures the entries with standing
+  (missing ones within their grace included) into `PendingChange.cancellers`, fixed for the
+  life of that change (ID-23).
+- **What the snapshot protects.** The authority key controls the live consolidation data
+  (revoking, reordering, or adding through a use-case-998 sub-delegate), but cannot strip a
+  recorded, established wallet of standing without a public missing mark and 30 days (ID-21).
 - **Only recorded wallets have standing.** Artists pay for their own refresh; 6529.io prompts one
   right after an artist links a wallet, and one refresh any time after consolidating is enough
   ([ADR 0003 owner decision 4](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026);
@@ -252,15 +247,13 @@ stateDiagram-v2
 ```
 
 Every transition but "effectiveAt passes" is made by a refresh (any trigger in the
-[refresh table](#recovery-standing)), at once, except the removal of a missing entry, which waits
-30 days after `missingSince`. New entries take free slots only.
+[refresh table](#refreshing-standing)); new entries take free slots only.
 
-The bindings (`bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`) are
-ADMIN calls made once each at genesis (`AlreadyBound`); `bindFederationRegistry` is deferred to
-v1.1, and `listFederatedContract` (at most 64 per artist) is callable only by that registry. Each
-binding refuses EIP-7702 delegated targets; the package registry, Stream and the federation
-registry must answer ERC-165, and the statement log's `artistResolver()` must name this registry
-(ID-29). Role and delay for every governed selector are in [roles](../audit/roles.md).
+The one-shot [bindings](governance.md#one-shot-bindings-instead-of-a-system-role)
+(`bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`) are made at
+genesis (ID-29); the statement log's `artistResolver()` must name this registry.
+`bindFederationRegistry` is deferred to v1.1, and only that registry may call
+`listFederatedContract` (at most 64 per artist). Roles and delays: [roles](../audit/roles.md).
 
 ## Flows
 
@@ -297,8 +290,7 @@ sequenceDiagram
 
 ### Stolen key: override and restraint
 
-A thief holds the authority key. The new key signs an acceptance, and governance stages a
-`CONTESTED` override whose evidence hash commits to the public record.
+A thief holds the authority key.
 
 ```mermaid
 sequenceDiagram
@@ -394,8 +386,8 @@ sequenceDiagram
   artist's latest DISPUTE_OUTCOME then. Further cancels do nothing, and `executeChange` refuses
   the override (`OverrideContested`); the freeze and the restraint continue.
 - **The vote.** PLATFORM records the outcome as a DISPUTE_OUTCOME statement on
-  `(registry, artistId)` ([disputes and statements](disputes-and-statements.md)). Until the
-  6529 chain exists the vote is off-chain, and the admin Safe is trusted to apply it.
+  `(registry, artistId)` ([disputes and statements](disputes-and-statements.md)); until the
+  6529 chain exists the admin Safe is trusted to apply it.
 - **The resolution.** `outcomeRef` must be nonzero, equal `latestDisputeOutcome(registry,
   artistId)` (`OutcomeNotRecorded`) and differ from `priorOutcome` (`OutcomePredatesContest`), so
   only a vote recorded after this contest qualifies (ID-14). An uphold re-checks as
@@ -405,9 +397,8 @@ sequenceDiagram
   within 7 days of maturing. A later DISPUTE_OUTCOME on the same subject invalidates a scheduled
   resolution. The window between `executableAt` and the lapse is always at least 185 days
   (`testFuzz_L3_UpholdWindowAlwaysOpen`).
-- **Other ends.** A guardian can still veto. A contest nobody resolves lapses 365 days after
-  `contestedAt`; the freeze and restraint lift at once, and anyone may then call `expireContest`
-  (LIM-ID-3).
+- **Other ends.** A guardian can still veto; an unresolved contest lapses after 365 days (ID-15,
+  LIM-ID-3).
 - Tested by `test_ContestedOverrideUpheldByARecordedVote`
   ([`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol)) and
   `test_PowersReturnWhenAVoteVoidsTheOverride`
@@ -439,9 +430,7 @@ sequenceDiagram
 ```
 
 - A payout-only override needs no acceptance, restrains nothing and needs no consent from the
-  artist (LIM-ID-8).
-- Activity inside the 48-hour scheduling window makes the staging revert with `NotDormant`; a
-  `CONTESTED` override has no dormancy requirement.
+  artist (LIM-ID-8). A `CONTESTED` override has no dormancy requirement.
 
 The calls that count as signed activity and reset the dormancy clock:
 
@@ -510,14 +499,11 @@ The adapter's reads:
 - **Fail closed.** Only a revert with no data that did not exhaust the stipend ends a walk, which
   is how the deployed getters answer an index past an array's end. Anything else reverts with
   `DelegationReadFailed`, never "not consolidated", which would mark every recorded wallet
-  missing (ID-25). During an outage or a code-hash mismatch, the triggers above that revert do
-  so, while registration and execution skip their refresh and emit `StandingRefreshSkipped`
-  (ID-26, LIM-ID-9). Only `DelegationReadFailed` and a code-hash mismatch are skipped, and
-  skipping removes nobody's standing.
-- **Swapping the source.** `setConsolidationSource(expected, next, nextCodeHash)` is
-  SUCCESSOR_SETTER, 30 days (successor class), compare-and-set; `next` must match `nextCodeHash`,
-  answer ERC-165 and not be EIP-7702 delegated, and the pinned hash is re-checked at every use
-  (DEPS-6, ID-27).
+  missing (ID-25). Outages and code-hash mismatches follow the trigger table above (ID-26,
+  LIM-ID-9); only those two are skipped, and skipping removes nobody's standing.
+- **Swapping the source.** `setConsolidationSource(expected, next, nextCodeHash)`
+  (SUCCESSOR_SETTER, 30 days) pins the new source's code hash, re-checked at every use (DEPS-6,
+  ID-27).
 
 Gas is in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table); the
 adversarial worst case is under Parameters.
@@ -605,7 +591,6 @@ Accepted risks are listed once, with their IDs, in
 | The key is stolen (LIM-ID-7) | The thief can cancel any STANDARD change and stage changes, freezing the payout each time | A `CONTESTED` override: the freeze and the restraint hold the thief from its staging; guardians veto the thief's STANDARD changes |
 | A thief's captured wallet contests the recovery override (LIM-ID-3, LIM-ID-4) | The override waits; the payout stays frozen and the artist restrained | A recorded vote and `resolveContested` (30 days), a guardian veto, or the lapse 365 days after the contest |
 | A scheduled `resolveContested` cites an outcome that is no longer the latest | Reverts with `OutcomeNotRecorded` | Schedule a new resolution citing the latest outcome |
-| An uphold is scheduled too early | Reverts with `ChangeNotDue`; the AccessManager drops it 7 days after maturing | Schedule no earlier than `executableAt` minus 30 days |
 | No statement log is bound | `resolveContested` always reverts with `OutcomeNotRecorded` | Genesis binds it; otherwise a veto or the lapse ends the contest |
 | An override acceptance expires during the 48-hour schedule, or is reused after a veto or contest | `InvalidSignature`; `AcceptanceUsed` | A new acceptance; a different deadline or evidence hash gives a new digest |
 | Activity lands during the 48-hour scheduling of an `ESTATE` or `LOST_KEY` override | The staging reverts with `NotDormant` | Wait out the dormancy, or stage a `CONTESTED` override |
@@ -667,8 +652,6 @@ before mint (LIM-ID-11).
 | 6529 delegation contract (mainnet) | `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d` | `ConsolidationAdapter` NatSpec; constructor argument |
 | ERC-1271 gas cap; largest signature | 200,000; 4,096 bytes | `SignatureVerifier.ERC1271_GAS_LIMIT`, `MAX_SIGNATURE_LENGTH` |
 | Gas kept for the CALL | 1,000 | `BoundedCall.CALL_RESERVE` |
-| `stageOverride`; `resolveContested` and `setConsolidationSource`; `vetoChange` | PARAMETER_SETTER, 48 hours; SUCCESSOR_SETTER, 30 days; GUARDIAN, immediate | [`config/genesis.example.json`](../../config/genesis.example.json) |
-| Scheduled-operation expiry | 7 days after maturing | OpenZeppelin `AccessManager.expiration` |
 | EIP-712 domain | `6529 Works Artist Registry`, version `1` | `Typehashes.ARTIST_REGISTRY_NAME`, `DOMAIN_VERSION` |
 | Worst-case `stageChange`, `stageOverride`, `refreshStanding` | About 5.31M, 5.33M and 4.66M gas, under half the 16,777,216-gas EIP-7825 cap | [`ArtistRegistryReview.t.sol`](../../test/identity/ArtistRegistryReview.t.sol) `test_WorstCase_*` |
 | One direct pair check, all cold | About 129,000 gas (8 reads) | `test_WorstCase_DirectCheckBoundedAtEightReads` |

@@ -2,12 +2,10 @@
 
 Curation decides which works may ever mint on 6529 Stream. Voters approve a package (a Merkle
 root of items) in a 6529 wave; a curation signer attests the approval; anyone registers the
-attested root on-chain; every party named by an item signs the root; and the lead artist signs a
-revocable move that lets the work start. At the auction start, 6529 Stream asks the package
-registry to consume the item, which checks all of this and records the item's content hash so
-that the same work can never mint twice. This page is for auditors, integrators and curation
-operators. `PackageRegistry` and `Eip712CurationVerifier` implement it, with the hashing rules in
-`WorksHashing` and `Typehashes` and the shared edition rule in `EditionRules`.
+root; every party named by an item signs it; and the lead artist signs a revocable move that lets
+the work start. At the auction start the package registry consumes the item, checking all of this
+and recording its content hash so the same work never mints twice. For auditors, integrators and
+curation operators; `PackageRegistry` and `Eip712CurationVerifier` implement it.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -15,16 +13,12 @@ operators. `PackageRegistry` and `Eip712CurationVerifier` implement it, with the
 
 | Contract | Source | Interface | Responsibility |
 | --- | --- | --- | --- |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Registers approved roots, records acceptances, consumes items once at the start, keeps content unique per product, tracks move nonces, releases content after an upheld dispute, swaps the verifier. |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Approved roots, acceptances, consume-once and per-product content uniqueness, move nonces, content release, verifier swap. |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | [`ICurationVerifier`, `ICurationSignerVerifier`](../../src/interfaces/ICurationVerifier.sol) | The v1 verifier: accepts a `PackageApproval` signature by an active curation signer at its current signer epoch; the guardian's per-signer kill switch. |
 | `WorksHashing` (library) | [`src/interfaces/types/WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol) | none | The one definition of the item hash, Merkle leaf, media hash and license key. |
 | `Typehashes` (library) | [`src/interfaces/types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | none | EIP-712 domain names, the domain version and every typehash. |
 | `EditionRules` (library) | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | none | Valid edition terms, applied by the registry at `consume` and by 6529 Editions at `createEdition`. |
 | Package types | [`src/interfaces/types/PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) | none | `PackageItem`, `Party`, `License`, `SaleTerms`, `EditionTerms`, `PartyAcceptance`, `MoveAuthorization`, `StreamMintRequest`. |
-
-6529 Stream is the only caller of `consume` and `releaseContent`; 6529 Editions the only
-caller of `claimContent`. The artist registry creates identities on a first acceptance and
-answers `activeAuthorityOf`.
 
 ## Concepts
 
@@ -43,9 +37,8 @@ glossary. What this page adds:
   publishes the matching [curation evidence](../glossary.md#curation-evidence) statement.
 - One storage word, `contentHash => itemHash`, is both the consume-once record and the
   uniqueness record.
-- While an authority-moving override is pending, `IArtistRegistry.activeAuthorityOf` returns
-  zero, so no acceptance, move or move revocation verifies for that artist (ADR 0003 owner
-  decision 6; [identity-and-recovery.md](identity-and-recovery.md)).
+- While an authority-moving override is pending, `activeAuthorityOf` returns zero, so no
+  acceptance, move or move revocation verifies for that artist (CUR-19, ADR 0003 owner decision 6).
 
 ### The package item
 
@@ -81,12 +74,11 @@ way off-chain tools compute them.
 | --- | --- |
 | item hash | `keccak256(abi.encode(PACKAGE_ITEM_DOMAIN, item))`, with `PACKAGE_ITEM_DOMAIN = keccak256("6529WORKS_PACKAGE_ITEM_V1")`. |
 | leaf | `keccak256(bytes.concat(itemHash))`. Double hashing makes a leaf's preimage 32 bytes, so a 64-byte inner node never passes as a leaf. |
-| package root | OpenZeppelin `MerkleProof` root (sorted pairs) over the leaves, equal to `StandardMerkleTree` with leaf encoding `["bytes32", <PackageItem tuple>]` and values `[PACKAGE_ITEM_DOMAIN, item]`. A one-item package's root is its leaf. Proofs have at most `Limits.MAX_PROOF_DEPTH` (32) nodes. |
+| package root | OpenZeppelin `MerkleProof` root (sorted pairs) over the leaves, equal to `StandardMerkleTree` with leaf encoding `["bytes32", <PackageItem tuple>]` and values `[PACKAGE_ITEM_DOMAIN, item]`. A one-item package's root is its leaf. |
 | media hash | `keccak256(abi.encode(MEDIA_DOMAIN, media))` over the ordered `MediaFile[]`, with `MEDIA_DOMAIN = keccak256("6529WORKS_MEDIA_V1")`. |
 | content hash, evidence hash | Declared by the item and by the signed approval; the contracts never recompute them. |
 
-The JSON package document maps field for field onto these structs; the ABI encoding is what is
-committed.
+The JSON package document maps field for field onto these structs; the ABI encoding is committed.
 
 ### EIP-712 messages
 
@@ -105,9 +97,9 @@ Each signing contract uses the domain `(name, "1", chainid, itself)`
   `(false, address(0))` without reverting.
 - **Signatures.** All three go through
   [`SignatureVerifier.isValid`](../../src/libraries/SignatureVerifier.sol): low-s ECDSA (65 bytes
-  or ERC-2098's 64), ERC-1271 and EIP-7702 accounts. A zero signer never verifies. Replay
-  protection never keys on signature bytes, because both ECDSA encodings verify.
-- **Digests.** `approvalDigest`, `acceptanceDigest` and `moveDigest` return the exact digests.
+  or ERC-2098's 64), ERC-1271 and EIP-7702 accounts; never a zero signer. Replay protection never
+  keys on signature bytes, since both ECDSA encodings verify.
+- **Digests.** `approvalDigest`, `acceptanceDigest` and `moveDigest` return them.
 
 ### Signer epoch
 
@@ -120,17 +112,17 @@ Each signing contract uses the domain `(name, "1", chainid, itself)`
 - `salt` is the low 64 bits of `keccak256(abi.encode(block.prevrandao, signer, changes))`,
   drawn at the latest disable or enable. It only has to be unknown before that block.
 
-So an approval made before a disable, or under a revoked grant, never counts again, and one
-signed while the signer is disabled cannot name its re-enable epoch. The signer reads
-`signerEpoch` before signing and re-signs what it still approves. A nonzero execution delay
-makes the signer inactive but keeps its epoch. Registered approvals never expire.
+So an approval made before a disable or under a revoked grant never counts again, and one signed
+while disabled cannot name the re-enable epoch. The signer reads `signerEpoch` before signing. A
+nonzero execution delay makes the signer inactive but keeps its epoch. Registered approvals never
+expire.
 
 ### Move nonces
 
-Each artist's move nonces live in a bitmap: word `nonce / 255`, bit `nonce % 255`. Bit 255 of
+Each artist's move nonces live in a bitmap: word `nonce / 255`, bit `nonce % 255`; bit 255 of
 every written word is a sentinel. The acceptance that creates an identity writes the sentinel
-into word 0, so the artist's first 255 starts update an existing slot instead of creating one.
-Tools should use nonces 0, 1, 2, and so on per artist; any `uint256` works.
+into word 0, so the artist's first 255 starts update an existing slot. Tools should use nonces 0,
+1, 2, and so on per artist; any `uint256` works.
 
 ### Trust obligations of the curation signer
 
@@ -138,8 +130,7 @@ The contracts cannot check these; the signer's tooling must, before it attests (
 "Package format and curation").
 
 - **Verify every declared SHA-256 against the decoded bytes**, for every media file, including
-  the content hash. On-chain uniqueness keys on the declared content hash and is defense in
-  depth.
+  the content hash, on which on-chain uniqueness keys.
 - **Simulate `WorkRecords.openRecord`** for every item. Its media checks
   ([WS-2](works-and-storage.md#rules-and-invariants)) do not run at mint, so a mis-committed
   item mints and its record never opens.
@@ -172,8 +163,8 @@ stateDiagram-v2
 
 ### Item and content hash (6529 Stream)
 
-An item is consumed at the start and, if an upheld dispute burns its work, tombstoned by
-`releaseContent`: never consumable again, through any root. Its content hash:
+If an upheld dispute burns a work, `releaseContent` tombstones its item: never consumable again,
+through any root. The content hash:
 
 ```mermaid
 stateDiagram-v2
@@ -188,9 +179,8 @@ stateDiagram-v2
 
 `consumedItemOf(contentHash)` reads the item holding the content, or zero when free or
 released. `releasedTo(contentHash)` reads the beneficiary of the latest release; it binds only
-while the content is released. `isReleased(itemHash)` reads the tombstone. Separately, 6529
-Editions may claim a used content hash once, for the master item that holds it
-(`editionClaimOf`).
+while the content is released. `isReleased(itemHash)` reads the tombstone and `editionClaimOf`
+the [edition claim](#edition-content-claim).
 
 ### Curation signer
 
@@ -210,8 +200,7 @@ stateDiagram-v2
     Active --> Inactive : role revoked
 ```
 
-A signer counts only while it holds the role with no execution delay and is not disabled
-(`isSignerActive`); a disable survives a role re-grant.
+`isSignerActive` reads the state; a disable survives a role re-grant.
 
 | Transition | Caller (role) | Delay | Function |
 | --- | --- | --- | --- |
@@ -259,13 +248,11 @@ sequenceDiagram
   code hash (`InvalidDependency`). The verifier approves and the evidence hash is nonzero
   (`NotApproved`).
 - **Effects.** Status `APPROVED`; the signer and evidence hash are stored and emitted.
-- **Curation evidence.** Only CURATOR may write a `CURATION_EVIDENCE` statement, with subject
-  `(address(0), uint256(root))`: through `appendCurator`, or through a relayed `appendSigned`
-  signed by a CURATOR holder ([`StatementLog.sol`](../../src/records/StatementLog.sol)). Genesis
-  gives CURATOR zero delay. A holder with a nonzero execution delay cannot write at once or by
-  relay (`appendSigned` refuses it), but could schedule `appendCurator` and then call it. A
-  [suspended](governance.md#suspension-of-operational-keys) CURATOR key cannot append at all.
-  The registry neither requires nor checks the statement; registration is unaffected.
+- **Curation evidence.** Only CURATOR writes a `CURATION_EVIDENCE` statement, subject
+  `(address(0), uint256(root))`, by `appendCurator` or a relayed `appendSigned`
+  ([`StatementLog.sol`](../../src/records/StatementLog.sol); delays and suspension in
+  [disputes-and-statements.md](disputes-and-statements.md)). The registry neither requires nor
+  checks it.
 
 Sepolia gas for registration and acceptance is in
 [flows.md, section 2](../../deployments/11155111/flows.md#2-the-curated-stream-sale).
@@ -296,12 +283,12 @@ sequenceDiagram
   artist, `profileId` and `profileDocHash` must match the identity record (`ProfileMismatch`).
 - **Effects.** `acceptedAs[root][account] = artistId`. A first acceptance creates artist ID
   `uint256(uint160(account))` with the signed profile and is the artist's first activity; later
-  acceptances are not activity for the dormancy clock. A repeat changes nothing.
+  acceptances do not reset the dormancy clock. A repeat changes nothing.
 - **Consent is per account.** An item listing an artist under another address (say, a new
   authority after recovery) needs an acceptance for that address; an item listing two accounts of
   one artist is invalid at consume.
-- **Restraint.** An existing artist's acceptances, including ones signed before the override
-  was staged, revert with `InvalidSignature` and verify again after a veto.
+- **Restraint.** Acceptances, even ones signed before the override was staged, revert with
+  `InvalidSignature` until a veto.
 
 ### Move and start
 
@@ -336,24 +323,21 @@ sequenceDiagram
     Auction->>Auction: lock terms, check custody, emit SaleStarted
 ```
 
-`consume` checks, in this order: the caller is the bound Stream (`UnboundCaller`); the root is
-`APPROVED` (`PackageNotApproved`); the proof has at most 32 nodes and places the leaf of the item
-hash the registry computes itself under the root (`ItemNotInPackage`); no item holds the content,
-or it is released and this item is not tombstoned (`ContentUsed`); the terms (CUR-9) and the
-parties and payees (CUR-6, CUR-8) (`InvalidItem`, `PartyNotAccepted`); released content goes only
-to its beneficiary (`ContentReserved`); then the move: the deadline (`InvalidSignature`), the
-nonce, spent now (`MoveNonceUsed`), and the lead's active authority's signature over `moveDigest`
-(`InvalidSignature`). A revert anywhere in the start, including `SeedNotDelivered` after
-`consume`, undoes the consume and the nonce.
+`consume` fails, in order, with: `UnboundCaller`; `PackageNotApproved`; `ItemNotInPackage` (also
+for a proof over 32 nodes; the registry computes the item hash itself); `ContentUsed` (held, or
+released and this item tombstoned); `InvalidItem` or `PartyNotAccepted` (CUR-9, CUR-6, CUR-8);
+`ContentReserved` (released content, not the beneficiary); then for the move `InvalidSignature`
+(deadline), `MoveNonceUsed` (the nonce is spent here) and `InvalidSignature` (over `moveDigest`).
+A revert anywhere in the start, including `SeedNotDelivered`, undoes the consume and the nonce.
 
 - **Consent reads, not calls.** The only external call in `consume` is `activeAuthorityOf` for
   the lead (plus ERC-1271 if that authority is a contract).
 - **Restraint.** No move verifies, from the old key or the reserved new key, and `revokeMove`
-  reverts with `NotAuthority`. After execution the new key signs the move.
-- **Rotated keys.** Unused moves signed by a key the artist rotated away from stay void, unless
-  the new authority is an ERC-1271 or EIP-7702 wallet that accepts them (ADR 0003, SIGS-3).
-- **Gas.** `consume` as Stream calls it measures 96,456 Prague gas and 1 new slot, under a
-  99,000 regression ceiling ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+  reverts with `NotAuthority`. After execution the new key signs.
+- **Rotated keys.** Unused moves signed by a rotated-away key stay void, unless the new authority
+  is an ERC-1271 or EIP-7702 wallet that accepts them (ADR 0003, SIGS-3).
+- **Gas.** `consume` measures 96,456 Prague gas and 1 new slot, under a 99,000 ceiling
+  ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 
 ### Edition content claim
 
@@ -375,9 +359,8 @@ A guardian calls `revokePackage(root, reasonHash)` (GUARDIAN, immediate). From t
 `acceptPackage` and `consume` revert for the root, and the entropy module's `requestSeed` refuses
 its items.
 
-- **Preconditions.** The root is not already `REVOKED` (`PackageNotApproved`). A root still
-  `NONE` may be revoked in advance, for example after an attestation leaked; it can then never
-  be registered (`PackageExists`).
+- **Preconditions.** The root is not already `REVOKED` (`PackageNotApproved`). A `NONE` root may
+  be revoked in advance, say after an attestation leaked; it then never registers (`PackageExists`).
 - **Effects.** Final. Consumed items, minted works and their editions are unaffected.
 - **Per root, not per item.** An item listed in two approved roots stays consumable through the
   other (`test_revokePackage_isPerRoot`), so the guardian revokes every root that lists it.
@@ -399,8 +382,7 @@ sequenceDiagram
     Verifier-->>Setter: emit SignerEnabled, a new salted epoch
 ```
 
-- **Disable.** One-way for the guardian, possible in advance. It stops only future
-  registrations: roots the signer registered stay approved until the guardian revokes them.
+- **Disable.** Roots the signer registered stay approved until the guardian revokes them.
 - **Re-enable.** Only a disabled signer (`SignerNotDisabled`). After a suspected compromise,
   grant the role to a fresh key instead.
 - **Not suspendable.** `WorksAccessManager.suspend` refuses `CURATION_SIGNER`
@@ -423,10 +405,10 @@ sequenceDiagram
 ```
 
 - **Preconditions.** `expected` is the current verifier (`ExpectedValueMismatch`). `next` is
-  neither the current verifier nor one retired before, has code, is not EIP-7702 delegated,
-  supports `ICurationVerifier` by ERC-165 and has `nextCodeHash` (`InvalidDependency`).
+  neither current nor retired, has code, is not delegated, supports `ICurationVerifier` and has
+  `nextCodeHash` (`InvalidDependency`).
 - **Effects.** The old verifier is retired for good; registered approvals are unaffected.
-- **Why.** A verifier backed by the 6529 chain replaces the v1 signer verifier through this path
+- **Why.** The path by which a verifier backed by the 6529 chain replaces the v1 signer verifier
   ([ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages)).
 
 ### Content release after an upheld dispute
@@ -481,7 +463,6 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| An attestation leaks before registration. | Anyone could register the root. | The guardian revokes the root in advance (`PackageExists` from then on). |
 | A curation signer key is compromised. | It can attest new roots. | `disableSigner` at once; curation continues on the other key (at least two at deployment). Revoke every root the key registered that should not stand (`packageOf` names the signer); grant the role to a fresh key. |
 | The CURATOR key is compromised. | Misleading `CURATION_EVIDENCE` stays in the log. | A guardian suspends it; governance replaces it (30 days, then the 30-day grant delay). A later statement supersedes the false one. |
 | A root with a bad item is approved. | Its items can start. | Revoke that root and every other root listing the item; works already started are disputes. |
@@ -489,7 +470,6 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | Pre-signed acceptances differ in profile fields. | The first relayed sets a new identity's profile; the others revert (`ProfileMismatch`). | The artist re-signs with the recorded profile. |
 | An account to be accepted is another artist's pending new authority. | The artist registry reverts (`AccountTaken`). | Wait for the change to resolve, or list another account. |
 | An unwanted move signature exists. | Anyone holding it can start the work before its deadline. | `revokeMove`, or let the deadline pass. |
-| The lead artist is restrained by a pending override. | Unminted works cannot start. | Resolves with the override: execution (the new key signs), veto, void or lapse. |
 | An item's media commitments do not match the content store. | It mints, but its record never opens: core-only metadata. | None on-chain; the signer's `openRecord` simulation is the control. |
 | A copier's work is minted from another artist's content. | During the auction an upheld dispute burns it; after the sale, a statement only. | `releaseContent` (48 hours) reserves the content for the rightful artist. |
 | A release names an artist with no identity. | `UnknownArtist`. | The rightful artist first registers, by a first acceptance. |
@@ -510,34 +490,19 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | `CURATION_SIGNER` and `CURATOR` grant delay | 30 days | `Roles.grantDelay`, [`Roles.sol`](../../src/governance/Roles.sol) |
 | Curation signer keys at deployment | at least 2 (off a local chain) | `DeployGuards.MIN_CURATION_SIGNERS`, [`DeployGuards.sol`](../../script/DeployGuards.sol) |
 
-Roles and delays of each governed function are in the transition table above and, selector by
-selector, in [roles.md](../audit/roles.md).
-
 ## Differences from the ADRs
 
 See the [register](README.md#differences-from-the-adrs).
 
 ## References
 
-- Code: [`PackageRegistry.sol`](../../src/curation/PackageRegistry.sol),
-  [`Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol),
-  [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol),
-  [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol),
-  [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol),
-  [`WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol),
-  [`Typehashes.sol`](../../src/interfaces/types/Typehashes.sol),
-  [`EditionRules.sol`](../../src/editions/EditionRules.sol),
+- Code: the sources under [Contracts](#contracts),
   [`SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol),
   [`src/curation/README.md`](../../src/curation/README.md).
 - ADRs: [ADR 0001 §3](../adr/0001-v1-scope.md#3-curation-and-approved-packages),
   [ADR 0003, "Package format and curation"](../adr/0003-build-time-decisions.md#package-format-and-curation-amends-adr-0001-3),
   [ADR 0004, the table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-- Tests: [`test/curation/`](../../test/curation/),
-  [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol),
-  [`Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol),
-  [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol),
-  [`Dispute.t.sol`](../../test/integration/Dispute.t.sol),
-  [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol). How to run them:
+- Tests: [`test/curation/`](../../test/curation/) and the files in the rules table. How to run them:
   [testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
 - Related pages: [architecture: identifiers and hashes](../architecture.md#identifiers-and-hashes),
   [stream-and-auctions.md](stream-and-auctions.md), [editions-and-sales.md](editions-and-sales.md),

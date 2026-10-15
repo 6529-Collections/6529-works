@@ -1,9 +1,7 @@
 # Buying, bidding, settling and claiming
 
 For marketplace and wallet engineers, relayers and keepers: how to start, bid on and settle a
-6529 Stream auction, buy 6529 Editions copies, claim what is owed, and read royalties. Each action
-gives the signature, the fields, the checks to make first, the errors and a gas figure. The rules
-are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
+6529 Stream auction, buy 6529 Editions copies, claim what is owed, and read royalties. Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
 [Editions and sales](../spec/editions-and-sales.md#rules-and-invariants) (`ED-n`) and
 [Economics and payouts](../spec/economics-and-payouts.md#rules-and-invariants) (`ECO-n`); event
 signatures in [Events and indexing](events-and-indexing.md); addresses in [Addresses](addresses.md).
@@ -70,29 +68,26 @@ Every adapter collects the same way (`_collect` in
 - **ETH** takes `DIRECT` only, with `payer == msg.sender` and `msg.value == amount`; anything else
   reverts with `InvalidPayment()`.
 - **An ERC-20** takes `msg.value == 0`. For `DIRECT`, the payer approved the adapter beforehand.
-  For `PERMIT`, an EIP-2612 permit of `amount` to the adapter; a permit that fails (for example
-  because someone submitted it first) is ignored, and the pull uses whatever allowance exists. For
+  For `PERMIT`, an EIP-2612 permit of `amount` to the adapter; a permit that fails (say,
+  submitted first by someone else) is ignored, and the pull uses whatever allowance exists. For
   `PERMIT2`, the payer approved the canonical Permit2 once and signs a witness transfer (below).
 - An expired `PERMIT` or `PERMIT2` deadline reverts with `PaymentExpired(deadline)`, even where an
   allowance would cover the pull.
 
 **Which ERC-20s work** ([TokenTransfer.sol](../../src/economics/TokenTransfer.sol)):
 
-- **Balance deltas, on every path.** Every ERC-20 movement is checked by exact balance delta on
-  both sides; a fee-on-transfer token reverts with `TokenBalanceMismatch(asset)`.
-- **Return values, not on every path.** `DIRECT` and `PERMIT` pulls, payouts, claims, flushes and
-  releases go through `TokenTransfer`, which also requires exactly one `true` word back
-  (`TokenCallFailed(asset, selector)` otherwise; `test_NoReturnAndFalseReturningTokensFailClosed`
-  in [EnglishAuctionHostile.t.sol](../../test/sales/auction/EnglishAuctionHostile.t.sol)). A
-  `PERMIT2` pull is Permit2's transfer, around which the adapter checks only balances (`_collect`
-  in EnglishAuction.sol, `_permit2` in MintSaleBase.sol;
-  `test_HostileToken_Permit2CannotSkipTheDeltaCheck` in
-  [FixedPricePayments.t.sol](../../test/sales/fixed/FixedPricePayments.t.sol)); the canonical
-  Permit2 accepts a token that returns nothing.
+- **Balance deltas, on every path.** A fee-on-transfer or rebasing token reverts with
+  `TokenBalanceMismatch(asset)`.
+- **Return values, except under `PERMIT2`.** Every other movement also requires exactly one
+  `true` word back (`TokenCallFailed(asset, selector)`;
+  `test_NoReturnAndFalseReturningTokensFailClosed` in
+  [EnglishAuctionHostile.t.sol](../../test/sales/auction/EnglishAuctionHostile.t.sol)). Around a
+  `PERMIT2` pull the adapter checks only balances, and Permit2 accepts a token that returns
+  nothing (`test_HostileToken_Permit2CannotSkipTheDeltaCheck` in
+  [FixedPricePayments.t.sol](../../test/sales/fixed/FixedPricePayments.t.sol)).
 - **Governance is the guard.** A currency is usable only once `AssetAllowlist.admitAsset`
-  (FUNDS_SETTER, 14 days) admits it, and governance admits standard ERC-20s only
-  ([ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions)). The admission probe checks only
-  code, no EIP-7702 delegation and clean reads (ECO-32), not standard behavior.
+  (FUNDS_SETTER, 14 days) admits it, and governance admits standard ERC-20s only; the admission
+  probe is not a behavior check (ECO-32).
 
 ### Signing a Permit2 payment
 
@@ -116,7 +111,6 @@ ED-18).
 | Dutch `purchase` | `DUTCH_PURCHASE_WITNESS` | `saleId`, `recipient` **as passed**, `quantity`, `maxUnitPrice`, `payment.deadline` |
 
 When the auction's `permit2()` is zero, a `PERMIT2` payment reverts with `InvalidPayment()`.
-Permit2's own errors (for example `InvalidSigner` or `InvalidNonce`) bubble up.
 
 ## Starting an auction
 
@@ -140,9 +134,8 @@ function saleIdOf(address token, uint256 tokenId) external pure returns (uint256
 - `token` is the 6529 Stream address; `mintData` is `abi.encode(StreamMintRequest)` (below).
 - The sale ID is `uint256(keccak256(abi.encode(token, tokenId)))`. Take it from the return value or
   from `SaleStarted`; the token ID is assigned at mint.
-- `startWithBid` also places the first bid, with the bid's payer as the bidder of record. A
-  relayer can submit it with a `PERMIT2` bid; the `StartBid` witness binds the hash of `mintData`
-  because no sale ID exists before the start.
+- `startWithBid` also places the first bid, with the bid's payer as the bidder of record; a
+  relayer can submit it with a `PERMIT2` bid.
 
 ### Building the `StreamMintRequest`
 
@@ -157,18 +150,15 @@ function saleIdOf(address token, uint256 tokenId) external pure returns (uint256
 | `move.deadline` | `uint64` | When the move signature expires |
 | `move.signature` | `bytes` | The lead artist's `MoveToStream` signature |
 
-The item hash and the leaf follow [WorksHashing.sol](../../src/interfaces/types/WorksHashing.sol):
-`itemHash = keccak256(abi.encode(keccak256("6529WORKS_PACKAGE_ITEM_V1"), item))` and
-`leaf = keccak256(bytes.concat(itemHash))`, over an OpenZeppelin sorted-pair tree. This is
-OpenZeppelin's `StandardMerkleTree` with the values `[PACKAGE_ITEM_DOMAIN, item]`, so the package
-tooling's proofs verify directly.
+The item hash, leaf and tree are OpenZeppelin's `StandardMerkleTree` over
+`[PACKAGE_ITEM_DOMAIN, item]` ([Curation](../spec/curation.md#identifiers-and-hashes)), so the
+package tooling's proofs verify directly.
 
 **Check before you submit:**
 
 1. `PackageRegistry.packageOf(root)` returns `APPROVED`.
 2. `PackageRegistry.consumedItemOf(item.contentHash)` is zero.
-3. `PackageRegistry.acceptedAs(root, party.account)` is nonzero for every `item.parties[i]`; anyone
-   relays a missing signed acceptance with `acceptPackage(packageRoot, acceptance, signature)`.
+3. `PackageRegistry.acceptedAs(root, party.account)` is nonzero for every `item.parties[i]`.
 4. `Stream.collection(item.collectionId)` does not revert.
 5. The move is unexpired and `PackageRegistry.isMoveNonceUsed(artistId, nonce)` is false.
 6. For a VRF item, `IEntropyModule.isDelivered(itemHash)` is true.
@@ -180,9 +170,8 @@ tooling's proofs verify directly.
 
 ### The move signature
 
-The lead artist authorizes the [move](../glossary.md#move) off-chain: an EIP-712 signature in the
-package registry's domain (name `6529 Works Package Registry`, version `1`, the chain ID, the
-registry's address) over
+The lead artist signs the [move](../glossary.md#move) off-chain, in the package registry's EIP-712
+domain (name `6529 Works Package Registry`, version `1`, the chain ID, the registry's address), over
 `MoveToStream(bytes32 packageRoot,bytes32 itemHash,uint256 nonce,uint64 deadline)`
 (`Typehashes.MOVE_TO_STREAM`). `PackageRegistry.moveDigest(packageRoot, itemHash, nonce, deadline)`
 returns the digest to sign.
@@ -190,13 +179,12 @@ returns the digest to sign.
 - **Signer.** The active authority of the lead artist's ID
   (`IArtistRegistry.activeAuthorityOf(artistId)`), where the artist ID is
   `PackageRegistry.acceptedAs(root, item.parties[0].account)`.
-- **Signature forms.** 65-byte ECDSA, 64-byte ERC-2098, ERC-1271 for contract accounts (at most
-  4,096 bytes, `SignatureVerifier.MAX_SIGNATURE_LENGTH`), and EIP-7702 delegated accounts
-  ([SignatureVerifier.sol](../../src/libraries/SignatureVerifier.sol)).
+- **Signature forms.** 65-byte ECDSA, 64-byte ERC-2098, ERC-1271 (at most 4,096 bytes) and
+  EIP-7702 accounts ([SignatureVerifier.sol](../../src/libraries/SignatureVerifier.sol)).
 - **Nonce.** Any unused `uint256`, single use per artist ID. Use them in order from 0: the first
-  255 share a storage word that already exists, which keeps the start within its gas budget
-  (`PackageRegistry` NatSpec). The artist revokes an unused one with `revokeMove(artistId, nonce)`.
-  A move signed by an authority the artist has rotated away from stays void.
+  255 share an existing storage word, which keeps the start within its gas budget. The artist
+  revokes an unused one with `revokeMove(artistId, nonce)`. A move signed by a rotated-away
+  authority stays void.
 
 ### Encoding `mintData`
 
@@ -240,17 +228,14 @@ A work whose item has `seedPolicy == VRF` starts only after its seed is delivere
 1. Anyone calls `requestSeed(item, packageRoot, proof)` on the entropy module.
 2. Wait for `SeedDelivered(contentHash, requestId, seed)`; on Sepolia it arrived five blocks after
    the request ([flows §6](../../deployments/11155111/flows.md#6-vrf)).
-3. Check `isDelivered(itemHash)`, then start. Earlier, the start reverts with
-   `IStream.SeedNotDelivered(itemHash)`.
+3. Check `isDelivered(itemHash)`, then start.
 
 If no seed arrives, anyone may request again once `retryDelay()` has passed (at least 3 days,
 `VrfEntropyModule.MIN_RETRY_DELAY`); earlier calls revert with `RequestPending(itemHash, retryAt)`.
 
 ### The currency
 
-The auction locks the sale's currency, opening bid, increment share and anti-snipe window at start,
-and the increment floor at the first bid (AUC-15, `_lockTerms` in
-[EnglishAuction.sol](../../src/sales/EnglishAuction.sol)). `CURRENCY_DEFAULT` resolves to
+The currency locks at start (AUC-15). `CURRENCY_DEFAULT` resolves to
 `AssetAllowlist.defaultCurrency(PRODUCT_STREAM)`, ETH at launch; an explicit currency must be
 active. An unusable currency reverts with `CurrencyNotConfigured(product)` or
 `AssetNotActive(asset)`. Read the locked currency from `SaleStarted.currency` or
@@ -286,9 +271,8 @@ sequenceDiagram
 
 ### Errors
 
-`EnglishAuction` raises `SalePaused`, `TargetNotAllowed` and `InvalidTerms`; `Stream` raises
-`InvalidMintRequest` and `SeedNotDelivered`; the currency errors come from `AssetAllowlist`; the
-rest from `PackageRegistry`.
+Errors come from `EnglishAuction` (`SalePaused`, `TargetNotAllowed`, `InvalidTerms`), `Stream`
+(`InvalidMintRequest`, `SeedNotDelivered`), `AssetAllowlist` (currency) or `PackageRegistry`.
 
 | Error | Cause | What to do |
 | --- | --- | --- |
@@ -297,7 +281,7 @@ rest from `PackageRegistry`.
 | `InvalidMintRequest()` | Malformed `mintData`, a missing collection, or item terms Stream refuses (AUC-2). | Fix the request. |
 | `PackageNotApproved(packageRoot)`, `ContentUsed(product, contentHash, claimedBy)`, `ContentReserved(contentHash, beneficiary)` | The root is unknown or revoked; the item already started, or its content is claimed by or reserved for another item. | Nothing to start. |
 | `ItemNotInPackage(packageRoot, itemHash)` | The proof does not place the item, or has more than 32 nodes. | Rebuild the proof. |
-| `PartyNotAccepted(packageRoot, account)` | A party has not accepted the root. | Relay its acceptance with `acceptPackage`. |
+| `PartyNotAccepted(packageRoot, account)` | A party has not accepted the root. | Relay its signed acceptance with `acceptPackage(packageRoot, acceptance, signature)`. |
 | `InvalidItem(itemHash)` | Parties, payees, seed or edition fields are inconsistent. | Report it to curation. |
 | `InvalidSignature()` | The move expired, was signed by another key, or the lead artist is restrained. | Get a fresh move, or wait for the override's outcome. |
 | `MoveNonceUsed(artistId, nonce)` | The nonce was spent or revoked. | Ask for a move with a new nonce. |
@@ -309,10 +293,9 @@ rest from `PackageRegistry`.
 
 ### Gas
 
-A steady-state `start` uses 291,808 Prague gas, within its 350,000 budget (AUC-32,
-[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). The first start on a
-deployment, and the first bid under a new combination of locked sale terms, cost more once; the
-table lists those rows and the ERC-20 Permit2 `startWithBid`.
+A steady-state `start` uses 291,808 Prague gas (AUC-32,
+[ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)); the table also lists
+the costlier first-time cases and the ERC-20 Permit2 `startWithBid`.
 
 ## Bidding
 
@@ -323,8 +306,7 @@ function auction(uint256 saleId) external view returns (Auction memory);
 ```
 
 `recipient` receives the token if the bid wins; zero means the payer. It cannot be the auction
-itself (`InvalidRecipient(recipient)`). The payer is the bidder of record: refunds go to it, and it
-alone may withdraw the bid.
+itself (`InvalidRecipient(recipient)`).
 
 - **The amount.** The bid is `payment.amount` exactly; there is no "bid up to" form. Read
   `minimumBid(saleId)` just before you submit (the rule is AUC-16). Live parameters are in
@@ -407,9 +389,8 @@ function claimFor(address account, address currency) external returns (uint256 a
 function pendingDelivery(uint256 saleId) external view returns (address);
 ```
 
-Settlement is permissionless once `auction(saleId).state == ENDED`, and never depends on the winner
-accepting the token (AUC-21). `ENDED` and `PAUSED` are derived from the clock; no transaction ends
-an auction.
+Settlement is permissionless once `auction(saleId).state == ENDED` (derived from the clock; no
+transaction ends an auction), and never depends on the winner accepting the token (AUC-21).
 
 ```mermaid
 stateDiagram-v2
@@ -449,15 +430,12 @@ sequenceDiagram
 ```
 
 The fee is `floor(price × feeShare / 100,000)`. The [seller wallet](../glossary.md#seller-wallet)
-is a predicted split-wallet address and may not be deployed yet. With no bid, the token goes to the
-artist's active authority, resolved at settlement (AUC-24).
+is a predicted split-wallet address and may not be deployed yet.
 
 ### Gas the caller must forward
 
-`settle` gives each external call a fixed allowance and refuses to run with less, so a caller
-cannot force a payout into the escrow or a delivery into a pending one by starving it (AUC-22).
-Each check requires the allowance, plus EIP-150's 1/63, plus a reserve
-([BoundedCall.sol](../../src/libraries/BoundedCall.sol)):
+`settle` refuses to run unless it can give each external call its allowance, plus EIP-150's
+1/63, plus a reserve, so a starved call cannot force the escrow or pending route (AUC-22):
 
 | Call | Allowance | Reserve | Revert when short |
 | --- | ---: | ---: | --- |
@@ -469,8 +447,8 @@ So an ERC-20 `settle` needs a gas limit of about 1.11M although it uses about 14
 `settle` about 460K ([ADR 0004, Security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact);
 `test_MONEY1_SettlerGasLimitVersusGasUsed` in
 [EnglishAuctionFollowUp.t.sol](../../test/sales/auction/EnglishAuctionFollowUp.t.sol)).
-`eth_estimateGas` returns these figures; never set the limit from the gas a past settlement used.
-The first payout to a new seller wallet creates its account, once, at the settler's cost.
+`eth_estimateGas` returns these; never reuse the gas a past settlement used. The first payout to
+a new seller wallet creates its account, at the settler's cost.
 
 ### Outcomes and what to do
 
@@ -697,8 +675,7 @@ A purchase that mints an edition's first copy to a new holder uses 193,971 Pragu
 
 ## Claiming
 
-Refunds are never pushed, and a payout that cannot be delivered stays owed to its wallet. Every
-amount owed has a pull function:
+Refunds are never pushed; every amount owed has a pull function:
 
 | What is owed | Where | Who calls | Function |
 | --- | --- | --- | --- |
@@ -718,10 +695,8 @@ function claim(address currency, address to) external returns (uint256 amount);
 
 `claim` sends all of the caller's credits in `currency` to `to` and emits `Claimed`. It reverts with
 `InvalidRecipient(address(0))` for a zero `to`, `NothingToClaim(account, currency)` for no credit,
-and `ClaimFailed(to)` when `to` refuses ETH, keeping the credit. `claimFor(account, currency)` on
-the auction pays an ERC-20 credit only to `account` itself and refuses ETH with
-`IRevenueEscrow.InvalidAsset(address(0))`. On Sepolia, a bidder's `claim` of an outbid credit used
-32,580 gas ([flows §2](../../deployments/11155111/flows.md#2-the-curated-stream-sale)).
+and `ClaimFailed(to)` when `to` refuses ETH, keeping the credit. On Sepolia, a bidder's `claim` of
+an outbid credit used 32,580 gas ([flows §2](../../deployments/11155111/flows.md#2-the-curated-stream-sale)).
 
 ### The escrow
 
@@ -747,8 +722,8 @@ predicted CREATE2 addresses (ECO-9).
 - **Deploy before you release.** Funds sent to a predicted address wait there (ECO-11). Anyone
   deploys the wallet with `SplitFactory.createWallet(payees, salt)`, with the payees and salt (zero)
   the address was predicted from. A seller wallet with one payee uses 1,236,339 Prague gas
-  ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)); it is mostly code,
-  which Glamsterdam reprices, so estimate it on the target chain.
+  ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)), mostly code, which
+  Glamsterdam reprices.
 - **Releasable amount.** `releasable(asset, index)`; ETH is `address(0)` (ECO-13).
 
 | Function | Who may call | Pays to |
@@ -760,11 +735,8 @@ predicted CREATE2 addresses (ECO-9).
 A royalty wallet's two payees (the seller wallet and the fee recipient) are fixed, so anyone may
 push royalties on to them; a seller wallet's artist-resolved payees are pull-only (ECO-15, ECO-16).
 
-Errors: `NotPayoutAddress(caller, payoutAddress)`, `NothingToRelease(asset, payee)`,
-`AmountExceedsReleasable(amount, releasable)`, `InvalidRecipient(recipient)`,
-`UnknownPayee(payee)`, `PayoutUnresolved(artistId)`, `ResolverCodeChanged()`,
-`ObservedDecreased(asset, recorded, current)` and `ETHTransferFailed(recipient, amount)`
-([ISplitWallet.sol](../../src/economics/interfaces/ISplitWallet.sol)).
+The errors (`NotPayoutAddress`, `NothingToRelease`, `PayoutUnresolved` and others) are declared
+in [ISplitWallet.sol](../../src/economics/interfaces/ISplitWallet.sol).
 
 ### Signed releases
 
@@ -812,11 +784,11 @@ payee fails. A batch holds at most 50 plain items (`MAX_CLAIMS`) or 20 signed on
   instead of silently skipping it.
 
 Keeper guidance ([economics README](../../src/economics/README.md#batch-claims-and-gas)):
-- Estimate every batch. First releases write new slots and may create accounts, so a full batch of
-  them may not fit one transaction; it then reverts whole, and you split it.
-- A party to an item (a co-payee whose `receive` burns gas, a signed release's recipient, a token
-  issuer) can make the item look short of gas after you estimated. Simulate privately, isolate
-  contract payees and unfamiliar tokens, and drop an item whose revert names its index.
+- Estimate every batch; a full batch of first releases may not fit one transaction, and then
+  reverts whole, so split it.
+- A party to an item (a gas-burning co-payee, a signed release's recipient, a token issuer) can
+  make it look short of gas after you estimated. Simulate privately, isolate contract payees and
+  unfamiliar tokens, and drop an item whose revert names its index.
 - An artist's first signed release through the router uses 141,370 Prague gas
   ([ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 
@@ -861,16 +833,14 @@ Glamsterdam, which reprices state creation, since 6 October 2026
 
 ## References
 
-- **Code.** [src/sales](../../src/sales/) and [src/economics](../../src/economics/); the
+- **Code.** [src/sales](../../src/sales/) and [src/economics](../../src/economics/), with their
+  [sales](../../src/sales/README.md) and [economics](../../src/economics/README.md) READMEs; the
   interfaces are linked under [Contracts you call](#contracts-you-call).
-- **Module READMEs.** [sales](../../src/sales/README.md),
-  [economics](../../src/economics/README.md).
 - **ADRs.** [ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions) (sales and auctions),
   [§7](../adr/0001-v1-scope.md#7-economics) (economics),
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (gas budgets under Glamsterdam).
-- **Tests.** Linked where cited; the Prague gas rows come from
-  [GasReport.t.sol](../../test/integration/GasReport.t.sol), the typehashes are checked in
-  [Typehashes.t.sol](../../test/interfaces/Typehashes.t.sol).
+- **Tests.** Linked where cited; Prague gas rows from
+  [GasReport.t.sol](../../test/integration/GasReport.t.sol).
 - **Measurements.** [Sepolia flows](../../deployments/11155111/flows.md).
 - **Related pages.** [Stream and auctions](../spec/stream-and-auctions.md),
   [Editions and sales](../spec/editions-and-sales.md),

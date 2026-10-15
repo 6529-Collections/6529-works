@@ -1,31 +1,18 @@
 # ABIs and interface IDs
 
-This page is for integration engineers who call, decode or verify the 6529 Works contracts.
-It says where the ABIs come from and which build matches which deployment, gives the ERC-165
-interface ID of every interface and which deployed contract answers it, lists every EIP-712
-domain and type string, and gives the exact formulas of the protocol hashes you recompute
-off-chain: item hashes, Merkle leaves and roots, media hashes, file IDs, allowlist leaves,
-statement entry hashes and chain heads. The Sepolia r2 instance runs an earlier build; what
-differs is in [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build).
-Addresses are in [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
+For integration engineers who call, decode or verify the 6529 Works contracts: where the ABIs
+come from and which build matches which deployment, the ERC-165 interface IDs and who answers
+them, every EIP-712 domain and type string, and the formulas of the protocol hashes you
+recompute off-chain. The Sepolia r2 instance runs an earlier build; see
+[Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
+[Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-## Contents
-
-- [Where ABIs come from](#where-abis-come-from)
-- [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build)
-- [ERC-165 interface IDs](#erc-165-interface-ids)
-- [EIP-712 domains](#eip-712-domains)
-- [Typehashes and type strings](#typehashes-and-type-strings)
-- [Protocol hashes recomputed off-chain](#protocol-hashes-recomputed-off-chain)
-- [Golden-vector tests](#golden-vector-tests)
-
 ## Where ABIs come from
 
-ABIs are build outputs. They are not committed: `out/` is in
-[`.gitignore`](../../.gitignore). Build them from the commit the deployment you target was
-built from.
+ABIs are build outputs, not committed (`out/` is in [`.gitignore`](../../.gitignore)). Build
+them from the commit the target deployment was built from:
 
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
@@ -35,9 +22,8 @@ git submodule update --init --recursive
 forge build
 ```
 
-`forge build` writes one JSON artifact per contract at `out/<File>.sol/<Contract>.json`; its
-`abi` field is the ABI. `forge inspect` prints one field of an artifact (it builds first if
-needed):
+`forge build` writes one artifact per contract at `out/<File>.sol/<Contract>.json`, whose
+`abi` field is the ABI. `forge inspect` prints one field (building first if needed):
 
 ```bash
 forge inspect src/stream/Stream.sol:Stream abi                 # the ABI
@@ -46,47 +32,47 @@ forge inspect src/stream/Stream.sol:Stream events              # event signature
 forge inspect src/stream/Stream.sol:Stream errors              # custom error selectors
 ```
 
-Use the **contract** artifact to decode a deployed address, not the interface artifact. Some
-contracts declare events and errors their interfaces do not: 6529 Editions declares
-`ContractURISet` and `RoyaltyRateChanged` itself, the entropy module its `ConfigSet`, and every
-adapter its own errors. A revert can also come from a contract further down the call, so decode
-it against the ABIs of every contract on the path.
+Decode a deployed address with the **contract** artifact, not the interface's: some contracts
+declare events and errors their interfaces do not (6529 Editions' `ContractURISet` and
+`RoyaltyRateChanged`, the entropy module's `ConfigSet`, every adapter's errors). A revert can
+come from a contract further down the call, so decode it against every contract on the path.
 
 ### Contract names
 
-The deployment records name some contracts differently from their source.
+Deployment records name contracts by their contract name, except `CurationVerifier` and
+`EntropyModule`.
 
-| Deployment record name | Source and contract | Artifact |
-| --- | --- | --- |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | `out/WorksAccessManager.sol/WorksAccessManager.json` |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | `out/GovernanceConfigurator.sol/GovernanceConfigurator.json` |
-| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | `out/ContentStore.sol/ContentStore.json` |
-| `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | `out/DependencyRegistry.sol/DependencyRegistry.json` |
-| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | `out/Renderer.sol/Renderer.json` |
-| `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | `out/ConsolidationAdapter.sol/ConsolidationAdapter.json` |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | `out/ArtistRegistry.sol/ArtistRegistry.json` |
-| `ReleaseVerifier` | [`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) | `out/ReleaseVerifier.sol/ReleaseVerifier.json` |
-| `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) | `out/SplitFactory.sol/SplitFactory.json` |
-| (each split wallet, deployed by the factory) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) | `out/SplitWallet.sol/SplitWallet.json` |
-| `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | `out/ClaimRouter.sol/ClaimRouter.json` |
-| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | `out/AssetAllowlist.sol/AssetAllowlist.json` |
-| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | `out/EconomicsResolver.sol/EconomicsResolver.json` |
-| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | `out/RevenueEscrow.sol/RevenueEscrow.json` |
-| `CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol), contract `Eip712CurationVerifier` | `out/Eip712CurationVerifier.sol/Eip712CurationVerifier.json` |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | `out/PackageRegistry.sol/PackageRegistry.json` |
-| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | `out/StatementLog.sol/StatementLog.json` |
-| `EntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol), contract `VrfEntropyModule` | `out/VrfEntropyModule.sol/VrfEntropyModule.json` |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | `out/Stream.sol/Stream.json` |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | `out/WorkRecords.sol/WorkRecords.json` |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | `out/Editions.sol/Editions.json` |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | `out/EnglishAuction.sol/EnglishAuction.json` |
-| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | `out/FixedPriceSale.sol/FixedPriceSale.json` |
-| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | `out/DutchSale.sol/DutchSale.json` |
+| Deployment record name | Source and contract |
+| --- | --- |
+| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) |
+| `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) |
+| `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) |
+| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) |
+| `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) |
+| `ReleaseVerifier` | [`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) |
+| `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) |
+| (each split wallet, deployed by the factory) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) |
+| `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) |
+| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) |
+| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) |
+| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) |
+| `CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol), contract `Eip712CurationVerifier` |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) |
+| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) |
+| `EntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol), contract `VrfEntropyModule` |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) |
+| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) |
+| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) |
 
 ### Compiler settings
 
-From [`foundry.toml`](../../foundry.toml), unchanged since the r2 build. These are
-the settings a block explorer or Sourcify needs to verify the bytecode.
+From [`foundry.toml`](../../foundry.toml), unchanged since the r2 build; a block explorer or
+Sourcify needs them to verify the bytecode.
 
 | Setting | Value |
 | --- | --- |
@@ -98,11 +84,9 @@ the settings a block explorer or Sourcify needs to verify the bytecode.
 | Remappings | `@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/` and `forge-std/=lib/forge-std/src/`, with `auto_detect_remappings = false` |
 | Libraries | OpenZeppelin Contracts 5.7.0 (the `lib/openzeppelin-contracts` submodule). Every protocol library is internal, so nothing is linked. |
 
-The metadata hash at the end of the runtime bytecode covers every source file byte for byte,
-NatSpec comments included. A build from any commit other than the deployment's therefore does
-not match the deployed bytecode exactly, even where the logic is unchanged. The deployment
-records hold each contract's code hash, and the runbook's
-[`Verify.s.sol`](../../script/Verify.s.sol) compares them.
+The metadata hash covers every source file byte for byte, NatSpec included, so only a build
+from the deployment's commit matches the deployed bytecode exactly. The deployment records
+hold each contract's code hash, which [`Verify.s.sol`](../../script/Verify.s.sol) compares.
 
 ## Changes since the Sepolia r2 build
 
@@ -134,43 +118,37 @@ files. The external surface changed in these:
 
 The other changed files (`IArtistPayoutResolver`, `IArtistRoleResolver`, `IReleaseVerifier`,
 `ISplitWallet`, `IRenderer`, and the `ContentTypes`, `IdentityTypes`, `PackageTypes` and
-`SaleTypes` types) changed only in NatSpec: no function, event, error, struct or constant
-differs. Two contracts also gained ERC-165 support after r2: the claim router and the revenue
-escrow implement `supportsInterface` on `main` and not on r2.
+`SaleTypes` types) changed only in NatSpec.
 
-`WorksAccessManager`, which has no interface file, gained functions, events and errors after
-r2 (review finding GOV-2, the guardians' suspension of operational keys):
+`WorksAccessManager`, which has no interface file, gained the guardians' suspension of
+operational keys (review finding GOV-2), plus the events `RoleSuspended` and
+`RoleSuspensionLifted` ([Events and indexing](events-and-indexing.md#governanceconfigurator-and-worksaccessmanager)):
 
-| Kind | Signature | Selector or topic0 |
+| Kind | Signature | Selector |
 | --- | --- | --- |
-| Function (GUARDIAN only, checked by the manager) | `suspend(uint64 roleId, address account)` | `0x64bf6e5d` |
+| Function (GUARDIAN only) | `suspend(uint64 roleId, address account)` | `0x64bf6e5d` |
 | View | `isSuspended(uint64 roleId, address account) returns (bool)` | `0xbd2e6ac3` |
-| Event | `RoleSuspended(uint64 indexed roleId, address indexed account, address indexed guardian)` | `0xe1ae302406100645ea7518db99f4eec3f03e4c4115f58871c94ee2c96029505d` |
-| Event | `RoleSuspensionLifted(uint64 indexed roleId, address indexed account)` | `0x4c939cf9582b90782641e9eb9bbd308c3522c902eb4f53ced7ed3fecede67020` |
 | Error | `RoleNotSuspendable(uint64 roleId)` | `0x3bf24b39` |
 | Error | `NotSuspendable(uint64 roleId, address account)` | `0x48431385` |
 
-`hasRole` keeps its signature but answers false for a suspended holder until an admin grant or
-revocation of that role, or the holder's own `renounceRole`, lifts the suspension
-([GV-28](../spec/governance.md#rules-and-invariants)). The function selectors are those in the
-`manager` section of
-[`config/genesis.example.json`](../../config/genesis.example.json); the event and error
-values were computed with [`tools/content/keccak.py`](../../tools/content/keccak.py).
+`hasRole` keeps its signature but answers false for a suspended holder
+([GV-28](../spec/governance.md#rules-and-invariants)). The function selectors are from the
+`manager` section of [`config/genesis.example.json`](../../config/genesis.example.json); the
+error selectors were computed with [`tools/content/keccak.py`](../../tools/content/keccak.py).
 
-Contract-level behavior changed too (the October 2026 internal review fixes, PRs #51 to #57),
-so read the `400f96d` source for r2's semantics; these tables cover only the declared
-surface. The method: compare the declarations of each file at both commits, not only
-`git diff --stat`, which also counts comment changes.
+These tables cover only the declared surface. Behavior changed too (the October 2026 internal
+review fixes, PRs #51 to #57), so read the `400f96d` source for r2's semantics, comparing
+declarations rather than `git diff --stat`, which also counts comment changes.
 
 ## ERC-165 interface IDs
 
 An interface ID is the XOR of the selectors of the functions the interface itself declares,
-excluding inherited ones, so `IStream`'s ID does not cover ERC-721 or ERC-2981. The IDs of
-every interface in `src/interfaces/` are pinned by `test_interfaceIds` in
-[`test/interfaces/InterfacesCompile.t.sol`](../../test/interfaces/InterfacesCompile.t.sol);
-the r2 column is the same test at `400f96d`. The economics interfaces in
-`src/economics/interfaces/` (except `IArtistPayoutResolver`) are not pinned by any test: their
-IDs below were computed from the selectors in the compiled artifacts.
+not inherited ones, so `IStream`'s ID does not cover ERC-721 or ERC-2981. `test_interfaceIds`
+in [`test/interfaces/InterfacesCompile.t.sol`](../../test/interfaces/InterfacesCompile.t.sol)
+pins the IDs of every interface in `src/interfaces/`; the r2 column is the same test at
+`400f96d`. The economics interfaces in `src/economics/interfaces/` (except
+`IArtistPayoutResolver`) are pinned by no test: their IDs were computed from the compiled
+selectors.
 
 | Interface | Source | ID on `main` | ID on r2 | Deployed contract that answers `supportsInterface` |
 | --- | --- | --- | --- | --- |
@@ -203,8 +181,8 @@ IDs below were computed from the selectors in the compiled artifacts.
 | `ISplitFactory` | [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol) | `0xfd1edda8` (computed) | | None: SplitFactory does not implement ERC-165 |
 | `ISplitWallet` | [`ISplitWallet.sol`](../../src/economics/interfaces/ISplitWallet.sol) | `0x535afbe4` (computed) | | None: split wallets do not implement ERC-165 |
 
-Every contract that implements `supportsInterface` also answers `0x01ffc9a7` (`IERC165`). The
-standard interfaces the tokens and the auction answer:
+Every contract that implements `supportsInterface` also answers `0x01ffc9a7` (`IERC165`), and
+the tokens and the auction answer these standard interfaces:
 
 | Interface | ID | Answered by |
 | --- | --- | --- |
@@ -216,59 +194,28 @@ standard interfaces the tokens and the auction answer:
 | ERC-4906 | `0x49064906` | Stream, Editions: the EIP's constant, hard-coded because OpenZeppelin's `IERC4906` declares no functions, so `type(IERC4906).interfaceId` would be zero |
 | `IERC721Receiver` | `0x150b7a02` | EnglishAuction (it accepts only the token it mints during a start) |
 
-Per contract, from each `supportsInterface`:
-
-| Contract | Answers |
-| --- | --- |
-| Stream | ERC-4906, `IERC2981`, `IMintTarget`, `IStream`, `IERC721`, `IERC721Metadata`, `IERC165` |
-| Editions | `IERC2981`, `IMintTarget`, `IEditions`, ERC-4906, `IERC1155`, `IERC1155MetadataURI`, `IERC165` |
-| WorkRecords | `IWorkRecords`, `IERC165` |
-| EnglishAuction | `IEnglishAuction`, `ISaleAdapter`, `IERC721Receiver`, `IERC165` |
-| FixedPriceSale | `IFixedPriceSale`, `ISaleAdapter`, `IERC165` |
-| DutchSale | `IDutchSale`, `ISaleAdapter`, `IERC165` |
-| PackageRegistry | `IERC165`, `IPackageRegistry` |
-| Eip712CurationVerifier | `IERC165`, `ICurationVerifier`, `ICurationSignerVerifier` |
-| ArtistRegistry | `IERC165`, `IArtistRoleResolver`, `IArtistPayoutResolver`, `IArtistRegistry` |
-| ConsolidationAdapter | `IERC165`, `IConsolidationSource` |
-| EconomicsResolver | `IEconomicsResolver`, `IERC165` |
-| RevenueEscrow | `IRevenueEscrow`, `IERC165` (`main` only) |
-| ClaimRouter | `IClaimRouter`, `IERC165` (`main` only) |
-| VrfEntropyModule | `IEntropyModule`, `IERC165` |
-| Renderer | `IRenderer`, `IERC165` |
-
 **Contracts without ERC-165.** The content store, dependency registry, statement log, asset
-allowlist, release verifier, split factory, split wallets, the configurator and the
-AccessManager have no `supportsInterface`; confirm with their ABIs. The protocol installs
-them by other checks:
-
-- the fixed-price and Dutch adapters check the asset allowlist for code, no EIP-7702
-  delegation, and `IAssetAllowlist` only if it answers ERC-165 at all (the `MintSaleBase`
-  constructor; [sales README](../../src/sales/README.md)); the English auction checks it for
-  code and no delegation only;
-- the artist registry's `bindSplitFactory` checks for code and no delegation, and
-  `bindStatementLog` also checks that the log's `artistResolver()` is the registry
-  ([`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol));
-- the work-records satellite checks the content store for code and no delegation in its
-  constructor, the dependency registry for code only; the renderer takes it unchecked.
-
-The interface IDs of `IContentStore`, `IDependencyRegistry` and `IStatementLog` are pinned so
-that a surface change is caught, not because any contract answers them.
+allowlist, release verifier, split factory, split wallets, configurator and AccessManager have
+no `supportsInterface`. The IDs of `IContentStore`, `IDependencyRegistry` and `IStatementLog`
+are pinned to catch a surface change, not because anything answers them. Installs check code
+and no EIP-7702 delegation instead ([GV-22](../spec/governance.md#rules-and-invariants)); the
+fixed-price and Dutch adapters also check `IAssetAllowlist` when the allowlist answers ERC-165
+([sales README](../../src/sales/README.md)), and `bindStatementLog` checks that the log's
+`artistResolver()` is the registry ([`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol)).
+Code alone is checked for the work records' dependency registry, the dependency registry's
+content store, the consolidation adapter's delegation contract and the configurator's targets;
+the renderer checks nothing.
 
 **EIP-7702 delegated accounts.** `DelegatedEOA.isDelegated`
 ([`DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol)) recognizes the `0xef0100`
-delegation designator. It refuses a delegated account as a dependency in the constructors'
-dependency checks, in every `bind*`, in the governed setters that install a verifier,
-renderer, coordinator, resolver, consolidation source, admitted minter or sale target
-([GV-22](../spec/governance.md#rules-and-invariants)), and when the asset allowlist admits a
-token ([ECO-32](../spec/economics-and-payouts.md#rules-and-invariants)). A few install checks
-require only code: the dependency registry's content store, the consolidation adapter's
-delegation contract and the configurator's targets; the renderer checks nothing. As a
-**signer**, a delegated account is accepted: `SignatureVerifier` first checks an ECDSA
-signature against the account's own address, then ERC-1271 through its delegate
-([`SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol)). Nothing else is
-checked for delegation on-chain, so payees, payout addresses, recipients and bidders may be
-delegated accounts. Off-chain, the deploy refuses a delegated sender and, off anvil, a
-delegated Safe owner ([GV-29, GV-34](../spec/governance.md#rules-and-invariants)).
+designator. Besides the installs above, the asset allowlist refuses a delegated token
+([ECO-32](../spec/economics-and-payouts.md#rules-and-invariants)), and the deploy refuses a
+delegated sender and, off anvil, a delegated Safe owner
+([GV-29, GV-34](../spec/governance.md#rules-and-invariants)). A delegated **signer** is
+accepted: `SignatureVerifier` ([`SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol))
+checks ECDSA against the account's own address, then ERC-1271 through its delegate. Nothing
+else checks delegation on-chain, so payees, payout addresses, recipients and bidders may be
+delegated.
 
 `ProtocolContracts.isProtocolContract`
 ([`ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol)) refuses a payout or fee
@@ -281,9 +228,8 @@ recipient that answers `IRevenueEscrow`, `IClaimRouter`, `ISaleAdapter`, `IMintT
 
 Every signing contract uses OpenZeppelin `EIP712` with the four-field domain
 `EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)` (typehash
-`0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f`). `chainId` is the chain
-the call runs on and `verifyingContract` is the contract itself, so a signature is valid for
-one deployment on one chain. Each contract reports its domain through EIP-5267
+`0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f`), so a signature is valid
+for one contract on one chain. Each contract reports its domain through EIP-5267
 `eip712Domain()`.
 
 | Contract | `name` | `version` | Defined in |
@@ -307,9 +253,8 @@ sale adapter as spender and a 6529 Works witness.
 
 ### Signed payloads
 
-The type strings exactly as in code, and the typehashes pinned by
-[`test/interfaces/Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol)
-(`test_signedPayloadTypehashes`) unless noted.
+Type strings exactly as in code; typehashes pinned by `test_signedPayloadTypehashes` in
+[`test/interfaces/Typehashes.t.sol`](../../test/interfaces/Typehashes.t.sol) unless noted.
 
 | Constant | Type string | Typehash | Domain and signer |
 | --- | --- | --- | --- |
@@ -331,13 +276,13 @@ The type strings exactly as in code, and the typehashes pinned by
 The three statement-log values are pinned by `test_Golden_TypeHashesAndDomainTags` in
 [`StatementLogGolden.t.sol`](../../test/records/StatementLogGolden.t.sol). The release
 typehash is checked against its type string by `test_GoldenTypehashDomainAndDigest` in
-[`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol); the hex value above was
+[`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol); its hex value was
 computed for this page.
 
 ### How each struct hash is built
 
-Each digest is `keccak256("\x19\x01" ‖ domainSeparator ‖ structHash)`. The struct hashes, as
-the contracts compute them (every field ABI-encoded as a 32-byte word):
+Each digest is `keccak256("\x19\x01" ‖ domainSeparator ‖ structHash)`, with every field
+ABI-encoded as a 32-byte word:
 
 | Payload | `structHash` | Digest helper |
 | --- | --- | --- |
@@ -353,13 +298,12 @@ the contracts compute them (every field ABI-encoded as a 32-byte word):
 | Authorization (statement relay) | `keccak256(abi.encode(AUTHORIZATION_TYPEHASH, uint8(role), signer, nonce, deadline, statementHash))`, with `statementHash` [below](#statement-entry-hash-and-chain-head) | `StatementLog.authorizationDigest` |
 | ReleaseAuthorization | `keccak256(abi.encode(RELEASE_TYPEHASH, wallet, asset, payee, account, recipient, amount, nonce, deadline))` | `ReleaseVerifier.releaseDigest` |
 
-`stateHash` is the work's current state hash (`WorkRecords.workStateHash`), so a relicense,
-rate change or repin signature applies only to the state its signers saw. A Relicense or
-RoyaltyRateChange digest is the same for every party of the item; each party signs it with the
-active authority of its artist ID (`artistIdOf(account)`, else `uint256(uint160(account))`),
-and the signatures are passed in party order. In `PhaseConfiguration`, `currency` is the
-sale's resolved currency (never `CURRENCY_DEFAULT`) and `packagePrice` the edition's unit
-price.
+`stateHash` is the work's current [state hash](#work-state-hash), so a relicense, rate change
+or repin signature applies only to the state its signers saw. Every party signs the same
+Relicense or RoyaltyRateChange digest with its artist ID's active authority, and the signatures
+go in party order ([WS-13, WS-14](../spec/works-and-storage.md#rules-and-invariants)). In
+`PhaseConfiguration`, `currency` is the resolved currency (never `CURRENCY_DEFAULT`) and
+`packagePrice` the edition's unit price ([ED-13](../spec/editions-and-sales.md#rules-and-invariants)).
 
 ### Permit2 witnesses
 
@@ -379,8 +323,6 @@ witness type and `TokenPermissions(address token,uint256 amount)`, for example
 `Bid witness)Bid(uint256 saleId,address recipient,uint256 amount,uint256 deadline)TokenPermissions(address token,uint256 amount)`.
 `test_witnessTypehashes` and `test_witnessTypeStrings` in `Typehashes.t.sol` pin both columns.
 
-The witness each adapter hashes:
-
 | Adapter | `witness` | `recipient` in the witness |
 | --- | --- | --- |
 | EnglishAuction `bid` | `keccak256(abi.encode(BID_WITNESS, saleId, recipient, amount, deadline))` | resolved: the payer when the argument is zero |
@@ -388,15 +330,14 @@ The witness each adapter hashes:
 | FixedPriceSale `purchase` | `keccak256(abi.encode(PURCHASE_WITNESS, saleId, phase, recipient, quantity, total, deadline))` | as passed in `Purchase.recipient` (zero means the payer) |
 | DutchSale `purchase` | `keccak256(abi.encode(DUTCH_PURCHASE_WITNESS, saleId, recipient, quantity, maxUnitPrice, deadline))` | as passed (zero means the payer) |
 
-`amount` is the payment amount, `total` the exact fixed-price charge, and `deadline` the
+`amount` is the payment amount, `total` the exact fixed-price charge and `deadline` the
 payment's deadline. The Permit2 `TokenPermissions` carry the currency and `payment.amount`;
-the adapter takes the exact charge.
+the adapter takes the exact charge ([ED-18](../spec/editions-and-sales.md#rules-and-invariants)).
 
 ## Protocol hashes recomputed off-chain
 
-None of these binds a chain ID or contract address unless it says so, so the same package has
-the same item hashes and root on every chain
-([CUR-20](../spec/curation.md#rules-and-invariants)).
+None of these binds a chain ID or contract address unless it says so, so a package has the
+same item hashes and root on every chain ([CUR-20](../spec/curation.md#rules-and-invariants)).
 
 ### Item hash, leaf and package root
 
@@ -411,7 +352,7 @@ root     = OpenZeppelin MerkleProof root over the leaves (sorted-pair keccak256)
 ```
 
 `item` is a `PackageItem` ([`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol)).
-For an off-chain ABI encoder, encode the two values `["bytes32", <tuple>]` with the tuple
+With an off-chain ABI encoder, encode the two values `["bytes32", <tuple>]` with the tuple
 
 ```text
 (uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes))
@@ -421,11 +362,11 @@ in field order: `kind`, `collectionId`, `contentHash`, `mediaHash`, `recordFileI
 `(account, role)`, `payees` `(artistId, account, share)`, `license` `(spdxId, textFileId)`,
 `seedPolicy`, `seed`, `sale` `(saleKind, currency, params)` and `edition`
 `(format, size, window, price, currency, saleKind, params)`. The tuple is dynamic, so the
-encoding is the domain word, an offset word and then the tuple. This is exactly OpenZeppelin's
+encoding is the domain word, an offset word and then the tuple. This is OpenZeppelin's
 `StandardMerkleTree` with leaf encoding `["bytes32", <PackageItem tuple>]` and leaf values
-`[PACKAGE_ITEM_DOMAIN, item]`, whose leaf is `keccak256(keccak256(abi.encode(values)))`.
-Double hashing keeps a 64-byte inner node from passing as a leaf, and a one-item package's
-root is its leaf. Proofs are at most 32 nodes (`Limits.MAX_PROOF_DEPTH`).
+`[PACKAGE_ITEM_DOMAIN, item]`, whose leaf is `keccak256(keccak256(abi.encode(values)))`; the
+double hash keeps a 64-byte inner node from passing as a leaf. A one-item package's root is
+its leaf, and proofs are at most 32 nodes (`Limits.MAX_PROOF_DEPTH`).
 
 ### Media hash, content hash and license key
 
@@ -440,7 +381,7 @@ CC0_LICENSE_KEY = keccak256("cc0-1.0")
 
 The media list is in approved order, primary first; `role` is 0 PRIMARY, 1 PREVIEW,
 2 AUXILIARY. The **content hash** is not computed on-chain: it is the declared SHA-256 of the
-fully decoded primary media, equal to `media[0].sha256Hash`.
+fully decoded primary media, `media[0].sha256Hash`.
 
 ### File ID and chunk hash
 
@@ -455,10 +396,8 @@ fileId      = keccak256(abi.encode(chunkHashes, length, uint8(encoding), mimeTyp
 `length` is the stored length; `encoding` is 0 Identity, 1 Gzip, 2 Base64, 3 GzipBase64;
 `mimeType` is the lowercase `type/subtype` of the decoded media; `sha256Hash` is the SHA-256 of
 the fully decoded media. A file ID names one encoded stream, not the content: the same media
-stored with another encoding or MIME type has another file ID. The repository's Python
-uploader ([`tools/content/`](../../tools/content/README.md)) computes chunk hashes and file IDs;
-[`UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) checks them against
-the contract.
+stored with another encoding or MIME type has another file ID. The Python uploader
+([`tools/content/`](../../tools/content/README.md)) computes both values.
 
 ### Allowlist leaf
 
@@ -473,11 +412,11 @@ leaf = keccak256(bytes.concat(keccak256(abi.encode(
        // types: (bytes32, uint256, address, address, uint256, uint256, address, uint256, uint256)
 ```
 
-This leaf binds the chain and the adapter. `account` is the recipient, or the payer in a
-`payerKeyed` phase; `cap` is the wallet's limit in the phase; `price` is used only in a
-`leafPriced` phase. Trees are OpenZeppelin sorted-pair trees, proofs at most 32 nodes. Emit at
-most one leaf per account and phase ([sales README](../../src/sales/README.md#allowlists),
-[ED-15](../spec/editions-and-sales.md#rules-and-invariants)).
+`account` is the recipient, or the payer in a `payerKeyed` phase; `cap` is the wallet's limit
+in the phase; `price` is used only in a `leafPriced` phase
+([ED-15](../spec/editions-and-sales.md#rules-and-invariants)). Trees are OpenZeppelin
+sorted-pair trees, proofs at most 32 nodes; emit at most one leaf per account and phase
+([sales README](../../src/sales/README.md#allowlists)).
 
 ### Statement entry hash and chain head
 
@@ -499,11 +438,10 @@ head_0        = 0x00000000000000000000000000000000000000000000000000000000000000
 head_(n+1)    = keccak256(abi.encode(HEAD_DOMAIN, head_n, entryHash_n))
 ```
 
-`statementHash` is EIP-712 `hashStruct(Statement)`. The contract hashes the entry as two
-`abi.encode` calls joined with `bytes.concat`; every word is static, so that equals one
-`abi.encode` of all ten values ([DSP-10](../spec/disputes-and-statements.md#rules-and-invariants)).
-The entry hash binds the chain and the log's address. Every
-input is in the `StatementAppended` event; the rebuild procedure is in
+`statementHash` is EIP-712 `hashStruct(Statement)`. The contract builds the entry hash from two
+`abi.encode` calls joined with `bytes.concat`, which equals one `abi.encode` of all ten static
+values ([DSP-10](../spec/disputes-and-statements.md#rules-and-invariants)). Every input is in
+the `StatementAppended` event; the rebuild procedure is in
 [Events and indexing](events-and-indexing.md#statements).
 
 ### Work state hash
@@ -518,9 +456,9 @@ stateHash = keccak256(abi.encode(STATE_DOMAIN, tokenId, version, recordFileId,
             // types: (bytes32, uint256, uint32, bytes32, bytes32, bytes32, uint32, address)
 ```
 
-`license` is the stored license, or the deployment's CC0 when none is stored. `renderer` is the
-pinned renderer once finalized, else 6529 Stream's current `defaultRenderer()`, so a new
-default renderer changes every unfinalized work's state hash
+The license is the stored one, or the deployment's CC0 when none is stored. `renderer` is the
+pinned renderer once finalized, else Stream's current `defaultRenderer()`, so a new default
+renderer changes every unfinalized work's state hash
 ([WS-10](../spec/works-and-storage.md#rules-and-invariants)).
 
 ### Other derived values
@@ -541,8 +479,8 @@ default renderer changes every unfinalized work's state hash
 
 ## Golden-vector tests
 
-These tests pin the values on this page with fixed hex produced outside the contracts
-(`cast keccak`, `cast abi-encode`, or a pure-Python implementation), so a change to a type
+These tests pin the values on this page against fixed hex produced outside the contracts
+(`cast keccak`, `cast abi-encode` or a pure-Python implementation), so a change to a type
 string, domain label or encoding fails them.
 
 | Test | Pins |
@@ -560,7 +498,7 @@ string, domain label or encoding fails them.
 | [`test/sales/auction/EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol) `test_Permit2Witness_Golden` | The auction's full Permit2 typehashes |
 | [`test/content/tooling/UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) | Chunk hashes and file IDs from the Python uploader against the content store |
 
-The testing guide is at
+The testing guide is
 [docs/testing/README.md](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
 
 ## References
