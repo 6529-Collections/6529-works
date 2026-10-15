@@ -5,18 +5,22 @@ import { Test } from "forge-std/Test.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { MockPackageRegistry, MockVrfCoordinator } from "test/mocks/EntropyMocks.sol";
 import { EntropyBase, EntropyItems } from "./EntropyBase.sol";
 
 /// @dev Drives the module with arbitrary requests, deliveries, revocations and consumptions, and
 ///      tracks what must hold: the handler predicts the outcome of every call, and `violations`
-///      counts each prediction the module got wrong (so a delivery that reverts or changes a fixed seed, a
-///      request that got past the package gate or the policy check, or a wrongly refused request
-///      shows). Indexes 0 to 3 are the VRF items of the four-item package; 4 and 5 are items of
-///      one-item packages whose seed policy is NONE and ARTIST, which must never be accepted.
+///      counts each prediction the module got wrong (so a delivery that reverts or changes a
+///      fixed seed, a request that got past the package gate or the policy check, or a wrongly
+///      refused request shows). Indexes 0 to 3 are the VRF items of the four-item package; 4 and
+///      5 are items of one-item packages whose seed policy is NONE and ARTIST, which must never
+///      be accepted; 6 and 7 are VRF items of their own one-item packages that carry the content
+///      of items 0 and 1 (revisions of the same works), so they share those items' draws.
 contract EntropyHandler is Test, EntropyItems {
     uint256 internal constant VRF_ITEMS = 4;
-    uint256 internal constant ITEMS = 6;
+    uint256 internal constant ITEMS = 8;
+    uint256 internal constant TWIN_SALT = 300;
 
     VrfEntropyModule internal immutable module;
     MockVrfCoordinator internal immutable coordinator;
@@ -27,11 +31,14 @@ contract EntropyHandler is Test, EntropyItems {
     uint64 internal immutable retryDelay;
     bytes32[][4] internal proofs;
 
-    mapping(uint256 index => uint256[]) internal issued;
-    mapping(uint256 index => uint256) public currentId;
-    mapping(uint256 index => bool) public delivered;
-    mapping(uint256 index => bytes32) public deliveredSeed;
-    mapping(uint256 index => uint256) public deliveries;
+    /// @dev The model is per content (the draw) and per item (its link to the draw).
+    mapping(uint256 index => bool) public linked;
+    mapping(uint256 content => uint256[]) internal issued;
+    mapping(uint256 content => uint256) internal _currentId;
+    mapping(uint256 content => uint64) internal _requestedAt;
+    mapping(uint256 content => bool) internal _delivered;
+    mapping(uint256 content => bytes32) internal _seed;
+    mapping(uint256 content => uint256) internal _deliveries;
     uint256 public violations;
     uint256 public accepted;
 
@@ -47,14 +54,22 @@ contract EntropyHandler is Test, EntropyItems {
         registry = registry_;
         (root, noneRoot, artistRoot) = (roots_[0], roots_[1], roots_[2]);
         retryDelay = module_.retryDelay();
+        for (uint256 i = 6; i < ITEMS; ++i) {
+            registry_.setStatus(_twinRoot(i), IPackageRegistry.PackageStatus.APPROVED);
+        }
     }
 
     function setProof(uint256 i, bytes32[] calldata proof) external {
         proofs[i] = proof;
     }
 
-    function itemOf(uint256 i) public pure returns (PackageItem memory) {
+    function itemOf(uint256 i) public pure returns (PackageItem memory item) {
         if (i < VRF_ITEMS) return _makeItem(i, SeedPolicy.VRF);
+        if (i >= 6) {
+            item = _makeItem(TWIN_SALT + i, SeedPolicy.VRF);
+            item.contentHash = _makeItem(i - 6, SeedPolicy.VRF).contentHash;
+            return item;
+        }
         SeedPolicy policy = i == VRF_ITEMS ? SeedPolicy.NONE : SeedPolicy.ARTIST;
         return _makeItem(PLAIN_SALT + uint256(policy), policy);
     }
@@ -63,16 +78,49 @@ contract EntropyHandler is Test, EntropyItems {
         return _hash(itemOf(i));
     }
 
-    /// @dev Whether the rules say a request for item `i` is accepted now.
-    function _requestAllowed(uint256 i) internal view returns (bool) {
-        (, uint64 requestedAt) = module.requestOf(itemHash(i));
-        return i < VRF_ITEMS && !delivered[i]
-            && registry.statusOf(root) == IPackageRegistry.PackageStatus.APPROVED
-            && registry.consumedBy(itemOf(i).contentHash) == 0
-            && (requestedAt == 0 || block.timestamp >= requestedAt + retryDelay);
+    /// @notice The content (draw) item `i` reads: the revisions read their originals' draws.
+    function contentOf(uint256 i) public pure returns (uint256) {
+        return i >= 6 ? i - 6 : i;
+    }
+
+    function delivered(uint256 i) external view returns (bool) {
+        return linked[i] && _delivered[contentOf(i)];
+    }
+
+    function deliveredSeed(uint256 i) external view returns (bytes32) {
+        return _seed[contentOf(i)];
+    }
+
+    function deliveries(uint256 i) external view returns (uint256) {
+        return _deliveries[contentOf(i)];
+    }
+
+    /// @notice The request `requestOf(item)` must report: the content's latest, until delivered.
+    function currentId(uint256 i) external view returns (uint256) {
+        uint256 c = contentOf(i);
+        return linked[i] && !_delivered[c] ? _currentId[c] : 0;
+    }
+
+    function _vrf(uint256 i) internal pure returns (bool) {
+        return i < VRF_ITEMS || i >= 6;
+    }
+
+    /// @dev Whether the gate admits item `i` now: VRF, approved root, unconsumed content.
+    function _gateOpen(uint256 i) internal view returns (bool) {
+        return _vrf(i) && registry.statusOf(_rootOf(i)) == IPackageRegistry.PackageStatus.APPROVED
+            && registry.consumedBy(itemOf(i).contentHash) == 0;
+    }
+
+    function _pending(uint256 c) internal view returns (bool) {
+        return _requestedAt[c] != 0 && block.timestamp < _requestedAt[c] + retryDelay;
+    }
+
+    function _twinRoot(uint256 i) internal pure returns (bytes32) {
+        return WorksHashing.leaf(_hash(itemOf(i)));
     }
 
     function _rootOf(uint256 i) internal view returns (bytes32) {
+        if (i >= 6) return _twinRoot(i);
         return i < VRF_ITEMS ? root : (i == VRF_ITEMS ? noneRoot : artistRoot);
     }
 
@@ -80,49 +128,63 @@ contract EntropyHandler is Test, EntropyItems {
         return i < VRF_ITEMS ? proofs[i] : new bytes32[](0);
     }
 
+    /// @dev A request: refused by the gate; for an item not yet linked, a join that returns zero
+    ///      when the content's draw is delivered or pending; for a linked item, refused then; and
+    ///      otherwise a new request for the content.
     function request(uint256 itemSeed, uint256 callerSeed, uint256 wait) external {
         uint256 i = itemSeed % ITEMS;
+        uint256 c = contentOf(i);
         vm.warp(block.timestamp + (wait % 36 hours));
-        bool allowed = _requestAllowed(i);
+        bool open = _gateOpen(i);
+        bool joins = open && !linked[i] && (_delivered[c] || _pending(c));
+        bool requests = open && !_delivered[c] && !_pending(c);
 
         vm.prank(address(uint160(callerSeed)));
         try module.requestSeed(itemOf(i), _rootOf(i), _proofOf(i)) returns (uint256 id) {
-            if (!allowed) ++violations;
+            if (!(joins || requests) || (joins && id != 0) || (requests && id == 0)) {
+                ++violations;
+            }
             ++accepted;
-            issued[i].push(id);
-            currentId[i] = id;
+            linked[i] = true;
+            if (id != 0) {
+                issued[c].push(id);
+                _currentId[c] = id;
+                _requestedAt[c] = uint64(block.timestamp);
+            }
         } catch {
-            if (allowed) ++violations;
+            if (joins || requests) ++violations;
         }
     }
 
-    /// @dev A delivery for any request ever issued for the item, current or earlier. The first
-    ///      one fixes the seed; later ones are no-ops. None may revert.
+    /// @dev A delivery for any request ever issued for the item's content, current or earlier.
+    ///      The first one fixes the seed; later ones are no-ops. None may revert.
     function fulfill(uint256 itemSeed, uint256 pick, uint256 word) external {
-        uint256 i = itemSeed % ITEMS;
-        uint256 count = issued[i].length;
+        uint256 c = contentOf(itemSeed % ITEMS);
+        uint256 count = issued[c].length;
         if (count == 0) return;
-        uint256 id = issued[i][pick % count];
+        uint256 id = issued[c][pick % count];
 
         try coordinator.fulfill(id, word) {
-            if (!delivered[i]) {
-                delivered[i] = true;
-                deliveredSeed[i] = bytes32(word);
-                ++deliveries[i];
+            if (!_delivered[c]) {
+                _delivered[c] = true;
+                _seed[c] = bytes32(word);
+                ++_deliveries[c];
             }
         } catch {
             ++violations;
         }
     }
 
-    /// @dev The guardian revokes the package, or it is approved again (the gate is stateless).
+    /// @dev The guardian revokes the packages, or they are approved again (the gate is
+    ///      stateless).
     function setApproved(bool approved) external {
-        registry.setStatus(
-            root,
-            approved
-                ? IPackageRegistry.PackageStatus.APPROVED
-                : IPackageRegistry.PackageStatus.REVOKED
-        );
+        IPackageRegistry.PackageStatus status = approved
+            ? IPackageRegistry.PackageStatus.APPROVED
+            : IPackageRegistry.PackageStatus.REVOKED;
+        registry.setStatus(root, status);
+        for (uint256 i = 6; i < ITEMS; ++i) {
+            registry.setStatus(_twinRoot(i), status);
+        }
     }
 
     /// @dev An item is consumed by a start, or not.
@@ -167,8 +229,8 @@ contract VrfEntropyInvariantTest is EntropyBase {
         assertEq(handler.violations(), 0);
     }
 
-    /// @dev One seed per item: at most one delivery ever succeeded, and the module agrees about
-    ///      which items are delivered and what their seeds are, forever.
+    /// @dev One seed per content: at most one delivery ever succeeded for a content, and the
+    ///      module agrees about which items are delivered and what their seeds are, forever.
     function invariant_AtMostOneSeedPerItemAndItNeverChanges() public view {
         for (uint256 i; i < handler.itemCount(); ++i) {
             bytes32 hash = handler.itemHash(i);
@@ -180,13 +242,26 @@ contract VrfEntropyInvariantTest is EntropyBase {
         }
     }
 
-    /// @dev The module's current request of an item is the last one it issued until the seed
-    ///      is delivered, then zero; an item whose seed policy is not VRF never has one.
+    /// @dev The module's current request of an item is the last one its content's draw issued
+    ///      until the seed is delivered, then zero; an item never linked, or whose seed policy is
+    ///      not VRF, never has one.
     function invariant_TheCurrentRequestIsTheLastIssued() public view {
         for (uint256 i; i < handler.itemCount(); ++i) {
             (uint256 requestId,) = module.requestOf(handler.itemHash(i));
-            assertEq(requestId, handler.delivered(i) ? 0 : handler.currentId(i));
-            if (i >= 4) assertEq(requestId, 0);
+            assertEq(requestId, handler.currentId(i));
+            if (i == 4 || i == 5) assertEq(requestId, 0);
+        }
+    }
+
+    /// @dev One draw per content: items that share a content hash (items 0 and 1 and their
+    ///      revisions 6 and 7) read equal seeds once both are linked and the draw delivered.
+    function invariant_ItemsThatShareContentReadOneSeed() public view {
+        for (uint256 i = 6; i < handler.itemCount(); ++i) {
+            bytes32 revision = handler.itemHash(i);
+            bytes32 original = handler.itemHash(i - 6);
+            if (module.isDelivered(revision) && module.isDelivered(original)) {
+                assertEq(module.seedOf(revision), module.seedOf(original));
+            }
         }
     }
 }

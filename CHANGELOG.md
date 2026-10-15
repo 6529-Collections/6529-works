@@ -159,7 +159,8 @@
 - Entropy (DEPS-1): VRF seeds are drawn once per content hash. Every approved item with the
   same content links to that draw (`SeedLinked`) and reads it by item hash; an item whose
   content already has a delivered or pending draw joins it without a new oracle request.
-  `SeedDelivered` is indexed by content hash.
+  `SeedDelivered` is indexed by content hash. The entropy invariant campaign adds items that
+  share content and asserts they read one seed.
 - Entropy (DEPS-2): the VRF callback creates no storage slot. The seed overwrites the word
   that held the request ID (`requestOf` reads zero once delivered), so a delivery costs about
   34,000 gas under Glamsterdam (with the DEPS-6 pin check), about a third of the 100,000
