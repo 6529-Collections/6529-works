@@ -311,3 +311,6 @@
     `claimFor(account, currency)` lets anyone send an account's credits to that account, so a
     split wallet's credited payout can be paid once the token works again. ETH payouts are
     unchanged.
+  - CALLS-5: the auction's NatSpec no longer claims that no transfer can strand a token in it:
+    only safe transfers are refused, and a token sent with a plain `transferFrom` is stranded.
+    A governed rescue does not fit the auction's remaining EIP-170 headroom; it is documented.

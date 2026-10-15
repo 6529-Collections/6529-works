@@ -597,7 +597,9 @@ contract EnglishAuction is
     }
 
     /// @notice Accepts only a token minted into this adapter's custody during a start, so no
-    ///         other transfer can strand a token here.
+    ///         other safe transfer can strand a token here. A plain `transferFrom` runs no hook
+    ///         and cannot be refused: a token sent to this adapter that way is stranded, since
+    ///         nothing records who sent it (CALLS-5). Never send a token here.
     /// @dev Relies on `start` and `startWithBid` holding the reentrancy guard while they mint;
     ///      any future intake path must hold it too.
     function onERC721Received(address operator, address from, uint256, bytes calldata)
