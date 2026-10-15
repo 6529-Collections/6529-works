@@ -58,9 +58,11 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      `pausedAt + MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay
 ///      exactly at day 5 still lands. After that it ends by itself: views and every mutating
 ///      entry point treat it as resumed with a {MAX_PAUSE} pause, and the first mutating call
-///      writes the resumption down. Every bid checks that the locked currency is still active in the allowlist
-///      (deprecation is an emergency stop for running auctions); settlement, refunds and claims
-///      never read the allowlist.
+///      writes the resumption down. Every bid checks that the locked currency is still active in
+///      the allowlist. Deprecation freezes a running auction (MARKET-2): a standing bid settles
+///      only once the currency is re-admitted (its bidder may withdraw meanwhile), and the first
+///      settle after a re-admission in the auction's last window or after its end reopens it
+///      instead (`AuctionResumed`). Refunds and claims never read the allowlist.
 contract EnglishAuction is
     IEnglishAuction,
     IERC721Receiver,
@@ -269,8 +271,13 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
+    /// @dev Also while the locked currency is deprecated (MARKET-2: the auction is frozen), so a
+    ///      currency that never returns cannot hold the bid.
     function withdrawBid(uint256 saleId) external nonReentrant {
-        Sale storage s = _require(saleId, AuctionState.PAUSED);
+        Sale storage s = _sales[saleId];
+        // MARKET-2: a live (or ended, unsettled) auction whose currency is deprecated is frozen.
+        (bool active,,) = _currencyClock(s);
+        if (s.status != AuctionState.ACTIVE || active) s = _require(saleId, AuctionState.PAUSED);
         address bidder = s.bidder;
         if (bidder == address(0) || msg.sender != bidder) revert NotHighBidder(msg.sender);
         uint256 amount = s.bid;
@@ -298,6 +305,7 @@ contract EnglishAuction is
     ///      executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
+        if (_reopenedAfterFreeze(saleId, s)) return;
         s.status = AuctionState.SETTLED;
         (LockedTerms memory lt, address creator) = _lockedTerms(s);
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
@@ -886,6 +894,38 @@ contract EnglishAuction is
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {
         _credits[account][currency] += amount;
         emit Credited(account, currency, saleId, amount);
+    }
+
+    /// @dev MARKET-2: a currency freeze (deprecation) stops the auction, not just its bids. While
+    ///      frozen, a standing bid waits for its currency (its bidder may withdraw). If the
+    ///      currency came back in the auction's last window or after its end, the first settle
+    ///      reopens the auction instead, for at least {_reopening}, so the bidders the freeze shut
+    ///      out can bid.
+    function _reopenedAfterFreeze(uint256 saleId, Sale storage s) private returns (bool) {
+        (bool active, uint256 since, address currency) = _currencyClock(s);
+        if (!active) {
+            if (s.bidder != address(0)) revert IAssetAllowlist.AssetNotActive(currency);
+            return false;
+        }
+        // forge-lint: disable-next-line(block-timestamp)
+        if (since + _terms[s.termsId].extensionWindow <= s.endTime) return false;
+        uint32 end = SafeCast.toUint32(block.timestamp + _reopening(s));
+        s.endTime = end;
+        emit AuctionResumed(saleId, end);
+        return true;
+    }
+
+    /// @dev Whether the sale's locked currency is active on the allowlist, since when its status
+    ///      last changed, and the currency.
+    function _currencyClock(Sale storage s)
+        private
+        view
+        returns (bool active, uint256 since, address currency)
+    {
+        currency = _terms[s.termsId].currency;
+        IAssetAllowlist.Status status;
+        (status, since,) = allowlist.statusClock(currency);
+        active = status == IAssetAllowlist.Status.Active;
     }
 
     /// @dev Loads a sale after writing down an expired pause, and requires the `wanted` state.

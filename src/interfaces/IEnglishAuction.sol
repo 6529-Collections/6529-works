@@ -125,7 +125,10 @@ interface IEnglishAuction is ISaleAdapter {
     ///         `type(uint96).max` base units (about 7.9e28); a larger one reverts.
     function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
-    ///         the seller and the network fee. Permissionless.
+    ///         the seller and the network fee. Permissionless. While the locked currency is
+    ///         deprecated, a standing bid cannot settle (`AssetNotActive`); after it is re-admitted,
+    ///         the first call reopens the auction for at least the anti-snipe window (the
+    ///         governed duration after a withdrawal) and emits `AuctionResumed` (MARKET-2).
     function settle(uint256 saleId) external;
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
     ///         token there.
@@ -144,7 +147,8 @@ interface IEnglishAuction is ISaleAdapter {
     ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and equal
     ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
-    /// @notice The high bidder withdraws its bid while the auction is paused; it is credited back
+    /// @notice The high bidder withdraws its bid while the auction is paused, or while its
+    ///         currency is deprecated and it has not settled (MARKET-2); it is credited back
     ///         and the auction has no bid. The withdrawn amount stays as a reserve the next bid
     ///         must reach, and the resumed auction runs at least the governed duration, so the
     ///         refunded bidders can return (LIFECYCLE-1).

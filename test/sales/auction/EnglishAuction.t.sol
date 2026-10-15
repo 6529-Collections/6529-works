@@ -284,7 +284,10 @@ contract EnglishAuctionTest is AuctionBase {
 
     /// @dev Deprecating the locked currency stops bidding (an emergency tightening), but never
     ///      settlement, refunds or claims.
-    function test_DeprecatedCurrencyStopsBidsOnly() public {
+    /// @dev MARKET-2: deprecation freezes the auction: bids and the settlement of a standing bid
+    ///      wait for the currency, claims never do, and the first settle after re-admission
+    ///      reopens the auction for at least the anti-snipe window.
+    function test_DeprecatedCurrencyFreezesTheAuction() public {
         uint256 saleId = _startUsd();
         _bidUsd(saleId, alice, 10e18);
         _bidUsd(saleId, bob, 20e18);
@@ -301,9 +304,22 @@ contract EnglishAuctionTest is AuctionBase {
         auction.claim(address(usd), alice);
         assertEq(usd.balanceOf(alice), 10e18);
         _end(saleId);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
+        );
         auction.settle(saleId);
-        assertEq(usd.balanceOf(seller), 15e18);
-        assertEq(stream.ownerOf(1), bob);
+        (,, uint64 revision) = allowlist.assetConfig(address(usd));
+        allowlist.admitAsset(address(usd), revision, USD_FLOOR);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + WINDOW));
+        auction.settle(saleId);
+        vm.startPrank(carol);
+        auction.bid(saleId, address(0), _direct(carol, 30e18));
+        vm.stopPrank();
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(usd.balanceOf(seller), 22.5e18);
+        assertEq(stream.ownerOf(1), carol);
     }
 
     /// @dev Terms naming `CURRENCY_DEFAULT` lock the product's default once, at start.

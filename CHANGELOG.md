@@ -280,3 +280,10 @@
     must reach (`minimumBid`, `auction().bid` with no bidder), and the resumed auction runs at
     least the governed duration, whether UNPAUSER resumes it or the pause lapses. With no
     bidder, settlement pays nothing and returns the work to the artist, as before.
+  - MARKET-2: deprecating an auction's currency freezes the auction, not just its bids. A
+    standing bid cannot settle until the currency is re-admitted, and its bidder may withdraw
+    meanwhile; the first `settle` after a re-admission in the auction's last window or after
+    its end reopens it for at least the anti-snipe window (the governed duration after a
+    withdrawal). With no standing bid, the work returns to the artist as before.
+  - Auction: the fee and the increment are computed exactly in 96-bit arithmetic instead of
+    `Math.mulDiv` (same results), which frees about 330 bytes for these fixes.
