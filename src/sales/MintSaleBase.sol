@@ -19,6 +19,7 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IMintSale } from "../interfaces/IMintSale.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import {
@@ -59,7 +60,7 @@ import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.so
 ///      delta, and every entry point that moves value is non-reentrant. While paused, sales
 ///      neither open nor sell; closing and claiming always work. A pause, or a deprecation of a
 ///      sale's currency, also stops the sale's schedule (`scheduleDelay`, MARKET-1).
-abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, ReentrancyGuardTransient {
+abstract contract MintSaleBase is IMintSale, ERC165, AccessManaged, ReentrancyGuardTransient {
     /// @notice A sale's locked terms and state, packed into five words so that opening an ETH
     ///         sale writes four (QUALITY-4): the token, fee share, flags and halt clock; the
     ///         token ID; the price; the seller with the fee recipient's index and the phase
@@ -166,8 +167,11 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     }
 
     /// @inheritdoc ISaleAdapter
+    /// @dev A listed token gets the install check every dependency gets, for `IMintTarget`, the
+    ///      only surface these adapters call; unlisting is unchecked.
     function setTarget(address token, bool listed) external restricted {
         if (token == address(0)) revert InvalidAddress();
+        if (listed) Dependency.check(token, type(IMintTarget).interfaceId);
         isListed[token] = listed;
         emit TargetSet(token, listed);
     }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ISaleAdapter } from "./ISaleAdapter.sol";
+import { IMintSale } from "./IMintSale.sol";
 import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 
 /// @title IDutchSale
@@ -15,7 +15,7 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      charge only, and ETH overpayment is credited back. There is no rebate when the price
 ///      later falls. `saleKind()` is `SaleKind.DUTCH`; PERMIT2 purchases use
 ///      `Typehashes.DUTCH_PURCHASE_WITNESS`.
-interface IDutchSale is ISaleAdapter {
+interface IDutchSale is IMintSale {
     /// @notice A sale's schedule.
     struct Schedule {
         uint256 restingPrice;

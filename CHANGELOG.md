@@ -6,13 +6,16 @@
   EIP-7702 delegation, ERC-165 where implemented, the pinned code hash), with one error,
   `InvalidDependency(address)`, and one for a pinned dependency whose code changed at use,
   `DependencyCodeChanged(address)`. The content store and the 6529 delegation contract are now
-  also refused as EIP-7702 delegated accounts. One shared `InvalidSignature(address signer)`
+  also refused as EIP-7702 delegated accounts, and the fixed-price and Dutch adapters list a
+  token only if it has code, is not delegated and reports `IMintTarget` (as the auction requires
+  ERC-721). One shared `InvalidSignature(address signer)`
   and `SignatureExpired(uint256 deadline)` in `SignatureVerifier`. `IStream.InvalidMintRequest`
   is split into errors per Stream rule (`InvalidItemSale`, `InvalidLeadArtist`,
   `InvalidSeedPolicy`, `InvalidLicenseId`, `InvalidWorkTerms`, `TermsCapacityExceeded`, and
   `UnknownCollection`) and moved to `IMintTarget` for malformed calls; a burn or settlement mark
   by an adapter that did not mint the token reverts with `NotMintingAdapter`. Errors the
-  implementations declared are declared in their interfaces. Selectors change (no function or
+  implementations declared are declared in their interfaces; those only the fixed-price and
+  Dutch adapters raise are on a new errors-only `IMintSale`. Selectors change (no function or
   interface ID does).
 - NatSpec: every external and public function, event and error in `src/` is documented, with
   `@param` and `@return` for each parameter and return value, checked by

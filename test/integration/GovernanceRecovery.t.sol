@@ -7,7 +7,6 @@ import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
@@ -16,6 +15,7 @@ import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/Pack
 import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Governance recovery on the real genesis deployment (ADR 0002 decision 5, owner
 ///         decision 2): the cold recovery admin completes a recovery even when the hot admin and
@@ -249,7 +249,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
         stream.createCollection("Another", keccak256("another"));
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
         dutchSale.openSale(address(editions), editionId, uint64(block.timestamp));
         vm.stopPrank();
 
@@ -257,7 +257,7 @@ contract GovernanceRecoveryTest is IntegrationBase {
         vm.prank(artist);
         uint256 saleId = dutchSale.openSale(address(editions), editionId, uint64(block.timestamp));
         vm.prank(platform);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
         dutchSale.closeSale(saleId);
         vm.prank(artist);
         dutchSale.closeSale(saleId);

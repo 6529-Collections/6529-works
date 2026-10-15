@@ -151,7 +151,10 @@ malformed call. Each Stream rule has its own error: `InvalidItemSale()`, `Invali
 and `TermsCapacityExceeded()`. `NotMintingAdapter(address)` (`0x271ce5c9`) replaces
 `NotAdmittedMinter` and `UnboundCaller` from `burn` and `markPrimarySettled`. The errors that
 only the implementations declared (Editions, the adapters, the entropy module, the renderer)
-are now declared in their interfaces, with unchanged selectors.
+are now declared in their interfaces, with unchanged selectors. The errors only the fixed-price
+and Dutch adapters raise (`InvalidAddress`, `SaleAlreadyOpen`, `NotSaleManager`, and the
+currency, quantity, close and approval errors) are on `IMintSale`, which `IFixedPriceSale` and
+`IDutchSale` extend, so the auction's ABI does not list them.
 
 `WorksAccessManager`, which has no interface file, gained the guardians' suspension of
 operational keys (review finding GOV-2), plus the events `RoleSuspended` and
@@ -193,6 +196,7 @@ selectors.
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
 | `IFixedPriceSale` | [`IFixedPriceSale.sol`](../../src/interfaces/IFixedPriceSale.sol) | `0x773a4920` | `0xfedd2754` | FixedPriceSale |
 | `IDutchSale` | [`IDutchSale.sol`](../../src/interfaces/IDutchSale.sol) | `0x382667e1` | `0xb1c10995` | DutchSale |
+| `IMintSale` | [`IMintSale.sol`](../../src/interfaces/IMintSale.sol) | `0x00000000` | none | None: it declares errors only (the fixed-price and Dutch adapters' own) |
 | `ICurationVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | `0x492733ca` | Eip712CurationVerifier |
 | `ICurationSignerVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | `0xb7ab1d96` | Eip712CurationVerifier |
 | `IPackageRegistry` | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `0xe69cc8c7` | `0xc0f6f835` | PackageRegistry |

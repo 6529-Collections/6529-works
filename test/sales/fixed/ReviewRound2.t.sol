@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import {
@@ -18,6 +17,7 @@ import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Regressions from the PR #18 re-review: the typed `PhaseConfiguration` digest against
 ///         Foundry's independent EIP-712 encoder, consent non-reuse, priced leaves in zero-price
@@ -218,11 +218,11 @@ contract ReviewRound2Test is FixedPriceBase {
         phases[1] = IFixedPriceSale.Phase(t + 1000, type(uint64).max, 0, 0, false, false);
         uint256 saleId = _open(creator, ETH_ED, phases);
         vm.warp(t + 500); // between phases: phase 1 has not started
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
         vm.warp(type(uint64).max - 1); // an open-ended phase never ends
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
     }
@@ -233,7 +233,7 @@ contract ReviewRound2Test is FixedPriceBase {
         uint256 saleId =
             _open(creator, ETH_ED, _one(IFixedPriceSale.Phase(t, t + 10, 0, 0, false, false)));
         vm.warp(t + 9);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
         _buyEth(alice, saleId, 0, alice, 1, PRICE);
@@ -246,12 +246,12 @@ contract ReviewRound2Test is FixedPriceBase {
         );
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.SaleAlreadyClosed.selector, saleId));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.SaleAlreadyClosed.selector, saleId));
         vm.prank(platform);
         fixedSale.closeSale(saleId);
         // A stranger cannot reopen. The phase is an uncapped public one, which counts nothing
         // (QUALITY-1).
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         _open(stranger, ETH_ED, _one(_phase(0, 0, false, false)));
         assertEq(_bought(saleId, 0, alice), 0);
     }
@@ -284,9 +284,7 @@ contract ReviewRound2Test is FixedPriceBase {
             abi.encode(address(usd))
         );
         vm.expectRevert(
-            abi.encodeWithSelector(
-                ISaleAdapter.CurrencyMismatch.selector, CURRENCY_ETH, address(usd)
-            )
+            abi.encodeWithSelector(IMintSale.CurrencyMismatch.selector, CURRENCY_ETH, address(usd))
         );
         _openPublic(ETH_ED, 0);
     }

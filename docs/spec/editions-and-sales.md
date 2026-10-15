@@ -322,8 +322,9 @@ sequenceDiagram
   below its `end`, and `payerKeyed` or `leafPriced` without a root (`InvalidPhases`).
 - Any other caller, or a PLATFORM holder whose grant carries a delay, reverts with
   `NotSaleManager`.
-- **Targets.** An adapter serves a token governance listed (`setTarget`; unlisting stops new
-  sales only), or, from v1.1, one the installed federation registry reports active (ED-24).
+- **Targets.** An adapter serves a token governance listed (`setTarget`, which requires
+  code, no EIP-7702 delegation and ERC-165 `IMintTarget`, else `InvalidDependency`;
+  unlisting stops new sales only), or, from v1.1, one the installed federation registry reports active (ED-24).
   `setFederationRegistry` is compare-and-set and pins the registry's code hash. A federated
   token's fee share is its entry's, paid to the `PRODUCT_FEDERATED` fee recipient, and its
   default currency resolves under `PRODUCT_FEDERATED`.

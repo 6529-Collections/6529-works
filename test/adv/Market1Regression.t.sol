@@ -8,6 +8,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { MarketPoCBase } from "./MarketPoCBase.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice MARKET-1 regression, on the real stack: an emergency pause of the fixed-price or Dutch
 ///         adapter, or a deprecation of a sale's currency, stops the sale's schedule as well as
@@ -120,7 +121,7 @@ contract Market1RegressionTest is MarketPoCBase {
         vm.warp(t0 + 1 days);
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         fixedSale.closeSale(saleId);
         vm.warp(t0 + Roles.STANDARD);
         vm.prank(hotAdmin);
@@ -131,7 +132,7 @@ contract Market1RegressionTest is MarketPoCBase {
         // Paused for four days: the one-day phase now ends at t0 + 5 days.
         vm.warp(t0 + 5 days - 1);
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         fixedSale.closeSale(saleId);
         vm.warp(t0 + 5 days);
         vm.expectEmit(address(fixedSale));

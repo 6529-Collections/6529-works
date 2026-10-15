@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { ISaleAdapter } from "./ISaleAdapter.sol";
+import { IMintSale } from "./IMintSale.sol";
 import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 
 /// @title IFixedPriceSale
@@ -33,7 +33,7 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      capped phases.
 ///      `saleKind()` is `SaleKind.FIXED_PRICE`; PERMIT2 purchases use
 ///      `Typehashes.PURCHASE_WITNESS`, and `payment.amount` is the exact total.
-interface IFixedPriceSale is ISaleAdapter {
+interface IFixedPriceSale is IMintSale {
     /// @notice One phase of a sale.
     struct Phase {
         uint64 start;

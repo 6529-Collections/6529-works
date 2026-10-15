@@ -27,6 +27,7 @@ import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
 ///         override that would move the authority is pending (staged or contested, until it
@@ -147,7 +148,7 @@ contract RecoveryRestraintTest is IntegrationBase {
     }
 
     function _notManager(address caller) internal pure returns (bytes memory) {
-        return abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, caller);
+        return abi.encodeWithSelector(IMintSale.NotSaleManager.selector, caller);
     }
 
     // ------------------------------------------------------------------ the edition sale

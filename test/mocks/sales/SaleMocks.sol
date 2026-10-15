@@ -105,6 +105,11 @@ contract MockEditionTarget is ERC1155, IMintTarget {
 
     /// @dev Editions record nothing at settlement: a no-op, as `IMintTarget` allows.
     function markPrimarySettled(uint256) external { }
+
+    /// @dev Reports `IMintTarget`, as the adapters require of a listed token.
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IMintTarget).interfaceId || super.supportsInterface(interfaceId);
+    }
 }
 
 /// @dev The revenue escrow's crediting surface: pulls exactly and credits per wallet and asset.

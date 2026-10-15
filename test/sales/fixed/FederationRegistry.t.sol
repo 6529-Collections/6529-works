@@ -16,6 +16,7 @@ import { MockERC20 } from "../../mocks/EconomicsMocks.sol";
 import { MockEditionTarget, MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Federation readiness (integrator decision D21), through the fixed-price adapter: the
 ///         governed compare-and-set registry with ERC-165, EIP-7702 and code-hash pinning, targets
@@ -109,9 +110,7 @@ contract FederationRegistryTest is FixedPriceBase {
         IFixedPriceSale.Phase[] memory phases = _one(_phase(0, 0, false, false));
         vm.prank(platform);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                ISaleAdapter.ArtistApprovalRequired.selector, address(fed), FED_ID
-            )
+            abi.encodeWithSelector(IMintSale.ArtistApprovalRequired.selector, address(fed), FED_ID)
         );
         fixedSale.openSale(address(fed), FED_ID, phases, _noConsent());
         vm.prank(creator);

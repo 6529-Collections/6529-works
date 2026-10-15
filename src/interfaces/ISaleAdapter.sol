@@ -128,37 +128,17 @@ interface ISaleAdapter is IERC165 {
     error InvalidRecipient(address recipient);
     /// @notice An ETH claim could not be delivered to `to`; the credit is kept.
     error ClaimFailed(address to);
-    /// @notice A sale of this token is already open.
-    error SaleAlreadyOpen(address token, uint256 id);
-    /// @notice The caller is neither the token's creator nor the PLATFORM role.
-    error NotSaleManager(address caller);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
-    /// @notice The token returned unusable terms: no seller, no fee recipient for a non-zero
-    ///         fee share, a fee share above the denominator, the revenue escrow as seller or fee
-    ///         recipient, federated code that differs from its registry entry, a mint that
-    ///         returned another token ID or (the auction) left custody elsewhere, or a new fee
-    ///         recipient past the fixed-price and Dutch adapters' 65,535.
+    /// @notice The token returned unusable terms. Every adapter: no seller, the revenue escrow
+    ///         as seller or fee recipient, no fee recipient for a nonzero fee share, a fee share
+    ///         above the denominator, federated code that differs from its registry entry, or a
+    ///         mint that returned another token ID. The auction also: a token ID of 2^32 or more,
+    ///         no creator (a pending recovery override), a nonzero price or sale parameters, the
+    ///         token not in its custody after the mint, or, for a federated token, an escrow or
+    ///         zero network fee recipient for a nonzero registry fee. The fixed-price and Dutch
+    ///         adapters also: a new fee recipient past their 65,535.
     error InvalidSaleTerms(address token, uint256 id);
-    /// @notice A required address is zero (fixed-price and Dutch adapters).
-    error InvalidAddress();
-    /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only
-    ///         (fixed-price and Dutch adapters).
-    error PricedDefaultCurrency(address token, uint256 id);
-    /// @notice The resolver returned another currency than the one the token named (fixed-price
-    ///         and Dutch adapters).
-    error CurrencyMismatch(address named, address resolved);
-    /// @notice The locked currency is no longer active on the asset allowlist (fixed-price and
-    ///         Dutch adapters; the auction reports `IAssetAllowlist.AssetNotActive`).
-    error CurrencyNotActive(address currency);
-    /// @notice A purchase must buy at least one copy.
-    error InvalidQuantity();
-    /// @notice The sale is already closed.
-    error SaleAlreadyClosed(uint256 saleId);
-    /// @notice PLATFORM opened, without the artist's approval, a sale only the artist may
-    ///         configure: an edition with a one-time window (OPEN), or a token that is not a
-    ///         listed 6529 Editions edition.
-    error ArtistApprovalRequired(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label.
     /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`.
@@ -180,9 +160,12 @@ interface ISaleAdapter is IERC165 {
     /// @return True when listed, or active in an installed registry whose code is unchanged.
     function isTarget(address token) external view returns (bool);
     /// @notice Lists or unlists a token contract for new sales. SUCCESSOR_SETTER role. Running
-    ///         sales finish.
-    /// @param token The token contract; the fixed-price and Dutch adapters refuse zero, and the
-    ///        auction lists only a contract that reports ERC-721 through ERC-165.
+    ///         sales finish. Listing checks the token like any dependency
+    ///         (`Dependency.InvalidDependency`): code, not an EIP-7702 delegated account, and
+    ///         ERC-165 support for the surface the adapter calls.
+    /// @param token The token contract: one that reports `IMintTarget` through ERC-165 for the
+    ///        fixed-price and Dutch adapters (which also refuse zero, even to unlist), ERC-721
+    ///        for the auction.
     /// @param listed True to list the token, false to unlist it.
     function setTarget(address token, bool listed) external;
     /// @notice The federation registry, or zero before v1.1.

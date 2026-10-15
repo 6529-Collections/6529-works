@@ -28,6 +28,7 @@ import { MockAssetAllowlist, MockEditionTarget } from "../../mocks/sales/SaleMoc
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Unit tests of the fixed-price adapter: configuration, opening, artist approval,
 ///         closing, purchases, allowlists (including the PR #744 recipient-binding regression)
@@ -40,9 +41,9 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     function test_Constructor_RevertsOnMissingOrUnfitDependency() public {
         (IRevenueEscrow e, ISignatureTransfer p, IEconomicsResolver r) = _deps();
-        vm.expectRevert(ISaleAdapter.InvalidAddress.selector);
+        vm.expectRevert(IMintSale.InvalidAddress.selector);
         new FixedPriceSale(address(manager), IRevenueEscrow(address(0)), p, r);
-        vm.expectRevert(ISaleAdapter.InvalidAddress.selector);
+        vm.expectRevert(IMintSale.InvalidAddress.selector);
         new FixedPriceSale(address(manager), e, ISignatureTransfer(address(0)), r);
         // The resolver must be a contract supporting IEconomicsResolver through ERC-165.
         address[3] memory unfit = [address(0), makeAddr("eoa"), address(usd)];
@@ -103,7 +104,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
     }
 
     function test_SetTarget_GovernedAndEmits() public {
-        address other = makeAddr("otherToken");
+        address other = address(new MockEditionTarget());
         vm.expectEmit(address(fixedSale));
         emit ISaleAdapter.TargetSet(other, true);
         vm.prank(admin);
@@ -120,9 +121,29 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
         vm.prank(platform);
         fixedSale.setTarget(address(1), true);
-        vm.expectRevert(ISaleAdapter.InvalidAddress.selector);
+        vm.expectRevert(IMintSale.InvalidAddress.selector);
         vm.prank(admin);
         fixedSale.setTarget(address(0), true);
+    }
+
+    /// @dev Review of #66 (L-2): a listed token gets the install check, for `IMintTarget`, as
+    ///      the auction's targets do for ERC-721; unlisting is unchecked.
+    function test_SetTarget_ChecksTheTokenLikeADependency() public {
+        address eoa = makeAddr("eoa");
+        address delegated = makeAddr("delegated");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(editions)));
+        address notATarget = address(allowlist); // code, but no `IMintTarget` through ERC-165
+        address[3] memory refused = [eoa, delegated, notATarget];
+        vm.startPrank(admin);
+        for (uint256 i; i < refused.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, refused[i])
+            );
+            fixedSale.setTarget(refused[i], true);
+            fixedSale.setTarget(refused[i], false);
+        }
+        vm.stopPrank();
+        assertFalse(fixedSale.isListed(delegated));
     }
 
     // ------------------------------------------------------------------ opening
@@ -235,21 +256,21 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     function test_OpenSale_RevertsForStrangerAndDelayedPlatform() public {
         IFixedPriceSale.Phase[] memory phases = _one(_phase(0, 0, false, false));
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         _open(stranger, ETH_ED, phases);
 
         // A PLATFORM member with an execution delay may not act immediately.
         address slow = makeAddr("slowPlatform");
         vm.prank(admin);
         manager.grantRole(PLATFORM_ROLE, slow, 1 days);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, slow));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, slow));
         _open(slow, ETH_ED, phases);
     }
 
     function test_OpenSale_OneOpenSalePerEdition() public {
         uint256 first = _openPublic(ETH_ED, 0);
         vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.SaleAlreadyOpen.selector, address(editions), ETH_ED)
+            abi.encodeWithSelector(IMintSale.SaleAlreadyOpen.selector, address(editions), ETH_ED)
         );
         _openPublic(ETH_ED, 0);
         // Another edition is independent; closing frees the edition.
@@ -494,7 +515,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         uint256 first = _openPublic(ETH_ED, 0);
         uint256 second = _open(platform, USD_ED, _one(_phase(0, 0, false, false)));
         vm.prank(platform);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
         fixedSale.closeSale(first);
         vm.expectEmit(address(fixedSale));
         emit IFixedPriceSale.SaleClosed(first);
@@ -515,7 +536,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
     function test_CloseSale_FollowsTheCurrentCreator() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         editions.setCreator(ETH_ED, bob);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, creator));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, creator));
         vm.prank(creator);
         fixedSale.closeSale(saleId);
         vm.prank(bob);
@@ -527,14 +548,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
         uint256 saleId = _openPublic(ETH_ED, 0);
         vm.prank(creator);
         fixedSale.closeSale(saleId);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.SaleAlreadyClosed.selector, saleId));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.SaleAlreadyClosed.selector, saleId));
         vm.prank(platform);
         fixedSale.closeSale(saleId);
     }
 
     function test_CloseSale_RevertsForStrangerOrUnknown() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 99));
@@ -669,7 +690,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         fixedSale.purchase{ value: PRICE }(
             _p(saleId, 1, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
         );
-        vm.expectRevert(ISaleAdapter.InvalidQuantity.selector);
+        vm.expectRevert(IMintSale.InvalidQuantity.selector);
         fixedSale.purchase(_p(saleId, 0, alice, 0, 0, 0), new bytes32[](0), _eth(alice, 0));
         vm.stopPrank();
     }
@@ -732,9 +753,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         uint256 saleId = _openPublic(ETH_ED, 0);
         allowlist.set(CURRENCY_ETH, false);
         vm.deal(alice, PRICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.CurrencyNotActive.selector, CURRENCY_ETH)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.CurrencyNotActive.selector, CURRENCY_ETH));
         vm.prank(alice);
         fixedSale.purchase{ value: PRICE }(
             _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
@@ -748,9 +767,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         editions.setTerms(9, _terms(SaleKind.FIXED_PRICE, CURRENCY_DEFAULT, USD_PRICE, ""), SIZE);
         allowlist.setDefault(PRODUCT_EDITIONS, address(usd));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                ISaleAdapter.PricedDefaultCurrency.selector, address(editions), 9
-            )
+            abi.encodeWithSelector(IMintSale.PricedDefaultCurrency.selector, address(editions), 9)
         );
         _openPublic(9, 0);
     }

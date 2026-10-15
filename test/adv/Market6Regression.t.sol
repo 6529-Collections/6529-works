@@ -8,7 +8,7 @@ import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/ty
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { MarketPoCBase } from "./MarketPoCBase.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice MARKET-6 regression, on the real stack (ADR 0001 section 6: the artist chooses an
 ///         edition's format and price within the package). Alone, PLATFORM opens a sale only at
@@ -88,7 +88,7 @@ contract Market6RegressionTest is MarketPoCBase {
         vm.prank(platform);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISaleAdapter.ArtistApprovalRequired.selector, address(editions), workId
+                IMintSale.ArtistApprovalRequired.selector, address(editions), workId
             )
         );
         fixedSale.openSale(
@@ -150,7 +150,7 @@ contract Market6RegressionTest is MarketPoCBase {
         vm.prank(platform);
         vm.expectRevert(
             abi.encodeWithSelector(
-                ISaleAdapter.ArtistApprovalRequired.selector, address(editions), openId
+                IMintSale.ArtistApprovalRequired.selector, address(editions), openId
             )
         );
         dutchSale.openSale(address(editions), openId, uint64(block.timestamp));

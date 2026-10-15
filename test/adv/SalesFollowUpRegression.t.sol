@@ -12,6 +12,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { EditionFormat, EditionTerms } from "src/interfaces/types/PackageTypes.sol";
 import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { MarketPoCBase } from "./MarketPoCBase.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Follow-ups from the review of the sales fixes, on the real stack: the halt clock's
 ///         documented double count, the 48-hour floor on `cancel` and on re-admission, and the
@@ -127,7 +128,7 @@ contract SalesFollowUpRegressionTest is MarketPoCBase {
         assertEq(dutchSale.currentPrice(dutch), priceAtFreeze, "the curve waits");
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         fixedSale.closeSale(fixedId2);
     }
 
@@ -277,7 +278,7 @@ contract SalesFollowUpRegressionTest is MarketPoCBase {
         uint256 saleId = dutchSale.openSale(address(editions), openId, uint64(block.timestamp));
         _dutchBuy(saleId, fan, 1);
         vm.prank(platform);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
         dutchSale.closeSale(saleId);
         assertEq(dutchSale.openSaleOf(address(editions), openId), saleId);
         vm.prank(artist);
