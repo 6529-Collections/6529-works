@@ -21,17 +21,26 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      attestation is valid for one verifier deployment only.
 ///
 ///      Epochs. Every approval binds the signer's epoch at signing ({signerEpoch}): the time its
-///      current CURATION_SIGNER grant took effect and the number of times it was disabled or
-///      enabled. Disabling a signer, or revoking its role, therefore ends every approval it
-///      signed so far, and re-enabling it, or granting the role to the same key again, starts a
-///      new epoch, so approvals signed in between never count either. The signer re-signs
-///      what it still approves. Approvals still never expire with
-///      time (ADR 0001 section 3).
+///      current CURATION_SIGNER grant took effect, the number of times it was disabled or
+///      enabled, and a salt drawn from `block.prevrandao` at each of those changes. An approval
+///      made before a disable, or before a revocation of the role, never counts again. An
+///      approval signed while the signer is disabled cannot name the epoch its re-enable will
+///      start, because that epoch's salt comes from the re-enable's block. The signer re-signs
+///      what it still approves. Approvals still never expire with time (ADR 0001 section 3).
+///
+///      Stopping a signer. `disableSigner` (GUARDIAN, immediate) is the way to stop a signer,
+///      and only it, or revoking the role and granting it again, ends an epoch. An ADMIN change
+///      of the signer's execution delay makes the signer inactive while the delay is nonzero,
+///      but keeps its epoch: approvals made before or during that change count again once the
+///      delay is back to zero. After any suspected compromise, use a fresh key: disable the old
+///      one and grant the role to a new address.
 contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP712 {
-    /// @dev Whether the signer is disabled, and how many times it was disabled or enabled.
+    /// @dev Whether the signer is disabled, how many times it was disabled or enabled, and the
+    ///      salt drawn at the latest of those changes. One slot.
     struct SignerState {
         bool disabled;
         uint64 changes;
+        uint64 salt;
     }
 
     mapping(address signer => SignerState) private _signers;
@@ -67,18 +76,18 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
         SignerState storage s = _signers[signer];
         if (s.disabled) revert SignerAlreadyDisabled(signer);
         s.disabled = true;
-        ++s.changes;
+        _newEpoch(s, signer);
         emit SignerDisabled(signer);
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The signer starts a new epoch, so
-    ///      nothing signed while it was disabled counts.
+    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The signer starts a new epoch, salted
+    ///      from this block, so nothing signed while it was disabled counts.
     function enableSigner(address signer) external restricted {
         SignerState storage s = _signers[signer];
         if (!s.disabled) revert SignerNotDisabled(signer);
         s.disabled = false;
-        ++s.changes;
+        _newEpoch(s, signer);
         emit SignerEnabled(signer);
     }
 
@@ -104,12 +113,14 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
     }
 
     /// @inheritdoc ICurationSignerVerifier
-    /// @dev `since << 64 | changes`: `since` is when the signer's CURATION_SIGNER grant takes
-    ///      or took effect (zero without a grant); a revocation deletes it and a new grant sets a
-    ///      later one. `changes` counts `disableSigner` and `enableSigner` calls.
+    /// @dev `since << 128 | salt << 64 | changes`: `since` is when the signer's CURATION_SIGNER
+    ///      grant takes or took effect (zero without a grant); a revocation deletes it and a new
+    ///      grant sets a later one. `changes` counts `disableSigner` and `enableSigner` calls, and
+    ///      `salt` is drawn at the latest of them.
     function signerEpoch(address signer) public view returns (uint256) {
         (uint48 since,,,) = IAccessManager(authority()).getAccess(Roles.CURATION_SIGNER, signer);
-        return uint256(since) << 64 | _signers[signer].changes;
+        SignerState storage s = _signers[signer];
+        return uint256(since) << 128 | uint256(s.salt) << 64 | s.changes;
     }
 
     /// @notice The EIP-712 digest a curation signer signs to approve a package root, at its
@@ -124,6 +135,17 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
                 abi.encode(Typehashes.PACKAGE_APPROVAL, packageRoot, evidenceHash, signerEpoch_)
             )
         );
+    }
+
+    /// @dev Counts a disable or an enable and draws its salt. The salt only has to be unknown
+    ///      before the block that changes the epoch, so `block.prevrandao` suffices; it is not
+    ///      a randomness source for anything else.
+    function _newEpoch(SignerState storage s, address signer) private {
+        uint64 changes = s.changes + 1;
+        s.changes = changes;
+        // The cast keeps the low 64 bits of the hash by design.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        s.salt = uint64(uint256(keccak256(abi.encode(block.prevrandao, signer, changes))));
     }
 
     /// @dev Decodes the exact canonical encoding without reverting: a 32-byte address word, the

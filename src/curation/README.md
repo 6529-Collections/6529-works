@@ -27,10 +27,18 @@ with the linked-pair exception from §6.
   delay and the guardian has not disabled it. Disabling is immediate and
   one-way; re-enabling is in the 30-day class. Deployments grant the role to at
   least two keys. The signature binds the signer's current `signerEpoch`: the
-  time its role grant took effect and how many times it was disabled or
-  enabled. Disabling a signer, re-enabling it, or revoking and granting its role
-  again therefore voids every approval it signed before, and nothing signed
-  while it was disabled counts; the signer re-signs what it still approves. Tooling reads `signerEpoch(signer)` before signing.
+  time its role grant took effect, how many times it was disabled or enabled,
+  and a salt drawn from `block.prevrandao` at each of those changes. An approval
+  made before a disable (or under a revoked grant of the role) never counts
+  again, and one signed while the signer is disabled cannot name the epoch its
+  re-enable will start. The signer re-signs what it still approves; tooling
+  reads `signerEpoch(signer)` before signing.
+- **Stopping a signer.** `disableSigner` (GUARDIAN, immediate) is the way to
+  stop a signer, and only it, or revoking the role and granting it again, ends
+  an epoch. An ADMIN change of the signer's execution delay makes it inactive
+  while the delay is nonzero but keeps its epoch. After any suspected
+  compromise, use a fresh key: disable the old one and grant the role to a new
+  address.
 
 **Governance.** The genesis configurator, which holds ADMIN with no delay until
 it renounces it, binds Stream and Editions (`bindStream`, `bindEditions`, each

@@ -141,23 +141,58 @@ contract Eip712CurationVerifierTest is CurationBase {
 
     // ------------------------------------------------------------------------ epochs (SIGS-2)
 
-    function test_signerEpoch_isTheGrantTimeAndTheDisableCount() public {
+    /// @dev The salt a disable or an enable draws: the low 64 bits of
+    ///      `keccak256(abi.encode(block.prevrandao, signer, changes))`.
+    function _salt(address signer, uint64 changes) internal view returns (uint256) {
+        return uint64(uint256(keccak256(abi.encode(block.prevrandao, signer, changes))));
+    }
+
+    function test_signerEpoch_isTheGrantTimeTheSaltAndTheChangeCount() public {
         (uint48 since,,,) = manager.getAccess(Roles.CURATION_SIGNER, signer1);
-        assertEq(verifier.signerEpoch(signer1), uint256(since) << 64);
+        assertEq(verifier.signerEpoch(signer1), uint256(since) << 128);
+        vm.prevrandao(keccak256("the disable block"));
         vm.prank(guardian);
         verifier.disableSigner(signer1);
-        assertEq(verifier.signerEpoch(signer1), uint256(since) << 64 | 1);
+        assertEq(verifier.signerEpoch(signer1), uint256(since) << 128 | _salt(signer1, 1) << 64 | 1);
+        vm.prevrandao(keccak256("the enable block"));
         vm.prank(successor);
         verifier.enableSigner(signer1);
-        assertEq(verifier.signerEpoch(signer1), uint256(since) << 64 | 2, "enabling changes it");
+        uint256 enabled = uint256(since) << 128 | _salt(signer1, 2) << 64 | 2;
+        assertEq(verifier.signerEpoch(signer1), enabled, "enabling changes it");
         vm.startPrank(admin);
         manager.revokeRole(Roles.CURATION_SIGNER, signer1);
-        assertEq(verifier.signerEpoch(signer1), 2, "no grant");
+        assertEq(verifier.signerEpoch(signer1), uint128(enabled), "no grant");
         vm.warp(block.timestamp + 1 days);
         manager.grantRole(Roles.CURATION_SIGNER, signer1, 0);
         vm.stopPrank();
-        assertEq(verifier.signerEpoch(signer1), uint256(block.timestamp) << 64 | 2);
+        assertEq(verifier.signerEpoch(signer1), uint256(block.timestamp) << 128 | uint128(enabled));
         assertEq(verifier.signerEpoch(makeAddr("never a signer")), 0);
+    }
+
+    /// @dev Review of SIGS-2: the epoch an enable starts is salted from the enable's block, so
+    ///      an approval signed while the signer is disabled cannot name it, whether it guesses
+    ///      the next change count or the salt the disable's block would give.
+    function test_isApproved_anApprovalSignedWhileDisabledCannotNameTheNextEpoch() public {
+        vm.prevrandao(keccak256("the disable block"));
+        vm.prank(guardian);
+        verifier.disableSigner(signer1);
+        uint256 disabled = verifier.signerEpoch(signer1);
+        uint256[2] memory guesses =
+            [disabled + 1, (disabled >> 128) << 128 | _salt(signer1, 2) << 64 | 2];
+        bytes[2] memory signed;
+        for (uint256 i; i < 2; ++i) {
+            bytes32 digest = verifier.approvalDigest(ROOT, EVIDENCE, guesses[i]);
+            signed[i] = abi.encode(signer1, _sig(signerKey1, digest));
+        }
+        vm.roll(block.number + 1);
+        vm.prevrandao(keccak256("the enable block"));
+        vm.prank(successor);
+        verifier.enableSigner(signer1);
+        for (uint256 i; i < 2; ++i) {
+            assertTrue(verifier.signerEpoch(signer1) != guesses[i]);
+            assertFalse(_approved(verifier, ROOT, EVIDENCE, signed[i]));
+        }
+        assertTrue(_approved(verifier, ROOT, EVIDENCE, _attestation(signerKey1, ROOT, EVIDENCE)));
     }
 
     function test_isApproved_onlyAtTheCurrentEpoch() public view {

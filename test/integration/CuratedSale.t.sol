@@ -446,6 +446,26 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(signer, signer1);
     }
 
+    /// @dev Review of SIGS-2: an approval signed while the signer is disabled, over the epoch the
+    ///      re-enable would start if it were not salted from the re-enable's block, does not
+    ///      register after the re-enable.
+    function test_AnApprovalSignedWhileDisabledCannotNameTheReEnableEpoch() public {
+        vm.prank(guardian1);
+        verifier.disableSigner(signer1);
+        Work[] memory works = _one(_work(_actor("unvetted"), collectionId));
+        bytes32 packageRoot = _rootOf(works);
+        bytes32 evidence = keccak256("unreviewed evidence");
+        uint256 guess = verifier.signerEpoch(signer1) + 1; // the change count after an enable
+        bytes memory early = abi.encode(
+            signer1, _sign(signer1, verifier.approvalDigest(packageRoot, evidence, guess))
+        );
+        vm.prevrandao(keccak256("the re-enable block"));
+        _govern(hotAdmin, address(verifier), abi.encodeCall(verifier.enableSigner, (signer1)));
+        assertTrue(verifier.signerEpoch(signer1) != guess);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, packageRoot));
+        registry.registerPackage(packageRoot, evidence, early);
+    }
+
     /// @dev SIGS-2: revoking the CURATION_SIGNER role and granting it again to the same key is a
     ///      new grant, with a new epoch: approvals signed under the old grant stay dead.
     function test_RegrantingTheSignerRoleDoesNotReviveOlderApprovals() public {

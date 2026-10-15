@@ -29,9 +29,9 @@ interface ICurationVerifier is IERC165 {
 ///      current `signerEpoch`. A curation signer key is never an on-chain caller: it only signs.
 ///      It counts while it holds the CURATION_SIGNER role with no execution delay and is not
 ///      disabled. Disabling is immediate and one-way (GUARDIAN role); only `enableSigner`
-///      (SUCCESSOR_SETTER role, 30-day delay) restores a signer, at a new epoch, so approvals
-///      signed before or during the disable never count (nor do those signed under a revoked
-///      grant of the role). Disabling affects packages registered afterwards; an approval already
+///      (SUCCESSOR_SETTER role, 30-day delay) restores a signer, at a new epoch: an approval
+///      made before the disable never counts again (nor does one made under a revoked grant of
+///      the role), and one signed during the disable cannot name the re-enable's epoch. Disabling affects packages registered afterwards; an approval already
 ///      registered is withdrawn with `IPackageRegistry.revokePackage`.
 interface ICurationSignerVerifier is ICurationVerifier {
     /// @notice The guardian disabled `signer`.
@@ -53,6 +53,7 @@ interface ICurationSignerVerifier is ICurationVerifier {
     /// @notice Whether an attestation by `signer` counts now.
     function isSignerActive(address signer) external view returns (bool);
     /// @notice The epoch an approval by `signer` must bind to count now. It changes whenever the
-    ///         signer is disabled or enabled, or its CURATION_SIGNER role is granted anew.
+    ///         signer is disabled or enabled (salted from that block, so it cannot be computed
+    ///         earlier), or its CURATION_SIGNER role is granted anew.
     function signerEpoch(address signer) external view returns (uint256);
 }
