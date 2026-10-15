@@ -139,6 +139,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
         return abi.encodeCall(module.lowerCallbackGasLimit, (expected, next));
     }
 
+    /// Regression: DEPS-5 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-5: the raise-only limit could not come back down, so a coordinator maximum
     ///      Chainlink lowered below it ended VRF for the deployment (6529 Stream pins the module).
     ///      A lowering in the 30-day class restores requests; `setConfig` still cannot lower.

@@ -312,8 +312,8 @@ gains an addendum. Trade-off: a guardian targeted by a hostile admin now relies 
 guardian, not the cold admin, to cancel the revocation.
 
 **Regression tests.** `test/integration/GovernanceRecovery.t.sol`
-(`test_GOV1_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`,
-`test_GOV1_TheGuardianVetoIsUnchanged`, `test_GOV1_DemotionsByGrantStayCancellable`);
+(`test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`,
+`test_TheGuardianVetoIsUnchanged`, `test_DemotionsByGrantStayCancellable`);
 `test/governance/GuardianCancel.t.sol` (`test_AdminCannotCancelAnotherAccountsRevocation`,
 `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation`,
 `testFuzz_NobodyCancelsTheirOwnRevocation`);
@@ -350,9 +350,9 @@ guardian, about 90 with a dishonest guardian and a compromised hot admin.
 **Regression tests.** `test/governance/Suspension.t.sol` (12 tests, including
 `test_AGuardianSuspendsAKeyInTheSameBlock`, `testFuzz_OnlyOperationalRolesCanBeSuspended`,
 `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat`);
-`test/integration/GovernanceRecovery.t.sol` (`test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce`,
-`test_GOV2_EveryOperationalRoleCanBeSuspended`, `test_GOV2_ReplacingASuspendedKey`,
-`test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays`);
+`test/integration/GovernanceRecovery.t.sol` (`test_AGuardianSuspendsThePlatformKeyAtOnce`,
+`test_EveryOperationalRoleCanBeSuspended`, `test_ReplacingASuspendedKey`,
+`test_ADishonestGuardiansSuspensionLastsAboutSixtyDays`);
 `test/governance/GovernanceInvariant.t.sol` (`invariant_SuspensionsStayContained`).
 
 **Fix review: approve with nits.** With a suspension added at detection, the original PoC reverts
@@ -481,13 +481,12 @@ or the pause lapses, runs at least the governed auction duration, or the sale's 
 window if longer, even when a bid is standing. ADR 0003 records this as a deviation from ADR 0001
 §12 ("resumes with its remaining time").
 
-**Regression tests.** `test/adv/Lifecycle1Regression.t.sol`
-(`test_LIFECYCLE1_WithdrawnBidStaysAsReserveThroughALapse`,
-`test_LIFECYCLE1_RejectedDisputeResumesWithTheReserveAndTheDuration`,
-`test_LIFECYCLE1_APauseWithAStandingBidAlsoReopensForTheDuration`);
-`test/sales/auction/EnglishAuctionDisputes.t.sol` (`test_Resume_GivesAtLeastTheDuration`);
-`test/sales/auction/EnglishAuctionFollowUp.t.sol`
-(`test_L7_ReopeningIsNeverShorterThanTheLockedWindow`);
+**Regression tests.** `test/sales/auction/AuctionDisputePause.t.sol`
+(`test_WithdrawBid_StaysAsTheReserveThroughALapse`,
+`test_Resume_ARejectedDisputeResumesWithTheReserveAndTheDuration`,
+`test_Pause_WithAStandingBidAlsoReopensForTheDuration`);
+`test/sales/auction/EnglishAuctionDisputes.t.sol` (`test_Resume_GivesAtLeastTheDuration`,
+`test_Resume_ReopeningIsNeverShorterThanTheLockedWindow`);
 `test/sales/auction/invariant/AuctionHaltsInvariant.t.sol`.
 
 **Fix review: approve with nits (two rounds).** Both original PoCs fail. The first round asked
@@ -515,13 +514,13 @@ reports deprecation time in the existing status word. Residual (documented, with
 runbook rule not to overlap halts): an adapter pause during a deprecation counts twice, so the
 schedule moves back by the overlap.
 
-**Regression tests.** `test/adv/Market1Regression.t.sol` (6 tests, including
-`test_MARKET1_PauseStopsTheDutchCurve`,
-`test_MARKET1_PauseKeepsAnAllowlistPhaseOpenForItsRemainingLength`,
-`test_MARKET1_CurrencyDeprecationStopsTheDutchCurve`); `test/adv/SalesFollowUpRegression.t.sol`
-(`test_MARKET1_OverlappingHaltsCountTwice_DutchCurveRewinds`,
-`test_MARKET1_ARunningDeprecationMovesViewsAndTheCloseRule`,
-`test_MARKET1_AHaltBeforeTheStartMovesTheDutchStart`).
+**Regression tests.** `test/sales/SaleSchedulesUnderHalts.t.sol` (10 tests, including
+`test_Pause_StopsTheDutchCurve`,
+`test_Pause_KeepsAnAllowlistPhaseOpenForItsRemainingLength`,
+`test_DeprecateAsset_StopsTheDutchCurve`,
+`test_ScheduleDelay_OverlappingHaltsCountTwice_DutchCurveRewinds`,
+`test_ScheduleDelay_ARunningDeprecationMovesViewsAndTheCloseRule`,
+`test_ScheduleDelay_AHaltBeforeTheStartMovesTheDutchStart`).
 
 **Fix review: approve with nits.** The Dutch price resumes where it stopped and the allowlist phase
 stays open. The reviewer found the overlapping-halt double count; no exact fix exists with
@@ -543,9 +542,9 @@ recipient is ignored. Residual: the recipient is read at settlement, so a later 
 to a zero recipient would recreate a stuck path; the sales README lists this as a prerequisite for
 installing federation.
 
-**Regression tests.** `test/adv/Market3Regression.t.sol`
-(`test_MARKET3_FederatedAuctionPaysTheNetworksFederatedRecipient`,
-`test_MARKET3_ListedWorksKeepTheirOwnFeeRecipient`).
+**Regression tests.** `test/sales/auction/AuctionFederatedTokens.t.sol`
+(`test_Settle_AFederatedAuctionPaysTheNetworksFederatedRecipient`,
+`test_Settle_ListedWorksKeepTheirOwnFeeRecipient`).
 
 **Fix review: approve with nits.** The fee now reaches the resolver's federated recipient. The
 reviewer's zero-recipient case led to the check at start.
@@ -809,7 +808,8 @@ repository root, after `git submodule update --init`:
 ```bash
 forge build --sizes
 forge test                                        # full suite, about 10 minutes
-forge test --match-path "test/adv/*" -vv          # the sales and auction regression tests
+# The sales and auction regression tests on the real stack:
+forge test -vv --match-contract "^(SaleSchedulesUnderHalts|PauseWindow|EditionSaleAuthority|Auction(CurrencyFreeze|Custody|DisputeCancel|DisputePause|FederatedTokens|PayoutFailures))"
 forge test --match-test test_Gas_Table -vv        # ADR 0004 gas table with exact slot counts
 python tools/check_budgets.py --profile default
 python tools/check_genesis.py
@@ -824,39 +824,39 @@ are not part of the repository.
 | --- | --- |
 | GOV-1 | `test/integration/GovernanceRecovery.t.sol`, `test/governance/GuardianCancel.t.sol`, `test/governance/GovernanceInvariant.t.sol` |
 | GOV-2 | `test/governance/Suspension.t.sol`, `test/integration/GovernanceRecovery.t.sol`, `test/governance/GovernanceInvariant.t.sol` |
-| GOV-3, GOV-4, DEPS-3, DEPS-4 | `test/deploy/DeployScript.t.sol` (`test_GOV3_*`, `test_GOV4_*`, `test_DEPS3_*`, `test_DEPS4_*`, Safe module, guard and singleton tests) |
-| GOV-5 | `test/adv/Gov5Regression.t.sol`, `test/adv/SalesFollowUpRegression.t.sol` |
+| GOV-3, GOV-4, DEPS-3, DEPS-4 | `test/deploy/DeployScript.t.sol` (the tests whose `Regression:` line names one of them, such as `test_VerifyRepeatsTheHolderGuards`, `test_OneKeyBehindEveryGuardianSafeIsRefused`, `test_MainnetRefusesANonCanonicalCoordinator` and `test_VerifyChecksTheSubscriptionConsumers`; and the Safe module, guard and singleton tests) |
+| GOV-5 | `test/sales/PauseWindow.t.sol` |
 | IDENTITY-1 | `test/integration/RecoveryRestraint.t.sol`, `test/identity/ArtistRegistry.t.sol`, `test/identity/ArtistRegistry.invariant.t.sol` |
 | IDENTITY-2 | `test/integration/IdentityRecovery.t.sol`, `test/identity/ArtistRegistry.t.sol`, `test/identity/ArtistRegistry.invariant.t.sol` |
-| IDENTITY-3 | `test/identity/ArtistRegistryReview.t.sol` (`test_Standing_*`) |
+| IDENTITY-3 | `test/identity/ArtistRegistryStanding.t.sol` (`test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`, `test_Standing_PendingEntryFollowsALaterReRegistration`, `test_Standing_RevocationObservedOnlyAfterTheThirtyDaysKeepsTheGrace`) |
 | IDENTITY-4 | `test/identity/ConsolidationAdapter.t.sol` (`test_Reads_*`), `test/identity/ArtistRegistry.t.sol` (`test_SourceReadFailure_FailsClosed`) |
 | SIGS-1 = LIFECYCLE-2 | `test/integration/Dispute.t.sol`, `test/curation/PackageRegistry.t.sol` |
 | SIGS-2 | `test/curation/Eip712CurationVerifier.t.sol`, `test/integration/CuratedSale.t.sol`, `test/curation/PackageRegistry.t.sol` (`test_setVerifier_refusesARetiredVerifier`) |
 | SIGS-3 | `test/integration/IdentityRecovery.t.sol` (`test_RotationBackToAPreviousAuthorityIsRefused`), `test/identity/ArtistRegistry.t.sol` |
 | SIGS-4 | `test/integration/MasterEdition.t.sol` (`test_RevokingTheRootDoesNotStrandASoldMastersEdition`) |
-| LIFECYCLE-1 | `test/adv/Lifecycle1Regression.t.sol`, `test/sales/auction/EnglishAuctionDisputes.t.sol`, `test/sales/auction/invariant/AuctionHaltsInvariant.t.sol` |
-| LIFECYCLE-3, CONTENT-3 | `test/integration/ContentReviewRegressions.t.sol` (`test_Locator_*`) |
-| LIFECYCLE-4 | `test/integration/Dispute.t.sol`, `test/records/StatementLogPolicy.t.sol`, `test/adv/Lifecycle4AuctionRegression.t.sol` |
-| MARKET-1 | `test/adv/Market1Regression.t.sol`, `test/adv/SalesFollowUpRegression.t.sol` |
-| MARKET-2 | `test/adv/Market2Regression.t.sol`, `test/sales/auction/EnglishAuction.t.sol` (`test_DeprecatedCurrencyFreezesTheAuction`) |
-| MARKET-3 | `test/adv/Market3Regression.t.sol` |
-| MARKET-5 | `test/adv/Market5Regression.t.sol` |
-| MARKET-6 | `test/adv/Market6Regression.t.sol`, `test/sales/fixed/FixedPriceSale.t.sol`, `test/sales/fixed/FederationRegistry.t.sol` |
-| MONEY-1 | `test/adv/Money1Regression.t.sol`, `test/sales/auction/EnglishAuctionFollowUp.t.sol` |
+| LIFECYCLE-1 | `test/sales/auction/AuctionDisputePause.t.sol`, `test/sales/auction/EnglishAuctionDisputes.t.sol`, `test/sales/auction/invariant/AuctionHaltsInvariant.t.sol` |
+| LIFECYCLE-3, CONTENT-3 | `test/integration/WorkRecordsStack.t.sol` (`test_Locator_*`) |
+| LIFECYCLE-4 | `test/integration/Dispute.t.sol`, `test/records/StatementLogPolicy.t.sol`, `test/sales/auction/AuctionDisputeCancel.t.sol` |
+| MARKET-1 | `test/sales/SaleSchedulesUnderHalts.t.sol` |
+| MARKET-2 | `test/sales/auction/AuctionCurrencyFreeze.t.sol`, `test/sales/auction/EnglishAuction.t.sol` (`test_DeprecatedCurrencyFreezesTheAuction`) |
+| MARKET-3 | `test/sales/auction/AuctionFederatedTokens.t.sol` |
+| MARKET-5 | `test/sales/auction/AuctionFederatedTokens.t.sol` |
+| MARKET-6 | `test/sales/EditionSaleAuthority.t.sol`, `test/sales/fixed/FixedPriceSale.t.sol`, `test/sales/fixed/FederationRegistry.t.sol` |
+| MONEY-1 | `test/sales/auction/AuctionPayoutFailures.t.sol`, `test/sales/auction/EnglishAuction.t.sol` (`test_Settle_AStarvedSettleRevertsInsteadOfCrediting`, `test_Settle_SettlerGasLimitVersusGasUsed`, `test_ClaimFor_RefusesEth`) |
 | MONEY-2 | `test/integration/EscrowRecovery.t.sol`, `test/economics/RevenueEscrow.t.sol` |
 | MONEY-3 = CALLS-4 | `test/economics/ClaimRouter.t.sol` (`test_ContinueMode*`, `test_ShortfallRevertsOnlyBelowTheCeiling`) |
 | MONEY-4 | `test/integration/RecipientValidation.t.sol` |
-| CALLS-1 | `test/integration/RecipientValidation.t.sol`, `test/economics/EconomicsResolver.t.sol`, `test_CALLS1_*` in the auction, fixed-price and Dutch suites |
+| CALLS-1 | `test/integration/RecipientValidation.t.sol`, `test/economics/EconomicsResolver.t.sol`, `test_Start_RefusesTheEscrowAsSellerOrFeeRecipient` in the auction suite and `test_OpenSale_RefusesTheEscrowAsSellerOrFeeRecipient` in the fixed-price and Dutch suites |
 | CALLS-2 = DEPS-2 | `test/entropy/VrfEntropyModule.t.sol` (`test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`) |
-| CALLS-5 | `test/adv/Calls5Regression.t.sol` |
+| CALLS-5 | `test/sales/auction/AuctionCustody.t.sol` |
 | CONTENT-1 | `test/integration/TokenUriBudget.t.sol` |
-| CONTENT-2 | `test/integration/ContentReviewRegressions.t.sol`, `test/content/renderer/Renderer.t.sol` |
+| CONTENT-2 | `test/integration/WorkRecordsStack.t.sol`, `test/content/renderer/Renderer.t.sol` |
 | CONTENT-4 | `test/integration/SyncOnChainResume.t.sol` |
-| CONTENT-5 | `test/content/renderer/RendererReview.t.sol` (`test_TraitNames_*`), `test/content/renderer/RendererOracles.t.sol` |
+| CONTENT-5 | `test/content/renderer/RendererRecords.t.sol` (`test_TraitNames_*`), `test/content/renderer/RendererOracles.t.sol` |
 | DEPS-1 | `test/entropy/VrfEntropyModule.t.sol` (`test_Content_*`), `test/integration/VrfWork.t.sol`, `test/entropy/VrfEntropyInvariant.t.sol` |
 | DEPS-5 | `test/entropy/VrfEntropyManaged.t.sol` |
 | DEPS-6 | `test/curation/PackageRegistry.t.sol`, `test/entropy/VrfEntropyModule.t.sol`, `test/records/StatementLog.t.sol`, `test/identity/ArtistRegistry.t.sol`, `test/integration/RecoveryRestraint.t.sol`, `test/integration/RendererCodePin.t.sol` (the DEPS-6 cases use `vm.etch`) |
-| QUALITY-7 | `test/sales/fixed/FixedPricePayments.t.sol`, `test/sales/fixed/ReviewRegressions.t.sol` |
+| QUALITY-7 | `test/sales/fixed/FixedPricePayments.t.sol`, `test/sales/fixed/FixedPriceSale.t.sol` (`test_Pause_RepeatedPauseOrUnpauseReverts`) |
 
 ### Fix reviews
 

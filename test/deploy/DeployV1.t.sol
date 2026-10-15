@@ -488,6 +488,7 @@ contract DeployV1Test is Test {
         this.checkPlatformPathExternal(d, cfg);
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev GOV-2: a holder a guardian suspended fails readback by name, not as a missing
     ///      member.
     function test_ReadbackRejectsASuspendedHolder() public {

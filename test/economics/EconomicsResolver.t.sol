@@ -151,6 +151,7 @@ contract EconomicsResolverTest is EconomicsBase {
         assertEq(econ.networkFeeRecipient(PRODUCT_STREAM), address(0));
     }
 
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
     /// @dev CALLS-1 (resolver side): a recipient that could never be paid is refused, because
     ///      works lock their fee recipient at mint.
     function test_FeeRecipientMustBePayable() public {

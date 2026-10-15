@@ -102,6 +102,7 @@ contract FederationRegistryTest is FixedPriceBase {
         assertFalse(fixedSale.isTarget(address(fed)));
     }
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-6: a federated token's sale configuration is its artist's (ADR 0001
     ///      section 16), so PLATFORM alone cannot open one, even for a FIXED edition.
     function test_FederatedSale_PlatformAloneCannotOpen() public {

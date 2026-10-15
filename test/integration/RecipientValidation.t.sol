@@ -70,6 +70,7 @@ contract RecipientValidationTest is IntegrationBase {
 
     // ------------------------------------------------------------------ MONEY-4
 
+    /// Regression: MONEY-4 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-4 regression: the claim router, the revenue escrow and every sale adapter
     ///      cannot call `release`, so none may become an artist's payout address.
     function test_PayoutRefusesProtocolContractsThatCannotPull() public {
@@ -101,6 +102,7 @@ contract RecipientValidationTest is IntegrationBase {
         assertEq(artists.payoutAddress(artistId), artist);
     }
 
+    /// Regression: MONEY-4 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-4 regression, the PoC's path: with the router refused as the payout, a stranger
     ///      batching the artist's index gets `NotPayoutAddress`, and the artist's share stays in
     ///      the wallet for the artist alone.
@@ -162,6 +164,7 @@ contract RecipientValidationTest is IntegrationBase {
 
     // ------------------------------------------------------------------ CALLS-1 (resolver)
 
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
     /// @dev CALLS-1 regression, the resolver's side: governance cannot point a product's network
     ///      fee at the revenue escrow, or at another system contract that cannot accept a
     ///      payment. The governed execution reverts after its delay, and the product keeps its
@@ -200,6 +203,7 @@ contract RecipientValidationTest is IntegrationBase {
         }
     }
 
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
     /// @dev CALLS-1, the PoC's flow with the fix: the refused change leaves the fee recipient
     ///      valid, so a work started afterwards settles and pays the network.
     function test_WorksStartedAfterARefusedChangeSettle() public {

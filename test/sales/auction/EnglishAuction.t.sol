@@ -89,6 +89,7 @@ contract EnglishAuctionTest is AuctionBase {
         );
     }
 
+    /// Regression: MARKET-3 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-3: the auction takes the economics resolver (ERC-165 checked) and derives the
     ///      allowlist from it.
     function test_Constructor_RejectsAnUnfitResolver() public {
@@ -343,6 +344,7 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.claimable(alice, address(usd)), 10e18);
     }
 
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-2: deprecation freezes the auction: bids and settlement wait for the
     ///      currency, claims never do, and the first settle after re-admission reopens the
     ///      auction for the governed duration.

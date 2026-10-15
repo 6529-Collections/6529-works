@@ -250,6 +250,7 @@ contract DisputeFlowTest is IntegrationBase {
         );
     }
 
+    /// Regression: SIGS-1, LIFECYCLE-2 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-1 / LIFECYCLE-2: the copier holds a second approved copy of the content (same
     ///      media, another record). Once the upheld dispute burns the first, the release reserves
     ///      the content for the rightful artist the outcome names, so the copy cannot take it in
@@ -343,6 +344,7 @@ contract DisputeFlowTest is IntegrationBase {
         assertEq(registry.releasedTo(contentHash), rightfulId, "the first release stands");
     }
 
+    /// Regression: SIGS-1, DEPS-1 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-1 with SIGS-1: a VRF work keeps its one seed through an upheld dispute. The
     ///      rightful artist's VRF item cannot request while the content is consumed; after the
     ///      release it joins the content's delivered draw, with no new request, and starts.
@@ -432,6 +434,7 @@ contract DisputeFlowTest is IntegrationBase {
         );
     }
 
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
     /// @dev LIFECYCLE-4: an outcome can name only a token that exists (not one not yet minted,
     ///      nor a burned one), and an edition's outcome goes on its master.
     function test_ADisputeOutcomeNamesAnExistingToken() public {
@@ -462,6 +465,7 @@ contract DisputeFlowTest is IntegrationBase {
         statements.appendPlatform(_outcome(address(editions), burned + 1));
     }
 
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
     /// @dev LIFECYCLE-4 (a) and (b), inverted: an outcome recorded about an item before its
     ///      mint (subject `(address(0), itemHash)`) is shown on the work minted from it and on
     ///      that work's edition, until an outcome about the token itself takes precedence.

@@ -822,6 +822,7 @@ contract StatementLogTest is StatementLogFixture {
         _append(Role.ARTIST, artist, _statement());
     }
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the resolver's code hash is checked at every ARTIST authorization, so code
     ///      that replaced the pinned code at its address (here one naming its deployer an artist
     ///      of everything) authorizes nobody.

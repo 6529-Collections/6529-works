@@ -304,6 +304,7 @@ contract DutchSaleTest is DutchBase {
         vm.stopPrank();
     }
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-6: the creator closes a sale it opened, which PLATFORM cannot; PLATFORM closes
     ///      a sale it opened alone.
     function test_CloseSale_ByCreatorOrPlatformOnly() public {

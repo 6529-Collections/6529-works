@@ -319,6 +319,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         return registry.acceptPackage(root_, a, signature);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2: a pending change reserves its next authority. While a recovery override
     ///      to the new key waits, the new key's own acceptance of a package cannot register it as
     ///      a separate artist, so the override executes and the frozen balance goes to the
@@ -358,6 +359,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         assertEq(_relayAcceptance(rootMine, newKey, artist, newKey, ""), artistId);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2 for a STANDARD change: the reservation holds while the change waits, and
     ///      a guardian veto releases it.
     function test_StandardChangeReservesItsNewAuthorityUntilVetoed() public {
@@ -420,6 +422,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         );
     }
 
+    /// Regression: SIGS-3 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-3 on the real contracts: the artist rotates from key A to key B and tries to
     ///      return to A. The return is refused, by a STANDARD change and by an override, so the
     ///      move A signed and never submitted stays dead, and A's acceptance of a new package

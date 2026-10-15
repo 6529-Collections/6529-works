@@ -450,8 +450,8 @@ is a predicted split-wallet address and may not be deployed yet.
 
 So an ERC-20 `settle` needs a gas limit of about 1.11M although it uses about 140K, and an ETH
 `settle` about 460K ([ADR 0004, Security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact);
-`test_MONEY1_SettlerGasLimitVersusGasUsed` in
-[EnglishAuctionFollowUp.t.sol](../../test/sales/auction/EnglishAuctionFollowUp.t.sol)).
+`test_Settle_SettlerGasLimitVersusGasUsed` in
+[EnglishAuction.t.sol](../../test/sales/auction/EnglishAuction.t.sol)).
 `eth_estimateGas` returns these; never reuse the gas a past settlement used. The first payout to
 a new seller wallet creates its account, at the settler's cost.
 

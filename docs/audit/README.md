@@ -66,9 +66,10 @@ Areas where a small change has large effects, or where the review concentrated:
 ## Existing evidence
 
 - **Tests.** Unit, fuzz, stateful invariant, integration and review-regression suites in
-  [`test/`](../../test/); review regressions are in [`test/adv/`](../../test/adv/), named by
-  finding ID. Coverage, mutation testing and Halmos proofs are in
-  [Testing](../testing/README.md).
+  [`test/`](../../test/), organised by contract and function ([the map](../../test/README.md)).
+  A regression test for a review finding carries the finding ID in a `/// Regression:` NatSpec
+  line, so `grep -rn "Regression: MARKET-2" test/` finds every test for MARKET-2. Coverage,
+  mutation testing and Halmos proofs are in [Testing](../testing/README.md).
 - **The internal review.** Findings, fixes, decisions, residual risks and how to reproduce
   them: [internal-review-2026-10.md](../security/internal-review-2026-10.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in

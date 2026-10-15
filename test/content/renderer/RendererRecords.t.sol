@@ -325,6 +325,7 @@ contract RendererRecordsTest is RendererBase {
         assertEq(_str(_out(), ".name"), "N");
     }
 
+    /// Regression: CONTENT-2 (docs/security/internal-review-2026-10.md)
     /// @dev CONTENT-2: a record file the store does not know (an approved manifest never
     ///      registered) is not complete: core-only metadata, never a revert. The primary file's
     ///      own read still fails closed (`test_Store_AnOversizedFileInfoFailsClosed`).

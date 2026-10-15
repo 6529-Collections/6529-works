@@ -93,6 +93,7 @@ abstract contract AuctionHaltsFixture is AuctionBase {
 }
 
 abstract contract AuctionHaltsInvariantBase is AuctionHaltsFixture {
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md)
     /// @dev The auction's balance covers (equals) every live high bid and every credit,
     ///      payout credits (MONEY-1) included; a withdrawn bid's reserve is not counted twice.
     function invariant_BalanceCoversOwed() public view {

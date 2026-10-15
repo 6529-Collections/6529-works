@@ -533,7 +533,7 @@ string, domain label or encoding fails them.
 | [`test/economics/ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_GoldenTypehashDomainAndDigest` | The release typehash, domain and digest |
 | [`test/stream/WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_stateHash_golden` | The state-hash preimage |
 | [`test/sales/fixed/FixedPriceSale.t.sol`](../../test/sales/fixed/FixedPriceSale.t.sol) `test_ConstantsAndTypehashes`, `test_AllowlistLeaf_MatchesTheDefinition` | The allowlist domain, phase typehashes and the leaf formula |
-| [`test/sales/auction/EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol) `test_Permit2Witness_Golden` | The auction's full Permit2 typehashes |
+| [`test/sales/auction/EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol) `test_Permit2Witness_Golden` | The auction's full Permit2 typehashes |
 | [`test/content/tooling/UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) | Chunk hashes and file IDs from the Python uploader against the content store |
 
 The testing guide is

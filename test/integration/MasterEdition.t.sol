@@ -93,6 +93,7 @@ contract MasterEditionFlowTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the link
 
+    /// Regression: SIGS-4 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-4: the guardian revokes the root over another item after a master from it sold.
     ///      Revocation stops unconsumed items only: the sold master still gets its edition
     ///      through the root it was minted from, with no new curation step.

@@ -1323,6 +1323,7 @@ contract PackageRegistryTest is CurationBase {
         assertEq(registry.consumedItemOf(SHA_A), _hash(item));
     }
 
+    /// Regression: SIGS-1 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-1: a released content hash is reserved for the named artist. Another artist's
     ///      approved item with the same content (here the copier's second copy) is refused, in
     ///      the same block as the release, while the named artist's item consumes. Fresh content
@@ -1386,6 +1387,7 @@ contract PackageRegistryTest is CurationBase {
         registry.registerPackage(root, EVIDENCE, abi.encode(signer1, sig));
     }
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the verifier's code hash is checked at every registration, so code that
     ///      replaced the pinned code at the verifier's address (here one that approves anything)
     ///      registers nothing.
@@ -1406,6 +1408,7 @@ contract PackageRegistryTest is CurationBase {
         _consume(root, item, new bytes32[](0), move);
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev Review of SIGS-2: a verifier once replaced is retired and can never be installed
     ///      again (A to B to A is refused), so a swap back cannot bring back the approvals and
     ///      the signer states of the retired verifier.

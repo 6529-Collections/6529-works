@@ -169,6 +169,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         _purchase(relayer, _usdPurchase(alice, 1), new bytes32[](0), pay);
     }
 
+    /// Regression: QUALITY-7 (docs/security/internal-review-2026-10.md)
     /// @dev QUALITY-7: EIP-2612 takes the documented 65-byte `r || s || v` in every adapter, so
     ///      the 64-byte compact (ERC-2098) form of a valid permit is refused, as in the auction.
     function test_Permit_RefusesTheCompactSignatureForm() public {
@@ -404,6 +405,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         _purchase(relayer, p, new bytes32[](0), pay);
     }
 
+    /// Regression: QUALITY-7 (docs/security/internal-review-2026-10.md)
     /// @dev QUALITY-7: a token that reports less than the payer holds fails the payer-side
     ///      delta check with `TokenBalanceMismatch`, as in the auction, not with an arithmetic
     ///      panic.

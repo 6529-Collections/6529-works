@@ -603,8 +603,8 @@ and a head. Also:
 - **A purchase's `SaleSettled` can follow `SaleClosed`.** A recipient's ERC-1155 hook runs
   inside `purchase`, and a creator's hook may close the sale there, and even open a new one.
   Treat `SaleClosed` as "no new purchases", not as a sale's last event
-  (`test_PoC_ReceiverHookCloseReopenIsHarmless` in
-  [`ReviewRegressions.t.sol`](../../test/sales/fixed/ReviewRegressions.t.sol)).
+  (`test_Purchase_AReceiverHookThatClosesAndReopensIsHarmless` in
+  [`FixedPriceSale.t.sol`](../../test/sales/fixed/FixedPriceSale.t.sol)).
 - **Effects come before the summary event.** `ItemConsumed` precedes `WorkMinted`;
   `PrimarySaleSettled` and the delivery precede `SaleSettled`; `Credited` precedes
   `BidPlaced` and `BidWithdrawn`; `RoyaltyRateChanged` precedes `RoyaltyRateSet`;

@@ -229,6 +229,7 @@ contract StatementLogPolicyTest is StatementLogFixture {
         assertEq(stmtLog.latestDisputeOutcome(address(0), 1), bytes32(0));
     }
 
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
     /// @dev LIFECYCLE-4: an outcome about an ERC-721 token needs the token to exist now; an
     ///      ERC-1155 subject is refused (an edition's outcome goes on its master); subjects that
     ///      are not tokens, such as an item or an artist ID, are not checked.

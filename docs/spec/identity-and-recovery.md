@@ -399,7 +399,7 @@ sequenceDiagram
   `ChangeNotDue` before `executableAt`, and the AccessManager drops an operation not executed
   within 7 days of maturing. A later DISPUTE_OUTCOME on the same subject invalidates a scheduled
   resolution. The window between `executableAt` and the lapse is always at least 185 days
-  (`testFuzz_L3_UpholdWindowAlwaysOpen`).
+  (`testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`).
 - **Other ends.** A guardian can still veto; an unresolved contest lapses after 365 days (ID-15,
   LIM-ID-3).
 - Tested by `test_ContestedOverrideUpheldByARecordedVote`
@@ -533,7 +533,7 @@ sequenceDiagram
 ## Rules and invariants
 
 Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (AR),
-[`ArtistRegistryReview.t.sol`](../../test/identity/ArtistRegistryReview.t.sol) (ARR),
+[`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) (ARR),
 [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) (CO),
 [`ConsolidationAdapter.t.sol`](../../test/identity/ConsolidationAdapter.t.sol) (CA),
 [`ArtistRegistry.invariant.t.sol`](../../test/identity/ArtistRegistry.invariant.t.sol) (INV),
@@ -555,17 +555,17 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-10 | The guardian can delete any pending change and has no path that writes an identity. | `ArtistRegistry.vetoChange`; genesis role map | AR `test_Veto_ByGuardian`, `test_Veto_StopsAnOverride`, `test_Attack_GuardianCannotRedirect`; CO `test_Contest_GuardianVetoVoids` |
 | ID-11 | An override needs an override kind and a nonzero evidence hash; `ESTATE` and `LOST_KEY` need 365 days without activity at staging. | `ArtistRegistry.stageOverride` | AR `test_Override_RevertsForInvalidKindOrEvidence`, `test_Override_EstateRevertsBeforeOneYearOfDormancy`, `test_Override_LostKeyBlockedByRecentHeartbeat` |
 | ID-12 | An override that moves the authority needs the new authority's unexpired acceptance, consumed once by digest; a payout-only override needs none. | `ArtistRegistry.stageOverride` | AR `test_Override_AuthorityChangeNeedsTheNewAuthority`, `test_Override_AcceptanceIsSingleUseByDigest`, `test_Override_PayoutOnlyNeedsNoAcceptance` |
-| ID-13 | A captured wallet's cancel during the notice contests an override once; later cancels do nothing; a contested override never executes through `executeChange`; a contest after `executableAt` reverts. | `ArtistRegistry.cancelChange`, `executeChange` | CO `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`, `test_L3_LateContestIsRefusedAndExecutionProceeds`, `test_Contest_IsActivityOnlyForTheCapturedWallet` |
-| ID-14 | A contest is resolved only by citing the latest DISPUTE_OUTCOME on `(registry, artistId)`, recorded after the contest; an uphold waits for `executableAt` and re-checks. | `ArtistRegistry.resolveContested` | CO `test_Contest_VoteUpholdsAndTheArtistRecovers`, `test_M1_StaleOutcomeFromAnEarlierContestIsRejected`, `test_M1_OutcomeRecordedBeforeTheContestIsRejected`, `test_Resolve_UpholdRechecksAtExecution`; IR `test_ContestedOverrideUpheldByARecordedVote` |
-| ID-15 | A contest lapses 365 days after it began: the freeze and the restraint lift at once, and anyone may delete it. | `ArtistRegistry._lapsed`, `expireContest` | CO `test_Contest_LapsesAfterAYear`, `testFuzz_L3_UpholdWindowAlwaysOpen`; RR `test_PowersReturnWhenAContestLapses` |
-| ID-16 | `payoutAddress` is zero exactly while a pending, unlapsed change would move the payout; the payout changes only through an executed change. | `ArtistRegistry.payoutAddress`, `_apply` | AR `test_PayoutFreeze_WhileAPayoutChangeIsPending`, `test_PayoutFreeze_NotForChangesThatKeepThePayout`; ARR `test_PoC4_NoOpOverrideDoesNotFreeze`; INV `invariant_PayoutChangesOnlyThroughExecutedChanges` |
+| ID-13 | A captured wallet's cancel during the notice contests an override once; later cancels do nothing; a contested override never executes through `executeChange`; a contest after `executableAt` reverts. | `ArtistRegistry.cancelChange`, `executeChange` | CO `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`, `test_Contest_ALateContestIsRefusedAndExecutionProceeds`, `test_Contest_IsActivityOnlyForTheCapturedWallet` |
+| ID-14 | A contest is resolved only by citing the latest DISPUTE_OUTCOME on `(registry, artistId)`, recorded after the contest; an uphold waits for `executableAt` and re-checks. | `ArtistRegistry.resolveContested` | CO `test_Contest_VoteUpholdsAndTheArtistRecovers`, `test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest`, `test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest`, `test_Resolve_UpholdRechecksAtExecution`; IR `test_ContestedOverrideUpheldByARecordedVote` |
+| ID-15 | A contest lapses 365 days after it began: the freeze and the restraint lift at once, and anyone may delete it. | `ArtistRegistry._lapsed`, `expireContest` | CO `test_Contest_LapsesAfterAYear`, `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen`; RR `test_PowersReturnWhenAContestLapses` |
+| ID-16 | `payoutAddress` is zero exactly while a pending, unlapsed change would move the payout; the payout changes only through an executed change. | `ArtistRegistry.payoutAddress`, `_apply` | AR `test_PayoutFreeze_WhileAPayoutChangeIsPending`, `test_PayoutFreeze_NotForChangesThatKeepThePayout`; ARR `test_PayoutFreeze_ANoOpOverrideDoesNotFreeze`; INV `invariant_PayoutChangesOnlyThroughExecutedChanges` |
 | ID-17 | A payout that cannot pull is refused at registration and staging, and clears the change at execution. | `ArtistRegistry._payoutAllowed`, `register`, `_checkNext`, `_apply` | AR `test_PayoutValidation_RejectsProtocolContractsAndSplitWallets`, `test_PayoutValidation_RecheckedAtExecution`; RV `test_PayoutRefusesProtocolContractsThatCannotPull`, `test_PredictedWalletIsCaughtOnlyOnceDeployed` |
 | ID-18 | `activeAuthorityOf` is zero exactly while a pending, unlapsed override would move the authority; every creator power reads it. | `ArtistRegistry._active`; consumers in the restraint table | AR `test_ActiveAuthority_RestrainedUntilTheOverrideExecutes`, `test_ActiveAuthority_OnlyAnAuthorityMovingOverrideRestrains`; INV `invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride`; RR (every test) |
 | ID-19 | Only the artist's own signed activity resets the dormancy clock. | `ArtistRegistry._recordActivity` call sites | ARR `test_Activity_OverridesAndVetoesDoNotCount`, `test_Activity_CancelsAndExecutionsCount`, `test_Standing_RefreshAddsButIsNotActivity`; INV `invariant_ActivityAndNonceMatchTheModel` |
 | ID-20 | The snapshot holds at most 16 distinct wallets and evicts nothing; free slots go to established wallets before pending ones. | `ArtistRegistry._update` | ARR `test_Standing_BoundedToSixteen`, `test_Standing_FullSnapshotKeepsMissingEntriesAndSkipsNewOnes`, `test_Standing_EstablishedWalletsTakeFreeSlotsBeforePendingOnes`; INV `invariant_AuthorityAndStandingAreConsistent` |
-| ID-21 | A recorded, established wallet loses standing only after a refresh marks it missing and a refresh at least 30 days later removes it; a wallet still consolidated is never marked missing. | `ArtistRegistry._update` | ARR `test_Standing_LostOnlyAfterAPublicThirtyDayGrace`, `test_PoC1_RevokeThenStageStillCapturesTheWallet`, `test_PoC2_SwapAndPopCannotDisplaceStanding`, `test_N2_StillEstablishedWalletBeyondTheScanKeepsStanding`; IR `test_StickyStandingDefeatsAKeyThief` |
+| ID-21 | A recorded, established wallet loses standing only after a refresh marks it missing and a refresh at least 30 days later removes it; a wallet still consolidated is never marked missing. | `ArtistRegistry._update` | ARR `test_Standing_LostOnlyAfterAPublicThirtyDayGrace`, `test_Standing_RevokeThenStageStillCapturesTheWallet`, `test_Standing_SwapAndPopCannotDisplaceStanding`, `test_Standing_AStillEstablishedWalletBeyondTheScanKeepsStanding`; IR `test_StickyStandingDefeatsAKeyThief` |
 | ID-22 | A pending entry found unconsolidated is removed at once; a pending entry follows its live clock; an established entry's clock only moves earlier. | `ArtistRegistry._update` | ARR `test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`, `test_Standing_PendingEntryFollowsALaterReRegistration`, `test_Standing_ReConsolidationCannotResetTheClock` |
-| ID-23 | The cancellers are the snapshot's effective entries after the staging's own refresh, and never change afterwards. | `ArtistRegistry._stage` | ARR `test_N1_YoungWalletRecordedPendingIsCapturedAfterRevocation`, `test_Standing_StagingAgesOutAMissingWallet`; AR `test_Attack_ThiefRevokingConsolidationsAfterStagingCannotStripCancellers` |
+| ID-23 | The cancellers are the snapshot's effective entries after the staging's own refresh, and never change afterwards. | `ArtistRegistry._stage` | ARR `test_Standing_AYoungWalletRecordedPendingIsCapturedAfterRevocation`, `test_Standing_StagingAgesOutAMissingWallet`; AR `test_Attack_ThiefRevokingConsolidationsAfterStagingCannotStripCancellers` |
 | ID-24 | A wallet is established only through a live, two-way, all-collections, use-case-999 consolidation at least 30 days old. | `ConsolidationAdapter.effectiveAt`, `_liveSince` | CA `test_IsEstablished_OnlyAfterThirtyDays`, `test_IsEstablished_FalseOnceExpired`, `test_IsEstablished_FalseForOneDirection`, `test_IsEstablished_IgnoresOtherUseCases`, `testFuzz_IsEstablished_MatchesModel` |
 | ID-25 | Adapter reads forward exactly 200,000 gas or revert, and fail closed on anything but a cheap no-data revert. | `ConsolidationAdapter._read` | CA `test_Reads_RevertWhenGasCannotBeForwarded`, `test_Reads_PastTheEndRevertsCheaplyWithNoData`, `test_Reads_FailClosedWhenAGetterRunsOutOfGas`, `test_Reads_FailClosedOnARevertWithDataOrAnOversizedReturn` |
 | ID-26 | During a source outage or code-hash mismatch, staging, heartbeats and refreshes revert, while registration and execution proceed and skip their refresh. | `ArtistRegistry._refresh`, `_skipRefresh`, `_source` | AR `test_SourceReadFailure_FailsClosed`, `test_SourceReadFailure_ExecutionSkipsTheRefresh`, `test_ConsolidationSource_CodeHashRecheckedAtUse`; RR `test_SourceMismatchDoesNotBlockRecoveryExecution` |
@@ -599,7 +599,7 @@ Accepted risks are listed once, with their IDs, in
 | Activity lands during the 48-hour scheduling of an `ESTATE` or `LOST_KEY` override | The staging reverts with `NotDormant` | Wait out the dormancy, or stage a `CONTESTED` override |
 | A contest lapses | The freeze and restraint lift; the stale entry blocks new changes | Anyone calls `expireContest`, or a guardian vetoes |
 | The new key tries to accept a package while its change waits | `register` reverts with `AccountTaken` | Accept after the change executes |
-| The old key stays consolidated with the new authority after a rotation | The old key is an established wallet of the new authority and is captured as an override canceller (`test_PoC8_OldKeyConsolidatedWithTheNewAuthorityIsCaptured`) | Revoke that consolidation after rotating; the old key then keeps standing only for the 30-day grace |
+| The old key stays consolidated with the new authority after a rotation | The old key is an established wallet of the new authority and is captured as an override canceller (`test_Standing_AnOldKeyConsolidatedWithTheNewAuthorityIsCaptured`) | Revoke that consolidation after rotating; the old key then keeps standing only for the 30-day grace |
 
 Other accepted risks for this area: wallets planted with the key (LIM-ID-4), standing only for
 recorded wallets (LIM-ID-5), a network that abuses recovery restrains the real artist (LIM-ID-2,
@@ -644,7 +644,7 @@ before mint (LIM-ID-11).
 | Dormancy for `ESTATE` and `LOST_KEY` | 365 days | `ArtistRegistry.DORMANCY` |
 | Grace for a missing wallet | 30 days | `ArtistRegistry.STANDING_GRACE` |
 | Contest lapse | 365 days after the contest | `ArtistRegistry.CONTEST_TIMEOUT` |
-| Minimum uphold window | At least 185 days | `testFuzz_L3_UpholdWindowAlwaysOpen` |
+| Minimum uphold window | At least 185 days | `testFuzz_Contest_TheUpholdWindowIsAlwaysOpen` |
 | Federated contracts per artist | 64 | `ArtistRegistry.MAX_FEDERATED` |
 | Statement-log resolver read at binding | 50,000 gas | `ArtistRegistry.BIND_READ_GAS` (private) |
 | Snapshot entries and captured cancellers | 16 | `Limits.MAX_CANCELLERS` in [`Limits.sol`](../../src/interfaces/types/Limits.sol) |
@@ -656,7 +656,7 @@ before mint (LIM-ID-11).
 | ERC-1271 gas cap; largest signature | 200,000; 4,096 bytes | `SignatureVerifier.ERC1271_GAS_LIMIT`, `MAX_SIGNATURE_LENGTH` |
 | Gas kept for the CALL | 1,000 | `BoundedCall.CALL_RESERVE` |
 | EIP-712 domain | `6529 Works Artist Registry`, version `1` | `Typehashes.ARTIST_REGISTRY_NAME`, `DOMAIN_VERSION` |
-| Worst-case `stageChange`, `stageOverride`, `refreshStanding` | About 5.31M, 5.33M and 4.66M gas, under half the 16,777,216-gas EIP-7825 cap | [`ArtistRegistryReview.t.sol`](../../test/identity/ArtistRegistryReview.t.sol) `test_WorstCase_*` |
+| Worst-case `stageChange`, `stageOverride`, `refreshStanding` | About 5.31M, 5.33M and 4.66M gas, under half the 16,777,216-gas EIP-7825 cap | [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*` |
 | One direct pair check, all cold | About 129,000 gas (8 reads) | `test_WorstCase_DirectCheckBoundedAtEightReads` |
 
 ## Differences from the ADRs

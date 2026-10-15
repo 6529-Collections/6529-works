@@ -169,6 +169,7 @@ contract Eip712CurationVerifierTest is CurationBase {
         assertEq(verifier.signerEpoch(makeAddr("never a signer")), 0);
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev Review of SIGS-2: the epoch an enable starts is salted from the enable's block, so
     ///      an approval signed while the signer is disabled cannot name it, whether it guesses
     ///      the next change count or the salt the disable's block would give.
@@ -204,6 +205,7 @@ contract Eip712CurationVerifierTest is CurationBase {
         }
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev Review SIGS-2, inverted: approvals signed before a disable, including those signed
     ///      while disabled, never count after `enableSigner`; a fresh signature does.
     function test_isApproved_reEnablingDoesNotReviveOlderApprovals() public {
@@ -219,6 +221,7 @@ contract Eip712CurationVerifierTest is CurationBase {
         assertTrue(_approved(verifier, ROOT, EVIDENCE, _attestation(signerKey1, ROOT, EVIDENCE)));
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev Review SIGS-2, inverted: a revoked and re-granted role is a new grant.
     function test_isApproved_regrantingDoesNotReviveOlderApprovals() public {
         bytes memory oldGrant = _attestation(signerKey1, ROOT, EVIDENCE);

@@ -318,6 +318,7 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.executeChange(artistId);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2 (formerly L3, where a registration meanwhile cleared the change): the
     ///      staging reserves the new authority, so neither a registration nor another artist's
     ///      change can take it while the change waits, and the change executes.
@@ -346,6 +347,7 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.reservedFor(newAuthority), 0, "the reservation ends with the change");
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2: only a change that moves the authority reserves anything, an override
     ///      replacing a STANDARD change moves the reservation, and every way a change ends
     ///      releases it.
@@ -380,6 +382,7 @@ contract ArtistRegistryTest is IdentityFixture {
         _register(thief);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2: a change cleared at execution (its payout became a split wallet) releases
     ///      the reservation too.
     function test_Reservation_ReleasedWhenExecutionClears() public {
@@ -764,6 +767,7 @@ contract ArtistRegistryTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
     }
 
+    /// Regression: SIGS-3 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-3: an authority the artist rotated away from never becomes its authority again
     ///      (A, then B, then A is refused), by a STANDARD change or an override, so the signatures
     ///      A left unused (moves, sale consents, acceptances, which check the current authority)
@@ -887,6 +891,7 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.consolidationSourceCodeHash(), address(next).codehash);
     }
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
     ///      source whose code no longer matches the pin (simulated with `vm.etch`) is never
     ///      trusted: staging, heartbeats and refreshes revert with `DependencyCodeChanged`, while an
@@ -982,6 +987,7 @@ contract ArtistRegistryTest is IdentityFixture {
         _stage(artistKey, _identity(artist, payout), 0);
     }
 
+    /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-4: a repriced read within the stipend's headroom changes nothing, and a read
     ///      that exhausts it makes staging, heartbeats and refreshes revert instead of reading
     ///      "not consolidated", while a registration goes ahead and skips its refresh (review
@@ -1235,6 +1241,7 @@ contract ArtistRegistryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- active authority
 
+    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1 (owner decision A): from its staging until it executes, an override that
     ///      would move the authority leaves the artist without an active authority, so nobody
     ///      acts as the artist (`isArtist` is false for both keys); `authorityOf` keeps

@@ -642,6 +642,7 @@ contract VrfEntropyModuleTest is EntropyBase {
 
     // ------------------------------------------------------------------ the pinned coordinator
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the coordinator's code hash is checked at every use, not only at install. If
     ///      the code at the pinned address no longer has the pinned hash, requests and deliveries
     ///      stop until governance installs a coordinator again.
@@ -925,6 +926,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     uint256 internal constant GLAMSTERDAM_NEW_SLOT_EXTRA = 89_000;
     uint256 internal constant GLAMSTERDAM_WRITE_EXTRA = 10_000 - 2900;
 
+    /// Regression: CALLS-2, DEPS-2 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-2 (CALLS-2): the floor must hold under Glamsterdam, with the callback using at
     ///      most half of it. The callback rewrites two nonzero words (the seed over the request
     ///      ID, and the delivered flag) and creates no slot, measured with every slot cold.

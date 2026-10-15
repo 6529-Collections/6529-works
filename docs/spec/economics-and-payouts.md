@@ -505,10 +505,10 @@ sequenceDiagram
 | ECO-30 | Batches are bounded (50 plain, 20 signed); continue mode gives each item at least its minimum and reverts on a shortfall below the ceiling. | `ClaimRouter.claim`, `claimSigned`, `_call` | [`ClaimRouter.t.sol`](../../test/economics/ClaimRouter.t.sol) `test_BatchesUpToMaxClaimsAndRejectsMore`, `test_SignedBatchesAreCappedAndNeedTheirMinimumGas`, `test_ShortfallRevertsOnlyBelowTheCeiling`, `test_ArmedCoPayeeIsSkippedOnceItsItemGetsTheCeiling`, `test_ERC1271ShortfallRevertsBelowTheCeiling` |
 | ECO-31 | The worst-case batches and the 64-payee wallet deployment fit within 75% of the EIP-7825 cap, in Prague gas. | `Splits.MAX_PAYEES`; `ClaimRouter` bounds | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) `test_WorstCaseAtomicClaimBatchFitsTheCap`, `test_WorstCaseAtomicSignedBatchFitsTheCap`, `test_MaximumWalletDeploymentFitsTheCap` |
 | ECO-32 | Admission refuses accounts without code, EIP-7702 delegated accounts, unreadable or inconsistent tokens, zero floors and already-active assets. | `AssetAllowlist.admitAsset`, `_admit` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_AdmitRejectsNonTokens`, `test_AdmitRejectsABalanceAboveTotalSupply`, `test_AdmitRejectsZeroFloorAndActiveAssets` |
-| ECO-33 | A deprecated asset returns only by re-admission, no earlier than 14 days after the deprecation, even if scheduled before it. | `AssetAllowlist.admitAsset` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_DeprecateThenReadmit`; [`SalesFollowUpRegression.t.sol`](../../test/adv/SalesFollowUpRegression.t.sol) `test_MARKET2_AReadmissionScheduledAheadCannotUndoADeprecation` |
+| ECO-33 | A deprecated asset returns only by re-admission, no earlier than 14 days after the deprecation, even if scheduled before it. | `AssetAllowlist.admitAsset` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_DeprecateThenReadmit`; [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol) `test_AdmitAsset_AReadmissionScheduledAheadCannotUndoADeprecation` |
 | ECO-34 | The default currency and `resolveCurrency` fail closed: an unconfigured or inactive currency reverts. | `AssetAllowlist.defaultCurrency`; `EconomicsResolver.resolveCurrency` | [`AssetAllowlist.t.sol`](../../test/economics/AssetAllowlist.t.sol) `test_DefaultCurrencyFailsClosed`; [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `test_ResolveCurrencyThroughTheAllowlist` |
 | ECO-35 | A CC0 default license names the CC0 text the resolver was deployed with. | `EconomicsResolver.setDefaultLicense` | [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `test_ACc0DefaultLicenseNamesThePinnedText` |
-| ECO-36 | An ERC-20 settlement payout that fails even through the escrow does not hold up the work; the credit pays only its own account. | `EnglishAuction._pay`, `settlePayout`, `claimFor` | [`Money1Regression.t.sol`](../../test/adv/Money1Regression.t.sol) `test_MONEY1_ATokenThatBlocksTheAuctionDoesNotHoldTheWork`, `test_MONEY1_ABlockedWalletIsStillPaidThroughTheEscrow`, `test_MONEY1_ClaimForPaysOnlyTheAccountItself` |
+| ECO-36 | An ERC-20 settlement payout that fails even through the escrow does not hold up the work; the credit pays only its own account. | `EnglishAuction._pay`, `settlePayout`, `claimFor` | [`AuctionPayoutFailures.t.sol`](../../test/sales/auction/AuctionPayoutFailures.t.sol) `test_Settle_ATokenThatBlocksTheAuctionDoesNotHoldTheWork`, `test_Settle_ABlockedWalletIsStillPaidThroughTheEscrow`, `test_ClaimFor_PaysOnlyTheAccountItself` |
 
 ## Events
 
@@ -592,7 +592,7 @@ See the [register](README.md#differences-from-the-adrs).
 - Tests: [`test/economics/`](../../test/economics/);
   [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol);
   [`RecipientValidation.t.sol`](../../test/integration/RecipientValidation.t.sol);
-  [`Money1Regression.t.sol`](../../test/adv/Money1Regression.t.sol). How to run them:
+  [`AuctionPayoutFailures.t.sol`](../../test/sales/auction/AuctionPayoutFailures.t.sol). How to run them:
   [testing docs](../testing/README.md).
 - Related pages: [Stream and auctions](stream-and-auctions.md),
   [Editions and sales](editions-and-sales.md), [Identity and recovery](identity-and-recovery.md),

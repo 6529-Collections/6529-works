@@ -133,7 +133,7 @@ implicit and never registered. `WorkRecords.addLocator` accepts exactly these sh
 
 Nothing may follow the address: no path, query or fragment, so no `/`, `?`, `%` or `#`. Refused
 examples, all from the tests
-([`ContentReviewRegressions.t.sol`](../../test/integration/ContentReviewRegressions.t.sol),
+([`WorkRecordsStack.t.sol`](../../test/integration/WorkRecordsStack.t.sol),
 [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol)):
 
 - `https://...` of any kind;

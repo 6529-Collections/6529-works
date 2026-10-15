@@ -342,6 +342,7 @@ contract ConsolidationAdapterTest is IdentityFixture {
         a2.consolidations(a);
     }
 
+    /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-4: the only failed read that ends a walk is an index past the end of an
     ///      array. The Solidity getters (the deployed contract is solc 0.8.18, like this mock in
     ///      this respect) then revert at once with no data, far below the stipend.
@@ -363,6 +364,7 @@ contract ConsolidationAdapterTest is IdentityFixture {
         assertEq(adapter.READ_GAS(), 200_000);
     }
 
+    /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-4: today's cold read is about 16K gas; the 200K stipend absorbs a repricing
     ///      many times that (the review's 35K surcharge exhausted the former 50K stipend), and the
     ///      walk still ends normally at the end of each array.
@@ -377,6 +379,7 @@ contract ConsolidationAdapterTest is IdentityFixture {
         assertEq(wallets[0], b);
     }
 
+    /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-4: a getter that exhausts its gas is a failed read, not "no registration":
     ///      every read reverts with `DelegationReadFailed`.
     function test_Reads_FailClosedWhenAGetterRunsOutOfGas() public {
@@ -393,6 +396,7 @@ contract ConsolidationAdapterTest is IdentityFixture {
         _expectReadsRevert(a2, _readFailed(address(repriced)));
     }
 
+    /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-4: a revert with data, or oversized return data, also fails closed.
     function test_Reads_FailClosedOnARevertWithDataOrAnOversizedReturn() public {
         (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();

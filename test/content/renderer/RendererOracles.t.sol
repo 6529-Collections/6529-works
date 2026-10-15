@@ -60,6 +60,7 @@ contract RendererOraclesTest is RendererBase {
         }
     }
 
+    /// Regression: CONTENT-5 (docs/security/internal-review-2026-10.md)
     /// @dev A record with each attribute name is accepted exactly when the trait-name rule says
     ///      so (CONTENT-5: printable ASCII, no backslash, no two spaces in a row, and not one of
     ///      the renderer's own names in any case or spacing).

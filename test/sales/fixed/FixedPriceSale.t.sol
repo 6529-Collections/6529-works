@@ -460,6 +460,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
     }
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-6: alone, PLATFORM sells at the package price only: discounts and premiums
     ///      alike need the artist.
     function test_Approval_PlatformAloneCannotPriceLeaves() public {
@@ -923,6 +924,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     // ------------------------------------------------------------------ closing
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev The creator closes any sale of its edition; PLATFORM closes only a sale it opened
     ///      without the artist's approval (MARKET-6).
     function test_CloseSale_ByCreatorOrPlatformStopsPurchases() public {

@@ -153,6 +153,7 @@ contract RecoveryRestraintTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the edition sale
 
+    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1 (a): the restrained key can neither close the platform's sale nor open
     ///      its own, and its signed consent does not approve a sale either. The platform's sale
     ///      at the package price keeps selling, its artist share frozen. After execution the new
@@ -209,6 +210,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         fixedSale.openSale(address(editions), masterId, _publicPhase(), none);
     }
 
+    /// Regression: IDENTITY-1, MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-6 with IDENTITY-1: PLATFORM cannot close a sale the artist opened, but while
     ///      a recovery override restrains the artist (the creator resolves to zero) it can, so a
     ///      sale opened with a compromised key is stopped without pausing the adapter.
@@ -231,6 +233,7 @@ contract RecoveryRestraintTest is IntegrationBase {
 
     // ------------------------------------------------------------------ moves and auctions
 
+    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1 (b): neither the restrained key nor the reserved new key can start an
     ///      approved, unminted work. After execution the new key's move starts it, and a no-bid
     ///      settlement delivers to the new key.
@@ -324,6 +327,7 @@ contract RecoveryRestraintTest is IntegrationBase {
 
     // ------------------------------------------------------------------ records and statements
 
+    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1 (c): the restrained key can neither add the artist's locators nor change
     ///      or finalize the record, nor append ARTIST statements. After execution the new key
     ///      does all of it.
@@ -445,6 +449,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         artists.stageChange(artistId, same, newKey, deadline, byNewKey, "");
     }
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev Review of #53 (L-1, DEPS-6): a consolidation source whose code changed during the
     ///      recovery does not block it. The override executes and a new artist registers, both
     ///      skipping their standing refresh without reading the source; staging and refreshes
