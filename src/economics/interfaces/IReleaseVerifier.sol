@@ -44,6 +44,9 @@ interface IReleaseVerifier {
     function consume(Authorization calldata authorization, bytes calldata signature) external;
 
     /// @notice Revokes the caller's unused `nonce` for every wallet.
+    /// @dev Nonces are any `uint256`, used in any order. 256 consecutive nonces (`n` with the same
+    ///      `n / 256`) share one storage word, so signing them in order writes one new slot per
+    ///      256 releases.
     function revokeNonce(uint256 nonce) external;
 
     /// @notice Returns whether `account` has used or revoked `nonce`.

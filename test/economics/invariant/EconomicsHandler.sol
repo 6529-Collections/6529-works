@@ -90,6 +90,8 @@ contract EconomicsHandler is Test {
     mapping(address asset => uint256) public payerResidue;
     /// @notice How often each outcome occurred, to show the campaign is not vacuous.
     mapping(bytes32 => uint256) public outcomes;
+    /// @notice The replacement the non-wallet target (`toggle`) consented to, or zero (MONEY-2).
+    address public toggleConsent;
 
     uint256 internal nonce;
     IReleaseVerifier.Authorization internal lastAuth;
@@ -336,19 +338,43 @@ contract EconomicsHandler is Test {
         ++outcomes["flush.ok"];
     }
 
-    /// @notice Governed recovery between any two targets; only an original and its equivalent
-    ///         replacement (same payees, another salt) may succeed.
+    /// @notice The non-wallet target (`toggle`) names, changes or withdraws its recovery
+    ///         replacement; naming the escrow or itself reverts.
+    function consentToggle(uint256 seed) external {
+        address to = seed % 4 == 0 ? address(0) : _target(seed >> 2);
+        vm.prank(address(toggle));
+        (bool ok, bytes memory ret) =
+            address(escrow).call(abi.encodeCall(IRevenueEscrow.consentToRecovery, (to)));
+        if (to == address(toggle)) {
+            assertFalse(ok, "self-consent should revert");
+            assertEq(ret, abi.encodeWithSelector(IRevenueEscrow.InvalidWallet.selector, to));
+            return;
+        }
+        assertTrue(ok, "consent reverted");
+        toggleConsent = to;
+        assertEq(escrow.recoveryConsent(address(toggle)), to);
+        ++outcomes["consent.set"];
+    }
+
+    /// @notice Governed recovery between any two targets. A wallet's credit may move only to
+    ///         its equivalent replacement (same payees, another salt); the non-wallet target's
+    ///         only to the replacement it consented to.
     function recover(uint256 fromSeed, uint256 toSeed, uint256 assetSeed) external {
         address from = _target(fromSeed);
-        address to = toSeed % 2 == 0 ? _equivalent(from) : _target(toSeed >> 1);
+        uint256 pick = toSeed % 3;
+        address to =
+            pick == 0 ? _equivalent(from) : pick == 1 ? toggleConsent : _target(toSeed >> 2);
         address asset = assets[assetSeed % 3];
         bytes memory expected;
-        if (
-            from == address(toggle) || to == address(toggle) || to == from
-                || _equivalent(from) != to
-        ) {
+        if (from == address(toggle)) {
+            if (to == address(0) || to != toggleConsent) {
+                expected =
+                    abi.encodeWithSelector(IRevenueEscrow.RecoveryNotConsented.selector, from, to);
+            }
+        } else if (to == address(toggle) || to == from || _equivalent(from) != to) {
             expected = abi.encodeWithSelector(IRevenueEscrow.NotEquivalentWallet.selector, from, to);
-        } else if (ghostOwed[from][asset] == 0) {
+        }
+        if (expected.length == 0 && ghostOwed[from][asset] == 0) {
             expected = abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, from, asset);
         }
         (bool ok, bytes memory ret) =
@@ -362,7 +388,11 @@ contract EconomicsHandler is Test {
         assertTrue(ok, "recover reverted");
         ghostOwed[to][asset] += ghostOwed[from][asset];
         ghostOwed[from][asset] = 0;
-        ++outcomes["recover.ok"];
+        if (from == address(toggle)) {
+            toggleConsent = address(0); // single use
+            assertEq(escrow.recoveryConsent(from), address(0));
+        }
+        ++outcomes[from == address(toggle) ? bytes32("recover.consented") : bytes32("recover.ok")];
     }
 
     // ------------------------------------------------------------------ environment

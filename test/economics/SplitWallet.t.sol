@@ -61,8 +61,27 @@ contract SplitWalletTest is EconomicsBase {
         assertEq(address(wallet).balance, 0);
         assertEq(wallet.totalReleased(ETH), 10 ether);
         assertEq(wallet.released(ETH, iArtist), 2 ether);
-        assertEq(wallet.recordedObserved(ETH), 10 ether);
+        assertEq(wallet.recordedObserved(ETH), 0, "ETH keeps no high-water mark");
         assertEq(wallet.observed(ETH), 10 ether);
+    }
+
+    /// @dev ETH receipts never fall: a release counts what it sends as released before sending,
+    ///      and nothing else takes ETH out (forced ETH only adds). So releases need no recorded
+    ///      mark for ETH, and a first ETH release writes the payee's and the wallet's totals only.
+    function test_ETHReceiptsNeverFallAndNeedNoMark() public {
+        vm.deal(address(wallet), 10 ether);
+        uint256 before = wallet.observed(ETH);
+        assertEq(wallet.release(ETH, iAlice), 5 ether);
+        assertGe(wallet.observed(ETH), before);
+        new ForceSender{ value: 1 ether }(payable(address(wallet)));
+        assertEq(wallet.observed(ETH), 11 ether);
+        assertEq(wallet.release(ETH, iBob), 3.3 ether);
+        vm.prank(artistPayout);
+        assertEq(wallet.release(ETH, iArtist), 2.2 ether);
+        assertEq(wallet.release(ETH, iAlice), 0.5 ether);
+        assertEq(wallet.observed(ETH), 11 ether);
+        assertEq(address(wallet).balance, 0);
+        assertEq(wallet.recordedObserved(ETH), 0);
     }
 
     /// @dev Ported from the review: force-sent ETH (no receive hook) is split like any receipt

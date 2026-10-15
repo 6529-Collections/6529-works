@@ -96,3 +96,63 @@
   execution skip their standing refresh when the source cannot read (`StandingRefreshSkipped`),
   while staging, heartbeats and `refreshStanding` still fail closed; `DelegationReadFailed`
   moves to `IConsolidationSource`.
+- Identity (MONEY-4): an artist's payout address may no longer be the claim router, the
+  revenue escrow, a sale adapter or a mint target. These declare their interfaces through
+  ERC-165 (the escrow and the router now do too), and `ArtistRegistry` refuses them at
+  registration, staging and execution (`src/libraries/ProtocolContracts.sol`). A split
+  wallet's predicted address is still refused only once deployed.
+- Economics (CALLS-1, resolver side): `EconomicsResolver` refuses a network fee recipient
+  that could never be paid (`InvalidFeeRecipient`): itself, its allowlist and split factory,
+  and any contract declaring the revenue escrow, claim router, sale adapter or mint target
+  interface. Works lock the recipient at mint, so such a recipient made their sales
+  unsettleable.
+- Economics (MONEY-2): an escrow credit owed to an account that is not a split wallet,
+  such as the network fee recipient's Safe when a token blocks it, can be recovered. The
+  account names its replacement with `RevenueEscrow.consentToRecovery`, and the governed
+  `recover` (14 days) moves the credit only there. The fee recipient's share in existing
+  royalty wallets is released with `releaseTo`; the economics README and ADR 0003 say how.
+- Economics (MONEY-3, CALLS-4): `ClaimRouter` continue mode reverts with
+  `ClaimInsufficientGas` when an item fails after spending all but 1/64 of the gas it was
+  given, so gas estimation raises the limit until a first release (which under Glamsterdam
+  costs far more than the Prague-sized minimums) is paid, instead of settling where it fails
+  silently. A target that burns all its gas now reverts the batch instead of being skipped.
+  The NatSpec, the economics README and ADR 0004 restate the minimums and batch sizes.
+- Tests: the integration gas report measures the split-wallet operations (`createWallet`
+  for a seller wallet, an artist's first ETH `release`, and a first and a later signed
+  release through the claim router), with exact counts and regression ceilings, also in
+  ADR 0004's table.
+- Economics: `Splits.entitlement` uses 6529 Stream's exact, overflow-free share formula
+  instead of a full-width `mulDiv` (identical results for every canonical share, fuzzed
+  over the full range). A split wallet's code shrinks from 5,439 to 5,302 bytes: about
+  27,600 less Prague gas per deployment, and about 211,000 less on Sepolia's Glamsterdam.
+  With the ETH branch below it ends at 5,350 bytes.
+- Economics: split wallets keep no receipts high-water mark for ETH, whose receipts can only
+  grow (nothing but a release takes ETH out, and a release counts it first);
+  `recordedObserved(address(0))` is now always zero. A wallet's first ETH release writes 2
+  new slots instead of 3 (about 111,000 less gas on Sepolia's Glamsterdam), and later ETH
+  releases skip the mark's read and write. ERC-20s keep the mark.
+- Economics: `ReleaseVerifier` keeps release nonces in a bitmap, 256 to a storage word, like
+  the statement log. A payee signing nonces in order writes one new slot per 256 signed
+  releases instead of one each (a later signed release: 1 new slot to 0, about 111,000 less
+  gas on Sepolia's Glamsterdam). `nonceUsed(account, nonce)` is unchanged.
+- Economics (QUALITY-12): split wallets have a constant init code. The wallet's constructor
+  reads its payee list back from the factory (`pendingPayees`, transient storage during
+  `createWallet`), and the CREATE2 salt commits to the payee configuration hash and the
+  caller's salt. `walletFor` no longer hashes the wallet's 6.6 KB creation code: about
+  4,400 Prague gas less per `start` and per `royaltyInfo`, and about 9,000 less per
+  `createEdition`. Every predicted wallet address changes.
+- Economics (review of PR 54, L-1 and L-2): `ClaimRouter` reverts a continue-mode batch on
+  an item's gas shortfall only while the item is offered less than
+  `SHORTFALL_REVERT_CEILING` (1,500,000, about twice a first signed release on Sepolia's
+  Glamsterdam). An item that fails despite the ceiling is skipped, so a party to one item
+  cannot revert a well-funded batch. An ERC-1271 check that could not get its gas
+  (`BoundedCallInsufficientGas`) also counts as a shortfall. The README gives keepers'
+  guidance: simulate privately, and split batches with contract payees or unfamiliar tokens.
+- Economics (MONEY-2 follow-up): a `consentToRecovery` consent is single use. The governed
+  `recover` that moves the account's credit consumes it, so the account consents again for
+  each further asset or later credit.
+- Economics and identity (CALLS-1 and MONEY-4 follow-up): `ProtocolContracts` also
+  recognises the artist registry, the package registry and the work records (ERC-165 IDs
+  they already declare), and `EconomicsResolver` also refuses its factory's release
+  verifier as a fee recipient. The resolver NatSpec, the economics README and the runbook
+  name the system contracts still not recognised on-chain.

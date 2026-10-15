@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 
 /// @title Splits
@@ -39,9 +38,16 @@ library Splits {
     /// @notice A payee's cumulative entitlement: `floor(observed * share / DENOMINATOR)`, computed
     ///         without overflow for any `observed`.
     /// @dev Across all payees the entitlements fall short of `observed` by at most `count - 1`
-    ///      units, and that dust never grows as receipts accumulate.
+    ///      units, and that dust never grows as receipts accumulate. Exact and overflow-free for
+    ///      every `share <= DENOMINATOR` (a canonical payee's always is), the form 6529 Stream's
+    ///      `royaltyInfo` uses: with `observed = q * DENOMINATOR + r`, the floor is
+    ///      `q * share + floor(r * share / DENOMINATOR)`, where `q * share <= observed` and
+    ///      `r * share < DENOMINATOR ** 2`. It replaces a full-width `mulDiv`, which cost each
+    ///      split wallet 137 bytes of code.
     function entitlement(uint256 observed, uint32 share) internal pure returns (uint256) {
-        return Math.mulDiv(observed, share, DENOMINATOR);
+        // Exact: the remainder term restores what the first division drops.
+        // forge-lint: disable-next-line(divide-before-multiply)
+        return (observed / DENOMINATOR) * share + (observed % DENOMINATOR) * share / DENOMINATOR;
     }
 
     /// @notice The canonical payee list of a work's royalty wallet (ADR 0001 section 7): the

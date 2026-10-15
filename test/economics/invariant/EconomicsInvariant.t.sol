@@ -93,7 +93,7 @@ contract EconomicsInvariantTest is Test {
         // The handler exercises governed recovery as the admin (zero delay in this campaign).
         manager.grantRole(manager.ADMIN_ROLE(), address(handler), 0);
 
-        bytes4[] memory selectors = new bytes4[](16);
+        bytes4[] memory selectors = new bytes4[](17);
         selectors[0] = EconomicsHandler.release.selector;
         selectors[1] = EconomicsHandler.releaseTo.selector;
         selectors[2] = EconomicsHandler.releaseSigned.selector;
@@ -110,6 +110,7 @@ contract EconomicsInvariantTest is Test {
         selectors[13] = EconomicsHandler.rebaseTo.selector;
         selectors[14] = EconomicsHandler.toggleOpen.selector;
         selectors[15] = EconomicsHandler.revokeNonce.selector;
+        selectors[16] = EconomicsHandler.consentToggle.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -137,13 +138,16 @@ contract EconomicsInvariantTest is Test {
     }
 
     /// @notice Per payee: released equals what recipients measurably received, and never exceeds
-    ///         the entitlement at the recorded receipts.
+    ///         the entitlement at the receipts the last release saw: the wallet's recorded mark
+    ///         for an ERC-20, the model's for ETH (which keeps no mark on-chain).
     function invariant_ReleasedWithinEntitlement() public view {
         for (uint256 w; w < wallets.length; ++w) {
             SplitWallet wallet = wallets[w];
             for (uint256 k; k < 4; ++k) {
                 address asset = assets[k];
-                uint256 recorded = wallet.recordedObserved(asset);
+                uint256 recorded = asset == ETH
+                    ? handler.modelHigh(address(wallet), ETH)
+                    : wallet.recordedObserved(asset);
                 for (uint256 i; i < wallet.payeeCount(); ++i) {
                     uint256 released = wallet.released(asset, i);
                     assertEq(released, handler.ghostReleased(address(wallet), asset, i));
@@ -173,10 +177,13 @@ contract EconomicsInvariantTest is Test {
     }
 
     /// @notice The recorded receipts follow the model's high-water mark exactly, so they never go
-    ///         down; outside the rebasing token they never exceed the live receipts either.
+    ///         down; outside the rebasing token they never exceed the live receipts either. ETH
+    ///         records no mark, and its live receipts never fall below the model's mark.
     function invariant_ObservedNeverDecreases() public view {
         for (uint256 w; w < wallets.length; ++w) {
-            for (uint256 k; k < 4; ++k) {
+            assertEq(wallets[w].recordedObserved(ETH), 0, "no ETH mark");
+            assertLe(handler.modelHigh(address(wallets[w]), ETH), wallets[w].observed(ETH));
+            for (uint256 k = 1; k < 4; ++k) {
                 address asset = assets[k];
                 uint256 recorded = wallets[w].recordedObserved(asset);
                 assertEq(recorded, handler.modelHigh(address(wallets[w]), asset));
@@ -237,7 +244,7 @@ contract EconomicsInvariantTest is Test {
     function test_HandlerReachesEveryPath() public {
         for (uint256 i; i < 1500; ++i) {
             uint256 r = uint256(keccak256(abi.encode(i)));
-            uint256 action = r % 15;
+            uint256 action = r % 16;
             if (action == 0) {
                 handler.release(r >> 8, r >> 16, r >> 24, r >> 32);
             } else if (action == 1) {
@@ -266,11 +273,13 @@ contract EconomicsInvariantTest is Test {
                 handler.toggleFee();
             } else if (action == 13) {
                 handler.rebaseTo(r >> 8);
+            } else if (action == 14) {
+                handler.consentToggle(r >> 8);
             } else {
                 handler.toggleOpen();
             }
         }
-        bytes32[14] memory paths = [
+        bytes32[16] memory paths = [
             keccak256(abi.encode(bytes32("release"), "ok")),
             keccak256(abi.encode(bytes32("releaseTo"), "ok")),
             keccak256(abi.encode(bytes32("signed"), "ok")),
@@ -284,7 +293,9 @@ contract EconomicsInvariantTest is Test {
             bytes32("pay.escrow"),
             bytes32("pay.reverted"),
             bytes32("flush.ok"),
-            bytes32("recover.ok")
+            bytes32("recover.ok"),
+            bytes32("consent.set"),
+            bytes32("recover.consented")
         ];
         for (uint256 i; i < paths.length; ++i) {
             assertGt(handler.outcomes(paths[i]), 0, vm.toString(i));

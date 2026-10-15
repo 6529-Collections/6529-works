@@ -180,6 +180,15 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     identical payee configuration.
   - No account's share changes, so the consent ADR 0001 §7 requires is
     satisfied trivially.
+  - A credit owed to an account that is not a split wallet, such as the
+    network fee recipient's Safe when a token blocks it, moves only to the
+    replacement that account names itself on the escrow
+    (`consentToRecovery`), through the same governed `recover`. That is the
+    consent ADR 0001 §7 requires, given explicitly and once per recovery: the
+    move consumes it (review of 14 October 2026).
+  - The fee recipient's share in existing royalty wallets is not escrowed: as
+    a fixed payee, it releases that share to another account with
+    `releaseTo`.
 - **Asset allowlist.** Every admission, deprecation and floor change carries a
   revision counter for compare-and-set.
 - **Royalty receiver.**

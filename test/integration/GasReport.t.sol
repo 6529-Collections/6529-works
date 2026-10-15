@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
+import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
+import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
@@ -76,6 +78,10 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PURCHASE_LATER_CEILING = 177_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
+    uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
+    uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
+    uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
+    uint256 internal constant SIGNED_LATER_CEILING = 92_000;
     /// @dev The edition master's terms, as on the Sepolia rehearsal (flows.md, section 3).
     uint64 internal constant EDITION_SIZE = 10;
     uint256 internal constant EDITION_PRICE = 0.0001 ether;
@@ -109,6 +115,8 @@ contract IntegrationGasReport is IntegrationBase {
     address internal starter = makeAddr("starter");
     address internal bidder = makeAddr("gasBidder");
     bytes32 internal root;
+    /// @dev Artist A's seller wallet (predicted; deployed by the split-wallet rows).
+    address internal soloWallet;
 
     function setUp() public override {
         super.setUp();
@@ -126,6 +134,7 @@ contract IntegrationGasReport is IntegrationBase {
         // ADR 0004 assumes the network fee recipient already exists, and off anvil the deploy
         // refuses one that does not. Here it is a placeholder address, so it is funded once.
         vm.deal(networkFee, 1);
+        soloWallet = economics.newWorkTerms(PRODUCT_STREAM, _soloPayees()).seller;
     }
 
     // ------------------------------------------------------------------ measuring and gates
@@ -724,6 +733,116 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 1, 0);
     }
 
+    // ------------------------------------------------------------------ split wallets
+
+    /// @dev Artist A's single-payee list: the seller wallet of every work in this report.
+    function _soloPayees() internal view returns (ISplitWallet.Payee[] memory solo) {
+        solo = new ISplitWallet.Payee[](1);
+        solo[0] = ISplitWallet.Payee(uint160(artistA), address(0), 100_000);
+    }
+
+    /// @dev The split wallets the release rows reach: their storage is cooled with the rest.
+    ///      The address is computed once in `setUp`, so cooling calls nothing and warms no
+    ///      account.
+    function _cooled() internal view override returns (address[] memory all) {
+        address[] memory base = super._cooled();
+        all = new address[](base.length + 1);
+        for (uint256 i; i < base.length; ++i) {
+            all[i] = base[i];
+        }
+        all[base.length] = soloWallet;
+    }
+
+    /// @dev The first sale settled into the seller wallet (0.75 ETH), the wallet deployed, and
+    ///      the artist an existing account (ADR 0004: payees exist).
+    function _fundedWallet() internal returns (address wallet) {
+        uint256 first = _steadyState();
+        _settleAtEnd(first);
+        wallet = splitFactory.createWallet(_soloPayees(), bytes32(0));
+        vm.deal(artistA, artistA.balance + 1);
+    }
+
+    /// @dev The artist's signed release of everything due, nonce `nonce`, to its own account.
+    function _signedClaimData(address wallet, uint256 nonce) internal view returns (bytes memory) {
+        IReleaseVerifier.Authorization memory a = IReleaseVerifier.Authorization(
+            wallet,
+            CURRENCY_ETH,
+            0,
+            artistA,
+            artistA,
+            type(uint256).max,
+            nonce,
+            block.timestamp + 1 days
+        );
+        IClaimRouter.SignedClaim[] memory claims = new IClaimRouter.SignedClaim[](1);
+        claims[0] = IClaimRouter.SignedClaim(a, _sign(artistA, releaseVerifier.releaseDigest(a)));
+        return abi.encodeCall(IClaimRouter.claimSigned, (claims, false));
+    }
+
+    /// @dev A new payee configuration's seller wallet, deployed once (permissionless, off the
+    ///      sale path): the payee list, its configuration hash and the code.
+    function _rowCreateWallet() internal returns (Row memory r) {
+        bytes memory data = abi.encodeCall(splitFactory.createWallet, (_soloPayees(), bytes32(0)));
+        r = _row(
+            "createWallet, a seller wallet (one artist payee)",
+            starter,
+            address(splitFactory),
+            data,
+            0
+        );
+        _gasAtMost(r, CREATE_WALLET_CEILING, "regression ceiling");
+        _growthIs(r, 4, 1);
+    }
+
+    /// @dev The artist pulls its first ETH from the seller wallet: the payee's and the wallet's
+    ///      release totals (ETH keeps no receipts high-water mark).
+    function _rowReleaseFirst() internal returns (Row memory r) {
+        address wallet = _fundedWallet();
+        r = _row(
+            "release, the artist's first ETH release",
+            artistA,
+            wallet,
+            abi.encodeCall(ISplitWallet.release, (CURRENCY_ETH, 0)),
+            0
+        );
+        _gasAtMost(r, RELEASE_FIRST_CEILING, "regression ceiling");
+        _growthIs(r, 2, 0);
+    }
+
+    /// @dev A relayer submits the artist's first signed release through the claim router: the
+    ///      first release's records and the verifier's nonce record.
+    function _rowSignedFirst() internal returns (Row memory r) {
+        address wallet = _fundedWallet();
+        r = _row(
+            "claimSigned, the artist's first signed release (relayed)",
+            makeAddr("relayer"),
+            address(claimRouter),
+            _signedClaimData(wallet, 0),
+            0
+        );
+        _gasAtMost(r, SIGNED_FIRST_CEILING, "regression ceiling");
+        _growthIs(r, 3, 0);
+    }
+
+    /// @dev The artist's next signed release, with the next nonce, after more revenue arrived. The
+    ///      nonce shares its bitmap word with the first, so nothing new is written.
+    function _rowSignedLater() internal returns (Row memory r) {
+        address wallet = _fundedWallet();
+        vm.prank(makeAddr("relayer"));
+        (bool ok, bytes memory ret) = address(claimRouter).call(_signedClaimData(wallet, 0));
+        _bubble(ok, ret);
+        vm.deal(wallet, wallet.balance + 1 ether);
+        r = _row(
+            "claimSigned, a later signed release (the next nonce)",
+            makeAddr("relayer"),
+            address(claimRouter),
+            _signedClaimData(wallet, 1),
+            0
+        );
+        _gasAtMost(r, SIGNED_LATER_CEILING, "regression ceiling");
+        _growthIs(r, 0, 0);
+    }
+
     // ------------------------------------------------------------------ views
 
     /// @dev `royaltyInfo` derives the receiver through the split factory (ADR 0003): one cold
@@ -824,6 +943,22 @@ contract IntegrationGasReport is IntegrationBase {
         _rowRoyaltyInfo();
     }
 
+    function test_Gas_CreateWallet() public {
+        _rowCreateWallet();
+    }
+
+    function test_Gas_Release_First() public {
+        _rowReleaseFirst();
+    }
+
+    function test_Gas_ClaimSigned_First() public {
+        _rowSignedFirst();
+    }
+
+    function test_Gas_ClaimSigned_Later() public {
+        _rowSignedLater();
+    }
+
     function test_Gas_TokenURIBySize() public {
         _tokenUriMatrix(artistA, starter);
     }
@@ -835,7 +970,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[21] memory rows = [
+        function() internal returns (Row memory)[25] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -856,9 +991,13 @@ contract IntegrationGasReport is IntegrationBase {
             _rowPurchaseLater,
             _rowRefreshFirst,
             _rowRefreshFurther,
-            _rowRoyaltyInfo
+            _rowRoyaltyInfo,
+            _rowCreateWallet,
+            _rowReleaseFirst,
+            _rowSignedFirst,
+            _rowSignedLater
         ];
-        Row[21] memory measured;
+        Row[25] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

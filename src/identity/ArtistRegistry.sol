@@ -24,6 +24,7 @@ import { Limits } from "../interfaces/types/Limits.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
 /// @title ArtistRegistry
@@ -77,8 +78,11 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      Payout freeze. While a pending change would move the payout, {payoutAddress} returns
 ///      zero, so split wallets hold accrued balances until the outcome; the artist's own pulls
 ///      pause too. Payouts are validated at registration, staging and execution: never zero,
-///      this registry, the bound package registry, Stream or its Editions, or a split wallet of
-///      the bound split factory (a predicted, undeployed CREATE2 wallet is undetectable).
+///      this registry, the bound package registry, Stream or its Editions, a split wallet of
+///      the bound split factory, or a protocol contract that cannot pull (the revenue escrow,
+///      the claim router, a sale adapter, a mint target, a registry or the work records,
+///      recognised by ERC-165 through `ProtocolContracts`). A predicted, undeployed CREATE2
+///      wallet is undetectable.
 ///
 ///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
@@ -574,13 +578,15 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         return artistIdOf[account] != 0 || (reserved != 0 && reserved != artistId);
     }
 
-    /// @dev False for payouts that would strand or stall pull-only artist funds.
+    /// @dev False for payouts that would strand or stall pull-only artist funds: none of these
+    ///      can call `release`, and a release some other caller triggers for them pays them.
     function _payoutAllowed(address account) private view returns (bool) {
         address s = stream;
         address factory = splitFactory;
         return !(account == address(0) || account == address(this) || account == packageRegistry
                 || (s != address(0) && (account == s || account == IStream(s).editions()))
-                || (factory != address(0) && ISplitFactory(factory).isWallet(account)));
+                || (factory != address(0) && ISplitFactory(factory).isWallet(account))
+                || ProtocolContracts.isProtocolContract(account));
     }
 
     function _checkSource(IConsolidationSource source, bytes32 codeHash) private view {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { Splits } from "src/economics/Splits.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
@@ -50,6 +51,25 @@ contract SplitMathTest is EconomicsBase {
         share = uint32(bound(share, 0, D));
         observed = bound(observed, 0, type(uint256).max / D);
         assertEq(Splits.entitlement(observed, share), observed * share / D);
+    }
+
+    /// @dev The overflow-free form equals a full-width `mulDiv` for every `observed`, up to
+    ///      `type(uint256).max`, and every share a canonical payee can hold.
+    function testFuzz_EntitlementMatchesMulDivOverTheFullRange(uint256 observed, uint32 share)
+        public
+        pure
+    {
+        share = uint32(bound(share, 0, D));
+        assertEq(Splits.entitlement(observed, share), Math.mulDiv(observed, share, D));
+    }
+
+    function test_EntitlementAtTheExtremes() public pure {
+        uint256 max = type(uint256).max;
+        assertEq(Splits.entitlement(max, D), max);
+        assertEq(Splits.entitlement(max, D - 1), Math.mulDiv(max, D - 1, D));
+        assertEq(Splits.entitlement(max, 1), max / D);
+        assertEq(Splits.entitlement(max, 0), 0);
+        assertEq(Splits.entitlement(D - 1, D - 1), D - 2);
     }
 
     function testFuzz_EntitlementIsMonotonic(uint256 a, uint256 b, uint32 share) public pure {

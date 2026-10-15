@@ -5,6 +5,7 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
@@ -18,10 +19,13 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 /// @dev Crediting and flushing are permissionless and never consult the asset allowlist: a credit
 ///      is backed by funds that arrived by exact balance delta, and credits are isolated per asset,
 ///      so a hostile token can only affect its own credits. The one governed path, {recover},
-///      moves a credit only to a replacement split wallet with an identical payee configuration.
-///      It deviates from the consent wording of ADR 0001 section 7: consent is trivially satisfied
-///      because the payees and shares are identical (recorded in ADR 0003). Funds force-sent or
-///      transferred here without a deposit are never owed to anyone and stay put.
+///      needs the consent ADR 0001 section 7 requires. A split wallet's credit moves only to a
+///      replacement wallet with an identical payee configuration, where consent is trivially
+///      satisfied because the payees and shares are identical (recorded in ADR 0003). Any other
+///      account's credit, such as the network fee recipient's, moves only to the replacement that
+///      account named itself with {consentToRecovery}, and each consent covers one recovery.
+///      Funds force-sent or transferred here without a deposit are never owed to anyone and stay
+///      put.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
     /// @inheritdoc IRevenueEscrow
     ISplitFactory public immutable factory;
@@ -30,6 +34,8 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     mapping(address wallet => mapping(address asset => uint256)) public owed;
     /// @inheritdoc IRevenueEscrow
     mapping(address asset => uint256) public totalOwed;
+    /// @inheritdoc IRevenueEscrow
+    mapping(address account => address replacement) public recoveryConsent;
 
     /// @param authority The AccessManager governing {recover}.
     /// @param factory_ The split factory whose wallet configurations {recover} compares.
@@ -71,21 +77,45 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     }
 
     /// @inheritdoc IRevenueEscrow
+    function consentToRecovery(address replacement) external {
+        if (replacement == address(this) || replacement == msg.sender) {
+            revert InvalidWallet(replacement);
+        }
+        recoveryConsent[msg.sender] = replacement;
+        emit RecoveryConsentSet(msg.sender, replacement);
+    }
+
+    /// @inheritdoc IRevenueEscrow
     function recover(address wallet, address replacement, address asset)
         external
         restricted
         nonReentrant
     {
         bytes32 config = factory.configOf(wallet);
-        if (
-            config == bytes32(0) || replacement == wallet || factory.configOf(replacement) != config
-        ) revert NotEquivalentWallet(wallet, replacement);
+        if (config != bytes32(0)) {
+            if (replacement == wallet || factory.configOf(replacement) != config) {
+                revert NotEquivalentWallet(wallet, replacement);
+            }
+        } else {
+            if (replacement == address(0) || recoveryConsent[wallet] != replacement) {
+                revert RecoveryNotConsented(wallet, replacement);
+            }
+            // Single use: one consent covers one recovery of one asset.
+            delete recoveryConsent[wallet];
+        }
         uint256 amount = owed[wallet][asset];
         if (amount == 0) revert NothingOwed(wallet, asset);
         owed[wallet][asset] = 0;
         uint256 balance = owed[replacement][asset] + amount;
         owed[replacement][asset] = balance;
         emit Recovered(wallet, replacement, asset, amount, balance);
+    }
+
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IRevenueEscrow).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
     }
 
     function _credit(address wallet, address asset, uint256 amount) private {

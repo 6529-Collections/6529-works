@@ -546,8 +546,9 @@ abstract contract IntegrationBase is WorksDeployment {
     }
 
     /// @dev Every account whose storage `_coolAll` cools: the deployed contracts, the 6529
-    ///      delegation contract, Permit2 and the test ERC-20.
-    function _cooled() internal view returns (address[] memory all) {
+    ///      delegation contract, Permit2 and the test ERC-20. A report that measures calls into
+    ///      other accounts (split wallets) adds them.
+    function _cooled() internal view virtual returns (address[] memory all) {
         address[24] memory list = [
             address(store),
             address(dependencies),
