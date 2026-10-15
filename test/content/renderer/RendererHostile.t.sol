@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { RendererBase } from "./RendererBase.sol";
-import { HostileStore } from "../../mocks/content/RendererHostile.sol";
+import { BurningRecords, HostileStore } from "../../mocks/content/RendererHostile.sol";
 import { StreamMock } from "../../mocks/stream/StreamMock.sol";
 import {
     GasBurnerMock,
@@ -274,6 +274,28 @@ contract RendererHostileTest is RendererBase {
                 IRenderer.RendererReadFailed.selector,
                 address(records),
                 IWorkRecords.mediaOf.selector
+            )
+        );
+        renderer.tokenURI(address(stream), ID);
+    }
+
+    /// Regression: M1 in the review of #20
+    /// @dev A satellite that spends its gas cap on `preferredLocator` (a stream lane walking a
+    ///      large file to answer an on-chain preference) fails the call: it is not "no media".
+    function test_Records_APreferredLocatorThatRunsOutOfGasFailsClosed() public {
+        bytes32 file = _file(_data(THRESHOLD + 1, 5), IDENTITY, "text/html");
+        _install(file);
+        records.addLocator(ID, file, Locator(LocatorKind.ARWEAVE, "ar://tx"));
+        assertTrue(_has(_out(), ".animation_url"));
+
+        BurningRecords burning = new BurningRecords(address(records), 310_000);
+        stream.setWorkRecords(address(burning));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRenderer.RendererReadFailed.selector,
+                address(burning),
+                IWorkRecords.preferredLocator.selector
             )
         );
         renderer.tokenURI(address(stream), ID);

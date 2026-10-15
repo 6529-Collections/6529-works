@@ -2,44 +2,20 @@
 pragma solidity ^0.8.24;
 
 import { Rec, RendererBase } from "./RendererBase.sol";
-import { RendererEditionsMock, RendererEntropyMock } from "../../mocks/content/RendererMocks.sol";
-import { Renderer } from "src/content/Renderer.sol";
+import { RendererEditionsMock } from "../../mocks/content/RendererMocks.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
+import { SSTORE2 } from "src/libraries/SSTORE2.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 
-/// @dev A records satellite whose `preferredLocator` burns gas, like a stream lane that walks a
-///      large file to answer it.
-contract BurningRecords {
-    address internal immutable inner;
-    uint256 internal immutable burn;
-
-    constructor(address inner_, uint256 burn_) {
-        inner = inner_;
-        burn = burn_;
-    }
-
-    fallback(bytes calldata data) external returns (bytes memory) {
-        if (bytes4(data) == IWorkRecords.preferredLocator.selector) {
-            uint256 start = gasleft();
-            while (start - gasleft() < burn) { }
-        }
-        (bool ok, bytes memory ret) = inner.staticcall(data);
-        if (!ok) {
-            assembly ("memory-safe") {
-                revert(add(ret, 0x20), mload(ret))
-            }
-        }
-        return ret;
-    }
-}
-
-/// @dev Regression tests for the findings of the review of the renderer (each is a case the
-///      review demonstrated, and each now has a defined, safe outcome): what a record may hold,
-///      what the renderer copies, and what it refuses.
-contract RendererReviewTest is RendererBase {
+/// @notice The work record as the renderer reads it: the JSON it accepts (strict, with bounded
+///         nesting, values, escapes and attributes, and a size limit), what it copies into the
+///         metadata, the trait names reserved for its own traits, and every record it refuses
+///         (falling back to core-only metadata marked `invalid`). Many of these cases began as
+///         the PR #20 review's demonstrations, and each now has a defined, safe outcome.
+contract RendererRecordsTest is RendererBase {
     bytes internal png = hex"89504e470d0a1a0a0000000d49484452";
 
     function _raw(bytes memory json) internal {
@@ -66,11 +42,311 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    // ---------------------------------------------------------------- M3: keys
+    // ---------------------------------------------------------------- structure and copying
 
+    function test_Record_WhitespaceAndUnknownMembersAreAccepted() public {
+        _raw(
+            bytes(
+                ' { "files" : { "a.js" : 0 } , "name" : "N" , "dependencies" : [ { "name" : "p5", "version" : "1.9.0" } ] ,'
+                ' "extra": [ 1, -2.5e3, true, false, null, { "k": [ ] } ], "year": 1999 , "attributes" : [ ] } '
+            )
+        );
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".name"), "N");
+        assertEq(_str(j, ".description"), "");
+        assertEq(_attrNum(j, "Year"), 1999);
+    }
+
+    function test_Record_NumbersAndStringsAsAttributeValues() public {
+        _raw(
+            bytes(
+                '{"attributes":[{"trait_type":"Rank","value":3},{"trait_type":"Score","value":-1.5e2},'
+                '{"trait_type":"Mood","value":"calm"}],"name":"N"}'
+            )
+        );
+
+        string memory j = _out();
+
+        assertEq(_attrNum(j, "Rank"), 3);
+        assertEq(vm.parseJsonInt(j, _at(_attrIndex(j, "Score"), ".value")), -150);
+        assertEq(_attr(j, "Mood"), "calm");
+    }
+
+    function test_Record_PercentAndHashInRecordStringsSurviveTheUri() public {
+        _raw(bytes('{"description":"100% #1 %25","name":"a#b%c"}'));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".name"), "a#b%c");
+        assertEq(_str(j, ".description"), "100% #1 %25");
+    }
+
+    function test_Record_EscapesAreCopiedAsTheyAre() public {
+        _raw(bytes('{"description":"q\\" b\\\\ s\\/ \\n \\u00e9 \\ud83d\\ude00","name":"N"}'));
+
+        assertEq(
+            _str(_out(), ".description"),
+            string(bytes.concat('q" b\\ s/ \n ', hex"c3a9", " ", hex"f09f9880"))
+        );
+    }
+
+    function test_Record_MalformedRecordsFallBackToCoreOnly() public {
+        string[13] memory bad = [
+            "{",
+            '{"name":"N"',
+            '{"name":"N"} x',
+            "{\"name\":N}",
+            '{"name":"N",}',
+            "{\"name\":\"a\nb\"}", // a raw newline inside a string
+            '{"name":"\\x"}', // an unknown escape
+            '{"name":"\\u12G4"}', // a bad unicode escape
+            '{"name":"N","year":01}',
+            '{"name":"N","year":1.}',
+            '{"name":"N","extra":tru}',
+            '{"name":"unterminated}',
+            '["name"]'
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
+        }
+    }
+
+    function test_Record_NestingBeyondTheLimitFallsBack() public {
+        _raw(_nested(9));
+        _assertCoreOnly("invalid");
+
+        // Eight levels are fine.
+        _raw(_nested(8));
+        assertEq(_str(_out(), ".name"), "N");
+    }
+
+    function _nested(uint256 levels) internal pure returns (bytes memory json) {
+        json = '{"name":"N","x":';
+        for (uint256 i; i < levels; ++i) {
+            json = bytes.concat(json, "[");
+        }
+        json = bytes.concat(json, "1");
+        for (uint256 i; i < levels; ++i) {
+            json = bytes.concat(json, "]");
+        }
+        json = bytes.concat(json, "}");
+    }
+
+    function test_Record_DuplicatedMembersFallBack() public {
+        string[2] memory bad = ['{"name":"A","name":"B"}', '{"name":"A","year":1,"year":2}'];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
+        }
+    }
+
+    function test_Record_WrongTypesAndMissingNameAreRejected() public {
+        string[11] memory bad = [
+            '{"description":"no name"}',
+            '{"name":""}',
+            '{"name":5}',
+            '{"name":"N","description":5}',
+            '{"name":"N","medium":[]}',
+            '{"name":"N","year":"2026"}',
+            '{"name":"N","year":[1]}',
+            '{"name":"N","artists":[1]}',
+            '{"name":"N","artists":[""]}',
+            '{"name":"N","artists":"Ada"}',
+            '{"name":"N","attributes":5}'
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(bytes(bad[i]));
+            _assertCoreOnly("invalid");
+        }
+        // An attribute is an object with a string name and a string or number value; nothing
+        // else is vouched for.
+        string[8] memory badTraits = [
+            '{"name":"N","attributes":[5]}',
+            '{"name":"N","attributes":[{"value":1}]}',
+            '{"name":"N","attributes":[{"trait_type":"k"}]}',
+            '{"name":"N","attributes":[{"trait_type":5,"value":1}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":true}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":null}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":[1]}]}',
+            '{"name":"N","attributes":[{"trait_type":"k","value":{}}]}'
+        ];
+        for (uint256 i; i < badTraits.length; ++i) {
+            _raw(bytes(badTraits[i]));
+            _assertCoreOnly("invalid");
+        }
+    }
+
+    /// @dev Decision M2: the renderer never reverts for a record: it says so and shows the core.
+    function test_Record_AnInvalidRecordKeepsTheChainTraits() public {
+        _raw(bytes('{"name":5}'));
+        IStream.WorkCore memory core = _core();
+        core.collectionId = 3;
+        core.serial = 12;
+        core.artistId = 0xabc;
+        stream.setWork(ID, core);
+        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        disputeLog.set(address(stream), ID, bytes32(uint256(9)));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".name"), "Spring #12");
+        assertEq(_str(j, ".record_status"), "invalid");
+        assertEq(_attr(j, "Collection"), "Spring");
+        assertEq(_attr(j, "Artist ID"), "0x0abc");
+        assertEq(_attr(j, "Dispute statement"), vm.toString(bytes32(uint256(9))));
+    }
+
+    function test_Record_ARecordThatIsFineHasNoRecordStatus() public {
+        _raw(bytes('{"name":"N"}'));
+        assertFalse(_has(_out(), ".record_status"));
+    }
+
+    function test_Record_AttributesAreCopiedAfterTheRenderersOwnTraits() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _installRaw(
+            bytes(
+                '{"attributes": [ {"trait_type":"Mood","value":"calm"} , {"trait_type":"N","value":3} ],"name":"N"}'
+            ),
+            _media(file, 0)
+        );
+        IStream.WorkCore memory core = _core();
+        core.collectionId = 1;
+        core.serial = 4;
+        stream.setWork(ID, core);
+        stream.setCollection(1, IStream.Collection("C", bytes32(0), 4));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".attributes[0].trait_type"), "Collection");
+        assertEq(_str(j, ".attributes[1].trait_type"), "Serial");
+        assertEq(_str(j, ".attributes[2].trait_type"), "Mood");
+        assertEq(_str(j, ".attributes[2].value"), "calm");
+        assertEq(_attrNum(j, "N"), 3);
+    }
+
+    function test_Record_EmptyOrBlankAttributesLeaveOnlyTheRenderersTraits() public {
+        string[3] memory docs = [
+            '{"attributes":[],"artists":["Ada"],"name":"N"}',
+            '{"attributes":[ \n ],"artists":["Ada"],"name":"N"}',
+            '{"artists":["Ada"],"name":"N"}'
+        ];
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        for (uint256 i; i < docs.length; ++i) {
+            _installRaw(bytes(docs[i]), _media(file, 0));
+            string memory j = _out();
+            assertEq(_attr(j, "Artist"), "Ada");
+            assertFalse(_has(j, _at(1, "")), "one trait only");
+        }
+        // And with nothing of the renderer's own, the record's attributes stand alone.
+        _installRaw(
+            bytes('{"attributes":[{"trait_type":"k","value":"v"}],"name":"N"}'), _media(file, 0)
+        );
+        assertEq(_attr(_out(), "k"), "v");
+        assertFalse(_has(_out(), _at(1, "")));
+    }
+
+    function test_Record_TooManyArtistsFallBack() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        Rec memory r = _rec();
+        r.artists = new string[](Limits.MAX_ARTISTS);
+        for (uint256 i; i < r.artists.length; ++i) {
+            r.artists[i] = "x";
+        }
+        _install(file, r);
+        assertEq(_str(_out(), ".name"), "Title"); // the limit itself is fine
+
+        r.artists = new string[](Limits.MAX_ARTISTS + 1);
+        for (uint256 i; i < r.artists.length; ++i) {
+            r.artists[i] = "x";
+        }
+        _install(file, r);
+        _assertCoreOnly("invalid");
+    }
+
+    function test_Record_MustBeAnIdentityFileWithinTheSizeLimit() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _install(file);
+        IWorkRecords.RecordInfo memory info = _info();
+
+        info.recordFileId = _file(bytes('{"name":"N"}'), GZIP, "application/json");
+        _setRecordInfo(info);
+        _assertCoreOnly("invalid");
+
+        info.recordFileId = _file(bytes('{"name":"N"}'), BASE64, "application/json");
+        _setRecordInfo(info);
+        _assertCoreOnly("invalid");
+
+        // One byte over the limit.
+        info.recordFileId =
+            _file(_data(Limits.MAX_RECORD_BYTES + 1, 2), IDENTITY, "application/json");
+        _setRecordInfo(info);
+        _assertCoreOnly("invalid");
+    }
+
+    /// @dev A record of at most `Limits.MAX_RECORD_BYTES` is a single store chunk, so it is read
+    ///      with one `readChunk`, and the shared limit is what the renderer reads.
+    function test_Record_TheLimitFitsOneStoreChunk() public pure {
+        assertLe(Limits.MAX_RECORD_BYTES, SSTORE2.MAX_CHUNK_LENGTH);
+        assertEq(Limits.MAX_RECORD_BYTES, 12_288);
+        assertEq(Limits.MAX_ARTISTS, 16);
+    }
+
+    function test_Record_ARecordOfExactlyTheLimitIsRead() public {
+        // A record padded with whitespace to exactly the limit.
+        bytes memory json = '{"name":"N"}';
+        uint256 limit = Limits.MAX_RECORD_BYTES;
+        bytes memory padded = new bytes(limit);
+        for (uint256 i; i < limit; ++i) {
+            padded[i] = i < json.length ? json[i] : bytes1(" ");
+        }
+        _raw(padded);
+        assertEq(_str(_out(), ".name"), "N");
+    }
+
+    /// @dev A record one byte over the limit is invalid even when it is otherwise a fine record
+    ///      (white space after the closing brace), and at the limit it is read.
+    function test_Record_OneByteOverTheLimitIsInvalid() public {
+        bytes memory json = '{"name":"N"}';
+        uint256 limit = Limits.MAX_RECORD_BYTES;
+        bytes memory padded = new bytes(limit + 1);
+        for (uint256 i; i < padded.length; ++i) {
+            padded[i] = i < json.length ? json[i] : bytes1(" ");
+        }
+        _raw(padded);
+        _assertCoreOnly("invalid");
+        bytes memory exact = new bytes(limit);
+        for (uint256 i; i < exact.length; ++i) {
+            exact[i] = padded[i];
+        }
+        _raw(exact);
+        assertEq(_str(_out(), ".name"), "N");
+    }
+
+    /// @dev CONTENT-2: a record file the store does not know (an approved manifest never
+    ///      registered) is not complete: core-only metadata, never a revert. The primary file's
+    ///      own read still fails closed (`test_Store_AnOversizedFileInfoFailsClosed`).
+    function test_Record_NotAFileTheStoreKnowsIsIncomplete() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _install(file);
+        IWorkRecords.RecordInfo memory info = _info();
+        info.recordFileId = bytes32(uint256(0xdead));
+        _setRecordInfo(info);
+        _assertCoreOnly("incomplete");
+        vm.expectRevert(
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
+        );
+        renderer.fullTokenURI(address(stream), ID);
+    }
+
+    // ---------------------------------------------------------------- keys and strings
+
+    /// Regression: M3 in the review of #20
     /// @dev `name` is `name` to every JSON parser. Matched on its raw text it would be a
     ///      second `name` to the renderer only; a key with a backslash makes the record invalid.
-    function test_M3_AKeyWithAnEscapeMakesTheRecordInvalid() public {
+    function test_Record_AKeyWithAnEscapeIsInvalid() public {
         string[4] memory bad = [
             '{"name":"Shown","n\\u0061me":"Seen by curators"}',
             '{"n\\u0061me":"N"}',
@@ -86,9 +362,8 @@ contract RendererReviewTest is RendererBase {
         assertEq(_str(_out(), ".name"), "Na");
     }
 
-    // ---------------------------------------------------------------- M4: NUL and surrogates
-
-    function test_M4_NulAndLoneSurrogatesMakeTheRecordInvalid() public {
+    /// Regression: M4 in the review of #20
+    function test_Record_NulAndLoneSurrogatesAreInvalid() public {
         string[8] memory bad = [
             '{"name":"a\\u0000b"}',
             '{"name":"\\ud800"}',
@@ -113,9 +388,10 @@ contract RendererReviewTest is RendererBase {
         );
     }
 
+    /// Regression: M4 in the review of #20
     /// @dev Whatever a record says in its strings, if the renderer accepts it the output is JSON
     ///      that serde_json reads, and the text comes back as written.
-    function testFuzz_M4_AcceptedRecordsGiveJsonEveryParserReads(uint256 seed, uint8 length)
+    function testFuzz_Record_AcceptedRecordsGiveJsonEveryParserReads(uint256 seed, uint8 length)
         public
     {
         string[14] memory pieces = [
@@ -150,9 +426,10 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    // ---------------------------------------------------------------- H2: bounds
+    // ---------------------------------------------------------------- bounds
 
-    function test_H2_TheYearIsAnIntegerOfAtMostSixDigits() public {
+    /// Regression: H2 in the review of #20
+    function test_Record_TheYearIsAnIntegerOfAtMostSixDigits() public {
         string[6] memory good = ["2026", "-500", "0", "999999", "-999999", "1"];
         for (uint256 i; i < good.length; ++i) {
             _raw(_bytes('{"name":"N","year":', string.concat(good[i], "}")));
@@ -172,7 +449,8 @@ contract RendererReviewTest is RendererBase {
         _assertCoreOnly("invalid");
     }
 
-    function test_H2_AtMostTheCapOfPercentAndHashEscapes() public {
+    /// Regression: H2 in the review of #20
+    function test_Record_AtMostTheCapOfPercentAndHashEscapes() public {
         uint256 cap = MAX_ESCAPES;
         bytes memory open = '{"name":"N","description":"';
         // `%` and `#` together make the count.
@@ -188,7 +466,8 @@ contract RendererReviewTest is RendererBase {
         _assertCoreOnly("invalid");
     }
 
-    function test_H2_AtMostTheCapOfAttributes() public {
+    /// Regression: H2 in the review of #20
+    function test_Record_AtMostTheCapOfAttributes() public {
         uint256 cap = MAX_ATTRIBUTES;
         bytes memory one = '{"trait_type":"k","value":1}';
         for (uint256 n = cap; n <= cap + 1; ++n) {
@@ -206,7 +485,8 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    function test_H2_AtMostTheCapOfJsonValues() public {
+    /// Regression: H2 in the review of #20
+    function test_Record_AtMostTheCapOfJsonValues() public {
         // `name` and its value, `a` and the array are six units (a top-level key is two), and
         // each zero is one: 1,018 are the most.
         uint256 cap = 1_024;
@@ -222,11 +502,12 @@ contract RendererReviewTest is RendererBase {
         _assertCoreOnly("invalid");
     }
 
-    // ---------------------------------------------------------------- the second review
+    // ---------------------------------------------------------------- strict JSON
 
-    /// @dev N1: `@` and the backtick are not hex digits; a record with one in a `\u` escape is
+    /// Regression: N1 in the second review of #20
+    /// @dev `@` and the backtick are not hex digits; a record with one in a `\u` escape is
     ///      invalid, wherever the escape is (the name, a description, a trait name, a surrogate).
-    function test_N1_ARecordWithABadHexDigitIsInvalid() public {
+    function test_Record_ABadHexDigitInAnEscapeIsInvalid() public {
         string[6] memory bad = [
             '{"name":"Title\\u004@"}',
             '{"name":"N","description":"\\u`041"}',
@@ -241,9 +522,10 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    /// @dev N2: a number that is out of the binary64 range is invalid (serde_json refuses the
+    /// Regression: N2 in the second review of #20
+    /// @dev A number that is out of the binary64 range is invalid (serde_json refuses the
     ///      whole document and JavaScript reads Infinity), as an attribute value or anywhere.
-    function test_N2_ANumberOutOfRangeIsInvalid() public {
+    function test_Record_ANumberOutOfRangeIsInvalid() public {
         string[5] memory bad = [
             '{"name":"N","attributes":[{"trait_type":"Size","value":1e400}]}',
             '{"name":"N","attributes":[{"trait_type":"Size","value":-1e999}]}',
@@ -262,10 +544,11 @@ contract RendererReviewTest is RendererBase {
         assertTrue(this.parses(j), "serde_json reads the output");
     }
 
-    /// @dev N3: a member twice in an attribute (`display_type` here) is a record that parsers read
+    /// Regression: N3 in the second review of #20
+    /// @dev A member twice in an attribute (`display_type` here) is a record that parsers read
     ///      differently (first wins, last wins, an error): it is invalid, and so is an attribute
     ///      with a member that is not one of the four OpenSea keys.
-    function test_N3_ADuplicatedAttributeMemberIsInvalid() public {
+    function test_Record_ADuplicatedAttributeMemberIsInvalid() public {
         _raw(
             bytes(
                 '{"name":"N","attributes":[{"trait_type":"When","value":1700000000,"display_type":"date","display_type":"number"}]}'
@@ -307,9 +590,10 @@ contract RendererReviewTest is RendererBase {
         assertFalse(_has(_out(), ".record_status"));
     }
 
-    /// @dev H2: every backslash escape counts against the 1,024 of values: a description of
+    /// Regression: H2 in the second review of #20
+    /// @dev Every backslash escape counts against the 1,024 of values: a description of
     ///      escapes is accepted up to the budget, and refused beyond it.
-    function test_H2_EscapesCountAgainstTheValueBudget() public {
+    function test_Record_EscapesCountAgainstTheValueBudget() public {
         bytes memory open = '{"name":"N","description":"';
         // `name` and `description` with their keys are six units, so 1,018 escapes make 1,024.
         _raw(bytes.concat(open, _fill("\\n", 2 * 1_018), '"}'));
@@ -327,41 +611,7 @@ contract RendererReviewTest is RendererBase {
         _assertCoreOnly("invalid");
     }
 
-    // ---------------------------------------------------------------- L1: license URL
-
-    function test_L1_TheLicenseUrlComesOnlyFromAnSpdxIdentifier() public {
-        _install(_file(png, IDENTITY, "image/png"));
-        // A license that tries to break out of the string or the URL.
-        string[9] memory bad = [
-            'MIT","name":"Forged',
-            "MIT/../x",
-            "MIT x",
-            "MIT%41",
-            "MIT#frag",
-            "MIT?x",
-            "MIT\\x",
-            unicode"MITé",
-            "MIT<>"
-        ];
-        for (uint256 i; i < bad.length; ++i) {
-            records.setLicense(ID, License(bad[i], bytes32(0)));
-            string memory j = _decode(renderer.tokenURI(address(stream), ID));
-            assertEq(_str(j, ".name"), "Title", bad[i]);
-            assertEq(_str(j, ".license"), bad[i]);
-            assertFalse(_has(j, ".license_url"), bad[i]);
-        }
-        string[5] memory good =
-            ["Apache-2.0", "GPL-3.0+", "AGPL-3.0-only", "LGPL-2.1-or-later", "A.b+c-1"];
-        for (uint256 i; i < good.length; ++i) {
-            records.setLicense(ID, License(good[i], bytes32(0)));
-            assertEq(
-                _str(_decode(renderer.tokenURI(address(stream), ID)), ".license_url"),
-                string.concat("https://spdx.org/licenses/", good[i], ".html")
-            );
-        }
-    }
-
-    // ---------------------------------------------------------------- L2: reserved traits
+    // ---------------------------------------------------------------- reserved trait names
 
     function _traitRecord(string memory name) internal pure returns (bytes memory) {
         return bytes(
@@ -369,8 +619,9 @@ contract RendererReviewTest is RendererBase {
         );
     }
 
+    /// Regression: L2 in the review of #20
     /// @dev The ten names the renderer writes are the ones a record may not use.
-    function test_L2_ARecordCannotUseARendererTraitName() public {
+    function test_TraitNames_ARecordCannotUseARendererTraitName() public {
         string[10] memory reserved = [
             "Artist",
             "Artist ID",
@@ -396,7 +647,8 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    function test_L2_OtherNamesAreFine() public {
+    /// Regression: L2 in the review of #20
+    function test_TraitNames_OtherNamesAreFine() public {
         string[10] memory fine = [
             "Artists",
             "Year 2",
@@ -417,7 +669,8 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    /// @dev CONTENT-5: the renderer's names are matched in any case and with any spaces, and two
+    /// Regression: CONTENT-5 (docs/security/internal-review-2026-10.md)
+    /// @dev The renderer's names are matched in any case and with any spaces, and two
     ///      spaces in a row are refused, so a name that displays like one of them (`Artist ID`,
     ///      `SEED`, `Serial `, `ArtistID`, `Artist  ID`) is refused.
     function test_TraitNames_ReservedInAnyCaseAndSpacing() public {
@@ -454,7 +707,8 @@ contract RendererReviewTest is RendererBase {
         assertFalse(_has(_out(), ".record_status"));
     }
 
-    /// @dev CONTENT-5: the word-at-a-time check finds two spaces in a row (also across a word
+    /// Regression: CONTENT-5 (docs/security/internal-review-2026-10.md)
+    /// @dev The word-at-a-time check finds two spaces in a row (also across a word
     ///      boundary), a non-ASCII character and DEL at the offsets around each word boundary of
     ///      names of the lengths around them, and takes the same names with a single space.
     function test_TraitNames_AreCheckedAroundWordBoundaries() public {
@@ -487,7 +741,8 @@ contract RendererReviewTest is RendererBase {
         assertFalse(_has(_out(), ".record_status"), "one space");
     }
 
-    /// @dev CONTENT-5: a trait name is printable ASCII, so no character from another script, no
+    /// Regression: CONTENT-5 (docs/security/internal-review-2026-10.md)
+    /// @dev A trait name is printable ASCII, so no character from another script, no
     ///      invisible or no-break space and no DEL can make a name display like the renderer's
     ///      own. Values may still be any UTF-8.
     function test_TraitNames_ArePrintableAscii() public {
@@ -511,10 +766,11 @@ contract RendererReviewTest is RendererBase {
         assertEq(_str(_out(), ".attributes[0].value"), unicode"Caf\u00e9");
     }
 
-    /// @dev Decision H2: a name with a backslash, as a key, is refused, so an escape cannot spell a
-    ///      reserved name. The refusal is for any backslash, of any name length; only names of
+    /// Regression: L2 and H2 in the review of #20
+    /// @dev A name with a backslash, as a key, is refused, so an escape cannot spell a reserved
+    ///      name (the review's decision on H2). The refusal is for any backslash, of any name length; only names of
     ///      at most 16 characters besides spaces are compared with the reserved list.
-    function test_L2_ANameWithABackslashIsRefused() public {
+    function test_TraitNames_ANameWithABackslashIsRefused() public {
         string[6] memory bad = [
             "Artis\\u0074",
             "Caf\\u00e9",
@@ -535,10 +791,11 @@ contract RendererReviewTest is RendererBase {
         assertFalse(_has(_out(), ".record_status"));
     }
 
+    /// Regression: L2 in the review of #20
     /// @dev The backslash check reads a name a word at a time: it finds a backslash (here the first
     ///      byte of an escaped backslash) at every offset of names of every length up to two words
     ///      and a bit, and takes the same names without one.
-    function test_L2_ABackslashIsFoundAtEveryOffset() public {
+    function test_TraitNames_ABackslashIsFoundAtEveryOffset() public {
         for (uint256 length = 2; length < 71; ++length) {
             for (uint256 pos; pos + 2 <= length; pos += (length < 40 ? 1 : 7)) {
                 bytes memory name = _fill("a", length);
@@ -552,9 +809,10 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
+    /// Regression: L2 in the review of #20
     /// @dev The names the renderer writes have at most 16 letters; the one of 16 ("Dispute
     ///      statement") is still found, and a name one letter longer is not reserved.
-    function test_L2_TheLongestReservedNameIsFound() public {
+    function test_TraitNames_TheLongestReservedNameIsFound() public {
         assertEq(bytes('"Dispute statement"').length, 19);
         _raw(_traitRecord("Dispute statement"));
         _assertCoreOnly("invalid");
@@ -562,10 +820,11 @@ contract RendererReviewTest is RendererBase {
         assertFalse(_has(_out(), ".record_status"));
     }
 
+    /// Regression: L2 in the review of #20
     /// @dev Every trait the renderer writes is a name a record may not use: the output of a work
     ///      with a collection, a seed, a dispute and a record, of an edition, and of a work with
     ///      no record (the only one with `Artist ID`).
-    function test_L2_TheReservedNamesAreExactlyTheOnesTheRendererWrites() public {
+    function test_TraitNames_TheReservedNamesAreExactlyTheOnesTheRendererWrites() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         Rec memory r = _rec();
         r.dimensions = "1 x 1";
@@ -611,115 +870,5 @@ contract RendererReviewTest is RendererBase {
         uint256 count;
         while (_has(full, _at(count, ""))) ++count;
         assertEq(count, 8, "Artist, Year, Medium, Dimensions, Collection, Serial, Seed, Dispute");
-    }
-
-    // ---------------------------------------------------------------- L4: license text
-
-    function test_L4_ALicenseRefGivesItsTextFileAndALocatorOfIt() public {
-        bytes32 text = _file("The terms.", IDENTITY, "text/plain");
-        bytes32 file = _file(png, IDENTITY, "image/png");
-        _install(file);
-        MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(text, _sha(text), FileRole.AUXILIARY);
-        records.setMedia(ID, media);
-        records.setLicense(ID, License("LicenseRef-Studio-1", text));
-        records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://terms"));
-
-        string memory j = _out();
-
-        assertEq(_str(j, ".license"), "LicenseRef-Studio-1");
-        assertEq(_str(j, ".license_text_file"), vm.toString(text));
-        assertEq(_str(j, ".license_url"), "ar://terms");
-    }
-
-    function test_L4_WithoutAListedFileOrALocatorThereIsNoUrl() public {
-        bytes32 text = _file("The terms.", IDENTITY, "text/plain");
-        _install(_file(png, IDENTITY, "image/png"));
-        records.setLicense(ID, License("LicenseRef-Studio-1", text));
-
-        // The text file is not one of the work's media: no URL, even if the satellite happens to
-        // know a copy of it (locators exist for media files, and are not read for other files).
-        records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://not-media"));
-        string memory j = _out();
-        assertEq(_str(j, ".license_text_file"), vm.toString(text));
-        assertFalse(_has(j, ".license_url"));
-
-        // Listed, but with no copy anywhere: still no URL.
-        bytes32 bare = _file("Other terms.", IDENTITY, "text/plain");
-        records.setLicense(ID, License("LicenseRef-Studio-1", bare));
-        bytes32 file = _file(png, IDENTITY, "image/png");
-        MediaFile[] memory media = new MediaFile[](2);
-        media[0] = MediaFile(file, _sha(file), FileRole.PRIMARY);
-        media[1] = MediaFile(bare, _sha(bare), FileRole.AUXILIARY);
-        records.setMedia(ID, media);
-        j = _out();
-        assertEq(_str(j, ".license_text_file"), vm.toString(bare));
-        assertFalse(_has(j, ".license_url"));
-    }
-
-    function test_L4_AnSpdxLicenseWithATextFileKeepsTheSpdxPage() public {
-        bytes32 text = _file("The terms.", IDENTITY, "text/plain");
-        _install(_file(png, IDENTITY, "image/png"));
-        records.setLicense(ID, License("MIT", text));
-
-        string memory j = _out();
-
-        assertEq(_str(j, ".license_url"), "https://spdx.org/licenses/MIT.html");
-        assertEq(_str(j, ".license_text_file"), vm.toString(text));
-    }
-
-    function test_L4_NoTextFileNoField() public {
-        _install(_file(png, IDENTITY, "image/png"));
-        assertFalse(_has(_out(), ".license_text_file"));
-    }
-
-    // ---------------------------------------------------------------- M1: locator reads
-
-    /// @dev A satellite that spends its gas cap on `preferredLocator` (a stream lane walking a
-    ///      large file to answer an on-chain preference) fails the call: it is not "no media".
-    function test_M1_APreferredLocatorThatRunsOutOfGasFailsClosed() public {
-        bytes32 file = _file(_data(THRESHOLD + 1, 5), IDENTITY, "text/html");
-        _install(file);
-        records.addLocator(ID, file, Locator(LocatorKind.ARWEAVE, "ar://tx"));
-        assertTrue(_has(_out(), ".animation_url"));
-
-        BurningRecords burning = new BurningRecords(address(records), 310_000);
-        stream.setWorkRecords(address(burning));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IRenderer.RendererReadFailed.selector,
-                address(burning),
-                IWorkRecords.preferredLocator.selector
-            )
-        );
-        renderer.tokenURI(address(stream), ID);
-    }
-
-    // ---------------------------------------------------------------- E6: escaping
-
-    /// @dev Strings from the Stream, the store and the satellite reach a `data:` URI too: a `%`
-    ///      or `#` in a collection name, a locator or a license identifier is escaped as well.
-    function test_E6_PercentAndHashInStreamAndSatelliteStringsAreEscaped() public {
-        bytes32 file = _file(_data(THRESHOLD + 1, 6), IDENTITY, "image/png");
-        _install(file);
-        IStream.WorkCore memory core = _core();
-        core.collectionId = 1;
-        core.serial = 4;
-        stream.setWork(ID, core);
-        stream.setCollection(1, IStream.Collection("50% off #1", bytes32(0), 4));
-        records.addLocator(ID, file, Locator(LocatorKind.IPFS, "ipfs://a%b#c"));
-        records.setLicense(ID, License("Nonsense%License#1", bytes32(0)));
-
-        string memory uri = _uri();
-        string memory j = _decode(uri); // fails on a raw `#` or a stray `%`
-
-        assertEq(_attr(j, "Collection"), "50% off #1");
-        assertEq(_str(j, ".image"), "ipfs://a%b#c");
-        assertEq(_str(j, ".license"), "Nonsense%License#1");
-        // And the same in the core-only form, whose name is the collection's.
-        _setOpen(false);
-        assertEq(_str(_out(), ".name"), "50% off #1 #4");
     }
 }
