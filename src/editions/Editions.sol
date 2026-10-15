@@ -58,10 +58,11 @@ import { EditionRules } from "./EditionRules.sol";
 ///      ever (burns do not free supply), and for OPEN editions only during `window` seconds from
 ///      the first mint. A master with an edition is never burned (Stream refuses to burn a
 ///      settled token), so minting reads nothing from Stream. The sale adapter owns the currency:
-///      `primaryTerms` and `mint` return the package's stored currency, possibly
-///      `CURRENCY_DEFAULT` (allowed only with a zero price), and the adapter resolves and locks
-///      it when it opens a sale (ADR 0001 section 5). Royalties are read from this contract's
-///      storage with no external call. The receiver is the edition's split (from
+///      `primaryTerms` returns the package's stored currency, possibly `CURRENCY_DEFAULT`
+///      (allowed only with a zero price), and the adapter resolves and locks it when it opens a
+///      sale (ADR 0001 section 5); `mint` returns only the sale kind of its terms. Royalties are
+///      read from this contract's storage with no external call. The receiver is the edition's
+///      split (from
 ///      `PRODUCT_EDITIONS` economics) and never changes; the rate starts at the master's current
 ///      rate, so a consented re-rate of the master before the edition exists carries over, and
 ///      the bound work-records satellite re-rates the edition with its master afterwards (every
@@ -292,8 +293,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     // ----------------------------------------------------------------------- minting
 
     /// @inheritdoc IMintTarget
-    /// @dev `data` must be empty. Effects precede the ERC-1155 acceptance call, so a reentering
-    ///      receiver sees the updated supply.
+    /// @dev `data` must be empty. `terms` carries only the sale kind: the adapters lock the full
+    ///      terms when a sale opens (`primaryTerms`) and never read them from a mint, so a
+    ///      purchase skips the record reads and the artist-registry call (QUALITY-2). Effects
+    ///      precede the ERC-1155 acceptance call, so a reentering receiver sees the updated supply.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
@@ -324,7 +327,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         // casting to 'uint64' is safe because amount <= cap - minted <= type(uint64).max - minted
         // forge-lint: disable-next-line(unsafe-typecast)
         e.minted += uint64(amount);
-        terms = _primaryTerms(id, e);
+        terms.saleKind = kind;
         _mint(to, id, amount, "");
         return (id, terms);
     }

@@ -34,7 +34,8 @@ interface IMintTarget {
     /// @param amount The number of tokens.
     /// @param data Token-specific authorization, opaque to the adapter.
     /// @return tokenId The minted token ID.
-    /// @return terms The primary-sale terms of `tokenId`.
+    /// @return terms The primary-sale terms of `tokenId`. 6529 Editions sets only `saleKind`: its
+    ///         adapters apply the terms they locked from `primaryTerms` when the sale opened.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256 tokenId, PrimaryTerms memory terms);

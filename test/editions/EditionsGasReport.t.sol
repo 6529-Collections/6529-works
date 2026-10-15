@@ -18,7 +18,7 @@ import { IntegrationBase } from "../integration/IntegrationBase.sol";
 contract EditionsGasReport is IntegrationBase {
     /// @dev Regression ceilings, with headroom over the measured values.
     uint256 internal constant CREATE_CEILING = 330_000;
-    uint256 internal constant MINT_CEILING = 110_000;
+    uint256 internal constant MINT_CEILING = 88_000;
 
     address internal artist;
     bytes32 internal root;

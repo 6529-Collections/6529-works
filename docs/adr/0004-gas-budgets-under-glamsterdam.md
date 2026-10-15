@@ -137,8 +137,8 @@ no ceiling, or not run on Sepolia.
 | `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
 | `openSale` (one public phase) | 292,853 | 299,000 (regression) | 8 | 0 | 993,668 |
-| `purchase`, the first copy, new holder | 170,746 | 175,000 (regression) | 2 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 153,646 | 157,000 (regression) | 1 | 0 | 370,142 |
+| `purchase`, the first copy, new holder | 148,880 | 152,000 (regression) | 2 | 0 | 468,086 |
+| `purchase`, a later copy, new holder | 131,780 | 135,000 (regression) | 1 | 0 | 370,142 |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
@@ -179,6 +179,10 @@ no ceiling, or not run on Sepolia.
     purchase count, so a new buyer in one writes one slot fewer: `purchase` 3 → 2
     new slots for the first copy and 2 → 1 for a later copy, about 23K less Prague
     gas each.
+  - QUALITY-2: `Editions.mint` returns only the sale kind of its terms, which the
+    adapters never read (they apply the terms locked at `openSale`). A purchase
+    no longer reads the rest of the edition record or calls the artist registry:
+    about 21.9K less Prague gas per `purchase`, with no change in slots.
 - **The two-party `startWithBid` is the tightest:** 341,251, about 8.7K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 377,833**, about 45K more
