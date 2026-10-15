@@ -51,10 +51,10 @@ jobs:
         # Cited test names, interface IDs, event topic0 values and nSLOC figures match the code.
         run: python tools/check_docs_facts.py
 
-  contracts:
-    name: Contracts
+  checks:
+    name: Build and checks
     runs-on: ubuntu-latest
-    # ADR 0001 budget: the whole CI finishes in under 15 minutes.
+    # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
 
     steps:
@@ -132,9 +132,6 @@ jobs:
             ~/.svm
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
-      - name: Test
-        run: forge test
-
       - name: Docs facts against the build
         # The audit scope's bytecode sizes, computed interface IDs and ABI event signatures.
         run: python tools/check_docs_facts.py --artifacts out
@@ -154,6 +151,13 @@ jobs:
       - name: Genesis checker unit tests
         run: python -m tools.test_check_genesis
 
+      - name: Coverage and mutation tool unit tests
+        # The tools run on main and on a schedule (strength.yml, mutation.yml); their unit
+        # tests are cheap enough for every pull request.
+        run: |
+          python -m tools.test_check_coverage
+          python -m tools.test_mutation
+
       - name: Content tooling tests
         # tools/content (standard library only). test_anvil.py sends the emitted calldata to the
         # compiled ContentStore on a local Anvil node, installed with Foundry above; with
@@ -161,6 +165,108 @@ jobs:
         env:
           CONTENT_E2E_REQUIRE: "1"
         run: python -m unittest discover -s tools/content -t . -p "test_*.py"
+
+  tests:
+    name: Tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    # ADR 0001 budget: every CI job finishes in under 15 minutes.
+    timeout-minutes: 15
+    # `forge test` in three parallel parts that together run every test exactly once:
+    # everything but the invariant tests, the economics invariants (the longest suite), and
+    # the other invariants. Each part builds incrementally from the cached compiler output.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: unit, fuzz and integration
+            filter: --no-match-test ^invariant
+          - name: economics invariants
+            filter: --match-test ^invariant --match-contract ^EconomicsInvariant
+          - name: other invariants
+            filter: --match-test ^invariant --no-match-contract ^EconomicsInvariant
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          # lib/openzeppelin-contracts and lib/forge-std only; their nested
+          # submodules are test-only and not needed.
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Identify compiler inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Staged records bind paths, blob IDs, modes and the lib/ submodule commits.
+          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib | sha256sum | cut -d ' ' -f1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiler output
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            out
+            cache
+            ~/.svm
+          key: ${{ runner.os }}-${{ runner.arch }}-forge-1.7.1-solc-0.8.37-${{ steps.inputs.outputs.digest }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-forge-1.7.1-solc-0.8.37-
+
+      - name: Test
+        env:
+          FILTER: ${{ matrix.filter }}
+        # FILTER is fixed in this file (word splitting is intended).
+        run: forge test $FILTER
+
+  contracts:
+    # The required check: green only when the build, the checks and every test part are.
+    name: Contracts
+    needs: [checks, tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Every part passed
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          echo "Build and checks: $CHECKS; tests: $TESTS"
+          test "$CHECKS" = success
+          test "$TESTS" = success
 
   static-analysis:
     name: Static analysis

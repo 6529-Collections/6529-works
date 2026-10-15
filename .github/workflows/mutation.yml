@@ -1,0 +1,200 @@
+name: Mutation
+
+# Mutation testing of src/ with slither-mutate (docs/testing/README.md, "Mutation testing").
+# Too slow for pull requests: it runs weekly and on demand, one job per shard of
+# tools/mutation.py, then merges the shards into one report. A merge to main that changes this
+# workflow or the tool runs one small shard only, to show the pipeline still works end to end
+# (not on pull requests: even one shard takes minutes of a shared runner).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mutation.yml"
+      - "tools/mutation.py"
+  schedule:
+    # Sundays at 02:00 UTC.
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: "Shards to run, space-separated (default: all; see `python tools/mutation.py list`)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.shards.outputs.shards }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Shards
+        id: shards
+        env:
+          # A push runs one small shard (six mutants of the hash-algorithm constants); schedule
+          # and dispatch default to all of them.
+          REQUESTED: >-
+            ${{ github.event_name == 'push' && 'interfaces-HashRef' || inputs.shards }}
+        run: |
+          python tools/mutation.py list --json > all-shards.json
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, sys
+          known = json.load(open("all-shards.json", encoding="utf-8"))
+          requested = os.environ.get("REQUESTED", "").split()
+          unknown = [s for s in requested if s not in known]
+          if unknown:
+              sys.exit(f"unknown shards: {unknown}")
+          print("shards=" + json.dumps(requested or known))
+          PY
+
+  shard:
+    name: Shard ${{ matrix.shard }}
+    needs: plan
+    runs-on: ubuntu-latest
+    # A shard mutates a few files; the largest takes a few hours on a 4-core runner.
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      # Leaves most of the organisation's concurrent jobs to pull requests while it runs.
+      max-parallel: 8
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Install slither-mutate
+        # Every package is pinned and hash-checked; wheels only, so nothing is built.
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary=:all: --no-deps -r requirements-tools.lock
+
+      - name: Mutate
+        # Edits src/ in this throwaway checkout and restores every file afterwards.
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: python tools/mutation.py run "$SHARD" --out mutation
+
+      - name: Upload the shard's results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-${{ matrix.shard }}
+          path: |
+            mutation/*/results.json
+            mutation/*/*.log
+            mutation/*/campaign/**/*.sol
+          if-no-files-found: error
+          retention-days: 30
+
+  report:
+    name: Report
+    needs: [plan, shard]
+    if: ${{ always() && needs.shard.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Download the shards' results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mutation-*
+          path: mutation
+
+      - name: Every shard reported
+        # A shard that crashed or timed out leaves no results; the report would then score the
+        # others alone, so the job fails instead (after the report below is still written).
+        env:
+          SHARDS: ${{ needs.plan.outputs.shards }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, sys
+          missing = [
+              s for s in json.loads(os.environ["SHARDS"])
+              if not any(pathlib.Path("mutation", f"mutation-{s}").glob("**/results.json"))
+          ]
+          if missing:
+              sys.exit(f"no results from {len(missing)} shard(s): {' '.join(missing)}")
+          PY
+
+      - name: Report
+        # Kill rate per contract and every survivor, in the job summary; fails when a contract
+        # falls below its floor in tools/mutation-floors.json.
+        if: ${{ always() }}
+        run: >-
+          python tools/mutation.py report mutation --markdown mutation-report.md
+          --json mutation-summary.json --floors tools/mutation-floors.json
+
+      - name: Upload the report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-report
+          path: |
+            mutation-report.md
+            mutation-summary.json
+          if-no-files-found: warn
+          retention-days: 90

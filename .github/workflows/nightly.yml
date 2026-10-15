@@ -1,0 +1,115 @@
+name: Nightly
+
+# The long runs a pull request cannot afford (docs/testing/README.md): the invariant suites at
+# the deep profile's depth, and the fork tests against the real external dependencies. Nightly
+# and on demand; never on pull requests.
+
+on:
+  schedule:
+    # Every day at 03:30 UTC.
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deep-invariants:
+    name: Deep invariants (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    # The economics suite alone takes about as long as all the others together.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: economics
+            filter: --match-contract ^EconomicsInvariant
+          - name: others
+            filter: --no-match-contract ^EconomicsInvariant
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Deep invariants
+        # [profile.deep.invariant] in foundry.toml: many more runs, each deeper.
+        env:
+          FOUNDRY_PROFILE: deep
+          FILTER: ${{ matrix.filter }}
+        # FILTER is fixed in this file (word splitting is intended).
+        run: forge test --match-test "^invariant" $FILTER
+
+  fork:
+    name: Fork tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Fork tests
+        # test/fork skips itself unless these are set. Public endpoints, no credentials.
+        env:
+          FORK_MAINNET_RPC: https://ethereum-rpc.publicnode.com
+          FORK_SEPOLIA_RPC: https://ethereum-sepolia-rpc.publicnode.com
+        run: forge test --match-path "test/fork/*" -vv

@@ -41,13 +41,30 @@ gets a regression test that names it.
 
 | Job | When | What | Time | Required |
 | --- | --- | --- | --- | --- |
-| Contracts | every pull request and push to `main` | `forge fmt --check`, `forge build`, `forge test` (default profile), the docs facts against the build, the budget gate, the genesis check and the content tooling tests | 11 to 13 min | yes |
+| Contracts | every pull request and push to `main` | the summary of the four jobs below, green only when all four are | seconds, after the last of them | yes |
+| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the budget gate, the genesis check, the content tooling tests, and the coverage and mutation tools' unit tests | about 3.5 min | through Contracts |
+| Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant` | about 1 min | through Contracts |
+| Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 2 min | through Contracts |
+| Tests (other invariants) | every pull request and push | every other invariant suite: 256 runs of depth 128 | about 7 min | through Contracts |
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
 | Docs | every pull request and push | relative links and anchors in Markdown, the generated role matrix, and the facts the docs quote from the code | under 1 min | no |
+| Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
+| Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 4 min (24 proofs) | no (not on pull requests) |
+| Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
+| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-The jobs run in parallel, and the 15-minute CI budget applies to each job. CI does not yet
-run coverage, the Halmos proofs, mutation testing, the deep invariant campaigns or the fork
-tests in `test/fork`; run them with the commands in the sections below.
+`forge test` runs in three parts whose filters together select every test exactly once (2,421
+tests at the time of writing: 2,346, 7 and 68), so the parts run on separate runners. Each
+part restores the latest compiler output and compiles only what changed. The 15-minute CI
+budget applies to each job. Before the split, one Contracts job built and ran everything in 11
+to 13 minutes; split, the longest part (the other invariants, where most suites are) takes
+about 7 minutes, and the rest finish in 1 to 4. The organisation's runners are shared, so a
+run's wall time is mostly the wait for them.
+
+Coverage and the Halmos proofs run after a merge rather than on the pull request, to keep the
+shared runners for the required checks. A change that may lower coverage or touch a proven
+library should run them locally first (the commands are below); a regression otherwise shows
+on `main`'s next run.
 
 ## Coverage
 
@@ -63,7 +80,7 @@ python tools/check_coverage.py --uncovered
   No `--ir-minimum` is needed; the unoptimized legacy pipeline compiles every contract.
 - **Expected failures.** Without the optimizer about 51 gas-ceiling tests fail
   (`GasReport`, the `*Gas*` tests, the `tokenURI` budgets). `--allow-failure` keeps the run
-  going and writes the report; the Contracts job runs every test for real.
+  going and writes the report; the Tests jobs run every test for real.
 - **The gate.** [`tools/coverage-floors.json`](../../tools/coverage-floors.json) holds a
   floor per src/ contract: the measured figure minus a margin of 1 point for lines and 2 for
   branches, rounded down to 0.1. A contract below either floor fails the check. A src/ file
@@ -266,13 +283,13 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 **Missing layers:**
 
-1. Scheduled fork and live checks. `test/fork` runs only by hand. A scheduled job running it,
-   and `Verify.s.sol` against the recorded Sepolia deployment, would catch drift in the external
-   dependencies and between the record and the chain.
+1. A scheduled live check. The nightly run forks mainnet and Sepolia, but nothing reads the
+   recorded Sepolia deployment back on a schedule. Running `Verify.s.sol` against it nightly
+   would catch drift between the record and the chain.
 2. Halmos's invariant mode for small state machines (the curation verifier's signer state, the
    escrow's credit book) with a depth of two or three calls.
 
 **Process:**
 
-1. Run coverage (with its floors) and the Halmos proofs on every pull request, the deep
-   invariant campaigns and the fork tests on a schedule, and mutation testing weekly.
+1. Coverage and Symbolic report on `main`, after the merge. If the runner queue allows, run
+   them on pull requests again and make them required checks.
