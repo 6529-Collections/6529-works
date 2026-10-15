@@ -217,6 +217,9 @@
   `openRecord` and at relicense, so a work that reads `CC0-1.0` always carries the pinned CC0
   legal code and its license never changes. An approved CC0 license with another text cannot
   open (the curation simulation of `openRecord` catches it).
+- Economics: `EconomicsResolver.setDefaultLicense` refuses a license whose key is CC0 unless it
+  names the CC0 text the resolver was deployed with (`cc0TextFileId`, immutable), since
+  `openRecord` refuses a CC0 license with any other text.
 - Stream and records (DEPS-6): renderer code-hash pins are checked at use. `rendererOf` (the
   `tokenURI` and `Editions.uri` path) compares the default renderer's code with the hash it was
   installed with, and `WorkRecords.pinnedRenderer` a finalized work's renderer with the hash it
