@@ -88,6 +88,16 @@ Installation:
 - rejects EIP-7702 delegated accounts;
 - pins the code hash. A registry whose code later differs is ignored.
 
+**Federation install prerequisites (v1.1; no registry is installed in v1).**
+Before `setFederationRegistry`, the economics resolver's `PRODUCT_FEDERATED`
+fee recipient must be set to a nonzero wallet, and it must stay nonzero while
+the registry is installed. The English auction reads that recipient when a
+federated auction settles, not when it starts (MARKET-3), so a later
+`setFeeTerms` that sets it to zero while a registry entry charges a fee share
+would leave those auctions unable to pay the fee at settlement. The
+fixed-price and Dutch adapters lock the recipient when a sale opens and refuse
+a zero one then.
+
 **Currency halts.** Every purchase requires its locked currency to be active
 on the allowlist, so deprecating an asset halts running sales in it as an
 emergency tightening. Claims are never blocked.

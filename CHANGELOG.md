@@ -321,7 +321,8 @@
     - LIFECYCLE-4 (L4): `cancel`, like `resume`, waits 48 hours from the pause.
     - MONEY-1 (L5): `claimFor` refuses ETH; it serves credited ERC-20 payouts.
     - MARKET-3 (L6): a federated start checks the network's federated fee recipient, not the
-      token's own.
+      token's own. The sales README lists, as a federation install prerequisite, that this
+      recipient must stay nonzero while a registry is installed.
     - MARKET-6: PLATFORM closes only a sale it opened without the artist's approval. A Dutch
       sale the creator opens counts as approved, as on fixed price. While the creator
       resolves to zero (a pending recovery override), PLATFORM may close any sale.
