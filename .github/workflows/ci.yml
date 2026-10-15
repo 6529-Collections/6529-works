@@ -447,13 +447,20 @@ jobs:
         run: |
           set -uo pipefail
           status=0
+          log=$(mktemp)
           contracts=$(grep -ho '^contract [A-Za-z0-9_]*SymbolicTest' test/symbolic/*.sol | cut -d' ' -f2 | sort)
           test -n "$contracts"
           for contract in $contracts; do
             echo "::group::$contract"
             start=$SECONDS
-            halmos --no-status --contract "$contract" || status=1
+            halmos --no-status --contract "$contract" 2>&1 | tee -a "$log" || status=1
             echo "$contract took $((SECONDS - start))s"
             echo "::endgroup::"
           done
+          # Every proof declared in test/symbolic ran and passed, so a test contract the name
+          # match above misses fails the job instead of being skipped.
+          declared=$(grep -ho 'function check_[A-Za-z0-9_]*' test/symbolic/*.sol | wc -l)
+          passed=$(sed 's/\x1b\[[0-9;]*m//g' "$log" | grep -c '^\[PASS\] check_' || true)
+          echo "$passed of $declared proofs passed"
+          test "$passed" -eq "$declared" || status=1
           exit $status

@@ -140,7 +140,7 @@ jobs:
 
   report:
     name: Report
-    needs: shard
+    needs: [plan, shard]
     if: ${{ always() && needs.shard.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -162,9 +162,26 @@ jobs:
           pattern: mutation-*
           path: mutation
 
+      - name: Every shard reported
+        # A shard that crashed or timed out leaves no results; the report would then score the
+        # others alone, so the job fails instead (after the report below is still written).
+        env:
+          SHARDS: ${{ needs.plan.outputs.shards }}
+        run: |
+          python - <<'PY'
+          import json, os, pathlib, sys
+          missing = [
+              s for s in json.loads(os.environ["SHARDS"])
+              if not any(pathlib.Path("mutation", f"mutation-{s}").glob("**/results.json"))
+          ]
+          if missing:
+              sys.exit(f"no results from {len(missing)} shard(s): {' '.join(missing)}")
+          PY
+
       - name: Report
         # Kill rate per contract and every survivor, in the job summary; fails when a contract
         # falls below its floor in tools/mutation-floors.json.
+        if: ${{ always() }}
         run: >-
           python tools/mutation.py report mutation --markdown mutation-report.md
           --json mutation-summary.json --floors tools/mutation-floors.json

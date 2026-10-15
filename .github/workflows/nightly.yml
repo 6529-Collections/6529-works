@@ -69,7 +69,7 @@ jobs:
           FOUNDRY_PROFILE: deep
           FILTER: ${{ matrix.filter }}
         # FILTER is fixed in this file (word splitting is intended).
-        run: forge test --match-test "invariant_" $FILTER
+        run: forge test --match-test "^invariant" $FILTER
 
   fork:
     name: Fork tests
