@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Runs the v1 flows on a Sepolia rehearsal deployment (r2 by default; -Record selects
+    Runs the v1 flows on a Sepolia rehearsal deployment (r3 by default; -Record selects
     another) and records the gas of every transaction (deployments/11155111/flows.md).
 
 .DESCRIPTION
@@ -36,8 +36,8 @@ param(
         'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openSale',
         'purchase', 'send', 'record', 'prague', 'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
-    # The deployment record, relative to the repository root (r2 by default).
-    [string] $Record = 'deployments/11155111/1791750816.json',
+    # The deployment record, relative to the repository root (r3 by default).
+    [string] $Record = 'deployments/11155111/1792095396.json',
     # The keystore that relays permissionless calls (role `any`). A second relayer lets the
     # content uploads run beside the sale flow, each with its own state file.
     [string] $Relay = 'stream-deployer',

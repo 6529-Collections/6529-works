@@ -1,0 +1,137 @@
+{
+  "cc0TextFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
+  "cc0TextSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+  "chainId": 11155111,
+  "configHash": "0xa6768a06ca8d4685b616b5c3ad4e57a1dd9da90bb3c0b30f68551fe96c8431ae",
+  "confirmed": false,
+  "contracts": {
+    "ArtistRegistry": {
+      "address": "0x69617D97A6186F1b84591C741B42E6432A50ee00",
+      "codehash": "0x1a83f51d6add4f903df936b2dad61157bf2ac19ddf656bbf3bfea7c1257b0012"
+    },
+    "AssetAllowlist": {
+      "address": "0xf639F666075Ffa068c9c5a652933A2D93436DEa7",
+      "codehash": "0xfba8efbee21e41b8d27e8cfd9284ab929891739192005cd2450ecc365509710e"
+    },
+    "ClaimRouter": {
+      "address": "0x512fE15d72E3001C97688a4DC87dd33C8FA0d1fa",
+      "codehash": "0x3e3d3c1d38fc423c560add2901544f75a89f97ea6f6a425de485028d8ac96982"
+    },
+    "ConsolidationAdapter": {
+      "address": "0x98D0c5A504047BF20c13cd534E58cd1F6E5bF85C",
+      "codehash": "0x1723d17717be9f860520bbf7bb3f7ac1d5b27f9ecaf6a1f78a17172731c78d90"
+    },
+    "ContentStore": {
+      "address": "0x102Fa07952733593036181bce6EA68Eacb288f08",
+      "codehash": "0x4f6146f0cc15c564d1eb9cb22d5179fb24c89d8e8c603683b35afd39cc449b62"
+    },
+    "CurationVerifier": {
+      "address": "0xdA2B89D3aF0563e8a2C3BD744b70B36f1AFA9B55",
+      "codehash": "0x68f9d9daccce2f7c2e4127d7c4b40d32aea6c4e23f90b5640dae985614be143d"
+    },
+    "DependencyRegistry": {
+      "address": "0x48D7dB75981Be98041013151767322e335d24537",
+      "codehash": "0x96e9001759824e16a8e1b04d40854c1b971b2b9d0ca8ddd0e1f001fa5599f829"
+    },
+    "DutchSale": {
+      "address": "0x605c312fb42c643C17892E25b2d77bC7C8eC674A",
+      "codehash": "0xef95c9dfaf75ec6e2d07bc0a6201892610d301c3a147f15815cdf76560979d65"
+    },
+    "EconomicsResolver": {
+      "address": "0xeF46fed48bECC91be66716872c3Cca8dF312863c",
+      "codehash": "0xda57711e15b17694d2ef0f7e4ccc9cc3cf777e05f59c1daf94a0bf37bb8321b9"
+    },
+    "Editions": {
+      "address": "0x3213D06f6906E2F4B6959c52dEac138006A86f2f",
+      "codehash": "0xcaf2c694d8e6fcbd4f079a2e58ddda5bc308b7f63a8aaa32ce0f51cde266014f"
+    },
+    "EnglishAuction": {
+      "address": "0x429f5011e2c8706c7Cfe066678084874e6DfB4e9",
+      "codehash": "0xa7e97d3dd0ab194b84208d804e8fc3c252fe8690793d0463a5dc13cec54cbb94"
+    },
+    "EntropyModule": {
+      "address": "0x7CD0F20950975620c3A718871619ca89b26DC66F",
+      "codehash": "0x21c09c498012894cbae363b17a74ee0e70af1aa8ae2bab6ff21f7659ecd0a486"
+    },
+    "FixedPriceSale": {
+      "address": "0xC703f43E9E24eDF0c5FBbFf7A22ea2dbF145D505",
+      "codehash": "0xdd4289735d8e44ae1204a0164762e75008c8608cd3e86812852abf5f7ef9e686"
+    },
+    "GovernanceConfigurator": {
+      "address": "0xFbffd423a8CEADab85767985f281b16720a3A8a4",
+      "codehash": "0x2b63422a1c4d2533ee6e17086e27a7d619451aa1a692ae5abc68f05825f3763e"
+    },
+    "PackageRegistry": {
+      "address": "0xB5f86498E01a4B197F1b8403075A45aD8b796FE9",
+      "codehash": "0xf0961c546c5cc3b7b0c5862ff738069902a9a66192b6e5fa89081c48fef74383"
+    },
+    "ReleaseVerifier": {
+      "address": "0x7a8b7A34Ac1A3A823C6463576FCe2C970C7C5fa9",
+      "codehash": "0xa7f75c1fa1a1636c32bc2f1a63d021dba6368d491a04f5f642291fe295dc93b5"
+    },
+    "Renderer": {
+      "address": "0xf35E84765bad1CEF10Cf782125F4614Aa20B513F",
+      "codehash": "0xe3c43f05b420e7db5bc96f70d21036f9bfaa9f7380577a820eb8498af3618ef3"
+    },
+    "RevenueEscrow": {
+      "address": "0x41bb809F592518a27057b45227D22207E63b1D30",
+      "codehash": "0x67ef776e78764f00d3dd6357e4ad2a09a4b0dbca2a54949b2dcd10478bedf6d2"
+    },
+    "SplitFactory": {
+      "address": "0x9f016127Ea06AC90ac0E5d2D938e6f9761B2C4a7",
+      "codehash": "0x7fd554d018c526cef97d85eb7b2b7875659cd1b7f36cac8d6b10b54328fb4419"
+    },
+    "StatementLog": {
+      "address": "0x38d4C76be1864aCF5A4cD8517F5b855706BDF3ec",
+      "codehash": "0x267db38d63012875e152c53013f9ac6728047ffed0dc0503b8acf2c0fb9b9e9e"
+    },
+    "Stream": {
+      "address": "0x7377B99f91c6Ab88B7db41276B75e8ef8b1AEE2F",
+      "codehash": "0xeb866c083d57b680f878b36733c610b7bc7ef7bc21aa3d3f21cf03588b4590ae"
+    },
+    "WorkRecords": {
+      "address": "0xb5dd70dE6522f5bAfEba0af1D300B2c71b75aD3E",
+      "codehash": "0xd9b773da7be559bfc659dcd88d4db1010c1a615fa6bb672f618a6059a20941ac"
+    },
+    "WorksAccessManager": {
+      "address": "0x1bD0d448B5B030d1b0bFE1A7A1BBA21ED3d18745",
+      "codehash": "0x0d07367178b6eb801ba9e304486d550f6f74ad03298f2f04ee899e1ab6e4462c"
+    }
+  },
+  "delegationCodeHash": "0x28e32b740f699e25d2a1afac207a84e31197c0d4b87c1432c9c5c52c4c1e74e0",
+  "delegationMock": false,
+  "entropy": "vrf",
+  "genesisConfig": "config/sepolia-r3/genesis.json",
+  "manifestDigest": "0xaa2d15fdd4853ca62c0ddbb4e6ea7bb6de56a7f99eac622c1b29ad1437f9fcb5",
+  "manifestPath": "config/sepolia-r3/manifest-epoch0.json",
+  "manifestUri": "https://raw.githubusercontent.com/6529-Collections/6529-works/main/config/sepolia-r3/manifest-epoch0.json",
+  "note": "Written from the simulation before the broadcast; Verify.s.sol confirms it on chain.",
+  "params": {
+    "auctionDuration": 86400,
+    "auctionExtensionWindow": 900,
+    "auctionIncrementShare": 5000,
+    "delegation": "0x8f86c644f845A077999939C69Bc787662377d915",
+    "deployer": "0x26A3f4505145b5E6164260cc868e50ddd9863697",
+    "ethIncrementFloor": "1000000000000000",
+    "factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "marketOwner": "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D",
+    "namespace": "0x1e2d250a5836f85ae457635f32970b1a8d9bdf46fb78f0a9d69cbd9905ec59f1",
+    "networkFeeRecipient": "0x2588A62384F41bB32412841ab774CD574b427bd5",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "vrfCallbackGasLimit": 200000,
+    "vrfConfirmations": 3,
+    "vrfCoordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
+    "vrfCoordinatorCodeHash": "0x5e22d4163e7c1b059a946f0600759a4d38eb3e04592d0e359def022cec36bdbc",
+    "vrfKeyHash": "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae",
+    "vrfNativePayment": true,
+    "vrfRetryDelay": 259200,
+    "vrfSubscriptionId": "17380386597866271432801956755306382836538403307654991060607305935714544308003"
+  },
+  "pendingLanes": [],
+  "placeholders": false,
+  "standIns": [],
+  "startBlock": 11922738,
+  "timestamp": 1792095396,
+  "wiringCalls": 19,
+  "wiringHash": "0xe5c9d78a409fcabeadc46f8c2ee21c897476dc218cfac094f9a41e311dccd42e"
+}

@@ -5,8 +5,9 @@ transactions to it.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-The Sepolia rehearsal r2 runs the earlier `400f96d`; build its ABIs from that commit. There is
-no mainnet deployment, and interfaces may still change before the audit.
+The current Sepolia rehearsal, r3, runs `main` at `e5fe78c`, verified on Sourcify; the
+superseded r2 runs the earlier `400f96d`, so build r2's ABIs from that commit. There is no
+mainnet deployment, and interfaces may still change before the audit.
 
 ## The pages
 
@@ -14,7 +15,7 @@ no mainnet deployment, and interfaces may still change before the audit.
 | --- | --- |
 | [Reading a work](reading-a-work.md) | Show a work: `tokenURI` and `uri`, the JSON fields, inline and locator media, editions, licenses, dispute statements, royalties |
 | [Events and indexing](events-and-indexing.md) | Index the protocol: every event of every contract, and how to rebuild each entity's state from logs |
-| [Addresses](addresses.md) | Find the deployed contracts: Sepolia r2 now, mainnet later |
+| [Addresses](addresses.md) | Find the deployed contracts: Sepolia r3 now, mainnet later |
 | [ABIs and interface IDs](abis-and-interface-ids.md) | Get the ABIs, detect contracts with ERC-165, and recompute the EIP-712 digests and protocol hashes |
 | [Buying, bidding, settling and claiming](buying-bidding-settling.md) | Send transactions: start and bid on auctions, settle as a keeper, buy editions, claim credits and payouts, with the errors to handle and gas notes |
 | [Storage](storage.md) | Fetch and verify a work's bytes: the content store, Arweave and IPFS locators, and the uploader |

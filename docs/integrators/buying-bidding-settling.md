@@ -8,9 +8,11 @@ signatures in [Events and indexing](events-and-indexing.md); addresses in [Addre
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-Sepolia r2 predates the October 2026 review fixes: it has no `claimFor`, ERC-20 payout frame,
-`scheduleDelay`, currency freeze, `SHORTFALL_REVERT_CEILING` or identity restraint
-([Addresses](addresses.md#sepolia-r2)). Sepolia gas figures here are r2's.
+Sepolia r3 ([Addresses](addresses.md#sepolia-r3)) runs the code this page describes. The
+superseded r2 predates the October 2026 review fixes: it has no `claimFor`, ERC-20 payout
+frame, `scheduleDelay`, currency freeze, `SHORTFALL_REVERT_CEILING` or identity restraint
+([Addresses](addresses.md#sepolia-r2-superseded)). Sepolia gas figures here are r2's; r3's
+are in [the flows file](../../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026).
 
 ## Before you start
 

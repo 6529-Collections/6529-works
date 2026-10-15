@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Sepolia rehearsal r3 (15 October 2026): `main` at `e5fe78c` deployed with r1's Safes and keys,
+  a new namespace and its own VRF subscription, and every contract verified on Sourcify with an
+  exact match ([record](deployments/11155111/README.md#sepolia-r3-15-october-2026-current)).
+  Verify passes on a fork advanced five days; the live Verify is due from 20 October 2026. A
+  lifecycle check measures the state-growth diet on chain: a steady-state `start` costs 735,859
+  gas against r2's 846,963 ([flows](deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
+  r3 is now the current Sepolia instance in the integrator docs. The flow driver
+  (`script/sepolia/`) signs the epoch-bound curation approval (#55) and defaults to r3.
 - Source quality (F7a). One install check for every dependency, `Dependency` (code, no
   EIP-7702 delegation, ERC-165 where implemented, the pinned code hash), with one error,
   `InvalidDependency(address)`, and one for a pinned dependency whose code changed at use,
