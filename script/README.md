@@ -119,7 +119,7 @@ or stores a key:
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
-| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it | Safe or EOA |
+| Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
 | VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
@@ -153,7 +153,9 @@ independent of the admins they check:
   `manager.suspend(role, key)` for a PLATFORM, CURATOR or STORAGE_OPERATOR key; the key
   stops at once. A curation signer key is cut off with the curation verifier's
   `disableSigner(key)` instead. The hot admin then schedules `revokeRole(role, key)` and the
-  grant of a replacement key (30 days, then the role's grant delay).
+  grant of a replacement key (30 days, then the role's grant delay). If the same key is also
+  the marketplace owner, schedule `setOwner` on Stream and Editions as well (FUNDS_SETTER,
+  14 days).
 - **Suspensions last.** Other guardians cannot cancel a suspension, and only a 30-day ADMIN
   grant or revocation lifts it. Plan for 30 days after a mistaken suspension, about 60 days
   if a dishonest guardian suspends keys (it cancels the lifts until its removal executes),
@@ -183,8 +185,11 @@ in these cases:
 - it is an EIP-7702 delegated EOA;
 - it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list;
 - its threshold is below 2 (`ThresholdTooLow`);
-- one of its owners has code: a nested Safe, another contract or an EIP-7702 delegated EOA
-  (`NestedOwner`). Owners must be plain keys, so the script can compare them;
+- one of its owners has code: an EIP-7702 delegated EOA (`DelegatedOwner`), or a nested
+  Safe, a passkey signer contract or any other contract (`NestedOwner`). Owners must be
+  plain keys, so the script can compare them; passkey signer contracts are refused by
+  design. Verify repeats this check, so a signer that later adds an EIP-7702 delegation
+  makes Verify fail until the delegation is cleared;
 - its proxy (storage slot 0) does not point to a canonical Safe singleton with that
   singleton's code hash (`NotACanonicalSafe`). The allowed singletons, from
   safe-global/safe-deployments, with code hashes read on mainnet and Sepolia:
@@ -370,7 +375,12 @@ On Sepolia, set the module up as on mainnet; do not use `NO_VRF`.
 3. After the broadcast, add the module (`EntropyModule` in the record) as the subscription's
    only consumer. Requests fail until it is a consumer and the subscription is funded.
    Verify, off anvil, requires the module to be the only consumer.
-4. **On mainnet, the subscription owner is the hot admin Safe.** Create the subscription
+4. **On mainnet, the subscription owner is the hot admin Safe.** This is an accepted
+   trade-off: if the hot admin is compromised, VRF works stop for about 64 days or more. The
+   hot Safe can cancel the subscription at once. The cold admin removes it (30 days), then
+   appoints a new hot Safe (30 days, then PARAMETER_SETTER's 48-hour grant delay), which
+   moves the module to a new subscription (`setConfig`, 48 hours). A guardian acting with
+   the hot Safe adds another 30 days ([admin recovery](#admin-recovery)). Create the subscription
    from it, or transfer it (`requestSubscriptionOwnerTransfer`, then the Safe's
    `acceptSubscriptionOwnerTransfer`) before Verify. The owner can cancel the subscription
    and take its balance, or remove the consumer, at once and outside governance; the
@@ -536,7 +546,11 @@ The record is only an index; each check is made against the chain or the committ
 Verify checks the genesis configuration. After a governance change, such as an
 [admin recovery](#admin-recovery) or a key rotation, run it in epoch mode: set
 `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders. The wiring
-readback stays genesis readback, so a later default-currency change still fails it.
+readback stays genesis readback, so a later default-currency change still fails it. Epoch
+mode logs every grant it accepts for an account that no longer holds the role. When the
+epoch's governance manifest is given (`GOVERNANCE_MANIFEST_PATH`), Verify requires its
+SHA-256 to be the content of a `GOVERNANCE_MANIFEST` statement on the manager's chain, and
+its `governanceConfig.sha256` to be the SHA-256 of the `GOVERNANCE_CONFIG` file.
 
 ### 12. Standing refresh: `refreshStanding`
 
@@ -644,5 +658,6 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `NO_VRF` | `0` | `1` declines the entropy module explicitly |
 | `DEPLOYMENT` | (Verify) | The record to verify |
 | `GOVERNANCE_CONFIG` | (Verify) unset: the genesis file | Epoch mode: a copy of the genesis file with the current holders, for readback after a governance change |
+| `GOVERNANCE_MANIFEST_PATH` | (Verify) unset | Epoch mode: the epoch's manifest file; it must be recorded on chain and name the `GOVERNANCE_CONFIG` file's SHA-256 |
 | `ALLOW_PENDING_OPERATIONS` | (Verify) `0` | `1` logs pending manager operations instead of failing on the first |
 | `MANIFEST_PATH` | (Verify) the recorded path | The manifest file to hash again |

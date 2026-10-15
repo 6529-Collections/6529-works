@@ -75,7 +75,7 @@ grant would not.
    operation keeps the stock rules, so an admin still cancels another admin's
    grants, remaps and authority moves.
 
-Why both rules, from what OZ 5.7.0's source does:
+Why three rules, from what OZ 5.7.0's source does:
 
 - **Stock cancellation is selector-scoped:** the scheduler, any admin, or the
   guardian of `getTargetFunctionRole(target, selector)`. `ADMIN_ROLE`'s guardian

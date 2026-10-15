@@ -99,9 +99,12 @@ library DeployGuards {
     /// @notice An admin or guardian Safe has a transaction guard, which can block its
     ///         transactions.
     error SafeHasGuard(string role, address safe, address guard);
-    /// @notice An owner of an admin or guardian Safe has code (a nested Safe, another contract
-    ///         or an EIP-7702 delegated EOA), so its signers cannot be compared.
+    /// @notice An owner of an admin or guardian Safe is a contract (a nested Safe, a passkey
+    ///         signer or any other), so its signers cannot be compared.
     error NestedOwner(address safe, address owner);
+    /// @notice An owner of an admin or guardian Safe is an EIP-7702 delegated EOA: wallet code
+    ///         can act for it. It passes again once the delegation is cleared.
+    error DelegatedOwner(address safe, address owner);
     error TooFewCurationSigners(uint256 count);
     /// @notice A holder is a contract of this deployment or one of its dependencies.
     error HolderIsADeploymentContract(uint64 role, address account);
@@ -202,7 +205,8 @@ library DeployGuards {
     }
 
     /// @notice A Safe's `getOwners()`; fails closed (`HolderNotASafe`) when it has none, and
-    ///         refuses an owner with code (`NestedOwner`).
+    ///         refuses an owner with code: `DelegatedOwner` for an EIP-7702 delegated EOA,
+    ///         `NestedOwner` for any contract.
     function ownersOf(string memory role, address safe)
         internal
         view
@@ -213,6 +217,7 @@ library DeployGuards {
         owners = abi.decode(ret, (address[]));
         if (owners.length == 0) revert HolderNotASafe(role, safe);
         for (uint256 i; i < owners.length; ++i) {
+            if (DelegatedEOA.isDelegated(owners[i])) revert DelegatedOwner(safe, owners[i]);
             if (owners[i].code.length != 0) revert NestedOwner(safe, owners[i]);
         }
     }

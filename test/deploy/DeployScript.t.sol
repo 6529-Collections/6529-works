@@ -542,9 +542,10 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(DeployGuards.NestedOwner.selector, _account("01"), inner)
         );
         deployer.prepare();
+        // An EIP-7702 delegation on an owner key has its own error, and clears with it.
         vm.etch(inner, abi.encodePacked(hex"ef0100", makeAddr("delegate")));
         vm.expectRevert(
-            abi.encodeWithSelector(DeployGuards.NestedOwner.selector, _account("01"), inner)
+            abi.encodeWithSelector(DeployGuards.DelegatedOwner.selector, _account("01"), inner)
         );
         deployer.prepare();
         vm.etch(inner, "");
@@ -1631,6 +1632,51 @@ contract DeployScriptTest is Test {
         assertEq(holders, 17);
         (bool admin,) = d.manager.hasRole(Roles.ADMIN, newHot);
         assertTrue(admin);
+    }
+
+    /// Epoch mode with the epoch's manifest: it must be recorded on the manager's statement
+    /// chain and name the epoch file by its SHA-256.
+    function test_EpochModeBindsTheEpochManifest() public {
+        (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
+        address newHot = _recoverHotAdmin(d);
+        bytes memory epoch = bytes(_epochFile());
+        bytes memory manifestFile = abi.encodePacked(
+            '{"schema":"6529-works/governance-manifest/1","epoch":1,"governanceConfig":{"sha256":"',
+            vm.toString(sha256(epoch)),
+            '"}}'
+        );
+        verifier.setFile("config/epoch-1.json", epoch);
+        verifier.setEnv("GOVERNANCE_CONFIG", "config/epoch-1.json");
+        verifier.setFile("config/manifest-epoch1.json", manifestFile);
+        verifier.setEnv("GOVERNANCE_MANIFEST_PATH", "config/manifest-epoch1.json");
+        // Not recorded yet.
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.ManifestNotRecorded.selector, sha256(manifestFile))
+        );
+        verifier.verify(record);
+        // The new hot admin publishes it (SUCCESSOR_SETTER, 30 days).
+        bytes memory publish = abi.encodeCall(
+            d.statementLog.appendGovernanceManifest,
+            (DeployV1.manifestStatement(d, DeployV1.Manifest(sha256(manifestFile), "ar://epoch-1")))
+        );
+        vm.recordLogs();
+        vm.prank(newHot);
+        d.manager.schedule(address(d.statementLog), publish, 0);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(newHot);
+        d.manager.execute(address(d.statementLog), publish);
+        verifier.addLogs(vm.getRecordedLogs());
+        verifier.verify(record);
+        // A configuration file other than the one the manifest names is refused, even one
+        // with the same holders.
+        bytes memory other = abi.encodePacked(epoch, " ");
+        verifier.setFile("config/epoch-1.json", other);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.ManifestConfigMismatch.selector, sha256(epoch), sha256(other)
+            )
+        );
+        verifier.verify(record);
     }
 
     /// Epoch mode: a holder the current file drops must be gone from the chain.

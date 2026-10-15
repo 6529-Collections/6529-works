@@ -8,6 +8,9 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { Role, Statement } from "src/interfaces/IStatementLog.sol";
+import { IStatementLog } from "src/interfaces/IStatementLog.sol";
+import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { DeployGuards } from "./DeployGuards.sol";
 import { DeployV1 } from "./DeployV1.sol";
@@ -55,7 +58,10 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///         After a governance change (an admin recovery, a key rotation), set
 ///         `GOVERNANCE_CONFIG` to a copy of the genesis file with the current holders (epoch
 ///         mode). Checks 5, 6 and 9 then use it; checks 7 and 8 keep the genesis file; every
-///         genesis holder it drops must hold no record for that role any more. The wiring
+///         genesis holder it drops must hold no record for that role any more, and each past
+///         grant it accepts for an account since removed is logged. With
+///         `GOVERNANCE_MANIFEST_PATH`, the epoch manifest must be recorded on the manager's
+///         statement chain and name the `GOVERNANCE_CONFIG` file's SHA-256. The wiring
 ///         readback in check 6 stays genesis readback (a later default-currency change still
 ///         fails it).
 contract Verify is ScriptIO {
@@ -85,6 +91,12 @@ contract Verify is ScriptIO {
     /// @notice Epoch mode: a genesis holder the current configuration drops still has a record
     ///         for the role.
     error HolderNotRemoved(uint64 role, address account);
+    /// @notice Epoch mode: no `GOVERNANCE_MANIFEST` statement on the manager's chain carries the
+    ///         SHA-256 of the file at `GOVERNANCE_MANIFEST_PATH`.
+    error ManifestNotRecorded(bytes32 digest);
+    /// @notice Epoch mode: the epoch manifest's `governanceConfig.sha256` is not the SHA-256 of
+    ///         the `GOVERNANCE_CONFIG` file.
+    error ManifestConfigMismatch(bytes32 named, bytes32 actual);
     /// @notice An operation scheduled on the manager since genesis is still pending (neither
     ///         executed, cancelled nor expired). Review it, then set `ALLOW_PENDING_OPERATIONS=1`.
     error PendingOperation(
@@ -278,6 +290,36 @@ contract Verify is ScriptIO {
         _checkGrants(d, initial, cfg, fromBlock);
         _checkRemoved(d, initial, cfg);
         _checkPendingOperations(d, fromBlock);
+        _checkEpochManifest(d, fromBlock);
+    }
+
+    /// @dev Epoch mode with `GOVERNANCE_MANIFEST_PATH`: the epoch manifest is recorded on the
+    ///      manager's statement chain (a `GOVERNANCE_MANIFEST` entry whose content is its
+    ///      SHA-256), and it names the `GOVERNANCE_CONFIG` file by its SHA-256.
+    function _checkEpochManifest(DeployV1.Deployment memory d, uint256 fromBlock) internal view {
+        string memory configPath = _env("GOVERNANCE_CONFIG");
+        string memory manifestPath = _env("GOVERNANCE_MANIFEST_PATH");
+        if (bytes(configPath).length == 0 || bytes(manifestPath).length == 0) return;
+        bytes memory manifestFile = _readBinary(manifestPath);
+        bytes32 named = vm.parseJsonBytes32(string(manifestFile), ".governanceConfig.sha256");
+        bytes32 actual = sha256(_readBinary(configPath));
+        if (named != actual) revert ManifestConfigMismatch(named, actual);
+        bytes32 digest = sha256(manifestFile);
+        Vm.EthGetLogs[] memory logs =
+            _logs(fromBlock, address(d.statementLog), IStatementLog.StatementAppended.selector);
+        bytes32 subject = keccak256(abi.encode(address(d.manager), uint256(0)));
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].topics[1] != subject
+                    || logs[i].topics[2] != StatementKinds.GOVERNANCE_MANIFEST
+                    || logs[i].topics[3] != bytes32(uint256(uint160(address(d.manager))))
+            ) continue;
+            (,,,,,, Statement memory statement) = abi.decode(
+                logs[i].data, (Role, address, uint64, uint64, bytes32, bytes32, Statement)
+            );
+            if (statement.content.digest == digest) return;
+        }
+        revert ManifestNotRecorded(digest);
     }
 
     /// @dev The file at `GOVERNANCE_CONFIG` (epoch mode), or the genesis file.
@@ -473,8 +515,12 @@ contract Verify is ScriptIO {
             uint64 role = uint64(uint256(logs[i].topics[1]));
             address account = address(uint160(uint256(logs[i].topics[2])));
             bool expected = (role == Roles.ADMIN && account == address(d.configurator))
-                || _holds(initial, role, account) || _holds(cfg, role, account)
-                || (epoch && !GovernanceConfig.hasRecord(d.manager, role, account));
+                || _holds(initial, role, account) || _holds(cfg, role, account);
+            if (!expected && epoch && !GovernanceConfig.hasRecord(d.manager, role, account)) {
+                expected = true;
+                console2.log("epoch mode: accepted a past grant, since removed: role", role);
+                console2.log("  account", account);
+            }
             if (!expected) revert UnexpectedGrant(role, account);
         }
     }

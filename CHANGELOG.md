@@ -43,7 +43,8 @@
 - Deployment (GOV-3): off anvil, `Verify.s.sol` repeats the deploy's holder guards
   (`DeployGuards.checkHolders` and `checkHoldersAgainst`) against the chain as it is now.
 - Deployment (GOV-4): off anvil, every admin and guardian Safe needs a threshold of at least 2
-  (`ThresholdTooLow`) and owners without code (`NestedOwner`), and no two of the admin and
+  (`ThresholdTooLow`) and owners without code (`NestedOwner`, or `DelegatedOwner` for an
+  EIP-7702 delegated owner), and no two of the admin and
   guardian Safes may share a signer, guardians included (`SharedSigner`). Each must run a
   canonical Safe 1.3.0 or 1.4.1 singleton (`NotACanonicalSafe`) with no enabled module
   (`SafeHasModules`) and no transaction guard (`SafeHasGuard`).
