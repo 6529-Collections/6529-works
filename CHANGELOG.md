@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Source quality (F7a). One install check for every dependency, `Dependency` (code, no
+  EIP-7702 delegation, ERC-165 where implemented, the pinned code hash), with one error,
+  `InvalidDependency(address)`, and one for a pinned dependency whose code changed at use,
+  `DependencyCodeChanged(address)`. The content store and the 6529 delegation contract are now
+  also refused as EIP-7702 delegated accounts. One shared `InvalidSignature(address signer)`
+  and `SignatureExpired(uint256 deadline)` in `SignatureVerifier`. `IStream.InvalidMintRequest`
+  is split into errors per Stream rule (`InvalidItemSale`, `InvalidLeadArtist`,
+  `InvalidSeedPolicy`, `InvalidLicenseId`, `InvalidWorkTerms`, `TermsCapacityExceeded`, and
+  `UnknownCollection`) and moved to `IMintTarget` for malformed calls; a burn or settlement mark
+  by an adapter that did not mint the token reverts with `NotMintingAdapter`. Errors the
+  implementations declared are declared in their interfaces. Selectors change (no function or
+  interface ID does).
+- NatSpec: every external and public function, event and error in `src/` is documented, with
+  `@param` and `@return` for each parameter and return value, checked by
+  `tools/check_natspec.py`. Text that contradicted the code is corrected, and the fixed gas
+  allowances state how EIP-8037's state-gas reservoir passes through them under Glamsterdam
+  (CALLS-3), with keeper guidance (send at most 2^24 gas).
+- Removed the unused `JsonEscape.scriptText` (`HtmlScript.neutralize` is what the renderer
+  uses), its tests and its Halmos proof.
+- Verify pins Permit2's runtime code hash on mainnet.
+
 - Tests: two stateful invariant suites on the real stack (`test/integration/invariant/`), each
   256 runs of depth 128 in CI with a coverage replay that fails if any action or key path never
   runs. The Stream lifecycle suite drives the package registry, Stream, the records satellite,
