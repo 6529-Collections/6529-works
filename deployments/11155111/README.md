@@ -23,7 +23,8 @@ namespace and its own VRF subscription.
 | Source | `main` at `400f96d` ([#44](https://github.com/6529-Collections/6529-works/pull/44)), solc 0.8.37, `prague` |
 | Not included | [#46](https://github.com/6529-Collections/6529-works/pull/46): a bounded read in `ArtistRegistry.bindStatementLog`. It is a one-shot genesis binding; r2's genesis already bound its own statement log, and Verify reads that back. |
 | Record | [`1791750816.json`](1791750816.json). Here `delegationMock` is `false`: since [#42](https://github.com/6529-Collections/6529-works/pull/42) the script compares the delegation's code hash with mainnet's and records it. |
-| Genesis | [`config/sepolia-r2/genesis.json`](../../config/sepolia-r2/genesis.json): the current committed policy with r1's holders |
+| Live Verify | Run it from r2's source commit, because later policy changes (new governed selectors, wiring and genesis keys) make the current committed policy differ: `git worktree add ../works-r2 400f96d`, copy this record and `config/sepolia-r2/` into it, then run the Verify command in the runbook (step 11) there. For the same reason, `python tools/check_genesis.py --config config/sepolia-r2/genesis.json` on today's `main` reports policy differences, which is expected. |
+| Genesis | [`config/sepolia-r2/genesis.json`](../../config/sepolia-r2/genesis.json): the committed policy at `400f96d` with r1's holders |
 | Epoch-0 manifest | [`config/sepolia-r2/manifest-epoch0.json`](../../config/sepolia-r2/manifest-epoch0.json) |
 | Namespace | `keccak256("6529-works/sepolia/r2")` = `0xd4cf2286…f090` |
 | CC0 text | The committed fixture `test/fixtures/cc0-legalcode.txt` (the default since #42) |
@@ -110,7 +111,7 @@ r1 stays deployed as a rehearsal record; new work targets r2.
 | Source | `main` at `60edd9b` ([#40](https://github.com/6529-Collections/6529-works/pull/40)), solc 0.8.37, `prague` |
 | Not included | The Editions gas changes ([#41](https://github.com/6529-Collections/6529-works/pull/41), merged after this run) and the contested-override recovery (ADR 0003, decision 1, in progress). A later rehearsal redeploys under a new namespace. |
 | Record | [`1791746472.json`](1791746472.json) (`"confirmed": false` until the live Verify) |
-| Live Verify | Run it from r1's source commit, because later policy changes (new governed selectors or wiring) make the current committed policy differ: `git worktree add ../works-r1 60edd9b`, copy this record and `config/sepolia-r1/` into it, then run the Verify command in the runbook (step 11) there. |
+| Live Verify | Run it from r1's source commit, because later policy changes (new governed selectors, wiring and genesis keys) make the current committed policy differ: `git worktree add ../works-r1 60edd9b`, copy this record and `config/sepolia-r1/` into it, then run the Verify command in the runbook (step 11) there. `tools/check_genesis.py --config` on today's `main` reports differences for this copy too, as expected. |
 | Genesis | [`config/sepolia-r1/genesis.json`](../../config/sepolia-r1/genesis.json): the committed policy with the holders below |
 | Epoch-0 manifest | [`config/sepolia-r1/manifest-epoch0.json`](../../config/sepolia-r1/manifest-epoch0.json), SHA-256 `cfb688aa…7c56` |
 | Namespace | `keccak256("6529-works/sepolia/r1")` = `0x5d0566b3…2454` |
