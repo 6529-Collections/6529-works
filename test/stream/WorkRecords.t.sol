@@ -1097,6 +1097,12 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(platform);
         records.addLocator(tokenId, file, _ar("tx2"));
         assertEq(records.locators(tokenId, file).length, 3);
+        // After finalize only the PLATFORM role adds locators.
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
+        );
+        records.addLocator(tokenId, file, _ar("tx3"));
     }
 
     function test_addLocator_reverts() public {

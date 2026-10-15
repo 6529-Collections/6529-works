@@ -199,8 +199,8 @@
   install.
 - Records (CONTENT-3, LIFECYCLE-3): a locator URI must be a content address with nothing
   after it, `ar://` and a 43-character transaction ID or `ipfs://` and a CIDv1 of the fixed
-  profile (`bafkrei`/`bafybei`, 59 characters). A locator the artist adds after finalize is
-  held: `preferredLocator` serves it only through the storage operator's file preference.
+  profile (`bafkrei`/`bafybei`, 59 characters), in its one canonical spelling. After finalize
+  only the PLATFORM role adds locators; the artist adds them until then.
 - Records (CONTENT-1): `openRecord` refuses a PREVIEW file over `Limits.MAX_PREVIEW_BYTES`
   (16 KiB stored, `Identity` counted four times). With the content-address locators this
   restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once

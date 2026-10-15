@@ -227,8 +227,7 @@ default when the sale starts".
    - The STORAGE_OPERATOR role sets preferences. The most specific one wins:
      the file index, then the collection kind, then the global kind, then the
      first registered locator. A file with no locator yields an empty one.
-   - A locator the artist adds after finalize is held: only the file index
-     serves it, so it shows once the storage operator selects it.
+   - After finalize only the PLATFORM role adds locators.
    - It cannot add, remove or alter locators.
 3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
    is on-chain complete: the record becomes immutable and Stream's default

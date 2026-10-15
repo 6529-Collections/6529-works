@@ -89,6 +89,12 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Locator kinds.**
   - Locators are ARWEAVE and IPFS only. HTTPS is dropped because its content can
     change.
+  - A locator is a bare content address in its canonical spelling: `ar://` and a
+    43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile,
+    with no path, query or fragment (adversarial review, LIFECYCLE-3 and
+    CONTENT-3).
+  - After finalize only the PLATFORM role adds locators. Copies of a finalized
+    work are the platform's to register and the storage operator's to choose.
   - On-chain copies are served once the file is complete.
   - The artist and the platform each have a quota of 8 locators.
 - **Content store.**

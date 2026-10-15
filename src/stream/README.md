@@ -122,13 +122,16 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   record and license text are therefore permanent and readable on-chain.
 - **Locators.** Append-only ARWEAVE and IPFS copies of media files: at most 8
   per file added by the artist and 8 by the platform, so neither can exhaust
-  the other's. Each URI is a content address with nothing after it, so the
-  content it names cannot be repointed: `ar://` and a 43-character base64url
-  transaction ID (an ArNS name is never 43 characters long), or `ipfs://` and a
-  base32 CIDv1 with a sha2-256 multihash, a raw leaf (`bafkrei...`) or a dag-pb
-  root (`bafybei...`), 59 characters. No path, query or fragment, so no `%` or
-  `#` either. A URI already registered for the file is refused, compared as
-  exact bytes, so a different spelling of the same content counts as new. The
+  the other's. Each URI is a content address with nothing after it, in its one
+  canonical spelling (the padding bits of the last character zero), so the
+  content it names cannot be repointed and one copy has one URI: `ar://` and a
+  43-character base64url transaction ID, or `ipfs://` and a base32 CIDv1 with a
+  32-byte sha2-256 multihash, a raw leaf (`bafkrei...`) or a dag-pb root
+  (`bafybei...`), 59 characters. No path, query or fragment, so no `%` or `#`
+  either. Only the shape is checked on-chain: an ArNS base name is never 43
+  characters long, but an undername can be, so the storage operator serves only
+  copies the off-chain monitor verified. A URI already registered for the file
+  is refused, compared as exact bytes. The
   set of registered URIs is shared, so whichever side adds a URI first holds it
   against its own quota, and the URI is listed either way. Preferred location:
   the file's index, then the collection's kind, then the global kind, then the
@@ -138,10 +141,8 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   (kind NONE). Locators are not verified on-chain: each is registered as a copy
   of that one file, and the storage operator chooses only among the copies
   registered for it.
-- **Held locators.** "Final" fixes the content, so after finalize an artist's
-  new locator does not change what a work shows by itself. It is held: listed
-  and emitted like any other, but skipped by the kinds and the first-registered
-  fallback, so it is served only while the storage operator selects it with
-  `setFilePreference` (after checking that it names the committed bytes). The
-  platform's locators, and the artist's from before finalize, are served as
-  usual.
+- **After finalize, platform only.** "Final" fixes the content, and the content
+  a locator names is not verified on-chain, so after finalize only the PLATFORM
+  role adds locators (the artist's call is unauthorized): the copies of a
+  finalized work are the platform's to register and the storage operator's to
+  choose. Locators added before finalize stay as they are.

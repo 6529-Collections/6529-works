@@ -51,6 +51,11 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      base32 CID (`a-z 2-7`), as bit sets over ASCII.
     uint256 private constant TXID_CHARS = 0x07fffffe87fffffe03ff200000000000;
     uint256 private constant CID_CHARS = 0x07fffffe0000000000fc000000000000;
+    /// @dev The last characters of a canonical transaction ID and CID: the encoding's last
+    ///      character carries two padding bits, which must be zero (`AEIMQUYcgkosw048`, and
+    ///      `aeimquy4`).
+    uint256 private constant TXID_LAST = 0x888888022222220111000000000000;
+    uint256 private constant CID_LAST = 0x2222222000000000010000000000000;
     /// @dev Chunks one `syncOnChain` call checks at most, in whole files. A chunk costs about
     ///      8,100 gas from cold storage, so a call stays near half of the EIP-7825 cap; one file
     ///      (at most `IContentStore.MAX_CHUNKS`, 512) always fits.
@@ -73,13 +78,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         uint256 roles;
     }
 
-    /// @dev How many of a file's locators the artist and the platform each added, and which
-    ///      the artist added after finalize (bit `i` for locator `i`): those are held, served
-    ///      only when the storage operator selects them.
+    /// @dev How many of a file's locators the artist and the platform each added.
     struct LocatorCounts {
         uint8 artist;
         uint8 platform;
-        uint16 held;
     }
 
     /// @inheritdoc IWorkRecords
@@ -458,11 +460,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev The artist and the platform each have a quota of `MAX_LOCATORS_PER_FILE / 2` (8)
     ///      locators per file, so neither can exhaust the other's. A URI already registered for
     ///      the file is refused, compared as exact bytes; the set is shared, so whichever side
-    ///      adds a URI first holds it (it is listed either way). A locator the artist adds after
-    ///      finalize is held: listed, but served only when the storage operator selects it.
+    ///      adds a URI first holds it (it is listed either way). After finalize only the platform
+    ///      adds locators: "Final" fixes the content, and the copies of a finalized work are the
+    ///      platform's and the storage operator's to register and choose.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
-        bool finalized = _open(tokenId).finalized;
-        bool byArtist = _isArtist(tokenId, msg.sender);
+        // After finalize the call goes through the PLATFORM role only.
+        bool byArtist = !_open(tokenId).finalized && _isArtist(tokenId, msg.sender);
         if (!byArtist) _checkCanCall(msg.sender, _msgData());
         _requireMedia(tokenId, fileId);
         _checkUri(locator);
@@ -473,16 +476,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             revert InvalidLocator();
         }
         seen[uriHash] = true;
+        if (byArtist) ++counts.artist;
+        else ++counts.platform;
         Locator[] storage list = _locators[tokenId][fileId];
         uint256 index = list.length;
-        if (!byArtist) {
-            ++counts.platform;
-        } else {
-            ++counts.artist;
-            // At most 16 locators per file (the two quotas), so the bit fits in 16 bits.
-            // forge-lint: disable-next-line(unsafe-typecast, incorrect-shift)
-            if (finalized) counts.held |= uint16(1 << index);
-        }
         list.push(locator);
         emit LocatorAdded(tokenId, fileId, index, locator);
         _refresh(tokenId);
@@ -499,10 +496,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      not verified on-chain, so the storage operator chooses only among the copies
     ///      registered for the file. ONCHAIN matches on the work's stored
     ///      `onChainComplete` flag (`syncOnChain`), never on a content-store completeness scan,
-    ///      which costs a read per chunk. A held locator (the artist's, added after finalize)
-    ///      is skipped by the kinds and the fallback, so only the file preference serves it.
-    ///      With no other locator, a synced work's file resolves to the implicit ONCHAIN copy;
-    ///      otherwise the result is the empty locator (kind NONE, index `type(uint256).max`).
+    ///      which costs a read per chunk. With no registered locator, a synced work's file
+    ///      resolves to the implicit ONCHAIN copy; otherwise the result is the empty locator
+    ///      (kind NONE, index `type(uint256).max`).
     function preferredLocator(uint256 tokenId, bytes32 fileId)
         external
         view
@@ -511,18 +507,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bool onChain = _open(tokenId).onChainComplete;
         _requireMedia(tokenId, fileId);
         Locator[] storage list = _locators[tokenId][fileId];
-        uint256 held = _locatorCounts[tokenId][fileId].held;
         index = _filePrefs[tokenId][fileId];
         bool found = index != 0;
         if (found) index -= 1;
         if (!found) {
             (,, uint256 collectionId,,,) = _core(tokenId);
-            (found, index) = _firstOfKind(list, held, onChain, _collectionKinds[collectionId]);
+            (found, index) = _firstOfKind(list, onChain, _collectionKinds[collectionId]);
         }
-        if (!found) (found, index) = _firstOfKind(list, held, onChain, preferredKind);
-        for (uint256 i; !found && i < list.length; ++i) {
-            if ((held >> i) & 1 == 0) (found, index) = (true, i);
-        }
+        if (!found) (found, index) = _firstOfKind(list, onChain, preferredKind);
+        if (!found && list.length != 0) (found, index) = (true, 0);
         if (!found && onChain) (found, index) = (true, NONE);
         if (!found) return (Locator(LocatorKind.NONE, ""), NONE);
         locator = index == NONE ? Locator(LocatorKind.ONCHAIN, "") : list[index];
@@ -800,34 +793,43 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         revert FileNotInWork(tokenId, fileId);
     }
 
-    /// @dev A locator URI is a content address, so what it names cannot change (D11, ADR 0003
-    ///      "Locator kinds"), with nothing after it (no path, query or fragment):
-    ///      - ARWEAVE: `ar://` and a 43-character transaction ID in base64url. An ArNS name,
-    ///        which its owner can repoint, is never 43 characters long.
-    ///      - IPFS: `ipfs://` and a CIDv1 of the fixed profile (ADR 0001 section 8): base32
-    ///        (`b`), sha2-256, a raw leaf or a dag-pb root (`bafkrei` or `bafybei`), 59
-    ///        characters in all.
+    /// @dev A locator URI is a content address in its one canonical spelling, with nothing after
+    ///      it (no path, query or fragment), so what it names cannot be repointed (D11, ADR 0003
+    ///      "Locator kinds") and a copy has one URI:
+    ///      - ARWEAVE: `ar://` and a 43-character base64url transaction ID (32 bytes) whose last
+    ///        character's two padding bits are zero. The shape is checked, not that the ID
+    ///        exists: an ArNS base name is never 43 characters long, but an undername can be,
+    ///        so the storage operator serves only copies the off-chain monitor verified.
+    ///      - IPFS: `ipfs://` and a base32 CIDv1 of the fixed profile (ADR 0001 section 8): a
+    ///        raw leaf or a dag-pb root with a 32-byte sha2-256 multihash (`bafkrei` or
+    ///        `bafybei`, then a character in `a-h`), whose last character's two padding bits
+    ///        are zero; 66 bytes in all.
     function _checkUri(Locator calldata locator) private pure {
         bytes calldata uri = bytes(locator.uri);
         uint256 chars = 0;
+        uint256 lasts = 0;
         uint256 start = 0;
         if (locator.kind == LocatorKind.ARWEAVE) {
-            if (uri.length == 48 && bytes5(uri[:5]) == "ar://") (chars, start) = (TXID_CHARS, 5);
+            if (uri.length == 48 && bytes5(uri[:5]) == "ar://") {
+                (chars, lasts, start) = (TXID_CHARS, TXID_LAST, 5);
+            }
         } else if (locator.kind == LocatorKind.IPFS && uri.length == 66) {
             bytes14 head = bytes14(uri[:14]);
-            if (head == "ipfs://bafkrei" || head == "ipfs://bafybei") {
-                (chars, start) = (CID_CHARS, 14);
-            }
+            if (
+                (head == "ipfs://bafkrei" || head == "ipfs://bafybei") && uri[14] >= "a"
+                    && uri[14] <= "h"
+            ) (chars, lasts, start) = (CID_CHARS, CID_LAST, 15);
         }
-        if (chars == 0) revert InvalidLocator();
-        for (uint256 i = start; i < uri.length; ++i) {
+        // The last character's set is inside the charset, so the loop stops before it.
+        if (chars == 0 || (lasts >> uint8(uri[uri.length - 1])) & 1 == 0) revert InvalidLocator();
+        for (uint256 i = start; i < uri.length - 1; ++i) {
             if ((chars >> uint8(uri[i])) & 1 == 0) revert InvalidLocator();
         }
     }
 
-    /// @dev The first locator of `kind` that is not held, or the implicit ONCHAIN one (`NONE`)
-    ///      when the work is on-chain complete. NONE as a kind never matches.
-    function _firstOfKind(Locator[] storage list, uint256 held, bool onChain, LocatorKind kind)
+    /// @dev The first locator of `kind`, or the implicit ONCHAIN one (`NONE`) when the work is
+    ///      on-chain complete. NONE as a kind never matches.
+    function _firstOfKind(Locator[] storage list, bool onChain, LocatorKind kind)
         private
         view
         returns (bool, uint256)
@@ -835,7 +837,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (kind == LocatorKind.NONE) return (false, 0);
         if (kind == LocatorKind.ONCHAIN) return (onChain, NONE);
         for (uint256 i; i < list.length; ++i) {
-            if ((held >> i) & 1 == 0 && list[i].kind == kind) return (true, i);
+            if (list[i].kind == kind) return (true, i);
         }
         return (false, 0);
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
@@ -86,57 +87,71 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertEq(records.locators(tokenId, file).length, 3);
     }
 
-    // ------------------------- LIFECYCLE-3: an artist locator after finalize waits for selection
-
-    /// @dev After finalize, an artist's new locator is not served by a kind preference; the
-    ///      platform's copy keeps being served until the storage operator selects the artist's.
-    function test_Locator_ArtistLocatorAfterFinalizeIsNotServedByKind() public {
+    /// @dev One copy, one URI: only the canonical spelling of a CID or transaction ID is
+    ///      accepted, so the exact-bytes duplicate check holds. The last character carries two
+    ///      padding bits, and a CID's eighth character holds the multihash length.
+    function test_Locator_OneSpellingPerAddress() public {
         (uint256 tokenId, bytes32 file) = _openWork();
-        string memory platformCopy = CA.arweave("platform copy");
+        bytes memory cid = bytes(CA.ipfs("x"));
+        bytes memory txid = bytes(CA.arweave("x"));
+        bytes memory b32 = "abcdefghijklmnopqrstuvwxyz234567";
+        bytes memory b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        uint256 v = _index(b32, cid[cid.length - 1]);
+        assertEq(v & 3, 0, "canonical CID");
+        for (uint256 bits = 1; bits < 4; ++bits) {
+            _refused(
+                platform, tokenId, file, Locator(LocatorKind.IPFS, _swap(cid, 65, b32[v | bits]))
+            );
+        }
+        uint256 w = _index(b64, txid[txid.length - 1]);
+        assertEq(w & 3, 0, "canonical ID");
+        for (uint256 bits = 1; bits < 4; ++bits) {
+            _refused(
+                platform,
+                tokenId,
+                file,
+                Locator(LocatorKind.ARWEAVE, _swap(txid, 47, b64[w | bits]))
+            );
+        }
+        // A multihash length other than 32 bytes.
+        _refused(platform, tokenId, file, Locator(LocatorKind.IPFS, _swap(cid, 14, "z")));
+        _refused(platform, tokenId, file, Locator(LocatorKind.IPFS, _swap(cid, 14, "i")));
+        vm.startPrank(platform);
+        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, string(cid)));
+        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string(txid)));
+        vm.stopPrank();
+    }
+
+    // ------------------------------------- LIFECYCLE-3: after finalize only the platform adds locators
+
+    /// @dev After finalize the artist's `addLocator` is refused, so the artist can neither serve
+    ///      new content under a finalized work nor register the work's canonical copy ahead of the
+    ///      platform; the platform registers it and an IPFS failover serves it.
+    function test_Locator_ArtistCannotAddAfterFinalize() public {
+        (uint256 tokenId, bytes32 file) = _openWork();
+        string memory arweaveCopy = CA.arweave("platform arweave copy");
         vm.prank(platform);
-        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, platformCopy));
+        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, arweaveCopy));
         _finalize(tokenId);
         bytes32 state = records.workStateHash(tokenId);
 
-        string memory artistCopy = CA.ipfs("artist copy");
-        vm.expectEmit(address(records));
-        emit IWorkRecords.LocatorAdded(tokenId, file, 1, Locator(LocatorKind.IPFS, artistCopy));
+        Locator memory canonical = CA.ipfsLocator("the canonical CID of the primary");
         vm.prank(artist);
-        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, artistCopy));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
+        );
+        records.addLocator(tokenId, file, canonical);
+        assertEq(records.locators(tokenId, file).length, 1);
+
+        vm.expectEmit(address(records));
+        emit IWorkRecords.LocatorAdded(tokenId, file, 1, canonical);
+        vm.prank(platform);
+        records.addLocator(tokenId, file, canonical);
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
-        assertEq(_served(tokenId, file), platformCopy, "the IPFS preference skips it");
-        assertTrue(_contains(stream.tokenURI(tokenId), platformCopy));
-        vm.prank(storageOperator);
-        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
-        assertEq(_served(tokenId, file), platformCopy, "so does the collection preference");
-
-        // The storage operator selects it: served.
-        vm.prank(storageOperator);
-        records.setFilePreference(tokenId, file, 1);
-        assertEq(_served(tokenId, file), artistCopy);
-        assertTrue(_contains(stream.tokenURI(tokenId), artistCopy));
+        assertEq(_served(tokenId, file), canonical.uri, "the IPFS failover serves it");
+        assertTrue(_contains(stream.tokenURI(tokenId), canonical.uri));
         assertEq(records.workStateHash(tokenId), state, "locators never change the state hash");
-    }
-
-    /// @dev After finalize, an artist's locator is not the first-registered fallback either: a
-    ///      file whose only locators the artist added after finalize has no served locator.
-    function test_Locator_ArtistLocatorAfterFinalizeIsNotTheFallback() public {
-        (uint256 tokenId, bytes32 file) = _openWork();
-        _finalize(tokenId);
-        vm.startPrank(artist);
-        records.addLocator(tokenId, file, CA.ar("first"));
-        records.addLocator(tokenId, file, CA.ipfsLocator("second"));
-        vm.stopPrank();
-        (Locator memory served, uint256 index) = records.preferredLocator(tokenId, file);
-        assertEq(uint8(served.kind), uint8(LocatorKind.NONE));
-        assertEq(index, type(uint256).max);
-        assertFalse(_contains(stream.tokenURI(tokenId), "ar://"), "no URL is served");
-
-        // A platform copy added later is the fallback.
-        vm.prank(platform);
-        records.addLocator(tokenId, file, CA.ar("platform"));
-        assertEq(_served(tokenId, file), CA.arweave("platform"));
     }
 
     /// @dev Unchanged: the artist's locators added before finalize, and the platform's at any
@@ -273,6 +288,17 @@ contract ContentReviewRegressionsTest is IntegrationBase {
     }
 
     // ------------------------------------------------------------------------------ helpers
+
+    function _index(bytes memory alphabet, bytes1 c) internal pure returns (uint256 i) {
+        while (alphabet[i] != c) ++i;
+    }
+
+    /// @dev A copy of `s` with byte `i` replaced by `b`.
+    function _swap(bytes memory s, uint256 i, bytes1 b) internal pure returns (string memory) {
+        bytes memory out = bytes(string.concat(string(s)));
+        out[i] = b;
+        return string(out);
+    }
 
     /// @dev `s` without its last `n` bytes.
     function _cut(string memory s, uint256 n) internal pure returns (string memory) {
