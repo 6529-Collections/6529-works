@@ -116,11 +116,7 @@ abstract contract WorksDeployment is Test {
     function _deployWorks() internal {
         signer1 = vm.addr(signer1Pk);
         signer2 = vm.addr(signer2Pk);
-        delegation = new DelegationManagementMock();
-        coordinator = new MockVrfCoordinator();
-        deployCodeTo("SaleMocks.sol:MockPermit2", PERMIT2);
-        permit2 = MockPermit2(PERMIT2);
-        usd = new PermitToken();
+        _deployExternals();
 
         DeployV1.Deployment memory d = DeployV1.deploy(_params());
         deployment = d;
@@ -130,7 +126,18 @@ abstract contract WorksDeployment is Test {
         if (!deferGenesis) DeployV1.install(d, _genesisConfig(), manifest, _genesisWiring());
     }
 
-    function _params() internal view returns (DeployV1.Params memory p) {
+    /// @dev The external systems: the identity lane's delegation reduction, the entropy lane's
+    ///      VRF coordinator mock, the sales lane's Permit2 reproduction at the canonical address,
+    ///      and an EIP-2612 ERC-20. A fork test overrides this to keep the real deployments.
+    function _deployExternals() internal virtual {
+        delegation = new DelegationManagementMock();
+        coordinator = new MockVrfCoordinator();
+        deployCodeTo("SaleMocks.sol:MockPermit2", PERMIT2);
+        permit2 = MockPermit2(PERMIT2);
+        usd = new PermitToken();
+    }
+
+    function _params() internal view virtual returns (DeployV1.Params memory p) {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/integration-lane-b");
         p.feeRecipient = networkFee;
@@ -282,6 +289,25 @@ abstract contract WorksDeployment is Test {
         vm.warp(block.timestamp + delay);
         vm.prank(caller);
         manager.execute(target, data);
+    }
+
+    /// @dev `_govern` that reports whether the governed call executed instead of reverting; a
+    ///      failed operation is cancelled so the same call can be scheduled again.
+    function _governTry(address caller, address target, bytes memory data)
+        internal
+        returns (bool ok)
+    {
+        (, uint32 delay) = manager.canCall(caller, target, bytes4(data));
+        vm.prank(caller);
+        manager.schedule(target, data, 0);
+        vm.warp(block.timestamp + delay);
+        vm.prank(caller);
+        try manager.execute(target, data) {
+            ok = true;
+        } catch {
+            vm.prank(caller);
+            manager.cancel(caller, target, data);
+        }
     }
 
     /// @dev Schedules a governed call and returns the operation ID, for cancellation tests.

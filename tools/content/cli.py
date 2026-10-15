@@ -1,4 +1,4 @@
-"""Command-line interface: `python -m tools.content <plan|calls|verify|rebuild|golden>`."""
+"""Command-line interface: `python -m tools.content <plan|calls|verify|rebuild|cid|golden>`."""
 
 from __future__ import annotations
 
@@ -359,6 +359,64 @@ def cmd_rebuild(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- cid ---
+
+
+def cmd_cid(args: argparse.Namespace) -> int:
+    from . import cid as cid_module
+
+    source = Path(args.file)
+    try:
+        with source.open("rb") as stream:
+            result = cid_module.cid_of_stream(stream)
+    except OSError as exc:
+        raise ToolError(f"cannot read input file {source}: {exc.strerror or exc}") from exc
+    accepted = cid_module.locator_accepted(result.uri)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "cid": result.cid,
+                    "locator": result.uri,
+                    "bytes": result.size,
+                    "chunks": result.chunks,
+                    "root": result.kind,
+                    "depth": result.depth,
+                    "locatorAccepted": accepted,
+                    "kubo": cid_module.KUBO_COMMAND,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(f"cid           {result.cid}")
+        print(f"locator       {result.uri}")
+        print(
+            f"bytes         {result.size:,} in {result.chunks} chunk(s) of "
+            f"{cid_module.CHUNK_SIZE:,}"
+        )
+        if result.depth == 0:
+            print("root          raw block (bafkrei...): the file is a single chunk")
+        else:
+            print(f"root          dag-pb UnixFS node (bafybei...), {result.depth} level(s) deep")
+    if not accepted:
+        _eprint("error: WorkRecords would refuse this locator; please report it")
+        return EXIT_NOT_OK
+    if not args.quiet:
+        _eprint(f"note: kubo gives the same CID with: {cid_module.KUBO_COMMAND}")
+        _eprint(
+            "warning: never use `ipfs add -w` (--wrap-with-directory) for a locator: its last "
+            "line is the wrapping directory's CID, which names a directory, not this file."
+        )
+        _eprint(
+            "note: pin with these settings (kubo's default import: balanced layout, 174 links "
+            "per node, no --inline, no --trickle); another chunker, layout, CID version or "
+            "hash gives another CID for the same bytes. For a gzip or base64 encoding, run this "
+            "on the stored stream (`plan`'s .stored file): that is what the locator names."
+        )
+    return 0
+
+
 # --- golden ---
 
 
@@ -463,6 +521,14 @@ def build_parser() -> argparse.ArgumentParser:
             )
             p.add_argument("--force", action="store_true", help="overwrite the output file")
         p.set_defaults(func=func)
+
+    p = sub.add_parser(
+        "cid", help="the IPFS CID (fixed profile) of a file, as an ipfs:// locator (offline)"
+    )
+    p.add_argument("file", help="the exact bytes the locator will name")
+    p.add_argument("--json", action="store_true", help="machine-readable output")
+    p.add_argument("-q", "--quiet", action="store_true", help="no notes or warnings on stderr")
+    p.set_defaults(func=cmd_cid)
 
     p = sub.add_parser("golden", help="maintainers: regenerate or check the golden vectors")
     mode = p.add_mutually_exclusive_group(required=True)

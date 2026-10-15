@@ -15,6 +15,7 @@ python -m tools.content plan art.png --mime image/png --encoding base64
 python -m tools.content calls art.png.content.json --store 0xSTORE --schedule glamsterdam
 python -m tools.content verify  --rpc "$ETH_RPC_URL" --store 0xSTORE 0xFILEID
 python -m tools.content rebuild --rpc "$ETH_RPC_URL" --store 0xSTORE 0xFILEID -o art.png
+python -m tools.content cid art.png                     # the ipfs:// locator (offline)
 ```
 
 Use `--schedule glamsterdam` for Sepolia, which has priced state creation under
@@ -159,6 +160,43 @@ Runs the same verification and writes the decoded media only if every check
 passed, atomically, and never over an existing file without `--force`.
 `--stored` writes the stored (encoded) stream instead, which is what to re-publish to
 Arweave or IPFS.
+
+### `cid FILE`
+
+Prints the IPFS CID of the file's exact bytes under the fixed profile of
+[ADR 0001 section 8](../../docs/adr/0001-v1-scope.md#8-works-content-and-storage), and the
+`ipfs://` locator `WorkRecords.addLocator` accepts for it. Offline: nothing is read but the
+file, which is streamed one chunk at a time, so a file of any size works.
+
+The profile is CIDv1, sha2-256, raw leaves, a fixed 262,144-byte chunker and the balanced
+UnixFS layout with at most 174 links per node, in lowercase base32. A file of at most one chunk
+is a single raw block (`bafkrei...`, the SHA-256 of the file); a larger file's root is a dag-pb
+node (`bafybei...`). It is what kubo prints with its default import settings for
+
+```bash
+ipfs add --only-hash --quieter --cid-version=1 --raw-leaves --chunker=size-262144 FILE
+```
+
+so pin with the same settings: another chunker, layout (`--trickle`), CID version, hash or
+`--inline` gives another CID for the same bytes, and a kubo configured with another
+`Import.UnixFSFileMaxLinks` or `Import.UnixFSChunker` (for example the `unixfs-v1-2025`
+profile's 1 MiB chunks) does too. Never use `ipfs add -w` (`--wrap-with-directory`) output: its
+last line is the wrapping directory's CID, which names a directory, not the file, and a path
+under it (`ipfs://<dir>/art.png`) is not a locator `WorkRecords` accepts. The command repeats
+these warnings on stderr (`-q` silences them). For a gzip or base64 encoding the locator names
+the stored stream, so run it on `plan`'s `.stored` file.
+
+`--json` prints the CID, the locator, the size, the number of chunks, the root's kind and depth,
+and whether the locator passes the `WorkRecords` rule.
+
+How it is checked (`test_cid.py`): the published CIDs of an empty file and of `hello world`; the
+root blocks of [IPIP-0499](https://specs.ipfs.tech/ipips/ipip-0499/)'s own test fixtures
+(`golden/ipip-0499-blocks.json`), each authenticated by its CID and re-encoded byte for byte,
+among them kubo's 174-link node and its rebalanced two-level root; an independent statement of
+the balanced layout at small sizes; Python's base32; and kubo itself whenever `ipfs` is on the
+`PATH`. `golden/cid-vectors.json` and the generated `test/content/tooling/CidGoldenData.sol`
+carry the golden CIDs into Foundry, where `CidGolden.t.sol` adds each as a locator on the real
+`WorkRecords` and re-derives the raw ones from their SHA-256.
 
 ## How it maps to the contract
 
