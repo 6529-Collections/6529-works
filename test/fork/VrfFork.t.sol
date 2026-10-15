@@ -12,16 +12,16 @@ import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 
 /// @notice The entropy module against the real Chainlink VRF v2.5 coordinator on a Sepolia
 ///         fork: a funded subscription with the module as its consumer, a seed request that the
-///         coordinator accepts and logs with sepolia-r2's gas lane and limits, then a simulated
+///         coordinator accepts and logs with sepolia-r3's gas lane and limits, then a simulated
 ///         fulfilment (the coordinator's own fulfilment needs the oracle's VRF proof) delivered
 ///         within the configured callback gas, after which the VRF work starts and renders its
 ///         seed.
 contract VrfSepoliaForkTest is WorksForkBase {
-    /// @dev The VRF v2.5 coordinator on Sepolia, and the code hash sepolia-r2 pinned.
+    /// @dev The VRF v2.5 coordinator on Sepolia, and the code hash sepolia-r3 pinned.
     address internal constant VRF_COORDINATOR = 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B;
-    bytes32 internal constant R2_COORDINATOR_CODEHASH =
+    bytes32 internal constant R3_COORDINATOR_CODEHASH =
         0x5e22d4163e7c1b059a946f0600759a4d38eb3e04592d0e359def022cec36bdbc;
-    /// @dev sepolia-r2's gas lane, callback gas limit and confirmations (its deployment record).
+    /// @dev sepolia-r3's gas lane, callback gas limit and confirmations (its deployment record).
     bytes32 internal constant KEY_HASH =
         0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
     uint32 internal constant CALLBACK_GAS = 200_000;
@@ -70,9 +70,9 @@ contract VrfSepoliaForkTest is WorksForkBase {
         _keep(root, _one(w));
     }
 
-    function test_TheCoordinatorIsTheOneR2Pinned() public onFork {
+    function test_TheCoordinatorIsTheOneR3Pinned() public onFork {
         assertEq(entropy.coordinator(), VRF_COORDINATOR);
-        assertEq(VRF_COORDINATOR.codehash, R2_COORDINATOR_CODEHASH, "the coordinator's code");
+        assertEq(VRF_COORDINATOR.codehash, R3_COORDINATOR_CODEHASH, "the coordinator's code");
     }
 
     /// @dev The request reaches the coordinator, which records it against the subscription and

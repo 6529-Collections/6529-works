@@ -63,38 +63,70 @@ script/          deployment and verification
 
 ## Current status
 
-- 11 October 2026: repository created and ADR 0001 recorded.
-- **Phases 1–6 complete:**
-  - skeleton and CI gates: budgets, Slither, links, genesis coverage;
-  - shared libraries;
-  - governance hardening (ADR 0002) and genesis wiring;
-  - every v1 module, independently reviewed: Stream and records, Editions, curation,
-    auction, fixed-price and Dutch sales, economics, identity with consolidation
-    recovery, content store and renderer, statement log, entropy.
-- **Build-time decisions:** [ADR 0003](../docs/adr/0003-build-time-decisions.md).
-- **Integration:**
-  - end-to-end flows pass on the real contracts;
-  - steady-state `start` is about 276K gas, and `startWithBid` about 317K (two-party about 325K);
-  - `tokenURI` is at most about 7.8M gas.
-- **Deployment:**
-  - the deploy library, genesis and readback scripts are done;
-  - they have been dry-run on a local chain with Verify passing after the 5-day delay;
-  - the Sepolia runbook is in `script/README.md`.
-- **Sepolia rehearsal r1 (11 October 2026):**
-  - deployed and configured from `60edd9b`, with throwaway Safes in the mainnet structure,
-    a dedicated VRF subscription and the official 6529 delegation contract;
-  - the record and addresses are in [`deployments/11155111/`](../deployments/11155111/README.md);
-  - Verify passes on a fork advanced five days; the live Verify is due from 16 October.
-  - **Finding:** Sepolia runs Glamsterdam, which reprices state creation. The deploy cost
-    6.2x Foundry's Prague estimate. Every gas budget that writes state must be re-measured
-    on Sepolia.
-- **Sepolia rehearsal r2 (11 October 2026):** the full v1 scope from `400f96d`, including
-  the contested-override recovery; same holders as r1, its own VRF subscription. Verify passes
-  on a fork advanced five days.
-- **Gas budgets under Glamsterdam (13 October 2026):** [ADR 0004](../docs/adr/0004-gas-budgets-under-glamsterdam.md).
-  The budgets stay as Prague gas, CI asserts each operation's exact new slots and accounts,
-  and the Sepolia totals are published next to them.
-- **Next (phase 7, testnet):**
-  - measure the flows on Sepolia under Glamsterdam: `start`, `settle`, Editions, uploads
-    and the `tokenURI` threshold matrix; then the marketplace matrix;
-  - run the live Verify on r2 from 16 October.
+**16 October 2026: release candidate
+[v1.0.0-rc.1](../docs/releases/v1.0.0-rc.1.md).** Phases 1 to 6 are complete. Phase 7
+(testnet) has three Sepolia rehearsals, the last of them RC1's code, with the items under "Open in
+phase 7" still to do. The code is pre-audit and not production-ready.
+
+**What RC1 is.** The tag on `main` whose contracts, deploy and verify scripts, genesis policy and
+`foundry.toml` are those of `e5fe78c`, the code deployed as Sepolia rehearsal r3. It holds every
+v1 module of [ADR 0001](../docs/adr/0001-v1-scope.md), as amended by ADRs
+[0002](../docs/adr/0002-access-manager-hardening.md),
+[0003](../docs/adr/0003-build-time-decisions.md) and
+[0004](../docs/adr/0004-gas-budgets-under-glamsterdam.md), and what the October work added to
+them: the review fixes, the state-growth gas diet and the source-quality pass.
+
+**The evidence** (figures in the [release notes](../docs/releases/v1.0.0-rc.1.md#evidence)):
+- an [internal adversarial review](../docs/security/internal-review-2026-10.md) by AI agents: no
+  Critical or High finding, 9 Medium and 30 Low; every Medium and 28 Lows fixed in #51 to #57;
+- the test suite: unit, fuzz, integration and fork tests, stateful invariants on every contract
+  that moves money and on the wired stack, per-contract coverage and mutation floors, and Halmos
+  proofs over the text, base64, bounded-call, signer-epoch and split libraries
+  ([Testing](../docs/testing/README.md));
+- the gas budgets of ADR 0004, in Prague gas with exact counts of new slots and accounts, gated
+  in CI;
+- Sepolia r3: every contract an exact match on Sourcify, Verify passing on a fork advanced five
+  days, and the lifecycle measured on chain
+  ([record](../deployments/11155111/README.md#sepolia-r3-15-october-2026-current),
+  [flows](../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
+
+**Open in phase 7:**
+- r3's settlements, edition sale and purchases, and a real anti-snipe bid, from 16 October
+  2026, 20:35 UTC; until then those rows are simulated;
+- the live Verify: r1 and r2 from 16 October, r3 from 20 October 2026;
+- the flows not yet run on Sepolia: the dispute pause and other guardian operations, and a
+  recovery or identity change (each needs a Safe or waits a governed delay); finalize and
+  preferred-location failover; the Dutch sale and ERC-20 payments by Permit2
+  ([flows](../deployments/11155111/flows.md#pending));
+- Etherscan verification, which needs an API key (Sourcify is done);
+- the marketplace and metadata rendering matrix
+  ([launch checklist](https://github.com/6529-Collections/6529-works/issues/1));
+- the mutation baseline's four contracts still to record (Editions, FixedPriceSale,
+  MintSaleBase, GovernanceConfig).
+
+**Next (phase 8, audit and mainnet):**
+1. **External audit** of RC1, with the [auditor pack](../docs/audit/README.md) and the review's
+   [residual risks](../docs/security/internal-review-2026-10.md#6-residual-risks-and-recommended-next-steps);
+   then remediation and a new release candidate.
+2. **Mainnet prerequisites:**
+   - Glamsterdam's final mainnet parameters: then re-measure ADR 0004's Sepolia column on them,
+     the fixed gas allowances (`DELIVERY_GAS`, `PAYOUT_GAS`, the auction's ERC-20 payout frame,
+     the VRF callback limit, the claim router's minimums and shortfall ceiling, the
+     consolidation read stipend) and the state-gas reservoir (runbook step 13);
+   - the Safes with hardware-wallet signers: the hot and cold admin Safes and three guardian
+     Safes, with no shared signer, and the operational keys;
+   - the deployment ceremony from the [runbook](../script/README.md), then Verify after the
+     5-day setback.
+3. **6529 Stream Federated** in v1.1, only if needed (ADR 0001 §16).
+4. **The front end:** the Stream, Editions and later Federated pages on 6529.io.
+
+**History:**
+- 11 October 2026: repository and ADR 0001; phases 1 to 6 (skeleton and CI gates, libraries,
+  governance hardening in ADR 0002, every v1 module, build-time decisions in ADR 0003);
+  Sepolia r1 (`60edd9b`) and r2 (`400f96d`), where Glamsterdam's repricing of state was found.
+- 13 October: ADR 0004, gas budgets under Glamsterdam; the v1 flows measured on r1 and r2.
+- 14 and 15 October: the internal adversarial review and its fixes (#51 to #57, report #60).
+- 15 October: invariant suites and fork tests (#62), the gas diet (#63), test infrastructure
+  (#58, #59, #65), docs (#61, #64), the quality pass (#66), Sepolia r3 (#67), the test
+  organisation (#68) and the mutation baseline (#69).
+- 16 October: v1.0.0-rc.1.

@@ -16,6 +16,7 @@
 | Run or extend the tests, or see how strong they are | [Testing](testing/README.md): the layers of the suite, coverage, mutation testing and the symbolic proofs |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |
 | Read the internal review | [Internal review, October 2026](security/internal-review-2026-10.md): by AI agents, not an external audit |
+| See what a release contains | The release notes of [v1.0.0-rc.1](releases/v1.0.0-rc.1.md), the first release candidate (pre-audit), and the [changelog](../CHANGELOG.md) |
 
 ## Where each fact lives
 

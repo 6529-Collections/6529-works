@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.0.0-rc.1 (2026-10-16)
+
+- Release candidate 1, pre-audit and not production-ready: the code deployed as Sepolia
+  rehearsal r3. The release notes,
+  [docs/releases/v1.0.0-rc.1.md](docs/releases/v1.0.0-rc.1.md), are linked from the README's
+  status table and the docs index. ADR 0004's Sepolia column gives the r3 receipts (an
+  amendment note; rows r3 has not run keep r2's receipt or show r3's simulation, marked, and
+  r2's column is kept below the table), and the known limitations quote r3. The fork tests take
+  r3's inputs: the deploy simulation uses r3's record, holders and manifest, and the VRF test
+  the code hash r3 pinned. The delivery plan's status is rewritten for the release.
 - Tests: the first full mutation baseline
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 9,606 mutants of
   `src/` at 054442d, 88.5% killed by the campaign and 90.4% by the final suite (98.1% leaving
