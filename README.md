@@ -19,57 +19,48 @@ governs every contract behind delays that guardians can veto.
 ## Architecture
 
 ```mermaid
-flowchart LR
-    Artist([Artist])
+flowchart TB
+    Artist([Artist and parties])
     Signer([Curation signer])
-    Collector([Collector])
-    Anyone([Anyone])
+    Buyers([Collectors, keepers, anyone])
 
     subgraph Curation
-        PR[PackageRegistry]
-        CV[Eip712CurationVerifier]
+        direction LR
+        PR[PackageRegistry] --> CV[Eip712CurationVerifier]
     end
-    subgraph Sales
+    subgraph Sales [Sale adapters]
+        direction LR
         EA[EnglishAuction]
         FP[FixedPriceSale]
         DS[DutchSale]
     end
     subgraph Products
-        S[Stream ERC-721]
-        WR[WorkRecords]
-        E[Editions ERC-1155]
+        direction LR
+        S[Stream ERC-721] --- WR[WorkRecords]
+        S <-->|master and edition| E[Editions ERC-1155]
     end
     subgraph Money
+        direction LR
         ER[EconomicsResolver]
         SW[Split wallets]
         RE[RevenueEscrow]
     end
-    subgraph Content
-        CS[ContentStore]
-        R[Renderer]
+    subgraph Content [Content and records]
+        direction LR
+        R[Renderer] --> CS[ContentStore]
+        R --> SL[StatementLog]
     end
     AR[ArtistRegistry]
-    SL[StatementLog]
     AM[WorksAccessManager]
 
-    Signer -->|approval| PR
-    Artist -->|consent, move| PR
-    PR -->|verify| CV
-    Anyone -->|start, settle| EA
-    Collector -->|bid| EA
-    Collector -->|buy| FP & DS
-    EA -->|mint| S
-    FP & DS -->|mint| E
-    S -->|consume item| PR
-    S <-->|master and edition| E
-    S --- WR
-    S -->|terms| ER
-    EA & FP & DS -->|pay| SW
-    EA & FP & DS -.->|failed payment| RE
-    SW -->|artist payout| AR
-    S -->|tokenURI| R
-    R -->|bytes| CS
-    R -->|dispute status| SL
+    Signer -->|approves roots| Curation
+    Artist -->|accepts, signs the move| Curation
+    Buyers -->|start, bid, buy, settle| Sales
+    Sales -->|mint| Products
+    Products -->|consume item| Curation
+    Sales -->|pay, or escrow on failure| Money
+    Products -->|tokenURI| Content
+    Money -->|artist payouts| AR
     AM -.->|governs every contract| Products
 ```
 
