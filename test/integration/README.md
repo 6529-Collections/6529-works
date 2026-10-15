@@ -48,6 +48,30 @@ acts directly; any other role is scheduled, waited out and executed.
 | [`GasHarness.t.sol`](GasHarness.t.sol) | The gas report's harness against the truth: a start measured from a fully cold state equals the corrected figure after every account it reaches was warmed, and storage the harness does not cool is refused. |
 | [`GasReport.t.sol`](GasReport.t.sol) | The budgets ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)): Prague gas, and the exact new slots and accounts, of `start` and `startWithBid` (one and two parties, VRF, edition master, ERC-20 by Permit2, first ever, new collection, new terms), `bid`, `settle`, `consume`, `createEdition`, `openSale`, `purchase`, `refreshStanding` and `royaltyInfo`, and `tokenURI` by size. |
 
+## Invariant suites
+
+Two stateful invariant suites run on the same real stack, in
+[`invariant/`](invariant/). Each test contract inherits its handler and targets itself, so the
+handler has every helper above and no handler contract meets the EIP-170 limit. Each action is
+bounded, never reverts (`fail_on_revert`), predicts its outcome from the protocol's rules and
+records any disagreement; the invariant function asserts there is none, then checks the state.
+
+| Suite | Actions | Invariants |
+| --- | --- | --- |
+| [`StreamLifecycleInvariant.t.sol`](invariant/StreamLifecycleInvariant.t.sol) (handler [`StreamLifecycleHandler.sol`](invariant/StreamLifecycleHandler.sol)) | register and accept packages; move items to Stream and start auctions (with or without a first bid, a revoked move); bid; settle; dispute pause; cancel (upheld) or resume (rejected, with a withdrawal); `releaseContent`; `openRecord`, `setRecord`, `finalize`, `addLocator`; governed relicense; transfer; stage a recovery override and end it (veto or execution); the restrained keys trying every artist power; time | every token has exactly one known owner, or auction custody while its sale is unsettled; token IDs assigned once, in order, never reused; a content hash held by at most one live item unless released to its beneficiary; a finalized record keeps its content hashes, and media never changes; a CC0 work stays CC0 with the pinned text; locators are append-only; a restrained artist never acts; the auction holds exactly the live bids and credits |
+| [`EditionSalesInvariant.t.sol`](invariant/EditionSalesInvariant.t.sol) (handler [`EditionSalesHandler.sol`](invariant/EditionSalesHandler.sol)) | create editions; open fixed-price sales (artist, PLATFORM with consent, PLATFORM alone) and Dutch sales; buy through allowlist and public phases in ETH and an ERC-20 (direct, EIP-2612, relayed Permit2); pause and unpause the adapters; deprecate and re-admit currencies; close sales; re-rate masters; claim credits; time | supply within the edition size, every copy held; every wallet within its cap in every capped phase; each adapter's ETH and ERC-20 balances cover what it owes, exactly; every purchase pays the schedule price, the schedule delay equals an independent model of the halts (MARKET-1); no purchase or opening while halted; an edition's royalty follows its master |
+
+`test_EveryActionRuns` in each suite replays sequences of the campaign's shape from fixed seeds
+and asserts that every action, and the paths the invariants are about (cancel, release and
+re-consumption, recovery, refusals), really ran, so a campaign cannot pass vacuously.
+
+```bash
+forge test --match-path "test/integration/invariant/*"            # CI: 256 runs x depth 128
+FOUNDRY_PROFILE=deep forge test --match-test "invariant_"         # nightly: 2,000 x 256
+```
+
+The fork tests against the real external systems are in [`test/fork/`](../fork/README.md).
+
 ## Findings
 
 Every integration finding was resolved in the lane that owned it. Each one is now a

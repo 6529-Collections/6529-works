@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Tests: two stateful invariant suites on the real stack (`test/integration/invariant/`), each
+  256 runs of depth 128 in CI with a coverage replay that fails if any action or key path never
+  runs. The Stream lifecycle suite drives the package registry, Stream, the records satellite,
+  the auction and recovery overrides; the Editions sales suite drives Editions with the
+  fixed-price and Dutch adapters, pauses and currency deprecations. A `deep` Foundry profile
+  (2,000 runs of depth 256) is for a nightly run.
+- Tests: opt-in fork tests (`test/fork/`, skipped unless `FORK_MAINNET_RPC` or
+  `FORK_SEPOLIA_RPC` is set) against the real 6529 delegation contract through the
+  `ConsolidationAdapter`, the canonical Permit2 through the sale adapters, the Chainlink VRF
+  v2.5 coordinator on Sepolia, and a full simulation of the deploy script on a Sepolia fork with
+  sepolia-r2's Safes and dependencies.
+- Tooling: `python -m tools.content cid FILE` computes a file's IPFS CID under the fixed
+  profile (CIDv1, sha2-256, raw leaves, 262,144-byte chunks, balanced layout) and its `ipfs://`
+  locator, checked against IPIP-0499's fixtures and the real `WorkRecords` locator rule.
 - Repository created for the 6529 network's art protocol: 6529 Stream, 6529
   Editions and 6529 Stream Federated.
 - ADR 0001 records the accepted v1 scope (originally 6529Stream ADR 0055).

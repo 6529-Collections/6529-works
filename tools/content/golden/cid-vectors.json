@@ -1,0 +1,105 @@
+{
+  "schema": "6529-works/cid-golden/v1",
+  "profile": {
+    "cidVersion": 1,
+    "hash": "sha2-256",
+    "rawLeaves": true,
+    "chunker": "size-262144",
+    "layout": "balanced",
+    "maxLinks": 174,
+    "multibase": "base32"
+  },
+  "vectors": [
+    {
+      "name": "empty",
+      "size": 0,
+      "chunks": 1,
+      "depth": 0,
+      "cid": "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku",
+      "sha256": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "input": {
+        "kind": "literal",
+        "hex": "0x"
+      },
+      "provenance": "published kubo CID"
+    },
+    {
+      "name": "hello-world",
+      "size": 11,
+      "chunks": 1,
+      "depth": 0,
+      "cid": "bafkreifzjut3te2nhyekklss27nh3k72ysco7y32koao5eei66wof36n5e",
+      "sha256": "0xb94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+      "input": {
+        "kind": "literal",
+        "hex": "0x68656c6c6f20776f726c64"
+      },
+      "provenance": "published kubo CID"
+    },
+    {
+      "name": "one-chunk",
+      "size": 262144,
+      "chunks": 1,
+      "depth": 0,
+      "cid": "bafkreia2r4ogaq33uq74e7m6ocauladvkrln4tk5jywm74l3voaqwo62zq",
+      "sha256": "0x1a8f1c60437ba43fc27d9e70814580755456de4d5d4e2ccff17bab810b3bdacc",
+      "input": {
+        "kind": "pattern",
+        "length": 262144
+      },
+      "provenance": "computed by tools/content/cid.py"
+    },
+    {
+      "name": "one-chunk-plus-one",
+      "size": 262145,
+      "chunks": 2,
+      "depth": 1,
+      "cid": "bafybeiallx37pvdv3kdlfghtcgxb336exsp4qsbolhwmoqnenyawpymlbe",
+      "sha256": "0x25f399908d7e0b066e130a860496af8438ed326339f41ba5eccf4c78c26ad309",
+      "input": {
+        "kind": "pattern",
+        "length": 262145
+      },
+      "provenance": "computed by tools/content/cid.py"
+    },
+    {
+      "name": "three-chunks-and-a-tail",
+      "size": 787432,
+      "chunks": 4,
+      "depth": 1,
+      "cid": "bafybeig3kva7vkbniwkcxcaadzhumpz7b7rzqsdhkyr5ftxumkudo7xhvi",
+      "sha256": "0x18ca400a01434fe010d7394526015a5e0af257d5fc4a634b830364f4655e3081",
+      "input": {
+        "kind": "pattern",
+        "length": 787432
+      },
+      "provenance": "computed by tools/content/cid.py"
+    },
+    {
+      "name": "one-full-node",
+      "size": 45613056,
+      "chunks": 174,
+      "depth": 1,
+      "cid": "bafybeiddszoeqgxk2lykdhxe3ykmzjvnqgo3fvgmrxw5lld4pjgjs4gopa",
+      "sha256": "0x4d0a50c8d8fc12958384595a867385d28a8ea7b0fca4bbcb7223f4e0513ce69d",
+      "input": {
+        "kind": "pattern",
+        "length": 45613056
+      },
+      "provenance": "computed by tools/content/cid.py"
+    },
+    {
+      "name": "two-levels",
+      "size": 45875200,
+      "chunks": 175,
+      "depth": 2,
+      "cid": "bafybeib46eankhoranxntbq4yii3k2vzvctv2tsdne6nem22vrfryphc5e",
+      "sha256": "0xe8337b749e8eba57612804c66d471ef0737a68a1bd714c97b114157cc8f7e595",
+      "input": {
+        "kind": "pattern",
+        "length": 45875200
+      },
+      "provenance": "computed by tools/content/cid.py"
+    }
+  ]
+}

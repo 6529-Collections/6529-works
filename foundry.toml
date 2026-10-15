@@ -45,6 +45,15 @@ depth = 128
 fail_on_revert = true
 show_metrics = true
 
+# Nightly: every stateful invariant suite, longer and deeper than CI runs it:
+#   FOUNDRY_PROFILE=deep forge test --match-test "invariant_"
+# Only the campaign changes; the compiler settings are the default profile's.
+[profile.deep.invariant]
+runs = 2000
+depth = 256
+fail_on_revert = true
+show_metrics = true
+
 [fmt]
 line_length = 100
 tab_width = 4

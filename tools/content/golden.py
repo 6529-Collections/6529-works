@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import abi, gas, golden_attest
+from . import abi, cid_golden, gas, golden_attest
 from .encoding import Encoding, decode, encode
 from .errors import ToolError
 from .keccak import keccak256
@@ -357,6 +357,7 @@ def check() -> list[str]:
             problems.append(f"{SOLIDITY_PATH.name} is stale: run `golden --write`")
     except (ToolError, OSError, KeyError) as exc:
         problems.append(f"cannot check the Solidity data: {exc}")
+    problems += cid_golden.check()
     return problems
 
 
@@ -394,12 +395,17 @@ def write() -> None:
     VECTORS_PATH.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8", newline="\n")
     SOLIDITY_PATH.parent.mkdir(parents=True, exist_ok=True)
     SOLIDITY_PATH.write_text(render_solidity(document, streams), encoding="utf-8", newline="\n")
+    cid_golden.write()
 
 
 def run(write_files: bool) -> int:
     if write_files:
         write()
         print(f"wrote {VECTORS_PATH.relative_to(ROOT)} and {SOLIDITY_PATH.relative_to(ROOT)}")
+        print(
+            f"wrote {cid_golden.VECTORS_PATH.relative_to(ROOT)} and "
+            f"{cid_golden.SOLIDITY_PATH.relative_to(ROOT)}"
+        )
         return 0
     problems = check()
     for problem in problems:
