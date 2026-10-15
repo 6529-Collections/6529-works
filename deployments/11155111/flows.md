@@ -18,6 +18,16 @@ Prague costs in Foundry. This file records what the flows cost on Sepolia now.
 
 These are testnet rehearsals with throwaway keys, and the code is pre-audit.
 
+> **Measured on the deployed code, not today's `main`.** Every figure here is from r1 and r2
+> (`60edd9b` and `400f96d`). `main` has changed since, so read these as measurements of those
+> instances. The gas budgets are now defined by
+> [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md) (Prague gas plus exact
+> counts of new slots), so the "fail" marks against 350K below are superseded. Later changes
+> also alter some details recorded here: the consolidation adapter's per-getter stipend is
+> 200,000 gas on `main` (50,000 in r1 and r2), the VRF callback writes no new slot since
+> DEPS-2, and the renderer's media-list read has its own 1,000,000-gas cap since the content
+> fixes (#56), so `tokenURI` needs about 1.07M gas available rather than about 1.0M.
+
 ## Summary (r2)
 
 - **Every flow ran on the real stack.** This covers:

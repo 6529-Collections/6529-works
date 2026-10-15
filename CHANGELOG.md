@@ -392,3 +392,12 @@
   Medium, 30 Low, 1 Info after deduplication) and how each was resolved (fixes in #51 to #57),
   the decisions and accepted risks, the coverage record and the residual risks for the external
   audit. SECURITY.md and the docs index link to it.
+- Documentation: a current-state protocol specification (`docs/spec/`, one page per area with
+  state machines, call sequences with roles and delays, rules linked to their tests, events
+  and failure modes); an auditor pack (`docs/audit/`: scope with nSLOC and bytecode sizes,
+  trust assumptions, threat model, invariants, known limitations, build and budgets); an
+  integrator guide (`docs/integrators/`: reading a work, events and indexing, addresses, ABIs
+  and interface IDs, buying and settling, storage); a glossary; and a rewritten README and docs
+  index. `tools/gen_role_matrix.py` generates the role and permission matrix
+  (`docs/audit/roles.md`) from `config/genesis.example.json`, checking each selector against
+  its signature and each delay against its role; CI's Docs job runs it with `--check`.

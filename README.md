@@ -2,230 +2,184 @@
 
 [![CI](https://github.com/6529-Collections/6529-works/actions/workflows/ci.yml/badge.svg)](https://github.com/6529-Collections/6529-works/actions/workflows/ci.yml)
 
-6529 Works is the 6529 network's art protocol: the smart contracts for **6529 Stream**,
-a curated ERC-721 of 1/1 artworks; **6529 Editions**, a linked ERC-1155 of editions
-anchored by Stream masters; and **6529 Stream Federated** (v1.1, only if needed), which
-lets artists run their own contracts from the network's templates. Stream works are
-curated by TDH-weighted votes in 6529 waves, sold in permissionless auctions that run
-24 hours by default, and paid out through immutable pull-payment split wallets. Content
-is content-addressed and stored on Arweave and IPFS, with an optional on-chain upgrade.
+6529 Works is the 6529 network's art protocol. It holds two products: **6529 Stream**, one
+shared ERC-721 for curated 1/1 artworks, and **6529 Editions**, one shared ERC-1155 whose
+editions are each anchored by a Stream master. Works are approved by TDH-weighted votes in
+6529 waves and attested by a curation signer; every party named in a work signs before it
+can be sold. Anyone may start a work's 24-hour English auction, and anyone may settle it.
+Money moves by pull: proceeds and royalties collect in immutable split wallets that payees
+release from, with an escrow for payments that fail. Content is addressed by hash, stored on
+Arweave and IPFS, and can be upgraded on-chain by anyone. One OpenZeppelin `AccessManager`
+governs every contract behind delays that guardians can veto.
 
-> **Status: pre-audit, not deployed.** Do not use this code to custody value. The scope
-> is fixed by [ADR 0001](docs/adr/0001-v1-scope.md); see [Status](#status-and-maturity)
-> for what exists today.
+> **Status: pre-audit.** Do not use this code to custody value. It has had an internal
+> adversarial review, not an external audit. A rehearsal runs on Sepolia; there is no mainnet
+> deployment. See [Status](#status).
 
-## Tiers
+## Architecture
 
-| Tier | Admission | Contract | Primary split (default) |
-| --- | --- | --- | --- |
-| The Memes | Main Stage winners, ranked by TDH-weighted votes | Existing Memes ERC-1155 (outside this repository) | 50 / 50 |
-| 6529 Stream | Approved by the published TDH rule | One shared ERC-721 | 75% artist / 25% network |
-| 6529 Editions | An approved edition package anchored by a Stream master | One shared ERC-1155 | 75 / 25 |
-| 6529 Stream Federated (v1.1) | Permissionless registration, no curation | Artist-owned contracts from audited templates | 90 / 10 |
+```mermaid
+flowchart LR
+    Artist([Artist])
+    Signer([Curation signer])
+    Collector([Collector])
+    Anyone([Anyone])
 
-Secondary royalties default to 6.529% (ERC-2981); rates use a 100,000 denominator so that
-is exact. Defaults apply to new works only: a work keeps the terms it was minted with.
+    subgraph Curation
+        PR[PackageRegistry]
+        CV[Eip712CurationVerifier]
+    end
+    subgraph Sales
+        EA[EnglishAuction]
+        FP[FixedPriceSale]
+        DS[DutchSale]
+    end
+    subgraph Products
+        S[Stream ERC-721]
+        WR[WorkRecords]
+        E[Editions ERC-1155]
+    end
+    subgraph Money
+        ER[EconomicsResolver]
+        SW[Split wallets]
+        RE[RevenueEscrow]
+    end
+    subgraph Content
+        CS[ContentStore]
+        R[Renderer]
+    end
+    AR[ArtistRegistry]
+    SL[StatementLog]
+    AM[WorksAccessManager]
 
-## How a work flows
-
+    Signer -->|approval| PR
+    Artist -->|consent, move| PR
+    PR -->|verify| CV
+    Anyone -->|start, settle| EA
+    Collector -->|bid| EA
+    Collector -->|buy| FP & DS
+    EA -->|mint| S
+    FP & DS -->|mint| E
+    S -->|consume item| PR
+    S <-->|master and edition| E
+    S --- WR
+    S -->|terms| ER
+    EA & FP & DS -->|pay| SW
+    EA & FP & DS -.->|failed payment| RE
+    SW -->|artist payout| AR
+    S -->|tokenURI| R
+    R -->|bytes| CS
+    R -->|dispute status| SL
+    AM -.->|governs every contract| Products
 ```
- curation     artist package --> 6529 wave vote --> curation signer attests
-                                                         |
- package      anyone registers --> PackageRegistry <-- every listed party accepts
-                                          |
- move         lead artist signs "move to Stream" (revocable)
-                                          |
- start        anyone calls start --> EnglishAuction --> Stream.mint --> item consumed
-                                  (24 h by default)     (token ID, terms locked)
-                                          |
- bids         late bids extend the clock; refunds are pulled
-                                          |
- settlement   anyone settles --> token to the winner (or a pending claim)
-                                  proceeds to split wallets (a failed push: RevenueEscrow)
-                                          |
- royalties    ERC-2981 --> split wallets --> payees release (pull)
-                                          |
- edition      master settled --> Editions.createEdition --> fixed-price or Dutch sale
-```
 
-1. **Curation.** The artist submits a package: a Merkle root over its items. Voters
-   approve it in a 6529 wave. The curation signer checks every declared SHA-256 against
-   the decoded bytes and signs an EIP-712 `PackageApproval`. In v1 the contracts trust
-   that key, not the vote itself.
-2. **The package.** Anyone registers an approved package. Every listed party signs the
-   root, so nobody is named, or paid, without consent. Each item can be minted once.
-3. **The move signature.** The lead artist signs `MoveToStream`, which makes the work
-   startable. An unused signature can be revoked.
-4. **Auction start.** Anyone may start the auction and pay its gas. The start verifies
-   the proof and signatures, mints the token into auction custody and starts the clock.
-   Seeded works can use an optional VRF module, requested before the start.
-5. **Settlement.** Anyone may settle. A winner who cannot receive the NFT gets a pending
-   claim instead of blocking the sale. With no bids the token goes to the artist.
-6. **Royalties.** `royaltyInfo` reads terms locked at mint. Payees pull from split
-   wallets; artist payouts follow the artist registry, including recovery.
-7. **The edition.** Once a master's sale has settled, anyone creates its linked edition
-   from the approved package. Editions sell on the fixed-price or Dutch adapter.
-
-The full call flows, trust boundaries and governance map are in
-[docs/architecture.md](docs/architecture.md).
+A work's path: the artist's package is voted on and attested, each party accepts it, the lead
+artist signs "move to Stream", anyone starts the auction (which mints the token into auction
+custody and consumes the item), bids extend the clock near the end, and anyone settles. A master
+work's edition opens once its auction has settled. By default, primary sales of both products
+pay 75% to the artist's side and 25% to the network, and royalties are 6.529% (ERC-2981, out of
+100,000); a work keeps the terms it was minted with. The
+[protocol specification](docs/spec/README.md) describes every flow; the
+[architecture overview](docs/architecture.md) shows how the contracts fit together.
 
 ## Modules
 
-Status is on `main` as of 11 October 2026. Each module's README carries its design;
-the [delivery plan](ops/DELIVERY_PLAN.md) holds the current state.
+| Contract | Purpose | nSLOC | Runtime bytes |
+| --- | --- | ---: | ---: |
+| [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 502 | 19,608 |
+| [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 633 | 22,900 |
+| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 308 | 18,552 |
+| [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 384 | 14,779 |
+| [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 | 5,694 |
+| [`EnglishAuction`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause | 789 | 24,449 |
+| [`FixedPriceSale`](src/sales/README.md), [`DutchSale`](src/sales/README.md) | Edition sales: allowlist phases, permits, a descending price | 278 + 145 (+ 364 shared) | 21,999, 16,550 |
+| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 196 + 124 | 9,083, 4,528 |
+| [`SplitFactory`](src/economics/README.md), [`SplitWallet`](src/economics/README.md) | Immutable pull-payment wallets at predicted addresses | 106 + 142 | 10,077, 5,350 |
+| [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`ReleaseVerifier`](src/economics/README.md) | Failed-payment escrow, batch claims, signed releases | 91 + 99 + 47 | 5,224, 3,026, 3,672 |
+| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Artist identity and payouts; 7-day recovery and 180-day overrides through 6529 consolidations | 569 + 133 | 20,525, 3,059 |
+| [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 240 + 65 | 7,257, 3,007 |
+| [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 774 | 24,397 |
+| [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 322 | 11,732 |
+| [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 242 | 8,266 |
+| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel any scheduled operation | 26 + 43 | 10,737, 10,634 |
 
-| Module | Contracts | What it does | Status |
-| --- | --- | --- | --- |
-| [`stream`](src/stream/README.md) | `Stream`, `WorkRecords` | The shared ERC-721 and its records satellite: finalize, license, locators | On `main` |
-| [`editions`](src/editions/README.md) | `Editions` | The shared ERC-1155, linked to Stream masters | On `main` |
-| [`curation`](src/curation/README.md) | `PackageRegistry`, `Eip712CurationVerifier` | Package roots, party consent, consume-once items, signer attestations | On `main` |
-| [`sales`](src/sales/README.md) | `EnglishAuction`; fixed-price and Dutch adapters | Shared sale adapters over a minimal mint interface | On `main` |
-| [`economics`](src/economics/README.md) | `SplitFactory`, `SplitWallet`, `RevenueEscrow`, `AssetAllowlist`, `EconomicsResolver`, `ReleaseVerifier`, `ClaimRouter` | Split wallets, escrow fallback, currency allowlist, per-product terms | On `main` |
-| [`identity`](src/identity/README.md) | `ArtistRegistry`, `ConsolidationAdapter` | Artist identity, payout resolution, 7-day recovery, 180-day override | On `main` |
-| [`content`](src/content/README.md) | `ContentStore`, `DependencyRegistry`; `Renderer` | Content-addressed chunks, shared libraries, `tokenURI` | On `main` |
-| [`records`](src/records/README.md) | `StatementLog` | Append-only signed log: disputes, curation evidence, fixity, manifests | On `main` |
-| [`entropy`](src/entropy/README.md) | `VrfEntropyModule` | Optional Chainlink VRF v2.5 seed per work, delivered before the mint | On `main` |
-| [`governance`](src/governance/README.md) | `WorksAccessManager`, `GovernanceConfigurator`, `Roles`, `BoundedParameter` | One AccessManager governs everything; guardians can cancel any scheduled operation | On `main`, including genesis wiring |
-| [`libraries`](src/libraries/README.md) | `SignatureVerifier`, `DelegatedEOA`, `JsonEscape`, `Utf8`, `SSTORE2`, `BoundedCall` | Shared internal libraries (none is linked) | On `main` |
-| [`interfaces`](src/interfaces/README.md) | `IStream`, `IEditions`, `IMintTarget`, and more | Contract surfaces and shared types every module builds against | On `main` |
-| [`federated`](src/federated/README.md) | none in v1 | Templates, factory and registry; v1 keeps only the interfaces | v1.1, only if needed |
+Sizes are at `c4b3355`; the [audit scope](docs/audit/scope.md) lists every file, its libraries
+and how the figures are measured. Shared code lives in internal
+[libraries](src/libraries/README.md) and the [interfaces](src/interfaces/README.md); nothing is
+linked, proxied or `delegatecall`ed. 6529 Stream Federated (artist-owned contracts from the
+network's templates) is [v1.1, only if needed](src/federated/README.md).
 
-## Engineering principles
+## Status
 
-- **Small enough to audit.** A hard line budget, no proxies, no `delegatecall`, every
-  contract within EIP-170. Shared code is internal libraries, not linked ones.
-- **Explicit trust boundaries.** One OpenZeppelin 5.7.0 `AccessManager` subclass governs
-  every contract behind delay classes (immediate, 48 hours, 14 days, 30 days). Setters
-  for funds, recipients, verifiers and renderers are compare-and-set, and governed
-  functions are non-payable. Guardians can veto and pause, never redirect.
-- **Money moves by pull.** Refunds are claimed, never pushed. Payouts collect in split
-  wallets that payees release from, token transfers are checked by exact balance delta,
-  and a payment that fails falls back to an escrow.
-- **Signatures are bound.** EIP-712 domains, `abi.encode` hashing, storage-backed replay
-  protection, and one shared verifier (low-s ECDSA, ERC-2098, ERC-1271, EIP-7702 aware).
-- **Fail closed, and say so in events.** Custom errors, no soft-failing reads, an event
-  for every important state change.
-- **Permanence.** Content-addressed storage, finalize pins a work's renderer, and the
-  artist's record is immutable once finalized.
-
-### Budgets
-
-| Budget | Limit | Enforced by |
-| --- | --- | --- |
-| Solidity under `src/` | At most 12,000 non-comment lines (the ADR targets 8–12K) | `tools/check_budgets.py` |
-| Linked libraries | At most 5 | `tools/check_budgets.py` |
-| `delegatecall` and proxies | None in `src/`; the one sanctioned exception is OpenZeppelin's `Multicall` in `lib/` ([ADR 0002](docs/adr/0002-access-manager-hardening.md)) | `tools/check_budgets.py`; no proxies by design |
-| Contract size | EIP-170 (24,576 bytes runtime) and EIP-3860 (49,152 bytes initcode), every contract | `tools/check_budgets.py` on `forge build --sizes` |
-| Auction start | An ETH start at steady state: at most 350K Prague gas, and at most 6 new storage slots (7 with a bid) ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md); ADR 0001 said 300K). On Glamsterdam Sepolia the same start costs about 847K | `test/integration/GasReport.t.sol`, `test/sales/auction/EnglishAuctionGas.t.sol` |
-| State growth | Every operation in the gas report asserts its exact count of new storage slots and new accounts, and a Prague gas ceiling ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)) | `test/integration/GasReport.t.sol` |
-| Transaction cap | Every transaction's regular gas fits 16,777,216 (EIP-7825) for worst-case inputs; on Sepolia, state-creation gas above it was accepted ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)) | Gas-cap tests; `Limits` bounds every array |
-| `tokenURI` | At most 8M gas in the worst case | The renderer's tests, once [#20](https://github.com/6529-Collections/6529-works/pull/20) lands |
-| Invariants | At least 256 runs of depth 128 for contracts that move value | `foundry.toml` |
-| CI time | Under 15 minutes per job | Job timeouts |
-
-### CI gates
-
-Every pull request runs three jobs in [`ci.yml`](.github/workflows/ci.yml). **Contracts**:
-`forge fmt --check`, `forge build`, `forge test`, the budget gate and the content tooling
-tests. **Static analysis**: Slither, failing on any High or Medium finding without a
-reviewed row in [`docs/security/slither-triage.md`](docs/security/slither-triage.md).
-**Docs**: a broken relative link or anchor in any Markdown file fails the job.
+| | |
+| --- | --- |
+| Maturity | **Pre-audit.** Not production-ready. An internal adversarial review ran in October 2026 and its fixes are merged; no external audit has started. |
+| Scope | Fixed by [ADR 0001](docs/adr/0001-v1-scope.md), amended by ADRs [0002](docs/adr/0002-access-manager-hardening.md), [0003](docs/adr/0003-build-time-decisions.md) and [0004](docs/adr/0004-gas-budgets-under-glamsterdam.md). |
+| Code | Every v1 module is on `main`, with about 2,200 unit, fuzz and integration tests in 127 test files, and 61 stateful invariants in 12 invariant suites ([invariants](docs/audit/invariants.md)). |
+| Testnet | Sepolia rehearsal **r2**, deployed on 11 October 2026 from `400f96d` with throwaway signers in the mainnet Safe structure: [addresses](docs/integrators/addresses.md), [deployment record](deployments/11155111/README.md), [flows and their gas](deployments/11155111/flows.md). It predates the review fixes. |
+| Mainnet | Not deployed. It follows an external audit ([delivery plan](ops/DELIVERY_PLAN.md)). |
+| Gas | Budgets are in Prague gas: a steady-state ETH auction start costs at most 350K and writes at most 6 new storage slots, `tokenURI` at most 8M. Sepolia runs Glamsterdam, which prices new state higher ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)). |
+| Known limits | Listed with their sources in [known limitations and accepted risks](docs/audit/known-limitations.md). |
 
 ## Quickstart
 
-You need [Foundry](https://book.getfoundry.sh/) (CI pins v1.7.1) and Python 3.12 or
-later. The Python tools use only the standard library. Clone with submodules:
+You need [Foundry](https://book.getfoundry.sh/) (CI pins v1.7.1) and Python 3.12 or later. The
+Python tools use only the standard library.
 
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
-```
-
-Then `cd 6529-works` (if you cloned without submodules, run `git submodule update --init`).
-Build and test:
-
-```bash
+cd 6529-works
 forge build
-```
-
-```bash
 forge test
 ```
 
-Run the same checks as CI:
+The first build compiles about 350 files and takes a few minutes. If you cloned without
+submodules, run `git submodule update --init` first. To run the gas report with its exact
+new-slot counts:
 
 ```bash
-forge fmt --check
+forge test --match-test test_Gas_Table -vv
 ```
 
-```bash
-python tools/check_budgets.py --profile default
+The CI gates, Slither and the other checks are in
+[Build, test and budgets](docs/audit/build-and-test.md). The code is Solidity 0.8.37 on the
+`prague` EVM, with OpenZeppelin 5.7.0 and forge-std 1.17.0 in `lib/`.
+
+## Where to go next
+
+| You are | Start with |
+| --- | --- |
+| New to the protocol | The [specification](docs/spec/README.md) and the [glossary](docs/glossary.md) |
+| Integrating: a marketplace, wallet, indexer or front end | The [integrator guide](docs/integrators/README.md): reading a work, events, ABIs, buying and settling, storage |
+| Auditing or reviewing security | The [auditor pack](docs/audit/README.md): scope, trust, roles, threat model, invariants, limitations |
+| Contributing code | [CONTRIBUTING.md](CONTRIBUTING.md); automated agents also read [AGENTS.md](AGENTS.md) |
+| Deploying or operating | The [deploy runbook](script/README.md) and the [genesis configuration](config/README.md) |
+| Looking for why a decision was made | The [ADRs](docs/adr/README.md) |
+
+Everything else is indexed in [docs/README.md](docs/README.md).
+
+## Repository layout
+
 ```
-
-```bash
-python tools/check_markdown_links.py
+src/         contracts, one folder per module, with interfaces/ for the shared surfaces
+test/        unit, fuzz, invariant, integration and review-regression tests
+script/      the deploy library, deploy and verify scripts, the Sepolia flow driver
+config/      the committed genesis policy and the Sepolia instances' copies
+deployments/ deployment records and measured flows, per chain
+tools/       standard-library Python: CI gates, the role matrix and the uploader
+docs/        specification, auditor pack, integrator guide, glossary, ADRs, architecture
+ops/         the delivery plan
+lib/         git submodules: OpenZeppelin Contracts and forge-std
 ```
-
-Slither needs a one-time install of the pinned, hash-locked toolchain (ideally in a virtualenv):
-
-```bash
-python -m pip install --require-hashes --only-binary=:all: --no-deps -r requirements-tools.lock
-```
-
-Then:
-
-```bash
-python tools/check_slither.py
-```
-
-The code is Solidity 0.8.37 on the `prague` EVM, with OpenZeppelin 5.7.0 and forge-std 1.17.0
-in `lib/`. See [CONTRIBUTING.md](CONTRIBUTING.md) and, for automated agents, [AGENTS.md](AGENTS.md).
-
-## Status and maturity
-
-- **Pre-audit and not deployed.** There is no v1 deployment on any network and no
-  external audit. Nothing here is production-ready.
-- **What exists.** Every v1 module is on `main` with unit, fuzz and invariant tests:
-  Stream and its records satellite, Editions, curation, the English auction and the
-  fixed-price and Dutch sales, economics, identity, the content store and renderer, the
-  statement log, the entropy module and governance with genesis wiring.
-  The deploy library, genesis and readback scripts and a Sepolia runbook are in
-  [`script/`](script/README.md); they have been dry-run on a local chain only.
-  End-to-end flows on the real, integrated contracts are in `test/integration/`, with a
-  gas report: steady-state `start` about 276K, `startWithBid` about 317K, and
-  `tokenURI` at most about 7.8M with every record cap filled.
-- **What does not exist yet.** The Sepolia deployment (it needs the owner's keys and Safes), the external audit and
-  mainnet. The owner's recovery and governance decisions are in
-  [ADR 0003](docs/adr/0003-build-time-decisions.md#owner-decisions-11-october-2026).
-- **v1.1 and deferred.** 6529 Stream Federated ships in v1.1, and only if needed.
-  Deferred beyond v1: other Stream sale types (buy-now, offers, private sales,
-  burn-to-mint), VRF reveals after settlement, a verifier backed by the 6529 chain,
-  and the museum, which has its own repository.
-- **Where to look.** The [delivery plan](ops/DELIVERY_PLAN.md) is the single source of
-  delivery state, the [launch checklist](https://github.com/6529-Collections/6529-works/issues/1)
-  tracks what remains before launch, and the [docs index](docs/README.md) lists everything
-  else. The earlier RC1 reference implementation, deployed on Sepolia, is kept in the
-  private 6529Stream repository.
 
 ## Security
 
 Report vulnerabilities privately through
 [GitHub private vulnerability reporting](https://github.com/6529-Collections/6529-works/security/advisories/new),
-as described in [SECURITY.md](SECURITY.md). Do not open public issues for exploitable
-bugs, and never include keys or secrets.
-
-## Repository layout
-
-```
-src/         contracts, one folder per module (see Modules), plus interfaces/ for shared surfaces
-test/        unit, fuzz, invariant and integration tests, with shared mocks and helpers
-script/      the deploy library, deploy and verify scripts, and the Sepolia runbook
-tools/       standard-library Python: the CI gates, and uploader tooling in tools/content
-docs/        index, ADRs, architecture and the Slither triage record
-ops/         the delivery plan
-lib/         git submodules: OpenZeppelin Contracts and forge-std
-```
+as [SECURITY.md](SECURITY.md) describes. Do not open public issues for exploitable bugs, and
+never include keys or secrets.
 
 ## License
 
-Code is MIT, see [LICENSE](LICENSE). Artworks minted on 6529 Stream and 6529 Editions
+The code is MIT ([LICENSE](LICENSE)). Artworks minted on 6529 Stream and 6529 Editions
 default to CC0 ([ADR 0001 §8](docs/adr/0001-v1-scope.md#8-works-content-and-storage)).

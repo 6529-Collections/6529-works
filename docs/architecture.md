@@ -8,8 +8,10 @@ decisions (D1–D26); where this document and the ADR differ, the ADR and those
 decisions win. The precise contract surfaces are the interfaces in
 [`src/interfaces/`](../src/interfaces/), which carry full NatSpec.
 
-> **Status:** pre-audit, under construction. The interfaces are the agreed
-> contract between implementation lanes; they are not yet implemented in full.
+> **Status:** pre-audit. Every v1 module is implemented on `main`. This document
+> is the overview; the [protocol specification](spec/README.md) describes how each
+> area works now, flow by flow, and the [role and permission matrix](audit/roles.md)
+> lists every governed selector.
 
 ## Modules
 
@@ -157,10 +159,11 @@ default when the sale starts".
    - Stream assigns the token ID and serial and locks the fee terms from
      `IEconomicsResolver.economics` and the predicted seller wallet from
      `ISplitFactory.walletFor` over the item's payees (what `newWorkTerms`
-     returns, without its royalty-receiver derivation). It stores the item hash,
-     the seller, the lead artist and one packed word; the royalty receiver is
-     derived from the seller and fee terms when `royaltyInfo` is called, not
-     stored.
+     returns, without its royalty-receiver derivation). It stores a three-word
+     token record (the seller with the serial, collection and flags; the lead
+     artist with the royalty rate, fee terms and minting adapter; the item hash)
+     beside the ERC-721 owner; the royalty receiver is derived from the seller
+     and fee terms when `royaltyInfo` is called, not stored.
    - The auction stores its sale and starts the 24-hour clock.
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against
@@ -170,8 +173,9 @@ default when the sale starts".
    the media file IDs and an ARTIST seed. Until then every per-token
    `IWorkRecords` call reverts with `RecordNotOpen`, and the renderer shows
    core-only metadata.
-8. **Bid.** The first bid is at least `max(openingBid, 1)` and locks the
-   currency's increment floor; later bids add `max(5%, floor)`. Late bids extend the end, outbid bidders are
+8. **Bid.** The first bid is at least the opening bid locked when the auction
+   started (or the reserve a withdrawn bid left, if higher), and at least 1 wei;
+   it locks the currency's increment floor. Later bids add `max(5%, floor)`. Late bids extend the end, outbid bidders are
    credited and `claim`, and PERMIT2 bids carry the `Bid` witness.
 9. **Settle (permissionless).** `settle` delivers the token or records a pending
    claim (`claimDelivery`, where the winner names the recipient).
@@ -185,9 +189,11 @@ default when the sale starts".
      settler must forward the frame's 1,000,000 gas: an ERC-20 settle needs a
      call gas limit of about 1.11M.
    - A deprecated currency freezes the auction (MARKET-2): nothing settles, and
-     a standing bidder may withdraw. After a re-admission (no earlier than 14
-     days after the deprecation), the first `settle` reopens the auction for the
-     governed duration. Once the currency has been deprecated for 30 days, anyone
+     a standing bidder may withdraw. A re-admission comes no earlier than 14
+     days after the deprecation. If it comes after the auction's end, or within
+     its last anti-snipe window, the first `settle` reopens the auction for at
+     least the governed duration; otherwise the auction settles as usual. Once
+     the currency has been deprecated for 30 days, anyone
      may end the sale unsold: the standing bid is credited back and the work goes
      to the artist.
      The resolver never accepts a fee recipient it can recognise as unable to
@@ -209,7 +215,9 @@ default when the sale starts".
 2. Once `IStream.primarySaleSettled(workId)` is true, anyone calls
    `IEditions.createEdition(workId, item, packageRoot, proof)`.
    - Editions checks the item against the master's item hash and the package,
-     which must still be approved, and claims the content hash under
+     which the registry must have registered (a later revocation of the root
+     does not strand the edition of a master already sold from it), and claims
+     the content hash under
      `PRODUCT_EDITIONS`.
    - It locks economics, records `(stream, workId, contentHash)` and calls
      `IStream.linkEdition`.
@@ -261,9 +269,11 @@ default when the sale starts".
 
 ### Recovery
 
-1. A lost or stolen key: an established consolidated wallet (6529 delegation,
-   use case 999, at least 30 days old, not expired) stages a STANDARD change,
-   with the new authority's signed acceptance.
+1. A lost key: an established consolidated wallet (6529 delegation, use case
+   999, at least 30 days old, not expired) stages a STANDARD change, with the
+   new authority's signed acceptance. A stolen key cannot be recovered this
+   way, because the thief, as the previous authority, can cancel any STANDARD
+   change; a stolen key goes through the override in step 4.
 2. The registry captures cancellers at staging: the effective wallets in the
    artist's sticky standing snapshot. A refresh records every two-way
    consolidation, a young one as pending until it is 30 days old; a keeper or
@@ -285,8 +295,9 @@ default when the sale starts".
    payouts follow the new payout address, including balances already accrued.
 4. Overrides cover contested changes, estates, and lost keys with no
    consolidation.
-   - `stageOverride` (PARAMETER_SETTER role) needs the new authority's
-     `OverrideAcceptance` signature and gives 180 days' public notice.
+   - `stageOverride` (PARAMETER_SETTER role) gives 180 days' public notice. An
+     override that moves the authority needs the new authority's
+     `OverrideAcceptance` signature; a payout-only override needs none.
    - Estates and lost keys also need a year without the artist's own activity:
      registration, a staged change, a heartbeat, a cancellation by the old key
      or a captured wallet, a nonce revocation, or an executed change. Overrides
@@ -308,7 +319,8 @@ default when the sale starts".
 ### Dispute pause
 
 1. A dispute is filed in the 6529 disputes wave. The GUARDIAN role calls
-   `IEnglishAuction.pause`; the pause allowance is 7 days in total.
+   `IEnglishAuction.pause`: one dispute pause per auction, lasting at most 7
+   days (`MAX_PAUSE`).
 2. While paused, the high bidder may `withdrawBid`. The withdrawn amount
    stays as a reserve the next bid must reach. When the auction resumes (by
    `resume` or when the pause lapses) it runs for its remaining time or the
@@ -324,7 +336,7 @@ default when the sale starts".
      after the pause: the auction keeps, at the pause, the chain position a
      later outcome must reach, so an outcome recorded before the pause, or one
      about the package item, cannot cancel it.
-   - The window is inclusive (`block.timestamp <= pausedUntil`).
+   - The window is inclusive (`block.timestamp <= pausedAt + MAX_PAUSE`).
    - The bid is credited back and the token is burned.
    - **Before the cancel executes, the guardian revokes every approved root
      that lists the copier's items** (`revokePackage`): any other copy of the
@@ -356,8 +368,8 @@ default when the sale starts".
 | Actor | Can | Cannot |
 | --- | --- | --- |
 | Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
-| Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations; suspend a platform, curator or storage operator key at once (lifted only by a 30-day ADMIN grant or revocation) | Redirect funds or identities; cancel or resume an auction; lift a suspension or grant any role |
-| Storage operator | Set preferred locations among registered, hash-equal locators | Add, remove or change locators; change content hashes |
+| Guardian Safes | Pause a live auction for a dispute (once, at most 7 days); pause the sale adapters' new sales; deprecate a currency, which halts sales in it and freezes live auctions in it; veto identity changes; revoke unconsumed approvals; disable a curation signer; deprecate a dependency version; cancel scheduled governance operations; suspend a platform, curator or storage operator key at once (lifted only by a 30-day ADMIN grant or revocation) | Redirect funds or identities; cancel or resume an auction; lift a suspension or grant any role |
+| Storage operator | Set preferred locations among the copies registered for each file (the contract stores no locator hash; the off-chain monitor verifies copies) | Add, remove or change locators; change content hashes |
 | Platform | Create collections; add locators; open edition sales and phases at the package price for FIXED editions | Change an approved package's prices, currencies, sizes or media; set allowlist prices (below or above the package price), or open an OPEN edition's one-time window, without the artist's signed approval |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
@@ -375,19 +387,22 @@ movement is checked by exact balance delta.
 ## Governance map
 
 The governance lane owns role IDs and delays in `src/governance/Roles.sol`. The
-interfaces name the role each governed selector is meant to map to:
+interfaces name the role each governed selector is meant to map to. The complete,
+authoritative list, generated from `config/genesis.example.json`, is the
+[role and permission matrix](audit/roles.md):
 
 | Role | Selectors |
 | --- | --- |
-| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindFederationRegistry`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords` |
-| GUARDIAN | `IEnglishAuction.pause`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`; economics `IAssetAllowlist.deprecateAsset`; the manager's own `WorksAccessManager.suspend` (checked by the manager, not mapped) |
-| UNPAUSER | `IEnglishAuction.resume` |
+| ADMIN (genesis, once each) | `IStream.bindWorkRecords`, `bindEditions`; `IPackageRegistry.bindStream`, `bindEditions`; `IArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`; `IEditions.bindWorkRecords`. `IArtistRegistry.bindFederationRegistry` is deferred to v1.1 (a 30-day ADMIN action then) |
+| GUARDIAN | `IEnglishAuction.pause(saleId, disputeRef)`, `IArtistRegistry.vetoChange`, `IPackageRegistry.revokePackage` (also pre-revokes unregistered roots), `ICurationSignerVerifier.disableSigner`, `IDependencyRegistry.deprecate`; economics `IAssetAllowlist.deprecateAsset`; the manager's own `WorksAccessManager.suspend` (checked by the manager, not mapped) |
+| PAUSER | the sale adapters' emergency `pause()` |
+| UNPAUSER (48 hours) | `IEnglishAuction.resume`; the sale adapters' `unpause()` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
-| PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator) |
+| PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator); statement log `appendPlatform` (DISPUTE_OUTCOME) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
+| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (v1.1); economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
@@ -396,12 +411,15 @@ the MINTER role, for the same reason. Each bind rejects EIP-7702 delegated
 accounts and checks ERC-165, except where the target does not implement it:
 `IArtistRegistry.bindSplitFactory` checks only for code, and `bindStatementLog`
 checks for code and that the log's artist resolver is the registry. Every installed dependency
-(verifier, renderer, consolidation source, entropy module, economics resolver,
-package registry, sale adapter, federation registry) supports ERC-165. Installs
-check it, pin the code hash and reject EIP-7702 delegated accounts. The curation
-verifier, the VRF coordinator, the statement log's artist resolver and the sale
-adapters' federation registry are also checked against their pinned hash at
-every use, not only at install.
+is checked at install for code, ERC-165 support where it has it, and no EIP-7702
+delegation. The curation verifier, the default renderer, the consolidation
+source, the VRF coordinator, the statement log's artist resolver, the split
+factory's payout resolver and release verifier, and the sale adapters'
+federation registry are also pinned to a reviewed code hash and checked against
+it again at use. Stream's package registry, artist registry, economics resolver
+and entropy module, and the admitted sale adapters, are checked at install only,
+with no code-hash pin. The auditor pack lists every pin and its test
+([trust assumptions](audit/trust-assumptions.md#pinned-code-hashes)).
 
 Renderer pins are checked again at use (DEPS-6): `Stream.rendererOf`, which
 `tokenURI` and 6529 Editions' `uri` go through, compares the default renderer's
@@ -423,9 +441,9 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   - Glamsterdam prices each new slot at about 111K on Sepolia, so the same start
     costs about 847K there. Every operation in the gas report asserts its exact
     count of new slots and new accounts.
-  - Stream stores the item hash, the seller, the lead artist and one packed
-    word per token, and derives the royalty receiver. The registry stores one
-    word per consumed item.
+  - Stream stores a three-word record per token beside the ERC-721 owner, and
+    derives the royalty receiver. The registry stores one word per consumed
+    item.
   - Mint checks an admitted-minter mapping, not an AccessManager hop.
   - The auction locks the increment floor at the first bid, not at start, and
     reads seller and fee terms back from the token.

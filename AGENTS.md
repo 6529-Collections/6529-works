@@ -66,6 +66,9 @@ forge test
 
 - One focused change per PR, branched from `origin/main`. Describe the summary,
   the validation you ran, and the security impact.
+- A change of behavior updates its page in [docs/spec/](docs/spec/README.md) in the
+  same PR. A change to `config/genesis.example.json` regenerates the role matrix
+  (`python tools/gen_role_matrix.py`); CI's Docs job checks it.
 - Keep the **Static analysis** job green. Fix a new High or Medium Slither finding; only
   disposition a real false positive or an accepted risk, with a reason, in
   [docs/security/slither-triage.md](docs/security/slither-triage.md).

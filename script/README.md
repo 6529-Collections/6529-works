@@ -10,7 +10,8 @@ Not built yet: a deployed-bytecode verifier that matches the chain against a rep
 build. Verify recomputes every address from the recorded constructor parameters and compares
 code hashes with the record, but it does not rebuild the bytecode.
 
-6529 Works is pre-audit and not deployed. A Sepolia run is a testnet rehearsal, not a launch.
+6529 Works is pre-audit and not deployed on mainnet. A Sepolia run is a testnet rehearsal, not a
+launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deployments/11155111/README.md).
 The library deploys every v1 contract: identity, curation, economics, content and the
 renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
 Editions, and the three sale adapters. No stand-in remains. A Sepolia run needs the owner's

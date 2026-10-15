@@ -58,8 +58,9 @@ def blank_out(text: str, start: int, end: int) -> str:
     return text[:start] + re.sub(r"[^\n]", " ", text[start:end]) + text[end:]
 
 
-def strip_code(text: str) -> str:
-    """Blank fenced code, HTML comments and code spans, preserving every line break."""
+def strip_code(text: str, spans: bool = True) -> str:
+    """Blank fenced code, HTML comments and (unless `spans` is False) code spans, preserving
+    every line break."""
     lines = text.split("\n")
     fence: str | None = None
     for index, line in enumerate(lines):
@@ -76,6 +77,8 @@ def strip_code(text: str) -> str:
     text = "\n".join(lines)
     for comment in reversed(list(re.finditer(r"<!--.*?-->", text, re.DOTALL))):
         text = blank_out(text, comment.start(), comment.end())
+    if not spans:
+        return text
     # A code span opens with a backtick run and closes with a run of the same length.
     out: list[str] = []
     i, n = 0, len(text)
@@ -191,7 +194,8 @@ def github_slug(heading: str) -> str:
 def heading_anchors(text: str) -> set[str]:
     """Lower-cased anchors a Markdown file offers: headings and id/name attributes."""
     code_free = strip_code(text)
-    lines = code_free.split("\n")
+    # Headings keep their code spans: GitHub slugs a heading's text with the backticks removed.
+    lines = strip_code(text, spans=False).split("\n")
     anchors: set[str] = set()
     seen: dict[str, int] = {}
 

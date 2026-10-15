@@ -37,6 +37,13 @@ jobs:
         # Every relative link and #anchor in tracked *.md files (lib/ excluded) must resolve.
         run: python tools/check_markdown_links.py
 
+      - name: Role matrix generator unit tests
+        run: python -m tools.test_gen_role_matrix
+
+      - name: Role matrix
+        # docs/audit/roles.md must be generated from config/genesis.example.json.
+        run: python tools/gen_role_matrix.py --check
+
   contracts:
     name: Contracts
     runs-on: ubuntu-latest
