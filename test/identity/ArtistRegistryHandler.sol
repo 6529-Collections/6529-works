@@ -17,6 +17,7 @@ import {
     DisputeOutcomeLogMock,
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 /// @notice The accounts the handler drives. `keys` are the artist key, an established
 ///         consolidated wallet, a fresh key and a thief; `payouts` are payout candidates.
@@ -140,7 +141,14 @@ contract ArtistRegistryHandler is Test {
         Used memory u = lastUsed;
         if (u.signer == address(0)) return;
         bytes memory err = _stageError(u.signer, u.next);
-        vm.expectRevert(err.length != 0 ? err : _sel(IArtistRegistry.InvalidSignature.selector));
+        if (err.length == 0) {
+            // The nonce moved on, so the replayed signature no longer verifies, unless the
+            // deadline passed first.
+            err = block.timestamp > u.deadline
+                ? SignatureReverts.expired(u.deadline)
+                : SignatureReverts.invalid(u.signer);
+        }
+        vm.expectRevert(err);
         registry.stageChange(artistId, u.next, u.signer, u.deadline, u.signature, u.acceptance);
     }
 
@@ -466,9 +474,7 @@ contract ArtistRegistryHandler is Test {
             if (usedDigest[u.digest]) {
                 return abi.encodeWithSelector(IArtistRegistry.AcceptanceUsed.selector, u.digest);
             }
-            if (block.timestamp > u.deadline) {
-                return _sel(IArtistRegistry.InvalidSignature.selector);
-            }
+            if (block.timestamp > u.deadline) return SignatureReverts.expired(u.deadline);
         }
         if (registry.pendingChange(artistId).kind > ChangeKind.STANDARD) {
             return abi.encodeWithSelector(IArtistRegistry.ChangePending.selector, artistId);

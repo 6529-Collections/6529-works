@@ -5,6 +5,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IConsolidationSource } from "../interfaces/IArtistRegistry.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title IDelegationManagement
 /// @notice The two public storage getters of the 6529 delegation contract
@@ -15,10 +16,23 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 interface IDelegationManagement {
     /// @notice The `index`-th delegate registered under
     ///         `keccak256(abi.encodePacked(delegator, collection, useCase))`.
+    /// @param key The hash of the delegator, the collection and the use case.
+    /// @param index The zero-based position in the delegator's delegate list.
+    /// @return The delegate at that position.
     function delegatorHashes(bytes32 key, uint256 index) external view returns (address);
 
     /// @notice The `index`-th registration under
     ///         `keccak256(abi.encodePacked(delegator, collection, delegate, useCase))`.
+    /// @param key The hash of the delegator, the collection, the delegate and the use case.
+    /// @param index The zero-based position among the pair's registrations.
+    /// @return delegator The delegator the registration belongs to (`delegatorAddress`).
+    /// @return delegate The delegate it registered (`delegationAddress`).
+    /// @return registeredDate The block timestamp of the registration.
+    /// @return expiryDate The registration's expiry as a Unix time in seconds; it is live while
+    ///        this is later than the current block timestamp.
+    /// @return allTokens Whether the registration covers every token of the collection.
+    /// @return tokenId The single token ID covered when `allTokens` is false, otherwise zero
+    ///        (the contract's `tokens` field).
     function globalDelegationHashes(bytes32 key, uint256 index)
         external
         view
@@ -46,14 +60,14 @@ interface IDelegationManagement {
 ///      Every read forwards exactly {READ_GAS} and reverts when the caller cannot forward it
 ///      (`BoundedCall.BoundedCallInsufficientGas`), so a caller choosing its gas limit cannot
 ///      truncate a walk. Reads fail closed: only a revert with no data that did not fully exhaust
-///      the stipend is the end of an array. A read that exhausts the stipend (out of gas),
-///      reverts with data or returns too much reverts with
-///      `IConsolidationSource.DelegationReadFailed`, so a repriced or broken source halts the
-///      registry's identity calls (registration and execution skip their refresh instead)
-///      rather than reading as "not consolidated". The getters cost at most about 16K gas cold
-///      (a `GlobalData` read is seven cold slots); the 200K stipend leaves room for a large
-///      repricing, and only the gas used is paid. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
-///      {MAX_REGISTRATIONS_READ} registrations per direction.
+///      the stipend is the end of an array. A read that exhausts the stipend (out of gas), reverts
+///      with data or returns too much reverts with `IConsolidationSource.DelegationReadFailed`, so
+///      a repriced or broken source halts the registry's identity calls (registration and execution
+///      skip their refresh instead) rather than reading as "not consolidated". The getters cost at
+///      most about 16K gas cold (a `GlobalData` read is seven cold slots); the 200K stipend leaves
+///      room for a large repricing, and only the gas used is paid. Walks are bounded:
+///      {MAX_DELEGATES_SCANNED} delegates per account and {MAX_REGISTRATIONS_READ} registrations
+///      per direction.
 ///
 ///      This is a live view, and the account's keys control it: its own key, and any use-case-998
 ///      sub-delegate of it (`registerDelegationAddressUsingSubDelegation`), can add, revoke or
@@ -76,12 +90,9 @@ contract ConsolidationAdapter is IConsolidationSource {
     /// @notice The 6529 delegation contract.
     IDelegationManagement public immutable delegation;
 
-    /// @notice The delegation address has no code.
-    error NoDelegationCode(address delegation);
-
     /// @param delegation_ The 6529 delegation contract (`0x2202…f43d` on mainnet).
     constructor(IDelegationManagement delegation_) {
-        if (address(delegation_).code.length == 0) revert NoDelegationCode(address(delegation_));
+        Dependency.check(address(delegation_));
         delegation = delegation_;
     }
 

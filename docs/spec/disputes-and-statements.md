@@ -368,7 +368,7 @@ sequenceDiagram
     Note over L: emits StatementAppended, then StatementRelayed
 ```
 
-- **Checks**, in order: `DeadlineExpired` (inclusive), `NonceAlreadyUsed`, `InvalidSignature`,
+- **Checks**, in order: `SignatureExpired` (inclusive), `NonceAlreadyUsed`, `InvalidSignature`,
   `NotAuthorized` (DSP-9). `revokeNonce(nonce)` spends one before use, and
   `nonceUsed(signer, nonce)` reads the per-signer bitmap.
 - **Signatures** go through [`SignatureVerifier`](../../src/libraries/SignatureVerifier.sol):
@@ -502,7 +502,7 @@ outcome emits no ERC-4906 event, so an indexer refreshes a work's metadata on
 | An outcome aimed at an unminted or burned token, or at an edition. | `UnknownDisputeSubject(token, id)`. | Before the mint, record it on the item subject; for an edition, on the master. |
 | A wrong or unauthorized statement is appended. | It stays in the log forever. | Append a correction whose `supersedes` cites it; a guardian suspends a misused CURATOR or PLATFORM key. |
 | The PLATFORM key is suspended during a dispute pause. | With the genesis policy's single platform key, no outcome can be recorded, so no upheld `cancel`; a replacement takes longer than the pause. | Let the pause lapse (after-sale path); suspend the key during a pause only if it is compromised. |
-| The resolver's code changes after install. | Every ARTIST append reverts with `ResolverCodeHashMismatch`. | `setArtistResolver` to a reviewed resolver (30 days). |
+| The resolver's code changes after install. | Every ARTIST append reverts with `DependencyCodeChanged`. | `setArtistResolver` to a reviewed resolver (30 days). |
 | The lead artist is restrained. | ARTIST appends revert with `NotAuthorized`. | Wait for the override's outcome ([Identity and recovery](identity-and-recovery.md)). |
 | The statement log cannot be read during rendering. | `tokenURI` reverts with `RendererReadFailed`. | A new default renderer or the errata repin. |
 

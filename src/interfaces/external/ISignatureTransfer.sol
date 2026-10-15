@@ -31,6 +31,16 @@ interface ISignatureTransfer {
 
     /// @notice Transfers `transferDetails.requestedAmount` from `owner` under a signature over
     ///         the permit, the calling spender and `witness`, typed by `witnessTypeString`.
+    /// @param permit The permit the owner signed: the token, its maximum amount, the nonce and
+    ///        the deadline.
+    /// @param transferDetails The spender's requested transfer: the recipient and an amount of
+    ///        at most the permitted amount.
+    /// @param owner The owner of the tokens, whose signature is checked.
+    /// @param witness The caller's extra data, hashed, that the owner's signature also covers.
+    /// @param witnessTypeString The EIP-712 type definition that completes the witness typehash;
+    ///        it must include the `TokenPermissions` type definition.
+    /// @param signature The owner's signature: 65 or 64 bytes from an externally owned account,
+    ///        or checked through EIP-1271 for a contract owner.
     function permitWitnessTransferFrom(
         PermitTransferFrom calldata permit,
         SignatureTransferDetails calldata transferDetails,

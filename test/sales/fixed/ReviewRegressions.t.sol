@@ -27,6 +27,8 @@ import {
     MockPermit2
 } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Regressions from the PR #18 review: the reviewer's proofs of concept, ported (the
 ///         #744 recipient binding held on every route) or inverted (caps, currency, federation),
@@ -191,9 +193,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         editions.setTerms(id, _terms(SaleKind.FIXED_PRICE, CURRENCY_DEFAULT, PRICE, ""), SIZE);
         allowlist.setDefault(PRODUCT_EDITIONS, address(usd));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MintSaleBase.PricedDefaultCurrency.selector, address(editions), id
-            )
+            abi.encodeWithSelector(IMintSale.PricedDefaultCurrency.selector, address(editions), id)
         );
         _open(platform, id, _one(_phase(0, 0, false, false)));
     }
@@ -215,7 +215,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         for (uint256 i; i < 2; ++i) {
             IFixedPriceSale.ArtistConsent memory c =
                 IFixedPriceSale.ArtistConsent(1, deadline, _sig(creatorKey, digests[i]));
-            vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+            vm.expectRevert(SignatureReverts.invalid(creator));
             vm.prank(platform);
             fixedSale.openSale(address(editions), USD_ED, phases, c);
         }
@@ -284,7 +284,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         (MockFederationRegistry registry, MockEditionTarget fed) = _fedSetup(address(0));
         registry.setCodeHash(address(fed), keccak256("another template"));
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.InvalidSaleTerms.selector, address(fed), 3)
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(fed), 3)
         );
         vm.prank(creator);
         fixedSale.openSale(address(fed), 3, _one(_phase(0, 0, false, false)), _noConsent());
@@ -373,7 +373,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         );
         vm.expectRevert(
             abi.encodeWithSelector(
-                FixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
+                IFixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
             )
         );
         _open(platform, ETH_ED, _one(_phase(_root(leaves), 0, false, true)));
@@ -538,7 +538,7 @@ contract ReviewRegressionsTest is FixedPriceBase {
         phases[1] = IFixedPriceSale.Phase(t, t + 200, 0, 0, false, false);
         uint256 saleId = _open(creator, ETH_ED, phases);
         vm.warp(t + 150);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
         vm.warp(t + 200);

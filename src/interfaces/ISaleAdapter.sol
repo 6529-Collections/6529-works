@@ -18,8 +18,19 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      registry entry, not from the token.
 interface ISaleAdapter is IERC165 {
     /// @notice A sale started (an auction opened, or a fixed-price or Dutch sale opened).
+    /// @param saleId The new sale's ID.
+    /// @param token The token contract the sale mints from.
+    /// @param tokenId The token ID: the minted token for an auction, the edition ID for fixed
+    ///        price and Dutch.
+    /// @param saleKind The adapter's `SaleKind` label.
+    /// @param currency The locked currency, zero for ETH.
     /// @param price The opening price: the opening bid for an auction, the unit price for fixed
     ///        price, the starting price for Dutch.
+    /// @param startTime When the sale starts, in Unix seconds: the block time for an auction, the
+    ///        earliest phase start for fixed price, the scheduled start for Dutch.
+    /// @param endTime The end as configured, in Unix seconds: the auction's first end (bids may
+    ///        extend it), the latest phase end for fixed price, and for Dutch the time the price
+    ///        reaches its resting price.
     event SaleStarted(
         uint256 indexed saleId,
         address indexed token,
@@ -32,9 +43,18 @@ interface ISaleAdapter is IERC165 {
     );
 
     /// @notice A sale settled: an auction ended, or one purchase completed.
-    /// @param buyer The paying bidder or buyer; zero when an auction drew no bids.
-    /// @param recipient Who received the tokens (the artist when there were no bids).
+    /// @param saleId The sale's ID.
+    /// @param token The token contract.
+    /// @param tokenId The token ID (the edition ID for fixed price and Dutch).
+    /// @param buyer The paying bidder or buyer; zero when no bid won an auction.
+    /// @param recipient Who receives the tokens (the artist when no bid won).
+    /// @param quantity The number of tokens sold: 1 for an auction, the copies bought otherwise.
+    /// @param currency The locked currency, zero for ETH.
     /// @param price The realized total price, equal to `sellerProceeds + fee`.
+    /// @param seller The seller split wallet.
+    /// @param sellerProceeds The seller's share of the price, `price - fee`.
+    /// @param feeRecipient The network fee recipient, or zero when the terms name none.
+    /// @param fee The network fee: `price` times the fee share out of 100,000, rounded down.
     event SaleSettled(
         uint256 indexed saleId,
         address indexed token,
@@ -50,22 +70,40 @@ interface ISaleAdapter is IERC165 {
         uint256 fee
     );
 
-    /// @notice `amount` was credited to `account` (an outbid refund, a withdrawn bid, or an
-    ///         overpayment) and is claimable.
+    /// @notice `amount` was credited to `account` and is claimable: an outbid refund, a
+    ///         withdrawn bid, or an ETH overpayment; for the auction also the high bid refunded by
+    ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 30 days, or
+    ///         a delisted federated contract), and an ERC-20 settlement payout that failed in its
+    ///         own frame (MONEY-1), which `IEnglishAuction.claimFor` pays out.
+    /// @param account The account credited: the bidder or buyer, or (MONEY-1) the seller or fee
+    ///        wallet.
+    /// @param currency The credit's currency, zero for ETH.
+    /// @param saleId The sale the credit comes from.
+    /// @param amount The amount credited, in the currency's base units.
     event Credited(
         address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount
     );
     /// @notice `account` claimed `amount` of its credits to `to`.
+    /// @param account The account whose credits were paid out.
+    /// @param currency The currency claimed, zero for ETH.
+    /// @param to The address the credits were sent to.
+    /// @param amount The amount sent: all of the account's credits in `currency`, in base units.
     event Claimed(
         address indexed account, address indexed currency, address indexed to, uint256 amount
     );
     /// @notice Governance listed or unlisted a token contract.
+    /// @param token The token contract.
+    /// @param listed Whether the token is now listed.
     event TargetSet(address indexed token, bool listed);
     /// @notice The federation registry changed.
+    /// @param previous The registry before the change, or zero.
+    /// @param next The registry after the change, or zero when none is installed.
     event FederationRegistrySet(address previous, address next);
     /// @notice `account` paused the adapter.
+    /// @param account The caller that paused it.
     event Paused(address account);
     /// @notice `account` unpaused the adapter.
+    /// @param account The caller that unpaused it.
     event Unpaused(address account);
 
     /// @notice The token contract is neither listed nor active in the federation registry.
@@ -90,14 +128,20 @@ interface ISaleAdapter is IERC165 {
     error InvalidRecipient(address recipient);
     /// @notice An ETH claim could not be delivered to `to`; the credit is kept.
     error ClaimFailed(address to);
-    /// @notice A sale of this token is already open.
-    error SaleAlreadyOpen(address token, uint256 id);
-    /// @notice The caller is neither the token's creator nor the PLATFORM role.
-    error NotSaleManager(address caller);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice The token returned unusable terms. Every adapter: no seller, the revenue escrow
+    ///         as seller or fee recipient, no fee recipient for a nonzero fee share, a fee share
+    ///         above the denominator, federated code that differs from its registry entry, or a
+    ///         mint that returned another token ID. The auction also: a token ID of 2^32 or more,
+    ///         no creator (a pending recovery override), a nonzero price or sale parameters, the
+    ///         token not in its custody after the mint, or, for a federated token, an escrow or
+    ///         zero network fee recipient for a nonzero registry fee. The fixed-price and Dutch
+    ///         adapters also: a new fee recipient past their 65,535.
+    error InvalidSaleTerms(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label.
+    /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`.
     function saleKind() external view returns (bytes32);
     /// @notice Pauses the adapter: no new opens or purchases, and for the auction no new `start`.
     ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role
@@ -108,19 +152,38 @@ interface ISaleAdapter is IERC165 {
     ///         unpause, even one scheduled before the pause.
     function unpause() external;
     /// @notice Whether the adapter is paused.
+    /// @return True from `pause` until `unpause`.
     function paused() external view returns (bool);
     /// @notice Whether `token` may be sold: listed by governance, or active in the federation
     ///         registry.
+    /// @param token The token contract.
+    /// @return True when listed, or active in an installed registry whose code is unchanged.
     function isTarget(address token) external view returns (bool);
     /// @notice Lists or unlists a token contract for new sales. SUCCESSOR_SETTER role. Running
-    ///         sales finish.
+    ///         sales finish. Listing checks the token like any dependency
+    ///         (`Dependency.InvalidDependency`): code, not an EIP-7702 delegated account, and
+    ///         ERC-165 support for the surface the adapter calls.
+    /// @param token The token contract: one that reports `IMintTarget` through ERC-165 for the
+    ///        fixed-price and Dutch adapters (which also refuse zero, even to unlist), ERC-721
+    ///        for the auction.
+    /// @param listed True to list the token, false to unlist it.
     function setTarget(address token, bool listed) external;
     /// @notice The federation registry, or zero before v1.1.
+    /// @return The registry's address, or zero.
     function federationRegistry() external view returns (address);
     /// @notice Sets the federation registry. SUCCESSOR_SETTER role, compare-and-set.
+    /// @param expected The registry the caller expects is installed now; a stale value reverts.
+    /// @param next The new registry, or zero to remove it; a nonzero one must support
+    ///        `IFederationRegistry` through ERC-165.
     function setFederationRegistry(address expected, address next) external;
     /// @notice What `account` may claim in `currency`.
+    /// @param account The credited account.
+    /// @param currency The currency, zero for ETH.
+    /// @return The account's credits in `currency`, in base units.
     function claimable(address account, address currency) external view returns (uint256);
     /// @notice Sends all of the caller's credits in `currency` to `to`.
+    /// @param currency The currency to claim, zero for ETH.
+    /// @param to The address that receives the credits; zero reverts.
+    /// @return amount The amount sent, in the currency's base units.
     function claim(address currency, address to) external returns (uint256 amount);
 }

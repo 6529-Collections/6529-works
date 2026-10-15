@@ -32,7 +32,8 @@ struct ProductEconomics {
 ///      `feeRecipient`; when `feeShare` is zero the fee payee is omitted rather than created, and
 ///      `royaltyReceiver` is `seller` itself. Both are predicted CREATE2 addresses: they may not be
 ///      deployed yet, which is safe because ETH and ERC-20 transfers to them are held until anyone
-///      deploys the wallet, and a sale start never pays the roughly 1.6M gas a deployment costs.
+///      deploys the wallet, and a sale start never pays for a deployment (about 1.24M Prague gas
+///      for a one-payee wallet, ADR 0004).
 struct WorkTerms {
     address seller;
     address feeRecipient;

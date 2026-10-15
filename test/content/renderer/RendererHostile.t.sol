@@ -13,6 +13,7 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
+import { IRenderer } from "src/interfaces/IRenderer.sol";
 
 /// @dev A renderer is a view over whatever `token` and its store say: a hostile or broken answer
 ///      must end in a revert (fail closed), never in metadata, and must never cost more than the
@@ -64,7 +65,7 @@ contract RendererHostileTest is RendererBase {
             HostileStore hostile = _withStore(modes[i]);
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    Renderer.RendererReadFailed.selector,
+                    IRenderer.RendererReadFailed.selector,
                     address(hostile),
                     IContentStore.readChunk.selector
                 )
@@ -114,7 +115,7 @@ contract RendererHostileTest is RendererBase {
         HostileStore hostile = _withStore(HostileStore.Mode.BurnComplete);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(hostile),
                 IContentStore.isComplete.selector
             )
@@ -130,7 +131,7 @@ contract RendererHostileTest is RendererBase {
         HostileStore hostile = _withStore(HostileStore.Mode.BurnAttest);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(hostile),
                 IContentStore.isBase64Attested.selector
             )
@@ -142,7 +143,7 @@ contract RendererHostileTest is RendererBase {
         HostileStore hostile = _withStore(HostileStore.Mode.BombInfo);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(hostile),
                 IContentStore.fileInfo.selector
             )
@@ -156,7 +157,7 @@ contract RendererHostileTest is RendererBase {
         address bomb = address(new ReturnBombMock(1_000_000, bytes32(uint256(1))));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, bomb, IStream.work.selector
+                IRenderer.RendererReadFailed.selector, bomb, IStream.work.selector
             )
         );
         renderer.tokenURI(bomb, ID);
@@ -164,7 +165,7 @@ contract RendererHostileTest is RendererBase {
         address burner = address(new GasBurnerMock());
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, burner, IStream.work.selector
+                IRenderer.RendererReadFailed.selector, burner, IStream.work.selector
             )
         );
         renderer.tokenURI(burner, ID);
@@ -197,7 +198,7 @@ contract RendererHostileTest is RendererBase {
         records.setLicense(ID, License(_text(5_000), bytes32(0)));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(records),
                 IWorkRecords.licenseOf.selector
             )
@@ -212,7 +213,7 @@ contract RendererHostileTest is RendererBase {
         stream.setCollection(1, IStream.Collection(_text(5_000), bytes32(0), 1));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, address(stream), IStream.collection.selector
+                IRenderer.RendererReadFailed.selector, address(stream), IStream.collection.selector
             )
         );
         renderer.tokenURI(address(stream), ID);
@@ -228,7 +229,7 @@ contract RendererHostileTest is RendererBase {
         records.setMedia(ID, media);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(records),
                 IWorkRecords.mediaOf.selector
             )
@@ -245,7 +246,7 @@ contract RendererHostileTest is RendererBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(records),
                 IWorkRecords.preferredLocator.selector
             )
@@ -266,7 +267,7 @@ contract RendererHostileTest is RendererBase {
         records.burn(IWorkRecords.mediaOf.selector, 1_000_000);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(records),
                 IWorkRecords.mediaOf.selector
             )

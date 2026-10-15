@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { Roles } from "../governance/Roles.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { IAssetAllowlist } from "./interfaces/IAssetAllowlist.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
 
@@ -46,8 +46,8 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     mapping(bytes32 product => Currency) private _defaults;
 
     /// @param authority The AccessManager governing this contract.
-    /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is admitted
-    ///        at deployment because 6529 Stream launches with it, at revision 1.
+    /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is
+    ///        admitted at deployment because 6529 Stream launches with it, at revision 1.
     constructor(address authority, uint256 ethIncrementFloor) AccessManaged(authority) {
         _admit(ETH, ethIncrementFloor);
     }
@@ -69,9 +69,8 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
             if (block.timestamp < allowedAt) revert ReadmissionTooEarly(asset, allowedAt);
         }
         if (asset != ETH) {
-            if (asset.code.length == 0 || DelegatedEOA.isDelegated(asset)) {
-                revert AssetNotAdmissible(asset);
-            }
+            // The install predicate every dependency gets, under the allowlist's own error.
+            if (!Dependency.isInstallable(asset)) revert AssetNotAdmissible(asset);
             // A sanity probe, not proof of a standard token (governance vets that): both reads
             // must return exactly one word, and no balance may exceed the supply.
             if (TokenTransfer.balanceOf(asset, address(this)) > TokenTransfer.totalSupply(asset)) {

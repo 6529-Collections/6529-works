@@ -88,7 +88,7 @@ contract FixedPriceZeroFeeTest is FixedPriceBase {
         t.feeShare = 1;
         editions.setTerms(44, t, SIZE);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.InvalidSaleTerms.selector, address(editions), 44)
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), 44)
         );
         _openPublic(44, 0);
     }

@@ -82,7 +82,7 @@ only when Build and checks and all three parts are.
 | Job | Timeout | Steps, in order |
 | --- | --- | --- |
 | **Docs** | 5 minutes | `python -m tools.test_check_markdown_links`; `python tools/check_markdown_links.py`; `python -m tools.test_gen_role_matrix`; `python tools/gen_role_matrix.py --check`; `python -m tools.test_check_docs_facts`; `python tools/check_docs_facts.py` |
-| **Build and checks** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; restore the compiler cache (keyed on Foundry 1.7.1, solc 0.8.37 and a digest of the staged `foundry.toml`, `foundry.lock`, `.gitmodules`, `src`, `test`, `script` and `lib` entries); `forge fmt --check`; `forge build`; save the cache; `python tools/check_docs_facts.py --artifacts out`; `python tools/check_budgets.py --profile default`; `python -m tools.test_check_budgets`; `python tools/check_genesis.py`; `python -m tools.test_check_genesis`; `python -m tools.test_check_coverage`; `python -m tools.test_mutation`; the content tooling tests |
+| **Build and checks** | 15 minutes | checkout with submodules; Python 3.12.13; Foundry v1.7.1; restore the compiler cache (keyed on Foundry 1.7.1, solc 0.8.37 and a digest of the staged `foundry.toml`, `foundry.lock`, `.gitmodules`, `src`, `test`, `script` and `lib` entries); `forge fmt --check`; `forge build`; save the cache; `python tools/check_docs_facts.py --artifacts out`; `python tools/check_budgets.py --profile default`; `python -m tools.test_check_budgets`; `python tools/check_genesis.py`; `python -m tools.test_check_genesis`; `python tools/check_natspec.py`; `python -m tools.test_check_natspec`; `python -m tools.test_check_coverage`; `python -m tools.test_mutation`; the content tooling tests |
 | **Tests** (unit, fuzz and integration) | 15 minutes | the same setup and cache; `forge test --no-match-test ^invariant` |
 | **Tests** (economics invariants) | 15 minutes | the same; `forge test --match-test ^invariant --match-contract ^EconomicsInvariant` |
 | **Tests** (other invariants) | 15 minutes | the same; `forge test --match-test ^invariant --no-match-contract ^EconomicsInvariant` |
@@ -108,6 +108,7 @@ mutation shard, weekly). [Testing](../testing/README.md) describes them and the 
 | Tests | Any failing unit, fuzz, invariant or integration test, including the gas and state-growth gates | `forge test` |
 | Budgets | More than 12,000 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860) | [`tools/check_budgets.py`](../../tools/check_budgets.py) |
 | Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class; a role whose `suspendable` flag is not a boolean, or is set on a role with a delay or on GUARDIAN, PAUSER or CURATION_SIGNER; a function `WorksAccessManager` adds to its OpenZeppelin base that `manager` does not list, or lists with another selector, role or delay. `GenesisConfig.t.sol` checks the flags against `Roles.isSuspendable` exactly | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
+| NatSpec | In `src/`: an external or public function or getter without `@notice` or `@inheritdoc` (the only declarations `@inheritdoc` can stand in for); an event without `@notice`; a function or event without a `@param` for a named parameter; a function without one `@return` per return value (a named return cited by name); a `@param` that names no parameter; an error without `@notice` | [`tools/check_natspec.py`](../../tools/check_natspec.py) |
 | Content tooling | A failing `unittest` in `tools/content`. `test_anvil.py` sends the uploader's calldata to the compiled `ContentStore` on a local Anvil node; `CONTENT_E2E_REQUIRE=1` makes a missing `anvil` or build output a failure, not a skip | `python -m unittest discover -s tools/content -t . -p "test_*.py"` |
 | Slither | A High or Medium finding in a file outside `lib/`, `test/` and `script/` with no row in [`docs/security/slither-triage.md`](../security/slither-triage.md); any `src/**/*.sol` file Slither did not analyze; an unreadable report. Low, Informational and Optimization findings are counted, not gated | [`tools/check_slither.py`](../../tools/check_slither.py) |
 | Markdown links | A relative link or `#anchor` in a tracked `*.md` file (outside `lib/`) that does not resolve, with exact letter case. External links are not fetched | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) |
@@ -129,6 +130,7 @@ python tools/check_genesis.py
 python -m unittest discover -s tools/content -t . -p "test_*.py"
 python tools/check_markdown_links.py
 python tools/gen_role_matrix.py --check
+python tools/check_natspec.py
 ```
 
 Slither needs the pinned toolchain, ideally in a virtual environment. CI installs the hash
@@ -160,6 +162,7 @@ All are standard library only and run from anywhere in the repository.
 | [`tools/check_genesis.py`](../../tools/check_genesis.py) | The genesis configuration against the compiled contracts and `src/`; with `--config <file>`, a deployment's copy against the committed policy |
 | [`tools/check_slither.py`](../../tools/check_slither.py) | Slither, gated by the triage record |
 | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) | Relative links and anchors in Markdown (`--no-git` checks untracked files too) |
+| [`tools/check_natspec.py`](../../tools/check_natspec.py) | NatSpec completeness in `src/`: every external or public function and getter has `@notice` (or `@inheritdoc`), every event `@notice`; functions and events have a `@param` for each named parameter, functions a `@return` for each return value; every error has `@notice` |
 | `tools/gen_role_matrix.py` | Generates [Roles](roles.md) from the genesis configuration; `--check` fails if it is stale |
 | [`tools/content/`](../../tools/content/README.md) | The content uploader: chunking, manifests, calldata, gas quotes under the Prague and Glamsterdam schedules, verification |
 

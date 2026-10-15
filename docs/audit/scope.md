@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 10,501 non-blank, non-comment lines in 83 files under `src/` (budget: 12,000) |
+| Source lines | 10,312 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
 | Deployed contracts | 23 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,35 +33,35 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 566 | 20,644 | 22,457 | 3,932 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 633 | 22,900 | 25,824 | 1,676 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 354 | 18,521 | 20,243 | 6,055 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 789 | 24,449 | 26,746 | **127** |
-| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | 307 | 22,843 | 24,435 | 1,733 |
-| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | 145 | 17,109 | 18,217 | 7,467 |
-| `MintSaleBase` (abstract; in both adapters above) | [`src/sales/MintSaleBase.sol`](../../src/sales/MintSaleBase.sol) | 394 |  |  |  |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 555 | 20,762 | 22,627 | 3,814 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,958 | 25,936 | 1,618 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 332 | 18,531 | 20,245 | 6,045 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 763 | 24,361 | 26,631 | **215** |
+| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | 306 | 22,975 | 24,622 | 1,601 |
+| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | 144 | 17,150 | 18,313 | 7,426 |
+| `MintSaleBase` (abstract; in both adapters above) | [`src/sales/MintSaleBase.sol`](../../src/sales/MintSaleBase.sol) | 377 |  |  |  |
 
 ### Curation, identity and records
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 384 | 14,779 | 16,179 | 9,797 |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 360 | 14,782 | 16,198 | 9,794 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 579 | 20,339 | 21,543 | 4,237 |
-| `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,255 | 21,517 |
-| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 322 | 11,732 | 13,021 | 12,844 |
-| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 242 | 8,266 | 10,222 | 16,310 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 561 | 20,329 | 21,597 | 4,247 |
+| `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
+| `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 314 | 11,742 | 13,038 | 12,834 |
+| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 218 | 8,282 | 10,220 | 16,294 |
 
 ### Economics
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 196 | 9,083 | 12,533 | 15,493 |
-| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 124 | 4,528 | 5,544 | 20,048 |
-| `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) | 106 | 10,077 | 17,455 | 14,499 |
-| `SplitWallet` (one per payee configuration) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) | 142 | 5,350 | 6,861 | 19,226 |
-| `ReleaseVerifier` | [`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) | 47 | 3,672 | 4,193 | 20,904 |
-| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 91 | 5,224 | 5,641 | 19,352 |
+| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 192 | 9,083 | 12,541 | 15,493 |
+| `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 122 | 4,541 | 5,557 | 20,035 |
+| `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) | 100 | 10,009 | 17,426 | 14,567 |
+| `SplitWallet` (one per payee configuration) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) | 143 | 5,375 | 6,886 | 19,201 |
+| `ReleaseVerifier` | [`src/economics/ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) | 41 | 3,672 | 4,193 | 20,904 |
+| `RevenueEscrow` | [`src/economics/RevenueEscrow.sol`](../../src/economics/RevenueEscrow.sol) | 89 | 5,224 | 5,669 | 19,352 |
 | `ClaimRouter` | [`src/economics/ClaimRouter.sol`](../../src/economics/ClaimRouter.sol) | 99 | 3,026 | 3,054 | 21,550 |
 
 ### Content and rendering
@@ -69,8 +69,8 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 240 | 7,257 | 7,285 | 17,319 |
-| `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 65 | 3,007 | 3,339 | 21,569 |
-| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 774 | 24,397 | 24,712 | **179** |
+| `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 3,007 | 3,452 | 21,569 |
+| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 769 | 24,397 | 24,712 | **179** |
 
 ### Governance
 
@@ -89,32 +89,33 @@ Compiled into the contracts that use them; none is deployed or linked.
 | Library | Source | nSLOC | Used by |
 | --- | --- | ---: | --- |
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | Renderer |
-| `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | 197 | Renderer |
-| `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `Stream`, `StatementLog` |
 | `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 246 | GovernanceConfigurator |
+| `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `Stream`, `StatementLog` |
 | `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 134 | Sale adapters, `SplitWallet`, `RevenueEscrow`, `AssetAllowlist`, `RevenuePayment` |
+| `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | 129 | Renderer |
 | `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | 104 | `Renderer`, `ConsolidationAdapter`, `ArtistRegistry`, `StatementLog`, `EnglishAuction`, `ClaimRouter`, `SignatureVerifier`, `TokenTransfer`, `RevenuePayment` |
 | `HtmlScript` | [`src/content/HtmlScript.sol`](../../src/content/HtmlScript.sol) | 84 | Renderer |
 | `DataUri` | [`src/content/DataUri.sol`](../../src/content/DataUri.sol) | 82 | Renderer |
 | `Base64Validator` | [`src/content/Base64Validator.sol`](../../src/content/Base64Validator.sol) | 78 | ContentStore |
 | `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 76 | `ContentStore`, `Renderer` |
 | `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 60 | Governance, `Eip712CurationVerifier`, `AssetAllowlist`, the sale adapters |
-| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 47 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `FixedPriceSale`, `ReleaseVerifier` |
+| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 55 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `FixedPriceSale`, `ReleaseVerifier` |
 | `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 44 | Economics, `Stream`, `Editions`, `PackageRegistry`, the sale adapters |
 | `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 43 | `EnglishAuction`, `MintSaleBase` |
 | `WorksHashing` | [`src/interfaces/types/WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol) | 37 | `PackageRegistry`, `WorkRecords`, `Editions`, `EconomicsResolver`, `VrfEntropyModule` |
+| `Dependency` | [`src/libraries/Dependency.sol`](../../src/libraries/Dependency.sol) | 32 | Every install, bind and listing check, and every use-time code-hash pin |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | 29 | Stream, WorkRecords |
 | `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | 27 | ArtistRegistry, EconomicsResolver |
 | `DutchPricing` | [`src/sales/DutchPricing.sol`](../../src/sales/DutchPricing.sol) | 27 | `DutchSale`, `EditionRules` |
 | `BoundedParameter` | [`src/governance/BoundedParameter.sol`](../../src/governance/BoundedParameter.sol) | 22 | VrfEntropyModule |
-| `DelegatedEOA` | [`src/libraries/DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol) | 21 | Every install and bind check, and `SignatureVerifier` |
+| `DelegatedEOA` | [`src/libraries/DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol) | 21 | `Dependency` and `SignatureVerifier` |
 | `EditionRules` | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | 21 | Editions, PackageRegistry |
 
 The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,600 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,628 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external

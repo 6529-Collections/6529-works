@@ -2,13 +2,14 @@
 pragma solidity ^0.8.24;
 
 /// @title JsonEscape
-/// @notice Byte-exact escaping for JSON string values and for inline `<script>` text.
-/// @dev Ported from 6529Stream PR #744's `StreamRenderContextV1.escape`/`scriptText`, keeping their output
-///      byte for byte. Escaping preserves every other byte, including malformed UTF-8; validate
-///      UTF-8 separately with `Utf8`. Inputs are never modified, and an input that needs no
-///      change is returned as the same memory reference. Each encoder walks the input twice
-///      (count, then write): it skips whole 32-byte words that hold nothing to escape and
-///      jumps straight to the first byte that may. Byte reads may load memory past the
+/// @notice Byte-exact escaping for JSON string values. Text placed inside a `<script>` element
+///         goes through `HtmlScript.neutralize` instead.
+/// @dev Ported from 6529Stream PR #744's `StreamRenderContextV1.escape`, keeping its output byte
+///      for byte. Escaping preserves every other byte, including malformed UTF-8; validate UTF-8
+///      separately with `Utf8`. Inputs are never modified, and an input that needs no change is
+///      returned as the same memory reference. The encoder walks the input twice (count, then
+///      write): it skips whole 32-byte words that hold nothing to escape and jumps straight to
+///      the first byte that may. Byte reads may load memory past the
 ///      input's end; only bytes inside the input are used.
 library JsonEscape {
     /// @dev Bit b is set when byte b needs escaping: 0x00-0x1f, '"', '<', '\' and 0xe2 (the
@@ -148,88 +149,6 @@ library JsonEscape {
             let extra := walk(start, end, 0)
             if extra {
                 let length := add(mload(value), extra)
-                out := mload(0x40)
-                mstore(out, length)
-                let words := and(add(length, 31), not(31))
-                mstore(add(out, words), 0) // zero the final word's padding
-                mstore(0x40, add(add(out, 0x20), words))
-                pop(walk(start, end, add(out, 0x20)))
-            }
-        }
-    }
-
-    /// @notice Neutralizes HTML end tags in text placed inside a `<script>` element.
-    /// @dev Every case-insensitive eight-byte `</script` prefix gains a backslash after its
-    ///      `<`, with or without a following `>`. Valid JavaScript keeps its meaning inside
-    ///      strings, template literals and comments.
-    function scriptText(string memory value) internal pure returns (string memory out) {
-        assembly ("memory-safe") {
-            // Index (0-31) of the first non-zero byte of the non-zero word m.
-            function firstFlag(m) -> i {
-                if iszero(shr(128, m)) {
-                    i := 16
-                    m := shl(128, m)
-                }
-                if iszero(shr(192, m)) {
-                    i := add(i, 8)
-                    m := shl(64, m)
-                }
-                if iszero(shr(224, m)) {
-                    i := add(i, 4)
-                    m := shl(32, m)
-                }
-                if iszero(shr(240, m)) {
-                    i := add(i, 2)
-                    m := shl(16, m)
-                }
-                if iszero(shr(248, m)) { i := add(i, 1) }
-            }
-            // Walks [start, end) and returns the number of end tags; when dst is non-zero it
-            // also writes the neutralized output there.
-            function walk(start, end, dst) -> matches {
-                let run := start
-                for { let p := start } lt(p, end) { } {
-                    // Jump to the first '<' of a full word, or past a word without one.
-                    if iszero(lt(sub(end, p), 32)) {
-                        // y has a zero byte exactly at each '<'; m flags exactly those bytes.
-                        let y := xor(mload(p), mul(ONES, 0x3c))
-                        let m := and(not(or(add(and(y, LOW7), LOW7), y)), HIGH)
-                        if iszero(m) {
-                            p := add(p, 32)
-                            continue
-                        }
-                        p := add(p, firstFlag(m))
-                    }
-                    // Case-insensitive "</script" with all eight bytes inside the input:
-                    // '<' and '/' exactly, the six letters with 0x20 OR-ed in.
-                    let tag := 0
-                    if iszero(lt(sub(end, p), 8)) {
-                        tag := eq(or(shr(192, mload(p)), 0x0000202020202020), 0x3c2f736372697074)
-                    }
-                    if iszero(tag) {
-                        p := add(p, 1)
-                        continue
-                    }
-                    if dst {
-                        // Copy through the '<', then insert the backslash.
-                        let n := add(sub(p, run), 1)
-                        mcopy(dst, run, n)
-                        mstore8(add(dst, n), 0x5c)
-                        dst := add(dst, add(n, 1))
-                    }
-                    matches := add(matches, 1)
-                    run := add(p, 1)
-                    p := add(p, 8)
-                }
-                if dst { mcopy(dst, run, sub(end, run)) }
-            }
-
-            let start := add(value, 0x20)
-            let end := add(start, mload(value))
-            out := value
-            let matches := walk(start, end, 0)
-            if matches {
-                let length := add(mload(value), matches)
                 out := mload(0x40)
                 mstore(out, length)
                 let words := and(add(length, 31), not(31))

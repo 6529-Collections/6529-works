@@ -23,22 +23,19 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 /// @notice The shared descending-price adapter (ADR 0001 sections 5 and 6) for 6529 Editions
 ///         and future federated contracts. The curve comes from the token's terms
 ///         (`DutchParams`); the sale only fixes when it starts.
-/// @dev Clearing semantics: there is no clearing price. Each purchase pays the unit price of
-///      the block it lands in (see `DutchPricing`), copies already sold are never repriced or
-///      rebated when the price later falls, and after the curve ends the price rests at
-///      `restingPrice` until the token's supply or window runs out or the sale is closed. A buyer
-///      bounds the price with `maxUnitPrice`; `Payment.amount` is the most the payer will pay
-///      (integrator decision D17): an ERC-20 payment pulls exactly the charge, and ETH above it is
-///      credited to the payer and claimed (pull). `SaleStarted.endTime` is when the curve reaches
-///      its resting price. A sale the creator opens is the artist's, which PLATFORM closes only
-///      while the creator resolves to zero (MARKET-6). Governance: map `openSale` and `closeSale`
-///      to PLATFORM (the creator needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to
-///      PAUSER and `unpause` to UNPAUSER.
+/// @dev Clearing semantics: there is no clearing price. Each purchase pays the unit price of the
+///      block it lands in (see `DutchPricing`), copies already sold are never repriced or rebated
+///      when the price later falls, and after the curve ends the price rests at `restingPrice`
+///      until the token's supply or window runs out or the sale is closed. A buyer bounds the price
+///      with `maxUnitPrice`; `Payment.amount` is the most the payer will pay (integrator decision
+///      D17): an ERC-20 payment pulls exactly the charge, and ETH above it is credited to the payer
+///      and claimed (pull). `SaleStarted.endTime` is when the curve reaches its resting price. A
+///      sale the creator opens is the artist's, which PLATFORM closes only while the creator
+///      resolves to zero (MARKET-6). Governance: map `openSale` and `closeSale` to PLATFORM (the
+///      creator needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER,
+///      `pause` to PAUSER and `unpause` to UNPAUSER.
 contract DutchSale is IDutchSale, MintSaleBase {
     mapping(uint256 saleId => Schedule) private _schedules;
-
-    /// @notice The start time is in the past, or the token's curve is invalid.
-    error InvalidSchedule();
 
     /// @param authority_ The AccessManager.
     /// @param escrow_ The revenue escrow.

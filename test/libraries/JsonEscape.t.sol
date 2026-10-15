@@ -12,24 +12,12 @@ contract JsonEscapeHarness {
         return JsonEscape.escape(raw);
     }
 
-    function scriptText(string calldata raw) external pure returns (string memory) {
-        return JsonEscape.scriptText(raw);
-    }
-
     function oracleEscape(string calldata raw) external pure returns (string memory) {
         return string(O.escape(bytes(raw)));
     }
 
-    function oracleScriptText(string calldata raw) external pure returns (string memory) {
-        return string(O.scriptText(bytes(raw)));
-    }
-
     function pr744Escape(string calldata raw) external pure returns (string memory) {
         return Pr744Escape.escape(raw);
-    }
-
-    function pr744ScriptText(string calldata raw) external pure returns (string memory) {
-        return Pr744Escape.scriptText(raw);
     }
 }
 
@@ -43,20 +31,13 @@ contract JsonEscapeTest is Test {
         return bytes(JsonEscape.escape(string(raw)));
     }
 
-    function _script(bytes memory raw) internal pure returns (bytes memory) {
-        return bytes(JsonEscape.scriptText(string(raw)));
-    }
-
-    /// @dev Both encoders match their oracles and leave the input untouched.
+    /// @dev The encoder matches both oracles and leaves the input untouched.
     function _parity(bytes memory raw) internal pure {
         bytes32 before = keccak256(raw);
         uint256 length = raw.length;
         bytes memory escaped = _escape(raw);
-        bytes memory scripted = _script(raw);
         assertEq(escaped, O.escape(raw), "escape parity (oracle)");
-        assertEq(scripted, O.scriptText(raw), "script parity (oracle)");
         assertEq(escaped, bytes(Pr744Escape.escape(string(raw))), "escape parity (#744)");
-        assertEq(scripted, bytes(Pr744Escape.scriptText(string(raw))), "script parity (#744)");
         assertEq(raw.length, length, "input length changed");
         assertEq(keccak256(raw), before, "input bytes changed");
     }
@@ -65,7 +46,6 @@ contract JsonEscapeTest is Test {
 
     function test_Empty() public pure {
         assertEq(_escape(""), "");
-        assertEq(_script(""), "");
     }
 
     function test_GoldenEscapes() public pure {
@@ -81,35 +61,16 @@ contract JsonEscapeTest is Test {
         assertEq(_escape("plain text / ok"), "plain text / ok");
     }
 
-    function test_GoldenScriptText() public pure {
-        assertEq(
-            _script("</scriptX</ScRiPt></script"),
-            bytes.concat("<", hex"5c", "/scriptX<", hex"5c", "/ScRiPt><", hex"5c", "/script")
-        );
-        // Incomplete prefixes are not end tags.
-        for (uint256 n; n < 8; ++n) {
-            bytes memory truncated = new bytes(n);
-            for (uint256 j; j < n; ++j) {
-                truncated[j] = TAG[j];
-            }
-            assertEq(_script(truncated), truncated);
-        }
-    }
-
     function test_UnchangedInputIsReturnedAsIs() public pure {
         string memory value = "no specials here";
         string memory escaped = JsonEscape.escape(value);
-        string memory scripted = JsonEscape.scriptText(value);
         uint256 a;
         uint256 b;
-        uint256 c;
         assembly {
             a := value
             b := escaped
-            c := scripted
         }
         assertEq(a, b);
-        assertEq(a, c);
     }
 
     // ---------------------------------------------------------------- exhaustive parity
@@ -164,19 +125,6 @@ contract JsonEscapeTest is Test {
         _parity(repeated);
     }
 
-    /// @dev Every single-byte substitution in each position of "</script" (2,048 cases),
-    ///      including bytes that equal a tag letter only after OR-ing 0x20.
-    function test_EverySubstitutionInTheTag() public pure {
-        for (uint256 k; k < 8; ++k) {
-            for (uint256 b; b < 256; ++b) {
-                bytes memory tag = bytes.concat(TAG);
-                tag[k] = bytes1(uint8(b));
-                bytes memory raw = bytes.concat("x", tag, "y");
-                assertEq(_script(raw), O.scriptText(raw));
-            }
-        }
-    }
-
     function test_InvalidUtf8PassesThroughUnchanged() public pure {
         bytes memory raw = hex"ff80c0afe080aff4908080eda080fe";
         assertEq(_escape(raw), raw);
@@ -224,7 +172,7 @@ contract JsonEscapeTest is Test {
         bytes32 firstHash = keccak256(first);
         bytes memory canary = O.fill(513, 0xab);
         bytes memory second = _escape(O.fill(33, 0x22));
-        bytes memory third = _script(bytes.concat(O.fill(40, "z"), TAG));
+        bytes memory third = _escape(bytes.concat(O.fill(40, "z"), TAG));
         (bytes memory a, bytes memory b, bytes memory c, bytes memory d, bytes memory e) = abi.decode(
             abi.encode(input, first, canary, second, third), (bytes, bytes, bytes, bytes, bytes)
         );
@@ -248,25 +196,19 @@ contract JsonEscapeTest is Test {
     }
 
     /// @dev Bytes in memory right after the input never complete a sequence the input only
-    ///      starts: `e2 80` before an `a8`, or `</scr` before `ipt`, at every length and word
-    ///      offset. Mutation testing found the two end-of-input bounds unpinned (the tests'
-    ///      memory past the end was always zero).
+    ///      starts (`e2 80` before an `a8`), at every length and word offset. Mutation testing
+    ///      found the end-of-input bound unpinned (the tests' memory past the end was always
+    ///      zero).
     function test_BytesPastTheEndAreNotRead() public pure {
-        bytes[2] memory heads = [bytes(hex"e280"), "</scr"];
-        bytes[2] memory tails = [bytes(hex"a8"), "ipt"];
-        for (uint256 h; h < heads.length; ++h) {
-            for (uint256 n; n < 40; ++n) {
-                // The text and what follows it in one allocation, then the length shortened, so
-                // the tail sits in memory right after the text's last byte.
-                bytes memory text = bytes.concat(O.fill(n, "a"), heads[h], tails[h]);
-                uint256 length = n + heads[h].length;
-                assembly ("memory-safe") {
-                    mstore(text, length)
-                }
-                string memory out =
-                    h == 0 ? JsonEscape.escape(string(text)) : JsonEscape.scriptText(string(text));
-                assertEq(bytes(out), text, "a byte past the end was read");
+        for (uint256 n; n < 40; ++n) {
+            // The text and what follows it in one allocation, then the length shortened, so the
+            // tail sits in memory right after the text's last byte.
+            bytes memory text = bytes.concat(O.fill(n, "a"), hex"e280", hex"a8");
+            uint256 length = n + 2;
+            assembly ("memory-safe") {
+                mstore(text, length)
             }
+            assertEq(bytes(JsonEscape.escape(string(text))), text, "a byte past the end was read");
         }
     }
 
@@ -296,7 +238,6 @@ contract JsonEscapeTest is Test {
                 assertTrue(escaped[i + 2] != 0xa8 && escaped[i + 2] != 0xa9, "separator left");
             }
         }
-        assertFalse(O.hasEndTag(_script(raw)), "end tag left");
     }
 
     // ---------------------------------------------------------------- gas
@@ -315,21 +256,6 @@ contract JsonEscapeTest is Test {
         _report("escape, ASCII", h.escape, h.pr744Escape, h.oracleEscape, ascii);
         _report("escape, '<' every 97 bytes", h.escape, h.pr744Escape, h.oracleEscape, mixed);
         _report("escape, printable cycle", h.escape, h.pr744Escape, h.oracleEscape, dense);
-        _report("scriptText, ASCII", h.scriptText, h.pr744ScriptText, h.oracleScriptText, ascii);
-        _report(
-            "scriptText, '<' every 97 bytes",
-            h.scriptText,
-            h.pr744ScriptText,
-            h.oracleScriptText,
-            mixed
-        );
-        _report(
-            "scriptText, printable cycle",
-            h.scriptText,
-            h.pr744ScriptText,
-            h.oracleScriptText,
-            dense
-        );
     }
 
     function _report(

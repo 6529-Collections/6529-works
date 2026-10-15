@@ -722,7 +722,7 @@ contract ClaimRouterTest is EconomicsBase {
         claims[0] = IClaimRouter.SignedClaim(a, _sign(bobPk, a));
         claims[1] = IClaimRouter.SignedClaim(a, _sign(artistPk, a));
         bytes memory reason =
-            abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, artistPayout);
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artistPayout);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IClaimRouter.ClaimCallFailed.selector, 0, address(w), reason.length, reason

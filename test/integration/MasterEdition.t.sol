@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
@@ -12,6 +11,7 @@ import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/ty
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Flow 2 (integration brief, lane B): an edition master and its linked 6529 Editions
 ///         edition on the real contracts. The master settles; `createEdition` proves the item
@@ -212,7 +212,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         // and the artist's signed consent allows leaf prices below the package price.
         IFixedPriceSale.ArtistConsent memory consent = _consent(workId, phases);
         vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, relayer));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, relayer));
         fixedSale.openSale(address(editions), workId, phases, consent);
         vm.prank(platform);
         uint256 saleId = fixedSale.openSale(address(editions), workId, phases, consent);
@@ -297,7 +297,7 @@ contract MasterEditionFlowTest is IntegrationBase {
         vm.warp(block.timestamp + 2 hours);
         assertEq(dutchSale.currentPrice(saleId), DUTCH_REST, "rests");
         vm.prank(platform);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
         dutchSale.closeSale(saleId);
         vm.prank(artist);
         dutchSale.closeSale(saleId);

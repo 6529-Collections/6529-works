@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { BoundedParameter } from "../governance/BoundedParameter.sol";
@@ -12,7 +11,7 @@ import { IEntropyModule } from "../interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 
 /// @title VrfEntropyModule
@@ -20,11 +19,12 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///         on Chainlink VRF v2.5 with a subscription. One seed per work, keyed by the work's
 ///         content hash, never per copy or per package item.
 /// @dev Flow (review decision D4). The seed is requested BEFORE a token exists: anyone calls
-///      {requestSeed} for a VRF item of an approved package; the coordinator later
-///      calls {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no
-///      call into the token or the auction. The auction's `start` requires {isDelivered}, mints
-///      and opens the clock, and the Stream reads the seed through {seedOf} by item hash. Nothing
-///      is in custody while a seed is outstanding, so nothing can be stuck.
+///      {requestSeed} for a VRF item of an approved package; the coordinator later calls
+///      {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no call into
+///      the token or the auction. The auction never calls this module: its `start` calls 6529
+///      Stream's `mint`, which consumes the item and then requires {isDelivered} before it mints;
+///      the work-records satellite and the renderer read the seed through {seedOf} by item hash.
+///      Nothing is in custody while a seed is outstanding, so nothing can be stuck.
 ///
 ///      One draw per content. The draw is keyed by the item's content hash, the registry's
 ///      per-product uniqueness key, so every approved item carrying the same work (a revised
@@ -134,29 +134,9 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _requests;
 
     /// @notice The request parameters changed.
+    /// @param previous The parameters before the change (all zero at deployment).
+    /// @param next The parameters after the change.
     event ConfigSet(VrfConfig previous, VrfConfig next);
-
-    /// @notice A request parameter is zero or outside its bounds (the gas limit's ceiling is
-    ///         enforced by `BoundedParameter`).
-    error InvalidConfig();
-    /// @notice `retryDelay` is outside `[MIN_RETRY_DELAY, MAX_RETRY_DELAY]`.
-    error InvalidRetryDelay(uint64 retryDelay);
-    /// @notice The coordinator has no code, is an EIP-7702 delegated account, or is the current
-    ///         coordinator (a swap to itself).
-    error InvalidCoordinator(address coordinator);
-    /// @notice The package registry has no code, is an EIP-7702 delegated account, or does not
-    ///         support `IPackageRegistry` through ERC-165.
-    error InvalidRegistry(address registry);
-    /// @notice The code at `account` does not have the pinned hash.
-    error CodeHashMismatch(address account, bytes32 expected, bytes32 actual);
-    /// @notice {rawFulfillRandomWords} was called by someone other than the coordinator.
-    error OnlyCoordinatorCanFulfill(address have, address want);
-    /// @notice The request ID was never issued by the current coordinator.
-    error UnknownRequest(uint256 requestId);
-    /// @notice The coordinator returned a zero or already used request ID.
-    error InvalidRequestId(uint256 requestId);
-    /// @notice The coordinator delivered other than exactly one random word.
-    error InvalidRandomWords(uint256 requestId);
 
     /// @param authority_ The AccessManager that governs this module.
     /// @param coordinator_ The VRF v2.5 coordinator.
@@ -177,15 +157,11 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         if (retryDelay_ < MIN_RETRY_DELAY || retryDelay_ > MAX_RETRY_DELAY) {
             revert InvalidRetryDelay(retryDelay_);
         }
-        _checkCoordinator(coordinator_, coordinatorCodeHash);
-        // The install checks every dependency gets (decision D8): code that is not an EIP-7702
-        // delegation, ERC-165 support, and the reviewed code hash.
-        address registry = address(packageRegistry_);
-        if (
-            registry.code.length == 0 || DelegatedEOA.isDelegated(registry)
-                || !ERC165Checker.supportsInterface(registry, type(IPackageRegistry).interfaceId)
-        ) revert InvalidRegistry(registry);
-        _checkCodeHash(registry, packageRegistryCodeHash);
+        // The coordinator implements no ERC-165.
+        Dependency.checkPinned(coordinator_, coordinatorCodeHash);
+        Dependency.checkPinned(
+            address(packageRegistry_), type(IPackageRegistry).interfaceId, packageRegistryCodeHash
+        );
         VrfConfig memory c = config_;
         c.callbackGasLimit =
             SafeCast.toUint32(BoundedParameter.initial(c.callbackGasLimit, MAX_CALLBACK_GAS));
@@ -247,7 +223,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
 
         VrfConfig memory c = _config;
         address coord = coordinator;
-        _checkCodeHash(coord, _coordinatorCodeHash);
+        Dependency.checkUnchanged(coord, _coordinatorCodeHash);
         requestId = IVRFCoordinatorV2Plus(coord)
             .requestRandomWords(
                 IVRFCoordinatorV2Plus.RandomWordsRequest({
@@ -282,7 +258,7 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     /// @param randomWords The delivered words: exactly one.
     function rawFulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) external {
         if (msg.sender != coordinator) revert OnlyCoordinatorCanFulfill(msg.sender, coordinator);
-        _checkCodeHash(msg.sender, _coordinatorCodeHash);
+        Dependency.checkUnchanged(msg.sender, _coordinatorCodeHash);
         bytes32 contentHash = _requests[msg.sender][requestId];
         if (contentHash == 0) revert UnknownRequest(requestId);
         Seed storage seed = _seeds[contentHash];
@@ -349,8 +325,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         restricted
     {
         if (expected != coordinator) revert ExpectedValueMismatch();
-        if (next == expected) revert InvalidCoordinator(next);
-        _checkCoordinator(next, nextCodeHash);
+        if (next == expected) revert Dependency.InvalidDependency(next);
+        Dependency.checkPinned(next, nextCodeHash);
         emit CoordinatorSet(expected, next, nextCodeHash);
         coordinator = next;
         _coordinatorCodeHash = nextCodeHash;
@@ -415,19 +391,6 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         return status == IPackageRegistry.PackageStatus.APPROVED
             && MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
             && packageRegistry.consumedItemOf(item.contentHash) == 0;
-    }
-
-    function _checkCoordinator(address account, bytes32 codeHash) private view {
-        if (account.code.length == 0 || DelegatedEOA.isDelegated(account)) {
-            revert InvalidCoordinator(account);
-        }
-        _checkCodeHash(account, codeHash);
-    }
-
-    function _checkCodeHash(address account, bytes32 expected) private view {
-        if (account.codehash != expected) {
-            revert CodeHashMismatch(account, expected, account.codehash);
-        }
     }
 
     function _validate(VrfConfig memory c) private pure {

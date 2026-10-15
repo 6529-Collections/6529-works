@@ -27,6 +27,7 @@ import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { RejectingRecipient, ReentrantRecipient } from "../../mocks/EconomicsMocks.sol";
 import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { DutchBase } from "./DutchBase.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Unit tests of the Dutch adapter: configuration, opening, the price curve, purchases
 ///         with excess credits and claims, ERC-20 payments, and the no-rebate clearing rule.
@@ -35,7 +36,7 @@ contract DutchSaleTest is DutchBase {
 
     function test_Constructor_RevertsOnZeroDependency() public {
         (IRevenueEscrow e,, IEconomicsResolver r) = _deps();
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(IMintSale.InvalidAddress.selector);
         new DutchSale(address(manager), e, ISignatureTransfer(address(0)), r);
     }
 
@@ -92,15 +93,15 @@ contract DutchSaleTest is DutchBase {
     }
 
     function test_OpenSale_RevertsForStrangerPastStartOrSecondSale() public {
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         dutch.openSale(address(editions), LINEAR, uint64(block.timestamp));
-        vm.expectRevert(DutchSale.InvalidSchedule.selector);
+        vm.expectRevert(IDutchSale.InvalidSchedule.selector);
         vm.prank(creator);
         dutch.openSale(address(editions), LINEAR, uint64(block.timestamp - 1));
         uint256 saleId = _openNow(LINEAR);
         vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.SaleAlreadyOpen.selector, address(editions), LINEAR)
+            abi.encodeWithSelector(IMintSale.SaleAlreadyOpen.selector, address(editions), LINEAR)
         );
         _openNow(LINEAR);
         assertEq(dutch.openSaleOf(address(editions), LINEAR), saleId);
@@ -118,7 +119,7 @@ contract DutchSaleTest is DutchBase {
             editions.setTerms(40 + i, t, SIZE);
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 40 + i
+                    ISaleAdapter.InvalidSaleTerms.selector, address(editions), 40 + i
                 )
             );
             _openNow(40 + i);
@@ -131,7 +132,7 @@ contract DutchSaleTest is DutchBase {
         _setDutch(21, CURRENCY_ETH, 1 ether, 0.5 ether, 0, 0); // falls with no duration
         _setDutch(22, CURRENCY_ETH, 1 ether, 0.5 ether, 1000, 300); // uneven steps
         for (uint256 id = 20; id <= 22; ++id) {
-            vm.expectRevert(DutchSale.InvalidSchedule.selector);
+            vm.expectRevert(IDutchSale.InvalidSchedule.selector);
             vm.prank(creator);
             dutch.openSale(address(editions), id, uint64(block.timestamp));
         }
@@ -296,7 +297,7 @@ contract DutchSaleTest is DutchBase {
             abi.encodeWithSelector(IDutchSale.PriceAboveLimit.selector, START, START - 1)
         );
         dutch.purchase{ value: START }(saleId, alice, 1, START - 1, _eth(alice, START));
-        vm.expectRevert(MintSaleBase.InvalidQuantity.selector);
+        vm.expectRevert(IMintSale.InvalidQuantity.selector);
         dutch.purchase(saleId, alice, 0, START, _eth(alice, 0));
         vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
         dutch.purchase{ value: START - 1 }(saleId, alice, 1, START, _eth(alice, START - 1));
@@ -307,10 +308,10 @@ contract DutchSaleTest is DutchBase {
     ///      a sale it opened alone.
     function test_CloseSale_ByCreatorOrPlatformOnly() public {
         uint256 saleId = _openNow(LINEAR);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
         vm.prank(stranger);
         dutch.closeSale(saleId);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
         vm.prank(platform);
         dutch.closeSale(saleId);
         vm.expectEmit(address(dutch));
@@ -319,7 +320,7 @@ contract DutchSaleTest is DutchBase {
         dutch.closeSale(saleId);
         assertTrue(_closed(saleId));
         assertEq(dutch.openSaleOf(address(editions), LINEAR), 0);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.SaleAlreadyClosed.selector, saleId));
         vm.prank(creator);
         dutch.closeSale(saleId);
 
@@ -371,9 +372,7 @@ contract DutchSaleTest is DutchBase {
         allowlist.set(CURRENCY_ETH, false);
         // New purchases halt, but the credit is still claimable.
         vm.deal(bob, START);
-        vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.CurrencyNotActive.selector, CURRENCY_ETH)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.CurrencyNotActive.selector, CURRENCY_ETH));
         vm.prank(bob);
         dutch.purchase{ value: START }(saleId, bob, 1, START, _eth(bob, START));
         vm.prank(alice);

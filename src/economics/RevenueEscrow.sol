@@ -6,7 +6,7 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { IRevenueEscrow } from "./interfaces/IRevenueEscrow.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -40,9 +40,7 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
     /// @param authority The AccessManager governing {recover}.
     /// @param factory_ The split factory whose wallet configurations {recover} compares.
     constructor(address authority, ISplitFactory factory_) AccessManaged(authority) {
-        if (address(factory_).code.length == 0 || DelegatedEOA.isDelegated(address(factory_))) {
-            revert InvalidFactory(address(factory_));
-        }
+        Dependency.check(address(factory_));
         factory = factory_;
     }
 

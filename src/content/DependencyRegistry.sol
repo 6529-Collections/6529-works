@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { IDependencyRegistry } from "../interfaces/IDependencyRegistry.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title DependencyRegistry
 /// @notice Pinned library versions for generative works: `(name, version)` to a {ContentStore}
@@ -13,10 +14,8 @@ import { IDependencyRegistry } from "../interfaces/IDependencyRegistry.sol";
 ///      deprecation is a one-way flag. Because a registered file must already be complete in the
 ///      store, every registered version is readable for as long as the chain exists.
 ///
-///      TODO(governance lane): grant `register` and `deprecate` to the registrar role from
-///      `src/governance/Roles.sol` (a role with a delay, since a version is forever) when that
-///      file lands; until then deployment scripts and tests wire a local role with
-///      `AccessManager.setTargetFunctionRole`.
+///      Genesis maps `register` to `Roles.PARAMETER_SETTER` (48 hours, so guardians can cancel a
+///      version before it is permanent) and `deprecate` to `Roles.GUARDIAN` (immediate).
 contract DependencyRegistry is IDependencyRegistry, AccessManaged {
     struct Entry {
         bytes32 fileId;
@@ -29,7 +28,7 @@ contract DependencyRegistry is IDependencyRegistry, AccessManaged {
     mapping(bytes32 name => mapping(bytes32 version => Entry)) private _entries;
 
     constructor(address authority, IContentStore store_) AccessManaged(authority) {
-        if (address(store_).code.length == 0) revert DependencyStoreInvalid(address(store_));
+        Dependency.check(address(store_));
         store = store_;
     }
 

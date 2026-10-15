@@ -66,6 +66,12 @@ library DeployGuards {
     /// @notice Its runtime code hash (24,094 bytes), read from mainnet on 14 October 2026.
     bytes32 internal constant CANONICAL_VRF_COORDINATOR_CODEHASH =
         0xbe4ae0321fb1c74c80eea0c14c9c7b28c69ce17df15222e27b1e934cc98f5f61;
+    /// @notice The runtime code hash of Permit2 (`DeployV1.CANONICAL_PERMIT2`) on Ethereum
+    ///         mainnet (9,152 bytes), read from mainnet on 15 October 2026 at block 26,198,501.
+    ///         Permit2 keeps its chain ID and EIP-712 domain separator as immutables, so its code,
+    ///         and this hash, differ per chain: Verify checks it on mainnet only.
+    bytes32 internal constant CANONICAL_PERMIT2_CODEHASH =
+        0xc67d1657868aa5146eaf24fb879fb1fdec3d2d493b3683a61c9c2f4fb2851131;
     /// @notice The official 6529 delegation deployment on Sepolia (the nftdelegation README).
     address internal constant SEPOLIA_DELEGATION = 0x8f86c644f845A077999939C69Bc787662377d915;
     uint256 internal constant SEPOLIA_CHAIN_ID = 11_155_111;

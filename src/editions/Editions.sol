@@ -5,7 +5,6 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Splits } from "../economics/Splits.sol";
@@ -33,7 +32,7 @@ import {
 } from "../interfaces/types/PackageTypes.sol";
 import { DutchParams, PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { EditionRules } from "./EditionRules.sol";
 
 /// @title Editions
@@ -137,32 +136,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     mapping(address adapter => uint8) private _minterStatus;
     mapping(uint256 editionId => Record) private _records;
 
-    /// @notice The contract URI changed from `previous` to `next` (beside ERC-7572's
-    ///         `ContractURIUpdated`, which carries no values).
-    event ContractURISet(string previous, string next);
-    /// @notice An edition's royalty rate changed with its master's, by every party's agreement
-    ///         plus a governed action, relayed by the work-records satellite.
-    event RoyaltyRateChanged(uint256 indexed editionId, uint32 previous, uint32 next);
-
-    /// @notice A required address is zero.
-    error ZeroAddress();
-    /// @notice Stream's code hash is not the reviewed one.
-    error CodeHashMismatch(bytes32 expected, bytes32 actual);
-    /// @notice The item's edition terms are malformed (format, size, window, sale kind, params).
-    error InvalidEditionTerms(uint256 workId);
-    /// @notice The edition terms price copies in `CURRENCY_DEFAULT`: a price is meaningless
-    ///         without its currency, since a governed change of the default would reprice the
-    ///         edition. `CURRENCY_DEFAULT` is allowed only with a zero price.
-    error PricedDefaultCurrency(uint256 workId);
-    /// @notice Stream did not record the link back to this edition.
-    error LinkFailed(uint256 workId);
-    /// @notice A mint carried data, or a mint or burn a zero amount.
-    error InvalidMintRequest();
-    /// @notice A royalty rate above 100,000.
-    error InvalidRoyaltyRate(uint32 rate);
-    /// @notice The work-records satellite is not bound yet, so no edition can be created.
-    error WorkRecordsUnbound();
-
     /// @param authority_ The AccessManager that governs this contract.
     /// @param stream_ The 6529 Stream contract; the other wiring is read from it.
     /// @param streamCodeHash The reviewed code hash of `stream_`.
@@ -171,10 +144,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ERC1155("")
         AccessManaged(authority_)
     {
-        if (!_installable(stream_, type(IStream).interfaceId)) revert InvalidBinding(stream_);
-        if (stream_.codehash != streamCodeHash) {
-            revert CodeHashMismatch(streamCodeHash, stream_.codehash);
-        }
+        Dependency.checkPinned(stream_, type(IStream).interfaceId, streamCodeHash);
         IStream s = IStream(stream_);
         (address registry, address resolver, address artists) =
             (s.packageRegistry(), s.economics(), s.artistRegistry());
@@ -243,10 +213,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev The target must also be the satellite Stream bound.
     function bindWorkRecords(address target) external restricted {
         if (workRecords != address(0)) revert AlreadyBound(WORK_RECORDS);
-        if (
-            target != IStream(stream).workRecords()
-                || !_installable(target, type(IWorkRecords).interfaceId)
-        ) revert InvalidBinding(target);
+        Dependency.check(target, type(IWorkRecords).interfaceId);
+        if (target != IStream(stream).workRecords()) revert InvalidBinding(target);
         workRecords = target;
         emit Bound(WORK_RECORDS, target);
     }
@@ -258,9 +226,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         uint8 status = _minterStatus[adapter];
         if (admitted == (status == MINTER_ADMITTED)) return;
-        if (admitted && !_installable(adapter, type(ISaleAdapter).interfaceId)) {
-            revert InvalidBinding(adapter);
-        }
+        if (admitted) Dependency.check(adapter, type(ISaleAdapter).interfaceId);
         _minterStatus[adapter] = admitted ? MINTER_ADMITTED : MINTER_REMOVED;
         emit AdmittedMinterSet(adapter, admitted);
     }
@@ -428,6 +394,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @notice The edition's metadata, built by its master's renderer from the master's record
     ///         and content-store bytes. Reverts with `UnknownEdition`.
+    /// @param id The edition ID.
+    /// @return The renderer's compact metadata URI (`IRenderer.tokenURI`) for this contract and
+    ///        `id`.
     function uri(uint256 id) public view override returns (string memory) {
         _edition(id);
         return IRenderer(IStream(stream).rendererOf(id)).tokenURI(address(this), id);
@@ -501,12 +470,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ) revert NotEditionMaster(workId);
         (, bytes32 evidenceHash,) = packageRegistry.packageOf(packageRoot);
         if (evidenceHash == 0) revert NotEditionMaster(workId);
-    }
-
-    /// @dev ADR 0001 section 13.6: code, no EIP-7702 delegation, and ERC-165 support.
-    function _installable(address target, bytes4 interfaceId) private view returns (bool) {
-        return target.code.length != 0 && !DelegatedEOA.isDelegated(target)
-            && ERC165Checker.supportsInterface(target, interfaceId);
     }
 
     function _edition(uint256 editionId) private view returns (Record storage r) {

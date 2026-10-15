@@ -8,6 +8,7 @@ import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { IVrfSubscriptions, WorksForkBase } from "./WorksForkBase.sol";
+import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 
 /// @notice The entropy module against the real Chainlink VRF v2.5 coordinator on a Sepolia
 ///         fork: a funded subscription with the module as its consumer, a seed request that the
@@ -110,7 +111,7 @@ contract VrfSepoliaForkTest is WorksForkBase {
         uint256[] memory words = new uint256[](1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                VrfEntropyModule.OnlyCoordinatorCanFulfill.selector, address(this), VRF_COORDINATOR
+                IEntropyModule.OnlyCoordinatorCanFulfill.selector, address(this), VRF_COORDINATOR
             )
         );
         entropy.rawFulfillRandomWords(requestId, words);

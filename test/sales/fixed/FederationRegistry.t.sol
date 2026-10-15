@@ -15,6 +15,8 @@ import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { MockERC20 } from "../../mocks/EconomicsMocks.sol";
 import { MockEditionTarget, MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Federation readiness (integrator decision D21), through the fixed-price adapter: the
 ///         governed compare-and-set registry with ERC-165, EIP-7702 and code-hash pinning, targets
@@ -68,9 +70,7 @@ contract FederationRegistryTest is FixedPriceBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(registry)));
         address[3] memory unfit = [makeAddr("eoa"), address(new MockERC20("X", "X")), delegated];
         for (uint256 i; i < unfit.length; ++i) {
-            vm.expectRevert(
-                abi.encodeWithSelector(MintSaleBase.InvalidDependency.selector, unfit[i])
-            );
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, unfit[i]));
             vm.prank(admin);
             fixedSale.setFederationRegistry(address(0), unfit[i]);
         }
@@ -110,9 +110,7 @@ contract FederationRegistryTest is FixedPriceBase {
         IFixedPriceSale.Phase[] memory phases = _one(_phase(0, 0, false, false));
         vm.prank(platform);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                MintSaleBase.ArtistApprovalRequired.selector, address(fed), FED_ID
-            )
+            abi.encodeWithSelector(IMintSale.ArtistApprovalRequired.selector, address(fed), FED_ID)
         );
         fixedSale.openSale(address(fed), FED_ID, phases, _noConsent());
         vm.prank(creator);

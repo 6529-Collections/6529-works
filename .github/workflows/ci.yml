@@ -151,6 +151,14 @@ jobs:
       - name: Genesis checker unit tests
         run: python -m tools.test_check_genesis
 
+      - name: NatSpec
+        # Every external or public function, getter, event and error in src/ is documented:
+        # @notice (or @inheritdoc), a @param per parameter and a @return per return value.
+        run: python tools/check_natspec.py
+
+      - name: NatSpec checker unit tests
+        run: python -m tools.test_check_natspec
+
       - name: Coverage and mutation tool unit tests
         # The tools run on main and on a schedule (strength.yml, mutation.yml); their unit
         # tests are cheap enough for every pull request.

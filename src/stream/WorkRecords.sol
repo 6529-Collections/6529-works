@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ERC165 } from "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
@@ -17,7 +16,7 @@ import { Limits } from "../interfaces/types/Limits.sol";
 import { ItemKind, License, PackageItem, SeedPolicy } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { SpdxId } from "./SpdxId.sol";
 
@@ -122,11 +121,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         AccessManaged(authority_)
         EIP712(Typehashes.WORK_RECORDS_NAME, Typehashes.DOMAIN_VERSION)
     {
-        _requireContract(stream_);
-        if (!ERC165Checker.supportsInterface(stream_, type(IStream).interfaceId)) {
-            revert InvalidDependency(stream_);
-        }
-        _requireContract(contentStore_);
+        Dependency.check(stream_, type(IStream).interfaceId);
+        Dependency.check(contentStore_);
         if (
             !SpdxId.isValid(cc0.spdxId)
                 || WorksHashing.licenseKey(cc0.spdxId) != WorksHashing.CC0_LICENSE_KEY
@@ -336,8 +332,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      checked once could be outlived by code recreated at the same address.
     function pinnedRenderer(uint256 tokenId) external view returns (address renderer) {
         renderer = _open(tokenId).renderer;
-        if (renderer != address(0) && renderer.codehash != _rendererCodeHashes[renderer]) {
-            revert InvalidRenderer(renderer);
+        if (renderer != address(0)) {
+            Dependency.checkUnchanged(renderer, _rendererCodeHashes[renderer]);
         }
     }
 
@@ -432,11 +428,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (!r.finalized) revert WorkNotFinalized(tokenId);
         address previous = r.renderer;
         if (renderer == previous) return;
-        if (
-            renderer.code.length == 0 || DelegatedEOA.isDelegated(renderer)
-                || renderer.codehash != rendererCodeHash
-                || !ERC165Checker.supportsInterface(renderer, type(IRenderer).interfaceId)
-        ) revert InvalidRenderer(renderer);
+        Dependency.checkPinned(renderer, type(IRenderer).interfaceId, rendererCodeHash);
         bytes32 digest = _hashTypedDataV4(
             keccak256(
                 abi.encode(
@@ -449,9 +441,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
                 )
             )
         );
-        // Deadlines are coarse (days); a validator's timestamp drift does not matter here.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > deadline) revert InvalidConsent(tokenId, 0);
+        SignatureVerifier.checkDeadline(deadline);
         if (!SignatureVerifier.isValid(_artistOf(tokenId), digest, artistSignature)) {
             revert InvalidConsent(tokenId, 0);
         }
@@ -577,6 +567,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Editions check when binding.
+    /// @param interfaceId The interface ID to test.
+    /// @return True for the `IWorkRecords` and `IERC165` interface IDs.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IWorkRecords).interfaceId || super.supportsInterface(interfaceId);
     }
@@ -589,7 +581,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     function _pinCode(address renderer, bytes32 codeHash) private {
         bytes32 pinned = _rendererCodeHashes[renderer];
         if (pinned == 0) _rendererCodeHashes[renderer] = codeHash;
-        else if (pinned != codeHash) revert InvalidRenderer(renderer);
+        else if (pinned != codeHash) revert Dependency.DependencyCodeChanged(renderer);
     }
 
     /// @dev The canonical key of `next`, or zero when it is the current license (a no-op).
@@ -649,8 +641,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @dev Every party of the work's item consents, in order, each by its active authority
-    ///      (artist ID `artistIdOf(account)`, else `uint160(account)`). A wrong count or a passed
-    ///      deadline reports the party index `signatures.length`.
+    ///      (artist ID `artistIdOf(account)`, else `uint160(account)`). A wrong count reports the
+    ///      party index `signatures.length`.
     function _checkConsents(
         uint256 tokenId,
         PackageItem calldata item,
@@ -661,11 +653,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (WorksHashing.itemHashCalldata(item) != _itemHashOf(tokenId)) {
             revert InvalidRecordData(tokenId);
         }
+        SignatureVerifier.checkDeadline(deadline);
         uint256 parties = item.parties.length;
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > deadline || signatures.length != parties) {
-            revert InvalidConsent(tokenId, signatures.length);
-        }
+        if (signatures.length != parties) revert InvalidConsent(tokenId, signatures.length);
         bytes32 digest = _hashTypedDataV4(structHash);
         IArtistRegistry registry = IArtistRegistry(artistRegistry);
         for (uint256 i; i < parties; ++i) {
@@ -873,11 +863,5 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (minted != 0) core.emitMetadataUpdate(1, minted);
         address editions = core.editions();
         if (editions != address(0)) IEditions(editions).notifyAllUpdated();
-    }
-
-    function _requireContract(address dependency) private view {
-        if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
-            revert InvalidDependency(dependency);
-        }
     }
 }

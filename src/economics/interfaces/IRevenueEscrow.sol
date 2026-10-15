@@ -14,6 +14,11 @@ import { ISplitFactory } from "./ISplitFactory.sol";
 ///      refuse the escrow as a payout or fee recipient (`ProtocolContracts`).
 interface IRevenueEscrow is IERC165 {
     /// @notice `payer` credited `amount` of `asset` to `wallet`, which is now owed `owed`.
+    /// @param wallet The account credited.
+    /// @param asset The asset credited (ETH is `address(0)`).
+    /// @param payer The account that made the deposit.
+    /// @param amount The amount deposited, in the asset's base units.
+    /// @param owed The wallet's whole credit in the asset after the deposit.
     event Credited(
         address indexed wallet,
         address indexed asset,
@@ -22,11 +27,20 @@ interface IRevenueEscrow is IERC165 {
         uint256 owed
     );
     /// @notice `caller` flushed `amount` of `asset` to `wallet`.
+    /// @param wallet The account paid.
+    /// @param asset The asset paid (ETH is `address(0)`).
+    /// @param caller The account that called {flush}.
+    /// @param amount The amount paid: the wallet's whole credit in the asset.
     event Flushed(
         address indexed wallet, address indexed asset, address indexed caller, uint256 amount
     );
     /// @notice `amount` of `asset` owed to `wallet` moved to `replacement`, which is now owed
     ///         `owed`.
+    /// @param wallet The account whose credit moved.
+    /// @param replacement The account the credit moved to.
+    /// @param asset The asset of the credit (ETH is `address(0)`).
+    /// @param amount The amount moved: the wallet's whole credit in the asset.
+    /// @param owed The replacement's whole credit in the asset after the move.
     event Recovered(
         address indexed wallet,
         address indexed replacement,
@@ -37,10 +51,10 @@ interface IRevenueEscrow is IERC165 {
 
     /// @notice `account` named `replacement` as where governance may move its credits; zero
     ///         withdraws the consent.
+    /// @param account The account that called {consentToRecovery}.
+    /// @param replacement The replacement it named, or zero.
     event RecoveryConsentSet(address indexed account, address indexed replacement);
 
-    /// @notice The factory has no code or is an EIP-7702 delegated account.
-    error InvalidFactory(address factory);
     /// @notice `wallet` is zero or the escrow itself.
     error InvalidWallet(address wallet);
     /// @notice An ERC-20 deposit named `address(0)`, which is ETH.
@@ -59,26 +73,41 @@ interface IRevenueEscrow is IERC165 {
     error RecoveryNotConsented(address account, address replacement);
 
     /// @notice The split factory whose wallet configurations {recover} compares.
+    /// @return The split factory, fixed at deployment.
     function factory() external view returns (ISplitFactory);
 
     /// @notice The amount of `asset` owed to `wallet`.
+    /// @param wallet The credited account.
+    /// @param asset The asset to look up (ETH is `address(0)`).
+    /// @return The credit, in the asset's base units.
     function owed(address wallet, address asset) external view returns (uint256);
 
     /// @notice The amount of `asset` owed to all wallets.
+    /// @param asset The asset to look up (ETH is `address(0)`).
+    /// @return The sum of every credit in the asset; funds sent here without a deposit are not
+    ///        counted.
     function totalOwed(address asset) external view returns (uint256);
 
     /// @notice The replacement `account` consented to and no {recover} has used yet, or zero.
+    /// @param account The account to look up.
+    /// @return The replacement it named, or zero.
     function recoveryConsent(address account) external view returns (address);
 
     /// @notice Credits `msg.value` to `wallet`.
+    /// @param wallet The account to credit; not zero or the escrow. `msg.value` must be non-zero.
     function depositETH(address wallet) external payable;
 
     /// @notice Pulls exactly `amount` of `asset` from the caller and credits it to `wallet`.
     /// @dev The caller approves the escrow first. Reverts unless both balances move by exactly
     ///      `amount` and the token returns `true`.
+    /// @param wallet The account to credit; not zero or the escrow.
+    /// @param asset The ERC-20 to pull; not `address(0)`, which is ETH.
+    /// @param amount The amount to pull and credit, in the asset's base units; must be non-zero.
     function depositERC20(address wallet, address asset, uint256 amount) external;
 
     /// @notice Pays everything owed to `wallet` in `asset` to `wallet`. Anyone may call.
+    /// @param wallet The credited account to pay.
+    /// @param asset The asset to pay (ETH is `address(0)`).
     /// @return amount The amount paid.
     function flush(address wallet, address asset) external returns (uint256 amount);
 
@@ -90,6 +119,7 @@ interface IRevenueEscrow is IERC165 {
     ///      blocks it: the consent ADR 0001 section 7 requires for terminal recovery. Split
     ///      wallets cannot call it; their credits follow the identical-payees rule instead.
     ///      Reverts with {InvalidWallet} for the escrow itself or the caller.
+    /// @param replacement The account to receive the caller's credit, or zero to withdraw.
     function consentToRecovery(address replacement) external;
 
     /// @notice Moves everything owed to `wallet` in `asset` to `replacement`. For a wallet of the
@@ -104,5 +134,8 @@ interface IRevenueEscrow is IERC165 {
     ///      any other account gives it explicitly. Factory wallets must be deployed: a predicted
     ///      address has no configuration and can never consent. A credit the replacement already
     ///      holds is added to, never overwritten.
+    /// @param wallet The account whose credit to move.
+    /// @param replacement The account to credit instead.
+    /// @param asset The asset of the credit (ETH is `address(0)`).
     function recover(address wallet, address replacement, address asset) external;
 }

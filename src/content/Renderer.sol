@@ -96,7 +96,8 @@ contract Renderer is IRenderer {
     ///         page (it has the 8M promise); `fullTokenURI` wraps a larger one, up to its size
     ///         limit.
     uint256 internal constant SCRIPT_LIMIT = 8_192;
-    /// @notice The largest record file, in bytes: one store chunk.
+    /// @notice The largest record file, in bytes: half a store chunk, so one chunk always holds
+    ///         it.
     uint256 internal constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
     uint256 internal constant MAX_ARTISTS = Limits.MAX_ARTISTS;
@@ -143,21 +144,6 @@ contract Renderer is IRenderer {
         "html,body{margin:0;height:100%;overflow:hidden}</style></head><body><script>"
         "window.works=";
     string private constant SHELL_TAIL = "</script></body></html>";
-
-    /// @notice The threshold is zero or above `MAX_INLINE_BYTES`.
-    error RendererThresholdInvalid(uint256 threshold);
-    /// @notice A read of `target` failed: no code, a revert, out of its gas cap, or too much
-    ///         return data. `selector` names the call.
-    error RendererReadFailed(address target, bytes4 selector);
-    /// @notice A string from the Stream, a locator or the store is not well-formed UTF-8.
-    error RendererInvalidUtf8();
-    /// @notice The work's data breaks a rule: no primary file first, or an edition whose content
-    ///         hash is not its master's. (A bad record is not an error: it renders core-only.)
-    error RendererRecordInvalid(address token, uint256 tokenId);
-    /// @notice `fullTokenURI` cannot serve the work in full: its record is not open, incomplete or
-    ///         invalid, or the primary file is not on-chain complete, is incomplete, too large,
-    ///         not attested `Base64`, or not stored as `Identity` or `Base64`.
-    error RendererNotInlineable(address token, uint256 tokenId);
 
     /// @dev What a work's record file is good for: not open yet, not completely uploaded,
     ///      unacceptable, or ready.
@@ -220,6 +206,8 @@ contract Renderer is IRenderer {
     }
 
     /// @notice ERC-165: `IRenderer` and `IERC165`.
+    /// @param id The interface ID to test.
+    /// @return True for the `IRenderer` and `IERC165` interface IDs.
     function supportsInterface(bytes4 id) external pure returns (bool) {
         return id == type(IRenderer).interfaceId || id == type(IERC165).interfaceId;
     }
@@ -338,10 +326,10 @@ contract Renderer is IRenderer {
     }
 
     /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
-    ///      complete yet, and never if it is not `Identity`, is over one chunk, is not UTF-8, or
-    ///      holds too many `%` and `#` to escape within the gas budget. A record file the store
-    ///      does not answer for (an approved one whose manifest was never registered) is not
-    ///      complete either: the store answered for the primary file in this same call, so the
+    ///      complete yet, and never if it is not `Identity`, is over `MAX_RECORD_BYTES`, is not
+    ///      UTF-8, or holds too many `%` and `#` to escape within the gas budget. A record file
+    ///      the store does not answer for (an approved one whose manifest was never registered) is
+    ///      not complete either: the store answered for the primary file in this same call, so the
     ///      failure is the unknown file, not a broken store.
     function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
         bytes32 id = c.rec.recordFileId;

@@ -27,7 +27,7 @@ The types live in [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol),
 the pages under [References](#references).
 
 **Wiring.** The constructor requires Stream to have code, no EIP-7702 delegation, ERC-165
-`IStream` (`InvalidBinding`) and the reviewed code hash (`CodeHashMismatch`), and reads the
+`IStream` and the reviewed code hash (`InvalidDependency`), and reads the
 package registry, economics resolver and artist registry from it as immutables (`ZeroAddress`).
 Genesis binds Editions in Stream and the package registry, calls `Editions.bindWorkRecords`
 once (`AlreadyBound`), admits both adapters on Editions and lists Editions on both
@@ -163,7 +163,7 @@ stateDiagram-v2
   `minted`. Minting reads nothing from Stream: a master with an edition has settled, and Stream
   never burns a settled token (`SaleAlreadySettled`).
 - `setAdmittedMinter(adapter, admitted)` admits an adapter with code, no EIP-7702 delegation
-  and ERC-165 `ISaleAdapter` (`InvalidBinding`); removal is unchecked, and only a change emits
+  and ERC-165 `ISaleAdapter` (`InvalidDependency`); removal is unchecked, and only a change emits
   `AdmittedMinterSet`.
 - `burn(id, amount)` burns from the caller's own balance, for any adapter ever admitted; burned
   copies still count toward the size. The shared adapters hold no copies, so in v1 this is the
@@ -322,8 +322,9 @@ sequenceDiagram
   below its `end`, and `payerKeyed` or `leafPriced` without a root (`InvalidPhases`).
 - Any other caller, or a PLATFORM holder whose grant carries a delay, reverts with
   `NotSaleManager`.
-- **Targets.** An adapter serves a token governance listed (`setTarget`; unlisting stops new
-  sales only), or, from v1.1, one the installed federation registry reports active (ED-24).
+- **Targets.** An adapter serves a token governance listed (`setTarget`, which requires
+  code, no EIP-7702 delegation and ERC-165 `IMintTarget`, else `InvalidDependency`;
+  unlisting stops new sales only), or, from v1.1, one the installed federation registry reports active (ED-24).
   `setFederationRegistry` is compare-and-set and pins the registry's code hash. A federated
   token's fee share is its entry's, paid to the `PRODUCT_FEDERATED` fee recipient, and its
   default currency resolves under `PRODUCT_FEDERATED`.
@@ -367,7 +368,7 @@ Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool
 - `phases` hashes as an EIP-712 array (`keccak256` of the concatenated
   `keccak256(abi.encode(PHASE, phase))`), so wallets show every window, cap and flag.
   `currency` is the resolved currency and `packagePrice` the package unit price, so a consent
-  never carries over to another currency, price or phase list (`InvalidArtistConsent`); in a
+  never carries over to another currency, price or phase list (`InvalidSignature`); in a
   zero-price sale it binds the currency a default-currency gift resolves to.
 - `SignatureVerifier.isValid` checks the consent against the creator at open (low-s ECDSA, or
   ERC-1271 with a 200,000-gas cap), so a key the artist rotated away from, or any key during a
@@ -603,7 +604,7 @@ compare `edition(id).minted` with `terms.size`.
 | An adapter is removed | Its purchases revert with `NotAdmittedMinter`. | Close its open sales; reopen on an admitted adapter of the same sale kind. |
 | A token is unlisted, or a federated token delisted or its registry's code changed | New sales (unlisted) or purchases (federated) revert with `TargetNotAllowed`. | Re-list it (30 days), relist through the registry, or install a new registry. |
 | The recipient's ERC-1155 hook reverts, returns the wrong value, or the recipient cannot hold the token | The whole purchase reverts; nothing is paid. | Buy for another recipient. |
-| A consent is stale | `InvalidArtistConsent`: wrong currency, price or phases, expired, nonce used, or signed by a key that is no longer the creator. | The current creator signs a new configuration. |
+| A consent is stale | `SignatureExpired` (expired), `ConsentNonceUsed` (nonce used) or `InvalidSignature` (wrong currency, price or phases, or signed by a key that is no longer the creator). | The current creator signs a new configuration. |
 
 ## Parameters and limits
 

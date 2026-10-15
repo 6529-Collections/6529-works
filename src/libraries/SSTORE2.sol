@@ -18,10 +18,16 @@ library SSTORE2 {
     ///      followed by the STOP byte that leads the runtime code.
     bytes12 private constant PREAMBLE = 0x600B5981380380925939F300;
 
+    /// @notice `write` was given `length` bytes, more than `MAX_CHUNK_LENGTH`.
     error SSTORE2ChunkTooLarge(uint256 length);
+    /// @notice The CREATE2 deployment of a chunk did not produce the predicted pointer.
     error SSTORE2WriteFailed();
+    /// @notice `pointer` has no code, or its code does not start with the STOP byte.
     error SSTORE2InvalidPointer(address pointer);
+    /// @notice The range `[start, end)` is reversed or ends past the `size` data bytes behind
+    ///         the pointer.
     error SSTORE2OutOfBounds(uint256 start, uint256 end, uint256 size);
+    /// @notice The data behind `pointer` does not hash (keccak256) to the expected hash.
     error SSTORE2HashMismatch(address pointer);
 
     /// @notice Stores `data` and returns its pointer, deploying it only if absent.

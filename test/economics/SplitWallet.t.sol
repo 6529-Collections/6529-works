@@ -19,6 +19,7 @@ import {
     ReentrantRecipient
 } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 contract SplitWalletTest is EconomicsBase {
     SplitWallet internal wallet;
@@ -237,9 +238,13 @@ contract SplitWalletTest is EconomicsBase {
     function test_ResolverCodeChangeFailsClosedForArtistPayeesOnly() public {
         vm.deal(address(wallet), 10 ether);
         vm.etch(address(resolver), address(router).code);
-        vm.expectRevert(ISplitWallet.ResolverCodeChanged.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
+        );
         wallet.payoutAddress(iArtist);
-        vm.expectRevert(ISplitWallet.ResolverCodeChanged.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
+        );
         vm.prank(artistPayout);
         wallet.release(ETH, iArtist);
         assertEq(wallet.release(ETH, iAlice), 5 ether);

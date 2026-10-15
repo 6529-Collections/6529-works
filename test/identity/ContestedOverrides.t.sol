@@ -11,6 +11,7 @@ import {
     SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @notice Contested overrides (ADR 0003 owner decision 1): a captured wallet's cancel during
 ///         the notice turns a 180-day override into a contest that a TDH vote, recorded after
@@ -384,7 +385,7 @@ contract ContestedOverridesTest is IdentityFixture {
         DisputeOutcomeLogMock foreign = new DisputeOutcomeLogMock(stranger);
         DisputeOutcomeLogMock mine = new DisputeOutcomeLogMock(address(registry));
         vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         registry.bindStatementLog(stranger);
         vm.expectRevert(
             abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(foreign))

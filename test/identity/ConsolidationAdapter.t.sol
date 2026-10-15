@@ -7,6 +7,7 @@ import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @notice The consolidation adapter against the delegation-contract mock: age, expiry, both
 ///         directions, all collections only, revocation, bounded walks and fail-closed reads.
@@ -22,10 +23,17 @@ contract ConsolidationAdapterTest is IdentityFixture {
     }
 
     function test_Constructor_RevertsWithoutCode() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(ConsolidationAdapter.NoDelegationCode.selector, stranger)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         new ConsolidationAdapter(IDelegationManagement(stranger));
+    }
+
+    /// @dev QUALITY-10: an EIP-7702 delegated account whose delegate is the delegation contract
+    ///      is refused too; before the shared install check only code was required.
+    function test_Constructor_RefusesADelegatedDelegationContract() public {
+        address delegated = makeAddr("delegated delegation");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(delegation)));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
+        new ConsolidationAdapter(IDelegationManagement(delegated));
     }
 
     function test_IsEstablished_OnlyAfterThirtyDays() public {

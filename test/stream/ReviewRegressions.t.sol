@@ -61,7 +61,7 @@ contract ReviewRegressionsTest is RecordsFixture {
             PackageItem memory item = _recordsItem(i, media);
             item.license = License(badIds[i], bytes32(0));
             bytes memory data = _request(item);
-            vm.expectRevert(IStream.InvalidMintRequest.selector);
+            vm.expectRevert(IStream.InvalidLicenseId.selector);
             auction.start(stream, data);
         }
     }
@@ -100,9 +100,7 @@ contract ReviewRegressionsTest is RecordsFixture {
         auction.deliver(address(stream), tokenId, collector);
         vm.prank(collector);
         stream.transferFrom(collector, address(other), tokenId);
-        vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(other))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
         other.burn(stream, tokenId, 1);
         assertEq(stream.totalSupply(), 1);
     }
@@ -165,7 +163,7 @@ contract ReviewRegressionsTest is RecordsFixture {
 
         econ.setTerms(WorkTerms(seller, address(0), 1, address(0), 6_529));
         bytes memory data = _request(_item(2));
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidWorkTerms.selector);
         auction.start(stream, data);
     }
 
@@ -371,7 +369,7 @@ contract ReviewRegressionsTest is RecordsFixture {
         item = _recordsItem(2, media);
         item.license = License(string(_repeatA(65)), bytes32(0));
         bytes memory data = _request(item);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidLicenseId.selector);
         auction.start(stream, data);
 
         vm.prank(governor);
@@ -402,7 +400,7 @@ contract ReviewRegressionsTest is RecordsFixture {
         MockSaleAdapter stranger = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         auction.deliver(address(stream), second, address(stranger));
         vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(stranger))
+            abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(stranger))
         );
         stranger.burn(stream, second, 1);
     }

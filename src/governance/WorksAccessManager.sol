@@ -27,12 +27,19 @@ import { Roles } from "./Roles.sol";
 ///      sanctioned exemption to the no-delegatecall rule.
 contract WorksAccessManager is AccessManager {
     /// @dev Suspended holders of `Roles.isSuspendable` roles. Cleared by any grant or revocation
-    ///      of the same role to the same account, both ADMIN actions (30 days).
+    ///      of the same role to the same account: an ADMIN grant or revocation (30 days,
+    ///      guardian-vetoable), or the holder's own `renounceRole`, which revokes the role.
     mapping(uint64 roleId => mapping(address account => bool)) private _suspended;
 
     /// @notice `guardian` suspended `account`'s `roleId`: it no longer acts for that role.
+    /// @param roleId The suspended role.
+    /// @param account The suspended holder.
+    /// @param guardian The guardian that called {suspend}.
     event RoleSuspended(uint64 indexed roleId, address indexed account, address indexed guardian);
-    /// @notice A grant or revocation of `roleId` to `account` cleared its suspension.
+    /// @notice A grant or revocation of `roleId` to `account` cleared its suspension: an ADMIN
+    ///         grant or revocation, or the holder's own `renounceRole`.
+    /// @param roleId The role whose suspension was lifted.
+    /// @param account The holder whose suspension was lifted.
     event RoleSuspensionLifted(uint64 indexed roleId, address indexed account);
 
     /// @notice `roleId` is not a zero-delay operational role (`Roles.isSuspendable`).
@@ -45,8 +52,13 @@ contract WorksAccessManager is AccessManager {
 
     /// @notice Suspends `account`'s `roleId` at once: it fails `hasRole`, and so `canCall` and
     ///         every check built on them, until an ADMIN grant or revocation of that role to
-    ///         that account executes (30 days, guardian-vetoable). Guardians only.
+    ///         that account executes (30 days, guardian-vetoable) or the holder renounces the
+    ///         role (`renounceRole` revokes it, which lifts the suspension with the role).
+    ///         Guardians only.
     /// @dev `roleId` must be `Roles.isSuspendable` and `account` must hold or await it.
+    /// @param roleId The role to suspend: `Roles.PLATFORM`, `Roles.CURATOR` or
+    ///        `Roles.STORAGE_OPERATOR`.
+    /// @param account The holder, or pending grantee, of `roleId`; must not be suspended already.
     function suspend(uint64 roleId, address account) external {
         address sender = _msgSender();
         (bool isGuardian,) = hasRole(Roles.GUARDIAN, sender);
@@ -59,6 +71,9 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @notice Whether `account`'s `roleId` is suspended.
+    /// @param roleId The role to check.
+    /// @param account The account to check.
+    /// @return True from {suspend} until a grant, revocation or renouncement of the role lifts it.
     function isSuspended(uint64 roleId, address account) external view returns (bool) {
         return _suspended[roleId][account];
     }

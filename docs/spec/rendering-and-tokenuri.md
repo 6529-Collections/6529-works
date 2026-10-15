@@ -123,7 +123,7 @@ sequenceDiagram
     S->>W: isOpen(tokenId)
     opt record open
         S->>W: pinnedRenderer(tokenId)
-        Note over W: reverts InvalidRenderer if the pinned code changed
+        Note over W: reverts DependencyCodeChanged if the pinned code changed
     end
     opt no pin
         S->>S: defaultRenderer, its codehash must match the installed hash
@@ -134,7 +134,7 @@ sequenceDiagram
 ```
 
 - `rendererOf` never falls back from a broken pin to the default, or from a broken default to
-  anything else: the call reverts (`IStream.InvalidBinding` or `IWorkRecords.InvalidRenderer`).
+  anything else: the call reverts (`Dependency.DependencyCodeChanged`).
 
 ### Inside the renderer
 
@@ -229,7 +229,7 @@ sequenceDiagram
 ```
 
 - A stale `expected` reverts with `ExpectedValueMismatch`; any failed check is
-  `InvalidBinding(next)` (`_requireRenderer`).
+  `InvalidDependency(next)` (`Dependency.checkPinned`).
 - The state hash of every unfinalized work changes, because it commits to the effective
   renderer, so a signature over the old one (a pending `finalize`, relicense or rate change) no
   longer applies.
@@ -240,7 +240,7 @@ sequenceDiagram
 
 [Works and storage](works-and-storage.md#set-the-record-and-finalize) specifies `finalize` and
 [the errata repin](works-and-storage.md#relicense-royalty-rate-and-errata-repin). For rendering:
-`finalize` reverts with `InvalidBinding` if the default renderer's code changed (RND-3), and a
+`finalize` reverts with `DependencyCodeChanged` if the default renderer's code changed (RND-3), and a
 finalized record the pinned renderer refuses stays core-only `invalid`.
 
 ## Rules and invariants
@@ -370,7 +370,7 @@ costs about 30M gas, 512 KiB about 8.4M (`test_FullForm_1MiB` and `test_FullForm
 | RND-1 | A token is served by its pinned renderer once finalized, else by the default renderer; never by any other. | `Stream.rendererOf` | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `test_setDefaultRenderer`; [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_finalize_pinsDefaultRenderer` |
 | RND-2 | A renderer whose code is no longer the code hash it was installed or pinned with is refused at every use; `tokenURI` and `uri` revert instead of falling back (DEPS-6). | `Stream.rendererOf`, `WorkRecords.pinnedRenderer` | [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) `test_DefaultRendererWithChangedCodeIsRefused`, `test_PinnedRendererWithChangedCodeIsRefused` |
 | RND-3 | Finalize pins the default only while its code is unchanged; an address is pinned with one code hash for good. | `WorkRecords.finalize`, `_pinCode` | `RendererCodePin.t.sol` `test_FinalizeRefusesADefaultRendererWhoseCodeChanged`, `test_RepinRefusesARendererWhoseCodeChangedSincePinned` |
-| RND-4 | A new default renderer must have code, not be an EIP-7702 delegated account, support `IRenderer` by ERC-165 and match the given code hash; the setter is compare-and-set and SUCCESSOR_SETTER (30 days). | `Stream.setDefaultRenderer`, `_requireRenderer` | `Stream.t.sol` `test_setDefaultRenderer_reverts` |
+| RND-4 | A new default renderer must have code, not be an EIP-7702 delegated account, support `IRenderer` by ERC-165 and match the given code hash; the setter is compare-and-set and SUCCESSOR_SETTER (30 days). | `Stream.setDefaultRenderer`, `Dependency.checkPinned` | `Stream.t.sol` `test_setDefaultRenderer_reverts` |
 | RND-5 | The errata repin needs a finalized work, the same renderer checks, the current state hash, an unexpired deadline and the artist's signature by the active authority, plus SUCCESSOR_SETTER (30 days). | `WorkRecords.repinRenderer` | `WorkRecords.t.sol` `test_repinRenderer_errataPath`, `test_repinRenderer_reverts` |
 | RND-6 | Every external read is a bounded `staticcall` with its own gas and return cap; a failed read reverts (`RendererReadFailed`, or `BoundedCallFailed` and `BoundedCallMalformedReturn` for a chunk). | `Renderer._read`, `_copyFile`, `BoundedCall` | [`RendererHostile.t.sol`](../../test/content/renderer/RendererHostile.t.sol) `test_Token_ReturnDataBombsAndGasBurnersFailClosed`, `test_Store_ARevertingOrOversizedChunkReadFailsClosed`; [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol) `test_FailsClosed_EveryReadOfTheStreamAndRecords` |
 | RND-7 | Too little gas to forward a read's full cap reverts with `BoundedCallInsufficientGas`; it is never reported as a failed or empty read. | `BoundedCall.tryRead` | `RendererHostile.t.sol` `test_NotEnoughGasRevertsInsteadOfMisreporting` |
@@ -410,8 +410,8 @@ changed makes `tokenURI` revert, also without an event.
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| The default renderer's code changed | Every unfinalized work and its edition reverts with `InvalidBinding(renderer)`; so does `finalize` | SUCCESSOR_SETTER installs a new default (`setDefaultRenderer`, 30 days) |
-| A finalized work's pinned renderer's code changed | That work's `tokenURI` and its edition's `uri` revert with `InvalidRenderer(renderer)` | Errata repin (artist signature plus SUCCESSOR_SETTER, 30 days); a lost artist key is recovered first through the artist registry |
+| The default renderer's code changed | Every unfinalized work and its edition reverts with `DependencyCodeChanged(renderer)`; so does `finalize` | SUCCESSOR_SETTER installs a new default (`setDefaultRenderer`, 30 days) |
+| A finalized work's pinned renderer's code changed | That work's `tokenURI` and its edition's `uri` revert with `DependencyCodeChanged(renderer)` | Errata repin (artist signature plus SUCCESSOR_SETTER, 30 days); a lost artist key is recovered first through the artist registry |
 | A dependency read fails (no code, revert, out of its gas cap, too much return data) | `RendererReadFailed(target, selector)`, or for a chunk `BoundedCallFailed` or `BoundedCallMalformedReturn` | The renderer's content store and statement log are fixed at construction: a broken one needs a new renderer (a new default, or an errata repin) |
 | The caller supplied too little gas | `BoundedCallInsufficientGas(gasLimit)` | Supply more gas (see [Inside the renderer](#inside-the-renderer)) |
 | The record is not open | Core-only, `not_open` | Anyone calls `openRecord` |

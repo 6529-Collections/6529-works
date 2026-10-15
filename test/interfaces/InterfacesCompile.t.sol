@@ -19,6 +19,7 @@ import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
 import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
 import { IFixedPriceSale } from "../../src/interfaces/IFixedPriceSale.sol";
+import { IMintSale } from "../../src/interfaces/IMintSale.sol";
 import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
@@ -42,6 +43,8 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
         assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x773a4920), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0x382667e1), "IDutchSale");
+        // Errors only: no function, so the ID is zero and nothing reports it.
+        assertEq(type(IMintSale).interfaceId, bytes4(0x00000000), "IMintSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"

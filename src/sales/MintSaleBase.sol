@@ -19,6 +19,7 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
+import { IMintSale } from "../interfaces/IMintSale.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import {
@@ -35,7 +36,7 @@ import {
 } from "../interfaces/types/SaleTypes.sol";
 import { Roles } from "../governance/Roles.sol";
 import { EditionFormat } from "../interfaces/types/PackageTypes.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 
 /// @title MintSaleBase
@@ -59,7 +60,7 @@ import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.so
 ///      delta, and every entry point that moves value is non-reentrant. While paused, sales
 ///      neither open nor sell; closing and claiming always work. A pause, or a deprecation of a
 ///      sale's currency, also stops the sale's schedule (`scheduleDelay`, MARKET-1).
-abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, ReentrancyGuardTransient {
+abstract contract MintSaleBase is IMintSale, ERC165, AccessManaged, ReentrancyGuardTransient {
     /// @notice A sale's locked terms and state, packed into five words so that opening an ETH
     ///         sale writes four (QUALITY-4): the token, fee share, flags and halt clock; the
     ///         token ID; the price; the seller with the fee recipient's index and the phase
@@ -85,7 +86,10 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         uint8 phaseCount;
     }
 
-    /// @notice Gas forwarded with an ETH payout; a wallet that needs more is paid in escrow.
+    /// @notice Gas forwarded with an ETH payout; a wallet that needs more is paid in escrow. Under
+    ///         the EIP-8037 draft it caps regular gas only: a wallet that writes new state draws
+    ///         state gas from the buyer's EIP-8037 reservoir, so whether it is paid or escrowed can
+    ///         depend on the purchase's gas limit (CALLS-3, LIM-GAS-2).
     uint256 public constant PAYOUT_GAS = 100_000;
 
     /// @notice Where a payout goes when the wallet or the token refuses it.
@@ -125,31 +129,6 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     mapping(address recipient => uint16 index) private _feeRecipientIds;
     mapping(uint16 index => address recipient) private _feeRecipients;
 
-    /// @notice A required address is zero.
-    error InvalidAddress();
-    /// @notice The token's terms are unusable: no seller, no fee recipient for a non-zero fee
-    ///         share, a fee share above the denominator, the revenue escrow as seller or fee
-    ///         recipient, federated code that differs from its registry entry, a mint that
-    ///         returned another token ID, or a new fee recipient past the adapter's 65,535.
-    error InvalidSaleTerms(address token, uint256 id);
-    /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
-    error PricedDefaultCurrency(address token, uint256 id);
-    /// @notice The resolver returned another currency than the one the token named.
-    error CurrencyMismatch(address named, address resolved);
-    /// @notice The locked currency is no longer active on the asset allowlist.
-    error CurrencyNotActive(address currency);
-    /// @notice A purchase must buy at least one copy.
-    error InvalidQuantity();
-    /// @notice A dependency has no code, is an EIP-7702 delegated account, or does not support
-    ///         its interface through ERC-165.
-    error InvalidDependency(address dependency);
-    /// @notice The sale is already closed.
-    error SaleAlreadyClosed(uint256 saleId);
-    /// @notice PLATFORM opened, without the artist's approval, a sale only the artist may
-    ///         configure: an edition with a one-time window (OPEN), or a token that is not a
-    ///         listed 6529 Editions edition.
-    error ArtistApprovalRequired(address token, uint256 id);
-
     /// @dev Reverts while the adapter is paused.
     modifier whenNotPaused() {
         if (paused) revert SalePaused();
@@ -171,20 +150,16 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         if (address(escrow_) == address(0) || address(permit2_) == address(0)) {
             revert InvalidAddress();
         }
-        if (!_fits(address(economicsResolver_), type(IEconomicsResolver).interfaceId)) {
-            revert InvalidDependency(address(economicsResolver_));
-        }
-        // The economics lane's AssetAllowlist implements no ERC-165, so it is checked for code
-        // and EIP-7702 delegation, and for IAssetAllowlist only if it does answer ERC-165. It
-        // comes from the resolver, which passed the full check above.
+        Dependency.check(address(economicsResolver_), type(IEconomicsResolver).interfaceId);
+        // The AssetAllowlist implements no ERC-165, so it is checked for code and EIP-7702
+        // delegation, and for IAssetAllowlist only if it does answer ERC-165. It comes from the
+        // resolver, which passed the full check above.
         address allowlist = economicsResolver_.assetAllowlist();
+        Dependency.check(allowlist);
         if (
-            allowlist.code.length == 0 || DelegatedEOA.isDelegated(allowlist)
-                || (ERC165Checker.supportsERC165(allowlist)
-                    && !ERC165Checker.supportsInterface(
-                        allowlist, type(IAssetAllowlist).interfaceId
-                    ))
-        ) revert InvalidDependency(allowlist);
+            ERC165Checker.supportsERC165(allowlist)
+                && !ERC165Checker.supportsInterface(allowlist, type(IAssetAllowlist).interfaceId)
+        ) revert Dependency.InvalidDependency(allowlist);
         escrow = escrow_;
         permit2 = permit2_;
         economicsResolver = economicsResolver_;
@@ -192,8 +167,11 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     }
 
     /// @inheritdoc ISaleAdapter
+    /// @dev A listed token gets the install check every dependency gets, for `IMintTarget`, the
+    ///      only surface these adapters call; unlisting is unchecked.
     function setTarget(address token, bool listed) external restricted {
         if (token == address(0)) revert InvalidAddress();
+        if (listed) Dependency.check(token, type(IMintTarget).interfaceId);
         isListed[token] = listed;
         emit TargetSet(token, listed);
     }
@@ -203,9 +181,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     ///      delegated accounts and pins the code hash; a registry whose code changes is ignored.
     function setFederationRegistry(address expected, address next) external restricted {
         if (federationRegistry != expected) revert ExpectedValueMismatch();
-        if (next != address(0) && !_fits(next, type(IFederationRegistry).interfaceId)) {
-            revert InvalidDependency(next);
-        }
+        if (next != address(0)) Dependency.check(next, type(IFederationRegistry).interfaceId);
         federationRegistry = next;
         federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
         emit FederationRegistrySet(expected, next);
@@ -550,12 +526,6 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             TokenTransfer.balanceOf(currency, address(this)) != ours + charge || theirs < charge
                 || TokenTransfer.balanceOf(currency, pay.payer) != theirs - charge
         ) revert TokenTransfer.TokenBalanceMismatch(currency);
-    }
-
-    /// @dev Whether `dependency` has code, is not EIP-7702 delegated, and supports `interfaceId`.
-    function _fits(address dependency, bytes4 interfaceId) private view returns (bool) {
-        return dependency.code.length != 0 && !DelegatedEOA.isDelegated(dependency)
-            && ERC165Checker.supportsInterface(dependency, interfaceId);
     }
 
     /// @dev A zero amount (no fee share, or a gift) pays nothing, so a zero-fee sale needs no

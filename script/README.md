@@ -573,6 +573,21 @@ re-measure it on Sepolia before relying on that figure.
   3. Once reads work, call `refreshStanding` for every artist ID in a `StandingRefreshSkipped`
      event since the outage began.
 
+### 13. To do: test the state-gas reservoir (CALLS-3)
+
+The NatSpec of the fixed-gas calls (`DELIVERY_GAS`, `PAYOUT_GAS`, `BoundedCall`,
+`RevenuePayment`, `TokenTransfer`, `ClaimRouter`) says, from the EIP-8037 draft, that a state-gas
+reservoir passes through a fixed-gas call, so a state-writing callee's outcome depends on the
+caller's gas limit. Sepolia has so far shown only that transactions above 2^24 gas are accepted
+([LIM-GAS-2](../docs/audit/known-limitations.md#gas-and-glamsterdam)). Not yet run:
+
+1. Deploy a recipient whose `onERC721Received` writes three new storage slots.
+2. Start and bid on two auctions with it as the recipient, and let both end.
+3. Settle one with a gas limit of `2^24 - 1` (expected: `DeliveryPending`, the token stays a
+   pending claim) and the other with `2^24 + 1,000,000` (expected: delivered).
+4. Record both receipts in [`deployments/11155111/flows.md`](../deployments/11155111/flows.md),
+   then update the NatSpec and LIM-GAS-2: confirmed, or corrected.
+
 ## Operating procedures
 
 The contracts do not enforce these procedures; they make the enforced rules effective. The

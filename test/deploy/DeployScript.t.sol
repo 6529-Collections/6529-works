@@ -48,6 +48,9 @@ contract DeployScriptTest is Test {
     uint256 internal constant SEPOLIA = 11_155_111;
     /// The committed CC0 1.0 legal code: the deploy's default text.
     string internal constant CC0_FIXTURE = "test/fixtures/cc0-legalcode.txt";
+    /// @dev Permit2's runtime code on Ethereum mainnet, read at block 26,198,501; its hash is
+    ///      `DeployGuards.CANONICAL_PERMIT2_CODEHASH`.
+    string internal constant PERMIT2_MAINNET_RUNTIME = "test/fixtures/permit2-mainnet-runtime.hex";
     bytes internal constant MANIFEST = '{"schema":"6529-works/governance-manifest/1","epoch":0}';
 
     DeployHarness internal deployer;
@@ -942,7 +945,9 @@ contract DeployScriptTest is Test {
             )
         );
         verifier.verify(moved);
-        // Permit2 and the delegation contract, on a record without the module.
+        // Permit2 and the delegation contract, on a record without the module. From here the
+        // canonical Permit2 address holds mainnet's Permit2 code, so its pin passes.
+        vm.etch(DeployV1.CANONICAL_PERMIT2, vm.parseBytes(vm.readFile(PERMIT2_MAINNET_RUNTIME)));
         string memory noVrf = _tamper(
             _tamper(record, '"entropy":"vrf"', '"entropy":"none"'),
             vm.toString(address(fake)),
@@ -960,6 +965,18 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(Verify.NonCanonicalOnMainnet.selector, "PERMIT2", address(fake))
         );
         verifier.verify(otherPermit2);
+        // The canonical Permit2 address with other code.
+        vm.etch(DeployV1.CANONICAL_PERMIT2, address(delegation).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector,
+                "PERMIT2",
+                DeployV1.CANONICAL_PERMIT2,
+                address(delegation).codehash
+            )
+        );
+        verifier.verify(noVrf);
+        vm.etch(DeployV1.CANONICAL_PERMIT2, vm.parseBytes(vm.readFile(PERMIT2_MAINNET_RUNTIME)));
         // The canonical delegation address with other code.
         address canonicalDelegation = DeployGuards.CANONICAL_DELEGATION;
         vm.etch(canonicalDelegation, address(delegation).code);

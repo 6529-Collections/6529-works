@@ -11,6 +11,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { IRenderer } from "src/interfaces/IRenderer.sol";
 
 /// @notice Regression tests from the content review, on the real stack (`IntegrationBase`).
 contract ContentReviewRegressionsTest is IntegrationBase {
@@ -197,7 +198,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertTrue(_contains(uri, '"name":"Genesis %23'));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererNotInlineable.selector, address(stream), tokenId
+                IRenderer.RendererNotInlineable.selector, address(stream), tokenId
             )
         );
         renderer.fullTokenURI(address(stream), tokenId);

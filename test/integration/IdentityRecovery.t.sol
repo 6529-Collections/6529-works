@@ -21,6 +21,7 @@ import {
     Standing
 } from "src/interfaces/types/IdentityTypes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 /// @notice Flow 4 (integration brief, lane B): artist identity and recovery on the real
 ///         contracts, with the 6529 delegation contract as the identity lane's faithful mock.
@@ -136,7 +137,7 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         Work[] memory works = _package(root);
         uint256 nonce = nextMoveNonce[artistId]++;
         bytes memory stale = _mintDataSignedBy(root, works, 1, artist, nonce);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(newKey));
         auction.start(address(stream), stale);
         auction.start(address(stream), _mintDataSignedBy(root, works, 1, newKey, nonce));
         assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
@@ -432,19 +433,19 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         _stage(artist, keyB);
         vm.warp(block.timestamp + 7 days);
         artists.executeChange(artistId);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(keyB));
         auction.start(address(stream), stale);
 
         _expectReturnRefused(keyB, artist);
         assertEq(artists.authorityOf(artistId), keyB);
 
         // A's signatures stay dead; B's work.
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(keyB));
         auction.start(address(stream), stale);
         Work[] memory next = _one(_work(artist, collectionId));
         bytes32 nextRoot = _rootOf(next);
         _approve(nextRoot);
-        bytes memory invalid = abi.encodePacked(IPackageRegistry.InvalidSignature.selector);
+        bytes memory invalid = SignatureReverts.invalid(keyB);
         _relayAcceptance(nextRoot, artist, artist, artist, invalid);
         assertEq(_relayAcceptance(nextRoot, artist, artist, keyB, ""), artistId);
         auction.start(address(stream), _longMove(works, 1, keyB, nonce));

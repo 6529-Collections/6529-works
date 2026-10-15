@@ -9,6 +9,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { EntropyBase } from "./EntropyBase.sol";
 import { MockVrfCoordinator } from "test/mocks/EntropyMocks.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @notice The governed setters of the VRF entropy module: compare-and-set, raise-only gas limit,
 ///         coordinator swap, and the delay classes under a real AccessManager.
@@ -170,25 +171,25 @@ contract VrfEntropyGovernanceTest is EntropyBase {
     function test_SetConfig_RejectsInvalidFields() public {
         VrfEntropyModule.VrfConfig memory next = _config();
         next.subscriptionId = 0;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         vm.prank(setter);
         module.setConfig(_config(), next);
 
         next = _config();
         next.keyHash = 0;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         vm.prank(setter);
         module.setConfig(_config(), next);
 
         next = _config();
         next.confirmations = module.MIN_CONFIRMATIONS() - 1;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         vm.prank(setter);
         module.setConfig(_config(), next);
 
         next = _config();
         next.confirmations = module.MAX_CONFIRMATIONS() + 1;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         vm.prank(setter);
         module.setConfig(_config(), next);
     }
@@ -201,7 +202,7 @@ contract VrfEntropyGovernanceTest is EntropyBase {
         next.callbackGasLimit = proposed;
         bool accepted;
         if (proposed < module.MIN_CALLBACK_GAS()) {
-            vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+            vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         } else if (proposed == GAS_LIMIT) {
             accepted = true;
         } else if (proposed < GAS_LIMIT) {
@@ -277,21 +278,17 @@ contract VrfEntropyGovernanceTest is EntropyBase {
         vm.prank(successor);
         module.setCoordinator(address(next), address(next), address(next).codehash);
 
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidCoordinator.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, 0));
         vm.prank(successor);
         module.setCoordinator(address(coordinator), address(0), bytes32(0));
 
         address delegated = makeAddr("delegated EOA");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(next)));
-        vm.expectRevert(
-            abi.encodeWithSelector(VrfEntropyModule.InvalidCoordinator.selector, delegated)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         vm.prank(successor);
         module.setCoordinator(address(coordinator), delegated, delegated.codehash);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(VrfEntropyModule.InvalidCoordinator.selector, stranger)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         vm.prank(successor);
         module.setCoordinator(address(coordinator), stranger, stranger.codehash);
         assertEq(module.coordinator(), address(coordinator));
@@ -299,9 +296,7 @@ contract VrfEntropyGovernanceTest is EntropyBase {
 
     function test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused() public {
         vm.expectRevert(
-            abi.encodeWithSelector(
-                VrfEntropyModule.InvalidCoordinator.selector, address(coordinator)
-            )
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(coordinator))
         );
         vm.prank(successor);
         module.setCoordinator(
@@ -315,12 +310,7 @@ contract VrfEntropyGovernanceTest is EntropyBase {
         MockVrfCoordinator next = new MockVrfCoordinator();
         bytes32 wrong = keccak256("not the reviewed coordinator");
         vm.expectRevert(
-            abi.encodeWithSelector(
-                VrfEntropyModule.CodeHashMismatch.selector,
-                address(next),
-                wrong,
-                address(next).codehash
-            )
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
         );
         vm.prank(successor);
         module.setCoordinator(address(coordinator), address(next), wrong);
@@ -334,7 +324,7 @@ contract VrfEntropyGovernanceTest is EntropyBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                VrfEntropyModule.OnlyCoordinatorCanFulfill.selector,
+                IEntropyModule.OnlyCoordinatorCanFulfill.selector,
                 address(coordinator),
                 address(next)
             )
@@ -365,7 +355,7 @@ contract VrfEntropyGovernanceTest is EntropyBase {
         _swap(address(next));
 
         // The new coordinator did not issue ID 1, so it cannot deliver it.
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.UnknownRequest.selector, oldId));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.UnknownRequest.selector, oldId));
         next.deliver(address(module), oldId, _oneWord(5));
 
         // It can issue the same number for another item without a collision.

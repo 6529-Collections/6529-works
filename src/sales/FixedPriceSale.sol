@@ -74,12 +74,6 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @inheritdoc IFixedPriceSale
     mapping(address creator => mapping(uint256 nonce => bool)) public isConsentNonceUsed;
 
-    /// @notice The phases are empty, too many, or one is malformed (start not before end, or an
-    ///         allowlist-only flag without a root).
-    error InvalidPhases();
-    /// @notice A sale prices its leaves without the artist's approval (MARKET-6).
-    error PricedLeavesNeedApproval(address token, uint256 id);
-
     /// @param authority_ The AccessManager.
     /// @param escrow_ The revenue escrow.
     /// @param permit2_ The Permit2 deployment.
@@ -138,7 +132,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     /// @inheritdoc IFixedPriceSale
     function revokeConsentNonce(uint256 nonce) external {
-        if (isConsentNonceUsed[msg.sender][nonce]) revert InvalidArtistConsent();
+        if (isConsentNonceUsed[msg.sender][nonce]) revert ConsentNonceUsed(msg.sender, nonce);
         isConsentNonceUsed[msg.sender][nonce] = true;
         emit ConsentNonceRevoked(msg.sender, nonce);
     }
@@ -263,6 +257,16 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     /// @notice The EIP-712 digest a creator signs to approve `phases_` for token `id` sold in
     ///         `currency` at `packagePrice` (the sale's resolved currency and package price).
+    /// @param token The token contract of the sale.
+    /// @param id The token ID of the sale.
+    /// @param currency The currency the sale resolves to when it opens (`CURRENCY_ETH` or an
+    ///        ERC-20), never `CURRENCY_DEFAULT`.
+    /// @param packagePrice The unit price from the token's terms, in the currency's base units.
+    /// @param phases_ The phases, in the order `openSale` will receive them.
+    /// @param nonce The creator's single-use, revocable consent nonce.
+    /// @param deadline The last timestamp, in seconds since the epoch, at which `openSale`
+    ///        accepts the signature.
+    /// @return The EIP-712 digest in this adapter's domain.
     function phaseConfigurationDigest(
         address token,
         uint256 id,
@@ -300,11 +304,11 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         bytes32 digest = phaseConfigurationDigest(
             token, id, t.currency, t.price, phases_, consent.nonce, consent.deadline
         );
-        if (
-            // forge-lint: disable-next-line(block-timestamp)
-            block.timestamp > consent.deadline || isConsentNonceUsed[t.creator][consent.nonce]
-                || !SignatureVerifier.isValid(t.creator, digest, consent.signature)
-        ) revert InvalidArtistConsent();
+        SignatureVerifier.checkDeadline(consent.deadline);
+        if (isConsentNonceUsed[t.creator][consent.nonce]) {
+            revert ConsentNonceUsed(t.creator, consent.nonce);
+        }
+        SignatureVerifier.check(t.creator, digest, consent.signature);
         isConsentNonceUsed[t.creator][consent.nonce] = true;
     }
 

@@ -20,11 +20,9 @@ pragma solidity ^0.8.24;
 ///      sequence split (`"<" + "/script"`) and it passes through unchanged.
 ///
 ///      The text is scanned a 32-byte word at a time and the work is per `<`: a word without one
-///      costs about 5 gas a byte, a `<` about 450 gas more, wherever it is. `JsonEscape.scriptText`
-///      handles `</script` alone, in two passes that cost about 300 gas per byte on text made of
-///      `<`. Because a script made of nothing but `<` would cost about 3.7M gas here for 8 KiB (7M
-///      for 16), the caller gives a cap on the number of `<`, and the work stops when it is
-///      passed.
+///      costs about 5 gas a byte, a `<` about 450 gas more, wherever it is. Because a script made
+///      of nothing but `<` would cost about 3.7M gas here for 8 KiB (7M for 16), the caller gives a
+///      cap on the number of `<`, and the work stops when it is passed.
 library HtmlScript {
     uint256 private constant ONES =
         0x0101010101010101010101010101010101010101010101010101010101010101;

@@ -22,6 +22,7 @@ import {
     ToggleRecipient
 } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 contract RevenueEscrowTest is EconomicsBase {
     address internal depositor = makeAddr("depositor");
@@ -228,11 +229,11 @@ contract RevenueEscrowTest is EconomicsBase {
     // ------------------------------------------------------------------ recovery (review M-1)
 
     function test_ConstructorRejectsFactoryWithoutCodeOrDelegated() public {
-        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidFactory.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
         new RevenueEscrow(address(manager), ISplitFactory(alice));
         address eoa = makeAddr("delegated");
         vm.etch(eoa, abi.encodePacked(hex"ef0100", address(factory)));
-        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidFactory.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new RevenueEscrow(address(manager), ISplitFactory(eoa));
         assertEq(address(escrow.factory()), address(factory));
         assertEq(escrow.authority(), address(manager));

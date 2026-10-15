@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
 import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
@@ -206,7 +207,7 @@ contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
     function _payout(uint256 index) private view returns (address account, bool artist) {
         Payee storage p = _payee(index);
         if (p.artistId == 0) return (p.account, false);
-        if (address(resolver).codehash != resolverCodeHash) revert ResolverCodeChanged();
+        Dependency.checkUnchanged(address(resolver), resolverCodeHash);
         account = resolver.payoutAddress(p.artistId);
         if (account == address(0)) revert PayoutUnresolved(p.artistId);
         return (account, true);

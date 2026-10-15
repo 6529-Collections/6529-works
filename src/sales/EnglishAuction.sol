@@ -5,7 +5,6 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -40,30 +39,30 @@ import {
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { Roles } from "../governance/Roles.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title EnglishAuction
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
 ///         12). See {IEnglishAuction} for the behaviour; this contract adds the storage layout and
 ///         the bounds.
-/// @dev Start gas (PR #10 review, D3 and E2). A start in steady state writes one storage word:
-///      the token, its ID (at most 32 bits), the end time (32-bit seconds, so starts stop in
-///      2106), the sale's state, and a 16-bit reference to a shared "terms" record. A terms record
-///      holds the values every sale locks at start (currency, opening bid, increment share,
-///      anti-snipe window, and a federated token's registry fee) and is written once per distinct
-///      combination. The currency's increment floor is locked by the first bid (E2), which only
-///      later bids need. Seller, fee recipient, fee share and the no-bid recipient are read back from
-///      the token (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`. A VRF item's seed
-///      is checked by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint
-///      data is opaque here. A pause is recorded once (`pausedAt`) and is live through
-///      `pausedAt + MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay
-///      exactly at day 5 still lands. After that it ends by itself: views and every mutating
-///      entry point treat it as resumed with a {MAX_PAUSE} pause, and the first mutating call
-///      writes the resumption down. Every bid checks that the locked currency is still active in
-///      the allowlist. Deprecation freezes a running auction (MARKET-2): a standing bid settles
-///      only once the currency is re-admitted (its bidder may withdraw meanwhile), and the first
-///      settle after a re-admission in the auction's last window or after its end reopens it
-///      instead (`AuctionResumed`). Refunds and claims never read the allowlist.
+/// @dev Start gas (PR #10 review, D3 and E2). A start in steady state writes one storage word: the
+///      token, its ID (at most 32 bits), the end time (32-bit seconds, so starts stop in 2106), the
+///      sale's state, and a 16-bit reference to a shared "terms" record. A terms record holds the
+///      values every sale locks at start (currency, opening bid, increment share, anti-snipe
+///      window, and a federated token's registry fee) and is written once per distinct combination.
+///      The currency's increment floor is locked by the first bid (E2), which only later bids need.
+///      Seller, fee recipient, fee share and the no-bid recipient are read back from the token
+///      (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`. A VRF item's seed is checked
+///      by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint data is
+///      opaque here. A pause is recorded once (`pausedAt`) and is live through `pausedAt +
+///      MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay exactly at day
+///      5 still lands. After that it ends by itself: views and every mutating entry point treat it
+///      as resumed with a {MAX_PAUSE} pause, and the first mutating call writes the resumption
+///      down. Every bid checks that the locked currency is still active in the allowlist.
+///      Deprecation freezes a running auction (MARKET-2): a standing bid settles only once the
+///      currency is re-admitted (its bidder may withdraw meanwhile), and the first settle after a
+///      re-admission in the auction's last window or after its end reopens it instead
+///      (`AuctionResumed`). Refunds and claims never read the allowlist.
 contract EnglishAuction is
     IEnglishAuction,
     IERC721Receiver,
@@ -87,9 +86,16 @@ contract EnglishAuction is
     ///         absolute ceiling of the governed opening bid.
     uint256 public constant OPENING_BID_FLOORS = 1_000;
     /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
+    ///         Under the EIP-8037 draft it caps regular gas only: a wallet that writes new state
+    ///         draws state gas from the settler's EIP-8037 reservoir, so whether it is paid or
+    ///         escrowed can depend on the settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should
+    ///         send at most 2^24 gas.
     uint256 public constant PAYOUT_GAS = 100_000;
     /// @notice Gas forwarded to the token's `safeTransferFrom` when settling; a failure leaves a
-    ///         pending claim.
+    ///         pending claim. Under the EIP-8037 draft it caps regular gas only: a recipient whose
+    ///         `onERC721Received` writes new state draws state gas from the settler's EIP-8037
+    ///         reservoir, so whether delivery succeeds or stays pending can depend on the settler's
+    ///         gas limit (CALLS-3, LIM-GAS-2). Settlers should send at most 2^24 gas.
     uint256 internal constant DELIVERY_GAS = 300_000;
     /// @notice Gas the settlement needs after the delivery attempt returns.
     uint256 internal constant DELIVERY_RESERVE = 50_000;
@@ -157,7 +163,7 @@ contract EnglishAuction is
     address public immutable escrow;
     /// @inheritdoc IEnglishAuction
     address public immutable statementLog;
-    /// @notice The economics lane's asset allowlist: currencies, defaults and increment floors.
+    /// @notice The asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
     /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3).
     IEconomicsResolver public immutable economicsResolver;
@@ -178,22 +184,6 @@ contract EnglishAuction is
     mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
-    /// @notice A dependency has no code, is a delegated account, or lacks its ERC-165 interface.
-    error InvalidDependency(address dependency);
-    /// @notice A configuration is outside the bounds above.
-    error InvalidConfig();
-    /// @notice The token returned an unusable ID, terms (including the revenue escrow as seller
-    ///         or fee recipient) or custody for the minted work.
-    error InvalidTerms(address token, uint256 tokenId);
-    /// @notice The token contract cannot be listed (no code, delegated, or not ERC-721).
-    error InvalidTarget(address token);
-    /// @notice The caller is not the high bidder.
-    error NotHighBidder(address caller);
-    /// @notice The opening bid is above its absolute ceiling.
-    error OpeningBidAboveCeiling(uint256 next, uint256 ceiling);
-    /// @notice The caller cannot forward {DELIVERY_GAS} in full.
-    error DeliveryInsufficientGas();
-
     /// @param authority The AccessManager governing this adapter.
     /// @param escrow_ The revenue escrow for refused payouts.
     /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated): the
@@ -212,15 +202,12 @@ contract EnglishAuction is
         AuctionConfig memory config_,
         address[] memory targets
     ) AccessManaged(authority) {
-        _requireContract(escrow_);
-        _requireContract(address(economicsResolver_));
-        if (!ERC165Checker.supportsInterface(
-                address(economicsResolver_), type(IEconomicsResolver).interfaceId
-            )) revert InvalidDependency(address(economicsResolver_));
+        Dependency.check(escrow_);
+        Dependency.check(address(economicsResolver_), type(IEconomicsResolver).interfaceId);
         IAssetAllowlist allowlist_ = IAssetAllowlist(economicsResolver_.assetAllowlist());
-        _requireContract(address(allowlist_));
-        _requireContract(statementLog_);
-        if (permit2_ != address(0)) _requireContract(permit2_);
+        Dependency.check(address(allowlist_));
+        Dependency.check(statementLog_);
+        if (permit2_ != address(0)) Dependency.check(permit2_);
         escrow = escrow_;
         economicsResolver = economicsResolver_;
         allowlist = allowlist_;
@@ -315,13 +302,13 @@ contract EnglishAuction is
     // -------------------------------------------------------------------------- settlement
 
     /// @inheritdoc IEnglishAuction
-    /// @dev Reads the seller, the fee terms and the artist's active authority back from the
-    ///      token. With no bids the artist is recorded as the recipient. Marks the token's primary
-    ///      sale settled (`IMintTarget.markPrimarySettled`, E11) while the token is still in custody,
-    ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold
-    ///      up the edition. With no bids and no active artist (the token reports a zero creator
-    ///      while a recovery override is pending) it reverts with `InvalidRecipient(address(0))`
-    ///      and moves nothing, the token staying in custody; anyone may retry once the override
+    /// @dev Reads the seller, the fee terms and the artist's active authority back from the token.
+    ///      With no bids the artist is recorded as the recipient. Marks the token's primary sale
+    ///      settled (`IMintTarget.markPrimarySettled`, E11) while the token is still in custody,
+    ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold up
+    ///      the edition. With no bids and no active artist (the token reports a zero creator while
+    ///      a recovery override is pending) it reverts with `InvalidRecipient(address(0))` and
+    ///      moves nothing, the token staying in custody; anyone may retry once the override
     ///      executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
@@ -446,6 +433,10 @@ contract EnglishAuction is
 
     /// @notice Pays one ERC-20 settlement payout in its own call frame, so that `settle` can
     ///         catch its failure (MONEY-1). Only this contract may call it.
+    /// @param currency The sale's ERC-20 currency.
+    /// @param wallet The seller or fee wallet; a failed transfer is deposited in the revenue
+    ///        escrow for it.
+    /// @param amount The payout, in the currency's base units.
     function settlePayout(address currency, address wallet, uint256 amount) external {
         if (msg.sender != address(this)) revert InvalidRecipient(msg.sender);
         RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
@@ -494,12 +485,7 @@ contract EnglishAuction is
     ///      `IFederationRegistry` through ERC-165 (D8); its code hash is pinned (L-6).
     function setFederationRegistry(address expected, address next) external restricted {
         if (federationRegistry != expected) revert ExpectedValueMismatch();
-        if (next != address(0)) {
-            _requireContract(next);
-            if (!ERC165Checker.supportsInterface(next, type(IFederationRegistry).interfaceId)) {
-                revert InvalidDependency(next);
-            }
-        }
+        if (next != address(0)) Dependency.check(next, type(IFederationRegistry).interfaceId);
         federationRegistry = next;
         federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
         emit FederationRegistrySet(expected, next);
@@ -610,6 +596,9 @@ contract EnglishAuction is
     ///         nothing records who sent it (CALLS-5). Never send a token here.
     /// @dev Relies on `start` and `startWithBid` holding the reentrancy guard while they mint;
     ///      any future intake path must hold it too.
+    /// @param operator The address that made the transfer; it must be this adapter.
+    /// @param from The previous owner; it must be zero (a mint).
+    /// @return The `onERC721Received` selector, which accepts the token.
     function onERC721Received(address operator, address from, uint256, bytes calldata)
         external
         view
@@ -645,7 +634,7 @@ contract EnglishAuction is
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
-        ) revert InvalidTerms(token, tokenId);
+        ) revert InvalidSaleTerms(token, tokenId);
         saleId = saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
         if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId, s.status);
@@ -703,7 +692,7 @@ contract EnglishAuction is
             if (
                 e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR
                     || recipient == escrow || (recipient == address(0) && e.feeShare != 0)
-            ) revert InvalidTerms(token, tokenId);
+            ) revert InvalidSaleTerms(token, tokenId);
             t.federated = true;
             t.registryFee = e.feeShare;
         }
@@ -739,7 +728,7 @@ contract EnglishAuction is
             t.federated ? _federatedFeeRecipient() : p.feeRecipient,
             t.federated ? t.registryFee : p.feeShare
         );
-        if (lt.feeShare > Splits.DENOMINATOR) revert InvalidTerms(s.token, s.tokenId);
+        if (lt.feeShare > Splits.DENOMINATOR) revert InvalidSaleTerms(s.token, s.tokenId);
         creator = p.creator;
     }
 
@@ -1114,12 +1103,7 @@ contract EnglishAuction is
     }
 
     function _setTarget(address token, bool listed) private {
-        if (
-            listed
-                && (token.code.length == 0
-                    || DelegatedEOA.isDelegated(token)
-                    || !ERC165Checker.supportsInterface(token, type(IERC721).interfaceId))
-        ) revert InvalidTarget(token);
+        if (listed) Dependency.check(token, type(IERC721).interfaceId);
         _listed[token] = listed;
         emit TargetSet(token, listed);
     }
@@ -1141,11 +1125,5 @@ contract EnglishAuction is
     function _currentConfig() private view returns (AuctionConfig memory) {
         Settings storage st = _settings;
         return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare);
-    }
-
-    function _requireContract(address dependency) private view {
-        if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
-            revert InvalidDependency(dependency);
-        }
     }
 }

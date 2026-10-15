@@ -10,6 +10,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { IRenderer } from "src/interfaces/IRenderer.sol";
 
 /// @dev Which media the renderer inlines, which it hands out by locator, and the HTML page it
 ///      builds around a script.
@@ -220,7 +221,7 @@ contract RendererMediaTest is RendererBase {
         records.fail(IWorkRecords.preferredLocator.selector, true);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(records),
                 IWorkRecords.preferredLocator.selector
             )
@@ -465,7 +466,7 @@ contract RendererMediaTest is RendererBase {
 
     function test_Full_RevertsWhenThePrimaryCannotBeInlined() public {
         bytes memory expected =
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID);
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID);
 
         // Over 1 MiB (a manifest alone is enough: the size is checked first).
         bytes32 huge = _declareOnly(MAX_INLINE_BYTES + 1, PNG);
@@ -683,7 +684,7 @@ contract RendererMediaTest is RendererBase {
         records.addLocator(ID, over, Locator(LocatorKind.IPFS, IPFS));
         assertEq(_str(_out(), ".animation_url"), IPFS);
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }
@@ -708,7 +709,7 @@ contract RendererMediaTest is RendererBase {
         bytes32 huge = _file(_scriptOf(MAX_INLINE_BYTES / 8 + 1), IDENTITY, "text/javascript");
         _install(huge);
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }
@@ -723,7 +724,7 @@ contract RendererMediaTest is RendererBase {
     function test_Script_FullFormRevertsForAScriptItCannotWrap() public {
         _install(_file(_data(300, 43), GZIP, "text/javascript"));
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }
@@ -795,7 +796,7 @@ contract RendererMediaTest is RendererBase {
     function test_Base64_FullFormRevertsForAnUnattestedPrimary() public {
         _install(_tampered(_data(100, 57)));
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }
@@ -810,7 +811,7 @@ contract RendererMediaTest is RendererBase {
         _install(_file(bytes(Base64.encode(_data(100, 58))), BASE64, PNG));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(noAttest.contentStore()),
                 IContentStore.isBase64Attested.selector
             )
@@ -830,7 +831,7 @@ contract RendererMediaTest is RendererBase {
         assertEq(_str(_out(), ".animation_url"), IPFS);
 
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }

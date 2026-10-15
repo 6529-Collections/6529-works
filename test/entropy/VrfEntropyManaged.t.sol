@@ -192,7 +192,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
             bytes32 id = _schedule(adminSafe, address(module), refused[i]);
             vm.warp(manager.getSchedule(id));
             vm.prank(adminSafe);
-            vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+            vm.expectRevert(IEntropyModule.InvalidConfig.selector);
             manager.execute(address(module), refused[i]);
         }
         bytes memory stale = _lowerData(250_000, floor);

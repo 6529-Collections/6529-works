@@ -70,6 +70,16 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     /// @notice A curated work was minted. With the published package, this is the museum's
     ///         source record of the mint (ADR 0001 section 15).
+    /// @param tokenId The new token ID.
+    /// @param collectionId The collection the work was minted into.
+    /// @param itemHash The hash of the consumed package item (`WorksHashing.itemHash`).
+    /// @param serial The work's serial in its collection, from 1.
+    /// @param artistId The lead artist's ID.
+    /// @param kind ORIGINAL or EDITION_MASTER.
+    /// @param packageRoot The approved package root the item was proved against.
+    /// @param contentHash The decoded SHA-256 of the primary media (`PackageItem.contentHash`).
+    /// @param mediaHash The commitment to the work's media list (`PackageItem.mediaHash`).
+    /// @param recordFileId The content-store file ID of the approved descriptive record.
     event WorkMinted(
         uint256 indexed tokenId,
         uint256 indexed collectionId,
@@ -83,40 +93,73 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
         bytes32 recordFileId
     );
     /// @notice A work's royalty rate changed, by agreement of every party plus a governed action.
+    /// @param tokenId The work's token ID.
+    /// @param previous The rate before the change, out of 100,000.
+    /// @param next The rate after the change, out of 100,000.
     event RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next);
     /// @notice The renderer of works that are not finalized changed; `codeHash` is pinned.
+    /// @param previous The default renderer before the change (zero at deployment).
+    /// @param next The default renderer after the change.
+    /// @param codeHash The code hash `next` is pinned with.
     event DefaultRendererSet(address previous, address next, bytes32 codeHash);
     /// @notice A collection was created.
+    /// @param collectionId The new collection's ID.
+    /// @param name The collection's display name.
+    /// @param metadataHash The hash of the collection's metadata document, or zero.
     event CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash);
     /// @notice An edition master was linked to its 6529 Editions edition.
+    /// @param tokenId The master's token ID.
+    /// @param editions The 6529 Editions contract.
+    /// @param editionId The edition ID, equal to `tokenId`.
     event EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId);
     /// @notice A satellite was bound under `name` (WORK_RECORDS or EDITIONS), once.
+    /// @param name The binding's label, as a left-aligned `bytes32` string.
+    /// @param target The bound contract.
     event Bound(bytes32 indexed name, address target);
     /// @notice The minting adapter marked a token's primary sale settled.
+    /// @param tokenId The token whose primary sale settled.
     event PrimarySaleSettled(uint256 indexed tokenId);
     /// @notice The marketplace owner changed (the event marketplaces index for `owner()`).
+    /// @param previousOwner The owner before the change (zero at deployment).
+    /// @param newOwner The owner after the change.
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
     /// @notice The contract URI changed from `previous` to `next` (emitted beside ERC-7572's
     ///         parameterless `ContractURIUpdated`).
+    /// @param previous The URI before the change.
+    /// @param next The URI after the change.
     event ContractURISet(string previous, string next);
 
     /// @notice No live token has this ID.
     error UnknownWork(uint256 tokenId);
     /// @notice No collection has this ID.
     error UnknownCollection(uint256 collectionId);
-    /// @notice The caller is not the bound contract (or minting adapter) this function serves.
+    /// @notice The caller is not the bound satellite this function serves.
     error UnboundCaller(address caller);
+    /// @notice The caller is not the adapter that minted the token (`burn`,
+    ///         `markPrimarySettled`).
+    error NotMintingAdapter(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The target lacks code or the expected ERC-165 support, is an EIP-7702 delegated
-    ///         account, or (a satellite) serves another Stream; or the default renderer's code is
-    ///         no longer the code hash it was installed with.
+    /// @notice The satellite serves another Stream: its `stream()` is not this contract.
     error InvalidBinding(address target);
-    /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
-    ///         seed policy, license ID, fee terms).
-    error InvalidMintRequest();
+    /// @notice The item's sale is not an English auction with empty parameters.
+    error InvalidItemSale();
+    /// @notice The item names no parties, or (a preview) its lead party has no artist ID yet.
+    error InvalidLeadArtist();
+    /// @notice The item's seed does not fit its seed policy (a seed for ARTIST only, and only
+    ///         with one), or it is a VRF item and this deployment has no entropy module.
+    error InvalidSeedPolicy();
+    /// @notice The item's license ID does not follow the `SpdxId` rule.
+    error InvalidLicenseId();
+    /// @notice The economics resolver's `PRODUCT_STREAM` terms cannot be locked: a royalty rate
+    ///         above 100,000, a fee share of 100,000 or more, or a fee share with no fee
+    ///         recipient or paid to the work's own seller.
+    error InvalidWorkTerms();
+    /// @notice A storage index is full: a 65,536th fee recipient, or a 2^23rd set of terms
+    ///         displaced to the overflow range by a collision.
+    error TermsCapacityExceeded();
     /// @notice The collection name is empty, too long, not UTF-8, or holds a control character,
     ///         `<`, `"` or `\`.
     error InvalidCollectionName();
@@ -138,22 +181,30 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     /// @notice Binds the work-records satellite, once (ERC-165 for `IWorkRecords`, and
     ///         `IWorkRecords(target).stream()` must be this contract). ADMIN role.
+    /// @param target The work-records contract to bind.
     function bindWorkRecords(address target) external;
     /// @notice Binds 6529 Editions, once (ERC-165 for `IEditions`, and `IEditions(target).stream()`
     ///         must be this contract). ADMIN role.
+    /// @param target The 6529 Editions contract to bind.
     function bindEditions(address target) external;
     /// @notice The bound `IWorkRecords` satellite.
+    /// @return The satellite, or zero before it is bound.
     function workRecords() external view returns (address);
     /// @notice The bound 6529 Editions contract.
+    /// @return The 6529 Editions contract, or zero before it is bound.
     function editions() external view returns (address);
     /// @notice The package registry consulted by `mint` (immutable).
+    /// @return The package registry.
     function packageRegistry() external view returns (address);
     /// @notice The artist registry that resolves each work's artist (immutable).
+    /// @return The artist registry.
     function artistRegistry() external view returns (address);
     /// @notice The economics resolver whose `PRODUCT_STREAM` terms works lock at mint
     ///         (immutable).
+    /// @return The economics resolver.
     function economics() external view returns (address);
     /// @notice The VRF entropy module, or zero if VRF works are not supported (immutable).
+    /// @return The entropy module, or zero.
     function entropyModule() external view returns (address);
 
     // ----- collections, supply and works -----
@@ -161,22 +212,39 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice Creates a collection and returns its ID (sequential, from 1). PLATFORM role. The
     ///         name is 1 to 256 bytes of UTF-8 without control characters (below 0x20, and
     ///         0x7F), `<`, `"` or `\`.
+    /// @param name The collection's display name.
+    /// @param metadataHash The hash of the collection's metadata document, or zero.
+    /// @return collectionId The new collection's ID.
     function createCollection(string calldata name, bytes32 metadataHash)
         external
         returns (uint256 collectionId);
     /// @notice A collection. Reverts with `UnknownCollection`.
+    /// @param collectionId A collection ID, from 1 to `collectionCount()`.
+    /// @return The collection's name, metadata hash and minted count.
     function collection(uint256 collectionId) external view returns (Collection memory);
     /// @notice The number of collections created.
+    /// @return The count, which is also the highest collection ID.
     function collectionCount() external view returns (uint256);
     /// @notice The number of tokens ever minted, which is also the highest token ID.
+    /// @return The count, burned tokens included.
     function totalMinted() external view returns (uint256);
     /// @notice The number of live tokens (minted minus burned).
+    /// @return The count of live tokens.
     function totalSupply() external view returns (uint256);
     /// @notice What Stream stores for a work, with the derived royalty receiver. Reverts with
     ///         `UnknownWork`.
+    /// @param tokenId A live token ID.
+    /// @return The work's stored fields and its royalty receiver.
     function work(uint256 tokenId) external view returns (WorkCore memory);
     /// @notice The stored core fields only, without deriving the royalty receiver: the cheap read
     ///         `IWorkRecords` uses. Reverts with `UnknownWork`.
+    /// @param tokenId A live token ID.
+    /// @return itemHash The hash of the work's package item.
+    /// @return artistId The lead artist's ID.
+    /// @return collectionId The work's collection.
+    /// @return kind ORIGINAL or EDITION_MASTER.
+    /// @return seedPolicy The work's seed policy.
+    /// @return royaltyRate The current royalty rate, out of 100,000.
     function coreOf(uint256 tokenId)
         external
         view
@@ -193,43 +261,64 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `IPackageRegistry.releaseContent`, which checks the pair and reserves the content
     ///         for that artist, who must be registered. PARAMETER_SETTER role (48 hours); reverts
     ///         with `NotBurned` for a live or unminted token.
+    /// @param tokenId A burned token ID.
+    /// @param contentHash The burned work's content hash (public in `WorkMinted`).
+    /// @param beneficiary The artist ID of the rightful artist.
     function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary) external;
-    /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
-    ///         Reverts with `UnknownWork`.
+    /// @notice The lead artist ID of a live work, kept in the terms word it shares with works
+    ///         under the same terms; `IArtistRegistry.isArtist` reads it. Reverts with
+    ///         `UnknownWork`.
+    /// @param tokenId A live token ID.
+    /// @return artistId The lead artist's ID.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
     /// @notice True once the minting adapter marked the token's primary sale settled
     ///         (`IMintTarget.markPrimarySettled`: to a
     ///         winner, a pending claim, or the artist); false before, and for burned or unminted
     ///         IDs. A packed flag; it gates edition creation.
+    /// @param tokenId Any token ID.
+    /// @return True for a live token whose primary sale settled.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
 
     // ----- rendering -----
 
     /// @notice The renderer of works that are not finalized.
+    /// @return The default renderer.
     function defaultRenderer() external view returns (address);
     /// @notice Sets the default renderer: ERC-165 checked for `IRenderer`, code hash
     ///         `nextCodeHash`, not an EIP-7702 delegated account. SUCCESSOR_SETTER role,
     ///         compare-and-set. Finalized works keep their pin; 6529 Editions is notified
     ///         (`IEditions.notifyAllUpdated`).
+    /// @param expected The current default renderer (`ExpectedValueMismatch` otherwise).
+    /// @param next The new default renderer.
+    /// @param nextCodeHash The code hash `next` must have, which it is pinned with.
     function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash) external;
     /// @notice The renderer serving a work: its pin in `IWorkRecords` once finalized, the default
     ///         before. `tokenURI` forwards to it (and 6529 Editions' `uri`). Fails closed: reverts
-    ///         with `InvalidBinding` when the default renderer's code is no longer the code hash
-    ///         `setDefaultRenderer` (or the constructor) pinned, and with
-    ///         `IWorkRecords.InvalidRenderer` when a finalized work's pinned renderer changed
-    ///         code; it never falls back to another renderer. A new default renderer, or the
-    ///         errata repin for a finalized work, restores the metadata.
+    ///         with `Dependency.DependencyCodeChanged` when the default renderer's code is no
+    ///         longer the code hash `setDefaultRenderer` (or the constructor) pinned, or when a
+    ///         finalized work's pinned renderer changed code; it never falls back to another
+    ///         renderer. A new default renderer, or the errata repin for a finalized work,
+    ///         restores the metadata.
+    /// @param tokenId A live token ID (`UnknownWork` otherwise).
+    /// @return The renderer that builds the token's metadata.
     function rendererOf(uint256 tokenId) external view returns (address);
 
     // ----- hooks for the bound satellites -----
 
     /// @notice Sets a work's royalty rate (payees never change). Bound `IWorkRecords` only, after
     ///         it verified every party's consent and the governed action.
+    /// @param tokenId A live token ID.
+    /// @param rate The new royalty rate, out of 100,000 (`InvalidRoyaltyRate` above 100,000).
     function setRoyaltyRate(uint256 tokenId, uint32 rate) external;
     /// @notice Emits ERC-4906 for `[fromTokenId, toTokenId]` (one `MetadataUpdate` when equal).
     ///         Bound `IWorkRecords` only.
+    /// @param fromTokenId The first token ID of the range.
+    /// @param toTokenId The last token ID of the range, inclusive.
     function emitMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
     /// @notice The 6529 Editions edition an EDITION_MASTER work anchors, or zeros if none.
+    /// @param tokenId Any token ID.
+    /// @return editionsContract The 6529 Editions contract, or zero.
+    /// @return editionId The edition ID, equal to `tokenId`, or zero.
     function editionOf(uint256 tokenId)
         external
         view
@@ -238,18 +327,25 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         sale settled (D14, checked here as well as in Editions); the edition ID equals the
     ///         token ID. Bound 6529 Editions only, from `IEditions.createEdition`, which records
     ///         the other direction in the same transaction.
+    /// @param tokenId The master's token ID.
+    /// @param editionId The edition ID, which must equal `tokenId`.
     function linkEdition(uint256 tokenId, uint256 editionId) external;
 
     // ----- marketplace metadata -----
 
     /// @notice ERC-7572 contract-level metadata URI.
+    /// @return The URI, empty until set.
     function contractURI() external view returns (string memory);
     /// @notice Sets the contract URI (`ContractURISet`, `ContractURIUpdated`). PARAMETER_SETTER
     ///         role.
+    /// @param uri The new contract URI.
     function setContractURI(string calldata uri) external;
     /// @notice The marketplace owner (held by 6529); it has no on-chain powers.
+    /// @return The marketplace owner.
     function owner() external view returns (address);
     /// @notice Sets the marketplace owner, which marketplaces let configure creator earnings.
     ///         FUNDS_SETTER role, compare-and-set.
+    /// @param expected The current owner (`ExpectedValueMismatch` otherwise).
+    /// @param next The new owner.
     function setOwner(address expected, address next) external;
 }

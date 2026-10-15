@@ -7,6 +7,7 @@ import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol"
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { Mock1271Account, RejectingRecipient } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 
 contract ReleaseVerifierTest is EconomicsBase {
     SplitWallet internal wallet;
@@ -271,7 +272,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         b.deadline = block.timestamp - 1;
         bytes memory sigB = _sign(alicePk, b);
         vm.expectRevert(
-            abi.encodeWithSelector(IReleaseVerifier.AuthorizationExpired.selector, b.deadline)
+            abi.encodeWithSelector(SignatureVerifier.SignatureExpired.selector, b.deadline)
         );
         wallet.releaseWithAuthorization(b, sigB);
     }
@@ -279,20 +280,20 @@ contract ReleaseVerifierTest is EconomicsBase {
     function test_WrongSignerOrTamperedFieldReverts() public {
         IReleaseVerifier.Authorization memory a = _a(iAlice, alice, 1 ether, 1);
         bytes memory bobSig = _sign(bobPk, a);
-        vm.expectRevert(abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
         wallet.releaseWithAuthorization(a, bobSig);
 
         bytes memory sig = _sign(alicePk, a);
         a.recipient = relayer;
-        vm.expectRevert(abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
         wallet.releaseWithAuthorization(a, sig);
         a.recipient = recipient;
         a.amount = 2 ether;
-        vm.expectRevert(abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
         wallet.releaseWithAuthorization(a, sig);
         a.amount = 1 ether;
         a.asset = address(token);
-        vm.expectRevert(abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
         wallet.releaseWithAuthorization(a, sig);
         assertFalse(verifier.nonceUsed(alice, 1));
     }
@@ -391,7 +392,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         bytes memory sig = _sign(alicePk, a);
         uint256 chain = block.chainid;
         vm.chainId(chain + 1);
-        vm.expectRevert(abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, alice));
         wallet.releaseWithAuthorization(a, sig);
         vm.chainId(chain);
         ReleaseVerifier other = new ReleaseVerifier();
@@ -436,7 +437,7 @@ contract ReleaseVerifierTest is EconomicsBase {
         IReleaseVerifier.Authorization memory a =
             _auth(w, ETH, 0, address(safe), recipient, 1 ether, 1);
         vm.expectRevert(
-            abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, address(safe))
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, address(safe))
         );
         w.releaseWithAuthorization(a, "");
         safe.accept(verifier.releaseDigest(a));

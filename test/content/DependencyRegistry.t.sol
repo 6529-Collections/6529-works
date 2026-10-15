@@ -8,6 +8,7 @@ import { ContentStore } from "src/content/ContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IDependencyRegistry } from "src/interfaces/IDependencyRegistry.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 contract DependencyRegistryTest is ContentBase {
     /// @dev Local stand-in for the registrar role. TODO(governance lane): use the role from
@@ -298,11 +299,18 @@ contract DependencyRegistryTest is ContentBase {
     }
 
     function test_Constructor_RequiresAStoreContract() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(IDependencyRegistry.DependencyStoreInvalid.selector, stranger)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         new DependencyRegistry(address(manager), IContentStore(stranger));
         assertEq(registry.authority(), address(manager));
+    }
+
+    /// @dev QUALITY-10: an EIP-7702 delegated account whose delegate is the real store is
+    ///      refused too; before the shared install check only code was required.
+    function test_Constructor_RefusesADelegatedStore() public {
+        address delegated = makeAddr("delegated store");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(store)));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
+        new DependencyRegistry(address(manager), IContentStore(delegated));
     }
 
     /// @dev Independent oracle: the label is 1 to 32 characters from the alphabet, then zeros.

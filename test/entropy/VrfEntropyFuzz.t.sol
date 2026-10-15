@@ -47,7 +47,7 @@ contract VrfEntropyFuzzTest is EntropyBase {
     function testFuzz_UnissuedRequestIdsNeverDeliver(uint256 id, uint256 word) public {
         uint256 issued = _request(0);
         vm.assume(id != issued);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.UnknownRequest.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.UnknownRequest.selector, id));
         _fulfillAs(address(coordinator), id, word);
         assertFalse(module.isDelivered(items[0]));
     }
@@ -112,7 +112,7 @@ contract VrfEntropyFuzzTest is EntropyBase {
         uint256 id = _request(0);
         vm.expectRevert(
             abi.encodeWithSelector(
-                VrfEntropyModule.OnlyCoordinatorCanFulfill.selector, caller, address(coordinator)
+                IEntropyModule.OnlyCoordinatorCanFulfill.selector, caller, address(coordinator)
             )
         );
         _fulfillAs(caller, id, word);

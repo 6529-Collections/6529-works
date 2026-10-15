@@ -29,6 +29,8 @@ import {
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 /// @notice Unit and attack-path tests for the artist registry (ADR 0001 section 11).
 contract ArtistRegistryTest is IdentityFixture {
@@ -130,7 +132,7 @@ contract ArtistRegistryTest is IdentityFixture {
         ArtistIdentity memory next = _identity(artist, payout);
         uint64 deadline = uint64(block.timestamp - 1);
         bytes memory signature = _sign(artistKey, _digest(next, deadline));
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.expired(deadline));
         registry.stageChange(artistId, next, artist, deadline, signature, "");
     }
 
@@ -147,14 +149,14 @@ contract ArtistRegistryTest is IdentityFixture {
         ArtistIdentity memory next = _identity(artist, thief);
         uint64 deadline = uint64(block.timestamp + 1);
         bytes memory forged = _sign(thiefKey, _digest(next, deadline));
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(artist));
         registry.stageChange(artistId, next, artist, deadline, forged, "");
     }
 
     function test_StageChange_RevertsForTamperedPayload() public {
         uint64 deadline = uint64(block.timestamp + 1);
         bytes memory signature = _sign(artistKey, _digest(_identity(artist, payout), deadline));
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(artist));
         registry.stageChange(artistId, _identity(artist, thief), artist, deadline, signature, "");
     }
 
@@ -163,9 +165,9 @@ contract ArtistRegistryTest is IdentityFixture {
         uint64 deadline = uint64(block.timestamp + 1);
         bytes32 digest = _digest(next, deadline);
         bytes memory signature = _sign(artistKey, digest);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(newAuthority));
         registry.stageChange(artistId, next, artist, deadline, signature, "");
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(newAuthority));
         registry.stageChange(artistId, next, artist, deadline, signature, _sign(thiefKey, digest));
         registry.stageChange(artistId, next, artist, deadline, signature, _sign(newKey, digest));
         assertEq(registry.pendingChange(artistId).next.authority, newAuthority);
@@ -217,7 +219,7 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.stageChange(artistId, next, artist, deadline, signature, "");
         vm.prank(artist);
         registry.cancelChange(artistId);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(artist));
         registry.stageChange(artistId, next, artist, deadline, signature, "");
     }
 
@@ -230,7 +232,7 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.prank(artist);
         registry.cancelChange(artistId);
         bytes32 vs = bytes32(uint256(v - 27) << 255 | uint256(s));
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(artist));
         registry.stageChange(artistId, next, artist, deadline, abi.encodePacked(r, vs), "");
     }
 
@@ -245,7 +247,7 @@ contract ArtistRegistryTest is IdentityFixture {
         ArtistIdentity memory next = _identity(artist, payout);
         uint64 deadline = uint64(block.timestamp + 1 days);
         bytes memory signature = _sign(artistKey, _digest(next, deadline));
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(artist));
         other.stageChange(artistId, next, artist, deadline, signature, "");
     }
 
@@ -258,7 +260,7 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.prank(artist);
         registry.revokeNonce(artistId);
         assertEq(registry.changeNonce(artistId), 1);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(artist));
         registry.stageChange(artistId, next, artist, deadline, signature, "");
     }
 
@@ -669,18 +671,18 @@ contract ArtistRegistryTest is IdentityFixture {
         bytes32 digest =
             registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline);
         vm.startPrank(governor);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(newAuthority));
         registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, "");
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(newAuthority));
         registry.stageOverride(
             artistId, ChangeKind.CONTESTED, next, evidence, deadline, _sign(thiefKey, digest)
         );
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(newAuthority));
         registry.stageOverride(
             artistId, ChangeKind.ESTATE, next, evidence, deadline, _sign(newKey, digest)
         );
         vm.warp(deadline + 1);
-        vm.expectRevert(IArtistRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.expired(deadline));
         registry.stageOverride(
             artistId, ChangeKind.CONTESTED, next, evidence, deadline, _sign(newKey, digest)
         );
@@ -831,7 +833,7 @@ contract ArtistRegistryTest is IdentityFixture {
 
     /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
     ///      source whose code no longer matches the pin (simulated with `vm.etch`) is never
-    ///      trusted: staging, heartbeats and refreshes revert with `InvalidSource`, while an
+    ///      trusted: staging, heartbeats and refreshes revert with `DependencyCodeChanged`, while an
     ///      execution and a registration go ahead and skip their refresh without reading it
     ///      (review L-1), so nobody's standing changes. The original code works again.
     function test_ConsolidationSource_CodeHashRecheckedAtUse() public {
@@ -842,7 +844,7 @@ contract ArtistRegistryTest is IdentityFixture {
         // The replacement answers "not consolidated" for everyone.
         vm.etch(address(adapter), address(new FailingConsolidationSource()).code);
         bytes memory changed =
-            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(adapter));
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(adapter));
 
         vm.expectRevert(changed);
         registry.refreshStanding(artistId);
@@ -877,16 +879,16 @@ contract ArtistRegistryTest is IdentityFixture {
 
     function test_SetConsolidationSource_RevertsForBadSourceOrCodeHash() public {
         vm.startPrank(successorSetter);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         registry.setConsolidationSource(adapter, IConsolidationSource(stranger), bytes32(0));
         address delegated = makeAddr("delegated7702");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(adapter)));
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         registry.setConsolidationSource(
             adapter, IConsolidationSource(delegated), delegated.codehash
         );
         vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(delegation))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(delegation))
         );
         registry.setConsolidationSource(
             adapter, IConsolidationSource(address(delegation)), address(delegation).codehash
@@ -895,14 +897,14 @@ contract ArtistRegistryTest is IdentityFixture {
         IConsolidationSource other =
             new ConsolidationAdapter(IDelegationManagement(address(delegation)));
         vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(other))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(other))
         );
         registry.setConsolidationSource(adapter, other, keccak256("reviewed elsewhere"));
         vm.stopPrank();
     }
 
     function test_Constructor_RevertsForCodelessSource() public {
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         new ArtistRegistry(address(manager), IConsolidationSource(stranger), bytes32(0));
     }
 
@@ -1078,22 +1080,22 @@ contract ArtistRegistryTest is IdentityFixture {
         address delegated = makeAddr("delegated7702");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", packageRegistry));
         vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         fresh.bindPackageRegistry(stranger);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         fresh.bindPackageRegistry(delegated);
         vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(adapter))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(adapter))
         );
         fresh.bindPackageRegistry(address(adapter));
         vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, packageRegistry)
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, packageRegistry)
         );
         fresh.bindStream(packageRegistry);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         fresh.bindFederationRegistry(stranger);
         vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, packageRegistry)
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, packageRegistry)
         );
         fresh.bindFederationRegistry(packageRegistry);
         vm.stopPrank();
@@ -1346,7 +1348,7 @@ contract ArtistRegistryTest is IdentityFixture {
 
     function test_BindSplitFactory_OneShotAndRequiresCode() public {
         vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, stranger));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         registry.bindSplitFactory(stranger);
         SplitFactoryWalletsMock factory = new SplitFactoryWalletsMock();
         vm.expectEmit(address(registry));

@@ -125,6 +125,11 @@ contract Eip712CurationVerifier is ICurationSignerVerifier, AccessManaged, EIP71
 
     /// @notice The EIP-712 digest a curation signer signs to approve a package root, at its
     ///         epoch `signerEpoch` (read with {signerEpoch}).
+    /// @param packageRoot The package root to approve.
+    /// @param evidenceHash The evidence hash the approval binds.
+    /// @param signerEpoch_ The signer's epoch; the approval counts only while it equals
+    ///        `signerEpoch(signer)`.
+    /// @return The `Typehashes.PACKAGE_APPROVAL` digest in this verifier's EIP-712 domain.
     function approvalDigest(bytes32 packageRoot, bytes32 evidenceHash, uint256 signerEpoch_)
         public
         view

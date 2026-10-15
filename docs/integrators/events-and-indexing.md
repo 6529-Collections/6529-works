@@ -330,7 +330,7 @@ contract at a CREATE2 address.
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `NonceUsed(address indexed account, uint256 indexed nonce, bool revoked)` | `0x4efdf80e…` | `ReleaseVerifier.consume`, called by the wallet inside `releaseWithAuthorization` (`revoked` false), and `revokeNonce` (`revoked` true) | A signed-release nonce is spent. A consumed nonce is followed by the wallet's `Released`. |
-| `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the revert data. Successful items appear only as the wallets' `Released`. |
+| `ClaimFailed(address indexed wallet, address indexed asset, uint256 indexed payee, uint256 index, uint256 size, bytes reason)` | `0xdaabf7a5…` | `ClaimRouter.claim` and `claimSigned`, in continue mode, for an item that failed | `index` is the item's position in the batch; `reason` is at most the first 256 bytes of the revert data: decode it against the wallet, the release verifier and the shared library errors (a bad signature reverts with the error `SignatureVerifier.InvalidSignature`, an expired one with `SignatureVerifier.SignatureExpired`). Successful items appear only as the wallets' `Released`. |
 
 ### RevenueEscrow
 
@@ -670,8 +670,9 @@ itself emits none: a new token has no cached metadata.
 Metadata also changes with no ERC-4906 event when a dispute outcome is recorded, when a record
 or preview file completes in the content store, and when a base64 file is attested: the
 signals are in [Reading a work](reading-a-work.md#when-to-refresh). A pinned renderer whose
-code changed makes `tokenURI` revert until a new default renderer or an errata repin, which do
-emit; a burned token's `tokenURI` reverts, and its `Transfer` to zero is the signal.
+code changed makes `tokenURI` revert with `Dependency.DependencyCodeChanged(renderer)` until a
+new default renderer or an errata repin, which do emit; a burned token's `tokenURI` reverts,
+and its `Transfer` to zero is the signal.
 
 ## Appendix: full topic0 values
 

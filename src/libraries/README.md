@@ -1,7 +1,7 @@
 # libraries
 
 Shared internal libraries compiled into the contracts that use them: signature verification,
-EIP-7702 detection, bounded external reads, SSTORE2 chunk storage, JSON escaping,
+dependency install checks, EIP-7702 detection, bounded external reads, SSTORE2 chunk storage, JSON escaping,
 UTF-8 validation and the recognition of protocol contracts that cannot be paid. Every function
 is `internal`, so nothing here is deployed or linked, and nothing counts against the
 five-linked-library budget. The rules these libraries enforce are stated where they are used,
@@ -12,11 +12,12 @@ in the [specification](../../docs/spec/README.md); the users of each library are
 
 | File | What it does | Main users |
 | --- | --- | --- |
-| `SignatureVerifier.sol` | The one signature check: low-s ECDSA (65 bytes, or 64 in ERC-2098 form), EIP-7702 delegated accounts (`ecrecover` first, then ERC-1271 through the delegate), ERC-1271 with a fixed gas cap and exactly one 32-byte magic word, signatures of at most 4,096 bytes. It tracks no replay. | Every signed payload: curation, identity, records, statement relay, phase consents, releases |
-| `DelegatedEOA.sol` | Detects an EIP-7702 delegation designator (`0xef0100 ‖ address`). | Every install and bind check; `SignatureVerifier` |
+| `SignatureVerifier.sol` | The one signature check: low-s ECDSA (65 bytes, or 64 in ERC-2098 form), EIP-7702 delegated accounts (`ecrecover` first, then ERC-1271 through the delegate), ERC-1271 with a fixed gas cap and exactly one 32-byte magic word, signatures of at most 4,096 bytes. It tracks no replay. `check` and `checkDeadline` revert with the shared `InvalidSignature(signer)` and `SignatureExpired(deadline)`. | Every signed payload: curation, identity, records, statement relay, phase consents, releases |
+| `Dependency.sol` | The one install check for a contract another contract calls, binds, lists or pins: code, not an EIP-7702 delegated account, ERC-165 for its role where implemented, and the pinned code hash (`InvalidDependency`); and the use-time check of a pinned code hash (`DependencyCodeChanged`). | Every install, bind and listing check; every code-hash pin re-checked at use |
+| `DelegatedEOA.sol` | Detects an EIP-7702 delegation designator (`0xef0100 ‖ address`). | `Dependency`, `SignatureVerifier` |
 | `BoundedCall.sol` | A `staticcall` with a fixed gas and return-size cap that reverts when the caller cannot forward the gas in full (`BoundedCallInsufficientGas`), and `hasSufficientGas`, the same check for callers that make their own fixed-gas calls. | Renderer, consolidation adapter, statement log, auction, claim router, token transfers |
 | `SSTORE2.sol` | Stores a chunk as the code of a CREATE2 contract and reads it back verified against its keccak256. | Content store, renderer |
-| `JsonEscape.sol` | JSON string escaping, a word at a time (`escape`). Its `scriptText` is used only by tests: the renderer neutralizes scripts with `HtmlScript`. | Renderer |
+| `JsonEscape.sol` | JSON string escaping, a word at a time (`escape`). Script text is neutralized by `HtmlScript`, not here. | Renderer |
 | `Utf8.sol` | RFC 3629 UTF-8 validation, resumable across chunks. | Renderer, Stream, statement log |
 | `ProtocolContracts.sol` | Whether an address declares, by ERC-165, the interface of a protocol contract that can neither pull a payout nor accept an ETH payment. | Artist registry (payout validation), economics resolver (fee recipient) |
 
