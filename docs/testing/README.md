@@ -61,7 +61,7 @@ python tools/check_coverage.py --uncovered
   and 16 invariant runs of depth 64. That is enough to reach every line and branch the full
   campaigns reach: two runs with different fuzz seeds gave identical per-contract figures.
   No `--ir-minimum` is needed; the unoptimized legacy pipeline compiles every contract.
-- **Expected failures.** Without the optimizer about 48 gas-ceiling tests fail
+- **Expected failures.** Without the optimizer about 51 gas-ceiling tests fail
   (`GasReport`, the `*Gas*` tests, the `tokenURI` budgets). `--allow-failure` keeps the run
   going and writes the report; the Contracts job runs every test for real.
 - **The gate.** [`tools/coverage-floors.json`](../../tools/coverage-floors.json) holds a
@@ -76,8 +76,8 @@ python tools/check_coverage.py --uncovered
   rewrites the floors from the run; review the diff. Lowering a floor needs a reason in the
   pull request.
 
-Measured on 15 October 2026, on `main` at 8c247de with these tests (Foundry 1.7.1, lite
-profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, branches and functions;
+Measured on 15 October 2026, on `main` at 054442d (after #63) with these tests (Foundry 1.7.1,
+lite profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, branches and functions;
 `check_coverage.py` prints all of them. The others, and what they leave unreached:
 
 | Contract | Lines | Branches | Unreached |
@@ -85,10 +85,10 @@ profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, branches 
 | `curation/PackageRegistry.sol` | 98.99% (196/198) | 95.45% (42/44) | two defensive reverts: an artist registry that returns another ID than the one it just assigned, and `releaseContent` to an artist whose authority is zero (the registry reverts `UnknownArtist` first) |
 | `economics/TokenTransfer.sol` | 98.28% (57/58) | 92.31% (12/13) | `transferExact`'s own revert: unreachable, because the strict transfer path never returns false (it reverts inside) |
 | `sales/EnglishAuction.sol` | 100% (433/433) | 97.98% (97/99) | `start` on a sale that already exists, and a locked fee share above the denominator |
-| `sales/MintSaleBase.sol` | 99.36% (155/156) | 97.87% (46/47) | `claim` of an ERC-20: unreachable today, since only ETH is ever credited (Dutch refunds) |
-| `stream/Stream.sol` | 100% (261/261) | 95.92% (47/49) | a package registry that returns a malformed `consume` result, and the 65,536th fee recipient |
+| `sales/MintSaleBase.sol` | 99.40% (167/168) | 98.00% (49/50) | `claim` of an ERC-20: unreachable today, since only ETH is ever credited (Dutch refunds) |
+| `stream/Stream.sol` | 100% (288/288) | 94.34% (50/53) | a package registry that returns a malformed `consume` result, the 65,536th fee recipient, and the 2**23rd terms word in the overflow range |
 | `stream/WorkRecords.sol` | 100% (366/366) | 97.53% (79/81) | consent from a party that never registered as an artist, and a content store that returns a short `FileInfo` |
-| **src/ total** | **99.91% (4,546/4,550)** | **99.04% (1,032/1,042)** | functions 100% (652/652) |
+| **src/ total** | **99.91% (4,624/4,628)** | **98.96% (1,043/1,054)** | functions 100% (661/661) |
 
 ## Mutation testing
 
@@ -249,7 +249,8 @@ that need a change under `src/` are for the module owners; the rest are tests.
    the auction): reachable, untested.
 5. Defensive guards that need a lying mock to reach: a registry that assigns another artist
    ID, or reports a zero authority (`PackageRegistry`); a malformed `consume` answer and the
-   65,536th fee recipient, reachable with `vm.store` (`Stream`); a short `FileInfo`
+   65,536th fee recipient and the 2**23rd overflow terms word, reachable with `vm.store`
+   (`Stream`); a short `FileInfo`
    (`WorkRecords`); a locked fee share above the denominator (`EnglishAuction`).
 
 **From the symbolic proofs:**

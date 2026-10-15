@@ -177,8 +177,8 @@
       "branches": 98.0
     },
     "src/sales/MintSaleBase.sol": {
-      "lines": 98.3,
-      "branches": 95.8
+      "lines": 98.4,
+      "branches": 96.0
     },
     "src/stream/SpdxId.sol": {
       "lines": 99.0,
@@ -186,7 +186,7 @@
     },
     "src/stream/Stream.sol": {
       "lines": 99.0,
-      "branches": 93.9
+      "branches": 92.3
     },
     "src/stream/WorkRecords.sol": {
       "lines": 99.0,
