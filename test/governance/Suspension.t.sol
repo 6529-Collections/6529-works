@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Multicall } from "@openzeppelin/contracts/utils/Multicall.sol";
@@ -176,6 +177,21 @@ contract SuspensionTest is GovernanceFixture {
         assertTrue(_member(Roles.CURATOR, curator), "an existing member: no grant delay");
         vm.prank(curator);
         target.curate();
+    }
+
+    /// @dev Leaving a role that was never suspended lifts nothing, so it announces nothing.
+    function test_ARenunciationWithoutASuspensionLiftsNothing() public {
+        vm.recordLogs();
+        vm.prank(platform);
+        manager.renounceRole(Roles.PLATFORM, platform);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != WorksAccessManager.RoleSuspensionLifted.selector,
+                "a lift was announced"
+            );
+        }
+        assertFalse(GovernanceConfig.hasRecord(manager, Roles.PLATFORM, platform));
     }
 
     function test_ARevocationClearsItAndTheKeyCanRenounce() public {

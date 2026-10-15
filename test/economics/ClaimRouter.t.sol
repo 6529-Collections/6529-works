@@ -25,6 +25,17 @@ import { EconomicsBase } from "./EconomicsBase.sol";
 
 /// @dev Ported from 6529Stream PR #744 `StreamClaimRouter.t.sol` (adversarial claim batches),
 ///      adapted to index-addressed payees and the artist-resolved payee kind.
+/// @dev Reverts every call with the error selector 0xffffffff, above every selector the router
+///      treats as a shortfall.
+contract HighSelectorReverter {
+    fallback() external payable {
+        assembly ("memory-safe") {
+            mstore(0, shl(224, 0xffffffff))
+            revert(0, 4)
+        }
+    }
+}
+
 contract ClaimRouterTest is EconomicsBase {
     bytes32 internal constant FAILED =
         keccak256("ClaimFailed(address,address,uint256,uint256,uint256,bytes)");
@@ -482,6 +493,21 @@ contract ClaimRouterTest is EconomicsBase {
         emit IClaimRouter.ClaimFailed(address(empty), ETH, 0, 0, reason.length, reason);
         uint256[] memory amounts =
             router.claim{ gas: 700_000 }(_two(address(empty), 0, address(real), 0), true);
+        assertEq(amounts[0], 0);
+        assertEq(amounts[1], 1 ether);
+    }
+
+    /// @dev Only `BoundedCallInsufficientGas` marks a shortfall; an item failing with any other
+    ///      error, whatever its selector, is skipped.
+    function test_ContinueModeSkipsAnItemFailingWithAHighSelector() public {
+        HighSelectorReverter odd = new HighSelectorReverter();
+        SplitWallet real = _solo(alice);
+        vm.deal(address(real), 1 ether);
+        bytes memory reason = hex"ffffffff";
+        vm.expectEmit(true, true, true, true, address(router));
+        emit IClaimRouter.ClaimFailed(address(odd), ETH, 0, 0, reason.length, reason);
+        uint256[] memory amounts =
+            router.claim{ gas: 700_000 }(_two(address(odd), 0, address(real), 0), true);
         assertEq(amounts[0], 0);
         assertEq(amounts[1], 1 ether);
     }

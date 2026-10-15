@@ -79,6 +79,25 @@ contract SplitFactoryTest is EconomicsBase {
         fresh.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
     }
 
+    /// @dev Code whose hash sorts below the pinned one, as well as above: any change fails.
+    function test_CreateWalletFailsClosedWhicheverWayADependencyHashMoves() public {
+        address[2] memory deps = [address(resolver), address(verifier)];
+        for (uint256 d; d < 2; ++d) {
+            bytes32 pinned = deps[d].codehash;
+            bytes memory lower;
+            for (uint256 i; lower.length == 0; ++i) {
+                bytes memory code = abi.encodePacked(bytes1(0x60), bytes1(uint8(i)), bytes1(0x00));
+                if (keccak256(code) < pinned) lower = code;
+            }
+            SplitFactory fresh = new SplitFactory(new MockArtistResolver(), verifier);
+            if (d == 1) fresh = new SplitFactory(resolver, new ReleaseVerifier());
+            address dep = d == 0 ? address(fresh.resolver()) : address(fresh.verifier());
+            vm.etch(dep, lower);
+            vm.expectRevert(abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, dep));
+            fresh.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
+        }
+    }
+
     function test_CreateWalletDeploysAtPredictedAddressWithConfiguration() public {
         ISplitWallet.Payee[] memory payees =
             _list(_fixed(alice, 50_000), _fixed(bob, 30_000), _artist(ARTIST, 20_000));
@@ -192,6 +211,14 @@ contract SplitFactoryTest is EconomicsBase {
         artistFirst[1] = _fixed(alice, 50_000);
         vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayeesNotCanonical.selector, 1));
         factory.createWallet(artistFirst, ZERO_SALT);
+
+        // Each payee sorts after the one before it, not only after the first.
+        ISplitWallet.Payee[] memory third = new ISplitWallet.Payee[](3);
+        third[0] = _artist(1, 30_000);
+        third[1] = _artist(3, 30_000);
+        third[2] = _artist(2, 40_000);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayeesNotCanonical.selector, 2));
+        factory.createWallet(third, ZERO_SALT);
     }
 
     function test_RejectsSharesNotSummingToDenominator() public {

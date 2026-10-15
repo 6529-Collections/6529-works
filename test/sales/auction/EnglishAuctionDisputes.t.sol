@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
@@ -246,6 +247,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 pausedAt = block.timestamp;
         vm.warp(pausedAt + 7 days);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED), "inclusive");
+        assertEq(auction.auction(saleId).pausedAt, pausedAt, "the view still shows the pause");
         vm.warp(pausedAt + 7 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         uint256 resumedEnd = pausedAt + 7 days + DURATION;
@@ -374,6 +376,46 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(address(auction).balance, 0, "every bid refunded");
         _expectState(saleId, IEnglishAuction.AuctionState.CANCELLED);
         auction.settle(saleId);
+    }
+
+    /// @dev A withdrawn high bid leaves a reserve but no bidder: cancelling then credits nobody.
+    function test_Cancel_AfterAWithdrawnBidCreditsNobody() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, bob, 2 ether);
+        _pause(saleId);
+        vm.prank(bob);
+        auction.withdrawBid(saleId);
+        bytes32 outcome = _recordOutcome(1);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.recordLogs();
+        vm.prank(setter);
+        auction.cancel(saleId, outcome);
+        assertEq(_countCredited(), 0);
+        assertEq(auction.claimable(address(0), ETH), 0);
+        assertEq(address(auction).balance, 2 ether, "only bob's credit");
+    }
+
+    /// @dev The first bid after a withdrawn one has no previous bidder to credit.
+    function test_Bid_AfterAWithdrawnBidCreditsNobody() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, bob, 2 ether);
+        _pause(saleId);
+        vm.prank(bob);
+        auction.withdrawBid(saleId);
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(unpauser);
+        auction.resume(saleId);
+        vm.recordLogs();
+        _bidEth(saleId, alice, 2 ether);
+        assertEq(_countCredited(), 0);
+        assertEq(auction.claimable(address(0), ETH), 0);
+    }
+
+    function _countCredited() internal view returns (uint256 n) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == ISaleAdapter.Credited.selector) ++n;
+        }
     }
 
     function test_Cancel_WithNoBids() public {
@@ -535,6 +577,19 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(setter);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setConfig(next, next);
+        // One stale field is enough to refuse.
+        for (uint256 f; f < 6; ++f) {
+            IEnglishAuction.AuctionConfig memory stale = _config();
+            if (f == 0) stale.duration += 1;
+            else if (f == 1) stale.extensionWindow += 1;
+            else if (f == 2) stale.incrementShare += 1;
+            else if (f == 3) stale.duration -= 1;
+            else if (f == 4) stale.extensionWindow -= 1;
+            else stale.incrementShare -= 1;
+            vm.prank(setter);
+            vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
+            auction.setConfig(stale, next);
+        }
         vm.expectEmit(address(auction));
         emit IEnglishAuction.ConfigSet(_config(), next);
         vm.prank(setter);
@@ -565,6 +620,8 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.setOpeningBid(ETH, 0, 0.5 ether);
         vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
         auction.setOpeningBid(ETH, 0, 0.2 ether);
+        vm.expectRevert(ISaleAdapter.ExpectedValueMismatch.selector);
+        auction.setOpeningBid(ETH, 1 ether, 0.2 ether); // stale from above as well
         auction.setOpeningBid(ETH, 0.5 ether, 0.2 ether);
         auction.setOpeningBid(ETH, 0.2 ether, ceiling);
         auction.setOpeningBid(ETH, ceiling, 0);

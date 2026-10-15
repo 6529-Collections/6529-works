@@ -69,6 +69,9 @@ contract EditionRulesTest is Test {
         assertFalse(rules.isValid(t));
         t.saleKind = keccak256("RAFFLE");
         assertFalse(rules.isValid(t));
+        // Every label above is below FIXED_PRICE's as a number; so is DUTCH's. One above it.
+        t.saleKind = bytes32(type(uint256).max);
+        assertFalse(rules.isValid(t));
     }
 
     function test_DefaultCurrencyOnlyWhenFree() public view {
@@ -90,6 +93,9 @@ contract EditionRulesTest is Test {
         assertFalse(rules.isValid(_dutch(PRICE + 1, 1 hours, 0)), "rests above the start");
         assertFalse(rules.isValid(_dutch(PRICE / 10, 0, 0)), "falls with no duration");
         assertFalse(rules.isValid(_dutch(PRICE / 10, 100, 7)), "steps do not divide");
+        // Durations are uint64: none is cut to 32 bits on the way to DutchPricing.
+        assertTrue(rules.isValid(_dutch(PRICE / 10, uint64(1) << 32, 0)), "2**32 seconds");
+        assertTrue(rules.isValid(_dutch(PRICE / 10, type(uint64).max, 0)), "the longest");
     }
 
     /// @dev Malformed params never revert the rule: wrong length or words that are not uint64.

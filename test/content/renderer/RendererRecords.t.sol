@@ -63,13 +63,17 @@ contract RendererRecordsTest is RendererBase {
         _raw(
             bytes(
                 '{"attributes":[{"trait_type":"Rank","value":3},{"trait_type":"Score","value":-1.5e2},'
-                '{"trait_type":"Mood","value":"calm"}],"name":"N"}'
+                '{"trait_type":"Mood","value":"calm"},{"trait_type":"Zero","value":0},'
+                '{"trait_type":"Nine","value":9}],"name":"N"}'
             )
         );
 
         string memory j = _out();
 
         assertEq(_attrNum(j, "Rank"), 3);
+        // A value may start with either end of the digit range.
+        assertEq(_attrNum(j, "Zero"), 0);
+        assertEq(_attrNum(j, "Nine"), 9);
         assertEq(vm.parseJsonInt(j, _at(_attrIndex(j, "Score"), ".value")), -150);
         assertEq(_attr(j, "Mood"), "calm");
     }

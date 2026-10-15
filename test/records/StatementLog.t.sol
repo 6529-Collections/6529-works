@@ -441,6 +441,15 @@ contract StatementLogTest is StatementLogFixture {
         _relay(
             Role.NONE, s, curatorSigner, 0, deadline, _sign(curatorKey, Role.NONE, s, 0, deadline)
         );
+        // Not even for the work's artist or its owner, who could sign in their own roles.
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.NONE, artist)
+        );
+        _relay(Role.NONE, s, artist, 0, deadline, _sign(artistKey, Role.NONE, s, 0, deadline));
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.NONE, tokenOwner)
+        );
+        _relay(Role.NONE, s, tokenOwner, 0, deadline, _sign(ownerKey, Role.NONE, s, 0, deadline));
     }
 
     function test_Relay_ERC1271ContractWalletArtist() public {
@@ -709,6 +718,29 @@ contract StatementLogTest is StatementLogFixture {
         }
     }
 
+    /// @dev The time of an entry is kept in full: past 2**32 seconds too.
+    function test_Append_RecordsATimePastTheYear2106() public {
+        vm.warp((uint256(1) << 32) + 9);
+        vm.recordLogs();
+        vm.prank(platform);
+        stmtLog.appendPlatform(_statement(address(0), 9));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        uint256 seen;
+        for (uint256 i; i < logs.length; ++i) {
+            if (!StatementModel.isAppended(logs[i], address(stmtLog))) continue;
+            assertEq(StatementModel.decode(logs[i]).recordedAt, (uint256(1) << 32) + 9);
+            ++seen;
+        }
+        assertEq(seen, 1);
+    }
+
+    /// @dev The algorithm numbers are stored in every statement and keep RC1's numbering.
+    function test_HashAlgorithms_KeepTheirNumbers() public pure {
+        assertEq(HASH_KECCAK256, 1);
+        assertEq(HASH_SHA256, 2);
+        assertEq(HASH_BLAKE3, 3);
+    }
+
     function test_Kinds_AreStableLabels() public pure {
         assertEq(StatementKinds.ARTIST_STATEMENT, keccak256("ARTIST_STATEMENT"));
         assertEq(StatementKinds.INTERVIEW, keccak256("INTERVIEW"));
@@ -838,6 +870,21 @@ contract StatementLogTest is StatementLogFixture {
         _append(Role.ARTIST, stranger, _statement());
     }
 
+    /// @dev New code whose hash sorts below the pinned one is refused too.
+    function test_Artist_AResolverCodeHashBelowThePinIsRefused() public {
+        bytes32 pinned = address(resolver).codehash;
+        bytes memory lower;
+        for (uint256 i; lower.length == 0; ++i) {
+            bytes memory code = abi.encodePacked(bytes1(0x60), bytes1(uint8(i)), bytes1(0x00));
+            if (keccak256(code) < pinned) lower = code;
+        }
+        vm.etch(address(resolver), lower);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
+        );
+        _append(Role.ARTIST, artist, _statement());
+    }
+
     function test_SetArtistResolver_StaleExpectedValueReverts() public {
         ArtistResolverMock next = new ArtistResolverMock();
         vm.expectRevert(IStatementLog.ExpectedValueMismatch.selector);
@@ -876,11 +923,20 @@ contract StatementLogTest is StatementLogFixture {
         );
         vm.prank(admin);
         stmtLog.setArtistResolver(r, address(next), bytes32(uint256(1)));
+        // A pinned hash above the code's is as wrong as one below it.
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
+        );
+        vm.prank(admin);
+        stmtLog.setArtistResolver(r, address(next), bytes32(type(uint256).max));
     }
 
     function test_SetArtistResolver_ZeroDisablesArtistStatements() public {
+        // No resolver pins no code, whatever hash the call names.
+        vm.expectEmit(address(stmtLog));
+        emit IStatementLog.ArtistResolverSet(address(resolver), address(0), bytes32(0));
         vm.prank(admin);
-        stmtLog.setArtistResolver(address(resolver), address(0), bytes32(0));
+        stmtLog.setArtistResolver(address(resolver), address(0), keccak256("ignored"));
         assertEq(stmtLog.artistResolver(), address(0));
         vm.expectRevert(
             abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.ARTIST, artist)

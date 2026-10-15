@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Tests: the first full mutation baseline
+  ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 9,606 mutants of
+  `src/` at 054442d, 88.5% killed by the campaign and 90.4% by the final suite (98.1% leaving
+  out the equivalent mutants), with every survivor triaged as equivalent, a gas margin,
+  defensive, caught by a Halmos proof, or a missing test. 62 new and 38 extended tests close
+  the gaps it found: one-sided comparisons (code hashes, interface IDs, sale kinds, license
+  keys either side of CC0), exact bounds and deadline seconds, constructor events, zero amounts
+  and indexes past an end. `tools/mutation-floors.json` now holds a kill-rate floor per
+  contract, which the weekly mutation run enforces; the open gaps are the next testing lane's
+  work list.
 - Tests organised by contract and function (F7b). The review-round files (`test/adv/`, the
   `Review*`, `ReviewRound2` and `FollowUp` suites) are folded into the suites of the contract and
   function they test, or into real-stack suites named for the behaviour they pin; no test is
