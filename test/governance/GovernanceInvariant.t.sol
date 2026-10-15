@@ -17,8 +17,10 @@ import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
 /// @notice Admins schedule random hostile operations alongside benign guardian and admin
 ///         rotations that really execute. Vigilant guardians (a random one each time) cancel
 ///         every hostile operation before time moves on; wrapped revocations that can never
-///         execute are left to mature. A model tracks who should hold which role. With
-///         `fail_on_revert`, any cancel the guardians are not entitled to fails the campaign.
+///         execute are left to mature. Guardians also suspend operational keys, and admins
+///         lift the suspensions with 30-day grants. A model tracks who should hold which role.
+///         With `fail_on_revert`, any cancel the guardians are not entitled to fails the
+///         campaign.
 contract GovernanceHandler is Test {
     struct Hostile {
         address caller;
@@ -32,7 +34,7 @@ contract GovernanceHandler is Test {
         address caller;
         bytes first;
         bytes second; // empty for a single call
-        uint8 kind; // 0 add guardian, 1 remove guardian, 2 add admin, 3 remove admin
+        uint8 kind; // 0 add guardian, 1 remove guardian, 2 add admin, 3 remove admin, 4 lift
         address subject;
     }
 
@@ -58,6 +60,14 @@ contract GovernanceHandler is Test {
     bool public hostileExecuted;
     bool public selfRescue;
     bool public benignFailed;
+    bool public adminCancelledRevocation;
+    bool public nonSuspendableSuspended;
+    /// @dev The fixed holders of suspendable roles, and the model of which are suspended.
+    GovernanceConfig.Grant[] internal keys;
+    mapping(address => bool) public suspendedKey;
+    uint256 public suspensions;
+    uint256 public lifts;
+    uint256 public revocationCancelAttempts;
     uint256 public benignExecuted;
     uint256 public hostileCancelled;
     uint256 public rescheduled;
@@ -87,6 +97,18 @@ contract GovernanceHandler is Test {
             granted[guardians[i]] = true;
         }
         granted[admins[0]] = true;
+        GovernanceConfig.Grant[] memory base = abi.decode(fixedGrants_, (GovernanceConfig.Grant[]));
+        for (uint256 i; i < base.length; ++i) {
+            if (Roles.isSuspendable(base[i].role)) keys.push(base[i]);
+        }
+    }
+
+    function keyCount() external view returns (uint256) {
+        return keys.length;
+    }
+
+    function keyAt(uint256 i) external view returns (uint64 role, address account) {
+        return (keys[i].role, keys[i].account);
     }
 
     // ------------------------------------------------------------------ model views
@@ -126,7 +148,8 @@ contract GovernanceHandler is Test {
         return manager.hashOperation(caller, to, data);
     }
 
-    /// @dev The configuration the model says is live: fixed holders plus active rotators.
+    /// @dev The configuration the model says is live: fixed holders that are not suspended,
+    ///      plus active rotators.
     function modelConfig() public view returns (GovernanceConfig.Config memory cfg) {
         GovernanceConfig.Grant[] memory base = abi.decode(fixedGrants, (GovernanceConfig.Grant[]));
         address[] memory guardians = activeGuardians();
@@ -135,6 +158,7 @@ contract GovernanceHandler is Test {
             new GovernanceConfig.Grant[](base.length + 2 * guardians.length + admins.length - 1);
         uint256 n;
         for (uint256 i; i < base.length; ++i) {
+            if (Roles.isSuspendable(base[i].role) && suspendedKey[base[i].account]) continue;
             cfg.grants[n++] = base[i];
         }
         for (uint256 i; i < guardians.length; ++i) {
@@ -143,6 +167,10 @@ contract GovernanceHandler is Test {
         }
         for (uint256 i = 1; i < admins.length; ++i) {
             cfg.grants[n++] = GovernanceConfig.Grant(Roles.ADMIN, admins[i]);
+        }
+        GovernanceConfig.Grant[] memory grants = cfg.grants;
+        assembly ("memory-safe") {
+            mstore(grants, n)
         }
         cfg.targets = abi.decode(targets, (GovernanceConfig.Target[]));
     }
@@ -327,7 +355,10 @@ contract GovernanceHandler is Test {
             vm.prank(op.caller);
             try manager.multicall(calls) {
                 ++benignExecuted;
-                if (op.kind == 0 || op.kind == 2) {
+                if (op.kind == 4) {
+                    suspendedKey[op.subject] = false;
+                    ++lifts;
+                } else if (op.kind == 0 || op.kind == 2) {
                     (granted[op.subject], activeAt[op.subject]) = (true, block.timestamp + 30 days);
                 } else {
                     granted[op.subject] = false;
@@ -366,6 +397,70 @@ contract GovernanceHandler is Test {
         delete inFlight[op.subject];
         benign[index] = benign[benign.length - 1];
         benign.pop();
+    }
+
+    /// @notice A guardian suspends a fixed operational key at once, and tries a role that is
+    ///         not suspendable, which must be refused.
+    function guardianSuspends(uint256 pick, uint256 who, uint64 otherRole) external {
+        address guardian = _pick(activeGuardians(), who);
+        GovernanceConfig.Grant memory key = keys[pick % keys.length];
+        if (!suspendedKey[key.account] && !inFlight[key.account]) {
+            vm.prank(guardian);
+            manager.suspend(key.role, key.account);
+            suspendedKey[key.account] = true;
+            ++suspensions;
+        }
+        otherRole = uint64(bound(otherRole, 0, Roles.COUNT - 1));
+        if (Roles.isSuspendable(otherRole)) return;
+        address victim = otherRole == Roles.ADMIN ? hot : _pick(activeGuardians(), pick);
+        vm.prank(guardian);
+        try manager.suspend(otherRole, victim) {
+            nonSuspendableSuspended = true;
+        } catch { }
+    }
+
+    /// @notice An admin schedules the lift of a suspended key (a 30-day grant to it), which
+    ///         the guardians let through.
+    function scheduleLift(uint256 pick, uint256 who) external {
+        GovernanceConfig.Grant memory key = keys[pick % keys.length];
+        if (!suspendedKey[key.account] || inFlight[key.account]) return;
+        address caller = _pick(_activeAdmins(), who);
+        bytes memory lift = abi.encodeCall(IAccessManager.grantRole, (key.role, key.account, 0));
+        bytes32 id = _id(caller, address(manager), lift);
+        if (manager.getSchedule(id) != 0) return;
+        vm.prank(caller);
+        manager.schedule(address(manager), lift, 0);
+        benignId[id] = true;
+        inFlight[key.account] = true;
+        benign.push(Benign(caller, lift, "", 4, key.account));
+    }
+
+    /// @notice An admin tries to cancel a revocation another account scheduled (Rule 3).
+    function adminCancelsOthersRevocation(uint256 index, uint256 who, bool fromBenign) external {
+        address caller;
+        address to = address(manager);
+        bytes memory data;
+        if (fromBenign) {
+            if (benign.length == 0) return;
+            Benign memory op = benign[index % benign.length];
+            if (op.kind != 1 && op.kind != 3) return;
+            (caller, data) = (op.caller, op.first);
+        } else {
+            (bool found, uint256 i) = _liveHostile(index);
+            if (!found) return;
+            Hostile memory op = hostile[i];
+            if (op.victim == address(0) || op.to != address(manager)) return;
+            (caller, to, data) = (op.caller, op.to, op.data);
+        }
+        if (bytes4(data) != IAccessManager.revokeRole.selector) return;
+        if (manager.getSchedule(_id(caller, to, data)) == 0) return;
+        address canceller = _pick(_activeAdmins(), who);
+        if (canceller == caller) return;
+        ++revocationCancelAttempts;
+        vm.prank(canceller);
+        try manager.cancel(caller, to, data) {
+            adminCancelledRevocation = true;
+        } catch { }
     }
 
     /// @notice The scheduler withdraws a hostile operation and schedules it again.
@@ -516,7 +611,7 @@ contract GovernanceInvariantTest is StdInvariant, GovernanceFixture {
         );
         configurator.verify(handler.modelConfig());
 
-        bytes4[] memory selectors = new bytes4[](8);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = GovernanceHandler.scheduleHostile.selector;
         selectors[1] = GovernanceHandler.scheduleBenign.selector;
         selectors[2] = GovernanceHandler.executeBenign.selector;
@@ -525,6 +620,9 @@ contract GovernanceInvariantTest is StdInvariant, GovernanceFixture {
         selectors[5] = GovernanceHandler.tryDirect.selector;
         selectors[6] = GovernanceHandler.trySelfRescue.selector;
         selectors[7] = GovernanceHandler.warp.selector;
+        selectors[8] = GovernanceHandler.guardianSuspends.selector;
+        selectors[9] = GovernanceHandler.scheduleLift.selector;
+        selectors[10] = GovernanceHandler.adminCancelsOthersRevocation.selector;
         targetSelector(FuzzSelector({ addr: address(handler), selectors: selectors }));
         targetContract(address(handler));
     }
@@ -562,5 +660,40 @@ contract GovernanceInvariantTest is StdInvariant, GovernanceFixture {
         (bool hotAdmin,) = manager.hasRole(Roles.ADMIN, adminSafe);
         assertTrue(hotAdmin);
         assertGe(handler.activeGuardians().length, 2, "fewer than two guardians");
+        assertFalse(handler.adminCancelledRevocation(), "an admin cancelled another's revocation");
+    }
+
+    /// Only suspendable roles are ever suspended, and a suspended holder never passes
+    /// `hasRole` or `canCall`. The suspension state matches the model.
+    function invariant_SuspensionsStayContained() public view {
+        assertFalse(handler.nonSuspendableSuspended(), "a non-suspendable role was suspended");
+        address[] memory accounts = new address[](guardianPool.length + adminPool.length + 3);
+        uint256 n;
+        for (uint256 i; i < guardianPool.length; ++i) {
+            accounts[n++] = guardianPool[i];
+        }
+        for (uint256 i; i < adminPool.length; ++i) {
+            accounts[n++] = adminPool[i];
+        }
+        (accounts[n++], accounts[n++], accounts[n++]) = (adminSafe, keeper, attacker);
+        for (uint64 role; role < Roles.COUNT; ++role) {
+            if (Roles.isSuspendable(role)) continue;
+            for (uint256 i; i < accounts.length; ++i) {
+                assertFalse(manager.isSuspended(role, accounts[i]), "non-suspendable suspended");
+            }
+        }
+        for (uint256 i; i < handler.keyCount(); ++i) {
+            (uint64 role, address key) = handler.keyAt(i);
+            bool suspended = manager.isSuspended(role, key);
+            assertEq(suspended, handler.suspendedKey(key), "suspension model");
+            (bool member,) = manager.hasRole(role, key);
+            assertEq(member, !suspended, "a suspended key is no member");
+            if (role == Roles.CURATOR) {
+                (bool immediate, uint32 delay) =
+                    manager.canCall(key, address(target), GovernedTargetMock.curate.selector);
+                assertEq(immediate, !suspended, "canCall");
+                assertEq(delay, 0);
+            }
+        }
     }
 }
