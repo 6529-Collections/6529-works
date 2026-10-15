@@ -107,9 +107,9 @@ contract DutchSaleTest is DutchBase {
         assertEq(dutch.openSaleOf(address(editions), LINEAR), saleId);
     }
 
-    /// @dev CALLS-1: terms that pay the revenue escrow as seller or fee recipient are refused at
-    ///      open.
-    function test_CALLS1_OpenSaleRefusesTheEscrowAsSellerOrFeeRecipient() public {
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
+    /// @dev Terms that pay the revenue escrow as seller or fee recipient are refused at open.
+    function test_OpenSale_RefusesTheEscrowAsSellerOrFeeRecipient() public {
         for (uint256 i; i < 2; ++i) {
             PrimaryTerms memory t = _terms(
                 SaleKind.DUTCH, CURRENCY_ETH, START, abi.encode(DutchParams(REST, DURATION, 0))
