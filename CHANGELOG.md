@@ -292,10 +292,6 @@
     after the dispute pause: the pause records, in spare bits of the sale's third slot, the
     chain position a later outcome must reach. An outcome recorded before the pause, or one
     about the package item, cannot cancel the auction.
-  - LIFECYCLE-4 (the auction's `cancel`): the cited dispute outcome must be the token's current
-    latest one and must differ from the latest at the dispute pause, which the auction records
-    (40 bits, in the sale's third slot). An outcome recorded before the pause, including one
-    about the package item before the mint, cannot cancel the auction.
   - MARKET-3: a federated auction pays its registry fee share to the economics resolver's
     federated network fee recipient, never to the recipient the token reports, as the
     fixed-price and Dutch adapters do. The auction's constructor takes the economics resolver
