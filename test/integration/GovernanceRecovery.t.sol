@@ -240,7 +240,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, "ar://mirror"));
+        records.addLocator(
+            tokenId,
+            fileId,
+            Locator(LocatorKind.ARWEAVE, "ar://M1rror0000000000000000000000000000000000000")
+        );
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
@@ -268,7 +272,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
         manager.execute(address(manager), lift);
         assertFalse(manager.isSuspended(Roles.PLATFORM, platform));
         vm.prank(platform);
-        records.addLocator(tokenId, fileId, Locator(LocatorKind.ARWEAVE, "ar://mirror"));
+        records.addLocator(
+            tokenId,
+            fileId,
+            Locator(LocatorKind.ARWEAVE, "ar://M1rror0000000000000000000000000000000000000")
+        );
     }
 
     /// @dev The other zero-delay operational roles close the same way; nobody but a guardian
