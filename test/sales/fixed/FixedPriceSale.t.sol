@@ -504,14 +504,57 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(seller.balance, total - _fee(total));
         assertEq(network.balance, _fee(total));
         assertEq(address(fixedSale).balance, 0);
-        assertEq(_bought(saleId, 0, bob), 3);
+        // An uncapped public phase counts nothing (QUALITY-1).
+        assertEq(_bought(saleId, 0, bob), 0);
     }
 
     function test_Purchase_RecipientDefaultsToPayer() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         _buyEth(alice, saleId, 0, address(0), 2, PRICE);
         assertEq(editions.balanceOf(alice, ETH_ED), 2);
-        assertEq(_bought(saleId, 0, alice), 2);
+        assertEq(_bought(saleId, 0, alice), 0, "an uncapped public phase counts nothing");
+    }
+
+    /// @dev QUALITY-1 (integrator decision): an uncapped public phase checks no count, so a
+    ///      purchase in it writes no adapter storage at all (the reentrancy guard is transient)
+    ///      and `purchased` stays zero.
+    function test_Purchase_UncappedPublicPhaseRecordsNothing() public {
+        uint256 saleId = _openPublic(ETH_ED, 0);
+        _buyEth(alice, saleId, 0, alice, 1, PRICE);
+        vm.deal(bob, PRICE);
+        vm.record();
+        vm.prank(bob);
+        fixedSale.purchase{ value: PRICE }(
+            _p(saleId, 0, bob, 1, 0, 0), new bytes32[](0), _eth(bob, PRICE)
+        );
+        (, bytes32[] memory writes) = vm.accesses(address(fixedSale));
+        assertEq(writes.length, 0, "no adapter storage written");
+        assertEq(editions.balanceOf(bob, ETH_ED), 1);
+        assertEq(_bought(saleId, 0, bob), 0);
+    }
+
+    /// @dev QUALITY-1: a capped public phase still counts, and its cap holds across reopened
+    ///      sales; purchases made earlier in an uncapped phase at the same index do not count
+    ///      against it.
+    function test_Purchase_CappedPublicPhaseCountsAcrossSales() public {
+        uint256 uncapped = _openPublic(ETH_ED, 0);
+        _buyEth(alice, uncapped, 0, alice, 3, PRICE);
+        vm.prank(creator);
+        fixedSale.closeSale(uncapped);
+        uint256 capped = _openPublic(ETH_ED, 2);
+        _buyEth(alice, capped, 0, alice, 2, PRICE);
+        assertEq(_bought(capped, 0, alice), 2, "only the capped phase's purchases count");
+        vm.prank(creator);
+        fixedSale.closeSale(capped);
+        uint256 again = _openPublic(ETH_ED, 2);
+        vm.deal(alice, PRICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(IFixedPriceSale.WalletCapExceeded.selector, again, 0, alice)
+        );
+        vm.prank(alice);
+        fixedSale.purchase{ value: PRICE }(
+            _p(again, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
+        );
     }
 
     function test_Purchase_PhaseWindowIsHalfOpen() public {

@@ -25,9 +25,10 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      payer in a payer-keyed phase, and the payer is always authenticated (`msg.sender`, or
 ///      the Permit2 signer): nobody can spend another wallet's leaf for themselves (PR #744's
 ///      High finding). Anyone may still pay for an allowlisted recipient; the tokens go to that
-///      recipient and count against its cap. Caps, public phases included, count per
+///      recipient and count against its cap. Caps, capped public phases included, count per
 ///      `(token, id, phase index, keyed wallet)` across sales, so reopening a token with the
-///      same tree never resets them; a fresh drop uses new phase indices. Any leaf price other
+///      same tree never resets them; a fresh drop uses new phase indices. An uncapped public
+///      phase (no root, no `walletCap`) counts nothing. Any leaf price other
 ///      than the package price, and any sale of an OPEN edition, needs the artist's approval
 ///      (MARKET-6): the creator opens the sale, or signs the typed
 ///      `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase), with a
@@ -176,7 +177,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @inheritdoc IFixedPriceSale
-    /// @dev Shared by every sale of `(token, id)` at that phase index.
+    /// @dev Shared by every sale of `(token, id)` at that phase index; an uncapped public phase
+    ///      adds nothing.
     function purchased(address token, uint256 id, uint256 phase, address account)
         external
         view
@@ -272,7 +274,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @dev Checks the phase is open (its window moved by the schedule's delay, MARKET-1), the
-    ///      leaf, the price and the caps; counts the purchase; returns the unit price.
+    ///      leaf, the price and the caps; counts the purchase in a capped phase (an allowlist, or
+    ///      a nonzero `walletCap`); returns the unit price.
     function _admit(Purchase calldata p, bytes32[] calldata proof, address payer, address recipient)
         private
         returns (uint256 unit)
@@ -296,6 +299,9 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
             // Only an approved sale has leaf-priced phases (`openSale`).
             if (phase.leafPriced) unit = p.leafPrice;
         }
+        // An uncapped public phase checks no count, so it records none (QUALITY-1): a per-wallet
+        // cap counts only the purchases made in capped phases.
+        if (phase.root == 0 && phase.walletCap == 0) return unit;
         address token = l.token;
         uint256 id = l.id;
         uint256 bought = _purchased[token][id][p.phase][account] + p.quantity;

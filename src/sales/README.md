@@ -160,8 +160,8 @@ how gifts are pushed, and it means a third party can spend a recipient's
 allowance by buying it for them.
 
 **Caps** count per `(token, id, phase index, keyed wallet)` across sales, read
-with `purchased(token, id, phase, account)`. Public phases share counts by
-phase index too. Reopening a token with the same tree never resets them; a
+with `purchased(token, id, phase, account)`. Capped public phases share counts
+by phase index too. Reopening a token with the same tree never resets them; a
 deliberately fresh drop uses new phase indices. That means padding: the new
 sale keeps placeholder phases (for example, already-ended windows) at the old
 indices and puts the new phases after them, within `Limits.MAX_PHASES` (16)
@@ -169,6 +169,15 @@ per sale. Placeholders count toward `SaleStarted.startTime`, the earliest phase
 start. An allowlist phase enforces the
 leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
 enforces `walletCap` per recipient.
+
+Only capped phases count: an allowlist phase, or a public phase with a nonzero
+`walletCap` (integrator decision on QUALITY-1). An uncapped public phase (no
+root, `walletCap` zero) checks no count, so it records none: its purchases
+leave `purchased` unchanged. A per-wallet cap therefore counts only the
+purchases made in capped phases, and a later capped phase that reuses the index
+of an uncapped one starts every wallet at zero. Not recording saves each new
+buyer in an uncapped phase a new storage slot, about 111,000 gas on Sepolia
+([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)).
 
 **Leaf prices need the artist** (integrator decision 4, widened by MARKET-6). A
 leaf-priced phase, whose leaves set prices below or above the package price, is

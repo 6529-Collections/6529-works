@@ -74,8 +74,8 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant CONSUME_CEILING = 99_000;
     uint256 internal constant CREATE_EDITION_CEILING = 331_000;
     uint256 internal constant OPEN_SALE_CEILING = 299_000;
-    uint256 internal constant PURCHASE_FIRST_CEILING = 195_000;
-    uint256 internal constant PURCHASE_LATER_CEILING = 181_000;
+    uint256 internal constant PURCHASE_FIRST_CEILING = 175_000;
+    uint256 internal constant PURCHASE_LATER_CEILING = 157_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
@@ -653,7 +653,8 @@ contract IntegrationGasReport is IntegrationBase {
         saleId = abi.decode(ret, (uint256));
     }
 
-    /// @dev The edition's first copy, to a new holder: the mint path's one-time records.
+    /// @dev The edition's first copy, to a new holder: the mint path's one-time records. The phase
+    ///      is public and uncapped, so the adapter records no purchase count (QUALITY-1).
     function _rowPurchaseFirst() internal returns (Row memory r) {
         uint256 saleId = _openEditionSale();
         address buyer = makeAddr("firstCopyBuyer");
@@ -665,7 +666,7 @@ contract IntegrationGasReport is IntegrationBase {
             EDITION_PRICE
         );
         _gasAtMost(r, PURCHASE_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 3, 0);
+        _growthIs(r, 2, 0);
     }
 
     function _rowPurchaseLater() internal returns (Row memory r) {
@@ -685,7 +686,7 @@ contract IntegrationGasReport is IntegrationBase {
             EDITION_PRICE
         );
         _gasAtMost(r, PURCHASE_LATER_CEILING, "regression ceiling");
-        _growthIs(r, 2, 0);
+        _growthIs(r, 1, 0);
     }
 
     // ------------------------------------------------------------------ identity
