@@ -96,6 +96,51 @@ contract OversizedConsolidationSource is InterfaceStub {
     }
 }
 
+/// @notice A governed consolidation source whose reads fail on demand: its scan
+///         (`consolidations`, `establishedWallets`), its direct checks (`effectiveAt`,
+///         `isEstablished`), or both, with `DelegationReadFailed` (an outage) or with another
+///         error. When nothing fails it reports no consolidation.
+contract FailingConsolidationSource is InterfaceStub {
+    error Broken();
+
+    bool public failScan;
+    bool public failDirect;
+    bool public otherError;
+
+    constructor() InterfaceStub(type(IConsolidationSource).interfaceId) { }
+
+    function set(bool scan, bool direct, bool other) external {
+        (failScan, failDirect, otherError) = (scan, direct, other);
+    }
+
+    function establishedWallets(address) external view returns (address[] memory wallets) {
+        if (failScan) _fail();
+    }
+
+    function consolidations(address)
+        external
+        view
+        returns (address[] memory wallets, uint64[] memory times)
+    {
+        if (failScan) _fail();
+    }
+
+    function isEstablished(address, address) external view returns (bool) {
+        if (failDirect) _fail();
+        return false;
+    }
+
+    function effectiveAt(address, address) external view returns (uint64) {
+        if (failDirect) _fail();
+        return 0;
+    }
+
+    function _fail() private view {
+        if (otherError) revert Broken();
+        revert IConsolidationSource.DelegationReadFailed(address(this));
+    }
+}
+
 /// @notice The economics split factory's `isWallet`, settable by tests.
 contract SplitFactoryWalletsMock {
     mapping(address => bool) public isWallet;

@@ -210,7 +210,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _artists[artistId] = Artist(identity, uint64(block.timestamp), 0);
         artistIdOf[account] = artistId;
         emit ArtistRegistered(artistId, identity);
-        _refresh(artistId, account);
+        _refresh(artistId, account, true);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -374,7 +374,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         delete _pending[artistId];
         _recordActivity(artistId, a);
         emit ChangeExecuted(artistId, previous, next);
-        _refresh(artistId, next.authority);
+        _refresh(artistId, next.authority, true);
         return true;
     }
 
@@ -383,7 +383,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         Artist storage a = _artist(artistId);
         _requireSigner(artistId, a, msg.sender);
         _recordActivity(artistId, a);
-        _refresh(artistId, a.identity.authority);
+        _refresh(artistId, a.identity.authority, false);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -397,7 +397,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function refreshStanding(uint256 artistId) external {
-        _refresh(artistId, _artist(artistId).identity.authority);
+        _refresh(artistId, _artist(artistId).identity.authority, false);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -617,7 +617,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         uint64 delay
     ) private {
         address current = a.identity.authority;
-        _refresh(artistId, current);
+        _refresh(artistId, current, false);
         Standing[] storage snapshot = _standing[artistId];
         address[] memory cancellers = new address[](snapshot.length);
         uint256 n;
@@ -644,10 +644,31 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @dev Updates recorded entries (a wallet absent from the bounded scan is checked directly
     ///      before it is marked missing), removes those missing for {STANDING_GRACE} and pending
     ///      ones found missing (they never had standing), then records new consolidations in free
-    ///      slots, established before pending. Nothing is evicted.
-    function _refresh(uint256 artistId, address authority) private {
+    ///      slots, established before pending. Nothing is evicted. When `bestEffort` (registration
+    ///      and execution), a source read failing with `DelegationReadFailed` ends the refresh
+    ///      ({StandingRefreshSkipped}) instead of reverting: what it already applied came from
+    ///      successful reads, and skipping the rest removes nobody's standing. Staging,
+    ///      heartbeats and `refreshStanding` fail closed.
+    function _refresh(uint256 artistId, address authority, bool bestEffort) private {
         IConsolidationSource source = consolidationSource;
-        (address[] memory live, uint64[] memory times) = source.consolidations(authority);
+        try source.consolidations(authority) returns (
+            address[] memory live, uint64[] memory times
+        ) {
+            _update(artistId, source, authority, live, times, bestEffort);
+        } catch (bytes memory reason) {
+            _skipRefresh(artistId, reason, bestEffort);
+        }
+    }
+
+    /// @dev {_refresh} after the scan: `live` and `times` are the authority's consolidations.
+    function _update(
+        uint256 artistId,
+        IConsolidationSource source,
+        address authority,
+        address[] memory live,
+        uint64[] memory times,
+        bool bestEffort
+    ) private {
         if (live.length > 2 * Limits.MAX_CANCELLERS || times.length != live.length) {
             revert InvalidSource(address(source));
         }
@@ -656,10 +677,21 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             Standing storage e = s[i - 1];
             address wallet = e.wallet;
             uint64 since = _effectiveIn(live, times, wallet);
-            if (since == 0) since = source.effectiveAt(authority, wallet);
+            if (since == 0) {
+                try source.effectiveAt(authority, wallet) returns (uint64 at) {
+                    since = at;
+                } catch (bytes memory reason) {
+                    return _skipRefresh(artistId, reason, bestEffort);
+                }
+            }
             if (since != 0) {
-                // forge-lint: disable-next-line(unsafe-typecast)
-                if (since < e.effectiveAt) e.effectiveAt = uint48(since);
+                // A pending entry follows its live clock, later as well as earlier (a revocation
+                // and re-registration no refresh saw); an established one only moves earlier.
+                // forge-lint: disable-next-line(block-timestamp)
+                if (since < e.effectiveAt || e.effectiveAt > block.timestamp) {
+                    // forge-lint: disable-next-line(unsafe-typecast)
+                    e.effectiveAt = uint48(since);
+                }
                 if (e.missingSince != 0) {
                     e.missingSince = 0;
                     emit StandingAdded(artistId, wallet, e.effectiveAt);
@@ -670,11 +702,10 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 e.missingSince = uint48(block.timestamp);
                 emit StandingMissing(artistId, wallet);
                 // A pending entry found missing never had standing: its consolidation ended
-                // before its 30 days, so it goes at once (ADR 0001 section 11).
-            } else if (
+                // before its 30 days, so it goes at once (ADR 0001 section 11). Its missingSince is
+                // zero, so the grace check below always holds for it.
                 // forge-lint: disable-next-line(block-timestamp)
-                e.missingSince == 0 || block.timestamp >= uint256(e.missingSince) + STANDING_GRACE
-            ) {
+            } else if (block.timestamp >= uint256(e.missingSince) + STANDING_GRACE) {
                 s[i - 1] = s[s.length - 1];
                 s.pop();
                 emit StandingRemoved(artistId, wallet);
@@ -692,6 +723,21 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 emit StandingAdded(artistId, live[i], times[i]);
             }
         }
+    }
+
+    /// @dev Ends a best-effort refresh on the source's `DelegationReadFailed`; rethrows any other
+    ///      failure, and every failure of a refresh that must succeed.
+    function _skipRefresh(uint256 artistId, bytes memory reason, bool bestEffort) private {
+        if (
+            !bestEffort || reason.length != 36
+                // forge-lint: disable-next-line(unsafe-typecast)
+                || bytes4(reason) != IConsolidationSource.DelegationReadFailed.selector
+        ) {
+            assembly ("memory-safe") {
+                revert(add(reason, 0x20), mload(reason))
+            }
+        }
+        emit StandingRefreshSkipped(artistId);
     }
 
     function _effectiveIn(address[] memory list, uint64[] memory times, address wallet)

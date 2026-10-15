@@ -139,8 +139,8 @@ no ceiling, or not run on Sepolia.
 | `openSale` (one public phase) | 286,584 | 293,000 (regression) | 8 | 0 | 993,668 |
 | `purchase`, the first copy, new holder | 190,597 | 195,000 (regression) | 3 | 0 | 468,086 |
 | `purchase`, a later copy, new holder | 173,497 | 177,000 (regression) | 2 | 0 | 370,142 |
-| `refreshStanding`, a first wallet | 127,820 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
-| `refreshStanding`, a further wallet | 157,132 | 161,000 (regression) | 1 | 0 | 247,970 |
+| `refreshStanding`, a first wallet | 127,467 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
+| `refreshStanding`, a further wallet | 156,864 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 45,853 | 50,000 of execution | 0 | 0 | 40,667 |
 | `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
 

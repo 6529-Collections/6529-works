@@ -91,4 +91,8 @@
   returns too much reverts with `DelegationReadFailed`. `READ_GAS` rises from 50,000 to 200,000.
   SIGS-3: an account that has been an artist's authority can never become its authority again
   (A, then B, then A reverts with `AccountTaken`), so its unused move, consent and acceptance
-  signatures stay void after a rotation.
+  signatures stay void after a rotation (recorded in ADR 0003). Review follow-ups: a pending
+  standing entry follows its live consolidation's clock in both directions; registration and
+  execution skip their standing refresh when the source cannot read (`StandingRefreshSkipped`),
+  while staging, heartbeats and `refreshStanding` still fail closed; `DelegationReadFailed`
+  moves to `IConsolidationSource`.

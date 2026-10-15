@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
+import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
@@ -318,7 +319,7 @@ contract ConsolidationAdapterTest is IdentityFixture {
     }
 
     function _readFailed(address target) internal pure returns (bytes memory) {
-        return abi.encodeWithSelector(ConsolidationAdapter.DelegationReadFailed.selector, target);
+        return abi.encodeWithSelector(IConsolidationSource.DelegationReadFailed.selector, target);
     }
 
     /// @dev Every read of `a2` reverts with `err`.

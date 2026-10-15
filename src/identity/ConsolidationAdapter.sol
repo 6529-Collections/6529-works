@@ -45,13 +45,14 @@ interface IDelegationManagement {
 ///
 ///      Every read forwards exactly {READ_GAS} and reverts when the caller cannot forward it
 ///      (`BoundedCall.BoundedCallInsufficientGas`), so a caller choosing its gas limit cannot
-///      truncate a walk. Reads fail closed: only a revert with no data that left most of the
-///      stipend unspent is the end of an array. A read that exhausts the stipend (out of gas),
-///      reverts with data or returns too much reverts with {DelegationReadFailed}, so a repriced
-///      or broken source halts the registry's identity calls instead of reading as "not
-///      consolidated". The getters cost at most about 16K gas cold (a `GlobalData` read is seven
-///      cold slots); the 200K stipend leaves room for a large repricing, and only the gas used
-///      is paid. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
+///      truncate a walk. Reads fail closed: only a revert with no data that did not fully exhaust
+///      the stipend is the end of an array. A read that exhausts the stipend (out of gas),
+///      reverts with data or returns too much reverts with
+///      `IConsolidationSource.DelegationReadFailed`, so a repriced or broken source halts the
+///      registry's identity calls (registration and execution skip their refresh instead)
+///      rather than reading as "not consolidated". The getters cost at most about 16K gas cold
+///      (a `GlobalData` read is seven cold slots); the 200K stipend leaves room for a large
+///      repricing, and only the gas used is paid. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
 ///      {MAX_REGISTRATIONS_READ} registrations per direction.
 ///
 ///      This is a live view, and the account's keys control it: its own key, and any use-case-998
@@ -77,9 +78,6 @@ contract ConsolidationAdapter is IConsolidationSource {
 
     /// @notice The delegation address has no code.
     error NoDelegationCode(address delegation);
-    /// @notice A read of the delegation contract failed for a reason other than an index past
-    ///         the end of its array: it ran out of gas, reverted with data or returned too much.
-    error DelegationReadFailed(address delegation);
 
     /// @param delegation_ The 6529 delegation contract (`0x2202…f43d` on mainnet).
     constructor(IDelegationManagement delegation_) {
@@ -181,8 +179,8 @@ contract ConsolidationAdapter is IConsolidationSource {
     }
 
     /// @dev One getter call forwarding exactly {READ_GAS}. Returns false only for an index past
-    ///      the end of the array: a revert with no data that left most of the stipend unspent.
-    ///      Reverts with {DelegationReadFailed} on any other failure. The gas check and the
+    ///      the end of the array: a revert with no data that did not fully exhaust the stipend.
+    ///      Reverts with `DelegationReadFailed` on any other failure. The gas check and the
     ///      warm-up mirror `BoundedCall.tryRead`.
     function _read(bytes memory input, uint256 maxReturn)
         private

@@ -145,6 +145,10 @@ A refresh does three things:
   before its 30 days, so it never had standing (ADR 0001 §11), and a later
   consolidation starts a new 30 days
   (`test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`).
+  A pending entry also follows its live consolidation's clock when a refresh
+  finds it re-registered later, so a revocation and re-registration that no
+  refresh saw does not keep the earlier date
+  (`test_Standing_PendingEntryFollowsALaterReRegistration`).
   The registry cannot tell when a consolidation ended, only when a refresh
   observed it. An entry first found missing after its `effectiveAt` is
   treated as an established wallet gone missing, so an artist who revokes a
@@ -277,12 +281,26 @@ registration read is seven cold slots), and only the gas used is paid.
 no revert data: the deployed contract is compiled with solc 0.8.18, and
 Solidity's array getters revert without a `Panic` code. That, and only that,
 ends a walk. A read that spends the whole stipend (out of gas), reverts with
-data, or returns more than expected reverts with `DelegationReadFailed`. A
-repricing or a broken source therefore makes registration, staging, execution,
-heartbeats and refreshes revert until the source is fixed or swapped
-(`setConsolidationSource`, 30 days). It never reads as "not consolidated",
-which would mark every recorded wallet missing and remove it after the grace
-(`test_SourceReadFailure_FailsClosed`).
+data, or returns more than expected reverts with
+`IConsolidationSource.DelegationReadFailed`. It never reads as "not
+consolidated", which would mark every recorded wallet missing and remove it
+after the grace.
+
+**During a source outage** (a repricing, or a broken source), until the source
+is fixed or swapped (`setConsolidationSource`, 30 days):
+- staging, heartbeats and `refreshStanding` revert (fail closed);
+- registration (a first package acceptance) and execution (`executeChange`, an
+  upheld `resolveContested`) go ahead and skip their standing refresh, emitting
+  `StandingRefreshSkipped(artistId)`. Skipping removes nobody's standing: the
+  snapshot keeps what it had, and a refresh stops at the first failed read.
+  Only the source's `DelegationReadFailed` is skipped; any other failure still
+  reverts;
+- once reads work again, `refreshStanding` for each artist in a
+  `StandingRefreshSkipped` event catches up.
+
+`test_SourceReadFailure_FailsClosed`,
+`test_SourceReadFailure_ExecutionSkipsTheRefresh` and
+`test_SourceReadFailure_OnlyTheOutageErrorIsSkipped` cover this.
 
 `consolidations` returns every consolidated wallet the 32-entry scan sees, with
 its `effectiveAt`. `effectiveAt(account, wallet)` checks one pair directly.
@@ -394,13 +412,13 @@ one of the 16 directly checked recorded wallets, needs 8 cold registration
 reads, because the forward padding sits beyond the 32-entry scan window. At the
 measured call, the 16 recorded wallets age out and 16 scanned wallets are
 recorded (and, for a staging, captured):
-- `stageOverride`: about 7.46M gas to execute;
-- `stageChange`: about 7.44M gas;
-- `refreshStanding`: about 6.82M gas.
+- `stageOverride`: about 5.33M gas to execute;
+- `stageChange`: about 5.31M gas;
+- `refreshStanding`: about 4.66M gas.
 
-That is about 45% of the 16,777,216-gas EIP-7825 transaction cap. The tests
+That is about a third of the 16,777,216-gas EIP-7825 transaction cap. The tests
 assert each stays under half of the cap, including intrinsic and calldata gas.
 
-One direct check (`effectiveAt`, 8 cold reads) costs about 130K gas.
+One direct check (`effectiveAt`, 8 cold reads) costs about 129K gas.
 `establishedWallets` alone, over 32 distinct cold entries, costs about 2.8M
 gas.

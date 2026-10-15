@@ -14,9 +14,14 @@ import { ArtistIdentity, ChangeKind, PendingChange, Standing } from "./types/Ide
 ///      expiry dates directly: a wallet counts only if its consolidation with `account` is at
 ///      least 30 days old and not expired. Use case 997 (primary address) is never used as a
 ///      payout. A 6529-chain source replaces it through a 30-day governed swap. A source must
-///      fail closed: when it cannot read its data, it reverts instead of answering "not
-///      consolidated", which would strip recorded standing.
+///      fail closed: when it cannot read its data, it reverts with {DelegationReadFailed}
+///      instead of answering "not consolidated", which would strip recorded standing.
 interface IConsolidationSource is IERC165 {
+    /// @notice A read of the underlying data failed for a reason other than its end (out of
+    ///         gas, a revert with data, or oversized return data). The artist registry skips a
+    ///         registration's or an execution's standing refresh on it, and reverts elsewhere.
+    error DelegationReadFailed(address delegation);
+
     /// @notice `account`'s established consolidated wallets, at most `Limits.MAX_CANCELLERS`.
     function establishedWallets(address account) external view returns (address[] memory);
     /// @notice Whether `wallet` is an established consolidated wallet of `account` now.
@@ -49,9 +54,10 @@ interface IConsolidationSource is IERC165 {
 ///      Every change of authority, payout or profile is staged, waits, and can be cancelled. At
 ///      staging and again at execution, `next.authority` must be the current authority or an
 ///      account that has never been an authority, and not reserved by another artist's pending
-///      change; a new authority must sign its acceptance (two-sided). Staging reserves a new authority for the artist
-///      (`reservedFor`) until the change executes or ends, so neither `register` (a package
-///      acceptance) nor another artist's change can take it meanwhile (`AccountTaken`):
+///      change; a new authority must sign its acceptance (two-sided). Staging reserves a new
+///      authority for the artist (`reservedFor`) until the change executes or ends, so neither
+///      `register` (a package acceptance) nor another artist's change can take it meanwhile
+///      (`AccountTaken`):
 ///      - STANDARD changes are staged by the authority or an established consolidated wallet,
 ///        wait 7 days, and may be cancelled by the previous authority or any consolidated wallet
 ///        captured at staging, or vetoed by the guardian (which blocks but never redirects);
@@ -133,6 +139,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     event StandingMissing(uint256 indexed artistId, address indexed wallet);
     /// @notice A wallet lost recovery standing after its grace period.
     event StandingRemoved(uint256 indexed artistId, address indexed wallet);
+    /// @notice A registration's or an execution's standing refresh was skipped because the
+    ///         consolidation source could not read (`IConsolidationSource.DelegationReadFailed`).
+    ///         Skipping removes nobody's standing; `refreshStanding` catches up later.
+    event StandingRefreshSkipped(uint256 indexed artistId);
 
     /// @notice No artist has this ID.
     error UnknownArtist(uint256 artistId);
@@ -194,7 +204,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Creates an identity for `authority` with ID `uint256(uint160(authority))` and
     ///         payout `authority`, and counts as its first activity. Bound package registry only,
     ///         after it verified the signed acceptance. Reverts with `AccountTaken` if mapped, or
-    ///         reserved as a pending change's next authority.
+    ///         reserved as a pending change's next authority. If the consolidation source cannot
+    ///         read, it registers anyway and skips the standing refresh (`StandingRefreshSkipped`).
     function register(address authority, bytes32 profileId, bytes32 profileDocHash)
         external
         returns (uint256 artistId);
@@ -248,7 +259,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Applies a due, uncontested change. Permissionless. If the next identity is no
     ///         longer valid (its payout is now rejected; its authority is reserved, so it cannot
     ///         be taken), the change is cleared with `ChangeCancelled(artistId, address(this),
-    ///         false)` instead of reverting, so a stale change cannot keep the payout frozen.
+    ///         false)` instead of reverting, so a stale change cannot keep the payout frozen. If
+    ///         the consolidation source cannot read, the change applies and its standing refresh
+    ///         is skipped (`StandingRefreshSkipped`).
     function executeChange(uint256 artistId) external;
     /// @notice Records signed activity. Callable by the authority or an established consolidated
     ///         wallet. Never on the auction-start path.

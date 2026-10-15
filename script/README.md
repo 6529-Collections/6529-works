@@ -460,7 +460,7 @@ The record is only an index; each check is made against the chain or the committ
 
 `ArtistRegistry.refreshStanding(artistId)` is permissionless and does not count as artist
 activity. One refresh any time after a consolidation records the wallet; a consolidation
-younger than 30 days is recorded as pending. The worst case was measured at about 6.8M gas
+younger than 30 days is recorded as pending. The worst case was measured at about 4.7M gas
 with Prague costs. A refresh writes new storage slots, which Glamsterdam reprices, so
 re-measure it on Sepolia before relying on that figure.
 
@@ -476,6 +476,17 @@ re-measure it on Sepolia before relying on that figure.
   cast send <ArtistRegistry> "refreshStanding(uint256)" <artistId> \
     --rpc-url "$SEPOLIA_RPC_URL" --account <artist>
   ```
+
+- **If the consolidation source cannot read** (a call reverts with
+  `DelegationReadFailed`, for example after a gas repricing): staging, heartbeats and
+  `refreshStanding` revert until it is fixed. Registrations and executions go ahead and skip
+  their standing refresh, emitting `StandingRefreshSkipped(artistId)`; nobody loses standing.
+  1. Confirm the failure with a direct read of the adapter (`effectiveAt`) and of the
+     delegation contract.
+  2. If the adapter needs replacing, deploy and review a new one and schedule
+     `setConsolidationSource` (SUCCESSOR_SETTER, 30 days).
+  3. Once reads work, call `refreshStanding` for every artist ID in a `StandingRefreshSkipped`
+     event since the outage began.
 
 ## Admin recovery
 

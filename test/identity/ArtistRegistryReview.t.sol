@@ -283,6 +283,29 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(_entry(planted).missingSince, 0);
     }
 
+    /// @dev IDENTITY-3, review of #51 (L1): a pending entry follows its live consolidation's
+    ///      clock, later as well as earlier. Revoked on day 1 with no refresh, re-registered on
+    ///      day 10 and then refreshed, it is pending until day 40, not day 30, so it is not
+    ///      captured on day 30 while its live pair is only 20 days old.
+    function test_Standing_PendingEntryFollowsALaterReRegistration() public {
+        address planted = makeAddr("planted");
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).effectiveAt, t0 + 30 days);
+        vm.warp(t0 + 1 days);
+        _revoke(artist, planted); // the artist revokes, and nobody refreshes
+        vm.warp(t0 + 10 days);
+        _delegate(artist, planted, FAR); // re-registered (a sub-delegate or a leaked key)
+        registry.refreshStanding(artistId);
+        assertEq(adapter.effectiveAt(artist, planted), t0 + 40 days);
+        assertEq(_entry(planted).effectiveAt, t0 + 40 days, "follows the live clock");
+        vm.warp(t0 + 30 days);
+        assertFalse(adapter.isEstablished(artist, planted), "live pair only 20 days old");
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        assertFalse(_inCancellers(planted), "not captured before its live 30 days");
+    }
+
     /// @dev IDENTITY-3, control: without a refresh observing the revocation before the recorded
     ///      `effectiveAt`, a refresh after it cannot tell when the consolidation ended, and treats
     ///      the entry as an established wallet gone missing. The artist's own refresh after
@@ -630,7 +653,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         vm.warp(block.timestamp + 30 days);
     }
 
-    /// @dev About 7.44M gas: under half of the 16,777,216 EIP-7825 cap with calldata included.
+    /// @dev About 5.31M gas: under half of the 16,777,216 EIP-7825 cap with calldata included.
     function test_WorstCase_StageChangeGas() public {
         _setupWorstCase();
         ArtistIdentity memory next = _identity(newAuthority, payout);
@@ -648,7 +671,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used + 21_000 + 16 * 900, 16_777_216 / 2);
     }
 
-    /// @dev About 7.46M gas.
+    /// @dev About 5.33M gas.
     function test_WorstCase_StageOverrideGas() public {
         _setupWorstCase();
         bytes32 evidence = keccak256("evidence");
@@ -668,7 +691,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used + 21_000 + 16 * 900, 16_777_216 / 2);
     }
 
-    /// @dev About 6.82M gas.
+    /// @dev About 4.66M gas.
     function test_WorstCase_RefreshStandingGas() public {
         _setupWorstCase();
         _coolAll();
@@ -680,7 +703,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used + 21_000, 16_777_216 / 2);
     }
 
-    /// @dev One direct check is bounded at 8 reads (4 per direction) of 50K gas each.
+    /// @dev One direct check is bounded at 8 reads (4 per direction), about 129K gas all cold,
+    ///      well under 50K per read (each read may use up to `READ_GAS`, 200K).
     function test_WorstCase_DirectCheckBoundedAtEightReads() public {
         _setupWorstCase();
         vm.cool(address(delegation));

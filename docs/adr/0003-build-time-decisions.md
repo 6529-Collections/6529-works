@@ -206,6 +206,22 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Payout freeze.** The payout returns zero only while a pending change or
   override would move it. A change that cannot execute is cleared rather than
   left blocking.
+- **No return to an earlier authority (review finding SIGS-3, 14 October
+  2026).** A change's new authority must be the current authority or an
+  account that has never been an authority, of any artist; a return (A, then
+  B, then A) reverts with `AccountTaken`, for STANDARD changes and overrides.
+  - Why it suffices: every consumer of an artist's signature (move
+    authorizations, package acceptances, fixed-price consents, record consents,
+    signed ARTIST statements) checks it against the current authority when it
+    is used. A key the artist rotated away from is never that again, so the
+    signatures it left unused never verify again. No typehash binds an
+    authority epoch.
+  - The trade-off: an artist can never return to an earlier key or wallet, not
+    even through governance. A recovery, or a rotation back from a temporary
+    device, needs a fresh key or Safe.
+  - The residual: a new authority that is an ERC-1271 or EIP-7702 wallet and
+    accepts the old key's signatures revives them. That is the artist's own
+    configuration of its new authority.
 - **Activity that resets the one-year dormancy clock:**
   - registration;
   - a staged change;

@@ -19,6 +19,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
 import {
     EditionsMastersMock,
+    FailingConsolidationSource,
     FederationRegistryStub,
     OversizedConsolidationSource,
     PackageRegistryStub,
@@ -885,9 +886,10 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     /// @dev IDENTITY-4: a repriced read within the stipend's headroom changes nothing, and a read
-    ///      that exhausts it makes every identity call that reads the source revert instead of
-    ///      reading "not consolidated". The recorded wallet is never marked missing, and its
-    ///      standing is intact once reads work again.
+    ///      that exhausts it makes staging, heartbeats and refreshes revert instead of reading
+    ///      "not consolidated", while a registration goes ahead and skips its refresh (review
+    ///      L3). The recorded wallet is never marked missing, and its standing is intact once
+    ///      reads work again.
     function test_SourceReadFailure_FailsClosed() public {
         RepricedDelegationMock repriced = new RepricedDelegationMock(delegation);
         ConsolidationAdapter source =
@@ -906,7 +908,7 @@ contract ArtistRegistryTest is IdentityFixture {
         // Reads that exhaust their gas: every call that reads the source reverts.
         repriced.setExtraGas(type(uint256).max);
         bytes memory err = abi.encodeWithSelector(
-            ConsolidationAdapter.DelegationReadFailed.selector, address(repriced)
+            IConsolidationSource.DelegationReadFailed.selector, address(repriced)
         );
         vm.expectRevert(err);
         registry.refreshStanding(artistId);
@@ -915,8 +917,11 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.heartbeat(artistId);
         _armRevert(err);
         _stage(artistKey, _identity(artist, payout), 0);
-        vm.expectRevert(err);
-        _register(stranger);
+        uint256 strangerId = uint160(stranger);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(strangerId);
+        assertEq(_register(stranger), strangerId, "registration goes ahead");
+        assertEq(registry.standingOf(strangerId).length, 0);
 
         repriced.setExtraGas(0);
         registry.refreshStanding(artistId);
@@ -926,6 +931,73 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(s[0].missingSince, 0, "standing intact");
         vm.prank(wallet);
         registry.heartbeat(artistId);
+    }
+
+    /// @dev Review L3: an execution during a source outage applies the change and skips its
+    ///      standing refresh, so a due recovery is never blocked and nobody loses standing; a
+    ///      later `refreshStanding` catches up once the source reads again.
+    function test_SourceReadFailure_ExecutionSkipsTheRefresh() public {
+        RepricedDelegationMock repriced = new RepricedDelegationMock(delegation);
+        ConsolidationAdapter source =
+            new ConsolidationAdapter(IDelegationManagement(address(repriced)));
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(adapter, source, address(source).codehash);
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+
+        repriced.setExtraGas(type(uint256).max);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority, "applied");
+        Standing[] memory s = registry.standingOf(artistId);
+        assertEq(s.length, 1);
+        assertEq(s[0].missingSince, 0, "nobody's standing changed");
+
+        repriced.setExtraGas(0);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp, "caught up");
+    }
+
+    /// @dev Review L3: only the source's `DelegationReadFailed` is skipped, in the scan and in a
+    ///      recorded wallet's direct check; any other failure still reverts a registration or an
+    ///      execution, and the fail-closed calls revert on both.
+    function test_SourceReadFailure_OnlyTheOutageErrorIsSkipped() public {
+        FailingConsolidationSource failing = new FailingConsolidationSource();
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(address(failing)), address(failing).codehash
+        );
+        bytes memory outage = abi.encodeWithSelector(
+            IConsolidationSource.DelegationReadFailed.selector, address(failing)
+        );
+
+        failing.set(true, false, true);
+        vm.expectRevert(FailingConsolidationSource.Broken.selector);
+        _register(stranger);
+        failing.set(false, true, true);
+        vm.expectRevert(FailingConsolidationSource.Broken.selector);
+        registry.executeChange(artistId);
+
+        // The outage, in the recorded wallet's direct check: execution goes ahead.
+        failing.set(false, true, false);
+        vm.expectRevert(outage);
+        registry.refreshStanding(artistId);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority);
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0);
+
+        // The outage, in the scan: registration goes ahead; a refresh still reverts.
+        failing.set(true, false, false);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
+        _register(stranger);
+        vm.expectRevert(outage);
+        registry.refreshStanding(uint160(stranger));
     }
 
     function test_Bindings_AreOneShot() public {
