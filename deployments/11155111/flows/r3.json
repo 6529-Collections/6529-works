@@ -99,6 +99,15 @@
                     "prague":  123587
                 },
                 {
+                    "label":  "registerManifest-record-0",
+                    "from":  "any",
+                    "hash":  "0x4db7c7c3f92ad586ccd5a84c002b7e342edc45ebf1dcce714e45fee4031a5d2d",
+                    "block":  11922780,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
                     "label":  "writeChunk-record-1",
                     "from":  "any",
                     "hash":  "0x514699a04dfafabda2ef94c607eec31d33eb48d7e4374a1e0515b7bc24fc9260",
@@ -421,21 +430,12 @@
                     "gasUsed":  66247,
                     "status":  "0x1",
                     "prague":  63547
-                },
-                {
-                    "label":  "registerManifest-record-0",
-                    "from":  "any",
-                    "hash":  "0x4db7c7c3f92ad586ccd5a84c002b7e342edc45ebf1dcce714e45fee4031a5d2d",
-                    "block":  11922780,
-                    "gasUsed":  579897,
-                    "status":  "0x1",
-                    "prague":  145997
                 }
             ],
     "notes":  {
                   "root":  "0xde416feb06607b5040bd35ad76ad00ef9c70d0ad3ddb4637be9ec22a9c58e68d",
                   "nextMoveNonce":  7,
-                  "registerManifest-record-0":  "Sent by the driver; the RPC dropped the connection before the receipt, so the row was added with the record step.",
+                  "registerManifest-record-0":  "Sent by the driver; the RPC dropped the connection before the receipt, so the row was added later with the record step (placed here in block order).",
                   "simulated":  {
                                     "method":  "eth_simulateV1 on the live state of 15 October 2026 (block time 1792096620), one block per call from 60 s after token 6\u0027s auction end; calldata from Flows.s.sol",
                                     "blockTime":  1792182912,
@@ -468,7 +468,7 @@
                                                      "gasUsed":  232158
                                                  },
                                                  {
-                                                     "label":  "purchase-two-existing",
+                                                     "label":  "purchase-two-copies",
                                                      "status":  "0x1",
                                                      "gasUsed":  134262
                                                  }
