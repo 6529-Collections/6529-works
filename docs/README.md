@@ -53,6 +53,7 @@ in [Testing](testing/README.md).
 | [`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py) `--check` | The role matrix matches `config/genesis.example.json` |
 | [`tools/check_docs_facts.py`](../tools/check_docs_facts.py) | Cited test names, interface IDs, event topic0 values, nSLOC and bytecode sizes match the code |
 | [`tools/check_genesis.py`](../tools/check_genesis.py) | The genesis configuration matches the compiled selectors |
+| [`tools/check_natspec.py`](../tools/check_natspec.py) | Every external or public function, getter, event and error in `src/` has complete NatSpec |
 | [`tools/check_budgets.py`](../tools/check_budgets.py), [`tools/check_slither.py`](../tools/check_slither.py) | The engineering budgets; reviewed Slither findings ([triage](security/slither-triage.md)) |
 
 All tools use only the Python standard library; CI runs them ([`ci.yml`](../.github/workflows/ci.yml);
