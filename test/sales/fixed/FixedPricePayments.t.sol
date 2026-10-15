@@ -23,7 +23,7 @@ import {
     RejectingRecipient,
     ReentrantRecipient,
     ReturnsFalseToken
-} from "../../mocks/EconomicsMocks.sol";
+} from "../../mocks/economics/EconomicsMocks.sol";
 import { GasBurnerWallet, HostileReceiver, MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 

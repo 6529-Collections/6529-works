@@ -14,8 +14,8 @@ import {
     ERC1155BalanceMock,
     OZERC1155Mock,
     OZERC721Mock
-} from "../mocks/RecordsMocks.sol";
-import { EvilResolverMock, ForwardingResolverMock } from "../mocks/RecordsResolvers.sol";
+} from "../mocks/records/RecordsMocks.sol";
+import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
 ///         attribution to the AccessManager, reserved kinds, the dispute pointer, the relayed-nonce

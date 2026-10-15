@@ -5,7 +5,7 @@ import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { DutchParams, Payment, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { BlocklistToken } from "../../mocks/EconomicsMocks.sol";
+import { BlocklistToken } from "../../mocks/economics/EconomicsMocks.sol";
 import { GasBurnerWallet } from "../../mocks/sales/SaleMocks.sol";
 import { DutchBase } from "./DutchBase.sol";
 

@@ -13,7 +13,7 @@ import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
-import { MockArtistResolver, MockERC20 } from "../mocks/EconomicsMocks.sol";
+import { MockArtistResolver, MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 
 /// @dev Exposes the internal `RevenuePayment` library the way a sale adapter compiles it in.
 contract PaymentHarness {

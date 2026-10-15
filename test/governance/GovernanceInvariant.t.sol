@@ -12,7 +12,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice Admins schedule random hostile operations alongside benign guardian and admin
 ///         rotations that really execute. Vigilant guardians (a random one each time) cancel

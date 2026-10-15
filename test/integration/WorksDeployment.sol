@@ -29,7 +29,7 @@ import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { DeployV1 } from "script/DeployV1.sol";
-import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { MockPermit2, PermitToken } from "../mocks/sales/SaleMocks.sol";
 

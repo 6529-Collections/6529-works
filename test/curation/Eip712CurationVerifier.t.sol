@@ -8,7 +8,7 @@ import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol"
 import { Roles } from "src/governance/Roles.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ICurationSignerVerifier, ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
-import { ERC1271WalletMock } from "test/mocks/AdversarialTargets.sol";
+import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
 
 contract Eip712CurationVerifierTest is CurationBase {

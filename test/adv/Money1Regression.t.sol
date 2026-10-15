@@ -6,7 +6,11 @@ import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { LockedTerms, Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { BlocklistToken, FeeOnTransferToken, MockERC20 } from "../mocks/EconomicsMocks.sol";
+import {
+    BlocklistToken,
+    FeeOnTransferToken,
+    MockERC20
+} from "../mocks/economics/EconomicsMocks.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
 /// @notice MONEY-1 regression, on the real stack: NFT delivery never depends on a payout

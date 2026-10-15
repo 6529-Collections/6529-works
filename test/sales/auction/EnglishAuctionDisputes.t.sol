@@ -16,7 +16,8 @@ import { LockedTerms } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
-import { MockFederationRegistry, MockMintTarget } from "../../mocks/auction/AuctionMocks.sol";
+import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
+import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 

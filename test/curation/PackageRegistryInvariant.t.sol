@@ -15,7 +15,7 @@ import {
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { MockArtistRegistry } from "test/mocks/curation/MockArtistRegistry.sol";
+import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { CurationBase, CurationHelpers } from "./CurationBase.sol";
 
 /// @dev An exact model of the registry, driven the way Stream, Editions, artists, relayers, the
@@ -38,7 +38,7 @@ contract CurationHandler is CurationHelpers {
 
     PackageRegistry internal registry;
     Eip712CurationVerifier internal verifier;
-    MockArtistRegistry internal artists;
+    CurationArtistRegistryMock internal artists;
     address internal stream;
     address internal editions;
     address internal guardian;
@@ -75,7 +75,7 @@ contract CurationHandler is CurationHelpers {
         PackageRegistry registry_,
         Eip712CurationVerifier verifier_,
         uint256 signerKey_,
-        MockArtistRegistry artists_,
+        CurationArtistRegistryMock artists_,
         address[4] memory actors // stream, editions, guardian, admin
     ) {
         registry = registry_;

@@ -254,7 +254,9 @@ contract MockEconomicsResolver is IEconomicsResolver {
     }
 }
 
-/// @dev A federation registry with test-set entries and status (`IFederationRegistry`).
+/// @dev A federation registry whose entries the test writes directly (`IFederationRegistry`):
+///      `register` and `setStatus` as the real registry's governed writes, with their events,
+///      and `setEntry` and `setCodeHash` as shortcuts.
 contract MockFederationRegistry is IFederationRegistry {
     mapping(address token => Entry) internal _entries;
 
@@ -270,10 +272,12 @@ contract MockFederationRegistry is IFederationRegistry {
 
     function register(address token, Entry calldata e) external {
         _entries[token] = e;
+        emit Registered(token, e.artistId, e);
     }
 
-    function setStatus(address token, Status status, bytes32) external {
+    function setStatus(address token, Status status, bytes32 voteRef) external {
         _entries[token].status = status;
+        emit StatusSet(token, status, voteRef);
     }
 
     function setArtistDelisted(uint256, bool, bytes32) external { }

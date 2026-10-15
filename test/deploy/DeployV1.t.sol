@@ -33,7 +33,7 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
-import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 

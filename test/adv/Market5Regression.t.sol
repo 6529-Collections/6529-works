@@ -6,7 +6,8 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { MockFederationRegistry, MockMintTarget } from "../mocks/auction/AuctionMocks.sol";
+import { MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
+import { MockFederationRegistry } from "../mocks/sales/SaleMocks.sol";
 import { MarketPoCBase } from "./MarketPoCBase.sol";
 
 /// @notice MARKET-5 regression, on the real stack with a mock federated token and registry

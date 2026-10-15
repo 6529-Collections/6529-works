@@ -23,7 +23,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
-import { Mock1271Account } from "../../mocks/EconomicsMocks.sol";
+import { Mock1271Account } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockAssetAllowlist, MockEditionTarget } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";

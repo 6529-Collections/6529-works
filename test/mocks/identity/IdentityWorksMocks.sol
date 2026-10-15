@@ -33,28 +33,6 @@ contract FederationRegistryStub is InterfaceStub {
     constructor() InterfaceStub(type(IFederationRegistry).interfaceId) { }
 }
 
-/// @notice The two 6529 Stream reads the artist registry makes: `artistOf(id)` and `editions()`.
-///         `artistOf` reverts with `UnknownWork` for unminted or burned IDs, like Stream.
-contract StreamWorksMock is InterfaceStub {
-    address public editions;
-    mapping(uint256 => uint256) internal _artistOf;
-
-    constructor() InterfaceStub(type(IStream).interfaceId) { }
-
-    function setEditions(address editions_) external {
-        editions = editions_;
-    }
-
-    function setWork(uint256 tokenId, uint256 artistId) external {
-        _artistOf[tokenId] = artistId;
-    }
-
-    function artistOf(uint256 tokenId) external view returns (uint256) {
-        if (_artistOf[tokenId] == 0) revert IStream.UnknownWork(tokenId);
-        return _artistOf[tokenId];
-    }
-}
-
 /// @notice The 6529 Editions read the artist registry makes: `masterOf(id)`, which reverts with
 ///         `UnknownEdition` for an unknown edition. `master` may be set to a foreign Stream.
 contract EditionsMastersMock {

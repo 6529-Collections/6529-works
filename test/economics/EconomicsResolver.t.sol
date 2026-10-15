@@ -22,7 +22,7 @@ import {
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { MockERC20 } from "../mocks/EconomicsMocks.sol";
+import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 

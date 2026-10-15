@@ -58,7 +58,7 @@ under [VrfEntropyModule events](../../docs/integrators/events-and-indexing.md#vr
 - **Tests:** `forge test --match-path 'test/entropy/**'`: unit, fuzz, the invariant suite,
   governance and `VrfEntropyManaged.t.sol`, which installs the module under the real
   `GovernanceConfigurator`. End to end: [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol).
-  Mocks are in [`test/mocks/EntropyMocks.sol`](../../test/mocks/EntropyMocks.sol). Coverage and
+  Mocks are in [`test/mocks/entropy/EntropyMocks.sol`](../../test/mocks/entropy/EntropyMocks.sol). Coverage and
   mutation testing: [Testing](../../docs/testing/README.md).
 
 ## Not in v1

@@ -26,7 +26,7 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { MockArtistRegistry } from "test/mocks/curation/MockArtistRegistry.sol";
+import { CurationArtistRegistryMock } from "test/mocks/curation/CurationArtistRegistryMock.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
 
 /// @dev Pure fixtures shared by the curation tests and the invariant handler: items, Merkle
@@ -156,7 +156,7 @@ abstract contract CurationHelpers is Test {
 ///      Merkle trees and every signature the registry checks.
 abstract contract CurationBase is CurationHelpers {
     AccessManager internal manager;
-    MockArtistRegistry internal artists;
+    CurationArtistRegistryMock internal artists;
     Eip712CurationVerifier internal verifier;
     PackageRegistry internal registry;
 
@@ -187,7 +187,7 @@ abstract contract CurationBase is CurationHelpers {
         deadline = uint64(block.timestamp + 1 days);
 
         manager = new AccessManager(admin);
-        artists = new MockArtistRegistry();
+        artists = new CurationArtistRegistryMock();
         verifier = new Eip712CurationVerifier(address(manager));
         registry = _newRegistry();
         artists.bindPackageRegistry(address(registry));

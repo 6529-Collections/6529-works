@@ -16,7 +16,7 @@ import {
     Standing
 } from "src/interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
+import { ERC1271WalletMock } from "../mocks/libraries/AdversarialTargets.sol";
 import {
     EditionsMastersMock,
     FailingConsolidationSource,
@@ -24,9 +24,9 @@ import {
     OversizedConsolidationSource,
     PackageRegistryStub,
     PullOnlyPayeeMock,
-    SplitFactoryWalletsMock,
-    StreamWorksMock
+    SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { StreamMock } from "../mocks/stream/StreamMock.sol";
 import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
@@ -1042,7 +1042,7 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Bindings_AreOneShot() public {
-        StreamWorksMock stream = new StreamWorksMock();
+        StreamMock stream = new StreamMock();
         address federation = _federationStub();
         vm.startPrank(admin);
         vm.expectEmit(address(registry));
@@ -1102,7 +1102,7 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Bindings_RevertForNonAdmin() public {
-        address stream = address(new StreamWorksMock());
+        address stream = address(new StreamMock());
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, governor)
         );
@@ -1143,7 +1143,7 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_IsArtist_StreamWorksAndEditions() public {
-        (StreamWorksMock stream, EditionsMastersMock editions) = _wireStream();
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
         assertTrue(registry.isArtist(address(stream), 1, artist));
         assertTrue(registry.isArtist(address(editions), 1, artist));
         assertFalse(registry.isArtist(address(stream), 1, wallet), "wallets are not the artist");
@@ -1168,7 +1168,7 @@ contract ArtistRegistryTest is IdentityFixture {
     ///      acts as the artist (`isArtist` is false for both keys); `authorityOf` keeps
     ///      identifying it. After execution the new authority is active.
     function test_ActiveAuthority_RestrainedUntilTheOverrideExecutes() public {
-        (StreamWorksMock stream,) = _wireStream();
+        (StreamMock stream,) = _wireStream();
         assertEq(registry.activeAuthorityOf(artistId), artist);
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
         assertEq(registry.activeAuthorityOf(artistId), address(0), "restrained");
@@ -1304,7 +1304,7 @@ contract ArtistRegistryTest is IdentityFixture {
     /// @dev Pull-only artist payees: a protocol contract or a split wallet as the payout would
     ///      strand or stall funds, and is rejected at staging.
     function test_PayoutValidation_RejectsProtocolContractsAndSplitWallets() public {
-        (StreamWorksMock stream, EditionsMastersMock editions) = _wireStream();
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
         SplitFactoryWalletsMock factory = _wireSplitFactory();
         address splitWallet = makeAddr("splitWallet");
         factory.setWallet(splitWallet, true);
@@ -1474,8 +1474,8 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.bindSplitFactory(address(factory));
     }
 
-    function _wireStream() internal returns (StreamWorksMock stream, EditionsMastersMock editions) {
-        stream = new StreamWorksMock();
+    function _wireStream() internal returns (StreamMock stream, EditionsMastersMock editions) {
+        stream = new StreamMock();
         editions = new EditionsMastersMock();
         stream.setEditions(address(editions));
         stream.setWork(1, artistId);

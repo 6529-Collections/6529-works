@@ -8,7 +8,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock, UnmanagedMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock, UnmanagedMock } from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice The one-shot configurator, the configuration validator and the CI readback.
 contract GovernanceConfiguratorTest is GovernanceFixture {

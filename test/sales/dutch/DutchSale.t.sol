@@ -24,7 +24,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
-import { RejectingRecipient, ReentrantRecipient } from "../../mocks/EconomicsMocks.sol";
+import { RejectingRecipient, ReentrantRecipient } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { DutchBase } from "./DutchBase.sol";
 import { IMintSale } from "src/interfaces/IMintSale.sol";

@@ -20,7 +20,7 @@ import {
     CreatorReentrant,
     InboundShortToken,
     OverDebitToken
-} from "../../mocks/sales/ReviewMocks.sol";
+} from "../../mocks/sales/HostileSaleMocks.sol";
 import {
     MockEditionTarget,
     MockFederationRegistry,

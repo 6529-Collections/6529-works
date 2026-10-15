@@ -22,7 +22,8 @@ import {
 } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { HostileActor, MockMintTarget } from "../../mocks/auction/AuctionMocks.sol";
+import { HostileActor, MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
+import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -625,13 +626,13 @@ contract EnglishAuctionTest is AuctionBase {
         usd.approve(address(permit2), type(uint256).max);
         Payment memory p = _permit2Payment(alicePk, saleId, carol, 10e18, 7);
         vm.startPrank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(saleId, relayer, p);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(other, carol, p);
         auction.bid(saleId, carol, p);
         Payment memory replay = _permit2Payment(alicePk, saleId, carol, 11e18, 7);
-        vm.expectRevert(bytes("InvalidNonce"));
+        vm.expectRevert(MockPermit2.InvalidNonce.selector);
         auction.bid(saleId, carol, replay);
         vm.stopPrank();
     }
@@ -677,10 +678,10 @@ contract EnglishAuctionTest is AuctionBase {
         bytes memory mintData = hex"c0ffee";
         Payment memory p = _startBidPayment(alicePk, mintData, carol, 5e18, 3);
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.startWithBid(address(stream), hex"c0ffef", carol, p);
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.startWithBid(address(stream), mintData, relayer, p);
         vm.prank(relayer);
         uint256 saleId = auction.startWithBid(address(stream), mintData, carol, p);
@@ -700,12 +701,12 @@ contract EnglishAuctionTest is AuctionBase {
         Payment memory more = _permit2Payment(alicePk, saleId, alice, 10e18, 9);
         more.amount = 11e18;
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(saleId, alice, more);
         Payment memory later = _permit2Payment(alicePk, saleId, alice, 10e18, 9);
         later.deadline += 1;
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(saleId, alice, later);
         vm.prank(relayer);
         auction.bid(saleId, address(0), p);

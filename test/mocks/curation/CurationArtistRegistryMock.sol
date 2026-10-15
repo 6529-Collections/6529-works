@@ -11,7 +11,7 @@ import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 ///      authority keeps mapping to its ID, `register` only from the bound package registry (and it
 ///      counts as the first activity), `authorityOf` and `artist` revert for unknown IDs.
 ///      `recover` stands in for an executed identity change.
-contract MockArtistRegistry is IERC165 {
+contract CurationArtistRegistryMock is IERC165 {
     error UnknownArtist(uint256 artistId);
     error AccountTaken(address account);
     error UnboundCaller(address caller);

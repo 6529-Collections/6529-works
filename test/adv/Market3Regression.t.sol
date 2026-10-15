@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { LockedTerms } from "src/interfaces/types/SaleTypes.sol";
-import { MockMintTarget } from "../mocks/auction/AuctionMocks.sol";
+import { MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
 import { MarketPoCBase } from "./MarketPoCBase.sol";
 
 /// @notice MARKET-3 regression, on the real stack with a mock federated token and registry: a

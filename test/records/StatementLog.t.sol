@@ -13,20 +13,20 @@ import {
     HASH_BLAKE3
 } from "src/interfaces/types/HashRef.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
-import { EvilResolverMock } from "../mocks/RecordsResolvers.sol";
+import { EvilResolverMock } from "../mocks/records/RecordsResolvers.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
 import {
     ArtistResolverMock,
     WrongInterfaceMock,
     ERC1155BalanceMock
-} from "../mocks/RecordsMocks.sol";
+} from "../mocks/records/RecordsMocks.sol";
 import {
     ERC1271WalletMock,
     GasBurnerMock,
     ReturnBombMock,
     ReturnDataMock
-} from "../mocks/AdversarialTargets.sol";
+} from "../mocks/libraries/AdversarialTargets.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";

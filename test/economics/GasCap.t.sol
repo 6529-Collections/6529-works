@@ -6,7 +6,7 @@ import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
-import { BlocklistToken, Mock1271Account } from "../mocks/EconomicsMocks.sol";
+import { BlocklistToken, Mock1271Account } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 /// @notice Every bounded loop fits Fusaka's per-transaction gas cap (EIP-7825, 16,777,216 gas)

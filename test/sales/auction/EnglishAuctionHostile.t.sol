@@ -19,8 +19,8 @@ import {
     NoReturnToken,
     RebasingToken,
     ReturnsFalseToken
-} from "../../mocks/EconomicsMocks.sol";
-import { GasBurnerToken, HostileActor } from "../../mocks/auction/AuctionMocks.sol";
+} from "../../mocks/economics/EconomicsMocks.sol";
+import { GasBurnerToken, HostileActor } from "../../mocks/sales/AuctionMocks.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 

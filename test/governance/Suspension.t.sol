@@ -8,7 +8,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice GOV-2: a guardian suspends a holder of a zero-delay operational role at once; only
 ///         an ADMIN grant or revocation (30 days, guardian-vetoable) clears it.

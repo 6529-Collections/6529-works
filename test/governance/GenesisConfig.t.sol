@@ -27,7 +27,7 @@ import {
     Erc165PeerMock,
     GenesisTargetMock,
     WiringTargetMock
-} from "../mocks/GenesisWiringMocks.sol";
+} from "../mocks/governance/GenesisWiringMocks.sol";
 
 /// @notice Checks the committed genesis configuration, `config/genesis.example.json`, against
 ///         the compiled selectors, {Roles} and {GovernanceConfig}; installs it with its wiring

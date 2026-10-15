@@ -184,7 +184,7 @@ contract ReentrantVrfCoordinator is IVRFCoordinatorV2Plus {
 
 /// @dev The reads of the package registry that gate a seed request: `packageOf` and
 ///      `consumedItemOf`, and ERC-165 for `IPackageRegistry` (the install check).
-contract MockPackageRegistry {
+contract EntropyPackageRegistryMock {
     mapping(bytes32 packageRoot => IPackageRegistry.PackageStatus) public statusOf;
     mapping(bytes32 contentHash => bytes32 itemHash) public consumedBy;
 

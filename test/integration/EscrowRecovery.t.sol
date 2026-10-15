@@ -7,7 +7,7 @@ import { Splits } from "src/economics/Splits.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { BlocklistToken } from "../mocks/EconomicsMocks.sol";
+import { BlocklistToken } from "../mocks/economics/EconomicsMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Recovering the network's own money after a token blocks its fee recipient (MONEY-2),

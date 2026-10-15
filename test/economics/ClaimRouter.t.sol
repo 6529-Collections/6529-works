@@ -20,7 +20,7 @@ import {
     GasHungryPayee,
     GasHungryWallet,
     Mock1271Account
-} from "../mocks/EconomicsMocks.sol";
+} from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 /// @dev Ported from 6529Stream PR #744 `StreamClaimRouter.t.sol` (adversarial claim batches),

@@ -7,8 +7,8 @@ import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { ReturnDataMock } from "../mocks/AdversarialTargets.sol";
-import { MockERC20 } from "../mocks/EconomicsMocks.sol";
+import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
+import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract AssetAllowlistTest is EconomicsBase {

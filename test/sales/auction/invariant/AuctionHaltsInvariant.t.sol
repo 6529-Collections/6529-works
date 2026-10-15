@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { HostileActor } from "../../../mocks/auction/AuctionMocks.sol";
+import { HostileActor } from "../../../mocks/sales/AuctionMocks.sol";
 import { AuctionBase } from "../AuctionBase.sol";
 import { AuctionHaltsHandler, SwitchToken } from "./AuctionHaltsHandler.sol";
 

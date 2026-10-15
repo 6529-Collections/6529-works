@@ -5,7 +5,7 @@ import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
-import { Mock1271Account, RejectingRecipient } from "../mocks/EconomicsMocks.sol";
+import { Mock1271Account, RejectingRecipient } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 

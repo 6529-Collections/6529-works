@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Rec, RendererBase, Trait } from "./RendererBase.sol";
-import { MockEditions, MockEntropy } from "../../mocks/RendererMocks.sol";
+import { RendererEditionsMock, RendererEntropyMock } from "../../mocks/content/RendererMocks.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
@@ -133,7 +133,7 @@ contract RendererTest is RendererBase {
         core.seedPolicy = SeedPolicy.VRF;
         stream.setWork(ID, core);
         stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
-        MockEntropy entropy = new MockEntropy();
+        RendererEntropyMock entropy = new RendererEntropyMock();
         entropy.set(core.itemHash, bytes32(uint256(0xfeed)));
         stream.setEntropyModule(address(entropy));
         _setOpen(false);
@@ -176,7 +176,7 @@ contract RendererTest is RendererBase {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         _setOpen(false);
-        MockEditions editions = new MockEditions(address(stream));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
         editions.setMaster(5, ID, _sha(file));
 
         string memory j = _decode(renderer.tokenURI(address(editions), 5));
@@ -669,7 +669,7 @@ contract RendererTest is RendererBase {
     function test_Dispute_ReadsTheMastersSubjectForAnEdition() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        MockEditions editions = new MockEditions(address(stream));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
         editions.setMaster(ID, ID, _sha(file));
         disputeLog.set(address(stream), ID, bytes32(uint256(5)));
 
@@ -706,7 +706,7 @@ contract RendererTest is RendererBase {
     function test_Edition_RendersTheMastersWorkAsAnEdition() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        MockEditions editions = new MockEditions(address(stream));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
         editions.setMaster(5, ID, _sha(file));
 
         string memory j = _decode(renderer.tokenURI(address(editions), 5));
@@ -720,7 +720,7 @@ contract RendererTest is RendererBase {
     function test_Edition_ContentHashMustMatchTheMaster() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
-        MockEditions editions = new MockEditions(address(stream));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
         editions.setMaster(5, ID, bytes32(uint256(0xbad)));
 
         vm.expectRevert(
@@ -730,7 +730,7 @@ contract RendererTest is RendererBase {
     }
 
     function test_Edition_UnknownEditionFailsClosed() public {
-        MockEditions editions = new MockEditions(address(stream));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IRenderer.RendererReadFailed.selector,

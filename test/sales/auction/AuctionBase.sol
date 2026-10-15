@@ -19,9 +19,14 @@ import { Roles } from "src/governance/Roles.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
-import { MockArtistResolver } from "../../mocks/EconomicsMocks.sol";
-import { MockMintTarget, MockPermit2, PermitToken } from "../../mocks/auction/AuctionMocks.sol";
-import { MockAssetAllowlist, MockEconomicsResolver } from "../../mocks/sales/SaleMocks.sol";
+import { MockArtistResolver } from "../../mocks/economics/EconomicsMocks.sol";
+import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
+import {
+    MockAssetAllowlist,
+    MockEconomicsResolver,
+    MockPermit2,
+    PermitToken
+} from "../../mocks/sales/SaleMocks.sol";
 import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 
 /// @dev Deploys the auction against the real AccessManager, asset allowlist, revenue escrow and
@@ -220,7 +225,7 @@ abstract contract AuctionBase is Test {
             abi.encode(Typehashes.BID_WITNESS, saleId, recipient, amount, permit.deadline)
         );
         bytes32 digest =
-            permit2.digest(permit, address(auction), witness, Typehashes.BID_WITNESS_TYPE);
+            permit2.witnessDigest(address(auction), permit, witness, Typehashes.BID_WITNESS_TYPE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         p = Payment(
             PaymentMethod.PERMIT2, payer, amount, permit.deadline, nonce, abi.encodePacked(r, s, v)
@@ -250,8 +255,9 @@ abstract contract AuctionBase is Test {
                 permit.deadline
             )
         );
-        bytes32 digest =
-            permit2.digest(permit, address(auction), witness, Typehashes.START_BID_WITNESS_TYPE);
+        bytes32 digest = permit2.witnessDigest(
+            address(auction), permit, witness, Typehashes.START_BID_WITNESS_TYPE
+        );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         p = Payment(
             PaymentMethod.PERMIT2,

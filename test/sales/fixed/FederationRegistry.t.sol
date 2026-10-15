@@ -12,7 +12,7 @@ import {
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
-import { MockERC20 } from "../../mocks/EconomicsMocks.sol";
+import { MockERC20 } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockEditionTarget, MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";

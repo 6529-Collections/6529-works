@@ -12,12 +12,9 @@ import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.s
 import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { FeeOnTransferToken } from "../../mocks/EconomicsMocks.sol";
-import {
-    HostileActor,
-    MockFederationRegistry,
-    PermitToken
-} from "../../mocks/auction/AuctionMocks.sol";
+import { FeeOnTransferToken } from "../../mocks/economics/EconomicsMocks.sol";
+import { HostileActor } from "../../mocks/sales/AuctionMocks.sol";
+import { MockFederationRegistry, PermitToken } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 
@@ -340,7 +337,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
             abi.encode(Typehashes.BID_WITNESS, saleId, alice, uint256(10e18), permit.deadline)
         );
         bytes32 digest =
-            permit2.digest(permit, address(auction), witness, Typehashes.BID_WITNESS_TYPE);
+            permit2.witnessDigest(address(auction), permit, witness, Typehashes.BID_WITNESS_TYPE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
         Payment memory p = Payment(
             PaymentMethod.PERMIT2, alice, 10e18, permit.deadline, 0, abi.encodePacked(r, s, v)

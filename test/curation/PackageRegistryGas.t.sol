@@ -17,7 +17,7 @@ import {
 } from "src/interfaces/types/PackageTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { ERC1271WalletMock } from "test/mocks/AdversarialTargets.sol";
+import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
 
 /// @dev Gas on the auction-start path (`consume`, which includes the move-signature check) and

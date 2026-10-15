@@ -10,8 +10,8 @@ import {
     MeteredOwnerMock,
     OZERC721Mock,
     OZERC1155Mock
-} from "../mocks/RecordsMocks.sol";
-import { ReturnBombMock } from "../mocks/AdversarialTargets.sol";
+} from "../mocks/records/RecordsMocks.sol";
+import { ReturnBombMock } from "../mocks/libraries/AdversarialTargets.sol";
 
 /// @notice The OWNER read: unmodified OpenZeppelin tokens with cold storage, the gas cap pinned
 ///         from both sides, return-data bombs that reach the size cap, and the ERC-1155 fall

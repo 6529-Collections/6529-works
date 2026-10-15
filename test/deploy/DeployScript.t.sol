@@ -17,7 +17,7 @@ import { Verify } from "script/Verify.s.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
-import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import {
     DeployHarness,

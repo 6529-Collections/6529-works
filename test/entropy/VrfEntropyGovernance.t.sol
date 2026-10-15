@@ -8,7 +8,7 @@ import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { EntropyBase } from "./EntropyBase.sol";
-import { MockVrfCoordinator } from "test/mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "test/mocks/entropy/EntropyMocks.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @notice The governed setters of the VRF entropy module: compare-and-set, raise-only gas limit,

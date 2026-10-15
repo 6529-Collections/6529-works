@@ -7,7 +7,7 @@ import { Deploy } from "script/Deploy.s.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { ScriptIO } from "script/ScriptIO.sol";
 import { Verify } from "script/Verify.s.sol";
-import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 
 /// @notice The scripts' outside inputs, set by the test instead of read from the process:
 ///         environment variables, files (falling back to the real ./config and ./deployments),

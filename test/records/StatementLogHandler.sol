@@ -8,8 +8,8 @@ import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { StatementModel } from "./StatementModel.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
-import { ArtistResolverMock } from "../mocks/RecordsMocks.sol";
-import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
+import { ArtistResolverMock } from "../mocks/records/RecordsMocks.sol";
+import { ERC1271WalletMock } from "../mocks/libraries/AdversarialTargets.sol";
 
 /// @notice The accounts and subjects the handler works with. `resolver` is the log's initial
 ///         artist resolver and already accepts `artist` for every subject; `tokenOwner` owns `nft`

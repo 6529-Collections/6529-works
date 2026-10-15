@@ -9,7 +9,7 @@ import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/t
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
-import { BlocklistToken, ToggleRecipient } from "../../mocks/EconomicsMocks.sol";
+import { BlocklistToken, ToggleRecipient } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockEditionTarget, MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { SaleMerkle } from "../../helpers/SaleFixture.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";

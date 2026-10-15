@@ -2,9 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { RendererBase } from "./RendererBase.sol";
-import { HostileStore } from "../../mocks/RendererHostile.sol";
-import { MockStream } from "../../mocks/RendererMocks.sol";
-import { GasBurnerMock, ReturnBombMock, ReturnDataMock } from "../../mocks/AdversarialTargets.sol";
+import { HostileStore } from "../../mocks/content/RendererHostile.sol";
+import { StreamMock } from "../../mocks/stream/StreamMock.sol";
+import {
+    GasBurnerMock,
+    ReturnBombMock,
+    ReturnDataMock
+} from "../../mocks/libraries/AdversarialTargets.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";

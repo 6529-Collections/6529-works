@@ -12,10 +12,10 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StateGrowth } from "test/helpers/StateGrowth.sol";
 import { EntropyBase } from "./EntropyBase.sol";
 import {
-    MockPackageRegistry,
+    EntropyPackageRegistryMock,
     MockVrfCoordinator,
     ReentrantVrfCoordinator
-} from "test/mocks/EntropyMocks.sol";
+} from "test/mocks/entropy/EntropyMocks.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev Different bytecode, same storage and functions as the mock (DEPS-6).
@@ -150,7 +150,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     /// @dev Review regression (PoC 3): an EIP-7702 delegated EOA whose delegate answers ERC-165 for
     ///      `IPackageRegistry` used to pass the install check.
     function test_Constructor_RejectsADelegatedRegistry() public {
-        MockPackageRegistry impl = new MockPackageRegistry();
+        EntropyPackageRegistryMock impl = new EntropyPackageRegistryMock();
         (address eoa, uint256 pk) = makeAddrAndKey("eoa-registry");
         vm.signAndAttachDelegation(address(impl), pk);
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));

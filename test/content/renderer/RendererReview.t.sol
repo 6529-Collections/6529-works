@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Rec, RendererBase } from "./RendererBase.sol";
-import { MockEditions, MockEntropy } from "../../mocks/RendererMocks.sol";
+import { RendererEditionsMock, RendererEntropyMock } from "../../mocks/content/RendererMocks.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
@@ -579,7 +579,7 @@ contract RendererReviewTest is RendererBase {
         records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(1)));
         disputeLog.set(address(stream), ID, bytes32(uint256(1)));
         string memory full = _out();
-        MockEditions editions = new MockEditions(address(stream));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
         editions.setMaster(5, ID, _sha(file));
         string memory edition = _decode(renderer.tokenURI(address(editions), 5));
         _setOpen(false);

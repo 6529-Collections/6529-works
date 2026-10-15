@@ -31,7 +31,7 @@ import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { ERC1271WalletMock } from "test/mocks/AdversarialTargets.sol";
+import { ERC1271WalletMock } from "test/mocks/libraries/AdversarialTargets.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { CurationBase } from "./CurationBase.sol";

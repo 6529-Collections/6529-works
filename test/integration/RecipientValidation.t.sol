@@ -16,7 +16,7 @@ import {
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { ArtistIdentity } from "src/interfaces/types/IdentityTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { Mock1271Account } from "../mocks/EconomicsMocks.sol";
+import { Mock1271Account } from "../mocks/economics/EconomicsMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Who may receive money, on the real deployment. An artist's payout address must be

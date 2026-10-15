@@ -12,7 +12,7 @@ import {
     GovernedTargetMock,
     SelectorCollisionMock,
     StockInstallHarness
-} from "../mocks/GovernanceMocks.sol";
+} from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice ADR 0001 §13.2: the guardian Safes can cancel the admin's operations on the
 ///         AccessManager itself, and nobody can cancel their own replacement.

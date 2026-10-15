@@ -24,7 +24,8 @@ import {
     PrimaryTerms,
     SaleKind
 } from "src/interfaces/types/SaleTypes.sol";
-import { MockFederationRegistry, MockMintTarget } from "../mocks/auction/AuctionMocks.sol";
+import { MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
+import { MockFederationRegistry } from "../mocks/sales/SaleMocks.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
 /// @notice Shared setup for the MARKET lens PoCs, on the real stack deployed through `DeployV1` and the committed

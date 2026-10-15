@@ -6,7 +6,7 @@ import { StatementLog } from "src/records/StatementLog.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { Role, Statement } from "src/interfaces/IStatementLog.sol";
-import { ArtistResolverMock } from "../mocks/RecordsMocks.sol";
+import { ArtistResolverMock } from "../mocks/records/RecordsMocks.sol";
 
 /// @notice Golden vectors with fixed hex values for every wire format a verifier depends on: the
 ///         EIP-712 type hashes and digest, the entry-hash preimage and the head fold. The hex

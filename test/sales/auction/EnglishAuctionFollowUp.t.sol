@@ -10,7 +10,8 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { MockFederationRegistry, MockMintTarget } from "../../mocks/auction/AuctionMocks.sol";
+import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
+import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
 /// @dev A bidding contract that forwards its refunds with `claim(currency, to)` and accepts ETH
