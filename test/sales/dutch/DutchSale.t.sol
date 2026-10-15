@@ -56,6 +56,7 @@ contract DutchSaleTest is DutchBase {
         assertTrue(dutch.supportsInterface(type(ISaleAdapter).interfaceId));
         assertTrue(dutch.supportsInterface(type(IDutchSale).interfaceId));
         assertFalse(dutch.supportsInterface(0xffffffff));
+        assertFalse(dutch.supportsInterface(0x00000001));
     }
 
     // ------------------------------------------------------------------ opening
@@ -186,6 +187,19 @@ contract DutchSaleTest is DutchBase {
         assertEq(dutch.currentPrice(stepped), 0.84 ether);
         vm.warp(t0 + 1000);
         assertEq(dutch.currentPrice(stepped), 0.2 ether);
+    }
+
+    /// @dev Halts before a sale opened do not move its curve: the view prices it from its own
+    ///      start, as a purchase does.
+    function test_CurrentPrice_IgnoresHaltsBeforeTheSaleOpened() public {
+        vm.prank(pauser);
+        dutch.pause();
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(unpauser);
+        dutch.unpause();
+        uint256 saleId = _openNow(LINEAR);
+        vm.warp(block.timestamp + 500);
+        assertEq(dutch.currentPrice(saleId), START - (START - REST) / 2);
     }
 
     function test_Views_RevertOnUnknownSale() public {

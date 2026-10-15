@@ -56,6 +56,39 @@ contract EnglishAuctionTest is AuctionBase {
         assertTrue(auction.supportsInterface(type(IERC165).interfaceId));
         assertTrue(auction.supportsInterface(type(IERC721Receiver).interfaceId));
         assertFalse(auction.supportsInterface(0xffffffff));
+        assertFalse(auction.supportsInterface(0x00000001));
+        // The opening-bid ceiling is a thousand currency floors (the specification's number).
+        assertEq(auction.OPENING_BID_FLOORS(), 1_000);
+    }
+
+    /// @dev Each bound is inclusive: a window as long as the auction, and a 100% increment.
+    function test_Constructor_AcceptsConfigAtTheBounds() public {
+        address[] memory none = new address[](0);
+        IEnglishAuction.AuctionConfig[2] memory edge = [
+            IEnglishAuction.AuctionConfig(2 hours, 2 hours, SHARE),
+            IEnglishAuction.AuctionConfig(DURATION, WINDOW, 100_000)
+        ];
+        for (uint256 i; i < edge.length; ++i) {
+            EnglishAuction a = new EnglishAuction(
+                address(manager),
+                address(escrow),
+                resolver,
+                address(statements),
+                address(0),
+                edge[i],
+                none
+            );
+            assertEq(a.config().extensionWindow, edge[i].extensionWindow);
+        }
+    }
+
+    /// @dev An ETH bid sends exactly the payment's amount: more is refused, not kept.
+    function test_Bid_EthMustMatchTheAmountExactly() public {
+        uint256 saleId = _start();
+        vm.deal(alice, 2 ether);
+        vm.prank(alice);
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        auction.bid{ value: 1 ether + 1 }(saleId, address(0), _direct(alice, 1 ether));
     }
 
     function test_Constructor_RejectsMissingDependencies() public {
@@ -775,6 +808,16 @@ contract EnglishAuctionTest is AuctionBase {
         // A direct payment carries no deadline.
         vm.prank(alice);
         auction.bid(saleId, address(0), _direct(alice, 10e18));
+        assertEq(auction.auction(saleId).bidder, alice);
+    }
+
+    /// @dev A permit is good through its deadline second (found by mutation testing).
+    function test_Bid_APermitPaysAtItsDeadlineSecond() public {
+        uint256 saleId = _startUsd();
+        usd.mint(alice, 10e18);
+        Payment memory p = _permitPayment(alicePk, 10e18, block.timestamp);
+        vm.prank(alice);
+        auction.bid(saleId, address(0), p);
         assertEq(auction.auction(saleId).bidder, alice);
     }
 
