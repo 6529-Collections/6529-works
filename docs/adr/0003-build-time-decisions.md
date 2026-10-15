@@ -95,6 +95,11 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile,
     with no path, query or fragment (adversarial review, LIFECYCLE-3 and
     CONTENT-3).
+    (Amendment note, 15 October 2026: the fixed IPFS profile is pinned as CIDv1,
+    sha2-256, raw leaves, a 262,144-byte fixed chunker and the balanced layout of at
+    most 174 links per node, kubo's default import. IPIP-0499's 1 MiB profile gives
+    different CIDs. See the [storage guide](../integrators/storage.md) and the
+    [works and storage specification](../spec/works-and-storage.md).)
   - After finalize only the PLATFORM role adds locators. Copies of a finalized
     work are the platform's to register and the storage operator's to choose.
   - On-chain copies are served once the file is complete.

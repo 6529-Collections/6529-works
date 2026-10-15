@@ -103,8 +103,16 @@ falls back to `ADMIN`. With `--config`, it also checks that copy against this co
 - **Pending contracts:** a configured contract whose artifact source is not in the
   repository yet is reported as pending and passes. It is mapped ahead from its lane's
   branch, so its merge never turns `main` red, and it is checked in full once its source
-  lands. Today these are Stream, WorkRecords and Editions.
+  lands. Every configured contract is on `main` today, so none is pending. (The JSON's
+  `status` and `pendingLanes` fields are descriptive only; the checker ignores them.)
 
 Selectors and wiring calldata are generated from the build artifacts and `cast calldata`,
 not typed by hand. When a lane merges, add its contract's `implementation` and its
 implementation-only setters; the checker fails until they are listed.
+
+**[`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py)** renders this file as the
+[role and permission matrix](../docs/audit/roles.md): every mapped selector with its role, delay
+class and whether a guardian can cancel it. After any change here, run
+`python tools/gen_role_matrix.py` and commit the result; CI's Docs job runs it with `--check`
+and fails if the matrix is stale. It also checks that every selector is the keccak-256 of its
+signature and that every delay matches its role.

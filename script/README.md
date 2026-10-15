@@ -10,7 +10,8 @@ Not built yet: a deployed-bytecode verifier that matches the chain against a rep
 build. Verify recomputes every address from the recorded constructor parameters and compares
 code hashes with the record, but it does not rebuild the bytecode.
 
-6529 Works is pre-audit and not deployed. A Sepolia run is a testnet rehearsal, not a launch.
+6529 Works is pre-audit and not deployed on mainnet. A Sepolia run is a testnet rehearsal, not a
+launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deployments/11155111/README.md).
 The library deploys every v1 contract: identity, curation, economics, content and the
 renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
 Editions, and the three sale adapters. No stand-in remains. A Sepolia run needs the owner's
@@ -129,9 +130,8 @@ Delays and responsibilities are in the [role table](../src/governance/README.md)
 independent of the admins they check:
 - **Signers.** Use signers independent of the admin Safes and of the other guardian Safes; the
   script refuses a signer shared between any two admin or guardian Safes. Mix team and community members across the three Safes.
-- **Monitoring.** Alert every guardian on the manager's `OperationScheduled`, `RoleGranted`,
-  `RoleGrantDelayChanged` and `TargetAdminDelayUpdated` events. A hostile admin operation
-  waits at least its delay class (up to 30 days), and a guardian cancels it in that window.
+- **Operations.** Monitoring, emergencies, suspensions and rotations are under
+  [Operating procedures](#operating-procedures).
 - **Separate pause and unpause.** The guardians hold PAUSER and the hot admin holds UNPAUSER;
   the configuration refuses one account holding both. A pause by a guardian is undone only by
   the admins, and no earlier than 48 hours after it (the adapters, `resume` and `cancel` count
@@ -149,17 +149,6 @@ independent of the admins they check:
   `settle` after the re-admission reopens each auction for at least the governed duration.
   After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
   the bidder and the work goes to the artist.
-- **A compromised operational key.** Any guardian Safe calls
-  `manager.suspend(role, key)` for a PLATFORM, CURATOR or STORAGE_OPERATOR key; the key
-  stops at once. A curation signer key is cut off with the curation verifier's
-  `disableSigner(key)` instead. The hot admin then schedules `revokeRole(role, key)` and the
-  grant of a replacement key (30 days, then the role's grant delay). If the same key is also
-  the marketplace owner, schedule `setOwner` on Stream and Editions as well (FUNDS_SETTER,
-  14 days).
-- **Suspensions last.** Other guardians cannot cancel a suspension, and only a 30-day ADMIN
-  grant or revocation lifts it. Plan for 30 days after a mistaken suspension, about 60 days
-  if a dishonest guardian suspends keys (it cancels the lifts until its removal executes),
-  and about 90 days if it acts with a compromised hot admin.
 
 #### The network fee recipient must exist
 
@@ -583,6 +572,106 @@ re-measure it on Sepolia before relying on that figure.
      `setConsolidationSource` (SUCCESSOR_SETTER, 30 days).
   3. Once reads work, call `refreshStanding` for every artist ID in a `StandingRefreshSkipped`
      event since the outage began.
+
+## Operating procedures
+
+The contracts do not enforce these procedures; they make the enforced rules effective. The
+rules themselves, including the cancellation Rules 1 to 3 cited below, are in the
+[governance spec](../docs/spec/governance.md#cancellation-rules).
+
+### Guardian liveness and monitoring
+
+- **Two honest guardians online at all times.** A guardian cannot cancel its own removal
+  (Rule 2), so one may be the target of a hostile revocation while another cancels it. With one
+  guardian online, a compromised admin removes it in 30 days, and nothing then stops a target
+  takeover (`test_Residual_LivenessNeedsTwoHonestGuardiansOnline`). The code floor is two
+  guardians (`GovernanceConfig.MIN_GUARDIANS`); off anvil the deploy requires three
+  (`DeployGuards.MIN_GUARDIANS`), 2-of-3 each (ADR 0003, owner decision 3).
+- **Monitoring.** Alert every guardian on the manager's `OperationScheduled`, `RoleGranted`,
+  `RoleGrantDelayChanged`, `TargetAdminDelayUpdated` and `RoleSuspended` events. A hostile
+  admin operation waits at least its delay class (up to 30 days), and a guardian cancels it in
+  that window. The pending set is every `OperationScheduled` not followed by
+  `OperationExecuted` or `OperationCanceled` with the same operation ID and nonce, and not yet
+  one week past its ready time; Verify fails while any is pending on the manager, unless
+  `ALLOW_PENDING_OPERATIONS=1`. On mainnet, also alert on the VRF coordinator's
+  `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and `SubscriptionOwnerTransferRequested`
+  for the subscription ID ([step 7](#7-chainlink-vrf-the-entropy-module)).
+- **Operation expiry.** An operation must execute within one week of becoming ready
+  (`expiration()`). After that `execute` reverts with `AccessManagerExpired`, and the operation
+  must be scheduled again with the full delay.
+
+### Emergencies
+
+- **Pausing** is immediate (PAUSER). Unpausing is a 48-hour UNPAUSER operation that any
+  guardian can cancel. The adapters and the auction also refuse an unpause, a `resume` or a
+  dispute `cancel` until 48 hours after the pause they end (review finding GOV-5), so one
+  scheduled before the pause cannot land inside it.
+- **A compromised operational key.** Any guardian Safe calls `manager.suspend(role, key)` for a
+  PLATFORM, CURATOR or STORAGE_OPERATOR key; the key stops in the same block. Pause the affected
+  targets as well where they have a pause. The hot admin then schedules `revokeRole(role, key)`
+  and the grant of a replacement key (30 days, then the role's grant delay). If the same key is
+  also the marketplace owner, schedule `setOwner` on Stream and Editions as well (FUNDS_SETTER,
+  14 days).
+- **A compromised curation signer.** Signers cannot be suspended. A guardian calls the curation
+  verifier's one-way `disableSigner(key)`, which cuts the key off at once. Re-enabling it is a
+  30-day SUCCESSOR_SETTER action and starts a new curation signer epoch, so no earlier approval
+  counts again.
+- **Suspensions last.** No guardian can lift a suspension, and nobody can cancel one. It ends
+  when a 30-day ADMIN `grantRole` of that role to that account executes (the key acts again), or
+  a `revokeRole` (the key loses the role), or when the key renounces the role itself. Plan for
+  30 days after a mistaken suspension, about 60 days if a dishonest guardian suspends keys (it
+  cancels each lift until its own removal executes), and about 90 days if it acts with a
+  compromised hot admin.
+
+### Rotating a guardian
+
+- **Cooperative: grant the replacement first, then revoke.**
+  1. Schedule `grantRole(GUARDIAN, new, 0)` and `grantRole(PAUSER, new, 0)`.
+  2. Once both are active (30 days to execute, then GUARDIAN's 30-day grant delay), schedule
+     `revokeRole(GUARDIAN, old)` and `revokeRole(PAUSER, old)`.
+
+  The departing guardian cannot cancel its own removal; the others can. The guardian count
+  never drops below the configured number.
+- **Compromised: revoke first.** Only the other guardians, or the admin that scheduled it, can
+  cancel the revocation (Rules 2 and 3). While still active, the guardian can cancel a grant to
+  its replacement (`test_GuardianCanCancelGrantOfAReplacement`), so schedule the grant once the
+  revocation has executed. Suspensions it made outlast its removal until an admin lifts them.
+
+### Rotating the hot admin Safe
+
+For a cooperative rotation; a compromised hot admin is removed by
+[admin recovery](#admin-recovery) instead.
+
+1. The old admin schedules grants of ADMIN, UNPAUSER and the three setter roles to the new
+   Safe, each at its class delay (`Roles.executionDelay`).
+2. Guardians, the old admin or the cold admin cancel every other pending operation of the old
+   admin (the pending set under [Monitoring](#guardian-liveness-and-monitoring)). A revocation
+   the old admin scheduled can be cancelled only by itself or a guardian (Rule 3).
+3. Execute the grants after 30 days and wait for the grant delays: 48 hours for UNPAUSER and
+   PARAMETER_SETTER, 14 days for FUNDS_SETTER, 30 days for SUCCESSOR_SETTER and ADMIN.
+4. The old admin renounces every role, which is immediate. Its remaining scheduled operations
+   can no longer execute.
+5. On mainnet, transfer the VRF subscription to the new Safe (Verify requires its owner to hold
+   ADMIN and PARAMETER_SETTER). Re-run Verify in epoch mode ([step 11](#11-verify-after-5-days))
+   and publish the change as a governance manifest.
+
+### Onboarding a target after genesis
+
+Deploy the target with `authority` set to the manager, then:
+
+1. schedule `setTargetAdminDelay(newTarget, 30 days)` and one `setTargetFunctionRole` per
+   selector, each a 30-day admin operation the guardians can cancel;
+2. execute them, for example in one `multicall`, where each call consumes its own schedule;
+3. wait `minSetback()` (5 days);
+4. read the manager back with the target added to the configuration
+   (`GovernanceConfigurator.verify`, `test_OnboardATargetAfterGenesis`).
+
+### Publishing a configuration epoch
+
+Schedule `StatementLog.appendGovernanceManifest` (SUCCESSOR_SETTER, 30 days) with the epoch's
+other operations, so the manifest's hash is public before they take effect. Once they have
+executed, run Verify in epoch mode with `GOVERNANCE_CONFIG` and `GOVERNANCE_MANIFEST_PATH`
+([step 11](#11-verify-after-5-days)).
 
 ## Admin recovery
 

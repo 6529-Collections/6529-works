@@ -37,6 +37,20 @@ jobs:
         # Every relative link and #anchor in tracked *.md files (lib/ excluded) must resolve.
         run: python tools/check_markdown_links.py
 
+      - name: Role matrix generator unit tests
+        run: python -m tools.test_gen_role_matrix
+
+      - name: Role matrix
+        # docs/audit/roles.md must be generated from config/genesis.example.json.
+        run: python tools/gen_role_matrix.py --check
+
+      - name: Docs facts checker unit tests
+        run: python -m tools.test_check_docs_facts
+
+      - name: Docs facts
+        # Cited test names, interface IDs, event topic0 values and nSLOC figures match the code.
+        run: python tools/check_docs_facts.py
+
   contracts:
     name: Contracts
     runs-on: ubuntu-latest
@@ -120,6 +134,10 @@ jobs:
 
       - name: Test
         run: forge test
+
+      - name: Docs facts against the build
+        # The audit scope's bytecode sizes, computed interface IDs and ABI event signatures.
+        run: python tools/check_docs_facts.py --artifacts out
 
       - name: Budget gates
         # The measured profile is explicit: adding a Foundry profile must not silently

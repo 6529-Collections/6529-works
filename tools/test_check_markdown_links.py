@@ -236,6 +236,12 @@ class CheckTest(unittest.TestCase):
         self.assertEqual(self.check("src/a/README.md", "# a\n[x](../../docs/dup.md#same-1)\n"), [])
         self.assertEqual(len(self.check("src/a/README.md", "# a\n[x](../../docs/dup.md#same-2)\n")), 1)
 
+    def test_headings_with_code_spans_get_githubs_anchor(self) -> None:
+        self.repo.write("docs/code.md", "# 4. `tokenURI` and other views\n\n## The `#` sign\n")
+        self.assertEqual(self.check("src/a/README.md", "# a\n[x](../../docs/code.md#4-tokenuri-and-other-views)\n"), [])
+        self.assertEqual(self.check("src/a/README.md", "# a\n[x](../../docs/code.md#the--sign)\n"), [])
+        self.assertEqual(len(self.check("src/a/README.md", "# a\n[x](../../docs/code.md#4------------and-other-views)\n")), 1)
+
     def test_bom_and_crlf_files(self) -> None:
         (self.repo.root / "docs/win.md").write_bytes("﻿# Windows\r\n\r\n## Two words\r\n".encode("utf-8"))
         self.assertEqual(self.check("src/a/README.md", "# a\n[x](../../docs/win.md#windows) [y](../../docs/win.md#two-words)\n"), [])

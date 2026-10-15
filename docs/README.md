@@ -1,95 +1,56 @@
 # Documentation
 
-Where to find things in 6529 Works. The project is pre-audit and not deployed; the
-[root README](../README.md) gives the overview and the quickstart.
+> Pre-audit. See the [project status](../README.md#status).
 
-## Start here
+## By audience
 
-| If you want to | Read |
+| You want to | Read |
 | --- | --- |
-| Understand what v1 is and is not | [ADR 0001: v1 scope](adr/0001-v1-scope.md) |
-| See how the contracts fit together | [Architecture](architecture.md): modules, identifiers, call flows, trust boundaries, governance map, budget notes |
-| Know what is built and what is next | [Delivery plan](../ops/DELIVERY_PLAN.md), and the [launch checklist](https://github.com/6529-Collections/6529-works/issues/1) |
-| Deploy, or verify a deployment | [script/README.md](../script/README.md): the anvil dry run and the Sepolia runbook |
-| Contribute a change | [CONTRIBUTING.md](../CONTRIBUTING.md); automated agents also read [AGENTS.md](../AGENTS.md) |
+| Learn how the protocol works now | The [specification](spec/README.md) and the [glossary](glossary.md) |
+| See how the contracts fit together | The [architecture overview](architecture.md) |
+| Integrate a marketplace, wallet or indexer | The [integrator guide](integrators/README.md) |
+| Audit or review the code | The [auditor pack](audit/README.md) |
+| Know why a decision was made | The [ADRs](adr/README.md) |
+| Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md) |
+| Contribute | [CONTRIBUTING.md](../CONTRIBUTING.md); automated agents also read [AGENTS.md](../AGENTS.md) |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |
+| Read the internal review | [Internal review, October 2026](security/internal-review-2026-10.md): by AI agents, not an external audit |
 
-## Architecture decision records
+## Where each fact lives
 
-The ADRs are the scope and the law. Where the architecture document, a module README and
-an ADR disagree, the accepted ADR wins, and a later ADR amends an earlier one. The
-[ADR index](adr/README.md) lists their status.
+Each fact has one owner; other pages link to it.
 
-| ADR | Decides |
+| Fact | Owner |
 | --- | --- |
-| [0001: v1 scope](adr/0001-v1-scope.md) | The product, network tiers, curation, token model, sales, Editions, economics, storage, permanence, identity and recovery, disputes, governance, Federated, the reuse plan and the engineering budgets |
-| [0002: AccessManager hardening](adr/0002-access-manager-hardening.md) | How guardians cancel any scheduled operation, guardian rules, the cold recovery admin, manifests after genesis, and the selector delay classes |
-| [0003: build-time decisions](adr/0003-build-time-decisions.md) | What building the modules changed: ABI package hashing, the Stream and WorkRecords split, the 350K start-gas budget, pull-only artist payouts, base64 attestation, and the EIP-7825 transaction cap |
-| [0004: gas budgets under Glamsterdam](adr/0004-gas-budgets-under-glamsterdam.md) | Gas budgets in Prague gas, exact counts of new storage slots and accounts per operation, the measured Glamsterdam totals, the per-transaction cap restated, and the payee assumption |
+| Rules, state machines and parameters | The [specification](spec/README.md) page of the area, by rule ID |
+| Where the code departs from an ADR | The [register](spec/README.md#differences-from-the-adrs) in the specification index |
+| Event signatures and topic0 values | [Events and indexing](integrators/events-and-indexing.md) |
+| Selector, role and delay | The generated [role and permission matrix](audit/roles.md) |
+| Gas budgets and measured gas | [ADR 0004](adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia receipts in [flows](../deployments/11155111/flows.md) |
+| Accepted risks and known gaps | [Known limitations](audit/known-limitations.md) |
+| Deployed addresses | [Addresses](integrators/addresses.md) and [`deployments/`](../deployments/11155111/README.md) |
 
-Earlier decisions for the RC1 reference implementation are in the ADR index of the
-private 6529Stream repository.
+## Module READMEs
 
-## Modules
+Each folder under `src/` has a README with design notes:
+[stream](../src/stream/README.md), [editions](../src/editions/README.md),
+[curation](../src/curation/README.md), [sales](../src/sales/README.md),
+[economics](../src/economics/README.md), [identity](../src/identity/README.md),
+[content](../src/content/README.md), [records](../src/records/README.md),
+[entropy](../src/entropy/README.md), [governance](../src/governance/README.md),
+[libraries](../src/libraries/README.md), [interfaces](../src/interfaces/README.md) and
+[federated](../src/federated/README.md) (v1.1, only if needed). Where a README and the
+specification differ, the specification follows the code.
 
-Every module folder under `src/` has a README with its design and limits.
+## Checks that keep the docs honest
 
-| Module | README |
+| Tool | Checks |
 | --- | --- |
-| Stream: the shared ERC-721 and its records satellite | [`src/stream`](../src/stream/README.md) |
-| Editions: the shared ERC-1155 | [`src/editions`](../src/editions/README.md) |
-| Curation: package registry and curation verifier | [`src/curation`](../src/curation/README.md) |
-| Sales: English auction, fixed-price and Dutch adapters | [`src/sales`](../src/sales/README.md) |
-| Economics: split wallets, escrow, currency allowlist, resolver | [`src/economics`](../src/economics/README.md) |
-| Identity: artist registry and consolidation recovery | [`src/identity`](../src/identity/README.md) |
-| Content: content store, dependency registry, renderer | [`src/content`](../src/content/README.md) |
-| Records: the statement log | [`src/records`](../src/records/README.md) |
-| Entropy: the optional VRF module | [`src/entropy`](../src/entropy/README.md) |
-| Governance: AccessManager, roles, configurator | [`src/governance`](../src/governance/README.md) |
-| Libraries: shared internal libraries | [`src/libraries`](../src/libraries/README.md) |
-| Interfaces: contract surfaces and shared types | [`src/interfaces`](../src/interfaces/README.md) |
-| Federated: templates, factory and registry (v1.1, only if needed) | [`src/federated`](../src/federated/README.md) |
+| [`tools/check_markdown_links.py`](../tools/check_markdown_links.py) | Every relative link and anchor resolves |
+| [`tools/gen_role_matrix.py`](../tools/gen_role_matrix.py) `--check` | The role matrix matches `config/genesis.example.json` |
+| [`tools/check_docs_facts.py`](../tools/check_docs_facts.py) | Cited test names, interface IDs, event topic0 values, nSLOC and bytecode sizes match the code |
+| [`tools/check_genesis.py`](../tools/check_genesis.py) | The genesis configuration matches the compiled selectors |
+| [`tools/check_budgets.py`](../tools/check_budgets.py), [`tools/check_slither.py`](../tools/check_slither.py) | The engineering budgets; reviewed Slither findings ([triage](security/slither-triage.md)) |
 
-Every v1 module is on `main`; see the [module table](../README.md#modules).
-
-## Security
-
-- [SECURITY.md](../SECURITY.md): the policy and how to report privately.
-- [Slither triage](security/slither-triage.md): the record of reviewed High and Medium
-  static-analysis findings. CI fails on any finding that has no row here.
-- [Internal review, October 2026](security/internal-review-2026-10.md): the internal adversarial
-  review by AI agents (not an external audit), its findings, fixes and residual risks.
-- The trust boundaries are in the
-  [architecture document](architecture.md#trust-boundaries); the accepted risks are in
-  [ADR 0001](adr/0001-v1-scope.md#accepted-risks) and [ADR 0003](adr/0003-build-time-decisions.md#security-impact).
-
-## Configuration and deployment
-
-- [`config/`](../config/README.md): the committed genesis configuration and policy, with
-  placeholder addresses, checked in CI by `tools/check_genesis.py`.
-- [`script/`](../script/README.md): the deploy library, genesis and readback scripts, and the
-  Sepolia runbook.
-- [`ops/DELIVERY_PLAN.md`](../ops/DELIVERY_PLAN.md): phases, exit criteria and current status.
-
-## Tooling
-
-All tools use only the Python standard library and run from the repository root.
-
-| Tool | Purpose |
-| --- | --- |
-| [`tools/check_budgets.py`](../tools/check_budgets.py) | The budget gate: source lines, linked libraries, `delegatecall`, and EIP-170 and EIP-3860 sizes. Run it with `--profile default` |
-| [`tools/check_slither.py`](../tools/check_slither.py) | Runs Slither and checks every High or Medium finding against the [triage record](security/slither-triage.md) |
-| [`tools/check_markdown_links.py`](../tools/check_markdown_links.py) | Fails on a broken relative link or anchor in any tracked Markdown file |
-| [`tools/content`](../tools/content/README.md) | Uploader tooling: plan, stage, verify and rebuild a work's bytes in the content store |
-
-Each checker has unit tests beside it (`tools/test_check_*.py`). Slither's version is
-pinned in [`requirements-tools.in`](../requirements-tools.in) and hash-locked for CI in
-[`requirements-tools.lock`](../requirements-tools.lock); its path filter is in
-[`slither.config.json`](../slither.config.json). The CI jobs are defined in
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
-
-## Project history
-
-[CHANGELOG.md](../CHANGELOG.md) records what changed. The RC1 reference implementation,
-which runs on Sepolia and predates this repository, is kept in the private 6529Stream
-repository.
+All tools use only the Python standard library; CI runs them ([`ci.yml`](../.github/workflows/ci.yml)).
+The [changelog](../CHANGELOG.md) records what changed.
