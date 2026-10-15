@@ -13,8 +13,11 @@ import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { IRenderer } from "src/interfaces/IRenderer.sol";
 
-/// @notice Regression tests from the content review, on the real stack (`IntegrationBase`).
-contract ContentReviewRegressionsTest is IntegrationBase {
+/// @notice The work-records satellite on the real stack (`IntegrationBase`): locators are
+///         canonical content addresses and, after finalize, only the platform adds them; an
+///         approved record file that was never registered renders core-only metadata instead of
+///         reverting; and a CC0 work names the deployment's pinned CC0 text, for good.
+contract WorkRecordsStackTest is IntegrationBase {
     address internal artist;
     address internal collector = makeAddr("contentCollector");
 
@@ -51,6 +54,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
 
     // ------------------------------------------------- CONTENT-3: locators are content addresses
 
+    /// Regression: CONTENT-3 (docs/security/internal-review-2026-10.md)
     /// @dev Only `ar://` and a 43-character transaction ID, or `ipfs://` and a profile CID with
     ///      nothing after it, are accepted, from the artist and the platform alike.
     function test_Locator_OnlyContentAddressesAreAccepted() public {
@@ -88,6 +92,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertEq(records.locators(tokenId, file).length, 3);
     }
 
+    /// Regression: CONTENT-3 (docs/security/internal-review-2026-10.md)
     /// @dev One copy, one URI: only the canonical spelling of a CID or transaction ID is
     ///      accepted, so the exact-bytes duplicate check holds. The last character carries two
     ///      padding bits, and a CID's eighth character holds the multihash length.
@@ -125,6 +130,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
 
     // ------------------------------------- LIFECYCLE-3: after finalize only the platform adds locators
 
+    /// Regression: LIFECYCLE-3 (docs/security/internal-review-2026-10.md)
     /// @dev After finalize the artist's `addLocator` is refused, so the artist can neither serve
     ///      new content under a finalized work nor register the work's canonical copy ahead of the
     ///      platform; the platform registers it and an IPFS failover serves it.
@@ -155,6 +161,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertEq(records.workStateHash(tokenId), state, "locators never change the state hash");
     }
 
+    /// Regression: LIFECYCLE-3 (docs/security/internal-review-2026-10.md)
     /// @dev Unchanged: the artist's locators added before finalize, and the platform's at any
     ///      time, are served by the kind preferences and the fallback.
     function test_Locator_ArtistBeforeAndPlatformAfterFinalizeAreServed() public {
@@ -175,6 +182,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
 
     // ----------------------------- CONTENT-2: a record file the store does not know is incomplete
 
+    /// Regression: CONTENT-2 (docs/security/internal-review-2026-10.md)
     /// @dev An approved record file whose manifest was never registered: once the record opens
     ///      the work gets core-only metadata marked `incomplete`, never a revert, until the
     ///      manifest is registered (and uploaded) or the artist sets another record.
@@ -248,6 +256,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         manager.execute(address(records), call);
     }
 
+    /// Regression: the CC0 text pinned in #56
     /// @dev A license whose key is CC0 names the deployment's pinned CC0 text: an approved CC0
     ///      license with another text cannot open (curation's simulation of `openRecord` catches
     ///      it), while the same text under another spelling of the identifier can.
@@ -270,6 +279,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertEq(records.record(other).licenseKey, WorksHashing.CC0_LICENSE_KEY);
     }
 
+    /// Regression: the CC0 text pinned in #56
     /// @dev A CC0 work's license never changes: no relicense moves it to another text, with
     ///      every party's consent and the governed action, before or after finalize, so a work
     ///      that reads `CC0-1.0` keeps the CC0 legal code.
@@ -286,6 +296,7 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         assertEq(records.licenseOf(tokenId).textFileId, cc0TextFileId);
     }
 
+    /// Regression: the CC0 text pinned in #56
     /// @dev A work relicensed to CC0 from another license takes the pinned CC0 text too.
     function test_Cc0_ARelicenseToCc0TakesThePinnedText() public {
         bytes32 byText = _storeText("Creative Commons Attribution 4.0 (fixture)", "text/plain");

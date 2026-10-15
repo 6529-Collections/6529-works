@@ -379,9 +379,10 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// Review PoC (M-1), inverted: holders with no code (an undeployed Safe, a typo) used to
-    /// pass, and genesis renounced the configurator's ADMIN to them.
-    function test_ReviewPoC_CodelessAdminsAndGuardiansAreRefused() public {
+    /// Regression: M-1 (a proof of concept, inverted) in the review of #31
+    /// @dev Holders with no code (an undeployed Safe, a typo) used to pass, and genesis
+    ///      renounced the configurator's ADMIN to them.
+    function test_OffAnvilCodelessAdminsAndGuardiansAreRefused() public {
         _sepolia();
         vm.etch(_account("01"), "");
         vm.expectRevert(
@@ -496,9 +497,10 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// GOV-4: one key behind every guardian Safe is refused: a 1-of-1 Safe is below the
-    ///        threshold floor, and 2-of-2 Safes of the same two keys share signers.
-    function test_GOV4_OneKeyBehindEveryGuardianSafeIsRefused() public {
+    /// Regression: GOV-4 (docs/security/internal-review-2026-10.md)
+    /// @dev One key behind every guardian Safe is refused: a 1-of-1 Safe is below the
+    ///      threshold floor, and 2-of-2 Safes of the same two keys share signers.
+    function test_OneKeyBehindEveryGuardianSafeIsRefused() public {
         _sepolia();
         bytes memory oneKey = address(new MockOneKeySafe()).code;
         vm.etch(_account("11"), oneKey);
@@ -534,9 +536,10 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// GOV-4: an owner with code (a nested Safe, any contract or an EIP-7702 delegated EOA) is
-    ///        refused, so it cannot hide a signer shared with another Safe.
-    function test_GOV4_ANestedOwnerIsRefused() public {
+    /// Regression: GOV-4 (docs/security/internal-review-2026-10.md)
+    /// @dev An owner with code (a nested Safe, any contract or an EIP-7702 delegated EOA) is
+    ///      refused, so it cannot hide a signer shared with another Safe.
+    function test_ANestedSafeOwnerIsRefused() public {
         _sepolia();
         address inner = MockNestedOwnerSafe(address(new MockNestedOwnerSafe())).INNER();
         vm.etch(_account("01"), address(new MockNestedOwnerSafe()).code);
@@ -721,10 +724,10 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// Review PoC (M-3, M-4, L-3), inverted: on mainnet any file was accepted as the CC0 text,
-    /// an unset VRF_COORDINATOR silently dropped the entropy module, and any contract was
-    /// accepted as Permit2.
-    function test_ReviewPoC_MainnetPinsCanonicalDependencies() public {
+    /// Regression: M-3, M-4 and L-3 (proofs of concept, inverted) in the review of #31
+    /// @dev On mainnet any file was accepted as the CC0 text, an unset VRF_COORDINATOR silently
+    ///      dropped the entropy module, and any contract was accepted as Permit2.
+    function test_MainnetPinsCanonicalDependencies() public {
         DelegationManagementMock delegation = _sepolia();
         vm.chainId(1);
         vm.expectRevert(
@@ -745,7 +748,8 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    function test_ReviewPoC_TheCc0TextMustBeTheCanonicalOne() public {
+    /// Regression: M-3 (a proof of concept, inverted) in the review of #31
+    function test_TheCc0TextMustBeTheCanonicalOne() public {
         _sepolia();
         deployer.setEnv("CC0_TEXT_PATH", "config/README.md");
         bytes32 actual = sha256(vm.readFileBinary("config/README.md"));
@@ -799,7 +803,8 @@ contract DeployScriptTest is Test {
         assertEq(keccak256(deployer.cc0Text(true)), keccak256(cc0));
     }
 
-    function test_ReviewPoC_TheEntropyModuleIsAnExplicitChoice() public {
+    /// Regression: M-4 (a proof of concept, inverted) in the review of #31
+    function test_TheEntropyModuleIsAnExplicitChoice() public {
         _sepolia();
         deployer.setEnv("NO_VRF", "");
         vm.expectRevert(
@@ -857,9 +862,10 @@ contract DeployScriptTest is Test {
         deployer.setEnv("VRF_KEY_HASH", vm.toString(keccak256("lane")));
     }
 
+    /// Regression: DEPS-3 (docs/security/internal-review-2026-10.md)
     /// The Chainlink VRF v2.5 coordinator on Ethereum mainnet (docs.chain.link), and its runtime
     /// code hash read from mainnet on 14 October 2026.
-    function test_DEPS3_TheMainnetCoordinatorIsPinned() public pure {
+    function test_TheMainnetCoordinatorIsPinned() public pure {
         assertEq(DeployGuards.CANONICAL_VRF_COORDINATOR, 0xD7f86b4b8Cae7D942340FF628F82735b7a20893a);
         assertEq(
             DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH,
@@ -867,8 +873,9 @@ contract DeployScriptTest is Test {
         );
     }
 
-    /// DEPS-3: on mainnet the coordinator must be the canonical one, with its pinned code.
-    function test_DEPS3_MainnetRefusesANonCanonicalCoordinator() public {
+    /// Regression: DEPS-3 (docs/security/internal-review-2026-10.md)
+    /// @dev On mainnet the coordinator must be the canonical one, with its pinned code.
+    function test_MainnetRefusesANonCanonicalCoordinator() public {
         DelegationManagementMock delegation = _sepolia();
         vm.chainId(1);
         vm.etch(DeployGuards.CANONICAL_DELEGATION, address(delegation).code);
@@ -893,8 +900,9 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// DEPS-3: off mainnet the operator may pin the coordinator's code hash.
-    function test_DEPS3_TheCoordinatorCodeHashCanBePinnedOffMainnet() public {
+    /// Regression: DEPS-3 (docs/security/internal-review-2026-10.md)
+    /// @dev Off mainnet the operator may pin the coordinator's code hash.
+    function test_TheCoordinatorCodeHashCanBePinnedOffMainnet() public {
         _sepolia();
         MockVrfCoordinator coordinator = new MockVrfCoordinator();
         _withVrf(address(coordinator));
@@ -912,9 +920,10 @@ contract DeployScriptTest is Test {
         assertEq(deployer.prepare().p.vrfCoordinator, address(coordinator));
     }
 
-    /// DEPS-3: Verify refuses a mainnet record whose dependencies are not the canonical
-    /// contracts with their pinned code. (A Sepolia deployment's record, relabelled chain 1.)
-    function test_DEPS3_VerifyRefusesNonCanonicalDependenciesOnMainnet() public {
+    /// Regression: DEPS-3 (docs/security/internal-review-2026-10.md)
+    /// @dev Verify refuses a mainnet record whose dependencies are not the canonical contracts
+    ///      with their pinned code. (A Sepolia deployment's record, relabelled chain 1.)
+    function test_VerifyRefusesNonCanonicalDependenciesOnMainnet() public {
         DelegationManagementMock delegation = _sepolia();
         MockVrfCoordinator fake = new MockVrfCoordinator();
         _withVrf(address(fake));
@@ -1023,8 +1032,9 @@ contract DeployScriptTest is Test {
         list[0] = a;
     }
 
-    /// DEPS-4: off anvil, Verify requires the module to be the subscription's only consumer.
-    function test_DEPS4_VerifyChecksTheSubscriptionConsumers() public {
+    /// Regression: DEPS-4 (docs/security/internal-review-2026-10.md)
+    /// @dev Off anvil, Verify requires the module to be the subscription's only consumer.
+    function test_VerifyChecksTheSubscriptionConsumers() public {
         MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
         (string memory record, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
         address module = address(d.entropyModule);
@@ -1050,9 +1060,10 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
-    /// DEPS-4: on mainnet the subscription owner must be the hot admin Safe (ADMIN and
-    /// PARAMETER_SETTER), and a coordinator that cannot report it fails closed.
-    function test_DEPS4_OnMainnetTheSubscriptionOwnerIsTheHotAdminSafe() public {
+    /// Regression: DEPS-4 (docs/security/internal-review-2026-10.md)
+    /// @dev On mainnet the subscription owner must be the hot admin Safe (ADMIN and
+    ///      PARAMETER_SETTER), and a coordinator that cannot report it fails closed.
+    function test_VerifyOnMainnetTheSubscriptionOwnerIsTheHotAdminSafe() public {
         MockVrfSubscriptions coordinator = new MockVrfSubscriptions();
         (, DeployV1.Deployment memory d) = _vrfRecord(coordinator);
         GovernanceConfig.Config memory cfg = DeployV1.config(d, _filled());
@@ -1076,9 +1087,10 @@ contract DeployScriptTest is Test {
         verifier.checkSubscriptionExternal(d, cfg, true);
     }
 
-    /// DEPS-3 (L4): on mainnet the live coordinator (the module's `coordinator()`) and the
-    /// canonical address's code are checked as well as the recorded parameters.
-    function test_DEPS3_VerifyChecksTheLiveCoordinatorAndItsCode() public {
+    /// Regression: DEPS-3 (docs/security/internal-review-2026-10.md); L4 in the review of #52
+    /// @dev On mainnet the live coordinator (the module's `coordinator()`) and the canonical
+    ///      address's code are checked as well as the recorded parameters.
+    function test_VerifyChecksTheLiveCoordinatorAndItsCode() public {
         // A deployment whose module points at a fake coordinator, its record moved to the
         // canonical address and pinned hash: the live coordinator is still the fake.
         _sepolia();
@@ -1109,8 +1121,9 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
-    /// DEPS-3 (L4): a module on the canonical address whose code is not the pinned code.
-    function test_DEPS3_VerifyChecksTheCanonicalCoordinatorsCode() public {
+    /// Regression: DEPS-3 (docs/security/internal-review-2026-10.md); L4 in the review of #52
+    /// @dev A module on the canonical address whose code is not the pinned code.
+    function test_VerifyChecksTheCanonicalCoordinatorsCode() public {
         _sepolia();
         address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
         vm.etch(canonical, address(new MockVrfCoordinator()).code);
@@ -1168,10 +1181,11 @@ contract DeployScriptTest is Test {
         deployer.prepare();
     }
 
-    /// Review PoC (front-run), ported: squatting the operator's own configurator initcode only
-    /// builds the operator's configurator (no takeover). The run now detects the taken slot
-    /// before broadcasting and asks for a new namespace.
-    function test_ReviewPoC_AConfiguratorFrontRunIsGriefOnlyAndDetected() public {
+    /// Regression: a front-running proof of concept (ported) in the review of #31
+    /// @dev Squatting the operator's own configurator initcode only builds the operator's
+    ///      configurator (no takeover). The run now detects the taken slot before broadcasting
+    ///      and asks for a new namespace.
+    function test_AConfiguratorFrontRunIsGriefOnlyAndDetected() public {
         _sepolia();
         DeployV1.Params memory p = deployer.params(false);
         p.deployer = address(this);
@@ -1252,9 +1266,10 @@ contract DeployScriptTest is Test {
 
     // ------------------------------------------------------------------ off anvil: deployment
 
-    /// Review PoC (M-2), inverted: remapping Stream.setAdmittedMinter (30-day class) to
-    /// PLATFORM (zero delay) used to pass and install.
-    function test_ReviewPoC_ARemappedSelectorIsRefused() public {
+    /// Regression: M-2 (a proof of concept, inverted) in the review of #31
+    /// @dev Remapping Stream.setAdmittedMinter (30-day class) to PLATFORM (zero delay) used to
+    ///      pass and install.
+    function test_ARemappedSelectorIsRefused() public {
         DeployV1.Deployment memory d = DeployV1.deploy(_localParams());
         this.checkPolicyExternal(d, _filled());
         string memory hostile = vm.replace(
@@ -1519,10 +1534,11 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
-    /// GOV-3: Verify repeats the deploy's holder guards against the chain. After genesis the
-    /// cold admin Safe takes one of the hot admin's signers (an ordinary owner swap), which the
-    /// deploy refuses; the readback now refuses it too.
-    function test_GOV3_VerifyRepeatsTheHolderGuards() public {
+    /// Regression: GOV-3 (docs/security/internal-review-2026-10.md)
+    /// @dev Verify repeats the deploy's holder guards against the chain. After genesis the cold
+    ///      admin Safe takes one of the hot admin's signers (an ordinary owner swap), which the
+    ///      deploy refuses; the readback now refuses it too.
+    function test_VerifyRepeatsTheHolderGuards() public {
         (string memory record,) = _offAnvilRecord();
         bytes memory shared = address(new MockSharedSignerSafe()).code;
         vm.etch(_account("01"), shared);
@@ -1544,8 +1560,9 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
-    /// GOV-3: a genesis file naming a contract of the deployment as a holder fails readback.
-    function test_GOV3_VerifyRefusesADeploymentContractAsAHolder() public {
+    /// Regression: GOV-3 (docs/security/internal-review-2026-10.md)
+    /// @dev A genesis file naming a contract of the deployment as a holder fails readback.
+    function test_VerifyRefusesADeploymentContractAsAHolder() public {
         (string memory record, DeployV1.Deployment memory d) = _offAnvilRecord();
         string memory platform = vm.toLowercase(vm.toString(_account("51")));
         string memory edited = vm.replace(_filled(), platform, vm.toString(address(d.stream)));
