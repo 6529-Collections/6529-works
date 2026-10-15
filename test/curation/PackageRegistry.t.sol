@@ -111,6 +111,7 @@ contract PackageRegistryTest is CurationBase {
         assertTrue(registry.supportsInterface(type(IERC165).interfaceId));
         assertTrue(registry.supportsInterface(type(IPackageRegistry).interfaceId));
         assertFalse(registry.supportsInterface(0xffffffff));
+        assertFalse(registry.supportsInterface(0x00000001));
     }
 
     function test_constructor_rejectsBadDependencies() public {
@@ -429,6 +430,9 @@ contract PackageRegistryTest is CurationBase {
         uint64 first = artists.lastActivity(_id(lead));
         vm.warp(block.timestamp + 100 days);
         deadline = uint64(block.timestamp + 1 days);
+        // An existing artist's acceptance is announced like the first one.
+        vm.expectEmit(address(registry));
+        emit IPackageRegistry.PackageAccepted(root2, _id(lead), lead);
         _accept(root2, leadKey);
         assertEq(registry.acceptedAs(root2, lead), _id(lead));
         assertEq(artists.registrations(), 1);
@@ -526,6 +530,39 @@ contract PackageRegistryTest is CurationBase {
         bytes memory zeroSig = _sig(leadKey, registry.acceptanceDigest(root, a));
         vm.expectRevert(SignatureReverts.invalid(address(0)));
         registry.acceptPackage(root, a, zeroSig);
+    }
+
+    /// @dev The deadline second itself is still in time.
+    function test_acceptPackage_atTheDeadline() public {
+        bytes32 root = keccak256("root");
+        _register(root);
+        PartyAcceptance memory a = _acceptance(lead);
+        bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+        vm.warp(a.deadline);
+        assertEq(registry.acceptPackage(root, a, sig), _id(lead));
+    }
+
+    /// @dev A profile that differs in either direction, in either field, is a mismatch.
+    function test_acceptPackage_profileMismatchEitherWay() public {
+        bytes32 root = keccak256("root");
+        _register(root);
+        _accept(keccak256("unrelated"), leadKey, true);
+        artists.setProfile(_id(lead), bytes32(uint256(5)), bytes32(uint256(5)));
+        PartyAcceptance memory base = _acceptance(lead);
+        for (uint256 v; v < 4; ++v) {
+            PartyAcceptance memory a = PartyAcceptance(
+                base.account, bytes32(uint256(5)), bytes32(uint256(5)), base.deadline
+            );
+            if (v == 0) a.profileId = bytes32(uint256(6));
+            else if (v == 1) a.profileId = bytes32(uint256(4));
+            else if (v == 2) a.profileDocHash = bytes32(uint256(6));
+            else a.profileDocHash = bytes32(uint256(4));
+            bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
+            vm.expectRevert(
+                abi.encodeWithSelector(IPackageRegistry.ProfileMismatch.selector, _id(lead))
+            );
+            registry.acceptPackage(root, a, sig);
+        }
     }
 
     function test_acceptPackage_revertsExpired() public {
@@ -878,6 +915,22 @@ contract PackageRegistryTest is CurationBase {
         _consume(root, item, new bytes32[](0), _move(leadKey, root, _hash(item), 1));
     }
 
+    /// @dev A bitmap word holds 255 nonces; its top bit is the sentinel acceptance sets. The
+    ///      nonces on either side of a word boundary are distinct from each other and from it.
+    function test_revokeMove_nonceWordBoundary() public {
+        _ready(SHA_A);
+        uint256 id = _id(lead);
+        for (uint256 n = 253; n <= 256; ++n) {
+            assertFalse(registry.isMoveNonceUsed(id, n));
+        }
+        vm.prank(lead);
+        registry.revokeMove(id, 255);
+        assertTrue(registry.isMoveNonceUsed(id, 255));
+        assertFalse(registry.isMoveNonceUsed(id, 254));
+        assertFalse(registry.isMoveNonceUsed(id, 256));
+        assertFalse(registry.isMoveNonceUsed(id, 0));
+    }
+
     function test_revokeMove_onlyCurrentAuthority() public {
         _ready(SHA_A);
         vm.prank(collab);
@@ -950,6 +1003,16 @@ contract PackageRegistryTest is CurationBase {
         _expectInvalid(item, _keys(leadKey));
         item.edition.params = "";
         item.edition.format = EditionFormat.OPEN;
+        _expectInvalid(item, _keys(leadKey));
+        // Each of the other terms on its own.
+        item.edition.format = EditionFormat.FIXED;
+        item.edition.window = 1;
+        _expectInvalid(item, _keys(leadKey));
+        item.edition.window = 0;
+        item.edition.price = 1;
+        _expectInvalid(item, _keys(leadKey));
+        item.edition.price = 0;
+        item.edition.saleKind = keccak256("FIXED_PRICE");
         _expectInvalid(item, _keys(leadKey));
     }
 
@@ -1059,6 +1122,10 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _masterItem(c);
         item.payees[0].share = 19_999;
         _expectInvalid(item, keys);
+        // Nor to more than 100,000.
+        item = _masterItem(c);
+        item.payees[0].share += 1;
+        _expectInvalid(item, keys);
         // A zero share.
         item = _masterItem(c);
         item.payees[0].share = 0;
@@ -1084,6 +1151,10 @@ contract PackageRegistryTest is CurationBase {
         item = _masterItem(c);
         item.payees[1].artistId = _id(makeAddr("stranger"));
         _expectInvalid(item, keys);
+        // One whose ID is above every party's: a match is equality, not an order.
+        item = _masterItem(c);
+        item.payees[1].artistId = type(uint256).max;
+        _expectInvalid(item, keys);
         // More payees than parties.
         item = _masterItem(c);
         ISplitWallet.Payee[] memory three = new ISplitWallet.Payee[](3);
@@ -1102,6 +1173,14 @@ contract PackageRegistryTest is CurationBase {
         PackageItem memory item = _masterItem(SHA_A);
         item.payees[0] = ISplitWallet.Payee(_id(lead), address(0), 20_000);
         _expectInvalid(item, _keys(leadKey, collabKey));
+    }
+
+    function test_validItem_fewerPayeesThanParties() public {
+        // The collaborator is credited but not paid: one payee for two parties.
+        PackageItem memory item = _masterItem(SHA_A);
+        item.payees = new ISplitWallet.Payee[](1);
+        item.payees[0] = ISplitWallet.Payee(_id(lead), address(0), 100_000);
+        _expectValid(item, _keys(leadKey, collabKey));
     }
 
     function test_validItem_partyPaidBothWays() public {
@@ -1400,6 +1479,21 @@ contract PackageRegistryTest is CurationBase {
         registry.registerPackage(root, EVIDENCE, "");
         (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
         assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.NONE));
+    }
+
+    /// @dev Code whose hash sorts below the pinned one is refused as well as code above it.
+    function test_registerPackage_refusesAVerifierCodeHashBelowThePin() public {
+        bytes32 pinned = address(verifier).codehash;
+        bytes memory lower;
+        for (uint256 i; lower.length == 0; ++i) {
+            bytes memory code = abi.encodePacked(bytes1(0x60), bytes1(uint8(i)), bytes1(0x00));
+            if (keccak256(code) < pinned) lower = code;
+        }
+        vm.etch(address(verifier), lower);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(verifier))
+        );
+        registry.registerPackage(keccak256("root"), EVIDENCE, "");
     }
 
     function test_setVerifier_keepsRegisteredApprovals() public {

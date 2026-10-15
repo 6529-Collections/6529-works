@@ -139,13 +139,29 @@ contract ConsolidationAdapterTest is IdentityFixture {
 
     /// @dev Documented bound: only the first MAX_REGISTRATIONS_READ registrations of a pair count.
     function test_IsEstablished_ReadsAtMostFourRegistrations() public {
-        for (uint256 i; i < adapter.MAX_REGISTRATIONS_READ(); ++i) {
+        assertEq(adapter.MAX_REGISTRATIONS_READ(), 4);
+        for (uint256 i; i < 4; ++i) {
             _delegate(a, b, block.timestamp + 1);
         }
         _delegate(a, b, FAR);
         _delegate(b, a, FAR);
         vm.warp(block.timestamp + 90 days);
         assertFalse(adapter.isEstablished(a, b));
+    }
+
+    /// @dev The delegation contract takes any uint256 expiry; the largest still counts.
+    function test_IsEstablished_ExpiryCanBeAnyWord() public {
+        _delegate(a, b, type(uint256).max);
+        _delegate(b, a, type(uint256).max);
+        vm.warp(block.timestamp + 30 days);
+        assertTrue(adapter.isEstablished(a, b));
+    }
+
+    /// @dev Registration dates are read in full: the effective date is right past 2**32 seconds.
+    function test_EffectiveAt_AfterTheYear2106() public {
+        vm.warp(uint256(1) << 32);
+        _consolidate(a, b);
+        assertEq(adapter.effectiveAt(a, b), (uint256(1) << 32) + 30 days);
     }
 
     function testFuzz_IsEstablished_MatchesModel(
@@ -386,6 +402,17 @@ contract ConsolidationAdapterTest is IdentityFixture {
         (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();
         repriced.setExtraGas(type(uint256).max);
         _expectReadsRevert(a2, _readFailed(address(repriced)));
+    }
+
+    /// @dev The same with only a little more gas than the stipend left after the read: the
+    ///      spent gas, not the gas left, tells an exhausted read from the end of an array.
+    function test_Reads_FailClosedWhenAGetterRunsOutOfGasOnATightBudget() public {
+        (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();
+        repriced.setExtraGas(type(uint256).max);
+        (bool ok, bytes memory data) =
+            address(a2).staticcall{ gas: 300_000 }(abi.encodeCall(a2.isEstablished, (a, b)));
+        assertFalse(ok);
+        assertEq(data, _readFailed(address(repriced)));
     }
 
     /// @dev A delegation contract that has lost its code (it cannot today, but the adapter does

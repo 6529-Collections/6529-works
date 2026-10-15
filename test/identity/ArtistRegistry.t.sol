@@ -236,6 +236,13 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.stageChange(artistId, next, artist, deadline, abi.encodePacked(r, vs), "");
     }
 
+    function test_Constructor_EmitsTheConsolidationSource() public {
+        address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectEmit(next);
+        emit IArtistRegistry.ConsolidationSourceSet(address(0), address(adapter));
+        new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
+    }
+
     function test_Replay_OtherRegistryRejected() public {
         ArtistRegistry other =
             new ArtistRegistry(address(manager), adapter, address(adapter).codehash);
@@ -690,6 +697,20 @@ contract ArtistRegistryTest is IdentityFixture {
             artistId, ChangeKind.CONTESTED, next, evidence, deadline, _sign(newKey, digest)
         );
         vm.stopPrank();
+    }
+
+    /// @dev An acceptance is good through its deadline second.
+    function test_Override_AcceptanceAtItsDeadlineSecond() public {
+        ArtistIdentity memory next = _identity(newAuthority, payout);
+        bytes32 evidence = keccak256("evidence");
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory acceptance = _sign(
+            newKey,
+            registry.overrideDigest(artistId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
+        vm.warp(deadline);
+        vm.prank(governor);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
     }
 
     /// @dev E11 (reverted to nonce-free): the acceptance is consumed once by digest, so the same
@@ -1203,8 +1224,10 @@ contract ArtistRegistryTest is IdentityFixture {
         address federation = address(new FederationRegistryStub());
         vm.prank(admin);
         registry.bindFederationRegistry(federation);
+        // By number, not through the constant it bounds.
+        assertEq(registry.MAX_FEDERATED(), 64);
         vm.startPrank(federation);
-        for (uint256 i; i < registry.MAX_FEDERATED(); ++i) {
+        for (uint256 i; i < 64; ++i) {
             registry.listFederatedContract(artistId, address(uint160(0xF000 + i)));
         }
         vm.expectRevert(
@@ -1300,6 +1323,7 @@ contract ArtistRegistryTest is IdentityFixture {
         assertTrue(registry.supportsInterface(type(IArtistRegistry).interfaceId));
         assertTrue(registry.supportsInterface(type(IArtistPayoutResolver).interfaceId));
         assertFalse(registry.supportsInterface(0xffffffff));
+        assertFalse(registry.supportsInterface(0x00000001));
     }
 
     function test_Views_ForUnknownArtists() public {

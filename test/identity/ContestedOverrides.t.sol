@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { Vm } from "forge-std/Vm.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
@@ -49,6 +50,20 @@ contract ContestedOverridesTest is IdentityFixture {
         return registry.pendingChange(artistId);
     }
 
+    function _cancellations() internal view returns (uint256 n) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == IArtistRegistry.ChangeCancelled.selector) ++n;
+        }
+    }
+
+    /// @dev Staging with nothing pending cancels nothing.
+    function test_Stage_WithNothingPendingCancelsNothing() public {
+        vm.recordLogs();
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertEq(_cancellations(), 0);
+    }
+
     function _resolve(bool uphold, bytes32 ref) internal {
         vm.prank(successorSetter);
         registry.resolveContested(artistId, uphold, ref);
@@ -91,7 +106,9 @@ contract ContestedOverridesTest is IdentityFixture {
         assertEq(registry.activeAuthorityOf(artistId), address(0), "restrained while contested");
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ContestResolved(artistId, true, true, VOTE);
+        vm.recordLogs();
         _resolve(true, VOTE);
+        assertEq(_cancellations(), 0, "an upheld change is not cancelled");
         assertEq(registry.authorityOf(artistId), newAuthority);
         assertEq(registry.activeAuthorityOf(artistId), newAuthority);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
@@ -226,6 +243,15 @@ contract ContestedOverridesTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
         PendingChange memory p = registry.pendingChange(artistId);
         vm.warp(p.executableAt);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IArtistRegistry.ContestWindowClosed.selector, artistId, p.executableAt
+            )
+        );
+        vm.prank(thiefWallet);
+        registry.cancelChange(artistId);
+        // And at any time after the notice, not only at its last second.
+        vm.warp(p.executableAt + 1);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IArtistRegistry.ContestWindowClosed.selector, artistId, p.executableAt
