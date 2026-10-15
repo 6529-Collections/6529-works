@@ -203,9 +203,9 @@
   only the PLATFORM role adds locators; the artist adds them until then.
 - Records (CONTENT-1): `openRecord` refuses an `Identity` or `Base64` PREVIEW file over
   `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, `Identity` counted four times; gzip files are never
-  inlined, so not bounded). With the content-address locators this
-  restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once
-  (`test/integration/TokenUriBudget.t.sol`: at most 7.78M Prague gas, `Editions.uri` included).
+  inlined, so not bounded). With the content-address locators this restores the 8M `tokenURI`
+  budget, now proven on the real stack with every cap at once
+  (`test/integration/TokenUriBudget.t.sol`: at most 7.77M Prague gas, `Editions.uri` included).
 - Stream: `createCollection` refuses names with control characters, `<`, `"` or `\`, which JSON
   escaping makes up to six bytes in every work's metadata; the budget proof uses the dearest
   name it accepts.
