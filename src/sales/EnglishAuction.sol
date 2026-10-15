@@ -300,8 +300,7 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     function minimumBid(uint256 saleId) external view returns (uint256) {
-        Sale storage s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
+        Sale storage s = _existing(saleId);
         return _minimumBid(s, _terms[s.termsId]);
     }
 
@@ -351,10 +350,9 @@ contract EnglishAuction is
         address pending = _recipientOf(s);
         if (s.flags & _DELIVERY_PENDING == 0) revert NoPendingDelivery(saleId);
         if (msg.sender != pending && msg.sender != s.bidder) {
-            if (
-                s.bidder != address(0)
-                    || msg.sender != IMintTarget(s.token).primaryTerms(s.tokenId, "").creator
-            ) revert NoPendingDelivery(saleId);
+            if (s.bidder != address(0) || msg.sender != _currentCreator(s)) {
+                revert NoPendingDelivery(saleId);
+            }
         }
         if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
@@ -410,7 +408,9 @@ contract EnglishAuction is
             revert OutcomeNotRecorded(saleId, outcomeRef);
         }
         s.status = AuctionState.CANCELLED;
-        s.pausedTotal = SafeCast.toUint24(block.timestamp - s.pausedAt);
+        // Safe: a live pause is at most MAX_PAUSE (7 days) long, far below 2^24 seconds.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        s.pausedTotal = uint24(block.timestamp - s.pausedAt);
         s.pausedAt = 0;
         _refundHighBid(saleId, s);
         IMintTarget(s.token).burn(s.tokenId, 1);
@@ -552,9 +552,7 @@ contract EnglishAuction is
     /// @dev `price` is zero, as for every English auction; a federated token's fee share is its
     ///      registry entry's, locked at start.
     function lockedTerms(uint256 saleId) external view returns (LockedTerms memory lt) {
-        Sale storage s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
-        (lt,) = _lockedTerms(s);
+        (lt,) = _lockedTerms(_existing(saleId));
     }
 
     /// @inheritdoc IEnglishAuction
@@ -949,6 +947,17 @@ contract EnglishAuction is
         active = status == IAssetAllowlist.Status.Active;
     }
 
+    /// @dev A sale that exists.
+    function _existing(uint256 saleId) private view returns (Sale storage s) {
+        s = _sales[saleId];
+        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
+    }
+
+    /// @dev The artist's current authority, as the token reports it now.
+    function _currentCreator(Sale storage s) private view returns (address creator) {
+        (, creator) = _lockedTerms(s);
+    }
+
     /// @dev The token's own latest dispute outcome in the statement log, and its position in
     ///      the token's chain.
     function _ownOutcome(Sale storage s) private view returns (bytes32, uint64) {
@@ -974,7 +983,9 @@ contract EnglishAuction is
     function _endPause(uint256 saleId, Sale storage s, uint256 length) private {
         uint32 end = SafeCast.toUint32(_resumedEnd(s, length));
         s.endTime = end;
-        s.pausedTotal = SafeCast.toUint24(length);
+        // Safe: `length` is at most MAX_PAUSE (7 days), far below 2^24 seconds.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        s.pausedTotal = uint24(length);
         s.pausedAt = 0;
         emit AuctionResumed(saleId, end);
     }
