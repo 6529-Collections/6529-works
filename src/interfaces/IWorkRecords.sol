@@ -22,7 +22,7 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      out-of-bounds record. Until finalize the artist may point the work at a new record
 ///      file, but media never changes.
 ///
-///      "The artist" is the current authority of the work's lead artist ID. The state hash
+///      "The artist" is the active authority of the work's lead artist ID. The state hash
 ///      commits to the token ID, the version, the record file ID, the license key and text, the
 ///      royalty rate and the effective renderer. The version bumps only on a real change (a new
 ///      record pointer, license, royalty rate or renderer pin); an identical re-publish is a
@@ -200,7 +200,7 @@ interface IWorkRecords {
 
     /// @notice Changes a work's license toward more permissive terms. PARAMETER_SETTER role plus
     ///         an EIP-712 `Typehashes.RELICENSE` signature from every party of `item`, in order,
-    ///         each by its current authority. Reverts with `LicenseIrrevocable` when the current
+    ///         each by its active authority. Reverts with `LicenseIrrevocable` when the current
     ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not. A CC0 license
     ///         names the deployment's CC0 text (`InvalidLicense` otherwise), as `openRecord`
     ///         requires too, so a CC0 work's license never changes. The new license's text file

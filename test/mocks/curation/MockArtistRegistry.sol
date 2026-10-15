@@ -58,6 +58,12 @@ contract MockArtistRegistry is IERC165 {
         return _identity[artistId].authority;
     }
 
+    /// @dev No recovery override is modelled: the active authority is the authority.
+    function activeAuthorityOf(uint256 artistId) external view returns (address) {
+        _known(artistId);
+        return _identity[artistId].authority;
+    }
+
     function artist(uint256 artistId)
         external
         view

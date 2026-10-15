@@ -67,7 +67,7 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   back to another renderer, which would show a finalized work in an output
   format nobody pinned; a new default renderer, or the errata repin, restores
   it. The errata repin needs the lead artist's signature (by the artist ID's
-  current authority), so a finalized work whose pinned renderer's code changed
+  active authority), so a finalized work whose pinned renderer's code changed
   stays without metadata while that key is lost: the artist first recovers the
   authority through the artist registry (a staged change or a governed override,
   see the [identity module](../identity/README.md)), then signs the repin.
@@ -105,7 +105,7 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   version bumps only on a real change; identical re-publishes are no-ops, and
   permissionless actions never change it.
 - **Amendments.** Relicensing and royalty-rate changes need every party's
-  EIP-712 consent, each by its current authority, plus a governed action. Only
+  EIP-712 consent, each by its active authority, plus a governed action. Only
   CC0 irrevocability is enforced on-chain, on the canonical license key; whether
   a new license is more permissive is the judgement of the parties' consent plus
   governance, and the contract does not order licenses. A license whose key is

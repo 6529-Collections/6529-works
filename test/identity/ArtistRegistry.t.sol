@@ -826,6 +826,45 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.prank(successorSetter);
         registry.setConsolidationSource(adapter, next, address(next).codehash);
         assertEq(address(registry.consolidationSource()), address(next));
+        assertEq(registry.consolidationSourceCodeHash(), address(next).codehash);
+    }
+
+    /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
+    ///      source whose code no longer matches the pin (simulated with `vm.etch`) is never
+    ///      trusted: staging, heartbeats and refreshes revert with `InvalidSource`, while an
+    ///      execution and a registration go ahead and skip their refresh without reading it
+    ///      (review L-1), so nobody's standing changes. The original code works again.
+    function test_ConsolidationSource_CodeHashRecheckedAtUse() public {
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        assertEq(registry.consolidationSourceCodeHash(), address(adapter).codehash, "pinned");
+        bytes memory original = address(adapter).code;
+        // The replacement answers "not consolidated" for everyone.
+        vm.etch(address(adapter), address(new FailingConsolidationSource()).code);
+        bytes memory changed =
+            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(adapter));
+
+        vm.expectRevert(changed);
+        registry.refreshStanding(artistId);
+        vm.expectRevert(changed);
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority, "the recovery executes");
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0, "nothing read from it");
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
+        _register(stranger);
+        _armRevert(changed);
+        _stage(newKey, _identity(newAuthority, payout), 0);
+
+        vm.etch(address(adapter), original);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp, "caught up");
+        _stage(newKey, _identity(newAuthority, payout), 0);
     }
 
     function test_SetConsolidationSource_RevertsForStaleExpected() public {
@@ -1118,6 +1157,53 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.executeChange(artistId);
         assertTrue(registry.isArtist(address(stream), 1, newAuthority));
         assertFalse(registry.isArtist(address(stream), 1, artist));
+    }
+
+    // ----------------------------------------------------------------- active authority
+
+    /// @dev IDENTITY-1 (owner decision A): from its staging until it executes, an override that
+    ///      would move the authority leaves the artist without an active authority, so nobody
+    ///      acts as the artist (`isArtist` is false for both keys); `authorityOf` keeps
+    ///      identifying it. After execution the new authority is active.
+    function test_ActiveAuthority_RestrainedUntilTheOverrideExecutes() public {
+        (StreamWorksMock stream,) = _wireStream();
+        assertEq(registry.activeAuthorityOf(artistId), artist);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertEq(registry.activeAuthorityOf(artistId), address(0), "restrained");
+        assertEq(registry.authorityOf(artistId), artist, "still identified");
+        assertFalse(registry.isArtist(address(stream), 1, artist));
+        assertFalse(registry.isArtist(address(stream), 1, newAuthority));
+
+        vm.warp(block.timestamp + 180 days);
+        assertEq(registry.activeAuthorityOf(artistId), address(0), "until it executes");
+        registry.executeChange(artistId);
+        assertEq(registry.activeAuthorityOf(artistId), newAuthority);
+        assertTrue(registry.isArtist(address(stream), 1, newAuthority));
+    }
+
+    /// @dev A STANDARD change, even one moving the authority, and an override that keeps the
+    ///      authority restrain nothing; a veto lifts the restraint at once.
+    function test_ActiveAuthority_OnlyAnAuthorityMovingOverrideRestrains() public {
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        assertEq(registry.activeAuthorityOf(artistId), artist, "a STANDARD change");
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(artist, payout), 0);
+        assertEq(registry.payoutAddress(artistId), address(0), "the payout is frozen");
+        assertEq(registry.activeAuthorityOf(artistId), artist, "a payout-only override");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertEq(registry.activeAuthorityOf(artistId), address(0));
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        assertEq(registry.activeAuthorityOf(artistId), artist, "restored by the veto");
+    }
+
+    function test_ActiveAuthority_RevertsForAnUnknownArtist() public {
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, 7));
+        registry.activeAuthorityOf(7);
     }
 
     /// @dev The statement log accepts the registry as its artist resolver (ERC-165 at install).

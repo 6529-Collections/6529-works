@@ -15,7 +15,9 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      than the resolver. The log pins a code hash at install, which binds bytecode, not
 ///      behaviour, so an implementation that forwards to a mutable backend is only as trustworthy
 ///      as whoever controls that backend. An implementation must therefore be immutable, or be
-///      governed no faster than the 30-day class (ADR 0001 section 13), with every change public.
+///      governed so that no answer is ever made true faster than the 30-day class (ADR 0001
+///      section 13), with every change public. A guardian-vetoable withholding (an answer made
+///      false, never redirected; ADR 0003 owner decision 6) is allowed.
 interface IArtistRoleResolver is IERC165 {
     /// @notice Returns whether `account` is currently an artist (or authorised artist key) of
     ///         the subject `(token, id)`.

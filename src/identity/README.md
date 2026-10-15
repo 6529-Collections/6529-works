@@ -106,7 +106,7 @@ authority still maps to the artist ID (a package naming it resolves), but the
 artist can never rotate back to it: A, then B, then A reverts with
 `AccountTaken(A)`, for a STANDARD change and for an override. The move,
 fixed-price consent and acceptance signatures a key left unused are checked
-against the current authority, so they never verify again once it rotates
+against the active authority, so they never verify again once it rotates
 away (`test_RotationBackToAPreviousAuthorityIsRefused`). Rotating to a
 temporary key and back is therefore not possible: rotate to a fresh key.
 Recovery likewise installs a fresh key. Changes that keep the current
@@ -208,6 +208,56 @@ each cancel; the guardian veto and the override path end that. Artist-resolved
 split payees are pull-only (economics lane): only the current
 `payoutAddress`, or a signature from it, can release.
 
+## Restrained authority during a recovery override
+
+Owner decision on IDENTITY-1 (14 October 2026, ADR 0003 owner decision 6):
+while a recovery override that would move the authority is pending, nobody
+acts as the artist. `activeAuthorityOf(artistId)` returns zero from the
+override's staging until it executes, is vetoed or voided, or its contest
+lapses (a lapsed contest stops restraining at once, as it stops freezing).
+Otherwise it returns the authority. `authorityOf` keeps identifying the
+artist.
+
+What reads the active authority:
+
+| Power | Where | While restrained |
+| --- | --- | --- |
+| Sale `creator` | `primaryTerms` in 6529 Stream and 6529 Editions | zero |
+| Open, consent to or close an edition sale as the artist | FixedPriceSale, DutchSale, MintSaleBase | `NotSaleManager`, `InvalidArtistConsent`; PLATFORM still manages sales at the package terms |
+| Move a work to Stream, revoke a move nonce | PackageRegistry | `InvalidSignature`, `NotAuthority` |
+| Accept a package for the artist's ID | PackageRegistry | `InvalidSignature` |
+| A no-bid auction's token | EnglishAuction `settle` | reverts with `InvalidRecipient(0)` and moves nothing; anyone retries after the outcome |
+| Set, finalize or add the artist's locators to a record; party consents | WorkRecords | `NotWorkArtist`, the AccessManager check, `InvalidConsent` |
+| ARTIST statements | `isArtist`, read by the statement log | `NotAuthorized` |
+
+The key being recovered from loses these powers, and the reserved new key
+gains none until execution. Identity calls (`heartbeat`, `revokeNonce`) are not
+creator powers and are unchanged. A STANDARD change, or an override that keeps
+the authority (a payout-only override), restrains nothing.
+
+**What is already running continues.** A restraint never reaches back:
+- An auction with a bid settles as usual. The bidder gets the work, and the
+  artist's share of the proceeds waits in the seller wallet under the payout
+  freeze (`test_AuctionWithABidRunningAtStagingSettlesNormally`).
+- A no-bid auction's `settle` waits until the outcome: the token stays in the
+  auction's custody and is delivered to the new authority after execution, or
+  to the old one after a veto, void or lapse
+  (`test_NoBidAuctionRunningAtStagingWaitsForTheOutcome`,
+  `test_NoBidAuctionSettlesToTheOldAuthorityAfterAVeto`).
+- An open edition sale keeps selling, its artist share frozen. PLATFORM can
+  close it; the artist's keys cannot.
+- A delivery recorded for the old authority before the staging can still be
+  claimed by it.
+
+Nothing waits forever. An uncontested override is executable by anyone after
+180 days, and a contested one is resolved by the vote, vetoed, or lapses 365
+days after the contest.
+
+**Trade-off.** A network that abused the recovery path would also freeze the
+real artist, until a guardian veto, a captured wallet's contest decided by the
+vote, or the lapse. `test/integration/RecoveryRestraint.t.sol` covers the
+flows on the real contracts.
+
 ## Payout validation
 
 Because artist payees are pull-only, some payouts would strand or stall funds.
@@ -289,15 +339,16 @@ data, or returns more than expected reverts with
 consolidated", which would mark every recorded wallet missing and remove it
 after the grace.
 
-**During a source outage** (a repricing, or a broken source), until the source
-is fixed or swapped (`setConsolidationSource`, 30 days):
+**During a source outage** (a repricing, a broken source, or a source whose code
+no longer matches its pinned hash), until the source is fixed or swapped
+(`setConsolidationSource`, 30 days):
 - staging, heartbeats and `refreshStanding` revert (fail closed);
 - registration (a first package acceptance) and execution (`executeChange`, an
   upheld `resolveContested`) go ahead and skip their standing refresh, emitting
   `StandingRefreshSkipped(artistId)`. Skipping removes nobody's standing: the
   snapshot keeps what it had, and a refresh stops at the first failed read.
-  Only the source's `DelegationReadFailed` is skipped; any other failure still
-  reverts;
+  Only the source's `DelegationReadFailed` and a code-hash mismatch are skipped;
+  any other failure still reverts;
 - once reads work again, `refreshStanding` for each artist in a
   `StandingRefreshSkipped` event catches up.
 
@@ -334,14 +385,22 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   cancels it or the guardian vetoes it.
 - **Consolidation source.** `setConsolidationSource` is a full-trust path on
   the 30-day class. The source decides who has standing, so a malicious source
-  could grant or deny it. A source that cannot read halts identity calls (they
+  could grant or deny it. Its code hash is pinned at install
+  (`consolidationSourceCodeHash`) and re-checked at every use. A source whose
+  code no longer matches is never trusted: staging, heartbeats and
+  `refreshStanding` revert with `InvalidSource`, while registration and
+  execution go ahead and skip their standing refresh, as in an outage
+  (`test_ConsolidationSource_CodeHashRecheckedAtUse`,
+  `test_SourceMismatchDoesNotBlockRecoveryExecution`). The re-check costs about
+  2.2K gas per call that reads the source. A source that cannot read halts identity calls (they
   revert) rather than stripping standing.
 - **Profile fields.** The profile ID and profile document hash are the
   artist's unverified claims. They are bound into signatures but not checked
   against 6529 profiles.
 - **Stolen key.** By design (ADR §11), the old key can cancel a 7-day
   STANDARD change. A stolen key therefore forces the 180-day CONTESTED route,
-  which the old key cannot cancel.
+  which the old key cannot cancel. From its staging, the override restrains
+  the stolen key's creator powers as well as the payout.
 - **The old key after a rotation.** After a rotation A to N, if A and N are
   still consolidated, A is an established wallet of N. A is then captured as an
   override canceller (`test_PoC8_OldKeyConsolidatedWithTheNewAuthorityIsCaptured`).
@@ -386,14 +445,18 @@ contests it, and only during the notice:
 - the guardian can still veto.
 
 **The cost to the artist.** The artist's own captured wallet can no longer end
-a rogue override alone. Its cancel only contests the override, and the payout
-stays frozen until one of three things happens:
+a rogue override alone. Its cancel only contests the override, and until one of
+three things happens the payout stays frozen and the artist's creator powers
+stay restrained (see "Restrained authority during a recovery override"):
 - a guardian veto;
 - a governed void;
 - the 365-day lapse.
 
 Guardian monitoring must therefore watch `ChangeContested` events and scheduled
-`resolveContested` operations.
+`resolveContested` operations. Guardians also watch scheduled `stageOverride`
+operations, since a staged override restrains the artist from its 48-hour
+staging; when vetoing one, they also cancel any other override queued for the
+same artist.
 
 `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`,
 `test_Contest_VoteUpholdsAndTheArtistRecovers` and the integration test

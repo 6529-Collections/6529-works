@@ -39,7 +39,7 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 /// @dev Gas (the 300K auction start). `consume` writes one fresh slot, 6529 Stream's
 ///      `contentHash => itemHash`, which is both the consume-once record and the uniqueness
 ///      record. It reads consent from `acceptedAs[root][account]`, and its only external call is
-///      the lead's current authority. Move nonces live in a per-artist bitmap of 255 nonces per
+///      the lead's active authority. Move nonces live in a per-artist bitmap of 255 nonces per
 ///      word whose top bit is a sentinel: the acceptance that creates an identity writes the
 ///      sentinel into word 0, so an artist's first 255 starts update a nonzero slot instead of
 ///      creating one. Tools should therefore use each artist's nonces sequentially from 0.
@@ -180,7 +180,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IPackageRegistry
     /// @dev The root must be approved. The signer is the account itself when it has no artist ID
     ///      yet (the acceptance then creates the identity, artist ID `uint160(account)`, which the
-    ///      artist registry counts as its first activity), otherwise the current authority of its
+    ///      artist registry counts as its first activity), otherwise the active authority of its
     ///      artist ID, and the profile fields must match the record. A repeat is a no-op. Later
     ///      acceptances are not reported as activity. Because the first acceptance relayed sets
     ///      the identity's profile, an artist's pre-signed acceptances carrying different profile
@@ -197,7 +197,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         if (block.timestamp > acceptance.deadline) revert InvalidSignature();
         address account = acceptance.account;
         artistId = _artists.artistIdOf(account);
-        address signer = artistId == 0 ? account : _artists.authorityOf(artistId);
+        address signer = artistId == 0 ? account : _artists.activeAuthorityOf(artistId);
         if (!SignatureVerifier.isValid(
                 signer, acceptanceDigest(packageRoot, acceptance), signature
             )) {
@@ -229,7 +229,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @dev Checks, in order: the caller is the bound Stream; the root is approved; the proof
     ///      places the item; its content hash is unused on Stream; the seed and edition terms;
     ///      every party accepted the root and is a distinct artist; the payee list is canonical
-    ///      and covered by the parties; the lead's current authority signed the move, unexpired,
+    ///      and covered by the parties; the lead's active authority signed the move, unexpired,
     ///      on an unused nonce. A second consume of the same item, or of an item burned and
     ///      released, reverts with `ContentUsed` naming the item itself. A released content hash
     ///      is consumed only by an item whose lead artist is the release's beneficiary
@@ -304,7 +304,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IPackageRegistry
     function revokeMove(uint256 artistId, uint256 nonce) external {
-        if (_artists.authorityOf(artistId) != msg.sender) {
+        if (_artists.activeAuthorityOf(artistId) != msg.sender) {
             revert NotAuthority(artistId, msg.sender);
         }
         _spendMoveNonce(artistId, nonce);
@@ -494,7 +494,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev Checks the deadline, spends the nonce and checks the signature of the lead artist's
-    ///      current authority.
+    ///      active authority (`IArtistRegistry.activeAuthorityOf`).
     function _useMove(
         bytes32 packageRoot,
         bytes32 itemHash,
@@ -505,7 +505,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         if (block.timestamp > move.deadline) revert InvalidSignature();
         _spendMoveNonce(artistId, move.nonce);
         bytes32 digest = moveDigest(packageRoot, itemHash, move.nonce, move.deadline);
-        if (!SignatureVerifier.isValid(_artists.authorityOf(artistId), digest, move.signature)) {
+        if (!SignatureVerifier.isValid(
+                _artists.activeAuthorityOf(artistId), digest, move.signature
+            )) {
             revert InvalidSignature();
         }
     }

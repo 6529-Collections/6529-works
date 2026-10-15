@@ -52,9 +52,10 @@ struct Payment {
 ///      `price` is the unit price for FIXED_PRICE, the starting price for DUTCH and zero for
 ///      ENGLISH_AUCTION. `seller` receives the artist portion (a split wallet's predicted CREATE2
 ///      address, which may not be deployed), `feeRecipient` the network portion, `feeShare` out of
-///      `Splits.DENOMINATOR` (100,000). `creator` is the lead artist's current authority, resolved
+///      `Splits.DENOMINATOR` (100,000). `creator` is the lead artist's active authority, resolved
 ///      through the artist registry when the terms are read: it receives an auction token that drew
-///      no bids, and may open edition sales.
+///      no bids, and may open edition sales. It is zero while a recovery override is pending
+///      (`IArtistRegistry.activeAuthorityOf`).
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;

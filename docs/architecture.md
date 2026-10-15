@@ -180,8 +180,8 @@ default when the sale starts".
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).
-   - With no bids, the token goes to the artist's current authority, resolved
-     at settlement.
+   - With no bids, the token goes to the artist's active authority, resolved
+     at settlement; while a recovery override is pending, settlement waits.
    - Settlement calls `IMintTarget.markPrimarySettled`, even when delivery is still
      pending, so a winner who never claims cannot block the edition.
 10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and
@@ -282,6 +282,13 @@ default when the sale starts".
      through the governed 30-day `resolveContested` (uphold executes, void
      deletes). The guardian can veto, and an unresolved contest lapses after a
      year.
+   - While an override that would move the authority is pending, nobody acts
+     as the artist (ADR 0003 owner decision 6). `activeAuthorityOf` is zero, so
+     the sale `creator`, move and acceptance signatures, record amendments and
+     consents, and ARTIST statements all refuse both the old and the new key
+     until it executes, is vetoed or voided, or lapses. A no-bid auction's
+     settlement waits for the outcome; sales already running continue, with
+     the artist's share frozen. `authorityOf` keeps identifying the artist.
 
 ### Dispute pause
 
@@ -328,7 +335,7 @@ default when the sale starts".
 | Platform | Create collections; add locators; open edition sales and phases | Change an approved package's prices, currencies, sizes or media; set allowlist prices below the package price without the artist's signed approval |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
-| Lead artist (current authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |
+| Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
 | Bound contracts | Stream consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts under artists; WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
 | VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |

@@ -13,7 +13,7 @@ enum ItemKind {
 
 /// @notice How a listed party is credited (ADR 0001 section 3).
 /// @dev ARTIST parties are credited authors; COLLABORATOR parties are credited contributors.
-///      The first party of every item is the lead ARTIST, whose current authority signs "move to
+///      The first party of every item is the lead ARTIST, whose active authority signs "move to
 ///      Stream", edits the work record and finalizes.
 enum PartyRole {
     ARTIST,
@@ -122,7 +122,7 @@ struct PackageItem {
 }
 
 /// @notice The lead artist's revocable "move to Stream" authorization (ADR 0001 section 3).
-/// @dev An EIP-712 `Typehashes.MOVE_TO_STREAM` signature by the lead artist's current authority
+/// @dev An EIP-712 `Typehashes.MOVE_TO_STREAM` signature by the lead artist's active authority
 ///      in the package registry's domain. The nonce is single-use per artist ID and revocable;
 ///      the registry tracks nonces in a bitmap of 255 per word (word `nonce / 255`, bit
 ///      `nonce % 255`), so any `uint256` nonce works. An authority the artist rotated away from
@@ -138,7 +138,7 @@ struct MoveAuthorization {
 /// @notice A party's acceptance of a package root (ADR 0001 sections 3 and 11).
 /// @dev An EIP-712 `Typehashes.PACKAGE_ACCEPTANCE` signature in the package registry's domain,
 ///      by `account` when it has no artist ID yet (the acceptance then creates one), or by the
-///      current authority of `account`'s artist ID. `profileId` is the artist's unverified claim
+///      active authority of `account`'s artist ID. `profileId` is the artist's unverified claim
 ///      of a 6529 profile; it must match the record when one exists. A rotated-away authority's
 ///      unused acceptances stay void, unless a new authority that is an ERC-1271 or EIP-7702
 ///      wallet accepts the old key's signatures (the artist's own configuration).

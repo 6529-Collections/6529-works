@@ -84,6 +84,15 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      recognised by ERC-165 through `ProtocolContracts`). A predicted, undeployed CREATE2
 ///      wallet is undetectable.
 ///
+///      Restrained authority (owner decision on IDENTITY-1). While a pending, unlapsed override
+///      would move the authority, {activeAuthorityOf} returns zero: nobody acts as the artist.
+///      The consumers that treat the authority as the artist acting (sale `creator`, move and
+///      acceptance signers, record amendments, ARTIST statements through {isArtist}) read it, so
+///      the key being recovered from loses those powers and the reserved new key gains none
+///      until the override executes. {authorityOf} keeps identifying the artist. A STANDARD
+///      change or a payout-only override restrains nothing; identity calls ({heartbeat},
+///      {revokeNonce}) are not creator powers and stay with the authority.
+///
 ///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution
 ///      (which restarts the clock for the identity it installs). Overrides and vetoes never do.
@@ -122,6 +131,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     IConsolidationSource public override consolidationSource;
     /// @inheritdoc IArtistRegistry
+    bytes32 public override consolidationSourceCodeHash;
+    /// @inheritdoc IArtistRegistry
     address public override packageRegistry;
     /// @inheritdoc IArtistRegistry
     address public override stream;
@@ -141,6 +152,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     {
         _checkSource(source, sourceCodeHash);
         consolidationSource = source;
+        consolidationSourceCodeHash = sourceCodeHash;
         emit ConsolidationSourceSet(address(0), address(source));
     }
 
@@ -196,6 +208,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         }
         _checkSource(next, nextCodeHash);
         consolidationSource = next;
+        consolidationSourceCodeHash = nextCodeHash;
         emit ConsolidationSourceSet(address(expected), address(next));
     }
 
@@ -419,7 +432,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRoleResolver
     /// @dev Resolves a 6529 Stream work (`IStream.artistOf`), or a 6529 Editions edition through
-    ///      its master, to the lead artist's current authority. Any other subject returns false.
+    ///      its master, to the lead artist's active authority ({activeAuthorityOf}). Any other
+    ///      subject returns false.
     function isArtist(address token, uint256 id, address account) external view returns (bool) {
         address s = stream;
         if (s == address(0) || token == address(0) || account == address(0)) return false;
@@ -436,7 +450,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
             }
         }
         try IStream(s).artistOf(id) returns (uint256 artistId) {
-            return _artists[artistId].identity.authority == account;
+            return _active(artistId) == account;
         } catch {
             return false;
         }
@@ -472,6 +486,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     function authorityOf(uint256 artistId) external view returns (address) {
         return _artist(artistId).identity.authority;
+    }
+
+    /// @inheritdoc IArtistRegistry
+    function activeAuthorityOf(uint256 artistId) external view returns (address) {
+        _artist(artistId);
+        return _active(artistId);
     }
 
     /// @inheritdoc IArtistRegistry
@@ -557,7 +577,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @dev `account` must be the authority or an established consolidated wallet of it.
     function _requireSigner(uint256 artistId, Artist storage a, address account) private view {
         address current = a.identity.authority;
-        if (account != current && !consolidationSource.isEstablished(current, account)) {
+        if (account != current && !_source().isEstablished(current, account)) {
             revert NotAuthorized(artistId, account);
         }
     }
@@ -571,7 +591,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      (of another artist, or a previous one of this artist), or another artist's pending
     ///      change reserves it. The current authority itself is never taken. Refusing a return to
     ///      a previous authority (A, then B, then A) keeps the signatures A left unused dead: every
-    ///      consumer verifies against the current authority, which A never is again.
+    ///      consumer verifies against the active authority, which A never is again.
     function _taken(uint256 artistId, address account) private view returns (bool) {
         if (account == _artists[artistId].identity.authority) return false;
         uint256 reserved = reservedFor[account];
@@ -587,6 +607,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 || (s != address(0) && (account == s || account == IStream(s).editions()))
                 || (factory != address(0) && ISplitFactory(factory).isWallet(account))
                 || ProtocolContracts.isProtocolContract(account));
+    }
+
+    /// @dev The consolidation source, its install-time code-hash pin re-checked at use (DEPS-6):
+    ///      a source whose code no longer matches is never trusted. The established-wallet check
+    ///      fails closed with `InvalidSource`; for refreshes see {_refresh}.
+    function _source() private view returns (IConsolidationSource source) {
+        source = consolidationSource;
+        if (address(source).codehash != consolidationSourceCodeHash) {
+            revert InvalidSource(address(source));
+        }
     }
 
     function _checkSource(IConsolidationSource source, bytes32 codeHash) private view {
@@ -653,10 +683,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      slots, established before pending. Nothing is evicted. When `bestEffort` (registration
     ///      and execution), a source read failing with `DelegationReadFailed` ends the refresh
     ///      ({StandingRefreshSkipped}) instead of reverting: what it already applied came from
-    ///      successful reads, and skipping the rest removes nobody's standing. Staging,
+    ///      successful reads, and skipping the rest removes nobody's standing. A source whose
+    ///      code no longer matches its pin (DEPS-6) is treated the same way: a best-effort refresh
+    ///      skips without reading it, and the others revert with `InvalidSource`. Staging,
     ///      heartbeats and `refreshStanding` fail closed.
     function _refresh(uint256 artistId, address authority, bool bestEffort) private {
         IConsolidationSource source = consolidationSource;
+        if (address(source).codehash != consolidationSourceCodeHash) {
+            if (!bestEffort) revert InvalidSource(address(source));
+            emit StandingRefreshSkipped(artistId);
+            return;
+        }
         try source.consolidations(authority) returns (
             address[] memory live, uint64[] memory times
         ) {
@@ -769,6 +806,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         address log = statementLog;
         if (log == address(0)) return bytes32(0);
         return IStatementLog(log).latestDisputeOutcome(address(this), artistId);
+    }
+
+    /// @dev The authority, or zero while a pending, unlapsed override would move it (owner
+    ///      decision on IDENTITY-1, 14 October 2026): nobody acts as the artist until it ends.
+    function _active(uint256 artistId) private view returns (address current) {
+        current = _artists[artistId].identity.authority;
+        PendingChange storage p = _pending[artistId];
+        if (p.kind > ChangeKind.STANDARD && p.next.authority != current && !_lapsed(p)) {
+            current = address(0);
+        }
     }
 
     /// @dev Whether `p` is a contest nobody resolved within {CONTEST_TIMEOUT}.
