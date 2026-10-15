@@ -10,7 +10,6 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
@@ -247,14 +246,14 @@ contract RecoveryRestraintTest is IntegrationBase {
         PendingChange memory p = _stageRecovery();
         _toEnd(saleId);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0))
         );
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), address(auction), "held in custody");
 
         vm.warp(p.executableAt);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0))
         );
         auction.settle(saleId);
         artists.executeChange(artistId);
@@ -269,7 +268,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         _stageRecovery();
         _toEnd(saleId);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0))
         );
         auction.settle(saleId);
         vm.prank(guardian2);
