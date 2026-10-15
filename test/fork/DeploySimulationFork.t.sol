@@ -178,8 +178,10 @@ contract DeploySimulationSepoliaForkTest is Test {
     }
 
     /// @dev The whole run, simulated: deploy, the deployment guards (nothing dropped, the
-    ///      committed policy, no holder a deployment contract), `configure` with r3's genesis,
-    ///      and the record; then Verify against the fork, after the manager's 5-day setback.
+    ///      committed policy, no holder a deployment contract), `configure` with the committed
+    ///      policy and r3's holders (`config/genesis.fork-simulation.json`, served by the
+    ///      harnesses), and the record; then Verify against the fork, after the manager's 5-day
+    ///      setback.
     function test_TheFullRunDeploysConfiguresAndVerifies() public onFork {
         vm.recordLogs();
         DeployV1.Deployment memory d = deployer.run();

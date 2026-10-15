@@ -57,8 +57,8 @@ pins, with the finding's ID in a `/// Regression:` NatSpec line
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in three parts whose filters together select every test exactly once (2,423
-tests at the time of writing: 2,348, 7 and 68), so the parts run on separate runners. Each
+`forge test` runs in three parts whose filters together select every test exactly once (2,486
+tests at v1.0.0-rc.1: 2,411, 7 and 68), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. Before the split, one Contracts job built and ran everything in 11
 to 13 minutes; split, the longest part (the other invariants, where most suites are) takes
