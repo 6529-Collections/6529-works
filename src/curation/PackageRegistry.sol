@@ -293,7 +293,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
             revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
         }
-        _artists.authorityOf(beneficiary);
+        if (_artists.authorityOf(beneficiary) == address(0)) {
+            revert IArtistRegistry.UnknownArtist(beneficiary);
+        }
         _streamItems[contentHash] = RELEASED;
         _released[itemHash] = true;
         _releasedTo[contentHash] = beneficiary;
