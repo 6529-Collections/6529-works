@@ -201,8 +201,9 @@
   after it, `ar://` and a 43-character transaction ID or `ipfs://` and a CIDv1 of the fixed
   profile (`bafkrei`/`bafybei`, 59 characters), in its one canonical spelling. After finalize
   only the PLATFORM role adds locators; the artist adds them until then.
-- Records (CONTENT-1): `openRecord` refuses a PREVIEW file over `Limits.MAX_PREVIEW_BYTES`
-  (16 KiB stored, `Identity` counted four times). With the content-address locators this
+- Records (CONTENT-1): `openRecord` refuses an `Identity` or `Base64` PREVIEW file over
+  `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, `Identity` counted four times; gzip files are never
+  inlined, so not bounded). With the content-address locators this
   restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once
   (`test/integration/TokenUriBudget.t.sol`: at most 7.78M Prague gas, `Editions.uri` included).
 - Stream: `createCollection` refuses names with control characters, `<`, `"` or `\`, which JSON

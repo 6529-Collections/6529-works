@@ -536,10 +536,11 @@ name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
   on-chain preview if the work lists a `PREVIEW` image that is complete, attested if
   `Base64`, and within `PREVIEW_LIMIT` (65,536, cost-weighted like the threshold),
   else the primary's locator for an image, else the preview's locator. A 6529 Stream
-  work's previews are smaller still: `WorkRecords.openRecord` refuses a `PREVIEW` file
-  over `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity` file counting four
-  times, so 4 KiB of `Identity` or 16 KiB of `Base64` text), which keeps the budget
-  below.
+  work's previews are smaller still: `WorkRecords.openRecord` refuses an `Identity` or
+  `Base64` `PREVIEW` file over `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity`
+  file counting four times, so 4 KiB of `Identity` or 16 KiB of `Base64` text), which
+  keeps the budget below. A larger preview, such as a video, belongs in the media list
+  as an `AUXILIARY` file.
   `animation_url` is the primary when it is not an image (inline, or its locator).
   `media_url` is the primary's preferred locator whenever the primary is not
   inlined.

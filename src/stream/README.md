@@ -75,10 +75,13 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
 - **Opening.** Nothing is written at mint. `openRecord` is permissionless: it
   checks the item against the core's item hash, the media list against
   `mediaHash`, the primary's SHA-256 against `contentHash`, every file's
-  SHA-256 against the content store's declaration, and every `PREVIEW` file's
-  size: at most `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity` file
-  counting four times), a small image the renderer inlines within the 8M
-  `tokenURI` budget (see the content README's budget proof). It stores the approved
+  SHA-256 against the content store's declaration, and the size of every
+  `PREVIEW` file stored as `Identity` or `Base64`: at most
+  `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity` file counting four
+  times), a small image the renderer inlines within the 8M `tokenURI` budget
+  (see the content README's budget proof). Gzip files are never inlined and not
+  bounded; a larger preview, such as a video, belongs in the media list as an
+  `AUXILIARY` file. It stores the approved
   record file ID as it is, one word per media file plus one word of roles, an
   ARTIST seed, and the approved license when it is not the default CC0. Neither
   the record file nor the license text is checked here, so neither can freeze a

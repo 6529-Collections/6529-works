@@ -36,11 +36,13 @@ library Limits {
     uint256 internal constant MAX_RECORD_BYTES = 12_288;
     /// @notice Artists listed in a descriptive record.
     uint256 internal constant MAX_ARTISTS = 16;
-    /// @notice Stored bytes of a PREVIEW media file, an `Identity` file counting four times: a
-    ///         preview is a small image the renderer inlines next to a primary file, so an
-    ///         `Identity` preview is at most 4 KiB and a `Base64` one 16 KiB of text. The
-    ///         renderer's own limit is wider; this bound, checked by `openRecord`, is what keeps
-    ///         `tokenURI` within its 8M budget with every other cap reached as well.
+    /// @notice Stored bytes of a PREVIEW media file the renderer can inline, an `Identity` file
+    ///         counting four times: a preview is a small image the renderer inlines next to a
+    ///         primary file, so an `Identity` preview is at most 4 KiB and a `Base64` one 16 KiB
+    ///         of text. `Gzip` and `GzipBase64` files are never inlined, so they are not bounded.
+    ///         The renderer's own limit is wider; this bound, checked by `openRecord`, is what
+    ///         keeps `tokenURI` within its 8M budget with every other cap reached as well. A
+    ///         larger preview (a video, say) belongs in the media list as an AUXILIARY file.
     uint256 internal constant MAX_PREVIEW_BYTES = 16_384;
     /// @notice Nodes in a Merkle proof (package items and allowlists): enough for 2^32 leaves.
     uint256 internal constant MAX_PROOF_DEPTH = 32;

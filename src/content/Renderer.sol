@@ -34,27 +34,27 @@ import { JsonScan } from "./JsonScan.sol";
 ///      closed).
 ///
 ///      The record. A work's descriptive record is a JSON file in the content store (stored as
-///      `Identity`, at most `MAX_RECORD_BYTES`). The renderer reads it, checks it as UTF-8 and
-///      with `JsonScan`, and copies the validated JSON text of `name`, `description`, `year`,
-///      `medium`, `dimensions` and each of `artists` into the metadata (the `attributes` array
-///      goes in as it is, after the renderer's own traits; other members are validated and
-///      ignored). Until the work's record is open (`IWorkRecords.isOpen`) and its file is
-///      registered and complete, or when it is not acceptable, the work gets core-only metadata
-///      from Stream with a `record_status` field (`not_open`, `incomplete` or `invalid`)
-///      instead, and never a revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
-///      `Identity`, is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a
-///      backslash, no `\u0000`, lone surrogate or bad hex digit in an escape, no number of more
-///      than 24 bytes or with more than two exponent digits, at most `JsonScan.MAX_VALUES`
-///      units (values, keys and escapes), eight levels), has no name or a wrong type, lists
-///      more than `MAX_ARTISTS` artists or `MAX_ATTRIBUTES` attributes, holds more than
-///      `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an integer of at most six digits,
-///      or has an attribute that is not an object whose members are only `trait_type`, `value`,
-///      `display_type` and `max_value`, each at most once, with a string `trait_type` and a
-///      string or number `value`, or whose name is not printable ASCII, has a backslash or is
-///      one the renderer writes itself in any case or spacing. These bounds are chosen together, so that a record at every one of them at once
-///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class
-///      of byte, and every cap at once; `TokenUriBudget.t.sol`: the budget proof on the real
-///      stack, with the records satellite's caps).
+///      `Identity`, at most `MAX_RECORD_BYTES`). The renderer reads it, checks it as UTF-8 and with
+///      `JsonScan`, and copies the validated JSON text of `name`, `description`, `year`, `medium`,
+///      `dimensions` and each of `artists` into the metadata (the `attributes` array goes in as it
+///      is, after the renderer's own traits; other members are validated and ignored). Until the
+///      work's record is open (`IWorkRecords.isOpen`) and its file is registered and complete, or
+///      when it is not acceptable, the work gets core-only metadata from Stream with a
+///      `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a revert;
+///      `fullTokenURI` reverts for such a work. A record is not acceptable if it is not `Identity`,
+///      is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a backslash, no
+///      `\u0000`, lone surrogate or bad hex digit in an escape, no number of more than 24 bytes or
+///      with more than two exponent digits, at most `JsonScan.MAX_VALUES` units (values, keys and
+///      escapes), eight levels), has no name or a wrong type, lists more than `MAX_ARTISTS` artists
+///      or `MAX_ATTRIBUTES` attributes, holds more than `MAX_ESCAPES` `%` and `#`, gives a `year`
+///      that is not an integer of at most six digits, or has an attribute that is not an object
+///      whose members are only `trait_type`, `value`, `display_type` and `max_value`, each at most
+///      once, with a string `trait_type` and a string or number `value`, or whose name is not
+///      printable ASCII, has a backslash or is one the renderer writes itself in any case or
+///      spacing. These bounds are chosen together, so that a record at every one of them at once
+///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class of
+///      byte, and every cap at once; `TokenUriBudget.t.sol`: the budget proof on the real stack,
+///      with the records satellite's caps).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is

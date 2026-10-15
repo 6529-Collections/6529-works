@@ -152,8 +152,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      license names the deployment's CC0 text (`cc0TextFileId`), since CC0 can never be
     ///      left or corrected later. Trust obligation: the media commitments
     ///      checked here (1 to 32 files, the PRIMARY first and alone, its SHA-256 equal to
-    ///      `item.contentHash`, every declaration matching the content store, every PREVIEW
-    ///      file within `Limits.MAX_PREVIEW_BYTES`) are not checked at mint, so a
+    ///      `item.contentHash`, every declaration matching the content store, every inlinable
+    ///      PREVIEW file within `Limits.MAX_PREVIEW_BYTES`) are not checked at mint, so a
     ///      mis-committed item mints and can never open. The curation signer's tooling MUST
     ///      simulate `openRecord` for an item before attesting it.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
@@ -762,13 +762,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         ) revert UnknownRecordFile(fileId);
     }
 
-    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId`, which must be within
-    ///      `Limits.MAX_PREVIEW_BYTES`, an `Identity` file counting four times.
+    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId`. One the renderer can
+    ///      inline (`Identity` or `Base64`) must be within `Limits.MAX_PREVIEW_BYTES`, an
+    ///      `Identity` file counting four times; a gzip one is served by locator only.
     function _previewSha(uint256 tokenId, bytes32 fileId) private view returns (bytes32 sha) {
         uint256 length;
         uint256 encoding;
         (sha, length,, encoding) = _fileInfo(fileId);
         if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
+        else if (encoding != uint256(IContentStore.Encoding.Base64)) length = 0;
         if (length > Limits.MAX_PREVIEW_BYTES) revert InvalidRecordData(tokenId);
     }
 

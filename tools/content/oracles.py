@@ -71,7 +71,7 @@ def _strict_atom(atom: str) -> bool:
         return False
 
 
-def json_vectors(count: int = 1000) -> list[tuple[bytes, bool]]:
+def json_vectors(count: int = 4000) -> list[tuple[bytes, bool]]:
     rng = random.Random(SEED)
     good = [a for a in JSON_ATOMS if _strict_atom(a)]
 
@@ -130,7 +130,7 @@ UTF8_SEQUENCES = [b"a", "é".encode(), "ࠀ".encode(), "퟿".encode(),
                   "\U0010ffff".encode(), " ".encode()]
 
 
-def utf8_vectors(count: int = 600) -> list[tuple[bytes, bool]]:
+def utf8_vectors(count: int = 3000) -> list[tuple[bytes, bool]]:
     rng = random.Random(SEED)
 
     def sample() -> bytes:
@@ -296,7 +296,7 @@ def _lf(b: bytes) -> bytes:
     return b.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
-def html_vectors(count: int = 600) -> list[tuple[bytes, bytes]]:
+def html_vectors(count: int = 6000) -> list[tuple[bytes, bytes]]:
     rng = random.Random(SEED)
     out: list[tuple[bytes, bytes]] = []
     early = 0

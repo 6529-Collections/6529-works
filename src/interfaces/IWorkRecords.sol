@@ -143,9 +143,10 @@ interface IWorkRecords {
     /// @notice Opens a work's record from its approved item and media. Permissionless (off the
     ///         auction-start path). Checks the item against Stream's stored item hash, `media`
     ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`,
-    ///         each file's declared SHA-256 against `IContentStore.sha256Of`, and each PREVIEW
-    ///         file's size against `Limits.MAX_PREVIEW_BYTES` (an `Identity` file counting four
-    ///         times, so `tokenURI` keeps its 8M budget); stores the record
+    ///         each file's declared SHA-256 against `IContentStore.sha256Of`, and the size of
+    ///         each PREVIEW file stored as `Identity` or `Base64` against
+    ///         `Limits.MAX_PREVIEW_BYTES` (an `Identity` file counting four times, so `tokenURI`
+    ///         keeps its 8M budget); stores the record
     ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license as approved.
     ///         Neither the record file's bounds nor the license text are checked here, so
     ///         neither can freeze a minted work: `setRecord` corrects a record before finalize,
@@ -251,9 +252,9 @@ interface IWorkRecords {
     ///         from the artist and half from the platform, so neither can exhaust the other's,
     ///         and a URI already registered for the file is refused (`InvalidLocator`). After
     ///         finalize only the PLATFORM role adds locators (the artist's call is then
-    ///         unauthorized): "Final" fixes the content, and since the content a locator names is not
-    ///         verified on-chain, a finalized work's copies are the platform's to register and
-    ///         the storage operator's to choose.
+    ///         unauthorized): "Final" fixes the content, and since the content a locator names
+    ///         is not verified on-chain, a finalized work's copies are the platform's to
+    ///         register and the storage operator's to choose.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
     /// @notice A file's registered locators, in registration order.
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);
