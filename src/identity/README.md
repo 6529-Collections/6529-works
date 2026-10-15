@@ -33,15 +33,20 @@ replaced.
    next identity (authority, payout, profile ID, profile document hash), the
    artist's nonce and a deadline. A new authority countersigns the same digest.
    Anyone relays it with `stageChange`, which consumes the nonce and captures
-   the cancellers.
+   the cancellers. A change that moves the authority reserves the new one for
+   the artist (`reservedFor`) until it executes or ends: `register` (a package
+   acceptance by the new key) and another artist's change revert with
+   `AccountTaken`, so the new key cannot become a separate artist meanwhile and
+   void the change.
 3. **Wait 7 days.** Until then, these can stop the change:
    - the previous authority (`cancelChange`);
    - any wallet captured at staging (`cancelChange`);
    - the guardian (`vetoChange`, veto only).
 4. **Execute.** Anyone calls `executeChange` once it is due. If the next
-   identity is no longer valid (its authority was taken, or its payout became a
-   split wallet), the change is cleared with
-   `ChangeCancelled(artistId, registry, false)` instead of reverting.
+   identity is no longer valid (its payout became a split wallet), the change is
+   cleared with `ChangeCancelled(artistId, registry, false)` instead of
+   reverting. The authority is re-checked too, as defence in depth; the
+   reservation keeps anything from taking it.
 
 **Overrides.** CONTESTED, ESTATE and LOST_KEY overrides:
 - are staged by the PARAMETER_SETTER role with an evidence hash;
@@ -95,6 +100,20 @@ captured wallet.
 nonce, voiding every unused STANDARD payload signed for it. Override
 acceptances are unaffected (`test_Override_AcceptanceSurvivesANonceBurn`).
 
+**No return to an earlier authority.** A change's new authority must be an
+account that has never been an authority, of any artist. Every earlier
+authority still maps to the artist ID (a package naming it resolves), but the
+artist can never rotate back to it: A, then B, then A reverts with
+`AccountTaken(A)`, for a STANDARD change and for an override. The move,
+fixed-price consent and acceptance signatures a key left unused are checked
+against the current authority, so they never verify again once it rotates
+away (`test_RotationBackToAPreviousAuthorityIsRefused`). Rotating to a
+temporary key and back is therefore not possible: rotate to a fresh key.
+Recovery likewise installs a fresh key. Changes that keep the current
+authority (payout or profile only) are unaffected. Signed release
+authorizations bind the payout address instead, which may return; see
+`IReleaseVerifier`.
+
 ## Recovery standing (sticky snapshot)
 
 Each artist has a snapshot of at most 16 consolidated wallets. These calls
@@ -116,11 +135,24 @@ A refresh does three things:
   (`StandingAdded`, with `effectiveAt`). A young one is recorded as pending,
   with `effectiveAt` set to its registration time plus 30 days. A pending entry
   confers no standing before `effectiveAt`.
-- **Marks missing.** A recorded wallet that is no longer consolidated is marked
-  missing (`StandingMissing`) and keeps its standing. Before marking, the
-  registry checks the wallet directly with the source (`effectiveAt`), not only
-  against the bounded scan, so a wallet that is still consolidated is never
-  marked missing.
+- **Marks missing.** An established wallet that is no longer consolidated is
+  marked missing (`StandingMissing`) and keeps its standing. Before marking,
+  the registry checks the wallet directly with the source (`effectiveAt`), not
+  only against the bounded scan, so a wallet that is still consolidated is
+  never marked missing.
+- **Drops ended pending entries.** A pending entry that is no longer
+  consolidated is removed at once (`StandingRemoved`). Its consolidation ended
+  before its 30 days, so it never had standing (ADR 0001 §11), and a later
+  consolidation starts a new 30 days
+  (`test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding`).
+  A pending entry also follows its live consolidation's clock when a refresh
+  finds it re-registered later, so a revocation and re-registration that no
+  refresh saw does not keep the earlier date
+  (`test_Standing_PendingEntryFollowsALaterReRegistration`).
+  The registry cannot tell when a consolidation ended, only when a refresh
+  observed it. An entry first found missing after its `effectiveAt` is
+  treated as an established wallet gone missing, so an artist who revokes a
+  wallet they did not consolidate should refresh at once.
 - **Removes.** It removes a wallet missing for at least 30 days
   (`StandingRemoved`). Removal needs a refresh that observes the elapsed 30
   days.
@@ -143,8 +175,10 @@ has already removed the rest. That makes at most 16.
 consolidation data. They can revoke the artist's consolidations, reorder the
 delegate list, or add a sub-delegate. None of that strips a recorded wallet of
 standing, even before staging. To do so, the key holder must let a refresh
-record the wallet missing (a public event) and then wait 30 days. These tests
-cover it:
+record the wallet missing (a public event) and then wait 30 days. A wallet
+still pending has no standing yet: revoking its consolidation before its 30
+days end does remove it, as for any consolidation that never reached 30 days.
+These tests cover it:
 - `test_PoC1_RevokeThenStageStillCapturesTheWallet`;
 - `test_PoC2_SwapAndPopCannotDisplaceStanding`;
 - `test_N1_YoungWalletRecordedPendingIsCapturedAfterRevocation`;
@@ -194,7 +228,7 @@ Limitations:
 
 | Function | Caller |
 | --- | --- |
-| `register` | the bound package registry only |
+| `register` | the bound package registry only; refuses an account that is mapped, or reserved by a pending change |
 | `stageChange` | anyone, relaying the authority's or an established wallet's signature |
 | `stageOverride` | PARAMETER_SETTER (48 hours) |
 | `cancelChange` | a captured wallet, or the previous authority for a STANDARD change; a captured wallet's cancel contests an override |
@@ -238,10 +272,35 @@ The walks are bounded:
 - 4 registrations read per direction;
 - at most 16 wallets returned.
 
-Each getter call forwards a fixed 50,000 gas through `BoundedCall`, and reverts
-if the caller cannot supply it, so a gas-starved transaction cannot truncate a
-walk. The getters cost at most about 16,000 gas cold (a registration read is
-seven cold slots). The 50,000 stipend assumes no repricing triples that.
+Each getter call forwards a fixed 200,000 gas, and reverts if the caller cannot
+supply it (the `BoundedCall` gas check), so a gas-starved transaction cannot
+truncate a walk. The getters cost at most about 16,000 gas cold (a
+registration read is seven cold slots), and only the gas used is paid.
+
+**Reads fail closed.** A getter past the end of its array reverts at once with
+no revert data: the deployed contract is compiled with solc 0.8.18, and
+Solidity's array getters revert without a `Panic` code. That, and only that,
+ends a walk. A read that spends the whole stipend (out of gas), reverts with
+data, or returns more than expected reverts with
+`IConsolidationSource.DelegationReadFailed`. It never reads as "not
+consolidated", which would mark every recorded wallet missing and remove it
+after the grace.
+
+**During a source outage** (a repricing, or a broken source), until the source
+is fixed or swapped (`setConsolidationSource`, 30 days):
+- staging, heartbeats and `refreshStanding` revert (fail closed);
+- registration (a first package acceptance) and execution (`executeChange`, an
+  upheld `resolveContested`) go ahead and skip their standing refresh, emitting
+  `StandingRefreshSkipped(artistId)`. Skipping removes nobody's standing: the
+  snapshot keeps what it had, and a refresh stops at the first failed read.
+  Only the source's `DelegationReadFailed` is skipped; any other failure still
+  reverts;
+- once reads work again, `refreshStanding` for each artist in a
+  `StandingRefreshSkipped` event catches up.
+
+`test_SourceReadFailure_FailsClosed`,
+`test_SourceReadFailure_ExecutionSkipsTheRefresh` and
+`test_SourceReadFailure_OnlyTheOutageErrorIsSkipped` cover this.
 
 `consolidations` returns every consolidated wallet the 32-entry scan sees, with
 its `effectiveAt`. `effectiveAt(account, wallet)` checks one pair directly.
@@ -272,7 +331,8 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   cancels it or the guardian vetoes it.
 - **Consolidation source.** `setConsolidationSource` is a full-trust path on
   the 30-day class. The source decides who has standing, so a malicious source
-  could grant or deny it.
+  could grant or deny it. A source that cannot read halts identity calls (they
+  revert) rather than stripping standing.
 - **Profile fields.** The profile ID and profile document hash are the
   artist's unverified claims. They are bound into signatures but not checked
   against 6529 profiles.
@@ -293,12 +353,15 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   cannot map an item hash to its lead artist. ARTIST statements start once a
   work is minted.
 
-## Residual risk: wallets of anyone who holds the key for 30 days
+## Residual risk: wallets planted with the key
 
 **The exposure.** The snapshot records every wallet consolidated with the
-current authority, so anyone who holds the authority key for at least 30 days
-can give wallets of their own standing. Once a refresh has recorded them and
-their consolidations are 30 days old, they are captured as cancellers.
+current authority. Anyone who can send one transaction from the authority key,
+or a use-case-998 sub-delegate of it, can consolidate a wallet of their own
+once a refresh records it. If the consolidation stays live for 30 days, the
+wallet is captured as a canceller. The artist removes it by revoking the
+consolidation and refreshing before those 30 days end: a pending entry found
+no longer consolidated is dropped at once.
 - **Before a hijack.** A thief who quietly holds the artist's key gains wallets
   captured alongside the artist's genuine wallets.
 - **Filling free slots.** A key holder can fill the snapshot's free slots with
@@ -349,13 +412,13 @@ one of the 16 directly checked recorded wallets, needs 8 cold registration
 reads, because the forward padding sits beyond the 32-entry scan window. At the
 measured call, the 16 recorded wallets age out and 16 scanned wallets are
 recorded (and, for a staging, captured):
-- `stageOverride`: about 7.46M gas to execute;
-- `stageChange`: about 7.44M gas;
-- `refreshStanding`: about 6.82M gas.
+- `stageOverride`: about 5.33M gas to execute;
+- `stageChange`: about 5.31M gas;
+- `refreshStanding`: about 4.66M gas.
 
-That is about 45% of the 16,777,216-gas EIP-7825 transaction cap. The tests
+That is about a third of the 16,777,216-gas EIP-7825 transaction cap. The tests
 assert each stays under half of the cap, including intrinsic and calldata gas.
 
-One direct check (`effectiveAt`, 8 cold reads) costs about 130K gas.
+One direct check (`effectiveAt`, 8 cold reads) costs about 129K gas.
 `establishedWallets` alone, over 32 distinct cold entries, costs about 2.8M
 gas.

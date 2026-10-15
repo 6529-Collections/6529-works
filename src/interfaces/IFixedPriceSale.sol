@@ -42,6 +42,9 @@ interface IFixedPriceSale is ISaleAdapter {
 
     /// @notice The creator's signed approval of a phase configuration; empty `signature` when
     ///         the creator opens the sale itself or no approval is needed.
+    /// @dev An authority the artist rotated away from is never the creator again, so its unused
+    ///      consents stay void; a new authority that is an ERC-1271 or EIP-7702 wallet accepting
+    ///      the old key's signatures revives them (the artist's own configuration).
     struct ArtistConsent {
         uint256 nonce;
         uint64 deadline;

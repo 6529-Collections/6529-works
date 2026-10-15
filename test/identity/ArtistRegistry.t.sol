@@ -9,11 +9,17 @@ import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutRes
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
-import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
+import {
+    ArtistIdentity,
+    ChangeKind,
+    PendingChange,
+    Standing
+} from "src/interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
 import {
     EditionsMastersMock,
+    FailingConsolidationSource,
     FederationRegistryStub,
     OversizedConsolidationSource,
     PackageRegistryStub,
@@ -21,6 +27,7 @@ import {
     SplitFactoryWalletsMock,
     StreamWorksMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 
 /// @notice Unit and attack-path tests for the artist registry (ADR 0001 section 11).
@@ -309,19 +316,79 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.executeChange(artistId);
     }
 
-    /// @dev L3: a change whose new authority was taken meanwhile is cleared, not reverted, so it
-    ///      cannot keep the payout frozen.
-    function test_ExecuteChange_ClearsIfTheNewAuthorityWasTakenMeanwhile() public {
+    /// @dev IDENTITY-2 (formerly L3, where a registration meanwhile cleared the change): the
+    ///      staging reserves the new authority, so neither a registration nor another artist's
+    ///      change can take it while the change waits, and the change executes.
+    function test_ExecuteChange_NewAuthorityCannotBeTakenMeanwhile() public {
+        uint256 otherId = _register(stranger);
         _stage(artistKey, _identity(newAuthority, payout), newKey);
+        assertEq(registry.reservedFor(newAuthority), artistId);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, newAuthority));
         _register(newAuthority);
+        ArtistIdentity memory hijack = _identity(newAuthority, stranger);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes32 digest = registry.changeDigest(otherId, hijack, 0, deadline);
+        vm.expectRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, newAuthority));
+        registry.stageChange(otherId, hijack, stranger, deadline, "", _sign(newKey, digest));
+
         vm.warp(block.timestamp + 7 days);
-        assertEq(registry.payoutAddress(artistId), address(0));
         vm.expectEmit(address(registry));
-        emit IArtistRegistry.ChangeCancelled(artistId, address(registry), false);
+        emit IArtistRegistry.ChangeExecuted(
+            artistId,
+            ArtistIdentity(artist, artist, PROFILE, PROFILE_DOC),
+            _identity(newAuthority, payout)
+        );
         registry.executeChange(artistId);
-        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        assertEq(registry.authorityOf(artistId), newAuthority);
+        assertEq(registry.artistIdOf(newAuthority), artistId);
+        assertEq(registry.reservedFor(newAuthority), 0, "the reservation ends with the change");
+    }
+
+    /// @dev IDENTITY-2: only a change that moves the authority reserves anything, an override
+    ///      replacing a STANDARD change moves the reservation, and every way a change ends
+    ///      releases it.
+    function test_Reservation_FollowsThePendingChange() public {
+        _stage(artistKey, _identity(artist, payout), 0);
+        assertEq(registry.reservedFor(artist), 0, "a change that keeps the authority");
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        assertEq(registry.reservedFor(newAuthority), artistId);
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        assertEq(registry.reservedFor(newAuthority), 0, "released by a cancel");
+
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        assertEq(registry.reservedFor(newAuthority), 0, "released by a veto");
+
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        _stageOverride(ChangeKind.CONTESTED, _identity(thief, payout), thiefKey);
+        assertEq(registry.reservedFor(newAuthority), 0, "released by the replaced change");
+        assertEq(registry.reservedFor(thief), artistId, "reserved by the override");
+        // An override to the same new authority as the change it replaces keeps it reserved.
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, artist), newKey);
+        assertEq(registry.reservedFor(newAuthority), artistId);
+        assertEq(registry.reservedFor(thief), 0);
+        _register(thief);
+    }
+
+    /// @dev IDENTITY-2: a change cleared at execution (its payout became a split wallet) releases
+    ///      the reservation too.
+    function test_Reservation_ReleasedWhenExecutionClears() public {
+        SplitFactoryWalletsMock factory = _wireSplitFactory();
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        factory.setWallet(payout, true);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
         assertEq(registry.authorityOf(artistId), artist);
-        assertEq(registry.payoutAddress(artistId), artist, "unfrozen");
+        assertEq(registry.reservedFor(newAuthority), 0);
+        assertEq(_register(newAuthority), uint160(newAuthority));
     }
 
     function testFuzz_ExecuteChange_RespectsTheDelay(uint256 wait) public {
@@ -695,6 +762,26 @@ contract ArtistRegistryTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
     }
 
+    /// @dev SIGS-3: an authority the artist rotated away from never becomes its authority again
+    ///      (A, then B, then A is refused), by a STANDARD change or an override, so the signatures
+    ///      A left unused (moves, sale consents, acceptances, which check the current authority)
+    ///      stay dead. The current authority may still stage changes that keep it.
+    function test_StageChange_RevertsForAPreviousAuthority() public {
+        _stage(artistKey, _identity(newAuthority, payout), newKey);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        assertEq(registry.artistIdOf(artist), artistId, "still resolves to the artist");
+
+        bytes memory taken = abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, artist);
+        _armRevert(taken);
+        _stage(newKey, _identity(artist, payout), artistKey);
+        _armRevert(taken);
+        _stageOverride(ChangeKind.CONTESTED, _identity(artist, artist), artistKey);
+
+        _stage(newKey, _identity(newAuthority, artist), 0);
+        assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.STANDARD));
+    }
+
     // ----------------------------------------------------------------- heartbeat
 
     function test_Heartbeat_ByAuthorityAndWallet() public {
@@ -796,6 +883,121 @@ contract ArtistRegistryTest is IdentityFixture {
         );
         _armRevert(abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(bad)));
         _stage(artistKey, _identity(artist, payout), 0);
+    }
+
+    /// @dev IDENTITY-4: a repriced read within the stipend's headroom changes nothing, and a read
+    ///      that exhausts it makes staging, heartbeats and refreshes revert instead of reading
+    ///      "not consolidated", while a registration goes ahead and skips its refresh (review
+    ///      L3). The recorded wallet is never marked missing, and its standing is intact once
+    ///      reads work again.
+    function test_SourceReadFailure_FailsClosed() public {
+        RepricedDelegationMock repriced = new RepricedDelegationMock(delegation);
+        ConsolidationAdapter source =
+            new ConsolidationAdapter(IDelegationManagement(address(repriced)));
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(adapter, source, address(source).codehash);
+
+        // Cold reads repriced by 35K, beyond the former 50K stipend: nothing changes.
+        repriced.setExtraGas(35_000);
+        vm.cool(address(delegation));
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0, "not marked missing");
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+
+        // Reads that exhaust their gas: every call that reads the source reverts.
+        repriced.setExtraGas(type(uint256).max);
+        bytes memory err = abi.encodeWithSelector(
+            IConsolidationSource.DelegationReadFailed.selector, address(repriced)
+        );
+        vm.expectRevert(err);
+        registry.refreshStanding(artistId);
+        vm.expectRevert(err);
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+        _armRevert(err);
+        _stage(artistKey, _identity(artist, payout), 0);
+        uint256 strangerId = uint160(stranger);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(strangerId);
+        assertEq(_register(stranger), strangerId, "registration goes ahead");
+        assertEq(registry.standingOf(strangerId).length, 0);
+
+        repriced.setExtraGas(0);
+        registry.refreshStanding(artistId);
+        Standing[] memory s = registry.standingOf(artistId);
+        assertEq(s.length, 1);
+        assertEq(s[0].wallet, wallet);
+        assertEq(s[0].missingSince, 0, "standing intact");
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+    }
+
+    /// @dev Review L3: an execution during a source outage applies the change and skips its
+    ///      standing refresh, so a due recovery is never blocked and nobody loses standing; a
+    ///      later `refreshStanding` catches up once the source reads again.
+    function test_SourceReadFailure_ExecutionSkipsTheRefresh() public {
+        RepricedDelegationMock repriced = new RepricedDelegationMock(delegation);
+        ConsolidationAdapter source =
+            new ConsolidationAdapter(IDelegationManagement(address(repriced)));
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(adapter, source, address(source).codehash);
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+
+        repriced.setExtraGas(type(uint256).max);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority, "applied");
+        Standing[] memory s = registry.standingOf(artistId);
+        assertEq(s.length, 1);
+        assertEq(s[0].missingSince, 0, "nobody's standing changed");
+
+        repriced.setExtraGas(0);
+        registry.refreshStanding(artistId);
+        assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp, "caught up");
+    }
+
+    /// @dev Review L3: only the source's `DelegationReadFailed` is skipped, in the scan and in a
+    ///      recorded wallet's direct check; any other failure still reverts a registration or an
+    ///      execution, and the fail-closed calls revert on both.
+    function test_SourceReadFailure_OnlyTheOutageErrorIsSkipped() public {
+        FailingConsolidationSource failing = new FailingConsolidationSource();
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(address(failing)), address(failing).codehash
+        );
+        bytes memory outage = abi.encodeWithSelector(
+            IConsolidationSource.DelegationReadFailed.selector, address(failing)
+        );
+
+        failing.set(true, false, true);
+        vm.expectRevert(FailingConsolidationSource.Broken.selector);
+        _register(stranger);
+        failing.set(false, true, true);
+        vm.expectRevert(FailingConsolidationSource.Broken.selector);
+        registry.executeChange(artistId);
+
+        // The outage, in the recorded wallet's direct check: execution goes ahead.
+        failing.set(false, true, false);
+        vm.expectRevert(outage);
+        registry.refreshStanding(artistId);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority);
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0);
+
+        // The outage, in the scan: registration goes ahead; a refresh still reverts.
+        failing.set(true, false, false);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
+        _register(stranger);
+        vm.expectRevert(outage);
+        registry.refreshStanding(uint160(stranger));
     }
 
     function test_Bindings_AreOneShot() public {

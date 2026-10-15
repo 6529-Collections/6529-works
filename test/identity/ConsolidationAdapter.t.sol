@@ -2,8 +2,10 @@
 pragma solidity ^0.8.24;
 
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
+import { IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
+import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 
 /// @notice The consolidation adapter against the delegation-contract mock: age, expiry, both
@@ -302,6 +304,88 @@ contract ConsolidationAdapterTest is IdentityFixture {
                 BoundedCall.BoundedCallInsufficientGas.selector, adapter.READ_GAS()
             )
         );
+    }
+
+    // ----------------------------------------------------------------- IDENTITY-4: fail closed
+
+    function _repriced()
+        internal
+        returns (RepricedDelegationMock repriced, ConsolidationAdapter a2)
+    {
+        repriced = new RepricedDelegationMock(delegation);
+        a2 = new ConsolidationAdapter(IDelegationManagement(address(repriced)));
+        _consolidate(a, b);
+        vm.warp(block.timestamp + 30 days);
+    }
+
+    function _readFailed(address target) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(IConsolidationSource.DelegationReadFailed.selector, target);
+    }
+
+    /// @dev Every read of `a2` reverts with `err`.
+    function _expectReadsRevert(ConsolidationAdapter a2, bytes memory err) internal {
+        vm.expectRevert(err);
+        a2.isEstablished(a, b);
+        vm.expectRevert(err);
+        a2.effectiveAt(a, b);
+        vm.expectRevert(err);
+        a2.establishedWallets(a);
+        vm.expectRevert(err);
+        a2.consolidations(a);
+    }
+
+    /// @dev IDENTITY-4: the only failed read that ends a walk is an index past the end of an
+    ///      array. The Solidity getters (the deployed contract is solc 0.8.18, like this mock in
+    ///      this respect) then revert at once with no data, far below the stipend.
+    function test_Reads_PastTheEndRevertsCheaplyWithNoData() public {
+        bytes[2] memory calls = [
+            abi.encodeCall(IDelegationManagement.delegatorHashes, (bytes32(0), 0)),
+            abi.encodeCall(IDelegationManagement.globalDelegationHashes, (bytes32(0), 0))
+        ];
+        for (uint256 i; i < 2; ++i) {
+            vm.cool(address(delegation));
+            uint256 before = gasleft();
+            (bool ok, bytes memory data) =
+                address(delegation).staticcall{ gas: adapter.READ_GAS() }(calls[i]);
+            uint256 used = before - gasleft();
+            assertFalse(ok);
+            assertEq(data.length, 0, "no revert data");
+            assertLt(used, 20_000, "cheap, even cold");
+        }
+        assertEq(adapter.READ_GAS(), 200_000);
+    }
+
+    /// @dev IDENTITY-4: today's cold read is about 16K gas; the 200K stipend absorbs a repricing
+    ///      many times that (the review's 35K surcharge exhausted the former 50K stipend), and the
+    ///      walk still ends normally at the end of each array.
+    function test_Reads_HeadroomForARepricing() public {
+        (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();
+        repriced.setExtraGas(150_000);
+        vm.cool(address(repriced));
+        vm.cool(address(delegation));
+        assertTrue(a2.isEstablished(a, b));
+        address[] memory wallets = a2.establishedWallets(a);
+        assertEq(wallets.length, 1);
+        assertEq(wallets[0], b);
+    }
+
+    /// @dev IDENTITY-4: a getter that exhausts its gas is a failed read, not "no registration":
+    ///      every read reverts with `DelegationReadFailed`.
+    function test_Reads_FailClosedWhenAGetterRunsOutOfGas() public {
+        (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();
+        repriced.setExtraGas(type(uint256).max);
+        _expectReadsRevert(a2, _readFailed(address(repriced)));
+    }
+
+    /// @dev IDENTITY-4: a revert with data, or oversized return data, also fails closed.
+    function test_Reads_FailClosedOnARevertWithDataOrAnOversizedReturn() public {
+        (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();
+        repriced.setMode(RepricedDelegationMock.Mode.REVERT_WITH_DATA);
+        _expectReadsRevert(a2, _readFailed(address(repriced)));
+        repriced.setMode(RepricedDelegationMock.Mode.OVERSIZED);
+        _expectReadsRevert(a2, _readFailed(address(repriced)));
+        repriced.setMode(RepricedDelegationMock.Mode.FORWARD);
+        assertTrue(a2.isEstablished(a, b));
     }
 
     /// @dev Worst case for `establishedWallets` (PoC-6): 32 distinct cold delegates, each with one

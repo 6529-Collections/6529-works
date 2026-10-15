@@ -10,7 +10,8 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 /// @notice The two public storage getters of the 6529 delegation contract
 ///         (`0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`) that the consolidation adapter reads.
 /// @dev Both are Solidity-generated getters of `mapping(bytes32 => T[])` and revert when `index` is
-///      past the end of the array; the contract exposes no array lengths.
+///      past the end of the array, at once and with no revert data (the deployed contract is
+///      compiled with solc 0.8.18); the contract exposes no array lengths.
 interface IDelegationManagement {
     /// @notice The `index`-th delegate registered under
     ///         `keccak256(abi.encodePacked(delegator, collection, useCase))`.
@@ -42,11 +43,16 @@ interface IDelegationManagement {
 ///      registration of the pair, so a registration that is still stored has been live since its
 ///      registration date. Specific-collection consolidations do not count.
 ///
-///      Every read is a {BoundedCall} that forwards exactly {READ_GAS} and reverts when the caller
-///      cannot forward it, so a caller choosing its gas limit cannot truncate a walk. The getters
-///      cost at most about 16K gas cold (a `GlobalData` read is seven cold slots); the 50K
-///      stipend assumes no repricing triples that. A failed read is therefore the end of the
-///      array. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
+///      Every read forwards exactly {READ_GAS} and reverts when the caller cannot forward it
+///      (`BoundedCall.BoundedCallInsufficientGas`), so a caller choosing its gas limit cannot
+///      truncate a walk. Reads fail closed: only a revert with no data that did not fully exhaust
+///      the stipend is the end of an array. A read that exhausts the stipend (out of gas),
+///      reverts with data or returns too much reverts with
+///      `IConsolidationSource.DelegationReadFailed`, so a repriced or broken source halts the
+///      registry's identity calls (registration and execution skip their refresh instead)
+///      rather than reading as "not consolidated". The getters cost at most about 16K gas cold
+///      (a `GlobalData` read is seven cold slots); the 200K stipend leaves room for a large
+///      repricing, and only the gas used is paid. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
 ///      {MAX_REGISTRATIONS_READ} registrations per direction.
 ///
 ///      This is a live view, and the account's keys control it: its own key, and any use-case-998
@@ -65,7 +71,7 @@ contract ConsolidationAdapter is IConsolidationSource {
     /// @notice Registrations read per direction of a pair.
     uint256 public constant MAX_REGISTRATIONS_READ = 4;
     /// @notice Gas forwarded to each getter call.
-    uint256 public constant READ_GAS = 50_000;
+    uint256 public constant READ_GAS = 200_000;
 
     /// @notice The 6529 delegation contract.
     IDelegationManagement public immutable delegation;
@@ -172,12 +178,35 @@ contract ConsolidationAdapter is IConsolidationSource {
         return 0;
     }
 
+    /// @dev One getter call forwarding exactly {READ_GAS}. Returns false only for an index past
+    ///      the end of the array: a revert with no data that did not fully exhaust the stipend.
+    ///      Reverts with `DelegationReadFailed` on any other failure. The gas check and the
+    ///      warm-up mirror `BoundedCall.tryRead`.
     function _read(bytes memory input, uint256 maxReturn)
         private
         view
-        returns (bool, bytes memory)
+        returns (bool found, bytes memory result)
     {
-        return BoundedCall.tryRead(address(delegation), input, READ_GAS, maxReturn, 0);
+        address target = address(delegation);
+        // Reading the code size warms the account, so the CALL below costs about 100 gas.
+        if (target.code.length == 0) revert DelegationReadFailed(target);
+        if (!BoundedCall.hasSufficientGas(gasleft(), READ_GAS, BoundedCall.CALL_RESERVE)) {
+            revert BoundedCall.BoundedCallInsufficientGas(READ_GAS);
+        }
+        uint256 start = gasleft();
+        uint256 size;
+        assembly ("memory-safe") {
+            found := staticcall(READ_GAS, target, add(input, 0x20), mload(input), 0, 0)
+            size := returndatasize()
+        }
+        // A call that spent the whole stipend ran out of gas (or hit an invalid opcode).
+        bool failed = found ? size > maxReturn : (size != 0 || start - gasleft() >= READ_GAS);
+        if (failed) revert DelegationReadFailed(target);
+        if (!found) return (false, result);
+        result = new bytes(size);
+        assembly ("memory-safe") {
+            returndatacopy(add(result, 0x20), 0, size)
+        }
     }
 
     function _contains(address[] memory list, uint256 length, address value)

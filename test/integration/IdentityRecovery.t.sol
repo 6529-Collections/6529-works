@@ -7,6 +7,12 @@ import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import {
+    MoveAuthorization,
+    PartyAcceptance,
+    StreamMintRequest
+} from "src/interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import {
     ArtistIdentity,
@@ -272,6 +278,181 @@ contract IdentityRecoveryFlowTest is IntegrationBase {
         vm.prank(newKey);
         ISplitWallet(seller).release(CURRENCY_ETH, 0);
         assertEq(newKey.balance, 0.75 ether);
+    }
+
+    /// @dev PARAMETER_SETTER stages a CONTESTED override to `next`, which `next` accepted.
+    function _stageRecovery(address next) internal returns (PendingChange memory p) {
+        ArtistIdentity memory id = _identity(next);
+        bytes32 evidence = keccak256("recovery evidence, public notice");
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes memory acceptance = _sign(
+            next, artists.overrideDigest(artistId, ChangeKind.CONTESTED, id, evidence, deadline)
+        );
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(
+                artists.stageOverride,
+                (artistId, ChangeKind.CONTESTED, id, evidence, deadline, acceptance)
+            )
+        );
+        p = artists.pendingChange(artistId);
+    }
+
+    /// @dev `account`'s acceptance of `root` with the profile fields `profileOf`'s identity
+    ///      carries, signed by `signer` and relayed by a stranger; it reverts with `err` unless
+    ///      `err` is empty.
+    function _relayAcceptance(
+        bytes32 root_,
+        address account,
+        address profileOf,
+        address signer,
+        bytes memory err
+    ) internal returns (uint256) {
+        PartyAcceptance memory a = PartyAcceptance(
+            account, _profileId(profileOf), _profileDoc(profileOf), uint64(block.timestamp + 1 days)
+        );
+        bytes memory signature = _sign(signer, registry.acceptanceDigest(root_, a));
+        if (err.length != 0) vm.expectRevert(err);
+        vm.prank(makeAddr("relayer"));
+        return registry.acceptPackage(root_, a, signature);
+    }
+
+    /// @dev IDENTITY-2: a pending change reserves its next authority. While a recovery override
+    ///      to the new key waits, the new key's own acceptance of a package cannot register it as
+    ///      a separate artist, so the override executes and the frozen balance goes to the
+    ///      recovered artist. After execution the new key's acceptance resolves to the artist.
+    function test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes() public {
+        PendingChange memory p = _stageRecovery(newKey);
+        assertEq(artists.reservedFor(newKey), artistId, "reserved for the artist");
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(ISplitWallet.PayoutUnresolved.selector, artistId));
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+
+        // Day 30 of the notice: the artist accepts a package with the new key, and anyone relays
+        // it. The acceptance would create a separate identity: it reverts instead.
+        vm.warp(block.timestamp + 30 days);
+        Work[] memory mine = _one(_work(newKey, collectionId));
+        bytes32 rootMine = _rootOf(mine);
+        _approve(rootMine);
+        _relayAcceptance(rootMine, newKey, newKey, newKey, _taken(newKey));
+        assertEq(artists.artistIdOf(newKey), 0, "no separate identity");
+
+        // Day 180: the override executes, and the recovered artist collects the frozen balance.
+        vm.warp(p.executableAt);
+        artists.executeChange(artistId);
+        assertEq(artists.authorityOf(artistId), newKey, "applied, not cleared");
+        assertEq(artists.reservedFor(newKey), 0, "the reservation ends with the change");
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISplitWallet.NotPayoutAddress.selector, artist, newKey)
+        );
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        vm.prank(newKey);
+        ISplitWallet(seller).release(CURRENCY_ETH, 0);
+        assertEq(newKey.balance, 0.75 ether, "the recovered artist collects");
+        assertEq(artist.balance, 0);
+
+        // The new key now accepts for the artist's identity, with its profile fields.
+        assertEq(_relayAcceptance(rootMine, newKey, artist, newKey, ""), artistId);
+    }
+
+    /// @dev IDENTITY-2 for a STANDARD change: the reservation holds while the change waits, and
+    ///      a guardian veto releases it.
+    function test_StandardChangeReservesItsNewAuthorityUntilVetoed() public {
+        vm.warp(block.timestamp + 31 days);
+        _stage(wallet, newKey);
+        Work[] memory mine = _one(_work(newKey, collectionId));
+        bytes32 rootMine = _rootOf(mine);
+        _approve(rootMine);
+        _relayAcceptance(rootMine, newKey, newKey, newKey, _taken(newKey));
+
+        vm.prank(guardian2);
+        artists.vetoChange(artistId);
+        assertEq(artists.reservedFor(newKey), 0, "released by the veto");
+        assertEq(_relayAcceptance(rootMine, newKey, newKey, newKey, ""), uint160(newKey));
+    }
+
+    /// @dev A move of item `index` on `nonce`, signed by `signer` and valid for a year.
+    function _longMove(Work[] memory works, uint256 index, address signer, uint256 nonce)
+        internal
+        view
+        returns (bytes memory)
+    {
+        uint64 deadline = uint64(block.timestamp + 365 days);
+        bytes32 digest =
+            registry.moveDigest(root, WorksHashing.itemHash(works[index].item), nonce, deadline);
+        MoveAuthorization memory move = MoveAuthorization(nonce, deadline, _sign(signer, digest));
+        return abi.encode(StreamMintRequest(root, works[index].item, _proofOf(works, index), move));
+    }
+
+    /// @dev A return to `previous`, staged by the current authority `current` and by the network
+    ///      (PARAMETER_SETTER, 48 hours), is refused with `AccountTaken(previous)`.
+    function _expectReturnRefused(address current, address previous) internal {
+        ArtistIdentity memory back = _identity(previous);
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes32 digest =
+            artists.changeDigest(artistId, back, artists.changeNonce(artistId), deadline);
+        bytes memory bySigner = _sign(current, digest);
+        bytes memory byPrevious = _sign(previous, digest);
+        vm.expectRevert(_taken(previous));
+        artists.stageChange(artistId, back, current, deadline, bySigner, byPrevious);
+
+        bytes memory data = _overrideTo(previous);
+        _schedule(hotAdmin, address(artists), data);
+        vm.warp(block.timestamp + 48 hours);
+        vm.prank(hotAdmin);
+        vm.expectRevert(_taken(previous));
+        manager.execute(address(artists), data);
+    }
+
+    /// @dev The `stageOverride` call data for a CONTESTED override to `next`, which accepted it.
+    function _overrideTo(address next) internal view returns (bytes memory) {
+        ArtistIdentity memory id = _identity(next);
+        bytes32 evidence = keccak256("override evidence");
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes32 digest =
+            artists.overrideDigest(artistId, ChangeKind.CONTESTED, id, evidence, deadline);
+        return abi.encodeCall(
+            artists.stageOverride,
+            (artistId, ChangeKind.CONTESTED, id, evidence, deadline, _sign(next, digest))
+        );
+    }
+
+    /// @dev SIGS-3 on the real contracts: the artist rotates from key A to key B and tries to
+    ///      return to A. The return is refused, by a STANDARD change and by an override, so the
+    ///      move A signed and never submitted stays dead, and A's acceptance of a new package
+    ///      does not verify: A is never the artist's authority again.
+    function test_RotationBackToAPreviousAuthorityIsRefused() public {
+        Work[] memory works = _package(root);
+        uint256 nonce = nextMoveNonce[artistId]++;
+        bytes memory stale = _longMove(works, 1, artist, nonce);
+        address keyB = _actor("artistKeyB");
+        vm.warp(block.timestamp + 31 days);
+        _stage(artist, keyB);
+        vm.warp(block.timestamp + 7 days);
+        artists.executeChange(artistId);
+        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        auction.start(address(stream), stale);
+
+        _expectReturnRefused(keyB, artist);
+        assertEq(artists.authorityOf(artistId), keyB);
+
+        // A's signatures stay dead; B's work.
+        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        auction.start(address(stream), stale);
+        Work[] memory next = _one(_work(artist, collectionId));
+        bytes32 nextRoot = _rootOf(next);
+        _approve(nextRoot);
+        bytes memory invalid = abi.encodePacked(IPackageRegistry.InvalidSignature.selector);
+        _relayAcceptance(nextRoot, artist, artist, artist, invalid);
+        assertEq(_relayAcceptance(nextRoot, artist, artist, keyB, ""), artistId);
+        auction.start(address(stream), _longMove(works, 1, keyB, nonce));
+        assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+    }
+
+    function _taken(address account) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, account);
     }
 
     function _authorization(address account, address recipient, uint256 amount, uint256 nonce)

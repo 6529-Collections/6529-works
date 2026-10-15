@@ -206,6 +206,22 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Payout freeze.** The payout returns zero only while a pending change or
   override would move it. A change that cannot execute is cleared rather than
   left blocking.
+- **No return to an earlier authority (review finding SIGS-3, 14 October
+  2026).** A change's new authority must be the current authority or an
+  account that has never been an authority, of any artist; a return (A, then
+  B, then A) reverts with `AccountTaken`, for STANDARD changes and overrides.
+  - Why it suffices: every consumer of an artist's signature (move
+    authorizations, package acceptances, fixed-price consents, record consents,
+    signed ARTIST statements) checks it against the current authority when it
+    is used. A key the artist rotated away from is never that again, so the
+    signatures it left unused never verify again. No typehash binds an
+    authority epoch.
+  - The trade-off: an artist can never return to an earlier key or wallet, not
+    even through governance. A recovery, or a rotation back from a temporary
+    device, needs a fresh key or Safe.
+  - The residual: a new authority that is an ERC-1271 or EIP-7702 wallet and
+    accepts the old key's signatures revives them. That is the artist's own
+    configuration of its new authority.
 - **Activity that resets the one-year dormancy clock:**
   - registration;
   - a staged change;
@@ -341,9 +357,12 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - A hostile approved package can spend one randomness draw per VRF item until
     a guardian revokes it.
   - Zero-price artist-approved allowlist entries pay no network fee.
-  - Anyone who holds an artist's key for 30 days or more can establish their
-    own consolidated wallets, before or after a hijack. Those wallets can
-    contest recovery overrides and can fill the standing snapshot's free slots.
+  - Anyone who can send one transaction from an artist's key, or from a
+    use-case-998 sub-delegate of it, can consolidate their own wallets, before
+    or after a hijack. Once a refresh records them and their consolidations
+    stay live for 30 days, those wallets can contest recovery overrides; they
+    can fill the standing snapshot's free slots at once. Revoking such a
+    consolidation and refreshing before its 30 days end removes it.
     A contested override no longer stalls: a TDH vote decides it (see
     [Owner decisions](#owner-decisions-11-october-2026)).
   - Standing protects only wallets that a refresh has recorded. Artists call

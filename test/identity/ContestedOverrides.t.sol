@@ -111,6 +111,7 @@ contract ContestedOverridesTest is IdentityFixture {
         _resolve(false, VOTE);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
         assertEq(registry.payoutAddress(artistId), artist);
+        assertEq(registry.reservedFor(newAuthority), 0, "a void releases the reservation");
         (, uint64 last) = registry.artist(artistId);
         assertEq(last, before, "a governed void is not artist activity");
     }
@@ -150,9 +151,11 @@ contract ContestedOverridesTest is IdentityFixture {
         emit IArtistRegistry.ContestExpired(artistId);
         vm.expectEmit(address(registry));
         emit IArtistRegistry.ChangeCancelled(artistId, address(registry), false);
+        assertEq(registry.reservedFor(newAuthority), artistId, "reserved until it ends");
         vm.prank(stranger);
         registry.expireContest(artistId);
         assertEq(uint8(registry.pendingChange(artistId).kind), uint8(ChangeKind.NONE));
+        assertEq(registry.reservedFor(newAuthority), 0, "a lapse releases the reservation");
         (, uint64 last) = registry.artist(artistId);
         assertEq(last, before, "expiry is not artist activity");
         _stage(artistKey, _identity(artist, payout), 0);

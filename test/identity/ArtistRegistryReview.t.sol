@@ -240,6 +240,90 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         registry.cancelChange(artistId);
     }
 
+    /// @dev IDENTITY-3: a consolidation revoked before its 30 days never gives standing (ADR 0001
+    ///      section 11). One transaction from the key plants a wallet and a refresh records it as
+    ///      pending. The artist revokes it on day 1 and a refresh observes that: the pending entry
+    ///      goes at once, so the wallet is not captured once its recorded `effectiveAt` passes. A
+    ///      re-consolidation starts a new 30 days. (A wallet revoked after its 30 days keeps
+    ///      standing for the grace: N1 and the grace tests.)
+    function test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding() public {
+        address planted = makeAddr("plantedWallet");
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).effectiveAt, t0 + 30 days, "recorded as pending");
+
+        vm.warp(t0 + 1 days);
+        _revoke(artist, planted);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRemoved(artistId, planted);
+        registry.refreshStanding(artistId);
+        assertFalse(_hasStanding(planted), "removed at once: it never had standing");
+
+        vm.warp(t0 + 30 days);
+        assertFalse(adapter.isEstablished(artist, planted));
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        assertFalse(_inCancellers(planted), "a STANDARD change does not capture it");
+        _expectNotAuthorized(planted);
+        vm.prank(planted);
+        registry.cancelChange(artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        assertFalse(_inCancellers(planted), "nor does an override");
+        _expectNotAuthorized(planted);
+        vm.prank(planted);
+        registry.cancelChange(artistId);
+        assertEq(registry.pendingChange(artistId).contestedAt, 0, "not contested");
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        // Consolidated again, it is recorded with the new registration's 30 days.
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).effectiveAt, t0 + 60 days, "a new 30 days");
+        assertEq(_entry(planted).missingSince, 0);
+    }
+
+    /// @dev IDENTITY-3, review of #51 (L1): a pending entry follows its live consolidation's
+    ///      clock, later as well as earlier. Revoked on day 1 with no refresh, re-registered on
+    ///      day 10 and then refreshed, it is pending until day 40, not day 30, so it is not
+    ///      captured on day 30 while its live pair is only 20 days old.
+    function test_Standing_PendingEntryFollowsALaterReRegistration() public {
+        address planted = makeAddr("planted");
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).effectiveAt, t0 + 30 days);
+        vm.warp(t0 + 1 days);
+        _revoke(artist, planted); // the artist revokes, and nobody refreshes
+        vm.warp(t0 + 10 days);
+        _delegate(artist, planted, FAR); // re-registered (a sub-delegate or a leaked key)
+        registry.refreshStanding(artistId);
+        assertEq(adapter.effectiveAt(artist, planted), t0 + 40 days);
+        assertEq(_entry(planted).effectiveAt, t0 + 40 days, "follows the live clock");
+        vm.warp(t0 + 30 days);
+        assertFalse(adapter.isEstablished(artist, planted), "live pair only 20 days old");
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        assertFalse(_inCancellers(planted), "not captured before its live 30 days");
+    }
+
+    /// @dev IDENTITY-3, control: without a refresh observing the revocation before the recorded
+    ///      `effectiveAt`, a refresh after it cannot tell when the consolidation ended, and treats
+    ///      the entry as an established wallet gone missing. The artist's own refresh after
+    ///      revoking (prompted by 6529.io) is what removes a planted wallet in time.
+    function test_Standing_RevocationObservedOnlyAfterTheThirtyDaysKeepsTheGrace() public {
+        address planted = makeAddr("plantedWallet");
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, planted);
+        registry.refreshStanding(artistId);
+        vm.warp(t0 + 1 days);
+        _revoke(artist, planted);
+        vm.warp(t0 + 30 days);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingMissing(artistId, planted);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(planted).missingSince, block.timestamp);
+    }
+
     /// @dev N2 inverted: a recorded wallet beyond the bounded scan is checked directly, so a
     ///      wallet that is still established is never marked missing or removed.
     function test_N2_StillEstablishedWalletBeyondTheScanKeepsStanding() public {
@@ -569,7 +653,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         vm.warp(block.timestamp + 30 days);
     }
 
-    /// @dev About 7.44M gas: under half of the 16,777,216 EIP-7825 cap with calldata included.
+    /// @dev About 5.31M gas: under half of the 16,777,216 EIP-7825 cap with calldata included.
     function test_WorstCase_StageChangeGas() public {
         _setupWorstCase();
         ArtistIdentity memory next = _identity(newAuthority, payout);
@@ -587,7 +671,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used + 21_000 + 16 * 900, 16_777_216 / 2);
     }
 
-    /// @dev About 7.46M gas.
+    /// @dev About 5.33M gas.
     function test_WorstCase_StageOverrideGas() public {
         _setupWorstCase();
         bytes32 evidence = keccak256("evidence");
@@ -607,7 +691,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used + 21_000 + 16 * 900, 16_777_216 / 2);
     }
 
-    /// @dev About 6.82M gas.
+    /// @dev About 4.66M gas.
     function test_WorstCase_RefreshStandingGas() public {
         _setupWorstCase();
         _coolAll();
@@ -619,7 +703,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used + 21_000, 16_777_216 / 2);
     }
 
-    /// @dev One direct check is bounded at 8 reads (4 per direction) of 50K gas each.
+    /// @dev One direct check is bounded at 8 reads (4 per direction), about 129K gas all cold,
+    ///      well under 50K per read (each read may use up to `READ_GAS`, 200K).
     function test_WorstCase_DirectCheckBoundedAtEightReads() public {
         _setupWorstCase();
         vm.cool(address(delegation));
@@ -651,19 +736,20 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertTrue(_inCancellers(wallet2), "captured before the young pair's 30 days");
     }
 
-    /// @dev A recorded wallet's clock only moves earlier: a key holder's revoke and re-add cannot
-    ///      push it later.
+    /// @dev An established wallet's clock only moves earlier: a key holder's revoke and re-add
+    ///      cannot push it later. (A pending wallet's revocation ends it: IDENTITY-3.)
     function test_Standing_ReConsolidationCannotResetTheClock() public {
         uint256 first = block.timestamp;
         _consolidate(artist, wallet2);
         registry.refreshStanding(artistId);
         assertEq(_entry(wallet2).effectiveAt, first + 30 days);
-        vm.warp(first + 10 days);
+        vm.warp(first + 40 days);
         _revoke(artist, wallet2);
         registry.refreshStanding(artistId);
-        vm.warp(first + 20 days);
+        assertEq(_entry(wallet2).missingSince, block.timestamp, "missing, within the grace");
+        vm.warp(first + 50 days);
         _delegate(artist, wallet2, FAR);
-        assertEq(adapter.effectiveAt(artist, wallet2), first + 50 days);
+        assertEq(adapter.effectiveAt(artist, wallet2), first + 80 days);
         registry.refreshStanding(artistId);
         assertEq(_entry(wallet2).effectiveAt, first + 30 days, "pinned");
         assertEq(_entry(wallet2).missingSince, 0);

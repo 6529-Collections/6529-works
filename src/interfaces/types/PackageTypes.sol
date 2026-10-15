@@ -125,7 +125,10 @@ struct PackageItem {
 /// @dev An EIP-712 `Typehashes.MOVE_TO_STREAM` signature by the lead artist's current authority
 ///      in the package registry's domain. The nonce is single-use per artist ID and revocable;
 ///      the registry tracks nonces in a bitmap of 255 per word (word `nonce / 255`, bit
-///      `nonce % 255`), so any `uint256` nonce works.
+///      `nonce % 255`), so any `uint256` nonce works. An authority the artist rotated away from
+///      never becomes its authority again, so its unused moves stay void; a new authority that is
+///      an ERC-1271 or EIP-7702 wallet accepting the old key's signatures revives them (the
+///      artist's own configuration).
 struct MoveAuthorization {
     uint256 nonce;
     uint64 deadline;
@@ -136,7 +139,9 @@ struct MoveAuthorization {
 /// @dev An EIP-712 `Typehashes.PACKAGE_ACCEPTANCE` signature in the package registry's domain,
 ///      by `account` when it has no artist ID yet (the acceptance then creates one), or by the
 ///      current authority of `account`'s artist ID. `profileId` is the artist's unverified claim
-///      of a 6529 profile; it must match the record when one exists.
+///      of a 6529 profile; it must match the record when one exists. A rotated-away authority's
+///      unused acceptances stay void, unless a new authority that is an ERC-1271 or EIP-7702
+///      wallet accepts the old key's signatures (the artist's own configuration).
 struct PartyAcceptance {
     address account;
     bytes32 profileId;

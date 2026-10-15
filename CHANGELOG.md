@@ -81,3 +81,18 @@
   `default`) and fails cleanly on malformed `forge build --sizes` output.
 - CI: a parallel **Static analysis** job runs Slither (hash-locked, pinned) and fails on
   any High or Medium finding without a row in `docs/security/slither-triage.md`.
+- Identity review fixes. IDENTITY-2: a staged change that moves the authority reserves the
+  new one for the artist (`IArtistRegistry.reservedFor`, one storage slot while it waits) until
+  it executes or ends; `register` and other artists' changes refuse a reserved account with
+  `AccountTaken`. IDENTITY-3: a refresh removes a pending standing entry that is no longer
+  consolidated at once, so a consolidation revoked before its 30 days never gives standing.
+  IDENTITY-4: the consolidation adapter's reads fail closed. Only a getter's no-data revert
+  past the end of an array ends a walk; a read that runs out of gas, reverts with data or
+  returns too much reverts with `DelegationReadFailed`. `READ_GAS` rises from 50,000 to 200,000.
+  SIGS-3: an account that has been an artist's authority can never become its authority again
+  (A, then B, then A reverts with `AccountTaken`), so its unused move, consent and acceptance
+  signatures stay void after a rotation (recorded in ADR 0003). Review follow-ups: a pending
+  standing entry follows its live consolidation's clock in both directions; registration and
+  execution skip their standing refresh when the source cannot read (`StandingRefreshSkipped`),
+  while staging, heartbeats and `refreshStanding` still fail closed; `DelegationReadFailed`
+  moves to `IConsolidationSource`.
