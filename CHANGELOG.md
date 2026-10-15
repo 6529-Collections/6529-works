@@ -247,3 +247,6 @@
   report it as the sale `creator`, and the package registry (acceptances, moves, move
   revocations), the work records (artist actions and party consents) and `isArtist` (ARTIST
   statements) read it. A no-bid auction settlement waits for the outcome.
+- Identity, DEPS-6: the artist registry pins the consolidation source's code hash at install
+  (`IArtistRegistry.consolidationSourceCodeHash`) and re-checks it at every use; a mismatch
+  reverts with `InvalidSource`.

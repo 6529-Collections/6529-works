@@ -384,7 +384,12 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
   cancels it or the guardian vetoes it.
 - **Consolidation source.** `setConsolidationSource` is a full-trust path on
   the 30-day class. The source decides who has standing, so a malicious source
-  could grant or deny it. A source that cannot read halts identity calls (they
+  could grant or deny it. Its code hash is pinned at install
+  (`consolidationSourceCodeHash`) and re-checked at every use: a source whose
+  code no longer matches makes every call that reads it revert with
+  `InvalidSource`, registration and execution included
+  (`test_ConsolidationSource_CodeHashRecheckedAtUse`). The re-check costs about
+  2.2K gas per call that reads the source. A source that cannot read halts identity calls (they
   revert) rather than stripping standing.
 - **Profile fields.** The profile ID and profile document hash are the
   artist's unverified claims. They are bound into signatures but not checked

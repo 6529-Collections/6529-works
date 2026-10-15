@@ -175,7 +175,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error InvalidBinding(address target);
     /// @notice The caller is not the bound contract for this function.
     error UnboundCaller(address caller);
-    /// @notice The consolidation source lacks ERC-165 support or the pinned code hash.
+    /// @notice The consolidation source lacks ERC-165 support or the pinned code hash, at install
+    ///         or at use.
     error InvalidSource(address source);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
@@ -280,7 +281,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     ///         6529.io UI calls it after consolidation events.
     function refreshStanding(uint256 artistId) external;
     /// @notice Swaps the consolidation source: ERC-165 checked, code hash `nextCodeHash`, not an
-    ///         EIP-7702 delegated account. SUCCESSOR_SETTER role, compare-and-set.
+    ///         EIP-7702 delegated account. SUCCESSOR_SETTER role, compare-and-set. The pinned
+    ///         code hash (`consolidationSourceCodeHash`) is re-checked at every use.
     function setConsolidationSource(
         IConsolidationSource expected,
         IConsolidationSource next,
@@ -312,6 +314,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function changeNonce(uint256 artistId) external view returns (uint256);
     /// @notice The consolidation source.
     function consolidationSource() external view returns (IConsolidationSource);
+    /// @notice The code hash pinned when the consolidation source was installed. Every call that
+    ///         reads the source re-checks it and reverts with `InvalidSource` on a mismatch.
+    function consolidationSourceCodeHash() external view returns (bytes32);
     /// @notice An artist's listed federated contracts.
     function federatedContracts(uint256 artistId) external view returns (address[] memory);
     /// @notice The bound package registry.

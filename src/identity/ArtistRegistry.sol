@@ -131,6 +131,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IArtistRegistry
     IConsolidationSource public override consolidationSource;
     /// @inheritdoc IArtistRegistry
+    bytes32 public override consolidationSourceCodeHash;
+    /// @inheritdoc IArtistRegistry
     address public override packageRegistry;
     /// @inheritdoc IArtistRegistry
     address public override stream;
@@ -150,6 +152,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     {
         _checkSource(source, sourceCodeHash);
         consolidationSource = source;
+        consolidationSourceCodeHash = sourceCodeHash;
         emit ConsolidationSourceSet(address(0), address(source));
     }
 
@@ -205,6 +208,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         }
         _checkSource(next, nextCodeHash);
         consolidationSource = next;
+        consolidationSourceCodeHash = nextCodeHash;
         emit ConsolidationSourceSet(address(expected), address(next));
     }
 
@@ -573,7 +577,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @dev `account` must be the authority or an established consolidated wallet of it.
     function _requireSigner(uint256 artistId, Artist storage a, address account) private view {
         address current = a.identity.authority;
-        if (account != current && !consolidationSource.isEstablished(current, account)) {
+        if (account != current && !_source().isEstablished(current, account)) {
             revert NotAuthorized(artistId, account);
         }
     }
@@ -603,6 +607,16 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
                 || (s != address(0) && (account == s || account == IStream(s).editions()))
                 || (factory != address(0) && ISplitFactory(factory).isWallet(account))
                 || ProtocolContracts.isProtocolContract(account));
+    }
+
+    /// @dev The consolidation source, its install-time code-hash pin re-checked at use (DEPS-6):
+    ///      a source whose code no longer matches fails closed with `InvalidSource`, also on the
+    ///      best-effort refreshes, since a changed source is not an outage.
+    function _source() private view returns (IConsolidationSource source) {
+        source = consolidationSource;
+        if (address(source).codehash != consolidationSourceCodeHash) {
+            revert InvalidSource(address(source));
+        }
     }
 
     function _checkSource(IConsolidationSource source, bytes32 codeHash) private view {
@@ -672,7 +686,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      successful reads, and skipping the rest removes nobody's standing. Staging,
     ///      heartbeats and `refreshStanding` fail closed.
     function _refresh(uint256 artistId, address authority, bool bestEffort) private {
-        IConsolidationSource source = consolidationSource;
+        IConsolidationSource source = _source();
         try source.consolidations(authority) returns (
             address[] memory live, uint64[] memory times
         ) {

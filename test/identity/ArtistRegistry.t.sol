@@ -826,6 +826,36 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.prank(successorSetter);
         registry.setConsolidationSource(adapter, next, address(next).codehash);
         assertEq(address(registry.consolidationSource()), address(next));
+        assertEq(registry.consolidationSourceCodeHash(), address(next).codehash);
+    }
+
+    /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
+    ///      source whose code no longer matches the pin (simulated with `vm.etch`) makes every
+    ///      call that reads it revert with `InvalidSource`, registration and execution included
+    ///      (a changed source is not an outage to skip); the original code works again.
+    function test_ConsolidationSource_CodeHashRecheckedAtUse() public {
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 7 days);
+        assertEq(registry.consolidationSourceCodeHash(), address(adapter).codehash, "pinned");
+        bytes memory original = address(adapter).code;
+        vm.etch(address(adapter), address(new FailingConsolidationSource()).code);
+        bytes memory changed =
+            abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(adapter));
+
+        vm.expectRevert(changed);
+        registry.refreshStanding(artistId);
+        vm.expectRevert(changed);
+        vm.prank(wallet);
+        registry.heartbeat(artistId);
+        vm.expectRevert(changed);
+        registry.executeChange(artistId);
+        vm.expectRevert(changed);
+        _register(stranger);
+
+        vm.etch(address(adapter), original);
+        registry.refreshStanding(artistId);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority);
     }
 
     function test_SetConsolidationSource_RevertsForStaleExpected() public {
