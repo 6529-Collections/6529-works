@@ -56,10 +56,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      `aeimquy4`).
     uint256 private constant TXID_LAST = 0x888888022222220111000000000000;
     uint256 private constant CID_LAST = 0x2222222000000000010000000000000;
-    /// @dev Chunks one `syncOnChain` call checks at most, in whole files. A chunk costs about
-    ///      8,100 gas from cold storage, so a call stays near half of the EIP-7825 cap; one file
-    ///      (at most `IContentStore.MAX_CHUNKS`, 512) always fits.
-    uint256 private constant SYNC_CHUNKS = 1_024;
+    /// @dev Chunks one `syncOnChain` call checks at most, in whole files: one file of at most
+    ///      `IContentStore.MAX_CHUNKS` (512), so it always fits. A chunk costs about 8,100 gas
+    ///      from cold storage, so a call stays at about a quarter of the EIP-7825 cap (4.2M).
+    uint256 private constant SYNC_CHUNKS = 512;
 
     /// @dev Word 0: the pin, version, media count, flags and how many leading media files
     ///      `syncOnChain` has found complete. `roles` packs each file's role in eight bits, file

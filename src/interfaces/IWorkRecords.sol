@@ -166,7 +166,7 @@ interface IWorkRecords {
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks the work on-chain complete once every media file is complete in the
     ///         content store. Permissionless and one-way; does not change the state hash.
-    ///         Resumable: a call checks whole files, in media order, up to a budget of 1,024
+    ///         Resumable: a call checks whole files, in media order, up to a budget of 512
     ///         chunks (a file of up to 512 always fits), keeps its place and emits
     ///         `OnChainSyncProgress` when the budget stops it, so a work of any size completes
     ///         over calls that each fit the EIP-7825 cap. Reverts with `NotOnChainComplete` at

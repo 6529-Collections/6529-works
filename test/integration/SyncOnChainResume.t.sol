@@ -100,20 +100,18 @@ contract SyncOnChainResumeTest is IntegrationBase {
             _measure(keeper, address(records), abi.encodeCall(records.syncOnChain, (tokenId)), 0);
         total += COLD_ACCOUNT_SURCHARGE;
         console2.log("syncOnChain call, whole transaction:", total);
-        assertLt(total, TX_CAP * 3 / 4, "a call fits the cap with a quarter to spare");
+        assertLt(total, TX_CAP * 3 / 10, "a call stays under 30% of the cap");
     }
 
     function test_SyncOnChain_ResumesAcrossCalls() public {
         store.writeChunk(missing);
-        // 2,560 chunks, at most 1,024 a call, in whole files: 2, then 2, then the last.
-        vm.expectEmit(address(records));
-        emit IWorkRecords.OnChainSyncProgress(tokenId, 2);
-        _sync();
-        assertFalse(records.record(tokenId).onChainComplete);
-        vm.expectEmit(address(records));
-        emit IWorkRecords.OnChainSyncProgress(tokenId, 4);
-        _sync();
-        assertFalse(records.record(tokenId).onChainComplete);
+        // 2,560 chunks, at most 512 a call, in whole files: one file a call.
+        for (uint256 f = 1; f < FILES; ++f) {
+            vm.expectEmit(address(records));
+            emit IWorkRecords.OnChainSyncProgress(tokenId, f);
+            _sync();
+            assertFalse(records.record(tokenId).onChainComplete);
+        }
         vm.expectEmit(address(records));
         emit IWorkRecords.WorkOnChainComplete(tokenId);
         _sync();
@@ -127,8 +125,9 @@ contract SyncOnChainResumeTest is IntegrationBase {
     /// @dev Progress is kept across calls; a call that reaches an incomplete file reverts, and
     ///      the next one resumes once the file is complete.
     function test_SyncOnChain_KeepsItsPlaceUntilAFileCompletes() public {
-        _sync();
-        _sync();
+        for (uint256 f = 1; f < FILES; ++f) {
+            _sync();
+        }
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.NotOnChainComplete.selector, tokenId));
         records.syncOnChain(tokenId);
         assertFalse(records.record(tokenId).onChainComplete);

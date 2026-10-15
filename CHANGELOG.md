@@ -209,7 +209,7 @@
   escaping makes up to six bytes in every work's metadata; the budget proof uses the dearest
   name it accepts.
 - Records (CONTENT-4): `syncOnChain` is resumable. Each call checks whole media files up to
-  1,024 chunks (about 8.3M gas cold), keeps its place in the record's first word and emits
+  512 chunks (about 4.2M gas cold), keeps its place in the record's first word and emits
   `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete
   over calls that each fit the EIP-7825 cap.
 - Records: a relicense to CC0, including the CC0-to-CC0 text correction, must name the
