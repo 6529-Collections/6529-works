@@ -166,14 +166,19 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   one wrote the whole statement's text into the comparison's place, so many of its mutants
   did not compile) and skips Yul comparisons; LIR gives `bool` the values `false` and `true`.
 
-**Status.** No baseline is recorded yet: `tools/mutation-floors.json` holds no floors, so a
-report gates nothing. Running the tool on the libraries, the content readers and the
-economics module while it was built already found checks the suite was missing, now pinned by
-tests: ill-formed UTF-8 lead bytes cut at a chunk end; an escape letter other than `u` before
-four hex digits; JSON and script escaping reading past the input's end; an exact Dutch payment
-crediting zero; a token that refuses `approve` by reverting, returns more than one word, or
-sets the upper bits of its `true`, and balances above 2**128; the resolver's bounds on each
-side; and CC0 license texts either side of the pinned one.
+**Status.** The first full baseline is in [mutation-baseline.md](mutation-baseline.md): 9,606
+mutants of 054442d's code in 46 contracts, 88.5% killed by the campaign and 90.4% by the final
+suite, 98.1% once the 755 equivalent mutants are left out. Every survivor is triaged there, and
+`tools/mutation-floors.json` holds a floor for each contract the baseline measured (the four
+contracts whose shards were still running have none yet). 245 of the campaign's survivors were
+gaps in the suite; the final suite kills 184 of them, most through tests this lane added, and
+the rest are in the work list below. Running the tool on the libraries, the content readers and
+the economics module while it was built already found checks the suite was missing, now pinned
+by tests: ill-formed UTF-8 lead bytes cut at a chunk end; an escape letter other than `u`
+before four hex digits; JSON and script escaping reading past the input's end; an exact Dutch
+payment crediting zero; a token that refuses `approve` by reverting, returns more than one
+word, or sets the upper bits of its `true`, and balances above 2**128; the resolver's bounds on
+each side; and CC0 license texts either side of the pinned one.
 
 ## Symbolic proofs (Halmos)
 
@@ -251,9 +256,35 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 **From mutation testing:**
 
-1. Record the first full baseline: run every shard, triage each survivor (equivalent,
-   defensive, caught by a proof, or a missing test), add the missing tests, commit the triage,
-   and write `tools/mutation-floors.json` from the run.
+The baseline's [open gaps](mutation-baseline.md#survivors-triaged), 61 survivors in all,
+grouped. Each is a missing test, not a known bug.
+
+1. One-sided comparisons still tested from one side: the item, media and content hashes
+   `WorkRecords.openRecord` and the consent check compare, a renderer pinned again with another
+   code hash, the artist registry's dependency code hashes, outcome references and accounts
+   reserved for a lower artist ID, the auction's federation-registry pin, federated token code
+   and a mint target's sale kind, and an edition whose primary hash sorts below its content
+   hash in the renderer.
+2. Boundaries: the auction's reopening window when the currency comes back exactly at its end,
+   a standing refresh at exactly its recorded times, a VRF proof of exactly `MAX_PROOF_LENGTH`
+   nodes, and a Permit2 pull whose balances move by other than the amount.
+3. EIP-7702 delegated dependencies whose delegate answers ERC-165 (the auction's economics
+   resolver and federation registry, the records' Stream, the registry's statement log): the
+   interface check alone refuses any other account without code, so only such a delegate
+   reaches the delegation check.
+4. Answers an arbitrary contract may give: a dispute subject whose `ownerOf` returns zero or
+   fewer than 32 bytes, that answers both ERC-721 and ERC-1155, or whose ERC-1155 balance is
+   2**128 or more; a `coreOf` of another length; an Editions answer naming another master or an
+   edition it does not know; a statement log's resolver answer shorter than a word; a revert
+   reason longer than the registry decodes; a permit signature shorter than 65 bytes.
+5. Inputs that cost more to build: a 49-chunk base64 file whose padding straddles its last two
+   chunks, a work with every trait slot filled, a license text outside the media, a
+   one-character `dependencies` value, a document at the exact JSON budget, a release of 2**128
+   or more through the claim router, and a stop-mode claim given more gas than its
+   continue-mode share.
+6. Reachable but untested: `EnglishAuction.start` on a sale that already exists (a settled
+   token sent back to the auction; coverage lists it too), a withdrawal from an unknown sale,
+   and a relicense consent from a registered artist whose authority is not the party's account.
 
 **From coverage:**
 
