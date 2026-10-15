@@ -8,14 +8,16 @@ pragma solidity ^0.8.24;
 ///      caused by the caller's own gas supply. A shortfall reverts instead of being reported
 ///      as a failed call. Return data is never copied unless it fits `maxReturn`.
 ///
-///      Glamsterdam (CALLS-3, observed on Sepolia): {hasSufficientGas} also guards the protocol's
-///      fixed-gas CALLs (payouts, token transfers, deliveries), and there it guarantees regular
-///      gas only. Under EIP-8037 a transaction whose gas limit exceeds 2^24 carries a state-gas
+///      Glamsterdam (CALLS-3): {hasSufficientGas} also guards the protocol's fixed-gas CALLs
+///      (payouts, token transfers, deliveries), and there it guarantees regular gas only. Under
+///      the EIP-8037 draft a transaction whose gas limit exceeds 2^24 carries a state-gas
 ///      reservoir that passes through a fixed-gas call, so the allowance does not cap the state
 ///      gas a callee spends creating storage or accounts, and whether a state-writing callee
-///      succeeds can depend on the caller's gas limit. Keepers should send at most 16,777,216
-///      (2^24) gas, which leaves no reservoir. {tryRead}'s STATICCALL creates no state and is
-///      unaffected. See docs/audit/known-limitations.md, LIM-GAS-2.
+///      succeeds can depend on the caller's gas limit. This follows the draft; it has not been
+///      reproduced on Sepolia, which has only shown that transactions above the cap are
+///      accepted. Keepers should send at most 16,777,216 (2^24) gas, which leaves no reservoir.
+///      {tryRead}'s STATICCALL creates no state and is unaffected. See
+///      docs/audit/known-limitations.md, LIM-GAS-2.
 library BoundedCall {
     /// @notice Gas kept for the CALL itself on top of EIP-150 retention. The target account is
     ///         already warm (its code size was read first), so the CALL costs about 100 gas.

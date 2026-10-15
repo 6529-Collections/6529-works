@@ -13,8 +13,9 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      randomness and nothing is ever in custody without a clock. The start never deploys a
 ///      split wallet. Sale IDs are derived: `saleIdOf(token, tokenId)`. Per sale the adapter
 ///      keeps at most three storage words (one from the start, one more from the first bid, and
-///      a third only for a recipient other than the bidder or a dispute pause); the seller and
-///      fee terms are read back from the token (`IMintTarget.primaryTerms`) at settlement.
+///      a third only for a recipient other than the bidder, a dispute pause, or the artist a
+///      no-bid settlement records); the seller and fee terms are read back from the token
+///      (`IMintTarget.primaryTerms`) at settlement.
 ///
 ///      Bidding: the start locks the currency, its opening bid (`openingBid(currency)` then),
 ///      the increment share and the anti-snipe window. The first bid must be at least the

@@ -70,8 +70,8 @@ library TokenTransfer {
 
     /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, giving the token
     ///         exactly `gasLimit` gas, so a refusal is the token's and never the caller's gas.
-    ///         Under Glamsterdam `gasLimit` caps regular gas only: a token creating storage draws
-    ///         state gas from the transaction's reservoir, so its outcome can depend on the
+    ///         Under the EIP-8037 draft `gasLimit` caps regular gas only: a token creating storage
+    ///         draws state gas from the transaction's reservoir, so its outcome can depend on the
     ///         caller's gas limit (CALLS-3; `BoundedCall`, LIM-GAS-2).
     /// @return moved False when the token reverted, or returned `false` and moved nothing; the
     ///         caller may then take another route. Reverts on any other misbehaviour, and when the

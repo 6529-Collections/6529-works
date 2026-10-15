@@ -168,8 +168,10 @@ interface IContentStore {
     /// @return The chunk size in bytes.
     function CHUNK_SIZE() external view returns (uint256);
 
-    /// @notice The most chunks one manifest may list. Chosen so that registering a manifest at
-    ///         the limit fits the EIP-7825 transaction gas cap of 16,777,216 with margin.
+    /// @notice The most chunks one manifest may list. Registering a manifest at the limit costs
+    ///         about 11.8M Prague gas, inside the EIP-7825 cap of 16,777,216; under Glamsterdam
+    ///         it costs about 57.6M, mostly state gas, which Sepolia keeps outside that cap
+    ///         (LIM-GAS-2, LIM-CNT-11).
     /// @return The chunk limit (512 in `ContentStore`).
     function MAX_CHUNKS() external view returns (uint256);
 

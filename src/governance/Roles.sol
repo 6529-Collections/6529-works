@@ -60,7 +60,8 @@ library Roles {
     uint64 internal constant FUNDS_SETTER = 10;
     /// @notice 30-day setters: swaps of the verifier, renderers, resolvers and other pinned
     ///         dependencies, sale targets and minter admission, signer re-enables, contested
-    ///         override resolutions and governance manifests.
+    ///         override resolutions, governance manifests, and lowering the VRF callback gas
+    ///         limit (`lowerCallbackGasLimit`).
     uint64 internal constant SUCCESSOR_SETTER = 11;
     /// @notice Appends curator statements, including `CURATION_EVIDENCE`
     ///         (`StatementLog.appendCurator`). Zero delay: the log refuses delayed writers.

@@ -86,16 +86,16 @@ contract EnglishAuction is
     ///         absolute ceiling of the governed opening bid.
     uint256 public constant OPENING_BID_FLOORS = 1_000;
     /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
-    ///         Under Glamsterdam it caps regular gas only: a wallet that writes new state draws
-    ///         state gas from the settler's EIP-8037 reservoir, so whether it is paid or escrowed
-    ///         can depend on the settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should send
-    ///         at most 2^24 gas.
+    ///         Under the EIP-8037 draft it caps regular gas only: a wallet that writes new state
+    ///         draws state gas from the settler's EIP-8037 reservoir, so whether it is paid or
+    ///         escrowed can depend on the settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should
+    ///         send at most 2^24 gas.
     uint256 public constant PAYOUT_GAS = 100_000;
     /// @notice Gas forwarded to the token's `safeTransferFrom` when settling; a failure leaves a
-    ///         pending claim. Under Glamsterdam it caps regular gas only: a recipient whose
+    ///         pending claim. Under the EIP-8037 draft it caps regular gas only: a recipient whose
     ///         `onERC721Received` writes new state draws state gas from the settler's EIP-8037
-    ///         reservoir, so whether delivery succeeds or stays pending can depend on the
-    ///         settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should send at most 2^24 gas.
+    ///         reservoir, so whether delivery succeeds or stays pending can depend on the settler's
+    ///         gas limit (CALLS-3, LIM-GAS-2). Settlers should send at most 2^24 gas.
     uint256 internal constant DELIVERY_GAS = 300_000;
     /// @notice Gas the settlement needs after the delivery attempt returns.
     uint256 internal constant DELIVERY_RESERVE = 50_000;
