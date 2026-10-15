@@ -68,7 +68,9 @@ token:
   at construction, derives its asset allowlist from it, and reads the federated
   recipient at settlement;
 - stops selling as soon as the registry delists it. Every purchase re-checks
-  `isActive`.
+  `isActive`. On the English auction every bid re-checks it, and a delisted
+  contract's auction settles by crediting the high bid back and giving the work
+  to its artist, as with no bid (MARKET-5); nothing is confiscated.
 
 The resolver is fixed at construction. It must support `IEconomicsResolver`
 through ERC-165, and EIP-7702 delegated accounts are rejected. Its asset

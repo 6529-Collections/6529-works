@@ -318,6 +318,9 @@ contract EnglishAuction is
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         if (_reopenedAfterFreeze(saleId, s)) return;
+        // MARKET-5: a delisted federated contract cannot sell; its high bid is credited back and
+        // the work goes to its artist, as with no bid. Nothing is confiscated.
+        if (_delisted(s)) _refundHighBid(saleId, s);
         s.status = AuctionState.SETTLED;
         (LockedTerms memory lt, address creator) = _lockedTerms(s);
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
@@ -727,6 +730,8 @@ contract EnglishAuction is
         bool starting
     ) private {
         Sale storage s = _require(saleId, AuctionState.ACTIVE);
+        // MARKET-5: a federated contract delisted since the start takes no more bids.
+        if (_delisted(s)) revert TargetNotAllowed(s.token);
         Terms storage t = _terms[s.termsId];
         address currency = t.currency;
         if (t.incrementFloor == 0) {
@@ -945,6 +950,12 @@ contract EnglishAuction is
         IAssetAllowlist.Status status;
         (status, since,) = allowlist.statusClock(currency);
         active = status == IAssetAllowlist.Status.Active;
+    }
+
+    /// @dev Whether the sale is of a federated contract the registry no longer serves (ADR 0001
+    ///      section 16: a delisted contract cannot sell through the network's adapters).
+    function _delisted(Sale storage s) private view returns (bool) {
+        return _terms[s.termsId].federated && !isTarget(s.token);
     }
 
     /// @dev A sale that exists.

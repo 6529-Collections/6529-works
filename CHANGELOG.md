@@ -301,3 +301,6 @@
     fixed-price and Dutch adapters do. The auction's constructor takes the economics resolver
     (ERC-165 checked) in place of the asset allowlist, which it derives from the resolver;
     `DeployV1` passes the resolver.
+  - MARKET-5: a federated contract delisted while its auction runs takes no more bids
+    (`TargetNotAllowed`), and the auction settles by crediting the high bid back and giving the
+    work to its artist, as with no bid.
