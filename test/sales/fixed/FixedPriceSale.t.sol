@@ -185,6 +185,29 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(network.balance, _fee(PRICE));
     }
 
+    /// @dev QUALITY-4: the fee-recipient counter shares slot 0 with the AccessManaged authority
+    ///      and `nextSaleId` (bytes 29 and 30). At 65,535 recipients a sale that would register
+    ///      another fails closed with `InvalidSaleTerms`, as Stream's index does, while a
+    ///      registered recipient still opens sales.
+    function test_OpenSale_FeeRecipientLimitFailsClosed() public {
+        uint256 first = _openPublic(ETH_ED, 0); // registers `network` as index 1
+        vm.prank(creator);
+        fixedSale.closeSale(first);
+        uint256 word = uint256(vm.load(address(fixedSale), bytes32(0)));
+        assertEq(address(uint160(word)), address(manager), "slot 0 holds the authority");
+        assertEq(uint64(word >> 168), fixedSale.nextSaleId(), "then nextSaleId");
+        assertEq(uint16(word >> 232), 1, "then the fee-recipient count");
+        vm.store(address(fixedSale), bytes32(0), bytes32(word | uint256(type(uint16).max) << 232));
+        _openPublic(ETH_ED, 0);
+        PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+        t.feeRecipient = makeAddr("oneTooMany");
+        editions.setTerms(42, t, SIZE);
+        vm.expectRevert(
+            abi.encodeWithSelector(MintSaleBase.InvalidSaleTerms.selector, address(editions), 42)
+        );
+        _openPublic(42, 0);
+    }
+
     /// @dev QUALITY-4: a phase is stored in one word, plus its root for an allowlist phase; the
     ///      view rebuilds every field, for every phase up to `Limits.MAX_PHASES`.
     function test_OpenSale_PackedPhasesRoundTrip() public {

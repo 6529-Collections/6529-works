@@ -97,7 +97,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      none, since `minted` shares the artist ID's word. `dutch` stands for the sale kind
     ///      (FIXED_PRICE or DUTCH, `EditionRules`), and a Dutch edition's params are kept decoded
     ///      (`abi.encode(DutchParams)` rebuilds them exactly: the rules bound both durations by
-    ///      2^64). `windowStart` is a timestamp, far below 2^48.
+    ///      2^64). `windowStart` is a timestamp, far below 2^48. It shares the fee recipient's
+    ///      word, so an OPEN edition on terms without a fee recipient writes that word at its
+    ///      first mint, one new slot.
     struct Record {
         bytes32 contentHash;
         address seller;

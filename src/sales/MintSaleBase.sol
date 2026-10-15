@@ -98,7 +98,10 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     IAssetAllowlist public immutable assets;
 
     /// @notice The ID the next sale gets; sale IDs start at 1.
-    uint256 public nextSaleId = 1;
+    uint64 public nextSaleId = 1;
+    /// @dev The number of fee recipients registered (below), in `nextSaleId`'s word so that
+    ///      registering one writes no counter slot of its own.
+    uint16 private _feeRecipientCount;
     /// @notice Whether governance listed `token`.
     mapping(address token => bool) public isListed;
     /// @inheritdoc ISaleAdapter
@@ -117,9 +120,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     mapping(uint256 saleId => Listing) internal _listings;
     mapping(address token => mapping(uint256 id => uint256 saleId)) internal _openSales;
     /// @dev Fee recipients, each stored once and referenced from listings by index (from 1). A
-    ///      new one needs a governed economics change, so there are few; the checked counter
-    ///      reverts past 65,535.
-    uint16 private _feeRecipientCount;
+    ///      new one needs a governed economics change, so there are few; a sale that would
+    ///      register the 65,536th reverts with `InvalidSaleTerms`.
     mapping(address recipient => uint16 index) private _feeRecipientIds;
     mapping(uint16 index => address recipient) private _feeRecipients;
 
@@ -127,8 +129,8 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     error InvalidAddress();
     /// @notice The token's terms are unusable: no seller, no fee recipient for a non-zero fee
     ///         share, a fee share above the denominator, the revenue escrow as seller or fee
-    ///         recipient, federated code that differs from its registry entry, or a mint that
-    ///         returned another token ID.
+    ///         recipient, federated code that differs from its registry entry, a mint that
+    ///         returned another token ID, or a new fee recipient past the adapter's 65,535.
     error InvalidSaleTerms(address token, uint256 id);
     /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only.
     error PricedDefaultCurrency(address token, uint256 id);
@@ -333,7 +335,7 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
             t.currency,
             t.price,
             t.seller,
-            _feeRecipientId(t.feeRecipient),
+            _feeRecipientId(token, id, t.feeRecipient),
             phaseCount
         );
     }
@@ -499,11 +501,17 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         return index == 0 ? address(0) : _feeRecipients[index];
     }
 
-    /// @dev The index of `recipient`, registered on first use; zero for the zero address.
-    function _feeRecipientId(address recipient) private returns (uint16 index) {
+    /// @dev The index of `recipient`, registered on first use; zero for the zero address. A
+    ///      sale of `(token, id)` that would register the 65,536th fails closed, as Stream's
+    ///      own fee-recipient index does.
+    function _feeRecipientId(address token, uint256 id, address recipient)
+        private
+        returns (uint16 index)
+    {
         if (recipient == address(0)) return 0;
         index = _feeRecipientIds[recipient];
         if (index == 0) {
+            if (_feeRecipientCount == type(uint16).max) revert InvalidSaleTerms(token, id);
             index = ++_feeRecipientCount;
             _feeRecipientIds[recipient] = index;
             _feeRecipients[index] = recipient;

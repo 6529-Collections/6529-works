@@ -73,11 +73,11 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PERMIT2_START_CEILING = 365_000;
     uint256 internal constant BID_CEILING = 75_000;
     uint256 internal constant CONSUME_CEILING = 97_000;
-    uint256 internal constant CREATE_EDITION_CEILING = 274_000;
-    uint256 internal constant CREATE_EDITION_DUTCH_CEILING = 323_000;
-    uint256 internal constant OPEN_SALE_CEILING = 248_000;
-    uint256 internal constant OPEN_SALE_FIRST_CEILING = 315_000;
-    uint256 internal constant OPEN_SALE_DUTCH_CEILING = 267_000;
+    uint256 internal constant CREATE_EDITION_CEILING = 275_000;
+    uint256 internal constant CREATE_EDITION_DUTCH_CEILING = 324_000;
+    uint256 internal constant OPEN_SALE_CEILING = 247_000;
+    uint256 internal constant OPEN_SALE_FIRST_CEILING = 291_000;
+    uint256 internal constant OPEN_SALE_DUTCH_CEILING = 265_000;
     uint256 internal constant PURCHASE_DUTCH_CEILING = 127_000;
     uint256 internal constant PURCHASE_FIRST_CEILING = 127_000;
     uint256 internal constant PURCHASE_LATER_CEILING = 127_000;
@@ -226,11 +226,15 @@ contract IntegrationGasReport is IntegrationBase {
         duo[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
         ISplitWallet.Payee[] memory soloC = new ISplitWallet.Payee[](1);
         soloC[0] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 100_000);
-        address[22] memory extra = [
+        ISplitWallet.Payee[] memory duoC = new ISplitWallet.Payee[](2);
+        duoC[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
+        duoC[1] = ISplitWallet.Payee(uint160(makeAddr("gasArtistC")), address(0), 80_000);
+        address[23] memory extra = [
             artistA,
             artistB,
             makeAddr("gasArtistC"),
             economics.newWorkTerms(PRODUCT_STREAM, soloC).seller,
+            economics.newWorkTerms(PRODUCT_STREAM, duoC).seller,
             platform,
             starter,
             bidder,
@@ -321,16 +325,24 @@ contract IntegrationGasReport is IntegrationBase {
 
     /// @dev A two-party work: the lead artist and a collaborator who is paid as a fixed payee.
     function _twoPartyPackage() internal returns (bytes32 twoRoot, Work[] memory works) {
+        return _twoPartyPackageOf(artistA);
+    }
+
+    /// @dev Eight works led by `lead`, with the collaborator paid as a fixed payee.
+    function _twoPartyPackageOf(address lead)
+        internal
+        returns (bytes32 twoRoot, Work[] memory works)
+    {
         address collaborator = _actor("gasCollaborator");
         works = new Work[](ITEMS);
         for (uint256 i; i < ITEMS; ++i) {
-            works[i] = _work(artistA, collectionId);
+            works[i] = _work(lead, collectionId);
             works[i].item.parties = new Party[](2);
-            works[i].item.parties[0] = Party(artistA, PartyRole.ARTIST);
+            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
             works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
             works[i].item.payees = new ISplitWallet.Payee[](2);
             works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
-            works[i].item.payees[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
+            works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
         }
         twoRoot = _publish(works);
     }
@@ -490,23 +502,63 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 5, 0);
     }
 
-    /// @dev An artist's first start, at steady state otherwise (the acceptance pre-wrote the
-    ///      artist's move-nonce word): Stream also writes the shared terms word that the artist's
-    ///      later works reuse (QUALITY-6), so it writes as many slots as every start did before.
-    function _rowStartArtistFirst() internal returns (Row memory r) {
-        _steadyState();
+    /// @dev Eight single-artist works by artist C, who has never started a work (the acceptance
+    ///      pre-wrote the move-nonce word).
+    function _artistCPackage() internal returns (bytes32 cRoot, Work[] memory works) {
         address artistC = _actor("gasArtistC");
-        Work[] memory works = new Work[](ITEMS);
+        works = new Work[](ITEMS);
         for (uint256 i; i < ITEMS; ++i) {
             works[i] = _work(artistC, collectionId);
         }
-        bytes32 cRoot = _publish(works);
+        cRoot = _publish(works);
+    }
+
+    /// @dev An artist's first start, at steady state otherwise: Stream also writes the shared
+    ///      terms word that the artist's later works reuse (QUALITY-6), so it writes as many slots
+    ///      as every start did before. The terms' hashed position is free here; on a collision the
+    ///      first start writes one slot more (`test/stream/StreamTermsGrind.t.sol`).
+    function _rowStartArtistFirst() internal returns (Row memory r) {
+        _steadyState();
+        (bytes32 cRoot, Work[] memory works) = _artistCPackage();
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(cRoot, works, 0)));
         r = _row("start, an artist's first work", starter, address(auction), data, 0);
         _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
+    }
+
+    /// @dev An artist's first start with a bid: the terms word and the bid.
+    function _rowStartWithBidArtistFirst() internal returns (Row memory r) {
+        _steadyState();
+        (bytes32 cRoot, Work[] memory works) = _artistCPackage();
+        r = _row(
+            "startWithBid, an artist's first work",
+            bidder,
+            address(auction),
+            _startWithBidData(cRoot, works, 0),
+            1 ether
+        );
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
+    /// @dev An artist's first start is a two-party work with a bid: the binding row of the 350K
+    ///      budget (ADR 0004).
+    function _rowStartWithBidArtistFirstTwoParty() internal returns (Row memory r) {
+        _steadyState();
+        (bytes32 twoRoot, Work[] memory works) = _twoPartyPackageOf(_actor("gasArtistC"));
+        r = _row(
+            "startWithBid, an artist's first work, two-party",
+            bidder,
+            address(auction),
+            _startWithBidData(twoRoot, works, 0),
+            1 ether
+        );
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
     /// @dev One-time: the first start on a new deployment (empty custody, the first fee terms
@@ -693,7 +745,8 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev One-time: the adapter's first sale also registers the network fee recipient, which
-    ///      later listings reference by index (the counter and both directions of the index).
+    ///      later listings reference by index (both directions of the index; the counter shares
+    ///      `nextSaleId`'s word).
     function _rowOpenSaleFirst() internal returns (Row memory r) {
         uint256 editionId = _createdEdition();
         r = _row(
@@ -704,7 +757,7 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, OPEN_SALE_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 9, 0);
+        _growthIs(r, 8, 0);
     }
 
     function _purchaseData(uint256 saleId, address buyer, uint256 quantity)
@@ -1083,6 +1136,14 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartArtistFirst();
     }
 
+    function test_Gas_StartWithBid_ArtistsFirstWork() public {
+        _rowStartWithBidArtistFirst();
+    }
+
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty() public {
+        _rowStartWithBidArtistFirstTwoParty();
+    }
+
     function test_Gas_Start_FirstWorkEver() public {
         _rowStartFirstEver();
     }
@@ -1182,7 +1243,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[31] memory rows = [
+        function() internal returns (Row memory)[33] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1192,6 +1253,8 @@ contract IntegrationGasReport is IntegrationBase {
             _rowStartWithPermit2Bid,
             _rowStartNewCollection,
             _rowStartArtistFirst,
+            _rowStartWithBidArtistFirst,
+            _rowStartWithBidArtistFirstTwoParty,
             _rowStartFirstEver,
             _rowStartWithBidNewTerms,
             _rowBid,
@@ -1215,7 +1278,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[31] memory measured;
+        Row[33] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

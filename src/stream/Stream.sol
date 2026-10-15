@@ -42,14 +42,20 @@ import { SpdxId } from "./SpdxId.sol";
 ///      the marketplace metadata, and forwards `tokenURI` to the work's renderer. Records,
 ///      licenses, seeds, finalize and locators live in the bound `IWorkRecords` satellite.
 ///
-///      Storage is shaped by the auction-start budget (350K Prague gas and at most 6 new slots,
-///      7 with a bid, per steady-state start; ADR 0004). A mint writes the ERC-721 owner and
+///      Storage is shaped by the auction-start budget (ADR 0004): 350K Prague gas and at most 6
+///      new slots, 7 with a bid, per steady-state start. A mint writes the ERC-721 owner and
 ///      balance, one shared counter word, the collection's counter word and two work words: the
 ///      seller, serial, collection, flags and terms ID; the item hash. The terms (the lead artist
 ///      ID, royalty rate, fee share, fee-recipient index and minting adapter's index) are one
 ///      word shared by every work with the same terms, written by the first of them (QUALITY-6),
-///      so a start under existing terms writes one word fewer. Fee recipients are stored once each
-///      and referenced by index. The ERC-2981 receiver is derived, not stored:
+///      so a start under existing terms writes one word fewer: 5 new slots, 6 with a bid. A first
+///      start under new terms (an artist's first, and every artist's first after an economics
+///      change or through a newly admitted adapter) writes the terms word: 6, 7 with a bid. On a
+///      collision of the terms' 23-bit hashed position it writes one more, the overflow word and
+///      its index; a curated artist can force that for another artist by grinding an address,
+///      and with a bid that one first start can exceed 350K (an accepted limitation, ADR 0004).
+///      Fee recipients are stored once each and referenced by index. The ERC-2981 receiver is
+///      derived, not stored:
 ///      the seller itself when the fee share is zero, otherwise the split factory's salt-zero
 ///      wallet for the canonical payee list `(feeRecipient: feeShare, seller: rest)`. `royaltyInfo`
 ///      makes that one plain view call and no other: it can run out of gas and revert, but never
@@ -151,6 +157,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     mapping(uint256 collectionId => CollectionData) private _collections;
     mapping(uint256 tokenId => TokenData) private _tokens;
     /// @dev Interned terms (QUALITY-6), at the position their hash names or in the overflow range.
+    ///      `_terms` is an ordinary mapping: a "position" is a terms ID, a mapping key, not a
+    ///      storage slot.
     mapping(uint24 termsId => Terms) private _terms;
     mapping(bytes32 termsHash => uint24 termsId) private _overflowIds;
 
@@ -753,7 +761,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (_key(held) == key) return id;
         id = _overflowIds[key];
         if (id == 0) {
-            // The checked counter reverts past 2^24 - 1; the range holds 2^23 - 1 terms.
+            // The overflow range holds 2^23 - 1 terms: the check reverts at the 2^23rd.
             uint24 n = ++_counts.overflowTerms;
             if (n > HASHED) revert InvalidMintRequest();
             id = OVERFLOW | n;
