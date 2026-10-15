@@ -58,3 +58,26 @@ show_metrics = true
 line_length = 100
 tab_width = 4
 bracket_spacing = true
+
+# Reduced-run test settings (FOUNDRY_PROFILE=lite) for the two tools that re-run the suite many
+# times or slowly: `forge coverage` (instrumented and unoptimized) and the mutation campaign
+# (once per mutant). Same sources and compiler settings as the default profile; only the fuzz
+# and invariant case counts drop. It builds into its own directories, so the mutation tool's
+# `forge clean` of the default build leaves it intact. See docs/testing/README.md.
+[profile.lite]
+out = "out-lite"
+cache_path = "cache-lite"
+
+[profile.lite.fuzz]
+runs = 64
+
+[profile.lite.invariant]
+runs = 16
+depth = 64
+
+# Halmos symbolic tests (docs/testing/README.md): only test/symbolic is compiled, into separate
+# output directories, so a Halmos run does not invalidate the default build.
+[profile.symbolic]
+test = "test/symbolic"
+out = "out-symbolic"
+cache_path = "cache-symbolic"

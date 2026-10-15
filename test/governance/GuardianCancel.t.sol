@@ -326,6 +326,18 @@ contract GuardianCancelTest is GovernanceFixture {
         assertEq(manager.getSchedule(id), 0);
     }
 
+    function test_TruncatedRevocationCanBeCancelledByAnyGuardian() public {
+        // The role word is there, so the call schedules; the account word is not, so it
+        // names nobody and no guardian is barred from cancelling it.
+        bytes memory data =
+            abi.encodePacked(IAccessManager.revokeRole.selector, uint256(Roles.GUARDIAN));
+        bytes32 id = _schedule(adminSafe, address(manager), data);
+        assertGt(manager.getSchedule(id), 0, "scheduled");
+        _expectUnauthorizedCancel(attacker, adminSafe, data);
+        _cancelAs(guardianA, adminSafe, address(manager), data);
+        assertEq(manager.getSchedule(id), 0);
+    }
+
     function test_Rule2OnlyProtectsRolesOnTheManager() public {
         // A target function with revokeRole's selector is not a role revocation: the account
         // named in it, a guardian, may cancel it like any other scheduled call.

@@ -247,6 +247,29 @@ contract JsonEscapeTest is Test {
         }
     }
 
+    /// @dev Bytes in memory right after the input never complete a sequence the input only
+    ///      starts: `e2 80` before an `a8`, or `</scr` before `ipt`, at every length and word
+    ///      offset. Mutation testing found the two end-of-input bounds unpinned (the tests'
+    ///      memory past the end was always zero).
+    function test_BytesPastTheEndAreNotRead() public pure {
+        bytes[2] memory heads = [bytes(hex"e280"), "</scr"];
+        bytes[2] memory tails = [bytes(hex"a8"), "ipt"];
+        for (uint256 h; h < heads.length; ++h) {
+            for (uint256 n; n < 40; ++n) {
+                // The text and what follows it in one allocation, then the length shortened, so
+                // the tail sits in memory right after the text's last byte.
+                bytes memory text = bytes.concat(O.fill(n, "a"), heads[h], tails[h]);
+                uint256 length = n + heads[h].length;
+                assembly ("memory-safe") {
+                    mstore(text, length)
+                }
+                string memory out =
+                    h == 0 ? JsonEscape.escape(string(text)) : JsonEscape.scriptText(string(text));
+                assertEq(bytes(out), text, "a byte past the end was read");
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- fuzz
 
     function testFuzz_ParityWithOracles(bytes memory raw) public pure {

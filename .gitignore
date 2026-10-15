@@ -21,3 +21,12 @@ node_modules/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Test tooling outputs (docs/testing/README.md)
+out-symbolic/
+out-lite/
+cache-symbolic/
+cache-lite/
+lcov.info
+coverage/
+mutation/

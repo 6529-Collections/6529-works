@@ -255,6 +255,40 @@ contract JsonScanTest is Test {
         assertFalse(ok);
     }
 
+    /// @dev Each way a navigated object or array can be malformed gives `ok` false: the walks
+    ///      do not validate, but they never accept text that is not the value they look for.
+    function test_Navigation_MalformedObjectsAndArraysAreNotOk() public view {
+        bytes32[] memory k = _keys1("a");
+        bytes[5] memory objects = [
+            bytes("{1:2}"), // a key that is not a string
+            '{"a" 1}', // no colon after the key
+            '{"a":1 "b":2}', // members not separated by a comma
+            '{"a":[1,2}', // a value closed by the wrong bracket, then nothing
+            '{"a":{"b":1}' // a nested value that never closes its parent
+        ];
+        for (uint256 i; i < objects.length; ++i) {
+            (bool ok,) = h.members(objects[i], 0, k);
+            assertFalse(ok, string(objects[i]));
+            (ok,) = h.records(bytes.concat("[", objects[i], "]"), 0, k, 4);
+            assertFalse(ok, string(objects[i]));
+        }
+        bytes[3] memory arrays = [
+            bytes("[1 2]"), // elements not separated by a comma
+            "[[1,2", // an element that is never closed
+            "[1,2" // the array itself never closes
+        ];
+        for (uint256 i; i < arrays.length; ++i) {
+            (bool ok,) = h.elements(arrays[i], 0, 4);
+            assertFalse(ok, string(arrays[i]));
+        }
+    }
+
+    /// @dev A number that is only a minus sign at the very end of the text.
+    function test_Accepts_RejectsALoneMinusAtTheEnd() public view {
+        assertFalse(h.accepts('{"a":-'));
+        assertFalse(h.accepts('{"a":[-'));
+    }
+
     // ---------------------------------------------------------------- what is accepted
 
     function test_Accepts_ValidDocuments() public view {
@@ -320,6 +354,11 @@ contract JsonScanTest is Test {
         assertFalse(h.accepts(hex"7b2261223a2261007b"));
         assertFalse(h.accepts('{"a":"\\'));
         assertFalse(h.accepts('{"a":"\\u123'));
+        // An escape letter other than `u` is refused even when four hex digits follow it
+        // (mutation testing: without the `u` test, `\x0041` read as `A`).
+        assertFalse(h.accepts('{"a":"\\x0041"}'));
+        assertFalse(h.accepts('{"a":"\\U0041"}'));
+        assertFalse(h.accepts('{"a":"\\ud800\\x0041"}'));
     }
 
     /// @dev M3: a key that reads the same to every parser. `name` is `name` to a JSON

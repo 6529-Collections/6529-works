@@ -427,6 +427,19 @@ contract StatementLogTest is StatementLogFixture {
         );
     }
 
+    /// @dev A validly signed statement in no role is authorised for nobody, not even a
+    ///      signer that holds every role.
+    function test_Relay_NoneRoleIsNeverAuthorized() public {
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        Statement memory s = _statement();
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.NONE, curatorSigner)
+        );
+        _relay(
+            Role.NONE, s, curatorSigner, 0, deadline, _sign(curatorKey, Role.NONE, s, 0, deadline)
+        );
+    }
+
     function test_Relay_ERC1271ContractWalletArtist() public {
         ERC1271WalletMock wallet = new ERC1271WalletMock(artist);
         resolver.grant(address(nft), 1, address(wallet));
