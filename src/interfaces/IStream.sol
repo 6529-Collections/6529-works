@@ -114,7 +114,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
     ///         seed policy, license ID, fee terms).
     error InvalidMintRequest();
-    /// @notice The collection name is empty or too long.
+    /// @notice The collection name is empty, too long, not UTF-8, or holds a control character,
+    ///         `<`, `"` or `\`.
     error InvalidCollectionName();
     /// @notice The royalty rate exceeds 100,000.
     error InvalidRoyaltyRate(uint32 rate);
@@ -154,7 +155,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     // ----- collections, supply and works -----
 
-    /// @notice Creates a collection and returns its ID (sequential, from 1). PLATFORM role.
+    /// @notice Creates a collection and returns its ID (sequential, from 1). PLATFORM role. The
+    ///         name is 1 to 256 bytes of UTF-8 without control characters (below 0x20, and
+    ///         0x7F), `<`, `"` or `\`.
     function createCollection(string calldata name, bytes32 metadataHash)
         external
         returns (uint256 collectionId);

@@ -204,7 +204,10 @@
 - Records (CONTENT-1): `openRecord` refuses a PREVIEW file over `Limits.MAX_PREVIEW_BYTES`
   (16 KiB stored, `Identity` counted four times). With the content-address locators this
   restores the 8M `tokenURI` budget, now proven on the real stack with every cap at once
-  (`test/integration/TokenUriBudget.t.sol`: at most 7.7M, `Editions.uri` included).
+  (`test/integration/TokenUriBudget.t.sol`: at most 7.78M Prague gas, `Editions.uri` included).
+- Stream: `createCollection` refuses names with control characters, `<`, `"` or `\`, which JSON
+  escaping makes up to six bytes in every work's metadata; the budget proof uses the dearest
+  name it accepts.
 - Records (CONTENT-4): `syncOnChain` is resumable. Each call checks whole media files up to
   1,024 chunks (about 8.3M gas cold), keeps its place in the record's first word and emits
   `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete

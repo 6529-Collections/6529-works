@@ -299,6 +299,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     // ----------------------------------------------------------------- collections and works
 
     /// @inheritdoc IStream
+    /// @dev The name goes into every work's metadata, where a control character, `<`, `"` or
+    ///      `\` is escaped to up to six bytes: refusing them keeps `tokenURI` within its gas
+    ///      budget (the content README's budget proof).
     function createCollection(string calldata name, bytes32 metadataHash)
         external
         restricted
@@ -307,6 +310,12 @@ contract Stream is ERC721, AccessManaged, IStream {
         bytes calldata raw = bytes(name);
         if (raw.length == 0 || raw.length > MAX_NAME_BYTES || !Utf8.isValid(raw)) {
             revert InvalidCollectionName();
+        }
+        for (uint256 i; i < raw.length; ++i) {
+            bytes1 b = raw[i];
+            if (b < 0x20 || b == 0x7f || b == "<" || b == '"' || b == "\\") {
+                revert InvalidCollectionName();
+            }
         }
         collectionId = ++_counts.collections;
         CollectionData storage c = _collections[collectionId];

@@ -635,17 +635,25 @@ top-level members or an array of zeros, and the dearest UTF-8 fill), next to 256
 of attested `Base64` `text/html` (inlined), a `PREVIEW` image at the WorkRecords cap
 (4 KiB of `Identity` or 16 KiB of attested `Base64`, inlined), 32 media files, a
 64-byte `LicenseRef` license whose text file is served by locator, 16 locators on it
-(the longest, 66 bytes, served last), a collection name of 256 `%`, an ARTIST seed
-and a dispute statement:
+(the longest, 66 bytes, served last), the dearest collection name 6529 Stream accepts,
+an ARTIST seed and a dispute statement. The name is 85 U+2028 and a `%`: JSON
+escaping makes each U+2028 six bytes (`\u2028`). `createCollection` refuses the
+names that escape longer, with control characters, `<`, `"` or `\`. With 256 `%` the
+edition row is 7.69M, with 256 `#` 7.70M, with plain ASCII 7.57M.
 
 | Row | Gas |
 | --- | --- |
-| white space before each attribute, an array of zeros (the dearest) | 7.69M |
-| the same, rendered as the edition of its master (`Editions.uri`) | 7.70M |
-| the same, the preview as 16 KiB of `Base64` | 7.60M |
-| white space after every token, an array of zeros | 7.67M |
-| white space before each attribute, top-level members | 7.66M |
-| `aa` and a 2-byte sequence, an array of zeros | 7.33M |
+| white space before each attribute, an array of zeros, rendered as the edition of its master (`Editions.uri`, the dearest) | 7.77M |
+| the same, through `Stream.tokenURI` | 7.76M |
+| the same, the preview as 16 KiB of `Base64` | 7.67M |
+| white space after every token, an array of zeros | 7.74M |
+| white space before each attribute, top-level members | 7.74M |
+| `aa` and a 2-byte sequence, an array of zeros | 7.40M |
+
+These are Prague gas, as ADR 0004 defines the budget, and the dearest row leaves
+2.8% (about 226,000 gas) under 8M. Reads are not repriced on Sepolia's Glamsterdam,
+but the margin is small: re-measure it whenever a fork (Glamsterdam on mainnet or a
+later one) reprices compute, memory or cold reads.
 
 The WorkRecords caps are what make it hold. Without them the same work cost up to
 9.8M: a locator could be 2 KiB of `%` (each escaped at about 470 gas), and a preview

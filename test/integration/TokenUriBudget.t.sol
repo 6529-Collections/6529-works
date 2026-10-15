@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { console2 } from "forge-std/console2.sol";
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
@@ -34,9 +35,10 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///           (`Limits.MAX_MEDIA_FILES`).
 ///         - **The rest**: a 64-byte `LicenseRef` license whose text is a media file served by
 ///           locator, 16 locators on it (the artist's 8 and the platform's 8, of the longest
-///           kind, the served one last, so the scan runs to the end), a collection name of 256
-///           `%`, an ARTIST seed and a dispute statement. (A VRF seed instead adds one bounded
-///           read of the entropy module, a few thousand gas.)
+///           kind, the served one last, so the scan runs to the end), the dearest collection
+///           name `createCollection` accepts (`_dearestName`), an ARTIST seed and a dispute
+///           statement. (A VRF seed instead adds one bounded read of the entropy module, a few
+///           thousand gas.)
 ///         Each row builds its own work, so each test measures one.
 contract TokenUriBudgetTest is IntegrationBase {
     uint256 internal constant MAX_ATTRIBUTES = 32;
@@ -155,6 +157,15 @@ contract TokenUriBudgetTest is IntegrationBase {
 
     // ------------------------------------------------------------------ the work
 
+    /// @dev The dearest collection name to render, of those `createCollection` accepts (it
+    ///      refuses control characters, `<`, `"` and `\`, which JSON escaping makes six bytes):
+    ///      U+2028 three bytes at a time, escaped to six (`\u2028`), and a `%` to fill the 256
+    ///      bytes. Measured on the edition row: 7.77M, against 7.69M for 256 `%`, 7.70M for 256
+    ///      `#` and 7.57M for plain ASCII.
+    function _dearestName() internal pure returns (string memory) {
+        return string(bytes.concat(_fill(hex"e280a8", 255), "%"));
+    }
+
     struct Built {
         uint256 tokenId;
         bytes32 licenseText;
@@ -202,7 +213,7 @@ contract TokenUriBudgetTest is IntegrationBase {
     {
         ++salt;
         vm.prank(platform);
-        uint256 coll = stream.createCollection(string(_fill("%", 256)), keccak256(abi.encode(salt)));
+        uint256 coll = stream.createCollection(_dearestName(), keccak256(abi.encode(salt)));
         bytes32 content;
         (b, content) = _mediaFiles(base64Preview);
         Work memory w;
@@ -366,6 +377,35 @@ contract TokenUriBudgetTest is IntegrationBase {
         console2.log("preferredLocator, 16 scanned, cold:", locator, "of", SMALL_READ_CAP);
         assertLt(media * 4, MEDIA_READ_CAP, "mediaOf: a quarter of its cap at most");
         assertLt(locator * 2, SMALL_READ_CAP, "preferredLocator: half of its cap at most");
+    }
+
+    // ------------------------------------------------------------------ the collection name
+
+    /// @dev The names the review measured above the budget (a collection of 256 control bytes,
+    ///      `"` or `<`, each escaped to up to six bytes in every work's metadata) are refused at
+    ///      creation, as are a backslash and DEL anywhere; the dearest accepted name is the one
+    ///      the rows use.
+    function test_CollectionName_RefusesBytesThatEscapeLong() public {
+        bytes[8] memory refused = [
+            _fill(hex"01", 256),
+            _fill('"', 256),
+            _fill("<", 256),
+            bytes("Genesis\\"),
+            bytes("Genesis\x7f"),
+            bytes("Gene\nsis"),
+            bytes("A <b> collection"),
+            hex"1f"
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.prank(platform);
+            vm.expectRevert(IStream.InvalidCollectionName.selector);
+            stream.createCollection(string(refused[i]), bytes32(0));
+        }
+        vm.startPrank(platform);
+        stream.createCollection(_dearestName(), bytes32(0));
+        stream.createCollection(string(_fill("%", 256)), bytes32(0));
+        stream.createCollection("Genesis & Co. > 'all' #1", bytes32(0));
+        vm.stopPrank();
     }
 
     // ------------------------------------------------------------------ the preview cap
