@@ -150,4 +150,5 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   a locator names is not verified on-chain, so after finalize only the PLATFORM
   role adds locators (the artist's call is unauthorized): the copies of a
   finalized work are the platform's to register and the storage operator's to
-  choose. Locators added before finalize stay as they are.
+  choose. The platform may then fill all 16 of a file's slots, the artist's
+  unused ones included. Locators added before finalize stay as they are.

@@ -200,7 +200,8 @@
 - Records (CONTENT-3, LIFECYCLE-3): a locator URI must be a content address with nothing
   after it, `ar://` and a 43-character transaction ID or `ipfs://` and a CIDv1 of the fixed
   profile (`bafkrei`/`bafybei`, 59 characters), in its one canonical spelling. After finalize
-  only the PLATFORM role adds locators; the artist adds them until then.
+  only the PLATFORM role adds locators, and may use all 16 of a file's slots; the artist adds
+  them until then.
 - Records (CONTENT-1): `openRecord` refuses an `Identity` or `Base64` PREVIEW file over
   `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, `Identity` counted four times; gzip files are never
   inlined, so not bounded). With the content-address locators this restores the 8M `tokenURI`

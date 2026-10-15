@@ -469,20 +469,24 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     ///      locators per file, so neither can exhaust the other's. A URI already registered for
     ///      the file is refused, compared as exact bytes; the set is shared, so whichever side
     ///      adds a URI first holds it (it is listed either way). After finalize only the platform
-    ///      adds locators: "Final" fixes the content, and the copies of a finalized work are the
-    ///      platform's and the storage operator's to register and choose.
+    ///      adds locators, up to the file's 16 in all (the artist's unused slots included):
+    ///      "Final" fixes the content, and the copies of a finalized work are the platform's and
+    ///      the storage operator's to register and choose.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
         // After finalize the call goes through the PLATFORM role only.
-        bool byArtist = !_open(tokenId).finalized && _isArtist(tokenId, msg.sender);
+        bool finalized = _open(tokenId).finalized;
+        bool byArtist = !finalized && _isArtist(tokenId, msg.sender);
         if (!byArtist) _checkCanCall(msg.sender, _msgData());
         _requireMedia(tokenId, fileId);
         _checkUri(locator);
         LocatorCounts storage counts = _locatorCounts[tokenId][fileId];
         mapping(bytes32 => bool) storage seen = _locatorUris[tokenId][fileId];
         bytes32 uriHash = keccak256(bytes(locator.uri));
-        if ((byArtist ? counts.artist : counts.platform) >= LOCATOR_QUOTA || seen[uriHash]) {
-            revert InvalidLocator();
-        }
+        uint256 used = byArtist ? counts.artist : counts.platform;
+        uint256 quota = LOCATOR_QUOTA;
+        // After finalize the artist adds none, so the platform may use the artist's unused slots.
+        if (finalized) (used, quota) = (used + counts.artist, Limits.MAX_LOCATORS_PER_FILE);
+        if (used >= quota || seen[uriHash]) revert InvalidLocator();
         seen[uriHash] = true;
         if (byArtist) ++counts.artist;
         else ++counts.platform;

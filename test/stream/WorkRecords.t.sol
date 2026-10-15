@@ -1175,6 +1175,34 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(other, otherFile, _ar("p0"));
     }
 
+    /// @dev After finalize the artist adds no locators, so the platform may fill the file's 16
+    ///      slots, the artist's unused ones included, and no more.
+    function test_addLocator_platformTakesTheArtistsUnusedSlotsAfterFinalize() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.startPrank(artist);
+        for (uint256 i; i < 3; ++i) {
+            records.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
+        }
+        vm.stopPrank();
+        vm.startPrank(platform);
+        for (uint256 i; i < 8; ++i) {
+            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+        }
+        _expectBadLocator(tokenId, file, _ar("p8"));
+        vm.stopPrank();
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        vm.startPrank(platform);
+        for (uint256 i = 8; i < 13; ++i) {
+            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+        }
+        assertEq(records.locators(tokenId, file).length, Limits.MAX_LOCATORS_PER_FILE);
+        _expectBadLocator(tokenId, file, _ar("p13"));
+        vm.stopPrank();
+    }
+
     /// @dev A URI already registered for the file is refused, whoever adds it again.
     function test_addLocator_rejectsDuplicateUri() public {
         (uint256 tokenId,) = _work(1);

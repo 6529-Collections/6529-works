@@ -254,7 +254,8 @@ interface IWorkRecords {
     ///         finalize only the PLATFORM role adds locators (the artist's call is then
     ///         unauthorized): "Final" fixes the content, and since the content a locator names
     ///         is not verified on-chain, a finalized work's copies are the platform's to
-    ///         register and the storage operator's to choose.
+    ///         register and the storage operator's to choose. The platform may then use the
+    ///         file's whole `Limits.MAX_LOCATORS_PER_FILE`, the artist's unused slots included.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
     /// @notice A file's registered locators, in registration order.
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);
