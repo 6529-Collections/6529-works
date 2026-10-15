@@ -8,7 +8,13 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
-import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
+import {
+    EditionFormat,
+    EditionTerms,
+    ItemKind,
+    SeedPolicy
+} from "src/interfaces/types/PackageTypes.sol";
+import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -322,6 +328,51 @@ contract DisputeFlowTest is IntegrationBase {
         );
         manager.execute(address(stream), again);
         assertEq(registry.releasedTo(contentHash), rightfulId, "the first release stands");
+    }
+
+    /// @dev DEPS-1 with SIGS-1: a VRF work keeps its one seed through an upheld dispute. The
+    ///      rightful artist's VRF item cannot request while the content is consumed; after the
+    ///      release it joins the content's delivered draw, with no new request, and starts.
+    function test_TheRightfulVrfItemReadsTheContentsSeed() public {
+        Work memory original = _work(rightful, collectionId);
+        original.item.seedPolicy = SeedPolicy.VRF;
+        Work memory copy = _work(copier, collectionId);
+        copy.media = original.media;
+        copy.item.contentHash = original.item.contentHash;
+        copy.item.mediaHash = original.item.mediaHash;
+        copy.item.seedPolicy = SeedPolicy.VRF;
+        bytes32 copyRoot = _publish(_one(copy));
+        bytes32 originalRoot = _publish(_one(original));
+        bytes32[] memory none = new bytes32[](0);
+        coordinator.fulfill(entropy.requestSeed(copy.item, copyRoot, none), 77);
+
+        (uint256 saleId, uint256 tokenId) = _start(copyRoot, _one(copy), 0);
+        bytes32 originalItem = WorksHashing.itemHash(original.item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.NotRequestable.selector, originalItem)
+        );
+        entropy.requestSeed(original.item, originalRoot, none);
+        vm.prank(guardian1);
+        auction.pause(saleId, keccak256("disputes wave: copied media"));
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://vrf-dispute-upheld"
+        );
+        _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
+        _govern(
+            hotAdmin,
+            address(stream),
+            abi.encodeCall(
+                stream.releaseContent,
+                (tokenId, original.item.contentHash, artists.artistIdOf(rightful))
+            )
+        );
+
+        uint256 nextId = coordinator.nextId();
+        assertEq(entropy.requestSeed(original.item, originalRoot, none), 0, "joined");
+        assertEq(coordinator.nextId(), nextId, "no second draw");
+        assertEq(entropy.seedOf(originalItem), bytes32(uint256(77)));
+        (, uint256 rightfulToken) = _start(originalRoot, _one(original), 0);
+        assertEq(uint8(stream.work(rightfulToken).seedPolicy), uint8(SeedPolicy.VRF));
     }
 
     /// @dev A guardian vetoes a mistaken release during its delay.
