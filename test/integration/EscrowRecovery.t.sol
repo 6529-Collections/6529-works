@@ -87,6 +87,7 @@ contract EscrowRecoveryTest is IntegrationBase {
 
         assertEq(escrow.owed(networkFee, address(usdc)), 0);
         assertEq(escrow.owed(newFeeSafe, address(usdc)), 250e6);
+        assertEq(escrow.recoveryConsent(networkFee), address(0), "the consent is used up");
         assertEq(escrow.totalOwed(address(usdc)), 250e6);
         escrow.flush(newFeeSafe, address(usdc));
         assertEq(usdc.balanceOf(newFeeSafe), 250e6);

@@ -147,3 +147,6 @@
   cannot revert a well-funded batch. An ERC-1271 check that could not get its gas
   (`BoundedCallInsufficientGas`) also counts as a shortfall. The README gives keepers'
   guidance: simulate privately, and split batches with contract payees or unfamiliar tokens.
+- Economics (MONEY-2 follow-up): a `consentToRecovery` consent is single use. The governed
+  `recover` that moves the account's credit consumes it, so the account consents again for
+  each further asset or later credit.

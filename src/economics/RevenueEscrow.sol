@@ -23,8 +23,9 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      replacement wallet with an identical payee configuration, where consent is trivially
 ///      satisfied because the payees and shares are identical (recorded in ADR 0003). Any other
 ///      account's credit, such as the network fee recipient's, moves only to the replacement that
-///      account named itself with {consentToRecovery}. Funds force-sent or transferred here
-///      without a deposit are never owed to anyone and stay put.
+///      account named itself with {consentToRecovery}, and each consent covers one recovery.
+///      Funds force-sent or transferred here without a deposit are never owed to anyone and stay
+///      put.
 contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransient {
     /// @inheritdoc IRevenueEscrow
     ISplitFactory public immutable factory;
@@ -95,8 +96,12 @@ contract RevenueEscrow is IRevenueEscrow, AccessManaged, ReentrancyGuardTransien
             if (replacement == wallet || factory.configOf(replacement) != config) {
                 revert NotEquivalentWallet(wallet, replacement);
             }
-        } else if (replacement == address(0) || recoveryConsent[wallet] != replacement) {
-            revert RecoveryNotConsented(wallet, replacement);
+        } else {
+            if (replacement == address(0) || recoveryConsent[wallet] != replacement) {
+                revert RecoveryNotConsented(wallet, replacement);
+            }
+            // Single use: one consent covers one recovery of one asset.
+            delete recoveryConsent[wallet];
         }
         uint256 amount = owed[wallet][asset];
         if (amount == 0) revert NothingOwed(wallet, asset);

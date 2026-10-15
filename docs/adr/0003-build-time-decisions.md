@@ -184,7 +184,8 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     network fee recipient's Safe when a token blocks it, moves only to the
     replacement that account names itself on the escrow
     (`consentToRecovery`), through the same governed `recover`. That is the
-    consent ADR 0001 §7 requires, given explicitly (review of 14 October 2026).
+    consent ADR 0001 §7 requires, given explicitly and once per recovery: the
+    move consumes it (review of 14 October 2026).
   - The fee recipient's share in existing royalty wallets is not escrowed: as
     a fixed payee, it releases that share to another account with
     `releaseTo`.

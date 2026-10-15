@@ -388,6 +388,10 @@ contract EconomicsHandler is Test {
         assertTrue(ok, "recover reverted");
         ghostOwed[to][asset] += ghostOwed[from][asset];
         ghostOwed[from][asset] = 0;
+        if (from == address(toggle)) {
+            toggleConsent = address(0); // single use
+            assertEq(escrow.recoveryConsent(from), address(0));
+        }
         ++outcomes[from == address(toggle) ? bytes32("recover.consented") : bytes32("recover.ok")];
     }
 

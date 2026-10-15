@@ -67,7 +67,7 @@ interface IRevenueEscrow is IERC165 {
     /// @notice The amount of `asset` owed to all wallets.
     function totalOwed(address asset) external view returns (uint256);
 
-    /// @notice The replacement `account` consented to, or zero.
+    /// @notice The replacement `account` consented to and no {recover} has used yet, or zero.
     function recoveryConsent(address account) external view returns (address);
 
     /// @notice Credits `msg.value` to `wallet`.
@@ -82,8 +82,10 @@ interface IRevenueEscrow is IERC165 {
     /// @return amount The amount paid.
     function flush(address wallet, address asset) external returns (uint256 amount);
 
-    /// @notice Names `replacement` as where governance may move the caller's credits with
-    ///         {recover}, for every asset, until the caller names another or withdraws with zero.
+    /// @notice Names `replacement` as where governance may move the caller's credit with
+    ///         {recover}. Single use: the next {recover} of the caller's credit, in whichever
+    ///         asset, consumes it, so the caller consents again for each further asset or later
+    ///         credit. The caller can change it, or withdraw it with zero, until then.
     /// @dev For accounts that can act, such as the network fee recipient's Safe when a token
     ///      blocks it: the consent ADR 0001 section 7 requires for terminal recovery. Split
     ///      wallets cannot call it; their credits follow the identical-payees rule instead.
@@ -93,7 +95,8 @@ interface IRevenueEscrow is IERC165 {
     /// @notice Moves everything owed to `wallet` in `asset` to `replacement`. For a wallet of the
     ///         factory, `replacement` must be a distinct wallet of the same factory with an
     ///         identical payee configuration (another salt). For any other account, it must be the
-    ///         replacement that account named with {consentToRecovery}.
+    ///         replacement that account named with {consentToRecovery}, and the move consumes
+    ///         that consent.
     /// @dev Governed: `Roles.FUNDS_SETTER` (`Roles.FUNDS`, 14 days). It rescues credits for an
     ///      account a token has blocked; the blocked account's own balance stays where it is.
     ///      ADR 0001 section 7 requires the affected accounts' consent: a factory wallet's is

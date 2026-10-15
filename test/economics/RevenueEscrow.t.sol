@@ -331,8 +331,8 @@ contract RevenueEscrowTest is EconomicsBase {
     }
 
     /// @dev A blocked account that is not a split wallet (a fee recipient's Safe) names its
-    ///      replacement, and governance moves every asset's credit there, adding to any credit
-    ///      the replacement already holds.
+    ///      replacement, and governance moves its credit there, one consent per recovery,
+    ///      adding to any credit the replacement already holds.
     function test_RecoverMovesAnAccountsCreditToTheReplacementItNamed() public {
         BlocklistToken usdc = new BlocklistToken();
         usdc.setBlocked(alice, true);
@@ -348,9 +348,18 @@ contract RevenueEscrowTest is EconomicsBase {
         vm.expectEmit(true, true, true, true, address(escrow));
         emit IRevenueEscrow.Recovered(alice, bob, address(usdc), 1000, 1000);
         escrow.recover(alice, bob, address(usdc));
+        // Single use: the recovery consumed the consent, so the next asset needs a new one.
+        assertEq(escrow.recoveryConsent(alice), address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IRevenueEscrow.RecoveryNotConsented.selector, alice, bob)
+        );
+        escrow.recover(alice, bob, ETH);
+        vm.prank(alice);
+        escrow.consentToRecovery(bob);
         vm.expectEmit(true, true, true, true, address(escrow));
         emit IRevenueEscrow.Recovered(alice, bob, ETH, 1 ether, 3 ether);
         escrow.recover(alice, bob, ETH);
+        assertEq(escrow.recoveryConsent(alice), address(0));
 
         assertEq(escrow.owed(alice, address(usdc)), 0);
         assertEq(escrow.owed(alice, ETH), 0);
@@ -394,6 +403,15 @@ contract RevenueEscrowTest is EconomicsBase {
         );
         escrow.recover(alice, keeper, ETH);
         assertEq(escrow.owed(alice, ETH), 1 ether);
+    }
+
+    /// @dev A failed recovery (nothing owed) leaves the consent in place: only a move uses it.
+    function test_ConsentSurvivesARecoveryThatMovesNothing() public {
+        vm.prank(alice);
+        escrow.consentToRecovery(bob);
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.NothingOwed.selector, alice, ETH));
+        escrow.recover(alice, bob, ETH);
+        assertEq(escrow.recoveryConsent(alice), bob);
     }
 
     /// @dev A split wallet's credit follows the identical-payees rule whatever consent is

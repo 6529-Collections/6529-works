@@ -91,8 +91,9 @@ mint, so rotating the fee recipient with `setFeeTerms` only helps new works).
   `consentToRecovery(replacement)`: that is its consent. Governance then calls
   `recover(safe, replacement, asset)` in the funds class (14 days), and anyone
   flushes the credit to the replacement. Without that consent, or to any other
-  address, `recover` reverts (`RecoveryNotConsented`). The consent covers every
-  asset until the Safe names another replacement or withdraws it with zero.
+  address, `recover` reverts (`RecoveryNotConsented`). A consent is single use:
+  the recovery consumes it, so the Safe consents again for each further asset
+  or later credit, and can change or withdraw (zero) a consent not yet used.
 - **Royalty shares.** A blocked fixed payee's share stays in the royalty
   wallet, not the escrow. The Safe releases it to any account itself with
   `releaseTo(asset, index, recipient)`. Split wallets have no governance, so
