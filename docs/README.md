@@ -53,7 +53,9 @@ specification differ, the specification follows the code.
 | [`tools/check_genesis.py`](../tools/check_genesis.py) | The genesis configuration matches the compiled selectors |
 | [`tools/check_budgets.py`](../tools/check_budgets.py), [`tools/check_slither.py`](../tools/check_slither.py) | The engineering budgets; reviewed Slither findings ([triage](security/slither-triage.md)) |
 
-All tools use only the Python standard library; CI runs them ([`ci.yml`](../.github/workflows/ci.yml)).
+All tools use only the Python standard library; CI runs them ([`ci.yml`](../.github/workflows/ci.yml);
+the scheduled runs are in [`nightly.yml`](../.github/workflows/nightly.yml) and
+[`mutation.yml`](../.github/workflows/mutation.yml)).
 The tools that measure the tests ([`tools/check_coverage.py`](../tools/check_coverage.py),
 [`tools/mutation.py`](../tools/mutation.py)) and the Halmos setup are described in
 [Testing](testing/README.md); Slither's and Halmos's versions are hash-locked in

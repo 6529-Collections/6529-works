@@ -51,10 +51,10 @@ jobs:
         # Cited test names, interface IDs, event topic0 values and nSLOC figures match the code.
         run: python tools/check_docs_facts.py
 
-  contracts:
-    name: Contracts
+  checks:
+    name: Build and checks
     runs-on: ubuntu-latest
-    # ADR 0001 budget: the whole CI finishes in under 15 minutes.
+    # ADR 0001 budget: every CI job finishes in under 15 minutes.
     timeout-minutes: 15
 
     steps:
@@ -132,9 +132,6 @@ jobs:
             ~/.svm
           key: ${{ steps.cache.outputs.cache-primary-key }}
 
-      - name: Test
-        run: forge test
-
       - name: Docs facts against the build
         # The audit scope's bytecode sizes, computed interface IDs and ABI event signatures.
         run: python tools/check_docs_facts.py --artifacts out
@@ -161,6 +158,108 @@ jobs:
         env:
           CONTENT_E2E_REQUIRE: "1"
         run: python -m unittest discover -s tools/content -t . -p "test_*.py"
+
+  tests:
+    name: Tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    # ADR 0001 budget: every CI job finishes in under 15 minutes.
+    timeout-minutes: 15
+    # `forge test` in three parallel parts that together run every test exactly once:
+    # everything but the invariant tests, the economics invariants (the longest suite), and
+    # the other invariants. Each part builds incrementally from the cached compiler output.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: unit, fuzz and integration
+            filter: --no-match-test ^invariant
+          - name: economics invariants
+            filter: --match-test ^invariant --match-contract ^EconomicsInvariant
+          - name: other invariants
+            filter: --match-test ^invariant --no-match-contract ^EconomicsInvariant
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          # lib/openzeppelin-contracts and lib/forge-std only; their nested
+          # submodules are test-only and not needed.
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Identify compiler inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Staged records bind paths, blob IDs, modes and the lib/ submodule commits.
+          digest=$(git ls-files --stage -z -- foundry.toml foundry.lock .gitmodules src test script lib | sha256sum | cut -d ' ' -f1)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Restore compiler output
+        id: cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            out
+            cache
+            ~/.svm
+          key: ${{ runner.os }}-${{ runner.arch }}-forge-1.7.1-solc-0.8.37-${{ steps.inputs.outputs.digest }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-forge-1.7.1-solc-0.8.37-
+
+      - name: Test
+        env:
+          FILTER: ${{ matrix.filter }}
+        # FILTER is fixed in this file (word splitting is intended).
+        run: forge test $FILTER
+
+  contracts:
+    # The required check: green only when the build, the checks and every test part are.
+    name: Contracts
+    needs: [checks, tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Every part passed
+        env:
+          CHECKS: ${{ needs.checks.result }}
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          echo "Build and checks: $CHECKS; tests: $TESTS"
+          test "$CHECKS" = success
+          test "$TESTS" = success
 
   static-analysis:
     name: Static analysis
@@ -217,3 +316,144 @@ jobs:
       - name: Slither
         # Fails on any High or Medium finding without a row in docs/security/slither-triage.md.
         run: python tools/check_slither.py
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    # Runs in parallel with Contracts and counts against the same 15-minute CI budget.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Coverage checker unit tests
+        run: python -m tools.test_check_coverage
+
+      - name: Mutation tool unit tests
+        run: python -m tools.test_mutation
+
+      - name: Coverage
+        # Instrumented and unoptimized, under the lite profile (fewer fuzz and invariant cases;
+        # docs/testing/README.md). Without the optimizer the gas-ceiling tests fail, as they
+        # should: --allow-failure keeps the run going, and Contracts runs every test for real.
+        env:
+          FOUNDRY_PROFILE: lite
+        run: forge coverage --report lcov --report summary --allow-failure
+
+      - name: Coverage floors
+        # Prints the per-contract table (also to the job summary) and the unreached lines and
+        # branches; fails when a src/ contract drops below its floor in
+        # tools/coverage-floors.json.
+        run: python tools/check_coverage.py --uncovered
+
+      - name: Upload the LCOV report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: ignore
+          retention-days: 30
+
+  symbolic:
+    name: Symbolic (Halmos)
+    runs-on: ubuntu-latest
+    # Runs in parallel with Contracts and counts against the same 15-minute CI budget.
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      # Halmos compiles through Foundry (`forge build --ast`).
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Install Halmos
+        # Every package is pinned and hash-checked; wheels only, so nothing is built. The SMT
+        # solver (yices-smt2) comes from the lock too, so Halmos downloads nothing.
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary=:all: --no-deps -r requirements-tools.lock
+
+      - name: Halmos
+        # Every check_* in test/symbolic, with the options in halmos.toml, one test contract at
+        # a time: a solver crash then names its contract, and the other contracts still report.
+        env:
+          FOUNDRY_PROFILE: symbolic
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          contracts=$(grep -ho '^contract [A-Za-z0-9_]*SymbolicTest' test/symbolic/*.sol | cut -d' ' -f2 | sort)
+          test -n "$contracts"
+          for contract in $contracts; do
+            echo "::group::$contract"
+            start=$SECONDS
+            halmos --no-status --contract "$contract" || status=1
+            echo "$contract took $((SECONDS - start))s"
+            echo "::endgroup::"
+          done
+          exit $status
