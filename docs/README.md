@@ -57,6 +57,8 @@ Every v1 module is on `main`; see the [module table](../README.md#modules).
 - [SECURITY.md](../SECURITY.md): the policy and how to report privately.
 - [Slither triage](security/slither-triage.md): the record of reviewed High and Medium
   static-analysis findings. CI fails on any finding that has no row here.
+- [Internal review, October 2026](security/internal-review-2026-10.md): the internal adversarial
+  review by AI agents (not an external audit), its findings, fixes and residual risks.
 - The trust boundaries are in the
   [architecture document](architecture.md#trust-boundaries); the accepted risks are in
   [ADR 0001](adr/0001-v1-scope.md#accepted-risks) and [ADR 0003](adr/0003-build-time-decisions.md#security-impact).

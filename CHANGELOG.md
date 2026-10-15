@@ -372,3 +372,8 @@
       `MAX_EXTENSION_WINDOW`, `MIN_INCREMENT_SHARE`, `DELIVERY_GAS`, `DELIVERY_RESERVE`) are
       internal, which frees 292 bytes; `setConfig`'s NatSpec states the bounds.
     - The review's auction invariant handler is adopted (`AuctionHaltsInvariant.t.sol`).
+- Docs: `docs/security/internal-review-2026-10.md` publishes the internal adversarial review of
+  commit `2cd1e34` by AI agents (not an external audit): the findings (0 Critical, 0 High, 9
+  Medium, 30 Low, 1 Info after deduplication) and how each was resolved (fixes in #51 to #57),
+  the decisions and accepted risks, the coverage record and the residual risks for the external
+  audit. SECURITY.md and the docs index link to it.

@@ -3,6 +3,9 @@
 6529 Works is pre-audit and not production-ready. Do not use these contracts to
 custody value.
 
+The [internal review of October 2026](docs/security/internal-review-2026-10.md),
+by AI agents and not an external audit, records its findings and their resolution.
+
 ## Reporting a vulnerability
 
 Please do not open public issues for exploitable vulnerabilities.
