@@ -171,12 +171,14 @@ offline.
 
 **Guardian suspension of operational keys.** Any guardian may call
 `WorksAccessManager.suspend(role, account)` for a holder of a zero-delay operational
-role: PLATFORM, CURATOR, STORAGE_OPERATOR or CURATION_SIGNER.
+role: PLATFORM, CURATOR or STORAGE_OPERATOR.
 - **Effect:** the holder fails `hasRole`, and so `canCall` and every manual check
   built on it, in the same block. Revoking a role takes the admin's 30-day delay, and
   most targets of these roles have no pause.
 - **One way:** a tightening action, like a pause. Lifting it is an ADMIN action in
   the 30-day class (a grant of that role to that account), or happens through
   revocation and a new grant. Guardians still never propose.
-- **Not suspendable:** ADMIN, GUARDIAN, PAUSER, UNPAUSER, the setter roles and
-  MINTER.
+- **Not suspendable:** ADMIN, GUARDIAN, PAUSER, UNPAUSER, the setter roles, MINTER,
+  KEEPER and CURATION_SIGNER. A curation signer's kill switch is the verifier's
+  one-way `disableSigner`, which also ends its approval epoch; a lift by grant would
+  not.

@@ -48,8 +48,11 @@ a wrong delay.
   caller bindings inside the target contracts, set once at genesis and locked forever.
   A shared contract role would let any holder call every hook.
 
-**Suspendable roles:** `PLATFORM`, `CURATOR`, `STORAGE_OPERATOR` and
-`CURATION_SIGNER` (`Roles.isSuspendable`), the zero-delay roles held by single keys.
+**Suspendable roles:** `PLATFORM`, `CURATOR` and `STORAGE_OPERATOR`
+(`Roles.isSuspendable`), the zero-delay roles held by single keys that call contracts.
+`CURATION_SIGNER` is not: the curation verifier's one-way `disableSigner` is its
+immediate kill switch, and it also ends the signer's approval epoch, which a lift by
+grant would not.
 
 **Delay classes:**
 - immediate: tightening actions and pauses;
@@ -111,9 +114,8 @@ once, for example a stolen platform key:
 
 - **Effect.** The holder fails `hasRole` for that role, so it fails `canCall` and every
   check built on them in the same block: `restricted` functions, the sale adapters' and
-  `StatementLog`'s manual PLATFORM and CURATOR checks, `WorkRecords.addLocator`'s
-  platform path, and the curation verifier's `isSignerActive`. Its record stays, so
-  `getAccess` still shows it.
+  `StatementLog`'s manual PLATFORM and CURATOR checks, and `WorkRecords.addLocator`'s
+  platform path. Its record stays, so `getAccess` still shows it.
 - **One way for the guardians.** No guardian can lift it. A grant or a revocation of
   that role to that account clears it; both are ADMIN operations in the 30-day class
   that any guardian can cancel. A grant to an existing member has no grant delay.
@@ -257,9 +259,9 @@ therefore executes them itself:
   - Pausing is immediate (`PAUSER`).
   - Unpausing waits 48 hours, during which any guardian can cancel it.
   - Revoking a role is a meta action and waits 30 days. A compromised
-    zero-delay key (`PLATFORM`, `CURATOR`, `STORAGE_OPERATOR`, `CURATION_SIGNER`)
-    is suspended at once by any guardian while its revocation matures; pause the
-    affected target as well where it has a pause.
+    zero-delay key (`PLATFORM`, `CURATOR`, `STORAGE_OPERATOR`) is suspended at once
+    by any guardian while its revocation matures; pause the affected target as well
+    where it has a pause. A curation signer is disabled with `disableSigner`.
   - A compromised curation signer is cut off immediately by the curation verifier's
     one-way `disableSigner` (mapped to `GUARDIAN`). Re-enabling a signer is in the
     30-day class.

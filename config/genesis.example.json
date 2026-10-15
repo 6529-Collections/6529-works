@@ -51,7 +51,7 @@
       "executionDelay": 0,
       "grantClass": "successor",
       "grantDelay": 2592000,
-      "suspendable": true
+      "suspendable": false
     },
     {
       "name": "STORAGE_OPERATOR",

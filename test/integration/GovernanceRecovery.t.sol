@@ -279,8 +279,8 @@ contract GovernanceRecoveryTest is IntegrationBase {
         );
     }
 
-    /// @dev The other zero-delay operational roles close the same way; nobody but a guardian
-    ///      suspends, and only these roles can be suspended.
+    /// @dev The other suspendable roles close the same way; nobody but a guardian suspends,
+    ///      and only these roles can be suspended.
     function test_GOV2_EveryOperationalRoleCanBeSuspended() public {
         _suspend(guardian1, Roles.STORAGE_OPERATOR, storageOperator);
         vm.prank(storageOperator);
@@ -298,8 +298,17 @@ contract GovernanceRecoveryTest is IntegrationBase {
         );
         statements.appendCurator(_statement(address(stream), 1));
 
-        assertTrue(verifier.isSignerActive(signer1));
-        _suspend(guardian1, Roles.CURATION_SIGNER, signer1);
+        // A curation signer is cut off by the verifier's `disableSigner` instead, which also
+        // ends its approval epoch.
+        vm.prank(guardian1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WorksAccessManager.RoleNotSuspendable.selector, Roles.CURATION_SIGNER
+            )
+        );
+        manager.suspend(Roles.CURATION_SIGNER, signer1);
+        vm.prank(guardian1);
+        verifier.disableSigner(signer1);
         assertFalse(verifier.isSignerActive(signer1), "signer 1 no longer approves");
         assertTrue(verifier.isSignerActive(signer2), "signer 2 still does");
 

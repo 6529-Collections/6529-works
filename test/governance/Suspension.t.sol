@@ -30,12 +30,15 @@ contract SuspensionTest is GovernanceFixture {
 
     function test_SuspendableRolesAreTheZeroDelayOperationalKeys() public view {
         for (uint64 role; role < Roles.COUNT; ++role) {
-            bool expected = role == Roles.PLATFORM || role == Roles.CURATOR
-                || role == Roles.STORAGE_OPERATOR || role == Roles.CURATION_SIGNER;
+            bool expected =
+                role == Roles.PLATFORM || role == Roles.CURATOR || role == Roles.STORAGE_OPERATOR;
             assertEq(Roles.isSuspendable(role), expected, vm.toString(role));
             if (expected) assertEq(Roles.executionDelay(role), 0, "zero-delay roles only");
         }
         assertFalse(Roles.isSuspendable(Roles.ADMIN));
+        // The curation verifier's `disableSigner` is the signer's kill switch.
+        assertFalse(Roles.isSuspendable(Roles.CURATION_SIGNER));
+        assertFalse(Roles.isSuspendable(Roles.KEEPER));
         assertFalse(Roles.isSuspendable(Roles.PUBLIC));
     }
 

@@ -541,6 +541,9 @@ class CheckGenesisTest(unittest.TestCase):
         roles = {r["name"]: r for r in self.repo.config["roles"]}
         roles["GUARDIAN"]["suspendable"] = True
         roles["PARAMETER_SETTER"]["suspendable"] = True
+        self.repo.config["roles"].append(
+            {"name": "CURATION_SIGNER", "executionDelay": 0, "suspendable": True}
+        )
         roles["PLATFORM"]["suspendable"] = "yes"
         problems = self.repo.problems()
         self.assertIn(
@@ -551,6 +554,9 @@ class CheckGenesisTest(unittest.TestCase):
             problems,
         )
         self.assertIn("roles: PLATFORM suspendable is not a boolean", problems)
+        self.assertIn(
+            "roles: CURATION_SIGNER is suspendable but not a zero-delay operational role", problems
+        )
 
 
 if __name__ == "__main__":

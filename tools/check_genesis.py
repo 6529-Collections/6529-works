@@ -21,8 +21,8 @@ Checks `config/genesis.example.json`:
   7. the manager's own functions beyond its OpenZeppelin base (`manager`): each listed one is a
      method of the compiled manager with the listed selector, a mapped one names a role whose
      delay and class match, and every added method is listed (`check_manager`);
-  8. every role's `suspendable` flag is a boolean, and only zero-delay roles other than GUARDIAN
-     and PAUSER are suspendable.
+  8. every role's `suspendable` flag is a boolean, and only zero-delay roles other than GUARDIAN,
+     PAUSER and CURATION_SIGNER are suspendable.
 
 A configured contract whose artifact source is not in the repository yet (a lane that has
 not merged) is reported as pending and skips checks 1 and 2; it fails nothing.
@@ -53,8 +53,9 @@ GENESIS_FUNCTIONS = frozenset({
     "setDefaultCurrency", "appendGovernanceManifest",
 })
 
-# Zero-delay roles a guardian may never suspend: the veto and the pause (check 8).
-NEVER_SUSPENDABLE = frozenset({"GUARDIAN", "PAUSER"})
+# Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation
+# signer, whose kill switch is the verifier's `disableSigner` (it also ends the signer's epoch).
+NEVER_SUSPENDABLE = frozenset({"GUARDIAN", "PAUSER", "CURATION_SIGNER"})
 
 # What a deployment's copy of the configuration may change (check 6).
 DEPLOYMENT_KEYS = frozenset({"holders", "description"})

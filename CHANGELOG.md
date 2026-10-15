@@ -35,7 +35,7 @@
   `WorksAccessManager` (Rule 3, ADR 0002 addendum). Admins keep the stock power to cancel
   each other's other operations.
 - Governance (GOV-2): any guardian may suspend a holder of a zero-delay operational role
-  (PLATFORM, CURATOR, STORAGE_OPERATOR, CURATION_SIGNER) at once with
+  (PLATFORM, CURATOR, STORAGE_OPERATOR) at once with
   `WorksAccessManager.suspend`; the holder fails `hasRole`, `canCall` and the manual checks
   built on them. Only an ADMIN grant or revocation (30 days) lifts it. The genesis example
   marks the suspendable roles and lists the manager's own functions, and

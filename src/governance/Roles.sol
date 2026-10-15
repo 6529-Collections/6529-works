@@ -91,11 +91,12 @@ library Roles {
 
     /// @notice Whether a guardian may suspend a holder of `role` at once
     ///         (`WorksAccessManager.suspend`): the zero-delay operational roles whose holders
-    ///         are single keys. Never a governance role, a pause role or `MINTER`.
+    ///         are single keys that call contracts. Never a governance role, a pause role,
+    ///         `MINTER` or `KEEPER`, and never `CURATION_SIGNER`: the curation verifier's
+    ///         `disableSigner` is its immediate kill switch and also ends the signer's approval
+    ///         epoch, which lifting a suspension by a grant would not.
     function isSuspendable(uint64 role) internal pure returns (bool) {
-        return
-            role == PLATFORM || role == CURATOR || role == STORAGE_OPERATOR
-                || role == CURATION_SIGNER;
+        return role == PLATFORM || role == CURATOR || role == STORAGE_OPERATOR;
     }
 
     /// @notice The label emitted for `role` at configuration. `ADMIN` cannot be labelled.
