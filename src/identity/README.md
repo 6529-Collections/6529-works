@@ -339,15 +339,16 @@ data, or returns more than expected reverts with
 consolidated", which would mark every recorded wallet missing and remove it
 after the grace.
 
-**During a source outage** (a repricing, or a broken source), until the source
-is fixed or swapped (`setConsolidationSource`, 30 days):
+**During a source outage** (a repricing, a broken source, or a source whose code
+no longer matches its pinned hash), until the source is fixed or swapped
+(`setConsolidationSource`, 30 days):
 - staging, heartbeats and `refreshStanding` revert (fail closed);
 - registration (a first package acceptance) and execution (`executeChange`, an
   upheld `resolveContested`) go ahead and skip their standing refresh, emitting
   `StandingRefreshSkipped(artistId)`. Skipping removes nobody's standing: the
   snapshot keeps what it had, and a refresh stops at the first failed read.
-  Only the source's `DelegationReadFailed` is skipped; any other failure still
-  reverts;
+  Only the source's `DelegationReadFailed` and a code-hash mismatch are skipped;
+  any other failure still reverts;
 - once reads work again, `refreshStanding` for each artist in a
   `StandingRefreshSkipped` event catches up.
 
@@ -385,10 +386,12 @@ contract exists on Sepolia, and deploys a faithful mock there if it does not.
 - **Consolidation source.** `setConsolidationSource` is a full-trust path on
   the 30-day class. The source decides who has standing, so a malicious source
   could grant or deny it. Its code hash is pinned at install
-  (`consolidationSourceCodeHash`) and re-checked at every use: a source whose
-  code no longer matches makes every call that reads it revert with
-  `InvalidSource`, registration and execution included
-  (`test_ConsolidationSource_CodeHashRecheckedAtUse`). The re-check costs about
+  (`consolidationSourceCodeHash`) and re-checked at every use. A source whose
+  code no longer matches is never trusted: staging, heartbeats and
+  `refreshStanding` revert with `InvalidSource`, while registration and
+  execution go ahead and skip their standing refresh, as in an outage
+  (`test_ConsolidationSource_CodeHashRecheckedAtUse`,
+  `test_SourceMismatchDoesNotBlockRecoveryExecution`). The re-check costs about
   2.2K gas per call that reads the source. A source that cannot read halts identity calls (they
   revert) rather than stripping standing.
 - **Profile fields.** The profile ID and profile document hash are the
@@ -442,14 +445,18 @@ contests it, and only during the notice:
 - the guardian can still veto.
 
 **The cost to the artist.** The artist's own captured wallet can no longer end
-a rogue override alone. Its cancel only contests the override, and the payout
-stays frozen until one of three things happens:
+a rogue override alone. Its cancel only contests the override, and until one of
+three things happens the payout stays frozen and the artist's creator powers
+stay restrained (see "Restrained authority during a recovery override"):
 - a guardian veto;
 - a governed void;
 - the 365-day lapse.
 
 Guardian monitoring must therefore watch `ChangeContested` events and scheduled
-`resolveContested` operations.
+`resolveContested` operations. Guardians also watch scheduled `stageOverride`
+operations, since a staged override restrains the artist from its 48-hour
+staging; when vetoing one, they also cancel any other override queued for the
+same artist.
 
 `test_Contest_ThiefWalletContestsAndThePayoutStaysFrozen`,
 `test_Contest_VoteUpholdsAndTheArtistRecovers` and the integration test

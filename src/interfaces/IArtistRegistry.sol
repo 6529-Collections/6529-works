@@ -48,8 +48,9 @@ interface IConsolidationSource is IERC165 {
 ///      only the active authority (`activeAuthorityOf`) can sign. An account the artist rotated
 ///      away from never becomes its authority again (A, then B, then A is refused with
 ///      `AccountTaken`), so the move, consent and acceptance signatures it left unused, which
-///      every consumer checks against the active authority, never verify again. `profileId` is the artist's
-///      unverified claim of a 6529 profile; the profile document hash is what the artist signed.
+///      every consumer checks against the active authority, never verify again. `profileId` is
+///      the artist's unverified claim of a 6529 profile; the profile document hash is what the
+///      artist signed.
 ///
 ///      Every change of authority, payout or profile is staged, waits, and can be cancelled. At
 ///      staging and again at execution, `next.authority` must be the current authority or an
@@ -143,7 +144,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice A wallet lost recovery standing after its grace period.
     event StandingRemoved(uint256 indexed artistId, address indexed wallet);
     /// @notice A registration's or an execution's standing refresh was skipped because the
-    ///         consolidation source could not read (`IConsolidationSource.DelegationReadFailed`).
+    ///         consolidation source could not read (`IConsolidationSource.DelegationReadFailed`)
+    ///         or no longer matches its pinned code hash.
     ///         Skipping removes nobody's standing; `refreshStanding` catches up later.
     event StandingRefreshSkipped(uint256 indexed artistId);
 
@@ -314,8 +316,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function changeNonce(uint256 artistId) external view returns (uint256);
     /// @notice The consolidation source.
     function consolidationSource() external view returns (IConsolidationSource);
-    /// @notice The code hash pinned when the consolidation source was installed. Every call that
-    ///         reads the source re-checks it and reverts with `InvalidSource` on a mismatch.
+    /// @notice The code hash pinned when the consolidation source was installed, re-checked at
+    ///         every use. On a mismatch, staging, heartbeats and `refreshStanding` revert with
+    ///         `InvalidSource`; registration and execution skip their standing refresh
+    ///         (`StandingRefreshSkipped`), trusting nothing from the changed source.
     function consolidationSourceCodeHash() external view returns (bytes32);
     /// @notice An artist's listed federated contracts.
     function federatedContracts(uint256 artistId) external view returns (address[] memory);

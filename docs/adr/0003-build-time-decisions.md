@@ -241,9 +241,9 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - Why it suffices: every consumer of an artist's signature (move
     authorizations, package acceptances, fixed-price consents, record consents,
     signed ARTIST statements) checks it against the artist's active authority
-    (owner decision 6) when it is used. A key the artist rotated away from is never that again, so the
-    signatures it left unused never verify again. No typehash binds an
-    authority epoch.
+    (owner decision 6) when it is used. A key the artist rotated away from is
+    never that again, so the signatures it left unused never verify again. No
+    typehash binds an authority epoch.
   - The trade-off: an artist can never return to an earlier key or wallet, not
     even through governance. A recovery, or a rotation back from a temporary
     device, needs a fresh key or Safe.
@@ -452,11 +452,17 @@ signatures, record amendments and party consents, and ARTIST statements. The key
 being recovered from loses those powers and the reserved new key gains none
 until execution, as the payout freeze already does for money. A no-bid
 settlement waits for the outcome; sales and auctions already running continue
-with their artist share frozen. `authorityOf` still identifies the artist, and a
-STANDARD change or a payout-only override restrains nothing. The trade-off
-accepted: a network that abused the recovery path would also freeze the real
-artist, until a guardian veto, a captured wallet's contest decided by the vote,
-or the lapse.
+with their artist share frozen. PLATFORM still opens and closes edition sales
+at the package terms during the restraint, and the artist cannot close them.
+`authorityOf` still identifies the artist, and a STANDARD change or a
+payout-only override restrains nothing. The trade-off accepted: a network that
+abused the recovery path would also freeze the real artist, until a guardian
+veto, a captured wallet's contest decided by the vote, or the lapse.
+- **An exception to the resolver rule.** The statement log's artist resolver
+  must never make `isArtist` true faster than the 30-day class. The restraint
+  makes it false, for both keys, from a 48-hour staging: a withholding the
+  guardian can veto, which never grants or redirects the answer. The rule in
+  `IArtistRoleResolver` and the records README allows this exception.
 
 ## Open items
 

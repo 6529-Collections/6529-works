@@ -163,8 +163,11 @@ Requirements that this places on other lanes:
 - `setArtistResolver` **must map to the 30-day class** (verifier and
   successor-level swaps, ADR 0001 §13). The integrator enforces this in the
   deploy configuration; the log cannot.
-- A resolver must be **immutable, or governed no faster than the 30-day class**,
-  with every change public (see `IArtistRoleResolver`).
+- A resolver must be **immutable, or governed so that no answer is ever made
+  true faster than the 30-day class**, with every change public (see
+  `IArtistRoleResolver`). A guardian-vetoable withholding is allowed (ADR 0003
+  owner decision 6: the artist registry withholds `isArtist` while a recovery
+  override is pending).
 - `appendGovernanceManifest` **must map to the 30-day class** and be scheduled
   through the AccessManager with the epoch's operations. The log cannot enforce
   the delay, which belongs to the mapping: a zero-delay mapping would let its

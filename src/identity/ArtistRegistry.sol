@@ -610,8 +610,8 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @dev The consolidation source, its install-time code-hash pin re-checked at use (DEPS-6):
-    ///      a source whose code no longer matches fails closed with `InvalidSource`, also on the
-    ///      best-effort refreshes, since a changed source is not an outage.
+    ///      a source whose code no longer matches is never trusted. The established-wallet check
+    ///      fails closed with `InvalidSource`; for refreshes see {_refresh}.
     function _source() private view returns (IConsolidationSource source) {
         source = consolidationSource;
         if (address(source).codehash != consolidationSourceCodeHash) {
@@ -683,10 +683,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      slots, established before pending. Nothing is evicted. When `bestEffort` (registration
     ///      and execution), a source read failing with `DelegationReadFailed` ends the refresh
     ///      ({StandingRefreshSkipped}) instead of reverting: what it already applied came from
-    ///      successful reads, and skipping the rest removes nobody's standing. Staging,
+    ///      successful reads, and skipping the rest removes nobody's standing. A source whose
+    ///      code no longer matches its pin (DEPS-6) is treated the same way: a best-effort refresh
+    ///      skips without reading it, and the others revert with `InvalidSource`. Staging,
     ///      heartbeats and `refreshStanding` fail closed.
     function _refresh(uint256 artistId, address authority, bool bestEffort) private {
-        IConsolidationSource source = _source();
+        IConsolidationSource source = consolidationSource;
+        if (address(source).codehash != consolidationSourceCodeHash) {
+            if (!bestEffort) revert InvalidSource(address(source));
+            emit StandingRefreshSkipped(artistId);
+            return;
+        }
         try source.consolidations(authority) returns (
             address[] memory live, uint64[] memory times
         ) {

@@ -3,6 +3,8 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
+import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -13,9 +15,16 @@ import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
-import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
+import {
+    EditionFormat,
+    EditionTerms,
+    ItemKind,
+    PartyAcceptance
+} from "src/interfaces/types/PackageTypes.sol";
 import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
+import { Typehashes } from "src/interfaces/types/Typehashes.sol";
+import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
@@ -209,6 +218,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         uint256 nonce = nextMoveNonce[artistId]++;
         bytes memory byOldKey = _mintDataSignedBy(root, works, 1, artist, nonce);
         bytes memory byNewKey = _mintDataSignedBy(root, works, 1, newKey, nonce);
+        assertEq(stream.primaryTerms(0, byOldKey).creator, address(0), "the preview has no creator");
         vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
         auction.start(address(stream), byOldKey);
         vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
@@ -221,6 +231,7 @@ contract RecoveryRestraintTest is IntegrationBase {
 
         vm.warp(p.executableAt);
         artists.executeChange(artistId);
+        assertEq(stream.primaryTerms(0, byNewKey).creator, newKey);
         uint256 saleId =
             auction.start(address(stream), _mintDataSignedBy(root, works, 1, newKey, nonce));
         uint256 tokenId = stream.totalMinted();
@@ -342,6 +353,114 @@ contract RecoveryRestraintTest is IntegrationBase {
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.WorkIsFinalized.selector, tokenId));
         records.finalize(tokenId, done);
         vm.stopPrank();
+    }
+
+    /// @dev Review of #53 (L-3): a package acceptance the authority signed before the staging is
+    ///      refused while restrained, and verifies again after a veto.
+    function test_PreSignedAcceptanceRefusedWhileRestrained() public {
+        Work[] memory works = _one(_work(artist, collectionId));
+        bytes32 root2 = _rootOf(works);
+        _approve(root2);
+        PartyAcceptance memory a = PartyAcceptance(
+            artist, _profileId(artist), _profileDoc(artist), uint64(block.timestamp + 30 days)
+        );
+        bytes memory sig = _sign(artist, registry.acceptanceDigest(root2, a));
+
+        _stageRecovery();
+        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        registry.acceptPackage(root2, a, sig);
+
+        vm.prank(guardian2);
+        artists.vetoChange(artistId);
+        registry.acceptPackage(root2, a, sig);
+        assertEq(registry.acceptedAs(root2, artist), artistId);
+    }
+
+    /// @dev Review of #53 (L-3): a royalty-rate consent signed and scheduled before the staging
+    ///      fails at execution while the artist is restrained.
+    function test_PreSignedRoyaltyConsentRefusedWhileRestrained() public {
+        Work[] memory works = _package(root);
+        uint256 tokenId = _sell(root, works, 2, collector, 1 ether);
+        records.openRecord(tokenId, works[2].item, works[2].media);
+        uint32 rate = 5000;
+        uint64 deadline = uint64(block.timestamp + 60 days);
+        bytes32 state = records.workStateHash(tokenId);
+        bytes32 digest = _typedDigest(
+            address(records),
+            keccak256(abi.encode(Typehashes.ROYALTY_RATE_CHANGE, tokenId, rate, state, deadline))
+        );
+        bytes[] memory sigs = new bytes[](1);
+        sigs[0] = _sign(artist, digest);
+        bytes memory call = abi.encodeCall(
+            records.setRoyaltyRate, (tokenId, rate, works[2].item, state, deadline, sigs)
+        );
+        _schedule(hotAdmin, address(records), call);
+        _stageRecovery();
+        vm.warp(block.timestamp + 14 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
+        manager.execute(address(records), call);
+    }
+
+    /// @dev A new artist's first acceptance, relayed; it registers the artist and skips the
+    ///      standing refresh.
+    function _registerFreshSkippingTheRefresh() internal {
+        address fresh = _actor("restraintFreshArtist");
+        bytes32 root3 = _rootOf(_one(_work(fresh, collectionId)));
+        _approve(root3);
+        PartyAcceptance memory a = PartyAcceptance(
+            fresh, _profileId(fresh), _profileDoc(fresh), uint64(block.timestamp + 60 days)
+        );
+        bytes memory sig = _sign(fresh, registry.acceptanceDigest(root3, a));
+        vm.expectEmit(address(artists));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(fresh));
+        registry.acceptPackage(root3, a, sig);
+    }
+
+    /// @dev A profile-only STANDARD change by the new key reverts with `err`.
+    function _expectStagingReverts(bytes memory err) internal {
+        ArtistIdentity memory same =
+            ArtistIdentity(newKey, newKey, _profileId(artist), keccak256("profile document v2"));
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes32 digest =
+            artists.changeDigest(artistId, same, artists.changeNonce(artistId), deadline);
+        bytes memory byNewKey = _sign(newKey, digest);
+        vm.expectRevert(err);
+        artists.stageChange(artistId, same, newKey, deadline, byNewKey, "");
+    }
+
+    /// @dev Review of #53 (L-1, DEPS-6): a consolidation source whose code changed during the
+    ///      recovery does not block it. The override executes and a new artist registers, both
+    ///      skipping their standing refresh without reading the source; staging and refreshes
+    ///      revert until the source is replaced.
+    function test_SourceMismatchDoesNotBlockRecoveryExecution() public {
+        PendingChange memory p = _stageRecovery();
+        address src = address(artists.consolidationSource());
+        vm.etch(src, address(new FailingConsolidationSource()).code);
+        bytes memory changed = abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, src);
+        vm.warp(p.executableAt);
+
+        vm.expectEmit(address(artists));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
+        artists.executeChange(artistId);
+        assertEq(artists.activeAuthorityOf(artistId), newKey, "recovered");
+        _registerFreshSkippingTheRefresh();
+        vm.expectRevert(changed);
+        artists.refreshStanding(artistId);
+        _expectStagingReverts(changed);
+
+        // The governed path: install a reviewed adapter (30 days); refreshes work again.
+        ConsolidationAdapter fixed_ =
+            new ConsolidationAdapter(IDelegationManagement(address(delegation)));
+        _govern(
+            hotAdmin,
+            address(artists),
+            abi.encodeCall(
+                artists.setConsolidationSource,
+                (IConsolidationSource(src), fixed_, address(fixed_).codehash)
+            )
+        );
+        artists.refreshStanding(artistId);
     }
 
     // ------------------------------------------------------------------ what does not restrain

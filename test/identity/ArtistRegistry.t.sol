@@ -830,14 +830,16 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
-    ///      source whose code no longer matches the pin (simulated with `vm.etch`) makes every
-    ///      call that reads it revert with `InvalidSource`, registration and execution included
-    ///      (a changed source is not an outage to skip); the original code works again.
+    ///      source whose code no longer matches the pin (simulated with `vm.etch`) is never
+    ///      trusted: staging, heartbeats and refreshes revert with `InvalidSource`, while an
+    ///      execution and a registration go ahead and skip their refresh without reading it
+    ///      (review L-1), so nobody's standing changes. The original code works again.
     function test_ConsolidationSource_CodeHashRecheckedAtUse() public {
         _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
         vm.warp(block.timestamp + 7 days);
         assertEq(registry.consolidationSourceCodeHash(), address(adapter).codehash, "pinned");
         bytes memory original = address(adapter).code;
+        // The replacement answers "not consolidated" for everyone.
         vm.etch(address(adapter), address(new FailingConsolidationSource()).code);
         bytes memory changed =
             abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, address(adapter));
@@ -847,15 +849,22 @@ contract ArtistRegistryTest is IdentityFixture {
         vm.expectRevert(changed);
         vm.prank(wallet);
         registry.heartbeat(artistId);
-        vm.expectRevert(changed);
+
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(artistId);
         registry.executeChange(artistId);
-        vm.expectRevert(changed);
+        assertEq(registry.authorityOf(artistId), newAuthority, "the recovery executes");
+        assertEq(registry.standingOf(artistId)[0].missingSince, 0, "nothing read from it");
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
         _register(stranger);
+        _armRevert(changed);
+        _stage(newKey, _identity(newAuthority, payout), 0);
 
         vm.etch(address(adapter), original);
         registry.refreshStanding(artistId);
-        registry.executeChange(artistId);
-        assertEq(registry.authorityOf(artistId), newAuthority);
+        assertEq(registry.standingOf(artistId)[0].missingSince, block.timestamp, "caught up");
+        _stage(newKey, _identity(newAuthority, payout), 0);
     }
 
     function test_SetConsolidationSource_RevertsForStaleExpected() public {

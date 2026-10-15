@@ -61,7 +61,7 @@ nothing.
 
 **Consent is per account.** An acceptance is recorded as
 `acceptedAs[root][account] = artistId` for the account that the item lists,
-signed by that account's artist's current authority. An item that lists an
+signed by that account's artist's active authority (`activeAuthorityOf`). An item that lists an
 artist under a different address (for example a new authority after recovery)
 needs an acceptance for that address too, and an item that lists two accounts of
 the same artist is invalid. The first acceptance relayed sets a new identity's
@@ -81,7 +81,7 @@ gas and at most 6 new slots (7 with a bid) per steady-state start
 one of those slots
 (Stream's content hash → item hash, which is both the consume-once record and
 the uniqueness record), reads consent from `acceptedAs`, and makes one external
-call: the lead artist's current authority.
+call: the lead artist's active authority.
 `test/curation/PackageRegistryGas.t.sol` measures it cold, directly and in the
 call shape Stream uses.
 

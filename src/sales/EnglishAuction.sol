@@ -319,7 +319,7 @@ contract EnglishAuction is
     /// @dev The pending recipient or the winning bidder (the payer of the high bid) may claim, to
     ///      any address except zero and this adapter, so a recipient contract that cannot make the
     ///      call does not strand the token. With no bids the artist may, as the authority
-    ///      recorded at settlement or the current one the token reports (L-5). If neither the
+    ///      recorded at settlement or the active one the token reports (L-5). If neither the
     ///      recipient nor the winner can make the call, the token stays in custody: that is the
     ///      winner's choice of recipient.
     function claimDelivery(uint256 saleId, address to) external nonReentrant {

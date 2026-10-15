@@ -210,8 +210,9 @@ There is no clearing price.
 
 The PLATFORM check uses the AccessManager's `canCall` for the selector, and
 needs an immediate (zero-delay) grant. The creator who may close a sale is read
-from the token at close time, so after a recovery the old key loses that
-power. Nothing here is payable except `purchase`.
+from the token at close time (the artist's active authority), so after a
+recovery the old key loses that power, and while a recovery override is pending
+nobody but PLATFORM can close it. Nothing here is payable except `purchase`.
 
 ### Gas
 
