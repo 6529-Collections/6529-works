@@ -256,9 +256,15 @@ contract AssetAllowlistTest is EconomicsBase {
         assertEq(revision, 2);
 
         // Switching back to ETH and then replaying the earlier switch is an ABA: still stale.
+        // The event names the currency switched from.
+        vm.expectEmit(true, false, false, true, address(allowlist));
+        emit IAssetAllowlist.DefaultCurrencyChanged(STREAM, address(usdc), ETH, 3);
         allowlist.setDefaultCurrency(STREAM, 2, ETH);
         vm.expectRevert(_mismatch(1, 3));
         allowlist.setDefaultCurrency(STREAM, 1, address(usdc));
+        // An expected revision ahead of the actual one is as stale as one behind it.
+        vm.expectRevert(_mismatch(4, 3));
+        allowlist.setDefaultCurrency(STREAM, 4, address(usdc));
         vm.expectRevert(IAssetAllowlist.InvalidProduct.selector);
         allowlist.setDefaultCurrency(bytes32(0), 0, ETH);
         vm.expectRevert(abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, bob));

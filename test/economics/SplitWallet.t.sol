@@ -235,6 +235,26 @@ contract SplitWalletTest is EconomicsBase {
         assertEq(bob.balance, 0.4 ether);
     }
 
+    /// @dev Any change of the resolver's code fails closed, whichever way its hash moves.
+    function test_ResolverCodeChangeFailsClosedEitherWay() public {
+        bytes32 pinned = address(resolver).codehash;
+        bool below;
+        bool above;
+        for (uint256 i; i < 64 && !(below && above); ++i) {
+            bytes memory code = abi.encodePacked(bytes1(0x60), bytes1(uint8(i)), bytes1(0x00));
+            bytes32 h = keccak256(code);
+            if (h < pinned ? below : above) continue;
+            if (h < pinned) below = true;
+            else above = true;
+            vm.etch(address(resolver), code);
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
+            );
+            wallet.payoutAddress(iArtist);
+        }
+        assertTrue(below && above, "found codes on both sides");
+    }
+
     function test_ResolverCodeChangeFailsClosedForArtistPayeesOnly() public {
         vm.deal(address(wallet), 10 ether);
         vm.etch(address(resolver), address(router).code);
@@ -423,6 +443,23 @@ contract SplitWalletTest is EconomicsBase {
         );
         assertEq(address(hostile).balance, 1 ether);
         assertEq(w.releasable(ETH, iOther), 1 ether);
+    }
+
+    function test_ReentryThroughReleaseToIsBlocked() public {
+        ReentrantRecipient hostile = new ReentrantRecipient();
+        SplitWallet w = _wallet(_list(_fixed(address(hostile), 50_000), _fixed(alice, 50_000)));
+        uint256 iHostile = _indexOf(w, address(hostile));
+        hostile.configure(
+            address(w), abi.encodeCall(ISplitWallet.releaseTo, (ETH, iHostile, address(hostile)))
+        );
+        vm.deal(address(w), 2 ether);
+        w.release(ETH, iHostile);
+        assertFalse(hostile.lastOk());
+        assertEq(
+            hostile.lastResult(),
+            abi.encodeWithSelector(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector)
+        );
+        assertEq(address(hostile).balance, 1 ether);
     }
 
     function test_ViewsRevertDuringRelease() public {
