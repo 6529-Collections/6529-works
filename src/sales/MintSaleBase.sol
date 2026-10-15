@@ -240,11 +240,12 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
         return isListed[token] || _federated(token);
     }
 
-    /// @notice Seconds sale `saleId`'s schedule has moved since it opened (MARKET-1): the time
-    ///         this adapter was paused and its currency deprecated since then, including a pause
-    ///         or deprecation still running. Phase windows (fixed price) and the price curve
-    ///         (Dutch) run that much later than configured, so a halt never uses up the sale.
-    function scheduleDelay(uint256 saleId) external view returns (uint256) {
+    /// @dev Seconds sale `saleId`'s schedule has moved since it opened (MARKET-1): the time
+    ///      this adapter was paused and its currency deprecated since then, including a pause
+    ///      or deprecation still running. Phase windows (fixed price) and the price curve
+    ///      (Dutch), including a start not yet reached, run that much later than configured, so
+    ///      a halt never uses up the sale. Overlapping halts count twice.
+    function _scheduleDelay(uint256 saleId) internal view returns (uint256) {
         Listing storage l = _listing(saleId);
         return _halted(l.currency) - l.haltedAtOpen;
     }

@@ -110,6 +110,10 @@ interface IFixedPriceSale is ISaleAdapter {
         returns (LockedTerms memory terms, bool artistApproved, bool closed);
     /// @notice The open sale of `(token, id)`, or zero.
     function openSaleOf(address token, uint256 id) external view returns (uint256 saleId);
+    /// @notice Seconds the sale's phase windows have moved since it opened: the adapter's pauses
+    ///         and its currency's deprecations since then, running ones included (MARKET-1).
+    ///         Overlapping halts count twice. Reverts for an unknown sale.
+    function scheduleDelay(uint256 saleId) external view returns (uint256);
     /// @notice A sale's phases.
     function phases(uint256 saleId) external view returns (Phase[] memory);
     /// @notice Copies `account` bought of token `id` in phase `phase` (counted against its cap).

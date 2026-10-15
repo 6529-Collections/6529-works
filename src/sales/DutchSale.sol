@@ -158,6 +158,11 @@ contract DutchSale is IDutchSale, MintSaleBase {
         return _openSales[token][id];
     }
 
+    /// @inheritdoc IDutchSale
+    function scheduleDelay(uint256 saleId) external view returns (uint256) {
+        return _scheduleDelay(saleId);
+    }
+
     /// @inheritdoc ISaleAdapter
     function saleKind() external pure returns (bytes32) {
         return SaleKind.DUTCH;

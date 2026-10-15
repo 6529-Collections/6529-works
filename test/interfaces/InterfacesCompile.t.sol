@@ -40,8 +40,8 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IEditions).interfaceId, bytes4(0x9c689136), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
-        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0xfedd2754), "IFixedPriceSale");
-        assertEq(type(IDutchSale).interfaceId, bytes4(0xb1c10995), "IDutchSale");
+        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x773a4920), "IFixedPriceSale");
+        assertEq(type(IDutchSale).interfaceId, bytes4(0x382667e1), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"

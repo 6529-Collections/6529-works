@@ -171,6 +171,11 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     }
 
     /// @inheritdoc IFixedPriceSale
+    function scheduleDelay(uint256 saleId) external view returns (uint256) {
+        return _scheduleDelay(saleId);
+    }
+
+    /// @inheritdoc IFixedPriceSale
     /// @dev Shared by every sale of `(token, id)` at that phase index.
     function purchased(address token, uint256 id, uint256 phase, address account)
         external
