@@ -196,8 +196,8 @@ contract Verify is ScriptIO {
 
     /// @dev On mainnet, every dependency the record names is the canonical contract with its
     ///      pinned code: the VRF coordinator (when the module was deployed), recorded and live
-    ///      (the module's current `coordinator()`), Permit2 and the 6529 delegation contract,
-    ///      which is no mock.
+    ///      (the module's current `coordinator()`), Permit2 (`CANONICAL_PERMIT2_CODEHASH`) and the
+    ///      6529 delegation contract, which is no mock.
     function _checkCanonical(string memory record, DeployV1.Deployment memory d) internal view {
         DeployV1.Params memory p = paramsOf(record);
         if (keccak256(bytes(vm.parseJsonString(record, ".entropy"))) != keccak256("none")) {
@@ -221,6 +221,9 @@ contract Verify is ScriptIO {
             revert NonCanonicalOnMainnet("PERMIT2", p.permit2);
         }
         if (p.permit2.code.length == 0) revert NonCanonicalCode("PERMIT2", p.permit2, bytes32(0));
+        if (p.permit2.codehash != DeployGuards.CANONICAL_PERMIT2_CODEHASH) {
+            revert NonCanonicalCode("PERMIT2", p.permit2, p.permit2.codehash);
+        }
         if (p.delegation != DeployGuards.CANONICAL_DELEGATION) {
             revert NonCanonicalOnMainnet("DELEGATION_CONTRACT", p.delegation);
         }

@@ -6,6 +6,7 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
 import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
+import { DeployGuards } from "script/DeployGuards.sol";
 import { WorksForkBase } from "./WorksForkBase.sol";
 
 /// @dev The two reads of the canonical Permit2 these tests use.
@@ -123,6 +124,10 @@ abstract contract Permit2ForkTests is WorksForkBase {
 
     function test_Permit2IsCanonical() public onFork {
         assertEq(IPermit2Reads(PERMIT2).DOMAIN_SEPARATOR(), _domain(), "the EIP-712 domain");
+        // The code (and so its hash) embeds the chain ID: the pin is mainnet's (Verify, DEPS-3).
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            assertEq(PERMIT2.codehash, DeployGuards.CANONICAL_PERMIT2_CODEHASH, "the pinned code");
+        }
         assertEq(address(fixedSale.permit2()), PERMIT2);
         assertEq(address(dutchSale.permit2()), PERMIT2);
         assertEq(auction.permit2(), PERMIT2);
