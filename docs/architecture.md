@@ -238,7 +238,7 @@ default when the sale starts".
    per-transaction cap. This does not change the state hash.
 5. Amendments need agreement plus a governed action:
    - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable, and a
-     CC0 license set this way names the deployment's CC0 text.
+     CC0 license (approved or set this way) names the deployment's CC0 text.
    - **Royalty-rate change:** every party, FUNDS_SETTER role. Payees never
      change. A master's change also applies to its edition
      (`IEditions.setRoyaltyRate`).

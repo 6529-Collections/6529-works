@@ -709,35 +709,32 @@ contract WorkRecordsTest is RecordsFixture {
     function test_relicense_cc0IsIrrevocableInAnyCase() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
-        item.license = License("cc0-1.0", _registerText("other cc0 text"));
+        // Another spelling of the identifier: stored as given, and CC0 by its key.
+        item.license = License("CC0-1.0", records.cc0TextFileId());
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
-        assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
+        assertEq(records.licenseOf(tokenId).spdxId, "CC0-1.0");
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
         records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
     }
 
-    /// @dev A CC0 license set by a relicense names the deployment's CC0 text: a CC0 work's text
-    ///      is corrected only to it, and checked before the consents.
+    /// @dev A CC0 license names the deployment's CC0 text: `openRecord` refuses an approved one
+    ///      with another text, and a relicense to CC0 with another text is refused before the
+    ///      consents are checked.
     function test_relicense_cc0TextOnlyToTheDeploymentText() public {
-        MediaFile[] memory media = _single(1, true);
-        PackageItem memory item = _recordsItem(1, media);
+        MediaFile[] memory media = _single(2, true);
+        PackageItem memory item = _recordsItem(2, media);
         item.license = License("cc0-1.0", _registerText("cc0 text with a typo"));
         uint256 tokenId = _mint(item);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         records.openRecord(tokenId, item, media);
+
+        (uint256 byWork, PackageItem memory byItem) = _byWork();
         License memory other = License("CC0-1.0", _registerText("other terms"));
         vm.prank(governor);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
-        records.relicense(tokenId, other, item, bytes32(0), 0, new bytes[](0));
-
-        License memory next = License("CC0-1.0", records.cc0TextFileId());
-        bytes32 state = records.workStateHash(tokenId);
-        uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
-        vm.prank(governor);
-        records.relicense(tokenId, next, item, state, deadline, sigs);
-        assertEq(records.licenseOf(tokenId).textFileId, records.cc0TextFileId());
+        records.relicense(byWork, other, byItem, bytes32(0), 0, new bytes[](0));
     }
 
     function test_relicense_identicalIsNoOp() public {

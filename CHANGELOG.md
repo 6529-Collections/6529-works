@@ -212,9 +212,10 @@
   512 chunks (about 4.2M gas cold), keeps its place in the record's first word and emits
   `OnChainSyncProgress`, so a work of up to 32 files of 512 chunks becomes on-chain complete
   over calls that each fit the EIP-7825 cap.
-- Records: a relicense to CC0, including the CC0-to-CC0 text correction, must name the
-  deployment's CC0 text (`cc0TextFileId`), so a work that reads `CC0-1.0` cannot be pointed at
-  other terms.
+- Records: a license whose key is CC0 must name the deployment's CC0 text (`cc0TextFileId`), at
+  `openRecord` and at relicense, so a work that reads `CC0-1.0` always carries the pinned CC0
+  legal code and its license never changes. An approved CC0 license with another text cannot
+  open (the curation simulation of `openRecord` catches it).
 - Stream and records (DEPS-6): renderer code-hash pins are checked at use. `rendererOf` (the
   `tokenURI` and `Editions.uri` path) compares the default renderer's code with the hash it was
   installed with, and `WorkRecords.pinnedRenderer` a finalized work's renderer with the hash it

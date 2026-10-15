@@ -148,7 +148,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev The approved record file and license are stored as they are, without the
     ///      structural record-file gate or a license-text check, so neither can freeze a
     ///      minted work: an invalid record renders core-only metadata until the artist sets a
-    ///      valid one, and `finalize` enforces both. Trust obligation: the media commitments
+    ///      valid one, and `finalize` enforces both. One license rule is checked here: a CC0
+    ///      license names the deployment's CC0 text (`cc0TextFileId`), since CC0 can never be
+    ///      left or corrected later. Trust obligation: the media commitments
     ///      checked here (1 to 32 files, the PRIMARY first and alone, its SHA-256 equal to
     ///      `item.contentHash`, every declaration matching the content store, every PREVIEW
     ///      file within `Limits.MAX_PREVIEW_BYTES`) are not checked at mint, so a
@@ -188,6 +190,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         r.mediaHash = item.mediaHash;
         r.roles = roles;
         if (!_isDefaultLicense(item.license)) {
+            if (
+                WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY
+                    && item.license.textFileId != cc0TextFileId
+            ) revert InvalidLicense();
             r.customLicense = true;
             _licenses[tokenId] = item.license;
         }
@@ -350,13 +356,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // ------------------------------------------------------------------------------ amendments
 
     /// @inheritdoc IWorkRecords
-    /// @dev Only CC0 irrevocability is enforced on-chain, on the canonical key: a CC0 work may
-    ///      only correct its text file, and only to the deployment's CC0 text (`cc0TextFileId`,
-    ///      pinned by digest at deployment), which any relicense to CC0 names. Whether `next`
-    ///      is more permissive than the current license is a judgement the artist's and every
-    ///      party's consent plus the governed action carry; the contract does not order
-    ///      licenses. A license with the current key and text is a no-op. The new text must be
-    ///      registered, and complete on-chain once the work is finalized.
+    /// @dev Only CC0 irrevocability is enforced on-chain, on the canonical key, and a CC0
+    ///      license always names the deployment's CC0 text (`cc0TextFileId`, pinned by digest
+    ///      at deployment): `openRecord` refuses any other, and so does a relicense to CC0. A CC0
+    ///      work therefore keeps its key and text for good. Whether `next` is more permissive
+    ///      than the current license is a judgement the artist's and every party's consent plus
+    ///      the governed action carry; the contract does not order licenses. A license with the
+    ///      current key and text is a no-op. The new text must be registered, and complete
+    ///      on-chain once the work is finalized. `finalize` needs no CC0 check of its own: the
+    ///      stored license is written only here and by `openRecord`.
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -581,9 +589,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @dev The canonical key of `next`, or zero when it is the current license (a no-op).
-    ///      Reverts when leaving CC0 (CC0 to CC0 with another text file is a correction), when
-    ///      a CC0 license would name any text but the deployment's CC0 text, or for an invalid
-    ///      identifier.
+    ///      Reverts when leaving CC0, when a CC0 license would name any text but the
+    ///      deployment's CC0 text, or for an invalid identifier.
     function _relicenseKey(uint256 tokenId, License memory previous, License calldata next)
         private
         view

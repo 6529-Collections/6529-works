@@ -127,10 +127,10 @@ interface IWorkRecords {
     ///         is an EIP-7702 delegated account.
     error InvalidDependency(address dependency);
     /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`, the deployment's
-    ///         default license is not CC0, a license text file declares no SHA-256, a relicense to
-    ///         CC0 names a text other than the deployment's CC0 text, or a license text that must
-    ///         be permanent (at finalize, or relicensing a finalized work) is not complete
-    ///         on-chain.
+    ///         default license is not CC0, a license text file declares no SHA-256, a CC0 license
+    ///         (at `openRecord` or a relicense) names a text other than the deployment's CC0
+    ///         text, or a license text that must be permanent (at finalize, or relicensing a
+    ///         finalized work) is not complete on-chain.
     error InvalidLicense();
     /// @notice The work is not finalized (an errata repin needs a finalized work).
     error WorkNotFinalized(uint256 tokenId);
@@ -149,7 +149,9 @@ interface IWorkRecords {
     ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license as approved.
     ///         Neither the record file's bounds nor the license text are checked here, so
     ///         neither can freeze a minted work: `setRecord` corrects a record before finalize,
-    ///         and `finalize` enforces both.
+    ///         and `finalize` enforces both. The exception is CC0, which can never be left or
+    ///         corrected: a license whose key is CC0 must name the deployment's CC0 text
+    ///         (`InvalidLicense`).
     /// @dev The media commitments are not visible at mint, so a mis-committed item mints and can
     ///      never open: the curation signer's tooling MUST simulate `openRecord` for an item
     ///      before attesting it. The license ID is checked at mint by 6529 Stream.
@@ -199,9 +201,9 @@ interface IWorkRecords {
     ///         an EIP-712 `Typehashes.RELICENSE` signature from every party of `item`, in order,
     ///         each by its current authority. Reverts with `LicenseIrrevocable` when the current
     ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not. A CC0 license
-    ///         set here names the deployment's CC0 text, so a CC0 work may correct its text file
-    ///         only to that text (`InvalidLicense` otherwise). The new license's text file must
-    ///         be registered in the
+    ///         names the deployment's CC0 text (`InvalidLicense` otherwise), as `openRecord`
+    ///         requires too, so a CC0 work's license never changes. The new license's text file
+    ///         must be registered in the
     ///         content store, and complete on-chain for a finalized work. Only CC0
     ///         irrevocability is enforced on-chain; whether `next` is more permissive rests with
     ///         the consents and the governed action.

@@ -27,7 +27,8 @@ contract ReviewRegressionsTest is RecordsFixture {
     function test_uppercaseSpdxMintsOpensAndAmends() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
-        item.license = _license("CC0-1.0");
+        // The deployment's CC0 text, under the identifier's canonical casing.
+        item.license = License("CC0-1.0", records.cc0TextFileId());
         assertEq(WorksHashing.licenseKey("CC0-1.0"), WorksHashing.CC0_LICENSE_KEY);
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
@@ -279,18 +280,26 @@ contract ReviewRegressionsTest is RecordsFixture {
         assertEq(records.licenseOf(tokenId).textFileId, _license("CC-BY-4.0").textFileId);
     }
 
-    /// @dev N1c for CC0: irrevocability is on the key, so a CC0 work with a mistyped text file
-    ///      can still correct it (CC0 to CC0) and finalize; leaving CC0 stays refused.
-    function test_cc0TextCanBeCorrected() public {
+    /// @dev N1c for CC0, as the content review amended it: a CC0 license names the deployment's
+    ///      CC0 text, so an approved CC0 license with a mistyped text cannot open (there is no
+    ///      correction to make later), while the deployment's text in any casing opens and
+    ///      finalizes; leaving CC0 stays refused.
+    function test_cc0TextMustBeTheDeploymentText() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
         item.license = License("CC0-1.0", keccak256("typo"));
         uint256 tokenId = _mint(item);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.openRecord(tokenId, item, media);
+
+        media = _single(2, true);
+        item = _recordsItem(2, media);
+        item.license = License("CC0-1.0", records.cc0TextFileId());
+        tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
         records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
-        _relicense(tokenId, item, _license("cc0-1.0"));
         bytes32 state = records.workStateHash(tokenId);
         vm.prank(artist);
         records.finalize(tokenId, state);

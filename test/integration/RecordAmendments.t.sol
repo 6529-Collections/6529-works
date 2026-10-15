@@ -82,10 +82,9 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         manager.execute(address(records), back);
     }
 
-    /// @dev A CC0 work may still correct its text file (CC0 to CC0), but only to the
-    ///      deployment's CC0 text: another text is refused even with every consent and the
-    ///      governed action. (A correction to the pinned text: `ContentReviewRegressions`.)
-    function test_Cc0WorkCorrectsItsTextFileOnlyToThePinnedText() public {
+    /// @dev A CC0 work names the deployment's CC0 text and keeps it: another text is refused
+    ///      even with every consent and the governed action.
+    function test_Cc0WorkKeepsThePinnedText() public {
         bytes32 corrected = _storeText("CC0 1.0 Universal (corrected text)", "text/plain");
         bytes memory call = _relicenseCall(2, 1, License("CC0-1.0", corrected));
         _schedule(hotAdmin, address(records), call);

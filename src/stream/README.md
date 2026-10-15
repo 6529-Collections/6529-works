@@ -100,11 +100,13 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   EIP-712 consent, each by its current authority, plus a governed action. Only
   CC0 irrevocability is enforced on-chain, on the canonical license key; whether
   a new license is more permissive is the judgement of the parties' consent plus
-  governance, and the contract does not order licenses. A CC0 work may still
-  correct its text file (CC0 to CC0), but only to the deployment's CC0 text
-  (`cc0TextFileId`, the legal code pinned by digest at deployment), and any
-  relicense to CC0 names that text, so a work that reads CC0 never points at
-  other terms. A relicense's text file must be
+  governance, and the contract does not order licenses. A license whose key is
+  CC0 always names the deployment's CC0 text (`cc0TextFileId`, the legal code
+  pinned by digest at deployment): `openRecord` refuses an approved CC0 license
+  with another text (the curation simulation of `openRecord` catches it before
+  approval), and a relicense to CC0 must name it. A CC0 work's license therefore
+  never changes, and a work that reads CC0 never points at other terms. A
+  relicense's text file must be
   registered, and stored on-chain once the work is finalized. A royalty-rate
   change bumps the version before its external calls, emits `RoyaltyRateSet`
   and refreshes the metadata. A repin needs the lead artist and the 30-day

@@ -247,28 +247,42 @@ contract ContentReviewRegressionsTest is IntegrationBase {
         manager.execute(address(records), call);
     }
 
-    /// @dev A CC0 work's text can only be corrected to the deployment's pinned CC0 text, with
-    ///      every party's consent and the governed action: never to any other text, before or
-    ///      after finalize, so a work that reads `CC0-1.0` keeps the CC0 legal code.
-    function test_Cc0_TheTextCorrectsOnlyToThePinnedText() public {
+    /// @dev A license whose key is CC0 names the deployment's pinned CC0 text: an approved CC0
+    ///      license with another text cannot open (curation's simulation of `openRecord` catches
+    ///      it), while the same text under another spelling of the identifier can.
+    function test_Cc0_AnApprovedCc0LicenseMustNameThePinnedText() public {
         bytes32 typo = _storeText("CC0 1.0 Universal, with a typo", "text/plain");
-        bytes32 reserved = _storeText("All rights reserved. No reuse permitted.", "text/plain");
         Work memory w = _work(artist, collectionId);
         w.item.license = License("CC0-1.0", typo);
         Work[] memory works = _one(w);
+        (, uint256 tokenId) = _start(_publish(works), works, 0);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.openRecord(tokenId, w.item, w.media);
+        assertFalse(records.isOpen(tokenId));
+
+        Work memory v = _work(artist, collectionId);
+        v.item.license = License("cc0-1.0", cc0TextFileId);
+        works = _one(v);
+        (, uint256 other) = _start(_publish(works), works, 0);
+        records.openRecord(other, v.item, v.media);
+        assertEq(records.licenseOf(other).textFileId, cc0TextFileId);
+        assertEq(records.record(other).licenseKey, WorksHashing.CC0_LICENSE_KEY);
+    }
+
+    /// @dev A CC0 work's license never changes: no relicense moves it to another text, with
+    ///      every party's consent and the governed action, before or after finalize, so a work
+    ///      that reads `CC0-1.0` keeps the CC0 legal code.
+    function test_Cc0_TheTextNeverChanges() public {
+        bytes32 reserved = _storeText("All rights reserved. No reuse permitted.", "text/plain");
+        Work memory w = _work(artist, collectionId);
+        Work[] memory works = _one(w);
         uint256 tokenId = _sell(_publish(works), works, 0, collector, 1 ether);
         records.openRecord(tokenId, w.item, w.media);
+        _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", reserved)));
         _finalize(tokenId);
-
         _expectRelicenseRefused(_relicense(tokenId, w, License("CC0-1.0", reserved)));
         _expectRelicenseRefused(_relicense(tokenId, w, License("cc0-1.0", reserved)));
-        assertEq(records.licenseOf(tokenId).textFileId, typo);
-
-        _govern(
-            hotAdmin, address(records), _relicense(tokenId, w, License("CC0-1.0", cc0TextFileId))
-        );
         assertEq(records.licenseOf(tokenId).textFileId, cc0TextFileId);
-        assertEq(records.record(tokenId).licenseKey, WorksHashing.CC0_LICENSE_KEY);
     }
 
     /// @dev A work relicensed to CC0 from another license takes the pinned CC0 text too.
