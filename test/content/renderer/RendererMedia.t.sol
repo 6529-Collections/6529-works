@@ -104,7 +104,9 @@ contract RendererMediaTest is RendererBase {
 
     function test_Inline_EveryTypeOfMimeKeepsItsLabel() public {
         bytes memory media = _data(300, 3);
-        string[4] memory mimes = ["image/svg+xml", "image/webp", "image/gif", "image/avif"];
+        // `image/jpeg`'s hash sorts above `text/javascript`'s: it is still no script.
+        string[5] memory mimes =
+            ["image/svg+xml", "image/webp", "image/gif", "image/avif", "image/jpeg"];
         for (uint256 i; i < mimes.length; ++i) {
             _install(_file(media, IDENTITY, mimes[i]));
             assertEq(_str(_out(), ".image"), _dataUri(mimes[i], media));

@@ -32,6 +32,9 @@ contract RendererTest is RendererBase {
         assertTrue(renderer.supportsInterface(0x01ffc9a7)); // ERC-165
         assertFalse(renderer.supportsInterface(0xffffffff));
         assertFalse(renderer.supportsInterface(0xd9b67a26)); // ERC-1155
+        // IDs just below each supported one.
+        assertFalse(renderer.supportsInterface(bytes4(uint32(type(IRenderer).interfaceId) - 1)));
+        assertFalse(renderer.supportsInterface(0x01ffc9a6));
     }
 
     function test_Constructor_RejectsBadThresholds() public {

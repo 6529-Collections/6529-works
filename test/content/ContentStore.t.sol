@@ -584,12 +584,16 @@ contract ContentStoreTest is ContentBase {
 
     function test_ChunkIndexOutOfBoundsReverts() public {
         bytes32 fileId = _publish(_data(CHUNK + 1, 16), IDENTITY, HTML);
-        bytes memory err =
-            abi.encodeWithSelector(IContentStore.ContentChunkIndexOutOfBounds.selector, fileId, 2);
-        vm.expectRevert(err);
-        store.chunkHash(fileId, 2);
-        vm.expectRevert(err);
-        store.readChunk(fileId, 2);
+        // One past the end and further out: the store's error, not an array bound.
+        for (uint256 index = 2; index < 4; ++index) {
+            bytes memory err = abi.encodeWithSelector(
+                IContentStore.ContentChunkIndexOutOfBounds.selector, fileId, index
+            );
+            vm.expectRevert(err);
+            store.chunkHash(fileId, index);
+            vm.expectRevert(err);
+            store.readChunk(fileId, index);
+        }
         assertEq(store.readChunk(fileId, 1).length, 1);
     }
 

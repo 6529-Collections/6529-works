@@ -168,6 +168,17 @@ contract JsonScanTest is Test {
         assertFalse(ok);
     }
 
+    /// @dev Navigation skips a string by its closing quote, not an escaped one inside it.
+    function test_Members_SkipAStringWithAnEscapedQuote() public view {
+        bytes memory json = '{"o":{"a":"x\\"y","b":1}}';
+        uint256[] memory s = _obj(json, _keys1("o"));
+        bytes32[] memory keys = new bytes32[](1);
+        keys[0] = keccak256("b");
+        (bool ok, uint256[] memory m) = h.members(json, s[0] >> 128, keys);
+        assertTrue(ok);
+        assertEq(_text(json, m[0]), "1");
+    }
+
     // ---------------------------------------------------------------- records
 
     function _two() internal pure returns (bytes32[] memory k) {
@@ -349,6 +360,12 @@ contract JsonScanTest is Test {
         for (uint256 i; i < bad.length; ++i) {
             assertFalse(h.accepts(bytes(bad[i])), bad[i]);
         }
+        // The document must open with `{`: an object body after any other byte is refused.
+        assertFalse(h.accepts('["a":1}'));
+        assertFalse(h.accepts('x"a":1}'));
+        // Members and elements are separated by commas, not by any other byte.
+        assertFalse(h.accepts('{"a":1;"b":2}'));
+        assertFalse(h.accepts('{"a":[1;2]}'));
         // A raw control byte, or a string that runs to the end of the text.
         assertFalse(h.accepts(hex"7b2261223a22610a62227d"));
         assertFalse(h.accepts(hex"7b2261223a2261007b"));
@@ -390,6 +407,8 @@ contract JsonScanTest is Test {
         // that happen to be one.
         assertFalse(h.accepts('{"a":"\\ud800xxdc00"}'));
         assertFalse(h.accepts('{"a":"\\ud800\\xdc00"}'));
+        // A low surrogate after a character that is not a high surrogate is still lone.
+        assertFalse(h.accepts('{"a":"\\u0041\\udc00"}'));
         assertFalse(h.accepts('{"a":"\\ud800 \\udc00"}'));
         assertFalse(h.accepts('{"a":"\\ud800uudc00"}'));
         assertFalse(h.accepts('{"a":"\\ud800\\'));
@@ -426,6 +445,23 @@ contract JsonScanTest is Test {
         // `{"a":` + n arrays: the object is level 0, so eight arrays are allowed.
         assertTrue(h.accepts(_nest(8)));
         assertFalse(h.accepts(_nest(9)));
+        // The scanner's assembly has the limit as a literal; the documented constant matches it.
+        assertEq(JsonScan.MAX_DEPTH, 8);
+        // Objects count as levels as arrays do.
+        assertTrue(h.accepts(_nestObjects(8)));
+        assertFalse(h.accepts(_nestObjects(9)));
+    }
+
+    /// @dev `{"a":` + n objects `{"a":` ... `1` ... closed.
+    function _nestObjects(uint256 n) internal pure returns (bytes memory json) {
+        json = '{"a":';
+        for (uint256 i; i < n; ++i) {
+            json = bytes.concat(json, '{"a":');
+        }
+        json = bytes.concat(json, "1");
+        for (uint256 i; i <= n; ++i) {
+            json = bytes.concat(json, "}");
+        }
     }
 
     function _nest(uint256 n) internal pure returns (bytes memory json) {
