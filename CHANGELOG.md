@@ -310,3 +310,24 @@
   - CALLS-5: the auction's NatSpec no longer claims that no transfer can strand a token in it:
     only safe transfers are refused, and a token sent with a plain `transferFrom` is stranded.
     A governed rescue does not fit the auction's remaining EIP-170 headroom; it is documented.
+  - Review follow-ups:
+    - MARKET-2 (L2, L3, L7): while a sale's currency is deprecated nothing settles, sold or
+      unsold; after 30 days frozen anyone may end the sale (the standing bid is credited back,
+      the work goes to the artist). Every reopening, after a dispute pause or a freeze, gives
+      the governed duration, or the sale's anti-snipe window if longer.
+    - LIFECYCLE-4 (L4): `cancel`, like `resume`, waits 48 hours from the pause.
+    - MONEY-1 (L5): `claimFor` refuses ETH; it serves credited ERC-20 payouts.
+    - MARKET-3 (L6): a federated start checks the network's federated fee recipient, not the
+      token's own.
+    - MARKET-6: PLATFORM closes only a sale it opened without the artist's approval.
+    - Re-admitting a deprecated currency waits 14 days from the deprecation
+      (`ReadmissionTooEarly`), so a re-admission scheduled ahead cannot undo it at once.
+    - The auction refuses an expired PERMIT or PERMIT2 payment with `PaymentExpired`, as the
+      fixed-price and Dutch adapters do (the error moves to `ISaleAdapter`).
+    - `scheduleDelay` is in `IFixedPriceSale` and `IDutchSale`. Overlapping halts (an adapter
+      pause during a deprecation) count twice; the sales README and the guardian runbook say
+      so, and tests pin the behaviour.
+    - The auction's bound constants (`MIN_DURATION`, `MAX_DURATION`, `MIN_EXTENSION_WINDOW`,
+      `MAX_EXTENSION_WINDOW`, `MIN_INCREMENT_SHARE`, `DELIVERY_GAS`, `DELIVERY_RESERVE`) are
+      internal, which frees 292 bytes; `setConfig`'s NatSpec states the bounds.
+    - The review's auction invariant handler is adopted (`AuctionHaltsInvariant.t.sol`).

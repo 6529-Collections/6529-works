@@ -130,7 +130,14 @@ independent of the admins they check:
   waits at least its delay class (up to 30 days), and a guardian cancels it in that window.
 - **Separate pause and unpause.** The guardians hold PAUSER and the hot admin holds UNPAUSER;
   the configuration refuses one account holding both. A pause by a guardian is undone only by
-  the admins.
+  the admins, and no earlier than 48 hours after it (the adapters, `resume` and `cancel` count
+  the delay from the pause; re-admitting a deprecated currency waits 14 days from the
+  deprecation).
+- **Do not overlap halts.** Do not pause the fixed-price or Dutch adapter while a currency is
+  deprecated. The sale clocks add both halts, so the overlap counts twice and the affected
+  schedules rewind (a Dutch curve climbs back, an ended phase reopens). If an adapter must be
+  paused during a deprecation, ask the creators or PLATFORM to close and reopen the affected
+  sales once both halts end.
 
 #### The network fee recipient must exist
 

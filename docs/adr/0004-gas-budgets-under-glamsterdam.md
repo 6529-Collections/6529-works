@@ -121,32 +121,32 @@ no ceiling, or not run on Sepolia.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 291,595 | 350,000 | **6** | 0 | 846,963 |
-| `startWithBid`, steady state | 332,949 | 350,000 | **7** | 0 | 982,312 |
-| `start`, two-party work | 299,888 | 350,000 | **6** | 0 | — |
-| `startWithBid`, two-party work | 341,251 | 350,000 | **7** | 0 | — |
-| `start`, VRF work | 299,285 | 350,000 | **6** | 0 | 852,868 |
-| `start`, edition master | 292,287 | 350,000 | **6** | 0 | 847,598 |
-| `startWithBid`, ERC-20 by relayed Permit2 | 377,833 | 388,000 (regression) | 7 | 0 | — |
-| `start`, first work in a new collection | 291,653 | 400,000 | 6 | 0 | 846,977 |
-| `start`, first work ever (one-time) | 440,711 | 452,000 (regression) | 13 | 0 | 1,604,862 |
-| `startWithBid`, first bid under new sale terms (one-time) | 403,098 | 413,000 (regression) | 10 | 0 | — |
-| `bid` that outbids | 73,348 | 75,000 (regression) | 1 | 0 | 168,932 |
-| `settle`, first payout to a seller wallet | 160,839 | 400,000 | 1 | 1 | 441,363 |
-| `settle`, with a bid | 135,839 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 96,424 | 99,000 (regression) | 1 | 0 | part of `start` |
+| `start`, steady state | 291,808 | 350,000 | **6** | 0 | 846,963 |
+| `startWithBid`, steady state | 333,883 | 350,000 | **7** | 0 | 982,312 |
+| `start`, two-party work | 300,037 | 350,000 | **6** | 0 | — |
+| `startWithBid`, two-party work | 342,121 | 350,000 | **7** | 0 | — |
+| `start`, VRF work | 299,486 | 350,000 | **6** | 0 | 852,868 |
+| `start`, edition master | 292,448 | 350,000 | **6** | 0 | 847,598 |
+| `startWithBid`, ERC-20 by relayed Permit2 | 378,977 | 388,000 (regression) | 7 | 0 | — |
+| `start`, first work in a new collection | 291,802 | 400,000 | 6 | 0 | 846,977 |
+| `start`, first work ever (one-time) | 440,880 | 452,000 (regression) | 13 | 0 | 1,604,862 |
+| `startWithBid`, first bid under new sale terms (one-time) | 404,032 | 413,000 (regression) | 10 | 0 | — |
+| `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 168,932 |
+| `settle`, first payout to a seller wallet | 168,063 | 400,000 | 1 | 1 | 441,363 |
+| `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
+| `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
-| `openSale` (one public phase) | 288,965 | 293,000 (regression) | 8 | 0 | 993,668 |
-| `purchase`, the first copy, new holder | 193,000 | 195,000 (regression) | 3 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 175,900 | 177,000 (regression) | 2 | 0 | 370,142 |
+| `openSale` (one public phase) | 292,853 | 293,000 (regression) | 8 | 0 | 993,668 |
+| `purchase`, the first copy, new holder | 193,971 | 195,000 (regression) | 3 | 0 | 468,086 |
+| `purchase`, a later copy, new holder | 176,871 | 177,000 (regression) | 2 | 0 | 370,142 |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
 | `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,236,339 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,368 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,350 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,094 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,370 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,074 | 92,000 (regression) | 0 | 0 | — |
 
 - **Re-measured after the review of 14 October 2026.** The split-wallet rows
   were added then, on the same harness; a wallet's deployment is mostly code
@@ -295,6 +295,16 @@ pricing.
   Glamsterdam; its payout is then refused and goes to the escrow, to be
   flushed later. Split wallets receive with an empty `receive` and are
   unaffected.
+- **The auction's ERC-20 payout frame (1,000,000).** Each ERC-20 settlement
+  payout runs in its own call frame with this allowance (MONEY-1), and the
+  settler must be able to forward it in full: an ERC-20 `settle` needs a call
+  gas limit of about 1.11M although it uses about 140K (an ETH `settle` about
+  460K). If a payout fails in the frame, it is credited to its wallet, to be
+  paid with `claimFor`. Under Glamsterdam, if a token burns the whole frame,
+  the credit's new storage slot (about 111K of state gas) may not fit in what
+  remains: the settlement then reverts and is retried with a higher limit.
+- **Settlement reads the currency's status** (MARKET-2: a deprecated currency
+  freezes the auction), about 7K more Prague gas per `settle` than before.
 - **The VRF callback** used about 62% of its 200,000-gas limit on Sepolia (one
   new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours);
   lowering it, never below the floor, a SUCCESSOR_SETTER one (30 days). The

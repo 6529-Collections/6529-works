@@ -176,7 +176,20 @@ default when the sale starts".
 9. **Settle (permissionless).** `settle` delivers the token or records a pending
    claim (`claimDelivery`, where the winner names the recipient).
    - Seller and fee terms are read back from the token, and the predicted seller
-     wallet and the fee recipient are paid; failed pushes go to the escrow.
+     wallet and the fee recipient are paid; failed pushes go to the escrow. An
+     ERC-20 payout runs in its own call frame: if it fails even through the
+     escrow (the token changed behaviour, or blocks the auction), it is credited
+     to its wallet in the auction and the work is still delivered; anyone pays
+     the credit out with `claimFor(wallet, token)` once the token works again
+     (ERC-20 only; ETH credits are bidders' refunds, claimed by the bidder). The
+     settler must forward the frame's 1,000,000 gas: an ERC-20 settle needs a
+     call gas limit of about 1.11M.
+   - A deprecated currency freezes the auction (MARKET-2): nothing settles, and
+     a standing bidder may withdraw. After a re-admission (no earlier than 14
+     days after the deprecation), the first `settle` reopens the auction for the
+     governed duration. Once the currency has been deprecated for 30 days, anyone
+     may end the sale unsold: the standing bid is credited back and the work goes
+     to the artist.
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).

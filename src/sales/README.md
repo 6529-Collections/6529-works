@@ -96,12 +96,21 @@ emergency tightening. Claims are never blocked.
 currency, stops the sale's schedule as well as its purchases. Each sale records,
 when it opens, how long the adapter has been paused and its currency deprecated
 so far; the growth since is the sale's `scheduleDelay(saleId)`. Fixed-price
-phase windows and the Dutch curve run that much later than configured, so a halt
-never uses up an allowlist phase or lets the Dutch price fall: trading resumes
-where it stopped. A pause during a deprecation counts twice, which only moves the
-schedule later. The adapter's own pause time is `pausedTotal` plus the running
-pause; the currency's is the allowlist's `statusClock`. Anyone may close a
-fixed-price sale once its moved phases have all ended.
+phase windows and the Dutch curve, including a start not yet reached, run that
+much later than configured, so a halt never uses up an allowlist phase or lets the
+Dutch price fall: trading resumes where it stopped. The adapter's own pause time is
+`pausedTotal` plus the running pause; the currency's is the allowlist's
+`statusClock`. Anyone may close a fixed-price sale once its moved phases have all
+ended.
+
+Overlapping halts count twice: a pause of the adapter while a sale's currency is
+deprecated moves the schedule by both, more than the time trading actually
+stopped. The schedule then does not resume where it stopped but rewinds by the
+overlap: a Dutch curve climbs back up (and may show "not open" again), and a
+fixed-price phase that had ended can reopen while the one that was running closes.
+Guardians therefore do not pause an adapter while a currency is deprecated; if they
+must, the creator or PLATFORM closes and reopens the affected sales afterwards
+(see the guardian practice in the [deploy runbook](../../script/README.md)).
 
 **Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
 `purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
@@ -251,8 +260,12 @@ There is no clearing price.
 The PLATFORM check uses the AccessManager's `canCall` for the selector, and
 needs an immediate (zero-delay) grant. The creator who may close a sale is read
 from the token at close time (the artist's active authority), so after a
-recovery the old key loses that power, and while a recovery override is pending
-nobody but PLATFORM can close it. Nothing here is payable except `purchase`.
+recovery the old key loses that power. PLATFORM closes only a sale it opened
+without the artist's approval: a sale the artist approved (opened by the creator,
+or by PLATFORM with the creator's signed configuration) closes by the artist, or
+stops by a guardian pause (MARKET-6). While a recovery override is pending, only
+PLATFORM can close, and only such an unapproved sale. Nothing here is payable
+except `purchase`.
 
 ### Gas
 
