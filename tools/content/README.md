@@ -516,8 +516,8 @@ python -m unittest discover -s tools/content -t . -p "test_*.py"
 
 `test_anvil.py` needs `anvil` on the `PATH` and `forge build` output; it is
 skipped without them, and CI sets `CONTENT_E2E_REQUIRE=1` so a missing
-prerequisite fails there instead. CI runs these in the Contracts job, next to
-`forge test`.
+prerequisite fails there instead. CI runs these in the Build and checks job, one of
+the parts behind the required Contracts check.
 
 ## Performance and limits
 

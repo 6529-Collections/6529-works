@@ -85,7 +85,8 @@ Each fact has one owner; every other page links to it instead of repeating it
   ADR 0004's table, which its decision 2 keeps current.
 - How to run the suite and how strong it is (coverage floors, mutation testing, Halmos proofs)
   is in [Testing](docs/testing/README.md); the CI gates are in
-  [Build, test and budgets](docs/audit/build-and-test.md).
+  [Build, test and budgets](docs/audit/build-and-test.md). Coverage and Halmos run on `main`,
+  nightly and on demand, not on pull requests, so run them locally when a change needs them.
 
 ## Workflow
 
@@ -104,8 +105,8 @@ forge test
   refreshes the docs: run `forge build`, then
   `python tools/check_docs_facts.py --artifacts out --update`, and commit what it rewrote.
   CI checks all three: the Docs job runs `gen_role_matrix.py --check`, `check_docs_facts.py`
-  and `check_markdown_links.py`, and the required Contracts job runs
-  `check_docs_facts.py --artifacts out`.
+  and `check_markdown_links.py`, and Build and checks runs `check_docs_facts.py --artifacts out`
+  (its result, with the three Tests parts, makes up the required Contracts check).
 - Keep the **Static analysis** job green. Fix a new High or Medium Slither finding; only
   disposition a real false positive or an accepted risk, with a reason, in
   [docs/security/slither-triage.md](docs/security/slither-triage.md).
