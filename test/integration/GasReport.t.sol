@@ -22,7 +22,7 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
@@ -73,9 +73,12 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant BID_CEILING = 75_000;
     uint256 internal constant CONSUME_CEILING = 99_000;
     uint256 internal constant CREATE_EDITION_CEILING = 331_000;
-    uint256 internal constant OPEN_SALE_CEILING = 299_000;
-    uint256 internal constant PURCHASE_FIRST_CEILING = 152_000;
-    uint256 internal constant PURCHASE_LATER_CEILING = 135_000;
+    uint256 internal constant OPEN_SALE_CEILING = 252_000;
+    uint256 internal constant OPEN_SALE_FIRST_CEILING = 318_000;
+    uint256 internal constant OPEN_SALE_DUTCH_CEILING = 273_000;
+    uint256 internal constant PURCHASE_DUTCH_CEILING = 147_000;
+    uint256 internal constant PURCHASE_FIRST_CEILING = 146_000;
+    uint256 internal constant PURCHASE_LATER_CEILING = 129_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
@@ -218,7 +221,7 @@ contract IntegrationGasReport is IntegrationBase {
         ISplitWallet.Payee[] memory duo = new ISplitWallet.Payee[](2);
         duo[0] = ISplitWallet.Payee(0, makeAddr("gasCollaborator"), 20_000);
         duo[1] = ISplitWallet.Payee(uint160(artistA), address(0), 80_000);
-        address[19] memory extra = [
+        address[20] memory extra = [
             artistA,
             artistB,
             platform,
@@ -230,6 +233,7 @@ contract IntegrationGasReport is IntegrationBase {
             makeAddr("masterCollector"),
             makeAddr("firstCopyBuyer"),
             makeAddr("laterCopyBuyer"),
+            makeAddr("dutchBuyer"),
             makeAddr("gasWallet1"),
             makeAddr("gasWallet2"),
             makeAddr("gasCollaborator"),
@@ -572,19 +576,34 @@ contract IntegrationGasReport is IntegrationBase {
 
     // ------------------------------------------------------------------ 6529 Editions
 
+    /// @dev A Dutch edition master: a fixed edition of 10 from 0.0001 ETH down to a tenth of it,
+    ///      in hourly steps over a day (every curve word nonzero).
+    function _dutchMasterWorks() internal returns (Work[] memory works) {
+        works = _masterWorks();
+        works[0].item.edition.saleKind = SaleKind.DUTCH;
+        works[0].item.edition.params = abi.encode(DutchParams(EDITION_PRICE / 10, 1 days, 1 hours));
+    }
+
     /// @dev The master package, published, with item 0 started at steady state, bid on and
     ///      settled.
     function _settledMaster()
         internal
         returns (uint256 workId, bytes32 masterRoot, Work[] memory works)
     {
+        return _settledMasterOf(_masterWorks());
+    }
+
+    function _settledMasterOf(Work[] memory works)
+        internal
+        returns (uint256 workId, bytes32 masterRoot, Work[] memory)
+    {
         _steadyState();
-        works = _masterWorks();
         masterRoot = _publish(works);
         uint256 saleId;
         (saleId, workId) = _start(masterRoot, works, 0);
         _ethBid(saleId, makeAddr("masterCollector"), 1 ether);
         _settleAtEnd(saleId);
+        return (workId, masterRoot, works);
     }
 
     function _rowCreateEdition() internal returns (Row memory r) {
@@ -616,9 +635,14 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev The PLATFORM opens one public phase at the package price, without the artist's
-    ///      consent.
+    ///      consent, at steady state: the adapter has registered the network fee recipient, here
+    ///      by an earlier sale of the same edition that the PLATFORM closed. Four listing words,
+    ///      the open-sale record and the phase word (QUALITY-4).
     function _rowOpenSale() internal returns (Row memory r) {
         uint256 editionId = _createdEdition();
+        uint256 earlier = _platformOpens(editionId);
+        vm.prank(platform);
+        fixedSale.closeSale(earlier);
         r = _row(
             "openSale (PLATFORM, one public phase)",
             platform,
@@ -627,7 +651,22 @@ contract IntegrationGasReport is IntegrationBase {
             0
         );
         _gasAtMost(r, OPEN_SALE_CEILING, "regression ceiling");
-        _growthIs(r, 8, 0);
+        _growthIs(r, 6, 0);
+    }
+
+    /// @dev One-time: the adapter's first sale also registers the network fee recipient, which
+    ///      later listings reference by index (the counter and both directions of the index).
+    function _rowOpenSaleFirst() internal returns (Row memory r) {
+        uint256 editionId = _createdEdition();
+        r = _row(
+            "openSale, the adapter's first sale (one-time)",
+            platform,
+            address(fixedSale),
+            _openSaleData(editionId),
+            0
+        );
+        _gasAtMost(r, OPEN_SALE_FIRST_CEILING, "regression ceiling");
+        _growthIs(r, 9, 0);
     }
 
     function _purchaseData(uint256 saleId, address buyer, uint256 quantity)
@@ -646,7 +685,11 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     function _openEditionSale() internal returns (uint256 saleId) {
-        uint256 editionId = _createdEdition();
+        saleId = _platformOpens(_createdEdition());
+    }
+
+    /// @dev The PLATFORM opens one public phase of `editionId`.
+    function _platformOpens(uint256 editionId) internal returns (uint256 saleId) {
         vm.prank(platform);
         (bool ok, bytes memory ret) = address(fixedSale).call(_openSaleData(editionId));
         _bubble(ok, ret);
@@ -687,6 +730,70 @@ contract IntegrationGasReport is IntegrationBase {
         );
         _gasAtMost(r, PURCHASE_LATER_CEILING, "regression ceiling");
         _growthIs(r, 1, 0);
+    }
+
+    // ------------------------------------------------------------------ 6529 Editions, Dutch
+
+    /// @dev A Dutch master, settled, and its edition created.
+    function _createdDutchEdition() internal returns (uint256 editionId) {
+        (uint256 workId, bytes32 masterRoot, Work[] memory works) =
+            _settledMasterOf(_dutchMasterWorks());
+        editions.createEdition(workId, works[0].item, masterRoot, _proofOf(works, 0));
+        editionId = workId;
+    }
+
+    function _dutchOpenData(uint256 editionId) internal view returns (bytes memory) {
+        return abi.encodeCall(
+            dutchSale.openSale, (address(editions), editionId, uint64(block.timestamp))
+        );
+    }
+
+    /// @dev The PLATFORM opens a sale of a FIXED Dutch edition.
+    function _dutchOpens(uint256 editionId) internal returns (uint256 saleId) {
+        vm.prank(platform);
+        (bool ok, bytes memory ret) = address(dutchSale).call(_dutchOpenData(editionId));
+        _bubble(ok, ret);
+        saleId = abi.decode(ret, (uint256));
+    }
+
+    /// @dev The PLATFORM opens a Dutch sale at steady state: the Dutch adapter has registered
+    ///      the network fee recipient (an earlier sale of the edition, closed). Four listing
+    ///      words, the open-sale record and the two schedule words.
+    function _rowOpenSaleDutch() internal returns (Row memory r) {
+        uint256 editionId = _createdDutchEdition();
+        uint256 earlier = _dutchOpens(editionId);
+        vm.prank(platform);
+        dutchSale.closeSale(earlier);
+        r = _row(
+            "openSale, Dutch (PLATFORM)", platform, address(dutchSale), _dutchOpenData(editionId), 0
+        );
+        _gasAtMost(r, OPEN_SALE_DUTCH_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev The Dutch edition's first copy, to a new holder, at the starting price.
+    function _rowPurchaseDutch() internal returns (Row memory r) {
+        uint256 saleId = _dutchOpens(_createdDutchEdition());
+        address buyer = makeAddr("dutchBuyer");
+        bytes memory data = abi.encodeCall(
+            dutchSale.purchase,
+            (
+                saleId,
+                buyer,
+                1,
+                EDITION_PRICE,
+                Payment(PaymentMethod.DIRECT, buyer, EDITION_PRICE, 0, 0, "")
+            )
+        );
+        r = _row(
+            "purchase, Dutch, first copy (new holder)",
+            buyer,
+            address(dutchSale),
+            data,
+            EDITION_PRICE
+        );
+        _gasAtMost(r, PURCHASE_DUTCH_CEILING, "regression ceiling");
+        _growthIs(r, 2, 0);
     }
 
     // ------------------------------------------------------------------ identity
@@ -924,6 +1031,18 @@ contract IntegrationGasReport is IntegrationBase {
         _rowOpenSale();
     }
 
+    function test_Gas_OpenSale_FirstSale() public {
+        _rowOpenSaleFirst();
+    }
+
+    function test_Gas_OpenSale_Dutch() public {
+        _rowOpenSaleDutch();
+    }
+
+    function test_Gas_Purchase_Dutch() public {
+        _rowPurchaseDutch();
+    }
+
     function test_Gas_Purchase_FirstCopy() public {
         _rowPurchaseFirst();
     }
@@ -971,7 +1090,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[25] memory rows = [
+        function() internal returns (Row memory)[28] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -988,8 +1107,11 @@ contract IntegrationGasReport is IntegrationBase {
             _rowConsume,
             _rowCreateEdition,
             _rowOpenSale,
+            _rowOpenSaleFirst,
             _rowPurchaseFirst,
             _rowPurchaseLater,
+            _rowOpenSaleDutch,
+            _rowPurchaseDutch,
             _rowRefreshFirst,
             _rowRefreshFurther,
             _rowRoyaltyInfo,
@@ -998,7 +1120,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[25] memory measured;
+        Row[28] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

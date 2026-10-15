@@ -71,7 +71,7 @@ contract DutchSale is IDutchSale, MintSaleBase {
             revert InvalidSchedule();
         }
         // A sale the creator opens is the artist's: PLATFORM cannot close it (MARKET-6).
-        saleId = _store(token, id, t, msg.sender == t.creator, federated);
+        saleId = _store(token, id, t, msg.sender == t.creator, federated, 0);
         _schedules[saleId] = Schedule(d.restingPrice, startTime, d.duration, d.stepSeconds);
         emit SaleStarted(
             saleId,

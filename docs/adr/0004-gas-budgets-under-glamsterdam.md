@@ -136,9 +136,12 @@ no ceiling, or not run on Sepolia.
 | `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
 | `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
-| `openSale` (one public phase) | 292,853 | 299,000 (regression) | 8 | 0 | 993,668 |
-| `purchase`, the first copy, new holder | 148,880 | 152,000 (regression) | 2 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 131,780 | 135,000 (regression) | 1 | 0 | 370,142 |
+| `openSale` (one public phase) | 246,877 | 252,000 (regression) | 6 | 0 | 993,668 |
+| `openSale`, the adapter's first sale (one-time) | 311,676 | 318,000 (regression) | 9 | 0 | — |
+| `purchase`, the first copy, new holder | 142,793 | 146,000 (regression) | 2 | 0 | 468,086 |
+| `purchase`, a later copy, new holder | 125,693 | 129,000 (regression) | 1 | 0 | 370,142 |
+| `openSale`, Dutch | 266,825 | 273,000 (regression) | 7 | 0 | — |
+| `purchase`, Dutch, the first copy, new holder | 143,356 | 147,000 (regression) | 2 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
@@ -183,6 +186,16 @@ no ceiling, or not run on Sepolia.
     adapters never read (they apply the terms locked at `openSale`). A purchase
     no longer reads the rest of the edition record or calls the artist registry:
     about 21.9K less Prague gas per `purchase`, with no change in slots.
+  - QUALITY-4: a fixed-price or Dutch listing is five words, of which an ETH
+    sale writes four. The fee recipient is stored once per adapter and
+    referenced by a 2-byte index, which shares the seller's word with the phase
+    count. A phase is one word (window, cap and flags), plus its root for an
+    allowlist phase, in place of an array whose length was a slot of its own.
+    `openSale` with one public phase writes 6 new slots instead of 8 (about 46K
+    less Prague gas); an allowlist or capped phase one fewer than before; a Dutch
+    `openSale` 7 instead of 8. The adapter's first sale registers the fee
+    recipient: 9 slots, once per adapter. A purchase reads its phase in one word
+    instead of four (about 6.1K less).
 - **The two-party `startWithBid` is the tightest:** 341,251, about 8.7K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 377,833**, about 45K more

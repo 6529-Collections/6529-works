@@ -156,6 +156,55 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(keccak256(abi.encode(fixedSale.phases(saleId))), keccak256(abi.encode(phases)));
     }
 
+    /// @dev QUALITY-4: fee recipients are stored once per adapter and referenced by index. Each
+    ///      sale keeps the recipient it locked, a repeated recipient reuses its index (opening
+    ///      writes no registry slot), and purchases pay the locked recipient.
+    function test_OpenSale_FeeRecipientsStoredOnceByIndex() public {
+        address other = makeAddr("otherNetwork");
+        PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+        t.feeRecipient = other;
+        editions.setTerms(40, t, SIZE);
+        editions.setTerms(41, _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, ""), SIZE);
+        uint256 first = _openPublic(ETH_ED, 0);
+        vm.record();
+        uint256 second = _openPublic(40, 0);
+        (, bytes32[] memory registering) = vm.accesses(address(fixedSale));
+        vm.record();
+        uint256 third = _openPublic(41, 0);
+        (, bytes32[] memory registered) = vm.accesses(address(fixedSale));
+        // A new recipient adds the counter and both directions of its index; a registered one
+        // adds no write.
+        assertEq(registering.length, registered.length + 3);
+        assertEq(_locked(first).feeRecipient, network);
+        assertEq(_locked(second).feeRecipient, other);
+        assertEq(_locked(third).feeRecipient, network);
+        _buyEth(alice, second, 0, alice, 1, PRICE);
+        assertEq(other.balance, _fee(PRICE));
+        assertEq(network.balance, 0);
+        _buyEth(alice, third, 0, alice, 1, PRICE);
+        assertEq(network.balance, _fee(PRICE));
+    }
+
+    /// @dev QUALITY-4: a phase is stored in one word, plus its root for an allowlist phase; the
+    ///      view rebuilds every field, for every phase up to `Limits.MAX_PHASES`.
+    function test_OpenSale_PackedPhasesRoundTrip() public {
+        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](16);
+        uint64 t = uint64(block.timestamp);
+        for (uint256 i; i < phases.length; ++i) {
+            bytes32 root = i % 2 == 0 ? keccak256(abi.encode(i)) : bytes32(0);
+            phases[i] = IFixedPriceSale.Phase(
+                t + uint64(i),
+                type(uint64).max - uint64(i),
+                root,
+                i % 3 == 0 ? type(uint32).max : uint32(i),
+                root != 0 && i % 4 == 0,
+                root != 0 && i % 4 == 2
+            );
+        }
+        uint256 saleId = _open(creator, ETH_ED, phases);
+        assertEq(keccak256(abi.encode(fixedSale.phases(saleId))), keccak256(abi.encode(phases)));
+    }
+
     function test_OpenSale_ByPlatformIsNotArtistApproved() public {
         uint256 saleId = _open(platform, ETH_ED, _one(_phase(0, 2, false, false)));
         assertFalse(_approved(saleId));
