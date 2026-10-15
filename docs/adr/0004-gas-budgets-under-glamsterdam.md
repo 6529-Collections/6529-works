@@ -288,11 +288,14 @@ pricing.
   raise-only.
 - **The claim router's continue-mode minimums** (200,000 per plain item,
   450,000 per signed item) are Prague-sized floors. A first release needs more
-  under Glamsterdam: new slots, and possibly the payee's account. Continue mode
-  reverts when an item fails after spending its share, so gas estimation raises
-  the limit until the item is paid, under any schedule. Only the batch sizes
-  remain to re-check: a full batch of first releases may not fit one
-  transaction, and then reverts for the caller to split.
+  under Glamsterdam: new slots, and possibly the payee's account (about 716,000
+  for a first signed release on Sepolia). While an item is offered less than
+  `SHORTFALL_REVERT_CEILING` (1,500,000), continue mode reverts when it fails
+  after spending its share, so gas estimation raises the limit until it is
+  paid; an item that fails despite the ceiling is skipped. Re-check the ceiling
+  (about twice the Sepolia figure) and the batch sizes: a full batch of first
+  releases may not fit one transaction, and then reverts for the caller to
+  split.
 
 Re-check all three allowances against mainnet's Glamsterdam parameters before
 mainnet.

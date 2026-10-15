@@ -140,3 +140,10 @@
   caller's salt. `walletFor` no longer hashes the wallet's 6.6 KB creation code: about
   4,400 Prague gas less per `start` and per `royaltyInfo`, and about 9,000 less per
   `createEdition`. Every predicted wallet address changes.
+- Economics (review of PR 54, L-1 and L-2): `ClaimRouter` reverts a continue-mode batch on
+  an item's gas shortfall only while the item is offered less than
+  `SHORTFALL_REVERT_CEILING` (1,500,000, about twice a first signed release on Sepolia's
+  Glamsterdam). An item that fails despite the ceiling is skipped, so a party to one item
+  cannot revert a well-funded batch. An ERC-1271 check that could not get its gas
+  (`BoundedCallInsufficientGas`) also counts as a shortfall. The README gives keepers'
+  guidance: simulate privately, and split batches with contract payees or unfamiliar tokens.

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { IClaimRouter } from "./interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
@@ -15,14 +16,19 @@ import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 ///      targets are contained: at most one word of return data is copied on success and at most
 ///      256 bytes of revert data on failure, and in continue mode each call gets only its share of
 ///      the gas left, but never less than its minimum.
-///      Continue mode never reports a gas shortfall as an item's failure, whatever the gas
-///      schedule: an item that fails after spending all but EIP-150's 1/64 reserve of the gas it
-///      was given (in its own frame or in a call it made) reverts the batch with
-///      {ClaimInsufficientGas}, so `eth_estimateGas` raises the limit until every item either is
-///      paid or fails with gas to spare. The minimums are only the floor of each item's share;
-///      they were sized on Prague and stay correct under Glamsterdam's state pricing because of
-///      this check, not because of their size. An item that burns whatever it is given (a hostile
-///      target) therefore reverts every continue-mode batch it is in: leave it out.
+///      Continue mode does not report a gas shortfall below {SHORTFALL_REVERT_CEILING} as an
+///      item's failure. An item offered less than the ceiling that fails after spending all but
+///      EIP-150's 1/64 reserve of its gas (in its own frame or in a call it made), or that fails
+///      because an ERC-1271 check could not get its gas (`BoundedCallInsufficientGas`), reverts
+///      the batch with {ClaimInsufficientGas}, so `eth_estimateGas` raises the limit. At the
+///      estimate, every item is paid, fails with gas to spare, or failed despite at least the
+///      ceiling and is skipped. The ceiling, about twice what a first signed release needs on
+///      Sepolia's Glamsterdam, covers honest items under that schedule with room; it bounds what a
+///      party to an item (a fixed co-payee, a signed recipient, a token) can force by burning gas:
+///      once its item is offered the ceiling, it is skipped like any other failure. Below it, such
+///      a party can still revert a batch; keepers simulate privately and split batches whose items
+///      involve contract payees or unfamiliar tokens. The minimums are only the floor of each
+///      item's share.
 contract ClaimRouter is IClaimRouter {
     /// @inheritdoc IClaimRouter
     /// @dev In Prague gas a worst-case plain item costs about 130,000, so a full atomic batch
@@ -42,6 +48,10 @@ contract ClaimRouter is IClaimRouter {
     uint256 public constant MAX_SIGNED_CLAIMS = 20;
     /// @inheritdoc IClaimRouter
     uint256 public constant MIN_SIGNED_ITEM_GAS = 450_000;
+    /// @inheritdoc IClaimRouter
+    /// @dev About twice a first signed release to a fresh recipient on Sepolia's Glamsterdam
+    ///      (about 716,000: the release's new slots, the nonce word and the account).
+    uint256 public constant SHORTFALL_REVERT_CEILING = 1_500_000;
 
     uint256 private constant _MAX_REASON_BYTES = 256;
 
@@ -119,12 +129,7 @@ contract ClaimRouter is IClaimRouter {
                 amount := mload(0x00)
             }
             if (ok && size == 32) return amount;
-            // A failure that spent all but the 1/64 reserve of the item's gas may be a shortfall
-            // (the wallet's, or a payee's or token's under it): revert so estimation raises the
-            // limit, instead of reporting a failure the caller paid for.
-            if (!ok && item.keepGoing && available - gasleft() > callGas - callGas / 64) {
-                revert ClaimInsufficientGas(item.index, callGas);
-            }
+            uint256 spent = available - gasleft();
             amount = 0;
             if (ok) {
                 reason = abi.encodeWithSelector(InvalidClaimReturnData.selector, size);
@@ -134,6 +139,17 @@ contract ClaimRouter is IClaimRouter {
                 assembly ("memory-safe") {
                     returndatacopy(add(reason, 0x20), 0, length)
                 }
+                // A failure below the ceiling that spent all but the 1/64 reserve of the item's
+                // gas (the wallet's, or a payee's or token's under it), or an ERC-1271 check that
+                // could not get its gas, may be a shortfall: revert so estimation raises the
+                // limit, instead of reporting a failure the caller paid for.
+                if (
+                    item.keepGoing && callGas < SHORTFALL_REVERT_CEILING
+                        && (spent > callGas - callGas / 64
+                            // The first four bytes of the revert data: its error selector.
+                            // forge-lint: disable-next-line(unsafe-typecast)
+                            || bytes4(reason) == BoundedCall.BoundedCallInsufficientGas.selector)
+                ) revert ClaimInsufficientGas(item.index, callGas);
             }
         }
         if (!item.keepGoing) revert ClaimCallFailed(item.index, wallet, size, reason);

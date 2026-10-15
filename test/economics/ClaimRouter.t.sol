@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Vm } from "forge-std/Vm.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -14,6 +15,7 @@ import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     BlocklistToken,
     ClaimReentrantRecipient,
+    ArmablePayee,
     ClaimWalletAdversary,
     GasHungryPayee,
     GasHungryWallet,
@@ -313,9 +315,9 @@ contract ClaimRouterTest is EconomicsBase {
     }
 
     /// @dev A target that burns all the gas it gets (`INVALID`) cannot be told apart from an item
-    ///      that needs more gas, so it reverts the continue-mode batch and names its index
-    ///      (MONEY-3), rather than being skipped. It never starves a later item silently, and
-    ///      without it the batch pays.
+    ///      that needs more gas: offered less than the shortfall ceiling, it reverts the
+    ///      continue-mode batch and names its index (MONEY-3). It never starves a later item
+    ///      silently, and without it the batch pays.
     function test_GasBurnerRevertsAContinueBatchAndNamesItsIndex() public {
         ClaimWalletAdversary hostile = new ClaimWalletAdversary();
         hostile.configure(7);
@@ -477,6 +479,134 @@ contract ClaimRouterTest is EconomicsBase {
             router.claim{ gas: 700_000 }(_two(address(empty), 0, address(real), 0), true);
         assertEq(amounts[0], 0);
         assertEq(amounts[1], 1 ether);
+    }
+
+    // ------------------------------------------------------------------ the shortfall ceiling
+
+    /// @dev `real` (alice, 1 ETH) first, then a target that burns everything it is given.
+    function _realThenBurner() internal returns (bytes memory input, SplitWallet real) {
+        ClaimWalletAdversary burner = new ClaimWalletAdversary();
+        burner.configure(7);
+        real = _solo(alice);
+        vm.deal(address(real), 1 ether);
+        input =
+            abi.encodeCall(IClaimRouter.claim, (_two(address(real), 0, address(burner), 0), true));
+    }
+
+    /// @dev Below the ceiling, a burnt item reverts the batch (estimation raises the limit);
+    ///      offered at least the ceiling, it is skipped as any other failure and the rest pays.
+    function test_ShortfallRevertsOnlyBelowTheCeiling() public {
+        assertEq(router.SHORTFALL_REVERT_CEILING(), 1_500_000);
+        (bytes memory input,) = _realThenBurner();
+        // The burner, second of two, is offered about half of what is left: about 1.27M here.
+        (bool ok, bytes memory data) = address(router).call{ gas: 2_600_000 }(input);
+        assertFalse(ok);
+        assertEq(_selector(data), IClaimRouter.ClaimInsufficientGas.selector);
+        (uint256 index, uint256 available) = abi.decode(_args(data), (uint256, uint256));
+        assertEq(index, 1);
+        assertLt(available, router.SHORTFALL_REVERT_CEILING());
+        assertEq(alice.balance, 0);
+
+        // About 1.67M: at least the ceiling, so the burner is skipped and alice is paid.
+        vm.recordLogs();
+        (ok, data) = address(router).call{ gas: 3_400_000 }(input);
+        assertTrue(ok);
+        uint256[] memory amounts = abi.decode(data, (uint256[]));
+        assertEq(amounts[0], 1 ether);
+        assertEq(amounts[1], 0);
+        assertEq(alice.balance, 1 ether);
+        Failure memory f = _onlyFailure(vm.getRecordedLogs());
+        assertEq(f.index, 1);
+        assertEq(f.size, 0, "INVALID returns no data");
+    }
+
+    /// @dev Review L-1 regression (the reviewer's PoC): a fixed co-payee arms a gas-burning
+    ///      `receive` after the keeper estimated. Offered at least the ceiling, its item is
+    ///      skipped and the ten unrelated releases in the batch are paid; the batch's own
+    ///      estimate does the same. Below the ceiling it still reverts the batch: the documented
+    ///      residual that keepers handle by simulating privately and splitting batches.
+    function test_ArmedCoPayeeIsSkippedOnceItsItemGetsTheCeiling() public {
+        ArmablePayee payee = new ArmablePayee();
+        IClaimRouter.Claim[] memory claims = new IClaimRouter.Claim[](11);
+        for (uint256 i; i < 10; ++i) {
+            SplitWallet s =
+                SplitWallet(payable(factory.createWallet(_list(_fixed(alice, D)), bytes32(i + 1))));
+            vm.deal(address(s), 1 ether);
+            claims[i] = IClaimRouter.Claim(address(s), ETH, 0);
+        }
+        SplitWallet shared = _wallet(_list(_fixed(address(payee), 50_000), _fixed(bob, 50_000)));
+        vm.deal(address(shared), 1 ether);
+        claims[10] = IClaimRouter.Claim(address(shared), ETH, _indexOf(shared, address(payee)));
+        bytes memory input = abi.encodeCall(IClaimRouter.claim, (claims, true));
+
+        // Unarmed, the keeper's estimate pays every item.
+        uint256 snap = vm.snapshotState();
+        (uint256 unarmedEstimate, bytes memory output) = _estimate(input);
+        assertEq(abi.decode(output, (uint256[]))[10], 0.5 ether);
+        vm.revertToStateAndDelete(snap);
+
+        payee.arm(true);
+        // The residual: at the unarmed estimate, the armed item is below the ceiling.
+        snap = vm.snapshotState();
+        (bool ok, bytes memory data) = address(router).call{ gas: unarmedEstimate }(input);
+        assertFalse(ok);
+        assertEq(_selector(data), IClaimRouter.ClaimInsufficientGas.selector);
+        vm.revertToStateAndDelete(snap);
+
+        // With 5M, the armed item is offered more than the ceiling: skipped, the rest paid.
+        snap = vm.snapshotState();
+        uint256[] memory amounts = router.claim{ gas: 5_000_000 }(claims, true);
+        assertEq(amounts[10], 0);
+        assertEq(alice.balance, 10 ether, "ten unrelated releases paid");
+        assertEq(address(payee).balance, 0);
+        vm.revertToStateAndDelete(snap);
+
+        // Re-estimated with the item armed, the batch settles where the item is skipped.
+        (, output) = _estimate(input);
+        amounts = abi.decode(output, (uint256[]));
+        assertEq(amounts[10], 0);
+        assertEq(alice.balance, 10 ether);
+    }
+
+    /// @dev An item that fails after spending most of its gas, but not all but the 1/64
+    ///      reserve, failed with gas to spare: it is skipped, never a shortfall.
+    function test_ItemThatSpendsMostButNotAllOfItsGasIsSkipped() public {
+        GasHungryWallet hungry = new GasHungryWallet();
+        hungry.setBurn(400_000);
+        hungry.setFailure(abi.encodeWithSignature("Error(string)", "refused"));
+        SplitWallet real = _solo(alice);
+        vm.deal(address(real), 1 ether);
+        // The hungry item, second of two, is offered about 495,000 and spends about 81% of it.
+        vm.recordLogs();
+        uint256[] memory amounts =
+            router.claim{ gas: 1_000_000 }(_two(address(real), 0, address(hungry), 0), true);
+        assertEq(amounts[0], 1 ether);
+        assertEq(amounts[1], 0);
+        Failure memory f = _onlyFailure(vm.getRecordedLogs());
+        assertEq(f.index, 1);
+        assertEq(f.reason, abi.encodeWithSignature("Error(string)", "refused"));
+    }
+
+    /// @dev Review L-2: an item whose ERC-1271 check could not get its gas
+    ///      (`BoundedCallInsufficientGas`) spent little, yet ran short: below the ceiling it
+    ///      reverts the batch so estimation raises the limit; from the ceiling up it is skipped.
+    function test_ERC1271ShortfallRevertsBelowTheCeiling() public {
+        GasHungryWallet starved = new GasHungryWallet();
+        bytes memory failure = abi.encodeWithSelector(
+            BoundedCall.BoundedCallInsufficientGas.selector, SignatureVerifier.ERC1271_GAS_LIMIT
+        );
+        starved.setFailure(failure);
+        bytes memory input =
+            abi.encodeCall(IClaimRouter.claim, (_one(address(starved), ETH, 0), true));
+        (bool ok, bytes memory data) = address(router).call{ gas: 1_000_000 }(input);
+        assertFalse(ok);
+        assertEq(_selector(data), IClaimRouter.ClaimInsufficientGas.selector);
+
+        vm.expectEmit(true, true, true, true, address(router));
+        emit IClaimRouter.ClaimFailed(address(starved), ETH, 0, 0, failure.length, failure);
+        uint256[] memory amounts =
+            router.claim{ gas: 3_200_000 }(_one(address(starved), ETH, 0), true);
+        assertEq(amounts[0], 0);
     }
 
     function _args(bytes memory data) internal pure returns (bytes memory args) {

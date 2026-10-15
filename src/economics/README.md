@@ -101,23 +101,29 @@ mint, so rotating the fee recipient with `setFeeTerms` only helps new works).
 ## Batch claims and gas
 
 Continue mode reverts unless every item can be offered its minimum gas: 200,000
-per plain item and 450,000 per signed item. It also reverts
-(`ClaimInsufficientGas`) when an item fails after spending all but EIP-150's
-1/64 reserve of the gas it was offered, in the wallet or in a payee or token
-under it. So gas estimation never settles on a limit at which an item silently
-runs dry, whatever the gas schedule: it raises the limit until every item is
-paid or fails with gas to spare (and is then reported and skipped).
+per plain item and 450,000 per signed item. Below a ceiling of 1,500,000 gas
+per item (`SHORTFALL_REVERT_CEILING`), it also reverts (`ClaimInsufficientGas`)
+when an item fails after spending all but EIP-150's 1/64 reserve of the gas it
+was offered (in the wallet or in a payee or token under it), or because an
+ERC-1271 check could not get its gas. Gas estimation then raises the limit
+instead of settling where such an item silently runs dry. At the estimate,
+every item is paid, fails with gas to spare, or failed despite being offered
+the ceiling; the last two are reported and skipped.
 
 - **Glamsterdam.** A first release from a wallet writes new slots and may
-  create the payee's account: about 120,000 Prague gas, but several hundred
-  thousand under Glamsterdam's state pricing. The minimums are Prague-sized
-  floors; the check above, not their size, keeps continue mode correct under
-  any schedule. Raising them to Glamsterdam figures would only shrink the
-  batches that fit one transaction, and would be wrong again for mainnet's
-  final parameters.
-- **Hostile items.** An item that burns all the gas it is given cannot be told
-  apart from one that needs more, so it reverts every continue-mode batch it
-  is in. Leave it out (the revert names its index).
+  create the payee's account: about 120,000 Prague gas, about 571,000 for a
+  plain one and 716,000 for a signed one on Sepolia's Glamsterdam. The
+  minimums are Prague-sized floors; the check above, not their size, gives
+  such items their gas. The ceiling is about twice the signed figure, so honest
+  items fit with room on Sepolia's parameters; re-check it against mainnet's.
+- **Hostile items.** A party to an item (a fixed co-payee whose `receive`
+  burns gas, a signed release's recipient, a token's issuer) can make the item
+  look short of gas, and can switch that on after the keeper estimated. While
+  the item is offered less than the ceiling, that reverts the whole batch; from
+  the ceiling up, the item is skipped. Keepers should simulate privately
+  (submit through a private mempool), put items with contract payees or
+  unfamiliar tokens at the end of a batch or in batches of their own, and drop
+  an item whose revert names its index.
 - **Batch size.** A full batch of first releases may not fit one transaction
   under Glamsterdam. It then reverts rather than paying part of the batch;
   split it.
