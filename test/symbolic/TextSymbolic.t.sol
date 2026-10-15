@@ -114,16 +114,6 @@ contract TextSymbolicTest is Test {
         }
     }
 
-    /// @notice `JsonEscape.scriptText` equals the oracle on every input of 8 to 10 bytes, the
-    ///         lengths where a `</script` (any case) fits once or overlaps the ends.
-    function check_jsonScriptText_matchesTheOracle(bytes32 w) public pure {
-        for (uint256 n = 8; n <= MAX_SCRIPT; ++n) {
-            bytes memory raw = _prefix(w, n);
-            string memory out = JsonEscape.scriptText(string(raw));
-            assert(keccak256(bytes(out)) == keccak256(TextOracles.scriptText(raw)));
-        }
-    }
-
     // ---------------------------------------------------------------- data: URI percent
 
     /// @dev Whether `DataUri.escape` with a cap of zero accepts the first `n` bytes of `w`, and

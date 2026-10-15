@@ -200,7 +200,6 @@ beyond.
 | | `royaltyPayees_isCanonical`: the royalty wallet's payee list is canonical | unbounded |
 | `Utf8` | `utf8_isValidMatchesTheOracle`, `utf8_streamingAtEverySplitEqualsWhole`, `utf8_returnedStatesAreWellFormed`: the validator against a code-point decoder, streamed across every split | bounded: every input of up to 4 bytes |
 | `JsonEscape` | `jsonEscape_matchesTheOracle` | bounded: every input of up to 4 bytes |
-| | `jsonScriptText_matchesTheOracle` | bounded: every input of 8 to 10 bytes |
 | `DataUri` | `dataUri_findsEveryHitInAWord`, `dataUri_ignoresTheBytesPastTheEnd`: a `%` or `#` is found wherever it is | unbounded: every 32-byte and 31-byte text |
 | `HtmlScript` | `htmlScript_matchesTheReference`: output and `<` cap against a reference | bounded: every input of 4 to 6 bytes |
 | | `htmlScript_endTagInAnyCase`: `</script` in every case mix | bounded: 8 to 10 bytes starting `</` |

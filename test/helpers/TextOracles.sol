@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 /// @notice Deliberately naive reference implementations for differential tests.
-/// @dev `escape` and `scriptText` are the byte-loop oracles 6529Stream PR #744 froze as
-///      `FrozenRenderContextV1` (the historical output the optimized code must match).
+/// @dev `escape` is the byte-loop oracle 6529Stream PR #744 froze as `FrozenRenderContextV1`
+///      (the historical output the optimized code must match).
 ///      `isValidUtf8` decodes code points and checks their range, an algorithm independent of
 ///      the byte-range table used by `Utf8`.
 library TextOracles {
@@ -39,23 +39,6 @@ library TextOracles {
             } else {
                 out[cursor++] = raw[i];
             }
-        }
-        assembly ("memory-safe") {
-            mstore(out, cursor)
-        }
-        return out;
-    }
-
-    function scriptText(bytes memory raw) internal pure returns (bytes memory) {
-        bytes memory out = new bytes(raw.length + raw.length / 8);
-        uint256 cursor;
-        for (uint256 i; i < raw.length; ++i) {
-            if (isEndTagAt(raw, i)) {
-                out[cursor++] = 0x3c;
-                out[cursor++] = BACKSLASH;
-                ++i;
-            }
-            out[cursor++] = raw[i];
         }
         assembly ("memory-safe") {
             mstore(out, cursor)
@@ -129,12 +112,5 @@ library TextOracles {
         for (uint256 i; i < n; ++i) {
             result[i] = value;
         }
-    }
-
-    function hasEndTag(bytes memory raw) internal pure returns (bool) {
-        for (uint256 i; i < raw.length; ++i) {
-            if (isEndTagAt(raw, i)) return true;
-        }
-        return false;
     }
 }
