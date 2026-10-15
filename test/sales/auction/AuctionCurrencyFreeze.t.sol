@@ -2,20 +2,21 @@
 pragma solidity ^0.8.24;
 
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { MarketPoCBase } from "./MarketPoCBase.sol";
+import { SalesStackBase } from "../SalesStackBase.sol";
 
-/// @notice MARKET-2 regression, on the real stack: deprecating an auction's currency freezes the
-///         auction, not just its bids. While frozen nothing settles, sold or unsold, and a
-///         standing bidder may withdraw (the bid stays as the reserve). Once the currency is
-///         re-admitted, the first `settle` reopens the auction for the governed duration. A
-///         currency deprecated for 30 days lets anyone end the sale unsold: the bid is credited
-///         back and the work goes to its artist.
-contract Market2RegressionTest is MarketPoCBase {
+/// @notice An English auction whose currency is deprecated, on the real stack: the deprecation
+///         freezes the auction, not just its bids. While frozen nothing settles, sold or unsold,
+///         and a standing bidder may withdraw (the bid stays as the reserve). Once the currency
+///         is re-admitted (no sooner than 14 days after the deprecation), the first `settle`
+///         reopens the auction for the governed duration. A currency deprecated for 30 days lets
+///         anyone end the sale unsold: the bid is credited back and the work goes to its artist.
+contract AuctionCurrencyFreezeTest is SalesStackBase {
     address internal alice = makeAddr("lowBidder");
     address internal bob = makeAddr("realBidder");
 
@@ -46,7 +47,8 @@ contract Market2RegressionTest is MarketPoCBase {
         );
     }
 
-    function test_MARKET2_FrozenAuctionWaitsAndReopensAfterReadmission() public {
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
+    function test_Settle_AFrozenAuctionWaitsAndReopensAfterReadmission() public {
         (uint256 saleId, uint256 tokenId) = _freezeAnHourBeforeTheEnd();
         vm.deal(bob, 10 ether);
         vm.prank(bob);
@@ -80,7 +82,8 @@ contract Market2RegressionTest is MarketPoCBase {
         assertEq(stream.ownerOf(tokenId), bob, "the real bidder wins");
     }
 
-    function test_MARKET2_WithdrawnWhileFrozenReopensForTheDurationWithAReserve() public {
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
+    function test_WithdrawBid_WhileFrozenTheAuctionReopensForTheDurationWithAReserve() public {
         (uint256 saleId,) = _freezeAnHourBeforeTheEnd();
         vm.expectEmit(address(auction));
         emit IEnglishAuction.BidWithdrawn(saleId, alice, 0.01 ether);
@@ -100,7 +103,8 @@ contract Market2RegressionTest is MarketPoCBase {
         assertEq(stream.ownerOf(auction.auction(saleId).tokenId), bob);
     }
 
-    function test_MARKET2_ACurrencyThatNeverReturnsReleasesTheWorkToTheArtist() public {
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
+    function test_Settle_ACurrencyThatNeverReturnsReleasesTheWorkToTheArtist() public {
         (uint256 saleId, uint256 tokenId) = _freezeAnHourBeforeTheEnd();
         vm.warp(block.timestamp + 365 days);
         vm.prank(alice);
@@ -112,7 +116,8 @@ contract Market2RegressionTest is MarketPoCBase {
         assertEq(address(auction).balance, 0.01 ether, "the credit is all the auction holds");
     }
 
-    function test_MARKET2_WithdrawalNeedsAPauseOrAFreeze() public {
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
+    function test_WithdrawBid_NeedsAPauseOrAFreeze() public {
         Work[] memory works = _package(root);
         (uint256 saleId,) = _start(root, works, 2);
         _ethBid(saleId, alice, 0.01 ether);
@@ -141,7 +146,8 @@ contract Market2RegressionTest is MarketPoCBase {
         auction.withdrawBid(saleId);
     }
 
-    function test_MARKET2_AnAuctionStartedAfterAFreezeSettlesNormally() public {
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
+    function test_Settle_AnAuctionStartedAfterAFreezeSettlesNormally() public {
         _govern(
             guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (CURRENCY_ETH))
         );
@@ -153,12 +159,11 @@ contract Market2RegressionTest is MarketPoCBase {
         assertEq(stream.ownerOf(tokenId), alice, "no reopening for a freeze before the start");
     }
 
-    // ------------------------------------------------------- review follow-ups (PR #57)
-
-    /// @dev L2: a deprecation that never ends, with a high bidder who never withdraws, no longer
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); L2 in the review of #57
+    /// @dev A deprecation that never ends, with a high bidder who never withdraws, no longer
     ///      holds the work: 30 days into the freeze anyone ends the sale unsold, the bid is
     ///      credited back and the work goes to its artist.
-    function test_MARKET2_AFrozenSaleEndsUnsoldThirtyDaysIntoTheFreeze() public {
+    function test_Settle_AFrozenSaleEndsUnsoldThirtyDaysIntoTheFreeze() public {
         Work[] memory works = _package(root);
         (uint256 saleId, uint256 tokenId) = _start(root, works, 2);
         address passive = makeAddr("passiveBidder");
@@ -188,9 +193,10 @@ contract Market2RegressionTest is MarketPoCBase {
         assertEq(address(auction).balance, 1 ether, "only the credit is held");
     }
 
-    /// @dev L3: a withdrawal during a freeze does not let anyone end the auction unsold before
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); L3 in the review of #57
+    /// @dev A withdrawal during a freeze does not let anyone end the auction unsold before
     ///      the currency returns (or the 30-day exit): the reopening keeps its promise.
-    function test_MARKET2_NothingSettlesWhileFrozen() public {
+    function test_Settle_NothingSettlesWhileFrozen() public {
         (uint256 saleId, uint256 tokenId) = _freezeAnHourBeforeTheEnd();
         vm.prank(alice);
         auction.withdrawBid(saleId);
@@ -208,9 +214,10 @@ contract Market2RegressionTest is MarketPoCBase {
         assertEq(stream.ownerOf(tokenId), bob, "sold after the currency returned");
     }
 
-    /// @dev L7: the reopening after a freeze is the governed duration, wherever the first settle
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); L7 in the review of #57
+    /// @dev The reopening after a freeze is the governed duration, wherever the first settle
     ///      lands, so a standing low bidder cannot pick a quiet moment for a short window.
-    function test_MARKET2_ReopeningAfterAFreezeIsTheDuration() public {
+    function test_Settle_ReopeningAfterAFreezeIsTheDuration() public {
         Work[] memory works = _package(root);
         (uint256 saleId, uint256 tokenId) = _start(root, works, 2);
         _ethBid(saleId, alice, 0.01 ether);
@@ -227,5 +234,32 @@ contract Market2RegressionTest is MarketPoCBase {
         _bobBids(saleId, 1 ether);
         _settleAtEnd(saleId);
         assertEq(stream.ownerOf(tokenId), bob);
+    }
+
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); the review of #57
+    /// @dev A re-admission scheduled before a deprecation, for its predictable revision, cannot
+    ///      undo it in the same block: re-admission waits 14 days from the deprecation.
+    function test_AdmitAsset_AReadmissionScheduledAheadCannotUndoADeprecation() public {
+        (,, uint64 revision) = allowlist.assetConfig(CURRENCY_ETH);
+        bytes memory admit =
+            abi.encodeCall(allowlist.admitAsset, (CURRENCY_ETH, revision + 1, 0.001 ether));
+        _schedule(hotAdmin, address(allowlist), admit);
+        vm.warp(block.timestamp + Roles.FUNDS);
+        _deprecateEth();
+        vm.prank(hotAdmin);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetAllowlist.ReadmissionTooEarly.selector,
+                CURRENCY_ETH,
+                block.timestamp + Roles.FUNDS
+            )
+        );
+        manager.execute(address(allowlist), admit);
+        assertFalse(allowlist.isActive(CURRENCY_ETH));
+        // The guardians veto it; a fresh re-admission lands 14 days after the deprecation.
+        vm.prank(guardian2);
+        manager.cancel(hotAdmin, address(allowlist), admit);
+        _readmitEth();
+        assertTrue(allowlist.isActive(CURRENCY_ETH));
     }
 }

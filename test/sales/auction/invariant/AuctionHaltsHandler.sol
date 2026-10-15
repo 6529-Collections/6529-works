@@ -20,10 +20,9 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import {
     BlockablePermitToken,
     HostileActor,
-    MockMintTarget,
-    MockPermit2,
-    PermitToken
-} from "../../../mocks/auction/AuctionMocks.sol";
+    MockMintTarget
+} from "../../../mocks/sales/AuctionMocks.sol";
+import { MockPermit2, PermitToken } from "../../../mocks/sales/SaleMocks.sol";
 
 /// @dev A permit token that can also refuse transfers *from* an address (USDC-style block of
 ///      the auction itself), so every payout and claim out of the auction fails, even through
@@ -688,7 +687,7 @@ contract AuctionHaltsHandler is Test {
             abi.encode(Typehashes.BID_WITNESS, saleId, recipient, amount, permit.deadline)
         );
         bytes32 digest =
-            permit2.digest(permit, address(auction), witness, Typehashes.BID_WITNESS_TYPE);
+            permit2.witnessDigest(address(auction), permit, witness, Typehashes.BID_WITNESS_TYPE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
         return Payment(
             PaymentMethod.PERMIT2,

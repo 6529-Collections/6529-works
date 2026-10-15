@@ -8,7 +8,7 @@ import {
     GasBurnerMock,
     GasReporterMock,
     ReturnBombMock
-} from "../mocks/AdversarialTargets.sol";
+} from "../mocks/libraries/AdversarialTargets.sol";
 
 contract BoundedCallHarness {
     function tryRead(address target, bytes calldata input, uint256 gasLimit, uint256 maxReturn)

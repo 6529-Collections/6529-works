@@ -332,7 +332,7 @@ current documentation). On Sepolia each instance has its own native-paid subscri
 | Words per request | 1 | `VrfEntropyModule.requestSeed` |
 | `extraArgs` tag | `0x92fd1338`, `bytes4(keccak256("VRF ExtraArgsV1"))` | `EXTRA_ARGS_V1_TAG`; `test_ExtraArgsTagIsTheV25Tag` |
 | Deploy defaults | callback gas 200,000; 3 confirmations; `retryDelay` 3 days; LINK payment unless `VRF_NATIVE_PAYMENT=1` | [`script/Deploy.s.sol`](../../script/Deploy.s.sol) |
-| Deploying without VRF | an explicit `NO_VRF=1` off a local chain | [`script/Deploy.s.sol`](../../script/Deploy.s.sol); `test_ReviewPoC_TheEntropyModuleIsAnExplicitChoice` |
+| Deploying without VRF | an explicit `NO_VRF=1` off a local chain | [`script/Deploy.s.sol`](../../script/Deploy.s.sol); `test_TheEntropyModuleIsAnExplicitChoice` |
 | Callback cost | about 34,000 gas under Glamsterdam, no new slot | [ADR 0004, "Security impact"](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact) |
 
 ## Differences from the ADRs

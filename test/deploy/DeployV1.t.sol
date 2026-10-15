@@ -33,7 +33,7 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
-import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -488,6 +488,7 @@ contract DeployV1Test is Test {
         this.checkPlatformPathExternal(d, cfg);
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev GOV-2: a holder a guardian suspended fails readback by name, not as a missing
     ///      member.
     function test_ReadbackRejectsASuspendedHolder() public {

@@ -80,7 +80,7 @@ tests check.
 - **Test fixture.** Integration tests inherit
   [`GovernanceFixture.sol`](../../test/helpers/GovernanceFixture.sol): hot and cold admins,
   three guardians, two curation signers, a curator and one key per operational role.
-  [`GovernanceMocks.sol`](../../test/mocks/GovernanceMocks.sol) holds a sample target.
+  [`GovernanceMocks.sol`](../../test/mocks/governance/GovernanceMocks.sol) holds a sample target.
 - **Tests:** `forge test --match-path 'test/governance/**'` (cancellation rules against a stock
   manager, hardening, suspension, genesis, wiring, the invariant campaign);
   `GovernanceRecovery.t.sol` and `Genesis.t.sol` in [`test/integration/`](../../test/integration/).

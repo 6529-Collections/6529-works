@@ -12,7 +12,10 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { GovernanceFixture } from "test/helpers/GovernanceFixture.sol";
-import { MockPackageRegistry, MockVrfCoordinator } from "test/mocks/EntropyMocks.sol";
+import {
+    EntropyPackageRegistryMock,
+    MockVrfCoordinator
+} from "test/mocks/entropy/EntropyMocks.sol";
 import { EntropyItems } from "./EntropyBase.sol";
 
 /// @notice The module under the real `WorksAccessManager`, configured the way a deploy script
@@ -20,7 +23,7 @@ import { EntropyItems } from "./EntropyBase.sol";
 ///         guardians' veto, no role on `requestSeed`, and no payable function.
 contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
     MockVrfCoordinator internal coordinator;
-    MockPackageRegistry internal registry;
+    EntropyPackageRegistryMock internal registry;
     VrfEntropyModule internal module;
 
     function _vrfConfig() internal pure returns (VrfEntropyModule.VrfConfig memory) {
@@ -36,7 +39,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
     function setUp() public {
         _deployUnconfigured();
         coordinator = new MockVrfCoordinator();
-        registry = new MockPackageRegistry();
+        registry = new EntropyPackageRegistryMock();
         module = new VrfEntropyModule(
             address(manager),
             address(coordinator),
@@ -136,6 +139,7 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
         return abi.encodeCall(module.lowerCallbackGasLimit, (expected, next));
     }
 
+    /// Regression: DEPS-5 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-5: the raise-only limit could not come back down, so a coordinator maximum
     ///      Chainlink lowered below it ended VRF for the deployment (6529 Stream pins the module).
     ///      A lowering in the 30-day class restores requests; `setConfig` still cannot lower.

@@ -7,7 +7,7 @@ import { Splits } from "src/economics/Splits.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { PRODUCT_STREAM, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { BlocklistToken } from "../mocks/EconomicsMocks.sol";
+import { BlocklistToken } from "../mocks/economics/EconomicsMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice Recovering the network's own money after a token blocks its fee recipient (MONEY-2),
@@ -65,6 +65,7 @@ contract EscrowRecoveryTest is IntegrationBase {
         return abi.encodeCall(IRevenueEscrow.recover, (networkFee, newFeeSafe, address(usdc)));
     }
 
+    /// Regression: MONEY-2 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-2 regression: with the Safe's consent, the governed `recover` moves the
     ///      network's escrowed fee to the new Safe, and anyone flushes it there.
     function test_BlockedFeeRecipientCreditMovesWithItsConsent() public {
@@ -94,6 +95,7 @@ contract EscrowRecoveryTest is IntegrationBase {
         assertEq(usdc.balanceOf(address(escrow)), 0);
     }
 
+    /// Regression: MONEY-2 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-2, negative: without the Safe's consent, or to another account than the one
     ///      it named, governance cannot move the credit, even after the full delay.
     function test_GovernanceCannotMoveTheCreditWithoutConsent() public {
@@ -120,6 +122,7 @@ contract EscrowRecoveryTest is IntegrationBase {
         assertEq(escrow.owed(networkFee, address(usdc)), 250e6);
     }
 
+    /// Regression: MONEY-2 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-2, the royalty side: the old work's royalty wallet still names the old Safe as
     ///      a fixed payee. Paying it directly fails while the token blocks it, but the Safe itself
     ///      may release its share to the new Safe.

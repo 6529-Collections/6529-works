@@ -19,12 +19,12 @@ import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
 import {
     Erc165PeerMock,
     WiringTargetMock,
     WiringValidationHarness
-} from "../mocks/GenesisWiringMocks.sol";
+} from "../mocks/governance/GenesisWiringMocks.sol";
 
 /// @notice The genesis wiring phase: one-shot binds, admitted minters, sale targets and the
 ///         epoch-0 manifest, executed by the configurator as zero-delay ADMIN inside the

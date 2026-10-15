@@ -13,7 +13,7 @@ import {
     SaleKind
 } from "src/interfaces/types/SaleTypes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
-import { BlocklistToken, ToggleRecipient } from "../../mocks/EconomicsMocks.sol";
+import { BlocklistToken, ToggleRecipient } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockEditionTarget } from "../../mocks/sales/SaleMocks.sol";
 import { DutchBase } from "./DutchBase.sol";
 

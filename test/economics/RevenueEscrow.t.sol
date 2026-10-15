@@ -20,7 +20,7 @@ import {
     ForceSender,
     ReentrantRecipient,
     ToggleRecipient
-} from "../mocks/EconomicsMocks.sol";
+} from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -536,6 +536,7 @@ contract RevenueEscrowTest is EconomicsBase {
         assertFalse(ok);
     }
 
+    /// Regression: MONEY-4, CALLS-1 (docs/security/internal-review-2026-10.md)
     /// @dev The escrow declares itself (ERC-165), so the registry and the resolver can refuse it
     ///      as a payout or fee recipient (MONEY-4, CALLS-1).
     function test_SupportsInterface() public view {

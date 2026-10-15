@@ -65,8 +65,8 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
   the address and code hash (GV-31).
 - **Bytecode:** comfortable margin; figures in the
   [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
-- **Tests:** `forge test --match-path 'test/identity/**'`: units, review regressions and worst
-  cases (`ArtistRegistryReview.t.sol`), contested overrides, the restrained flag, the adapter
+- **Tests:** `forge test --match-path 'test/identity/**'`: units, the standing snapshot and its
+  worst cases (`ArtistRegistryStanding.t.sol`), contested overrides, the restrained flag, the adapter
   against the real getter shapes, and the invariant suite. End to end:
   `IdentityRecovery.t.sol` and `RecoveryRestraint.t.sol` in
   [`test/integration/`](../../test/integration/). Coverage and mutation testing: [Testing](../../docs/testing/README.md).

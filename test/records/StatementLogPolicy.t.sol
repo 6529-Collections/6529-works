@@ -14,8 +14,8 @@ import {
     ERC1155BalanceMock,
     OZERC1155Mock,
     OZERC721Mock
-} from "../mocks/RecordsMocks.sol";
-import { EvilResolverMock, ForwardingResolverMock } from "../mocks/RecordsResolvers.sol";
+} from "../mocks/records/RecordsMocks.sol";
+import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
 ///         attribution to the AccessManager, reserved kinds, the dispute pointer, the relayed-nonce
@@ -229,6 +229,7 @@ contract StatementLogPolicyTest is StatementLogFixture {
         assertEq(stmtLog.latestDisputeOutcome(address(0), 1), bytes32(0));
     }
 
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
     /// @dev LIFECYCLE-4: an outcome about an ERC-721 token needs the token to exist now; an
     ///      ERC-1155 subject is refused (an edition's outcome goes on its master); subjects that
     ///      are not tokens, such as an item or an artist ID, are not checked.

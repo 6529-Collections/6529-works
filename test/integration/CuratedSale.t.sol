@@ -414,6 +414,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         return abi.encode(signer, _sign(signer, digest));
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-2: re-enabling a disabled signer starts a new epoch. Approvals its key signed
     ///      before, or while it was disabled, never count again; the signer re-signs what it
     ///      still approves.
@@ -446,6 +447,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(signer, signer1);
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev Review of SIGS-2: an approval signed while the signer is disabled, over the epoch the
     ///      re-enable would start if it were not salted from the re-enable's block, does not
     ///      register after the re-enable.
@@ -466,6 +468,7 @@ contract CuratedSaleFlowTest is IntegrationBase {
         registry.registerPackage(packageRoot, evidence, early);
     }
 
+    /// Regression: SIGS-2 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-2: revoking the CURATION_SIGNER role and granting it again to the same key is a
     ///      new grant, with a new epoch: approvals signed under the old grant stay dead.
     function test_RegrantingTheSignerRoleDoesNotReviveOlderApprovals() public {

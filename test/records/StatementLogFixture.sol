@@ -8,7 +8,11 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { StatementModel } from "./StatementModel.sol";
-import { ArtistResolverMock, ERC721OwnerMock, ERC1155BalanceMock } from "../mocks/RecordsMocks.sol";
+import {
+    ArtistResolverMock,
+    ERC721OwnerMock,
+    ERC1155BalanceMock
+} from "../mocks/records/RecordsMocks.sol";
 
 /// @notice Shared setup for the statement log tests: an AccessManager with the curator and
 ///         platform selectors mapped to roles, an artist resolver, and token ownership sources.

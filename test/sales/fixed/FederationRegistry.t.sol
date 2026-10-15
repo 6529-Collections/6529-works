@@ -10,9 +10,9 @@ import {
     CURRENCY_ETH,
     PRODUCT_FEDERATED
 } from "src/interfaces/types/EconomicsTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
-import { MockERC20 } from "../../mocks/EconomicsMocks.sol";
+import { MockERC20 } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockEditionTarget, MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
@@ -102,6 +102,7 @@ contract FederationRegistryTest is FixedPriceBase {
         assertFalse(fixedSale.isTarget(address(fed)));
     }
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-6: a federated token's sale configuration is its artist's (ADR 0001
     ///      section 16), so PLATFORM alone cannot open one, even for a FIXED edition.
     function test_FederatedSale_PlatformAloneCannotOpen() public {
@@ -168,5 +169,72 @@ contract FederationRegistryTest is FixedPriceBase {
         uint256 saleId = _openPublic(ETH_ED, 0);
         assertEq(_locked(saleId).feeShare, FEE_SHARE);
         assertEq(_locked(saleId).feeRecipient, network);
+    }
+
+    function _fedSetup(address tokenFeeRecipient)
+        internal
+        returns (MockFederationRegistry fedRegistry, MockEditionTarget fedToken)
+    {
+        fedRegistry = new MockFederationRegistry();
+        fedToken = new MockEditionTarget();
+        fedToken.setAdmittedMinter(address(fixedSale), true);
+        PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+        if (tokenFeeRecipient != address(0)) t.feeRecipient = tokenFeeRecipient;
+        fedToken.setTerms(3, t, SIZE);
+        fedRegistry.setEntry(address(fedToken), 25_000, true);
+        vm.prank(admin);
+        fixedSale.setFederationRegistry(address(0), address(fedRegistry));
+    }
+
+    /// Regression: a proof of concept (inverted) in the review of #18
+    function test_FederatedSale_TheFeeGoesToTheNetworkRecipient() public {
+        (, MockEditionTarget fedToken) = _fedSetup(creator);
+        vm.prank(creator);
+        uint256 saleId = fixedSale.openSale(
+            address(fedToken), 3, _one(_phase(0, 0, false, false)), _noConsent()
+        );
+        vm.deal(alice, PRICE);
+        vm.prank(alice);
+        fixedSale.purchase{ value: PRICE }(
+            _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
+        );
+        assertEq(creator.balance, 0);
+        assertEq(federatedNetwork.balance, PRICE * 25_000 / 100_000);
+    }
+
+    /// Regression: a proof of concept (inverted) in the review of #18
+    function test_FederatedSale_ADelistedTokenStopsSelling() public {
+        (MockFederationRegistry fedRegistry, MockEditionTarget fedToken) = _fedSetup(address(0));
+        vm.prank(creator);
+        uint256 saleId = fixedSale.openSale(
+            address(fedToken), 3, _one(_phase(0, 0, false, false)), _noConsent()
+        );
+        fedRegistry.setEntry(address(fedToken), 25_000, false); // delisted by vote
+        vm.deal(alice, PRICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.TargetNotAllowed.selector, address(fedToken))
+        );
+        vm.prank(alice);
+        fixedSale.purchase{ value: PRICE }(
+            _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
+        );
+        // Relisting resumes it.
+        fedRegistry.setEntry(address(fedToken), 25_000, true);
+        vm.prank(alice);
+        fixedSale.purchase{ value: PRICE }(
+            _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
+        );
+        assertEq(fedToken.balanceOf(alice, 3), 1);
+    }
+
+    /// Regression: the review of #18
+    function test_FederatedSale_TheTokenMustRunItsRegisteredCode() public {
+        (MockFederationRegistry fedRegistry, MockEditionTarget fedToken) = _fedSetup(address(0));
+        fedRegistry.setCodeHash(address(fedToken), keccak256("another template"));
+        vm.expectRevert(
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(fedToken), 3)
+        );
+        vm.prank(creator);
+        fixedSale.openSale(address(fedToken), 3, _one(_phase(0, 0, false, false)), _noConsent());
     }
 }

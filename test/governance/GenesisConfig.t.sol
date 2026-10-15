@@ -27,7 +27,7 @@ import {
     Erc165PeerMock,
     GenesisTargetMock,
     WiringTargetMock
-} from "../mocks/GenesisWiringMocks.sol";
+} from "../mocks/governance/GenesisWiringMocks.sol";
 
 /// @notice Checks the committed genesis configuration, `config/genesis.example.json`, against
 ///         the compiled selectors, {Roles} and {GovernanceConfig}; installs it with its wiring
@@ -460,6 +460,7 @@ contract GenesisConfigTest is Test {
         }
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev The manager's own guardian function and view (GOV-2), beyond its OpenZeppelin base.
     function test_ManagerSectionMatchesWorksAccessManager() public view {
         assertEq(_count(".manager.functions"), 1, "suspend");

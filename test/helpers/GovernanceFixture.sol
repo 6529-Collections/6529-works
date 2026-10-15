@@ -7,7 +7,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
-import { GovernedTargetMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock } from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice Deploys and configures a `WorksAccessManager` the way a deploy script must, with
 ///         the default holder layout, and offers schedule/execute helpers. Other lanes can

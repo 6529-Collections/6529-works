@@ -10,8 +10,11 @@ import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { Payment } from "src/interfaces/types/SaleTypes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 
-/// @notice Adversarial mocks from the PR #18 review (ported from the reviewer's proofs of concept
-///         and mutation killers).
+/// @notice Adversarial mocks for the fixed-price adapter: ERC-20s whose `transferFrom` moves less
+///         to the receiver, or more from the sender, than asked (the balance-delta checks on each
+///         side of a Permit2 payment), and a creator wallet that closes and reopens its sale from
+///         its own ERC-1155 receiver hook. First written for the PR #18 review's proofs of
+///         concept and mutation killers.
 
 /// @dev `transferFrom` delivers one unit less than asked (receiver short); `transfer` is exact.
 contract InboundShortToken is ERC20 {

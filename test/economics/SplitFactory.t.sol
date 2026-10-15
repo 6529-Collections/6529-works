@@ -9,7 +9,7 @@ import { IArtistPayoutResolver } from "src/economics/interfaces/IArtistPayoutRes
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
-import { MockArtistResolver } from "../mocks/EconomicsMocks.sol";
+import { MockArtistResolver } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 

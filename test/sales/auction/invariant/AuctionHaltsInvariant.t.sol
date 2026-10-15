@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { HostileActor } from "../../../mocks/auction/AuctionMocks.sol";
+import { HostileActor } from "../../../mocks/sales/AuctionMocks.sol";
 import { AuctionBase } from "../AuctionBase.sol";
 import { AuctionHaltsHandler, SwitchToken } from "./AuctionHaltsHandler.sol";
 
@@ -93,6 +93,7 @@ abstract contract AuctionHaltsFixture is AuctionBase {
 }
 
 abstract contract AuctionHaltsInvariantBase is AuctionHaltsFixture {
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md)
     /// @dev The auction's balance covers (equals) every live high bid and every credit,
     ///      payout credits (MONEY-1) included; a withdrawn bid's reserve is not counted twice.
     function invariant_BalanceCoversOwed() public view {

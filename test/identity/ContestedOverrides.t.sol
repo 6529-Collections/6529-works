@@ -167,11 +167,11 @@ contract ContestedOverridesTest is IdentityFixture {
         _stage(artistKey, _identity(artist, payout), 0);
     }
 
-    // ----------------------------------------------------------------- M1: the vote is fresh
+    // ----------------------------------------------------------------- the vote is fresh
 
-    /// @dev Review PoC, now reverting: a vote recorded for an earlier contest cannot resolve a
-    ///      later, unrelated one.
-    function test_M1_StaleOutcomeFromAnEarlierContestIsRejected() public {
+    /// Regression: M1 (a proof of concept, now reverting) in the review of #44
+    /// @dev A vote recorded for an earlier contest cannot resolve a later, unrelated one.
+    function test_Resolve_RefusesAStaleOutcomeFromAnEarlierContest() public {
         _contestedByTheThief();
         outcomes.setOutcome(address(registry), artistId, EARLIER_VOTE);
         _resolve(false, EARLIER_VOTE);
@@ -193,9 +193,9 @@ contract ContestedOverridesTest is IdentityFixture {
         assertEq(registry.authorityOf(artistId), newAuthority);
     }
 
-    /// @dev Review PoC, now reverting: an outcome recorded before the contest existed does not
-    ///      count.
-    function test_M1_OutcomeRecordedBeforeTheContestIsRejected() public {
+    /// Regression: M1 (a proof of concept, now reverting) in the review of #44
+    /// @dev An outcome recorded before the contest existed does not count.
+    function test_Resolve_RefusesAnOutcomeRecordedBeforeTheContest() public {
         outcomes.setOutcome(address(registry), artistId, EARLIER_VOTE);
         vm.warp(block.timestamp + 10 days);
         PendingChange memory p = _contestedByTheThief();
@@ -214,11 +214,12 @@ contract ContestedOverridesTest is IdentityFixture {
         _resolve(false, EARLIER_VOTE);
     }
 
-    // ----------------------------------------------------------------- L3: contests in the notice
+    // ----------------------------------------------------------------- contests in the notice
 
-    /// @dev Review PoC, now reverting: a captured wallet cannot contest once the notice ended, so
-    ///      it cannot front-run a due execution.
-    function test_L3_LateContestIsRefusedAndExecutionProceeds() public {
+    /// Regression: L3 (a proof of concept, now reverting) in the review of #44
+    /// @dev A captured wallet cannot contest once the notice ended, so it cannot front-run a due
+    ///      execution.
+    function test_Contest_ALateContestIsRefusedAndExecutionProceeds() public {
         _consolidate(artist, thiefWallet);
         vm.warp(block.timestamp + 31 days);
         registry.refreshStanding(artistId);
@@ -236,9 +237,10 @@ contract ContestedOverridesTest is IdentityFixture {
         assertEq(registry.authorityOf(artistId), newAuthority);
     }
 
+    /// Regression: L3 in the review of #44
     /// @dev Every contest falls inside the notice, so the uphold window, from the notice's end
     ///      to the lapse, is always at least 185 days: no deadlock.
-    function testFuzz_L3_UpholdWindowAlwaysOpen(uint256 contestDelay) public {
+    function testFuzz_Contest_TheUpholdWindowIsAlwaysOpen(uint256 contestDelay) public {
         _consolidate(artist, thiefWallet);
         vm.warp(block.timestamp + 31 days);
         registry.refreshStanding(artistId);

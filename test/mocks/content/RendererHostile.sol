@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IContentStore } from "src/interfaces/IContentStore.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 
 /// @dev A content store that answers `fileInfo`, `isComplete` and `readChunk` for a work record
 ///      (`RECORD`, always honest) and for one base64 file of `'A'` bytes (every other ID), and
@@ -111,5 +112,31 @@ contract HostileStore {
                 )
             }
         }
+    }
+}
+
+/// @dev A records satellite whose `preferredLocator` burns gas, like a stream lane that walks a
+///      large file to answer it.
+contract BurningRecords {
+    address internal immutable inner;
+    uint256 internal immutable burn;
+
+    constructor(address inner_, uint256 burn_) {
+        inner = inner_;
+        burn = burn_;
+    }
+
+    fallback(bytes calldata data) external returns (bytes memory) {
+        if (bytes4(data) == IWorkRecords.preferredLocator.selector) {
+            uint256 start = gasleft();
+            while (start - gasleft() < burn) { }
+        }
+        (bool ok, bytes memory ret) = inner.staticcall(data);
+        if (!ok) {
+            assembly ("memory-safe") {
+                revert(add(ret, 0x20), mload(ret))
+            }
+        }
+        return ret;
     }
 }

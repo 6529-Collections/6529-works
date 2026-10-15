@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { console2 } from "forge-std/console2.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { LockedTerms } from "src/interfaces/types/SaleTypes.sol";
-import { BlockablePermitToken, HostileActor } from "../../../mocks/auction/AuctionMocks.sol";
+import { BlockablePermitToken, HostileActor } from "../../../mocks/sales/AuctionMocks.sol";
 import { AuctionBase } from "../AuctionBase.sol";
 import { AuctionHandler } from "./AuctionHandler.sol";
 

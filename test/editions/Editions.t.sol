@@ -288,6 +288,7 @@ contract EditionsTest is EditionsBase {
         assertTrue(editions.exists(soldId));
     }
 
+    /// Regression: SIGS-4 (docs/security/internal-review-2026-10.md)
     /// @dev The caller proves the item in a package root the registry registered. SIGS-4: a
     ///      revocation after the master sold no longer blocks its edition (it stops unconsumed
     ///      items only); a root never registered, or revoked before registration, proves nothing.

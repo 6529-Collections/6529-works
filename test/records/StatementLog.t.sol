@@ -13,20 +13,20 @@ import {
     HASH_BLAKE3
 } from "src/interfaces/types/HashRef.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
-import { EvilResolverMock } from "../mocks/RecordsResolvers.sol";
+import { EvilResolverMock } from "../mocks/records/RecordsResolvers.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
 import {
     ArtistResolverMock,
     WrongInterfaceMock,
     ERC1155BalanceMock
-} from "../mocks/RecordsMocks.sol";
+} from "../mocks/records/RecordsMocks.sol";
 import {
     ERC1271WalletMock,
     GasBurnerMock,
     ReturnBombMock,
     ReturnDataMock
-} from "../mocks/AdversarialTargets.sol";
+} from "../mocks/libraries/AdversarialTargets.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
@@ -822,6 +822,7 @@ contract StatementLogTest is StatementLogFixture {
         _append(Role.ARTIST, artist, _statement());
     }
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the resolver's code hash is checked at every ARTIST authorization, so code
     ///      that replaced the pinned code at its address (here one naming its deployer an artist
     ///      of everything) authorizes nobody.

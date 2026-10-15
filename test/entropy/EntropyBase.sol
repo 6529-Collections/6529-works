@@ -20,7 +20,10 @@ import {
 } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { MockPackageRegistry, MockVrfCoordinator } from "test/mocks/EntropyMocks.sol";
+import {
+    EntropyPackageRegistryMock,
+    MockVrfCoordinator
+} from "test/mocks/entropy/EntropyMocks.sol";
 
 /// @dev Builds package items without storing them: an item holds arrays of structs, which the
 ///      legacy code generator cannot copy from memory to storage, so tests rebuild an item from
@@ -79,7 +82,7 @@ abstract contract EntropyBase is Test, EntropyItems {
 
     AccessManager internal manager;
     MockVrfCoordinator internal coordinator;
-    MockPackageRegistry internal registry;
+    EntropyPackageRegistryMock internal registry;
     VrfEntropyModule internal module;
 
     /// @dev The four-item package: the root, the item hashes and each item's Merkle proof.
@@ -92,7 +95,7 @@ abstract contract EntropyBase is Test, EntropyItems {
         vm.warp(1_800_000_000);
         manager = new AccessManager(admin);
         coordinator = new MockVrfCoordinator();
-        registry = new MockPackageRegistry();
+        registry = new EntropyPackageRegistryMock();
         module = _deploy(coordinator);
 
         // The deploy configuration maps `setConfig` to the 48-hour class and `setCoordinator` to

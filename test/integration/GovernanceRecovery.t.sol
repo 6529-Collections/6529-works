@@ -59,10 +59,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
 
     // ------------------------------------------------- GOV-1: recovery completes
 
+    /// Regression: GOV-1 (docs/security/internal-review-2026-10.md)
     /// @dev Round one removes the guardian (only another guardian may cancel its revocation,
     ///      and the honest ones do not); round two removes the hot admin (nobody left may cancel
     ///      it). Then the cold admin appoints the replacement: revocations first, grants after.
-    function test_GOV1_ColdAdminRemovesAHotAdminAndAGuardianActingTogether() public {
+    function test_ColdAdminRemovesAHotAdminAndAGuardianActingTogether() public {
         vm.warp(block.timestamp + manager.minSetback());
         uint64[5] memory hotRoles = _hotAdminRoles();
         bytes[5] memory removeHot;
@@ -128,10 +129,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
         assertTrue(_has(Roles.ADMIN, coldAdmin), "the cold admin stays");
     }
 
+    /// Regression: GOV-1 (docs/security/internal-review-2026-10.md)
     /// @dev The guardian veto is unchanged: any other guardian cancels a hostile admin's
     ///      revocation of a guardian, and admins keep the stock power to cancel each other's
     ///      operations other than revocations.
-    function test_GOV1_TheGuardianVetoIsUnchanged() public {
+    function test_TheGuardianVetoIsUnchanged() public {
         vm.warp(block.timestamp + manager.minSetback());
         bytes memory removeGuardian2 = _revoke(Roles.GUARDIAN, guardian2);
         bytes32 id = _schedule(hotAdmin, address(manager), removeGuardian2);
@@ -216,10 +218,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
         editions.createEdition(editionId, works[1].item, root, _proofOf(works, 1));
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev A guardian suspends the PLATFORM key and every platform path closes in the same
     ///      block: `canCall` and the manual checks that consult it. The creator path, which
     ///      needs no role, stays open.
-    function test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce() public {
+    function test_AGuardianSuspendsThePlatformKeyAtOnce() public {
         address artist = _actor("suspensionArtist");
         (uint256 tokenId, bytes32 fileId, uint256 editionId) = _soldWorkAndEdition(artist);
 
@@ -279,9 +282,10 @@ contract GovernanceRecoveryTest is IntegrationBase {
         );
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev The other suspendable roles close the same way; nobody but a guardian suspends,
     ///      and only these roles can be suspended.
-    function test_GOV2_EveryOperationalRoleCanBeSuspended() public {
+    function test_EveryOperationalRoleCanBeSuspended() public {
         _suspend(guardian1, Roles.STORAGE_OPERATOR, storageOperator);
         vm.prank(storageOperator);
         vm.expectRevert(
@@ -332,8 +336,9 @@ contract GovernanceRecoveryTest is IntegrationBase {
         manager.suspend(Roles.ADMIN, hotAdmin);
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev Revocation and a new grant also clear it: the replacement key is never suspended.
-    function test_GOV2_ReplacingASuspendedKey() public {
+    function test_ReplacingASuspendedKey() public {
         _suspend(guardian1, Roles.PLATFORM, platform);
         address newPlatform = makeAddr("newPlatformKey");
         bytes memory revoke = _revoke(Roles.PLATFORM, platform);
@@ -356,10 +361,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
         return abi.encodeCall(IAccessManager.grantRole, (role, account, 0));
     }
 
+    /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev The documented duration: one dishonest guardian keeps its suspensions for about 60
     ///      days. It cancels every lift until its own removal executes (30 days); the lift then
     ///      takes another 30 days. No other guardian can cancel or lift a suspension.
-    function test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays() public {
+    function test_ADishonestGuardiansSuspensionLastsAboutSixtyDays() public {
         vm.warp(block.timestamp + manager.minSetback());
         uint256 t0 = block.timestamp;
         uint64[3] memory roles = [Roles.PLATFORM, Roles.CURATOR, Roles.STORAGE_OPERATOR];
@@ -415,10 +421,11 @@ contract GovernanceRecoveryTest is IntegrationBase {
         stream.createCollection("lifted", keccak256("lifted"));
     }
 
+    /// Regression: GOV-1 (docs/security/internal-review-2026-10.md)
     /// @dev A raised execution delay through `grantRole` is not a revocation, so Rule 3 does
     ///      not apply: the cold admin still cancels a demotion of itself, and a guardian a
     ///      demotion of itself.
-    function test_GOV1_DemotionsByGrantStayCancellable() public {
+    function test_DemotionsByGrantStayCancellable() public {
         vm.warp(block.timestamp + manager.minSetback());
         bytes memory demoteCold =
             abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, type(uint32).max));

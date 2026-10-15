@@ -5,13 +5,13 @@ import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { IntegrationBase } from "../integration/IntegrationBase.sol";
+import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 
-/// @notice LIFECYCLE-1 regression, on the real stack: a dispute pause keeps the market it
+/// @notice An English auction's dispute pause, on the real stack: the pause keeps the market it
 ///         interrupted. A bid withdrawn while paused stays as a reserve the next bid must reach,
 ///         and the resumed auction runs at least the governed duration, whether the pause lapses
 ///         or UNPAUSER resumes it, so the refunded bidders can return.
-contract Lifecycle1RegressionTest is IntegrationBase {
+contract AuctionDisputePauseTest is IntegrationBase {
     address internal artist;
     address internal alice = makeAddr("aliceBidder");
     address internal mallory = makeAddr("malloryBidder");
@@ -40,7 +40,8 @@ contract Lifecycle1RegressionTest is IntegrationBase {
         );
     }
 
-    function test_LIFECYCLE1_WithdrawnBidStaysAsReserveThroughALapse() public {
+    /// Regression: LIFECYCLE-1 (docs/security/internal-review-2026-10.md)
+    function test_WithdrawBid_StaysAsTheReserveThroughALapse() public {
         (uint256 saleId, uint256 tokenId) = _startOne();
         _ethBid(saleId, alice, 1 ether);
         _ethBid(saleId, mallory, 2 ether);
@@ -72,7 +73,8 @@ contract Lifecycle1RegressionTest is IntegrationBase {
         assertEq(address(auction).balance, 3 ether, "the auction holds exactly the credits");
     }
 
-    function test_LIFECYCLE1_RejectedDisputeResumesWithTheReserveAndTheDuration() public {
+    /// Regression: LIFECYCLE-1 (docs/security/internal-review-2026-10.md)
+    function test_Resume_ARejectedDisputeResumesWithTheReserveAndTheDuration() public {
         (uint256 saleId, uint256 tokenId) = _startOne();
         _ethBid(saleId, makeAddr("earlyBidder"), 3 ether);
         address honest = makeAddr("honestHighBidder");
@@ -103,9 +105,10 @@ contract Lifecycle1RegressionTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), honest);
     }
 
-    /// @dev Review follow-up (L7): any dispute pause, with or without a withdrawal, reopens the
+    /// Regression: LIFECYCLE-1 (docs/security/internal-review-2026-10.md); L7 in the review of #57
+    /// @dev Any dispute pause, with or without a withdrawal, reopens the
     ///      auction for at least the governed duration; a standing bid keeps its increment.
-    function test_LIFECYCLE1_APauseWithAStandingBidAlsoReopensForTheDuration() public {
+    function test_Pause_WithAStandingBidAlsoReopensForTheDuration() public {
         (uint256 saleId,) = _startOne();
         _ethBid(saleId, alice, 1 ether);
         uint256 end = auction.auction(saleId).endTime;

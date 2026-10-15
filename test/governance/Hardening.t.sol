@@ -8,7 +8,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { BoundedParameter } from "src/governance/BoundedParameter.sol";
 import { GovernanceFixture } from "../helpers/GovernanceFixture.sol";
-import { GovernedTargetMock, PayableGovernedMock } from "../mocks/GovernanceMocks.sol";
+import { GovernedTargetMock, PayableGovernedMock } from "../mocks/governance/GovernanceMocks.sol";
 
 /// @notice ADR 0001 §13 AccessManager hardening requirements 1, 3, 4, 5, 7 and 9, operation
 ///         expiry, and the rotated-admin procedure, on a configured `WorksAccessManager`.

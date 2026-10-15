@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Vm } from "forge-std/Vm.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { DeployV1 } from "script/DeployV1.sol";
-import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
+import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import { MockPermit2, PermitToken } from "../mocks/sales/SaleMocks.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";

@@ -6,57 +6,9 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 
-/// @dev The part of 6529 Stream core the renderer reads, with fixtures set by the test.
-///      `fail(selector, true)` makes one read revert.
-contract MockStream {
-    address public workRecords;
-    mapping(uint256 => IStream.WorkCore) internal cores;
-    address public entropyModule;
-    mapping(uint256 => IStream.Collection) internal collections;
-    mapping(bytes4 => bool) internal failing;
-
-    function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == 0x01ffc9a7 || id == 0x80ac58cd;
-    }
-
-    function fail(bytes4 selector, bool on) external {
-        failing[selector] = on;
-    }
-
-    function setWorkRecords(address records) external {
-        workRecords = records;
-    }
-
-    function setWork(uint256 id, IStream.WorkCore calldata core) external {
-        cores[id] = core;
-    }
-
-    function setEntropyModule(address module) external {
-        entropyModule = module;
-    }
-
-    function setCollection(uint256 id, IStream.Collection calldata collection_) external {
-        collections[id] = collection_;
-    }
-
-    function work(uint256 id) external view returns (IStream.WorkCore memory) {
-        _gate(msg.sig);
-        return cores[id];
-    }
-
-    function collection(uint256 id) external view returns (IStream.Collection memory) {
-        _gate(msg.sig);
-        return collections[id];
-    }
-
-    function _gate(bytes4 selector) internal view {
-        require(!failing[selector], "mock failure");
-    }
-}
-
 /// @dev The part of the work-records satellite the renderer reads. The media list is kept as an
 ///      ABI blob because memory arrays of structs cannot always be copied to storage.
-contract MockWorkRecords {
+contract RendererWorkRecordsMock {
     mapping(uint256 => IWorkRecords.RecordInfo) internal infos;
     mapping(uint256 => bool) internal opened;
     mapping(uint256 => SeedPolicy) internal seedPolicies;
@@ -175,7 +127,7 @@ contract MockWorkRecords {
 }
 
 /// @dev A 6529 Editions stand-in: ERC-1155 by ERC-165, with `masterOf` set by the test.
-contract MockEditions {
+contract RendererEditionsMock {
     address public stream;
     mapping(uint256 => uint256) internal masters;
     mapping(uint256 => bytes32) internal hashes;
@@ -200,7 +152,7 @@ contract MockEditions {
 }
 
 /// @dev `latestDisputeOutcome` as the statement log answers it.
-contract MockDisputeLog {
+contract RendererDisputeLogMock {
     mapping(address => mapping(uint256 => bytes32)) internal outcomes;
     bool public broken;
 
@@ -219,7 +171,7 @@ contract MockDisputeLog {
 }
 
 /// @dev `IEntropyModule.seedOf` by item hash.
-contract MockEntropy {
+contract RendererEntropyMock {
     mapping(bytes32 => bytes32) internal seeds;
 
     function set(bytes32 itemHash, bytes32 seed) external {

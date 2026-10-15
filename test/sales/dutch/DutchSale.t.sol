@@ -24,7 +24,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
-import { RejectingRecipient, ReentrantRecipient } from "../../mocks/EconomicsMocks.sol";
+import { RejectingRecipient, ReentrantRecipient } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { DutchBase } from "./DutchBase.sol";
 import { IMintSale } from "src/interfaces/IMintSale.sol";
@@ -107,9 +107,9 @@ contract DutchSaleTest is DutchBase {
         assertEq(dutch.openSaleOf(address(editions), LINEAR), saleId);
     }
 
-    /// @dev CALLS-1: terms that pay the revenue escrow as seller or fee recipient are refused at
-    ///      open.
-    function test_CALLS1_OpenSaleRefusesTheEscrowAsSellerOrFeeRecipient() public {
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
+    /// @dev Terms that pay the revenue escrow as seller or fee recipient are refused at open.
+    function test_OpenSale_RefusesTheEscrowAsSellerOrFeeRecipient() public {
         for (uint256 i; i < 2; ++i) {
             PrimaryTerms memory t = _terms(
                 SaleKind.DUTCH, CURRENCY_ETH, START, abi.encode(DutchParams(REST, DURATION, 0))
@@ -304,6 +304,7 @@ contract DutchSaleTest is DutchBase {
         vm.stopPrank();
     }
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-6: the creator closes a sale it opened, which PLATFORM cannot; PLATFORM closes
     ///      a sale it opened alone.
     function test_CloseSale_ByCreatorOrPlatformOnly() public {

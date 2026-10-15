@@ -17,7 +17,7 @@ import {
     MockArtistResolver,
     RebasingToken,
     ToggleRecipient
-} from "../../mocks/EconomicsMocks.sol";
+} from "../../mocks/economics/EconomicsMocks.sol";
 import { PaymentHarness } from "../EconomicsBase.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 

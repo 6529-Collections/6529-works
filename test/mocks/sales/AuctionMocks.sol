@@ -4,19 +4,16 @@ pragma solidity ^0.8.24;
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
-import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
-import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
-import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { MockFederationRegistry, PermitToken } from "./SaleMocks.sol";
 
-/// @notice Auction-lane mocks: a configurable 6529 Stream stand-in, a federation registry, a
-///         faithful Permit2 signature-transfer, an EIP-2612 token and a hostile actor.
+/// @notice English-auction mocks: a configurable ERC-721 mint target, a hostile bidder or
+///         wallet, and EIP-2612 tokens that burn gas or block recipients. The federation
+///         registry, Permit2 and the plain EIP-2612 token are shared with the other sale
+///         adapters' tests, in `SaleMocks.sol`.
 
 /// @dev An ERC-721 that mints through `IMintTarget` on terms the test sets. `mode` injects the
 ///      faults an admitted but broken token could produce.
@@ -139,107 +136,6 @@ contract MockMintTarget is ERC721, IMintTarget {
     }
 }
 
-/// @dev A federation registry whose entries the test writes directly.
-contract MockFederationRegistry is IFederationRegistry {
-    mapping(address => Entry) internal _entries;
-
-    function register(address token, Entry calldata entry_) external {
-        _entries[token] = entry_;
-        emit Registered(token, entry_.artistId, entry_);
-    }
-
-    function setStatus(address token, Status status, bytes32 voteRef) external {
-        _entries[token].status = status;
-        emit StatusSet(token, status, voteRef);
-    }
-
-    function setArtistDelisted(uint256, bool, bytes32) external pure {
-        revert("unused");
-    }
-
-    function entry(address token) external view returns (Entry memory) {
-        return _entries[token];
-    }
-
-    function isActive(address token) external view returns (bool) {
-        return _entries[token].status == Status.ACTIVE;
-    }
-
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IFederationRegistry).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
-    }
-}
-
-/// @dev Permit2's `permitWitnessTransferFrom`, with the same EIP-712 domain, type strings,
-///      unordered nonces and spender binding as the canonical deployment.
-contract MockPermit2 is ISignatureTransfer {
-    bytes32 public constant TOKEN_PERMISSIONS_TYPEHASH =
-        keccak256("TokenPermissions(address token,uint256 amount)");
-    string public constant STUB =
-        "PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,";
-    bytes32 public immutable DOMAIN_SEPARATOR;
-    mapping(address => mapping(uint256 => uint256)) public nonceBitmap;
-
-    constructor() {
-        DOMAIN_SEPARATOR = keccak256(
-            abi.encode(
-                keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)"),
-                keccak256("Permit2"),
-                block.chainid,
-                address(this)
-            )
-        );
-    }
-
-    function digest(
-        PermitTransferFrom memory permit,
-        address spender,
-        bytes32 witness,
-        string memory witnessTypeString
-    ) public view returns (bytes32) {
-        bytes32 typeHash = keccak256(abi.encodePacked(STUB, witnessTypeString));
-        bytes32 permissions = keccak256(abi.encode(TOKEN_PERMISSIONS_TYPEHASH, permit.permitted));
-        bytes32 data = keccak256(
-            abi.encode(typeHash, permissions, spender, permit.nonce, permit.deadline, witness)
-        );
-        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, data));
-    }
-
-    function permitWitnessTransferFrom(
-        PermitTransferFrom calldata permit,
-        SignatureTransferDetails calldata details,
-        address owner,
-        bytes32 witness,
-        string calldata witnessTypeString,
-        bytes calldata signature
-    ) external {
-        require(block.timestamp <= permit.deadline, "SignatureExpired");
-        require(details.requestedAmount <= permit.permitted.amount, "InvalidAmount");
-        uint256 bit = 1 << (permit.nonce & 0xff);
-        uint256 flipped = nonceBitmap[owner][permit.nonce >> 8] ^= bit;
-        require(flipped & bit != 0, "InvalidNonce");
-        require(
-            SignatureVerifier.isValid(
-                owner, digest(permit, msg.sender, witness, witnessTypeString), signature
-            ),
-            "InvalidSigner"
-        );
-        (bool ok, bytes memory data) = permit.permitted.token
-            .call(abi.encodeCall(IERC20.transferFrom, (owner, details.to, details.requestedAmount)));
-        require(ok && (data.length == 0 || abi.decode(data, (bool))), "TRANSFER_FROM_FAILED");
-    }
-}
-
-/// @dev A standard ERC-20 with EIP-2612 permits.
-contract PermitToken is ERC20Permit {
-    constructor() ERC20("Permit USD", "PUSD") ERC20Permit("Permit USD") { }
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
-}
-
 /// @dev A bidder, winner or wallet that misbehaves on demand when it receives ETH or an NFT, and
 ///      can call anything as itself.
 contract HostileActor is IERC721Receiver {
@@ -336,4 +232,110 @@ contract BlockablePermitToken is PermitToken {
         require(!blocked[to], "blocked");
         super._update(from, to, value);
     }
+}
+
+/// @dev A minimal federated template: every `IMintTarget` function, with the settlement hook as a
+///      no-op (as 6529 Editions implements it).
+contract PlainMintTarget is ERC721, IMintTarget {
+    PrimaryTerms internal _terms;
+    mapping(address => bool) public isAdmittedMinter;
+    uint256 public nextId;
+
+    constructor() ERC721("Federated", "FED") { }
+
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+        emit AdmittedMinterSet(adapter, admitted);
+    }
+
+    function setTerms(PrimaryTerms calldata terms) external {
+        _terms = terms;
+    }
+
+    function mint(address to, uint256, uint256, bytes calldata)
+        external
+        returns (uint256 tokenId, PrimaryTerms memory terms)
+    {
+        require(isAdmittedMinter[msg.sender], "minter");
+        tokenId = ++nextId;
+        terms = _terms;
+        _mint(to, tokenId);
+    }
+
+    function primaryTerms(uint256, bytes calldata) external view returns (PrimaryTerms memory t) {
+        t = _terms;
+        t.currency = address(0);
+    }
+
+    function burn(uint256 id, uint256) external {
+        require(isAdmittedMinter[msg.sender], "minter");
+        _burn(id);
+    }
+
+    function markPrimarySettled(uint256) external { }
+}
+
+/// @dev Mints a chosen token ID.
+contract HugeIdTarget is ERC721, IMintTarget {
+    mapping(address => bool) public isAdmittedMinter;
+    uint256 public id;
+
+    constructor() ERC721("Huge", "HUGE") { }
+
+    function setAdmittedMinter(address adapter, bool admitted) external {
+        isAdmittedMinter[adapter] = admitted;
+    }
+
+    function setId(uint256 id_) external {
+        id = id_;
+    }
+
+    function mint(address to, uint256, uint256, bytes calldata)
+        external
+        returns (uint256 tokenId, PrimaryTerms memory terms)
+    {
+        tokenId = id;
+        terms = PrimaryTerms(
+            SaleKind.ENGLISH_AUCTION,
+            address(0),
+            0,
+            "",
+            address(0xB),
+            address(0xC),
+            25_000,
+            address(0xA)
+        );
+        _mint(to, tokenId);
+    }
+
+    function primaryTerms(uint256, bytes calldata) external pure returns (PrimaryTerms memory t) {
+        t.saleKind = SaleKind.ENGLISH_AUCTION;
+    }
+
+    function burn(uint256, uint256) external { }
+
+    function markPrimarySettled(uint256) external { }
+}
+
+/// @dev A registry with different code, for the code-hash pin.
+contract MockFederationRegistryV2 is MockFederationRegistry {
+    function version() external pure returns (uint256) {
+        return 2;
+    }
+}
+
+/// @dev A bidding contract that forwards its refunds with `claim(currency, to)` and accepts ETH
+///      for other reasons, but has no way to move ETH out.
+contract ForwardingBidder {
+    function bid(IEnglishAuction auction, uint256 saleId) external payable {
+        auction.bid{ value: msg.value }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, address(this), msg.value, 0, 0, "")
+        );
+    }
+
+    function claimTo(IEnglishAuction auction, address treasury) external {
+        auction.claim(address(0), treasury);
+    }
+
+    receive() external payable { }
 }

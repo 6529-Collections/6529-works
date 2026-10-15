@@ -16,7 +16,7 @@ import {
     RevertOnZeroToken,
     SenderFeeToken,
     ReturnsFalseToken
-} from "../mocks/EconomicsMocks.sol";
+} from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 /// @notice The hostile-token matrix. Every money path (payment with escrow fallback, escrow

@@ -5,7 +5,7 @@ import { SplitWallet } from "src/economics/SplitWallet.sol";
 import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
-import { GasBurnerMock } from "../mocks/AdversarialTargets.sol";
+import { GasBurnerMock } from "../mocks/libraries/AdversarialTargets.sol";
 import {
     BlocklistToken,
     GasCheckingToken,
@@ -13,7 +13,7 @@ import {
     GasHungryToken,
     RejectingRecipient,
     StickyAllowanceToken
-} from "../mocks/EconomicsMocks.sol";
+} from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 contract RevenuePaymentTest is EconomicsBase {

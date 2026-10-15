@@ -17,7 +17,7 @@ import {
     RebasingToken,
     RejectingRecipient,
     ReentrantRecipient
-} from "../mocks/EconomicsMocks.sol";
+} from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 

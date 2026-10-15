@@ -22,7 +22,7 @@ import {
 import { Limits } from "src/interfaces/types/Limits.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { MockERC20 } from "../mocks/EconomicsMocks.sol";
+import { MockERC20 } from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -151,6 +151,7 @@ contract EconomicsResolverTest is EconomicsBase {
         assertEq(econ.networkFeeRecipient(PRODUCT_STREAM), address(0));
     }
 
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
     /// @dev CALLS-1 (resolver side): a recipient that could never be paid is refused, because
     ///      works lock their fee recipient at mint.
     function test_FeeRecipientMustBePayable() public {

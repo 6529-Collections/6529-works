@@ -2,6 +2,9 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import { RevenuePayment } from "src/economics/RevenuePayment.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
@@ -22,7 +25,13 @@ import {
 } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { HostileActor, MockMintTarget } from "../../mocks/auction/AuctionMocks.sol";
+import {
+    ForwardingBidder,
+    HostileActor,
+    HugeIdTarget,
+    MockMintTarget
+} from "../../mocks/sales/AuctionMocks.sol";
+import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -80,6 +89,7 @@ contract EnglishAuctionTest is AuctionBase {
         );
     }
 
+    /// Regression: MARKET-3 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-3: the auction takes the economics resolver (ERC-165 checked) and derives the
     ///      allowlist from it.
     function test_Constructor_RejectsAnUnfitResolver() public {
@@ -231,10 +241,11 @@ contract EnglishAuctionTest is AuctionBase {
         }
     }
 
-    /// @dev CALLS-1: a work paying the revenue escrow as its seller or fee recipient is refused at
+    /// Regression: CALLS-1 (docs/security/internal-review-2026-10.md)
+    /// @dev A work paying the revenue escrow as its seller or fee recipient is refused at
     ///      start and at start-with-bid, while nothing is in custody, because the escrow refuses
     ///      to be paid as a wallet and the work could never settle.
-    function test_CALLS1_StartRefusesTheEscrowAsSellerOrFeeRecipient() public {
+    function test_Start_RefusesTheEscrowAsSellerOrFeeRecipient() public {
         for (uint256 i; i < 2; ++i) {
             PrimaryTerms memory t = _terms(ETH);
             if (i == 0) t.feeRecipient = address(escrow);
@@ -333,6 +344,7 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.claimable(alice, address(usd)), 10e18);
     }
 
+    /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
     /// @dev MARKET-2: deprecation freezes the auction: bids and settlement wait for the
     ///      currency, claims never do, and the first settle after re-admission reopens the
     ///      auction for the governed duration.
@@ -431,6 +443,36 @@ contract EnglishAuctionTest is AuctionBase {
         );
         _start();
         assertEq(stream.balanceOf(address(auction)), 0);
+    }
+
+    /// Regression: L-1 (PoC F2, inverted) in the review of #21
+    /// @dev A zero fee with no fee recipient starts.
+    function test_Start_AZeroFeeWorkStarts() public {
+        stream.setTerms(
+            PrimaryTerms(SaleKind.ENGLISH_AUCTION, ETH, 0, "", seller, address(0), 0, artist)
+        );
+        uint256 saleId = auction.start(address(stream), "");
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.ACTIVE));
+    }
+
+    /// Regression: the review of #21
+    /// @dev Token IDs at the packing limit: 2^32 - 1 is accepted and round-trips; 2^32 is refused.
+    function test_Start_TokenIdPackingLimit() public {
+        HugeIdTarget t = new HugeIdTarget();
+        t.setAdmittedMinter(address(auction), true);
+        vm.prank(successor);
+        auction.setTarget(address(t), true);
+        t.setId(type(uint32).max);
+        uint256 saleId = auction.start(address(t), "");
+        assertEq(auction.auction(saleId).tokenId, type(uint32).max);
+        assertEq(saleId, auction.saleIdOf(address(t), type(uint32).max));
+        t.setId(uint256(type(uint32).max) + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(t), uint256(type(uint32).max) + 1
+            )
+        );
+        auction.start(address(t), "");
     }
 
     // ------------------------------------------------------------------------------ bids
@@ -625,13 +667,13 @@ contract EnglishAuctionTest is AuctionBase {
         usd.approve(address(permit2), type(uint256).max);
         Payment memory p = _permit2Payment(alicePk, saleId, carol, 10e18, 7);
         vm.startPrank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(saleId, relayer, p);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(other, carol, p);
         auction.bid(saleId, carol, p);
         Payment memory replay = _permit2Payment(alicePk, saleId, carol, 11e18, 7);
-        vm.expectRevert(bytes("InvalidNonce"));
+        vm.expectRevert(MockPermit2.InvalidNonce.selector);
         auction.bid(saleId, carol, replay);
         vm.stopPrank();
     }
@@ -677,10 +719,10 @@ contract EnglishAuctionTest is AuctionBase {
         bytes memory mintData = hex"c0ffee";
         Payment memory p = _startBidPayment(alicePk, mintData, carol, 5e18, 3);
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.startWithBid(address(stream), hex"c0ffef", carol, p);
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.startWithBid(address(stream), mintData, relayer, p);
         vm.prank(relayer);
         uint256 saleId = auction.startWithBid(address(stream), mintData, carol, p);
@@ -700,17 +742,147 @@ contract EnglishAuctionTest is AuctionBase {
         Payment memory more = _permit2Payment(alicePk, saleId, alice, 10e18, 9);
         more.amount = 11e18;
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(saleId, alice, more);
         Payment memory later = _permit2Payment(alicePk, saleId, alice, 10e18, 9);
         later.deadline += 1;
         vm.prank(relayer);
-        vm.expectRevert(bytes("InvalidSigner"));
+        vm.expectRevert(MockPermit2.InvalidSigner.selector);
         auction.bid(saleId, alice, later);
         vm.prank(relayer);
         auction.bid(saleId, address(0), p);
         assertEq(auction.auction(saleId).recipient, alice, "zero resolves to the payer");
     }
+
+    /// Regression: the review of #57
+    /// @dev An expired PERMIT or PERMIT2 payment reverts with `PaymentExpired`, as in the
+    ///      fixed-price and Dutch adapters, even where an existing allowance would pay.
+    function test_Bid_ExpiredPermitsRevertAlike() public {
+        uint256 saleId = _startUsd();
+        usd.mint(alice, 10e18);
+        vm.prank(alice);
+        usd.approve(address(auction), 10e18);
+        uint256 deadline = block.timestamp - 1;
+        Payment memory p = _permitPayment(alicePk, 10e18, deadline);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, deadline));
+        auction.bid(saleId, address(0), p);
+        Payment memory p2 = _permit2Payment(bobPk, saleId, bob, 10e18, 1);
+        vm.warp(p2.deadline + 1);
+        vm.prank(relayer);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, p2.deadline));
+        auction.bid(saleId, bob, p2);
+        // A direct payment carries no deadline.
+        vm.prank(alice);
+        auction.bid(saleId, address(0), _direct(alice, 10e18));
+        assertEq(auction.auction(saleId).bidder, alice);
+    }
+
+    /// Regression: the review of #21
+    /// @dev Boundaries: a bid at exactly the end reverts; a bid one second before extends to
+    ///      exactly now + window; a bid at end - window does not extend.
+    function test_Bid_TimingBoundaries() public {
+        uint256 saleId = _start();
+        uint256 end = auction.auction(saleId).endTime;
+        vm.warp(end - WINDOW);
+        _bidEth(saleId, alice, 1 ether);
+        assertEq(auction.auction(saleId).endTime, end, "no extension at exactly the window");
+        vm.warp(end - 1);
+        _bidEth(saleId, bob, 2 ether);
+        assertEq(auction.auction(saleId).endTime, end - 1 + WINDOW);
+        vm.warp(end - 1 + WINDOW);
+        vm.deal(carol, 3 ether);
+        vm.prank(carol);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.ENDED
+            )
+        );
+        auction.bid{ value: 3 ether }(saleId, address(0), _direct(carol, 3 ether));
+    }
+
+    /// Regression: mutant I5 in the review of #21
+    /// @dev A floor raised after the first bid does not apply to later bids.
+    function test_Bid_AFloorRaisedAfterTheFirstBidDoesNotApply() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _setFloor(ETH, 1 ether);
+        _bidEth(saleId, bob, 1.05 ether);
+        assertEq(auction.auction(saleId).bidder, bob);
+        assertEq(auction.auction(saleId).incrementFloor, ETH_FLOOR);
+    }
+
+    /// Regression: L-4 in the review of #21
+    /// @dev A bid for oneself stores no recipient; a bid for another stores it, and the
+    ///      next self-bid clears it.
+    function test_Bid_RecipientStoredOnlyWhenItDiffers() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        assertEq(auction.auction(saleId).recipient, alice, "resolved to the bidder");
+        vm.deal(bob, 2 ether);
+        vm.prank(bob);
+        auction.bid{ value: 2 ether }(saleId, carol, _direct(bob, 2 ether));
+        assertEq(auction.auction(saleId).recipient, carol);
+        _bidEth(saleId, alice, 3 ether);
+        assertEq(auction.auction(saleId).recipient, alice);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(1), alice);
+    }
+
+    /// Regression: surviving mutant M8 in the review of #33
+    /// @dev A recipient already stored is replaced when the next bid names a different third
+    ///      party, and the token goes to the latest one.
+    function test_Bid_RecipientChangesBetweenThirdParties() public {
+        uint256 saleId = _start();
+        address dave = makeAddr("dave");
+        _bidFor(saleId, alice, carol, 1 ether);
+        _bidFor(saleId, bob, dave, 2 ether);
+        assertEq(auction.auction(saleId).recipient, dave);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), dave, "the winning bid's recipient");
+    }
+
+    /// Regression: L-4 in the review of #21
+    /// @dev Bids above 96 bits (7.9e28 base units) are refused rather than truncated; the
+    ///      largest one is accepted.
+    function test_Bid_RefusesBidsAbove96Bits() public {
+        uint256 largest = _start();
+        _bidEth(largest, bob, type(uint96).max);
+        assertEq(auction.auction(largest).bid, type(uint96).max);
+        uint256 saleId = _start();
+        uint256 amount = uint256(type(uint96).max) + 1;
+        vm.deal(alice, amount);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(SafeCast.SafeCastOverflowedUintDowncast.selector, 96, amount)
+        );
+        auction.bid{ value: amount }(saleId, address(0), _direct(alice, amount));
+    }
+
+    /// @dev Golden values computed off-chain with `cast keccak`: the full Permit2 type hashes the
+    ///      auction's PERMIT2 bids are signed under (D16), built from `Typehashes`.
+    function test_Permit2Witness_Golden() public pure {
+        string memory stub =
+            "PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,";
+        assertEq(keccak256(abi.encodePacked(stub, Typehashes.BID_WITNESS_TYPE)), BID_PERMIT_GOLDEN);
+        assertEq(
+            keccak256(abi.encodePacked(stub, Typehashes.START_BID_WITNESS_TYPE)),
+            START_BID_PERMIT_GOLDEN
+        );
+        assertEq(
+            Typehashes.BID_WITNESS,
+            keccak256("Bid(uint256 saleId,address recipient,uint256 amount,uint256 deadline)")
+        );
+    }
+
+    bytes32 internal constant BID_PERMIT_GOLDEN =
+        0x0bfd3d1d308e98f9f0a38b17a9eaaad1118b7813eead91902f6714537c0eb034;
+    bytes32 internal constant START_BID_PERMIT_GOLDEN =
+        0xb44f39960bfdaf0c5fedccb2b3159844117a56c2d506bcf2c35776fe2c346acf;
 
     // ------------------------------------------------------------------------- settlement
 
@@ -974,6 +1146,64 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction));
     }
 
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md); the review of #57
+    /// @dev A settler that cannot forward the payout frame's gas in full is refused, so it
+    ///      cannot force a payout onto the credit route.
+    function test_Settle_AStarvedSettleRevertsInsteadOfCrediting() public {
+        uint256 saleId = _endedUsdSale();
+        (bool ok, bytes memory reason) =
+            address(auction).call{ gas: 900_000 }(abi.encodeCall(auction.settle, (saleId)));
+        assertFalse(ok, "refused");
+        assertEq(bytes4(reason), RevenuePayment.PaymentInsufficientGas.selector, "for want of gas");
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.ENDED));
+        assertEq(auction.claimable(seller, address(usd)), 0, "nothing credited");
+        auction.settle(saleId);
+        assertEq(usd.balanceOf(seller), 75e18, "paid directly with enough gas");
+    }
+
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md); the review of #57
+    /// @dev The least call gas a keeper must give an ERC-20 settlement (about 1.1M: the payout
+    ///      frame must be forwardable in full) against the gas it uses, and the same for ETH.
+    function test_Settle_SettlerGasLimitVersusGasUsed() public {
+        uint256 saleId = _endedUsdSale();
+        (uint256 limit, uint256 used) = _leastSettleGas(saleId);
+        emit log_named_uint("ERC-20 settle: least call gas", limit);
+        emit log_named_uint("ERC-20 settle: gas used", used);
+        assertLe(limit, 1_200_000);
+        assertLt(used, 300_000);
+        stream.setTerms(_terms(ETH));
+        uint256 ethSale = _start();
+        _bidEth(ethSale, bob, 1 ether);
+        vm.warp(auction.auction(ethSale).endTime);
+        (limit, used) = _leastSettleGas(ethSale);
+        emit log_named_uint("ETH settle: least call gas", limit);
+        emit log_named_uint("ETH settle: gas used", used);
+        assertLe(limit, 500_000);
+    }
+
+    function _endedUsdSale() internal returns (uint256 saleId) {
+        saleId = _startUsd();
+        _bidUsd(saleId, alice, 100e18);
+        vm.warp(auction.auction(saleId).endTime);
+    }
+
+    function _leastSettleGas(uint256 saleId) internal returns (uint256 lo, uint256 used) {
+        uint256 hi = 5_000_000;
+        lo = 100_000;
+        while (hi - lo > 1_000) {
+            uint256 mid = (lo + hi) / 2;
+            uint256 snap = vm.snapshotState();
+            (bool ok,) = address(auction).call{ gas: mid }(abi.encodeCall(auction.settle, (saleId)));
+            vm.revertToState(snap);
+            if (ok) hi = mid;
+            else lo = mid;
+        }
+        lo = hi;
+        uint256 before = gasleft();
+        auction.settle(saleId);
+        used = before - gasleft();
+    }
+
     /// @dev A recipient contract that can neither receive the token nor make the claim does not
     ///      strand it: the winning bidder claims it to any address. Nobody else can.
     function test_ClaimDelivery_TheWinnerCanRedirect() public {
@@ -1033,6 +1263,29 @@ contract EnglishAuctionTest is AuctionBase {
         );
     }
 
+    /// Regression: L-5 (PoC N2, inverted) in the review of #21
+    /// @dev After a recovery, the artist's current authority claims a no-bid pending delivery; an
+    ///      outsider still cannot.
+    function test_ClaimDelivery_ANoBidClaimFollowsTheCurrentAuthority() public {
+        HostileActor oldWallet = new HostileActor();
+        oldWallet.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        PrimaryTerms memory t = _terms(ETH);
+        t.creator = address(oldWallet);
+        stream.setTerms(t);
+        uint256 saleId = _start();
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.pendingDelivery(saleId), address(oldWallet));
+        address recovered = makeAddr("recoveredAuthority");
+        stream.setCreatorNow(recovered);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, alice);
+        vm.prank(recovered);
+        auction.claimDelivery(saleId, recovered);
+        assertEq(stream.ownerOf(1), recovered);
+    }
+
     // ---------------------------------------------------------------------------- credits
 
     function test_Claim_RevertsWithNothingOrNoDestination() public {
@@ -1056,6 +1309,23 @@ contract EnglishAuctionTest is AuctionBase {
         );
         auction.claim(ETH, address(refusing));
         assertEq(auction.claimable(alice, ETH), 1 ether);
+    }
+
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md); L5 in the review of #57
+    /// @dev `claimFor` refuses ETH: an outbid bidder's ETH refund is claimed by the bidder, to the
+    ///      address it chooses, and nobody can push it into a contract that cannot move it on.
+    function test_ClaimFor_RefusesEth() public {
+        uint256 saleId = _start();
+        ForwardingBidder fb = new ForwardingBidder();
+        vm.deal(address(this), 1 ether);
+        fb.bid{ value: 1 ether }(auction, saleId);
+        _bidEth(saleId, alice, 2 ether);
+        vm.prank(makeAddr("griefer"));
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidAsset.selector, ETH));
+        auction.claimFor(address(fb), ETH);
+        address treasury = makeAddr("treasury");
+        fb.claimTo(auction, treasury);
+        assertEq(treasury.balance, 1 ether);
     }
 
     // ------------------------------------------------------------------------------ views
@@ -1172,6 +1442,36 @@ contract EnglishAuctionTest is AuctionBase {
             s := mload(add(sig, 0x40))
             v := byte(0, mload(add(sig, 0x60)))
         }
+    }
+
+    // ------------------------------------------------------------------- 96-bit arithmetic
+
+    /// @dev The auction's fee and increment formulas, exact at 96 bits: the fee rounds down
+    ///      and the step rounds up, as `Math.mulDiv` does.
+    function testFuzz_FeeMatchesMulDivFloor(uint96 price, uint32 share) public pure {
+        share = uint32(bound(share, 0, 100_000));
+        uint256 exact = uint256(price) * share / 100_000;
+        assertEq(exact, Math.mulDiv(price, share, 100_000));
+        assertLe(exact, price);
+    }
+
+    function testFuzz_StepMatchesMulDivCeil(uint96 high, uint24 share) public pure {
+        share = uint24(bound(share, 0, 100_000));
+        assertEq(
+            (uint256(high) * share + 100_000 - 1) / 100_000,
+            Math.mulDiv(high, share, 100_000, Math.Rounding.Ceil)
+        );
+    }
+
+    function test_ArithmeticEdgeValues() public pure {
+        uint96 m = type(uint96).max;
+        assertEq(uint256(m) * 100_000 / 100_000, Math.mulDiv(m, 100_000, 100_000));
+        assertEq(
+            (uint256(m) * 100_000 + 99_999) / 100_000,
+            Math.mulDiv(m, 100_000, 100_000, Math.Rounding.Ceil)
+        );
+        assertEq((uint256(1) * 1 + 99_999) / 100_000, 1);
+        assertEq((uint256(0) * 5_000 + 99_999) / 100_000, 0);
     }
 }
 

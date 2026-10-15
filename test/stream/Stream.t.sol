@@ -15,9 +15,12 @@ import { Roles } from "src/governance/Roles.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_DEFAULT, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     ItemKind,
+    License,
     MoveAuthorization,
     PackageItem,
     Party,
@@ -28,6 +31,7 @@ import {
 import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
+import { WorkRecords } from "src/stream/WorkRecords.sol";
 import {
     MockEconomics,
     MockEditions,
@@ -37,6 +41,7 @@ import {
     MockWorkRecords,
     RoyaltyProbe
 } from "../mocks/stream/StreamMocks.sol";
+import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamFixture } from "./StreamFixture.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
@@ -1253,5 +1258,195 @@ contract StreamTest is StreamFixture {
         vm.expectRevert(IStream.InvalidWorkTerms.selector);
         auction.start(stream, data);
         econ.setTerms(_defaultTerms());
+    }
+}
+
+/// @notice Stream's behaviour where the work-records satellite takes part: the license checks
+///         at mint that keep every work openable, burns by the minting adapter, the one-shot
+///         satellite bindings, edition links, and the rate `coreOf` reports after a re-rate.
+contract StreamWithRecordsTest is RecordsFixture {
+    /// Regression: F1 (M2) in the reviews of #22
+    /// @dev A license ID `WorkRecords` would refuse never mints, so no license can leave a work
+    ///      unopenable.
+    function test_mint_refusesALicenseIdTheRecordsWouldRefuse() public {
+        string[4] memory badIds = ["", "CC BY 4.0", "cc_by", string(new bytes(65))];
+        for (uint256 i; i < badIds.length; ++i) {
+            MediaFile[] memory media = _single(i, true);
+            PackageItem memory item = _recordsItem(i, media);
+            item.license = License(badIds[i], bytes32(0));
+            bytes memory data = _request(item);
+            vm.expectRevert(IStream.InvalidLicenseId.selector);
+            auction.start(stream, data);
+        }
+    }
+
+    /// Regression: F2 (M3) in the reviews of #22
+    /// @dev A removed adapter still cancels and burns the disputed token it minted.
+    function test_burn_aRemovedAdapterStillBurnsItsDisputedToken() public {
+        uint256 tokenId = _mint(1);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        auction.burn(stream, tokenId, 1);
+        assertEq(stream.totalSupply(), 0);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, tokenId));
+        stream.work(tokenId);
+    }
+
+    /// Regression: F2b (M3) in the reviews of #22
+    /// @dev An admitted adapter that did not mint a token cannot burn it, even while
+    ///      it holds it.
+    function test_burn_refusesAnAdmittedAdapterThatDidNotMint() public {
+        uint256 tokenId = _mint(1);
+        MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(other), true);
+        address collector = makeAddr("collector");
+        auction.deliver(address(stream), tokenId, collector);
+        vm.prank(collector);
+        stream.transferFrom(collector, address(other), tokenId);
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
+        other.burn(stream, tokenId, 1);
+        assertEq(stream.totalSupply(), 1);
+    }
+
+    /// Regression: F3 (L1) in the reviews of #22
+    /// @dev A one-shot bind refuses a satellite serving another Stream and accepts the
+    ///      fresh Stream's own.
+    function test_bind_refusesASatelliteOfAnotherStream() public {
+        Stream fresh = new Stream(
+            address(manager),
+            address(registry),
+            address(artists),
+            address(econ),
+            address(entropy),
+            address(renderer),
+            address(renderer).codehash,
+            marketOwner
+        );
+        assertEq(records.stream(), address(stream));
+        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(records)));
+        fresh.bindWorkRecords(address(records));
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(editionsMock))
+        );
+        fresh.bindEditions(address(editionsMock));
+
+        WorkRecords own =
+            new WorkRecords(address(manager), address(fresh), address(store), _license("cc0-1.0"));
+        fresh.bindWorkRecords(address(own));
+        assertEq(fresh.workRecords(), address(own));
+        MockEditions ownEditions = new MockEditions(address(fresh));
+        fresh.bindEditions(address(ownEditions));
+        assertEq(fresh.editions(), address(ownEditions));
+    }
+
+    /// Regression: F4 in the reviews of #22
+    /// @dev Stream links an edition only to a settled master (D14, defence in depth).
+    function test_linkEdition_needsASettledMaster() public {
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.kind = ItemKind.EDITION_MASTER;
+        uint256 tokenId = _mint(item);
+        assertFalse(stream.primarySaleSettled(tokenId));
+        vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, tokenId));
+        editionsMock.link(stream, tokenId, tokenId);
+        auction.settle(stream, tokenId);
+        editionsMock.link(stream, tokenId, tokenId);
+        (address e,) = stream.editionOf(tokenId);
+        assertEq(e, address(editionsMock));
+    }
+
+    /// Regression: F5 (L2) in the reviews of #22
+    /// @dev A zero fee may come with a zero fee recipient, and the start reports it;
+    ///      a nonzero fee needs a recipient.
+    function test_mint_aZeroFeeAllowsAZeroRecipient() public {
+        econ.setTerms(WorkTerms(seller, address(0), 0, address(0), 6_529));
+        (uint256 tokenId, PrimaryTerms memory terms) = auction.start(stream, _request(_item(1)));
+        assertEq(terms.feeRecipient, address(0));
+        assertEq(terms.feeShare, 0);
+        assertEq(stream.primaryTerms(tokenId, "").feeRecipient, address(0));
+        (address receiver,) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(receiver, seller);
+
+        econ.setTerms(WorkTerms(seller, address(0), 1, address(0), 6_529));
+        bytes memory data = _request(_item(2));
+        vm.expectRevert(IStream.InvalidWorkTerms.selector);
+        auction.start(stream, data);
+    }
+
+    /// Regression: L5 in the reviews of #22
+    /// @dev The master's current rate is readable through `coreOf`, so an edition created
+    ///      after a rate change can inherit it.
+    function test_coreOf_reportsTheCurrentRate() public {
+        (uint256 tokenId, PackageItem memory item) = _work(1);
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes[] memory sigs = _both(_royaltyHash(tokenId, 8_000, state, deadline));
+        vm.prank(governor);
+        records.setRoyaltyRate(tokenId, 8_000, item, state, deadline, sigs);
+        (,,,,, uint32 rate) = stream.coreOf(tokenId);
+        assertEq(rate, 8_000);
+    }
+
+    // ------------------------------------------------------------------------------ round 2
+
+    /// Regression: a nit (S3) in the reviews of #22
+    /// @dev The license-ID length bound is exact. 64 valid characters mint, 65 do not.
+    function test_mint_licenseIdLengthBoundIsExact() public {
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = License(string(_repeatA(64)), _registerText("long id text"));
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        assertEq(bytes(records.licenseOf(tokenId).spdxId).length, 64);
+
+        media = _single(2, true);
+        item = _recordsItem(2, media);
+        item.license = License(string(_repeatA(65)), bytes32(0));
+        bytes memory data = _request(item);
+        vm.expectRevert(IStream.InvalidLicenseId.selector);
+        auction.start(stream, data);
+
+        vm.prank(governor);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.relicense(
+            tokenId, License(string(_repeatA(65)), bytes32(0)), item, bytes32(0), 0, new bytes[](0)
+        );
+    }
+
+    function _repeatA(uint256 n) internal pure returns (bytes memory out) {
+        out = new bytes(n);
+        for (uint256 i; i < n; ++i) {
+            out[i] = "a";
+        }
+    }
+
+    /// Regression: the reviews of #22
+    /// @dev Re-admission keeps the index, so a removed and re-admitted adapter still
+    ///      burns its token; a never-admitted holder (index 0) cannot.
+    function test_burn_readmittedAdapterBurnsAndNeverAdmittedCannot() public {
+        uint256 tokenId = _mint(1);
+        vm.startPrank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        stream.setAdmittedMinter(address(auction), true);
+        vm.stopPrank();
+        uint256 second = _mint(2);
+        auction.burn(stream, tokenId, 1);
+
+        MockSaleAdapter stranger = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
+        auction.deliver(address(stream), second, address(stranger));
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(stranger))
+        );
+        stranger.burn(stream, second, 1);
+    }
+
+    /// Regression: the reviews of #22
+    /// @dev The minting adapter cannot burn after settlement.
+    function test_burn_refusedAfterSettlement() public {
+        uint256 tokenId = _mint(1);
+        auction.settle(stream, tokenId);
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, tokenId));
+        auction.burn(stream, tokenId, 1);
     }
 }

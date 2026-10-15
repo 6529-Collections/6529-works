@@ -4,11 +4,11 @@ pragma solidity ^0.8.24;
 import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 import { ContentBase } from "../ContentBase.sol";
 import {
-    MockDisputeLog,
-    MockEditions,
-    MockStream,
-    MockWorkRecords
-} from "../../mocks/RendererMocks.sol";
+    RendererDisputeLogMock,
+    RendererEditionsMock,
+    RendererWorkRecordsMock
+} from "../../mocks/content/RendererMocks.sol";
+import { StreamMock } from "../../mocks/stream/StreamMock.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { Renderer } from "src/content/Renderer.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
@@ -59,17 +59,17 @@ abstract contract RendererBase is ContentBase {
     uint256 internal constant MAX_INLINE_BYTES = 1_048_576;
     string internal constant PREFIX = "data:application/json;utf8,";
 
-    MockStream internal stream;
-    MockWorkRecords internal records;
-    MockDisputeLog internal disputeLog;
+    StreamMock internal stream;
+    RendererWorkRecordsMock internal records;
+    RendererDisputeLogMock internal disputeLog;
     Renderer internal renderer;
 
     function setUp() public virtual {
         store = new ContentStore();
-        stream = new MockStream();
-        records = new MockWorkRecords();
+        stream = new StreamMock();
+        records = new RendererWorkRecordsMock();
         stream.setWorkRecords(address(records));
-        disputeLog = new MockDisputeLog();
+        disputeLog = new RendererDisputeLogMock();
         renderer = new Renderer(store, IStatementLog(address(disputeLog)), THRESHOLD);
     }
 

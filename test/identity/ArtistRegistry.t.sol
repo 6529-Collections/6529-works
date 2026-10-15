@@ -16,7 +16,7 @@ import {
     Standing
 } from "src/interfaces/types/IdentityTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { ERC1271WalletMock } from "../mocks/AdversarialTargets.sol";
+import { ERC1271WalletMock } from "../mocks/libraries/AdversarialTargets.sol";
 import {
     EditionsMastersMock,
     FailingConsolidationSource,
@@ -24,9 +24,9 @@ import {
     OversizedConsolidationSource,
     PackageRegistryStub,
     PullOnlyPayeeMock,
-    SplitFactoryWalletsMock,
-    StreamWorksMock
+    SplitFactoryWalletsMock
 } from "../mocks/identity/IdentityWorksMocks.sol";
+import { StreamMock } from "../mocks/stream/StreamMock.sol";
 import { RepricedDelegationMock } from "../mocks/identity/RepricedDelegationMock.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
@@ -318,6 +318,7 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.executeChange(artistId);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2 (formerly L3, where a registration meanwhile cleared the change): the
     ///      staging reserves the new authority, so neither a registration nor another artist's
     ///      change can take it while the change waits, and the change executes.
@@ -346,6 +347,7 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.reservedFor(newAuthority), 0, "the reservation ends with the change");
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2: only a change that moves the authority reserves anything, an override
     ///      replacing a STANDARD change moves the reservation, and every way a change ends
     ///      releases it.
@@ -380,6 +382,7 @@ contract ArtistRegistryTest is IdentityFixture {
         _register(thief);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2: a change cleared at execution (its payout became a split wallet) releases
     ///      the reservation too.
     function test_Reservation_ReleasedWhenExecutionClears() public {
@@ -764,6 +767,7 @@ contract ArtistRegistryTest is IdentityFixture {
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
     }
 
+    /// Regression: SIGS-3 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-3: an authority the artist rotated away from never becomes its authority again
     ///      (A, then B, then A is refused), by a STANDARD change or an override, so the signatures
     ///      A left unused (moves, sale consents, acceptances, which check the current authority)
@@ -818,6 +822,62 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.heartbeat(9);
     }
 
+    /// Regression: PoC-5 (an observation) in the review of #16
+    /// @dev A heartbeat during a LOST_KEY notice does not stop it; only a
+    ///      captured wallet or the guardian can (ADR: the old key cannot cancel an override).
+    function test_Heartbeat_DuringALostKeyNoticeDoesNotStopIt() public {
+        vm.warp(block.timestamp + 366 days);
+        _stageOverride(ChangeKind.LOST_KEY, _identity(newAuthority, newAuthority), newKey);
+        vm.prank(artist);
+        registry.heartbeat(artistId);
+        vm.warp(block.timestamp + 180 days);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority);
+    }
+
+    function _assertActivityNow() internal view {
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, block.timestamp);
+    }
+
+    /// Regression: M2 (dormancy accounting) in the review of #16
+    function test_Activity_OverridesAndVetoesDoNotCount() public {
+        (, uint64 last) = registry.artist(artistId);
+        vm.warp(block.timestamp + 1 days);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        (, uint64 now_) = registry.artist(artistId);
+        assertEq(now_, last);
+    }
+
+    /// Regression: M2 (dormancy accounting) in the review of #16
+    function test_Activity_CancelsAndExecutionsCount() public {
+        vm.warp(block.timestamp + 1 days);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        _assertActivityNow();
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(governor);
+        registry.stageOverride(
+            artistId, ChangeKind.CONTESTED, _identity(artist, payout), keccak256("e"), 0, ""
+        );
+        vm.warp(block.timestamp + 180 days);
+        registry.executeChange(artistId);
+        _assertActivityNow();
+
+        _stage(artistKey, _identity(artist, artist), 0);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        _assertActivityNow();
+    }
+
     // ----------------------------------------------------------------- governed wiring
 
     function test_SetConsolidationSource() public {
@@ -831,6 +891,7 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(registry.consolidationSourceCodeHash(), address(next).codehash);
     }
 
+    /// Regression: DEPS-6 (docs/security/internal-review-2026-10.md)
     /// @dev DEPS-6: the consolidation source's install-time code-hash pin holds at every use. A
     ///      source whose code no longer matches the pin (simulated with `vm.etch`) is never
     ///      trusted: staging, heartbeats and refreshes revert with `DependencyCodeChanged`, while an
@@ -926,6 +987,7 @@ contract ArtistRegistryTest is IdentityFixture {
         _stage(artistKey, _identity(artist, payout), 0);
     }
 
+    /// Regression: IDENTITY-4 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-4: a repriced read within the stipend's headroom changes nothing, and a read
     ///      that exhausts it makes staging, heartbeats and refreshes revert instead of reading
     ///      "not consolidated", while a registration goes ahead and skips its refresh (review
@@ -1042,7 +1104,7 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Bindings_AreOneShot() public {
-        StreamWorksMock stream = new StreamWorksMock();
+        StreamMock stream = new StreamMock();
         address federation = _federationStub();
         vm.startPrank(admin);
         vm.expectEmit(address(registry));
@@ -1102,7 +1164,7 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_Bindings_RevertForNonAdmin() public {
-        address stream = address(new StreamWorksMock());
+        address stream = address(new StreamMock());
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, governor)
         );
@@ -1136,6 +1198,22 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.listFederatedContract(5, token);
     }
 
+    /// Regression: the bounds in the review of #16
+    function test_FederatedList_BoundedToSixtyFour() public {
+        address federation = address(new FederationRegistryStub());
+        vm.prank(admin);
+        registry.bindFederationRegistry(federation);
+        vm.startPrank(federation);
+        for (uint256 i; i < registry.MAX_FEDERATED(); ++i) {
+            registry.listFederatedContract(artistId, address(uint160(0xF000 + i)));
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.FederatedListFull.selector, artistId)
+        );
+        registry.listFederatedContract(artistId, stranger);
+        vm.stopPrank();
+    }
+
     // ----------------------------------------------------------------- artist role resolution
 
     function test_IsArtist_FalseBeforeTheStreamIsSet() public view {
@@ -1143,7 +1221,7 @@ contract ArtistRegistryTest is IdentityFixture {
     }
 
     function test_IsArtist_StreamWorksAndEditions() public {
-        (StreamWorksMock stream, EditionsMastersMock editions) = _wireStream();
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
         assertTrue(registry.isArtist(address(stream), 1, artist));
         assertTrue(registry.isArtist(address(editions), 1, artist));
         assertFalse(registry.isArtist(address(stream), 1, wallet), "wallets are not the artist");
@@ -1163,12 +1241,13 @@ contract ArtistRegistryTest is IdentityFixture {
 
     // ----------------------------------------------------------------- active authority
 
+    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1 (owner decision A): from its staging until it executes, an override that
     ///      would move the authority leaves the artist without an active authority, so nobody
     ///      acts as the artist (`isArtist` is false for both keys); `authorityOf` keeps
     ///      identifying it. After execution the new authority is active.
     function test_ActiveAuthority_RestrainedUntilTheOverrideExecutes() public {
-        (StreamWorksMock stream,) = _wireStream();
+        (StreamMock stream,) = _wireStream();
         assertEq(registry.activeAuthorityOf(artistId), artist);
         _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
         assertEq(registry.activeAuthorityOf(artistId), address(0), "restrained");
@@ -1299,12 +1378,34 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(artist.balance, 0);
     }
 
+    /// Regression: PoC-4 (inverted) in the review of #16
+    /// @dev A no-op override does not freeze the payout.
+    function test_PayoutFreeze_ANoOpOverrideDoesNotFreeze() public {
+        (ArtistIdentity memory current,) = registry.artist(artistId);
+        vm.prank(governor);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, current, keccak256("x"), 0, "");
+        assertEq(registry.payoutAddress(artistId), artist);
+    }
+
+    /// Regression: PoC-7 (inverted) in the review of #16
+    /// @dev A recovery override that keeps a safe payout does not freeze it.
+    function test_PayoutFreeze_ARecoveryOverrideKeepsASafePayoutLive() public {
+        _stage(artistKey, _identity(artist, payout), 0);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        PullOnlyPayeeMock payee = new PullOnlyPayeeMock{ value: 1 ether }(registry, artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
+        vm.prank(payout);
+        payee.release();
+        assertEq(payout.balance, 1 ether);
+    }
+
     // ----------------------------------------------------------------- payout validation
 
     /// @dev Pull-only artist payees: a protocol contract or a split wallet as the payout would
     ///      strand or stall funds, and is rejected at staging.
     function test_PayoutValidation_RejectsProtocolContractsAndSplitWallets() public {
-        (StreamWorksMock stream, EditionsMastersMock editions) = _wireStream();
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
         SplitFactoryWalletsMock factory = _wireSplitFactory();
         address splitWallet = makeAddr("splitWallet");
         factory.setWallet(splitWallet, true);
@@ -1474,8 +1575,8 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.bindSplitFactory(address(factory));
     }
 
-    function _wireStream() internal returns (StreamWorksMock stream, EditionsMastersMock editions) {
-        stream = new StreamWorksMock();
+    function _wireStream() internal returns (StreamMock stream, EditionsMastersMock editions) {
+        stream = new StreamMock();
         editions = new EditionsMastersMock();
         stream.setEditions(address(editions));
         stream.setWork(1, artistId);

@@ -11,7 +11,7 @@ import {
     ReturnBombMock,
     ERC1271WalletMock,
     Delegate1271Mock
-} from "../mocks/AdversarialTargets.sol";
+} from "../mocks/libraries/AdversarialTargets.sol";
 
 contract SignatureVerifierHarness {
     function isValid(address signer, bytes32 digest, bytes calldata signature)

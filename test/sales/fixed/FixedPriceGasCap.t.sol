@@ -5,7 +5,7 @@ import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
-import { BlocklistToken, Mock1271Account } from "../../mocks/EconomicsMocks.sol";
+import { BlocklistToken, Mock1271Account } from "../../mocks/economics/EconomicsMocks.sol";
 import { GasBurnerWallet } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 

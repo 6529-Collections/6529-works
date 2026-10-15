@@ -20,7 +20,7 @@ import {
     GasHungryPayee,
     GasHungryWallet,
     Mock1271Account
-} from "../mocks/EconomicsMocks.sol";
+} from "../mocks/economics/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
 
 /// @dev Ported from 6529Stream PR #744 `StreamClaimRouter.t.sol` (adversarial claim batches),
@@ -66,6 +66,7 @@ contract ClaimRouterTest is EconomicsBase {
         claims[1] = IClaimRouter.Claim(second, ETH, secondPayee);
     }
 
+    /// Regression: MONEY-4, CALLS-1 (docs/security/internal-review-2026-10.md)
     /// @dev The router declares itself (ERC-165), so the registry and the resolver can refuse it
     ///      as a payout or fee recipient (MONEY-4, CALLS-1).
     function test_SupportsInterface() public view {
@@ -314,6 +315,7 @@ contract ClaimRouterTest is EconomicsBase {
         _hostileThenReal(5);
     }
 
+    /// Regression: MONEY-3 (docs/security/internal-review-2026-10.md)
     /// @dev A target that burns all the gas it gets (`INVALID`) cannot be told apart from an item
     ///      that needs more gas: offered less than the shortfall ceiling, it reverts the
     ///      continue-mode batch and names its index (MONEY-3). It never starves a later item
@@ -400,6 +402,7 @@ contract ClaimRouterTest is EconomicsBase {
         }
     }
 
+    /// Regression: MONEY-3 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-3 regression (the review's PoC): an item that needs more gas than its minimum
     ///      share, as a first release does under Glamsterdam, is paid at the gas limit estimation
     ///      settles on. It used to fail silently there (`ClaimFailed`, the batch succeeding).
@@ -422,6 +425,7 @@ contract ClaimRouterTest is EconomicsBase {
         }
     }
 
+    /// Regression: MONEY-3 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-3: an item whose wallet frame runs out of the gas it was given reverts the
     ///      continue-mode batch with `ClaimInsufficientGas`, so estimation raises the limit,
     ///      instead of reporting a failure the caller paid for. Given enough, it is paid.
@@ -449,6 +453,7 @@ contract ClaimRouterTest is EconomicsBase {
         assertEq(hungry.releases(), 1);
     }
 
+    /// Regression: MONEY-3 (docs/security/internal-review-2026-10.md)
     /// @dev MONEY-3, signed items: the same holds for a signed release whose recipient's receipt
     ///      costs more than the signed minimum leaves.
     function test_ContinueSignedAtItsEstimatePaysAnItemAboveItsMinimum() public {

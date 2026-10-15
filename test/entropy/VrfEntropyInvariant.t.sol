@@ -6,7 +6,10 @@ import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { MockPackageRegistry, MockVrfCoordinator } from "test/mocks/EntropyMocks.sol";
+import {
+    EntropyPackageRegistryMock,
+    MockVrfCoordinator
+} from "test/mocks/entropy/EntropyMocks.sol";
 import { EntropyBase, EntropyItems } from "./EntropyBase.sol";
 
 /// @dev Drives the module with arbitrary requests, deliveries, revocations and consumptions, and
@@ -24,7 +27,7 @@ contract EntropyHandler is Test, EntropyItems {
 
     VrfEntropyModule internal immutable module;
     MockVrfCoordinator internal immutable coordinator;
-    MockPackageRegistry internal immutable registry;
+    EntropyPackageRegistryMock internal immutable registry;
     bytes32 internal immutable root;
     bytes32 internal immutable noneRoot;
     bytes32 internal immutable artistRoot;
@@ -46,7 +49,7 @@ contract EntropyHandler is Test, EntropyItems {
     constructor(
         VrfEntropyModule module_,
         MockVrfCoordinator coordinator_,
-        MockPackageRegistry registry_,
+        EntropyPackageRegistryMock registry_,
         bytes32[3] memory roots_
     ) {
         module = module_;

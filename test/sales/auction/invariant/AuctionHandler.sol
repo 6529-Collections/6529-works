@@ -18,9 +18,9 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import {
     BlockablePermitToken,
     HostileActor,
-    MockMintTarget,
-    MockPermit2
-} from "../../../mocks/auction/AuctionMocks.sol";
+    MockMintTarget
+} from "../../../mocks/sales/AuctionMocks.sol";
+import { MockPermit2 } from "../../../mocks/sales/SaleMocks.sol";
 
 /// @dev Drives one currency's auctions through every lifecycle path: starts and start-with-bids,
 ///      bids from honest and hostile bidders for themselves, for each other or for the hostile
@@ -508,7 +508,7 @@ contract AuctionHandler is Test {
             abi.encode(Typehashes.BID_WITNESS, saleId, recipient, amount, permit.deadline)
         );
         bytes32 digest =
-            permit2.digest(permit, address(auction), witness, Typehashes.BID_WITNESS_TYPE);
+            permit2.witnessDigest(address(auction), permit, witness, Typehashes.BID_WITNESS_TYPE);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
         return Payment(
             PaymentMethod.PERMIT2,

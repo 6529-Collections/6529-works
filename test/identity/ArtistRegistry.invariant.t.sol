@@ -63,6 +63,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(registry.payoutAddress(artistId), frozen ? address(0) : handler.ghostPayout());
     }
 
+    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1: the active authority is zero exactly while a pending, unlapsed override
     ///      would move the authority, and the authority otherwise.
     function invariant_ActiveAuthorityIsRestrainedOnlyByAnAuthorityMovingOverride() public view {
@@ -133,6 +134,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(handler.lapsed(), 1);
     }
 
+    /// Regression: IDENTITY-2 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-2: exactly the next authority of a pending change that moves the authority
     ///      is reserved for the artist; every other key is unreserved.
     function invariant_OnlyThePendingNextAuthorityIsReserved() public view {
@@ -147,6 +149,7 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         }
     }
 
+    /// Regression: SIGS-3 (docs/security/internal-review-2026-10.md)
     /// @dev SIGS-3: exactly the keys that have been the artist's authority resolve to it, and the
     ///      handler's model (which refuses a return to any of them) matches.
     function invariant_PastAuthoritiesResolveToTheArtist() public view {

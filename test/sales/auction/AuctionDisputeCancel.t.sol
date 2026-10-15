@@ -4,13 +4,13 @@ pragma solidity ^0.8.24;
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
-import { IntegrationBase } from "../integration/IntegrationBase.sol";
+import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 
-/// @notice LIFECYCLE-4 regression (the auction's governed cancel), on the real stack: `cancel`
+/// @notice An English auction's governed `cancel` after an upheld dispute, on the real stack: it
 ///         must cite the token's current latest dispute outcome, recorded after the dispute
 ///         pause. An outcome recorded before the pause, about the token or about its package
 ///         item before the mint, cannot cancel the auction; a fresh one can.
-contract Lifecycle4AuctionRegressionTest is IntegrationBase {
+contract AuctionDisputeCancelTest is IntegrationBase {
     address internal artist;
     address internal bidder = makeAddr("disputeBidder");
 
@@ -34,7 +34,8 @@ contract Lifecycle4AuctionRegressionTest is IntegrationBase {
         manager.execute(address(auction), data);
     }
 
-    function test_LIFECYCLE4_OutcomeBeforeThePauseCannotCancel() public {
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
+    function test_Cancel_RefusesAnOutcomeRecordedBeforeThePause() public {
         Work[] memory works = _one(_work(artist, collectionId));
         bytes32 root = _publish(works);
         (uint256 saleId, uint256 tokenId) = _start(root, works, 0);
@@ -62,7 +63,8 @@ contract Lifecycle4AuctionRegressionTest is IntegrationBase {
         );
     }
 
-    function test_LIFECYCLE4_ItemOutcomeBeforeTheMintCannotCancel() public {
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
+    function test_Cancel_RefusesAnItemOutcomeRecordedBeforeTheMint() public {
         Work[] memory works = _one(_work(artist, collectionId));
         bytes32 root = _publish(works);
         bytes32 itemOutcome = _platformStatement(
@@ -84,7 +86,8 @@ contract Lifecycle4AuctionRegressionTest is IntegrationBase {
         assertEq(auction.claimable(bidder, address(0)), 1 ether, "the bid is credited back");
     }
 
-    function test_LIFECYCLE4_OnlyTheLatestOutcomeCancels() public {
+    /// Regression: LIFECYCLE-4 (docs/security/internal-review-2026-10.md)
+    function test_Cancel_OnlyTheLatestOutcomeCancels() public {
         Work[] memory works = _one(_work(artist, collectionId));
         bytes32 root = _publish(works);
         (uint256 saleId, uint256 tokenId) = _start(root, works, 0);

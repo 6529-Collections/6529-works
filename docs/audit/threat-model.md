@@ -20,8 +20,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
   ([ADR 0003](../adr/0003-build-time-decisions.md)), and the integrated system had an
   [internal adversarial review](../security/internal-review-2026-10.md) in October 2026, whose
   fixes merged in PRs #51 to #57. Finding IDs such as MARKET-2 or IDENTITY-1 mark the defenses
-  that came from it; the regression tests for the sales findings are in
-  [`test/adv/`](../../test/adv/). This is not an audit.
+  that came from it; each finding's regression tests carry its ID in a `/// Regression:` NatSpec
+  line ([the test map](../../test/README.md)). This is not an audit.
 - **How to read the tables.** Each row is one entry point and one threat. The mitigation names
   the rule (its spec page holds the enforcing function and the tests) and, in brackets, the
   finding it closed. Delays use the [delay classes](../glossary.md#delay-class): immediate;
@@ -267,7 +267,8 @@ See the [register](../spec/README.md#differences-from-the-adrs).
   [trust assumptions](trust-assumptions.md), [role and permission matrix](roles.md),
   [known limitations](known-limitations.md), [invariants](invariants.md).
 - Review: [internal adversarial review, October 2026](../security/internal-review-2026-10.md);
-  regression tests in [`test/adv/`](../../test/adv/).
+  regression tests by finding ID in the
+  [appendix](../security/internal-review-2026-10.md#7-appendix-how-to-reproduce).
 - ADRs: [0001](../adr/0001-v1-scope.md), [0002](../adr/0002-access-manager-hardening.md),
   [0003](../adr/0003-build-time-decisions.md), [0004](../adr/0004-gas-budgets-under-glamsterdam.md).
 - Architecture: [call flows and trust boundaries](../architecture.md#trust-boundaries).

@@ -28,13 +28,13 @@ import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { MockArtistResolver } from "../../mocks/EconomicsMocks.sol";
+import { MockArtistResolver } from "../../mocks/economics/EconomicsMocks.sol";
 import {
     LeanArtistRegistry,
     LeanEconomicsResolver,
     LeanPackageRegistry,
     LeanStream
-} from "../../mocks/auction/LeanStartStack.sol";
+} from "../../mocks/sales/LeanStartStack.sol";
 
 /// @dev End-to-end `start` gas (PR #10 review decision D5) against the lean model of the decided
 ///      start path in `LeanStartStack.sol`, over the real AccessManager, asset allowlist and
