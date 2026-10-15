@@ -53,6 +53,8 @@ interface IEnglishAuction is ISaleAdapter {
     ///         first bid (zero before).
     /// @param bidder The high bidder (the payer of the high bid), or zero.
     /// @param recipient Who receives the token if the high bid wins.
+    /// @param bid The high bid; with no bidder, the reserve a withdrawn (or refunded) bid left,
+    ///        which the next bid must reach, or zero.
     /// @param pausedAt When the current pause began, or zero.
     /// @param pausedTotal Seconds paused so far, at most 7 days.
     struct Auction {
@@ -143,7 +145,9 @@ interface IEnglishAuction is ISaleAdapter {
     ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
     /// @notice The high bidder withdraws its bid while the auction is paused; it is credited back
-    ///         and the auction has no bid.
+    ///         and the auction has no bid. The withdrawn amount stays as a reserve the next bid
+    ///         must reach, and the resumed auction runs at least the governed duration, so the
+    ///         refunded bidders can return (LIFECYCLE-1).
     function withdrawBid(uint256 saleId) external;
 
     /// @notice Sets the auction parameters, within the implementation's ceilings.

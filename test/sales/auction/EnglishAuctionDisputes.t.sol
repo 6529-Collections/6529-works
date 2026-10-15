@@ -107,9 +107,9 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.withdrawBid(saleId);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(a.bidder, address(0));
-        assertEq(a.bid, 0);
+        assertEq(a.bid, 2 ether, "kept as the reserve (LIFECYCLE-1)");
         assertEq(auction.claimable(bob, ETH), 2 ether);
-        assertEq(auction.minimumBid(saleId), 0.1 ether, "back to the locked opening bid");
+        assertEq(auction.minimumBid(saleId), 2 ether, "the reserve, above the opening bid");
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NotHighBidder.selector, bob));
         auction.withdrawBid(saleId);
@@ -218,7 +218,8 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.warp(block.timestamp + 7 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
-        assertEq(a.endTime, end - 1 + 7 days + WINDOW, "the window, not one second");
+        // LIFECYCLE-1: the bid was withdrawn, so the full duration, not one second.
+        assertEq(a.endTime, end - 1 + 7 days + DURATION, "the duration, not one second");
         _bidEth(saleId, alice, 10 ether);
         _end(saleId);
         auction.settle(saleId);

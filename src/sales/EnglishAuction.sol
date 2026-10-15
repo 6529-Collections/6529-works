@@ -300,18 +300,21 @@ contract EnglishAuction is
         Sale storage s = _require(saleId, AuctionState.ENDED);
         s.status = AuctionState.SETTLED;
         (LockedTerms memory lt, address creator) = _lockedTerms(s);
+        // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
+        uint256 price;
         if (s.bidder == address(0)) {
             if (creator == address(0)) revert InvalidRecipient(creator);
             s.recipient = creator;
             s.flags |= _RECIPIENT_SET;
+        } else {
+            price = s.bid;
         }
-        uint256 price = s.bid;
         uint256 fee = Math.mulDiv(price, lt.feeShare, Splits.DENOMINATOR);
         _pay(lt.currency, lt.seller, price - fee);
         _pay(lt.currency, lt.feeRecipient, fee);
         IMintTarget(lt.token).markPrimarySettled(lt.id);
         _deliver(saleId, s);
-        _emitSettled(saleId, s, lt, fee);
+        _emitSettled(saleId, s, lt, price, fee);
     }
 
     /// @inheritdoc IEnglishAuction
@@ -801,9 +804,10 @@ contract EnglishAuction is
 
     /// @dev D12: the first bid is at least `max(openingBid, 1 wei)`; later bids add
     ///      `max(incrementShare of the high bid, rounded up; the increment floor locked by the
-    ///      first bid)`.
+    ///      first bid)`. With no bidder after a withdrawal, the withdrawn bid is a reserve: a bid
+    ///      must reach it (LIFECYCLE-1).
     function _minimumBid(Sale storage s, Terms storage t) private view returns (uint256) {
-        if (s.bidder == address(0)) return Math.max(t.openingBid, 1);
+        if (s.bidder == address(0)) return Math.max(Math.max(t.openingBid, s.bid), 1);
         uint256 high = s.bid;
         uint256 step = Math.mulDiv(high, t.incrementShare, Splits.DENOMINATOR, Math.Rounding.Ceil);
         return high + Math.max(step, t.incrementFloor);
@@ -841,10 +845,14 @@ contract EnglishAuction is
     }
 
     /// @dev Emitted from its own frame to stay within the legacy code generator's stack. The
-    ///      high bid is zero when the auction drew no bids, so the price and fee are too.
-    function _emitSettled(uint256 saleId, Sale storage s, LockedTerms memory lt, uint256 fee)
-        private
-    {
+    ///      price is zero when no bid stands, so the fee is too.
+    function _emitSettled(
+        uint256 saleId,
+        Sale storage s,
+        LockedTerms memory lt,
+        uint256 price,
+        uint256 fee
+    ) private {
         emit SaleSettled(
             saleId,
             lt.token,
@@ -853,9 +861,9 @@ contract EnglishAuction is
             _recipientOf(s),
             1,
             lt.currency,
-            s.bid,
+            price,
             lt.seller,
-            s.bid - fee,
+            price - fee,
             lt.feeRecipient,
             fee
         );
@@ -870,7 +878,7 @@ contract EnglishAuction is
             s.flags &= ~_RECIPIENT_SET;
             s.recipient = address(0);
         }
-        s.bid = 0;
+        // `s.bid` stays as the reserve the next bid must reach (LIFECYCLE-1).
     }
 
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {
@@ -919,11 +927,19 @@ contract EnglishAuction is
     }
 
     /// @dev The end after a pause of `length` seconds: the remaining time at the pause, but at
-    ///      least the anti-snipe window, counted from the resumption (L-2), so bidders who
-    ///      withdrew always have a window to return.
+    ///      least {_reopening} from the resumption (L-2, LIFECYCLE-1).
     function _resumedEnd(Sale storage s, uint256 length) private view returns (uint256) {
         uint256 pausedAt = s.pausedAt;
-        return pausedAt + length + Math.max(s.endTime - pausedAt, _terms[s.termsId].extensionWindow);
+        return pausedAt + length + Math.max(s.endTime - pausedAt, _reopening(s));
+    }
+
+    /// @dev The least time a halted auction gets back when it resumes: the anti-snipe window, or
+    ///      the governed duration when its high bid was withdrawn (LIFECYCLE-1: the reserve is
+    ///      set and no bidder stands), so the refunded bidders can re-form the market.
+    function _reopening(Sale storage s) private view returns (uint256) {
+        return s.bidder == address(0) && s.bid != 0
+            ? _settings.duration
+            : _terms[s.termsId].extensionWindow;
     }
 
     /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.STANDARD` later.

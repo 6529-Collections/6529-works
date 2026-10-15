@@ -448,7 +448,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
-        assertEq(auction.minimumBid(saleId), 1, "no bid: the opening bid, at least 1");
+        assertEq(auction.minimumBid(saleId), 1 ether, "no bid: the withdrawn bid's reserve");
         _bidEth(saleId, bob, 1 ether);
         assertEq(auction.auction(saleId).incrementFloor, ETH_FLOOR, "kept, not relocked");
         uint256 minimum = _minimumAfter(1 ether, ETH_FLOOR);

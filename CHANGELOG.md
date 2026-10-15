@@ -276,3 +276,7 @@
     refuse terms whose seller or fee recipient is the revenue escrow (`InvalidTerms`,
     `InvalidSaleTerms`), since the escrow refuses to be paid as a wallet and such a sale
     could never pay out.
+  - LIFECYCLE-1: a bid withdrawn during a dispute pause stays as a reserve that the next bid
+    must reach (`minimumBid`, `auction().bid` with no bidder), and the resumed auction runs at
+    least the governed duration, whether UNPAUSER resumes it or the pause lapses. With no
+    bidder, settlement pays nothing and returns the work to the artist, as before.
