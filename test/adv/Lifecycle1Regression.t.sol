@@ -103,7 +103,9 @@ contract Lifecycle1RegressionTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), honest);
     }
 
-    function test_LIFECYCLE1_PauseWithoutAWithdrawalKeepsTheWindowRule() public {
+    /// @dev Review follow-up (L7): any dispute pause, with or without a withdrawal, reopens the
+    ///      auction for at least the governed duration; a standing bid keeps its increment.
+    function test_LIFECYCLE1_APauseWithAStandingBidAlsoReopensForTheDuration() public {
         (uint256 saleId,) = _startOne();
         _ethBid(saleId, alice, 1 ether);
         uint256 end = auction.auction(saleId).endTime;
@@ -114,8 +116,8 @@ contract Lifecycle1RegressionTest is IntegrationBase {
         vm.warp(pausedAt + auction.MAX_PAUSE() + 1);
         assertEq(
             auction.auction(saleId).endTime,
-            pausedAt + auction.MAX_PAUSE() + EXTENSION_WINDOW,
-            "a standing bid needs no more than the anti-snipe window"
+            pausedAt + auction.MAX_PAUSE() + AUCTION_DURATION,
+            "the governed duration, not just the anti-snipe window"
         );
         assertEq(auction.minimumBid(saleId), 1 ether + 0.05 ether);
         // An unpaused auction never had a reserve: the opening bid applies.

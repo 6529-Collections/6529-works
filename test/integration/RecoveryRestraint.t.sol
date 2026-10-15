@@ -245,16 +245,12 @@ contract RecoveryRestraintTest is IntegrationBase {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         PendingChange memory p = _stageRecovery();
         _toEnd(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), address(auction), "held in custody");
 
         vm.warp(p.executableAt);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         artists.executeChange(artistId);
         auction.settle(saleId);
@@ -267,9 +263,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         _stageRecovery();
         _toEnd(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         vm.prank(guardian2);
         artists.vetoChange(artistId);

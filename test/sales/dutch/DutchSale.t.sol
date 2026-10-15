@@ -465,7 +465,7 @@ contract DutchSaleTest is DutchBase {
         vm.prank(relayer);
         dutch.purchase(saleId, relayer, 2, USD_START, fresh);
         vm.warp(deadline + 1);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.PaymentExpired.selector, deadline));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, deadline));
         vm.prank(relayer);
         dutch.purchase(saleId, bob, 2, USD_START, fresh);
     }

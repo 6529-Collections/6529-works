@@ -159,7 +159,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         Payment memory pay =
             _permitPayment(aliceKey, alice, address(fixedSale), USD_PRICE, block.timestamp - 1);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.PaymentExpired.selector, block.timestamp - 1)
+            abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, block.timestamp - 1)
         );
         _purchase(alice, _usdPurchase(alice, 1), new bytes32[](0), pay);
         pay = _permitPayment(
@@ -235,7 +235,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         uint256 deadline = block.timestamp + 10;
         Payment memory pay = _intent(aliceKey, alice, p, USD_PRICE, 1, deadline);
         vm.warp(deadline + 1);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.PaymentExpired.selector, deadline));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, deadline));
         _purchase(relayer, p, new bytes32[](0), pay);
     }
 

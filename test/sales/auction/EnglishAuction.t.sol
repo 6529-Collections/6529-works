@@ -324,11 +324,9 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.claimable(alice, address(usd)), 10e18);
     }
 
-    /// @dev Deprecating the locked currency stops bidding (an emergency tightening), but never
-    ///      settlement, refunds or claims.
-    /// @dev MARKET-2: deprecation freezes the auction: bids and the settlement of a standing bid
-    ///      wait for the currency, claims never do, and the first settle after re-admission
-    ///      reopens the auction for at least the anti-snipe window.
+    /// @dev MARKET-2: deprecation freezes the auction: bids and settlement wait for the
+    ///      currency, claims never do, and the first settle after re-admission reopens the
+    ///      auction for the governed duration.
     function test_DeprecatedCurrencyFreezesTheAuction() public {
         uint256 saleId = _startUsd();
         _bidUsd(saleId, alice, 10e18);
@@ -351,9 +349,10 @@ contract EnglishAuctionTest is AuctionBase {
         );
         auction.settle(saleId);
         (,, uint64 revision) = allowlist.assetConfig(address(usd));
+        vm.warp(block.timestamp + Roles.FUNDS);
         allowlist.admitAsset(address(usd), revision, USD_FLOOR);
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + WINDOW));
+        emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + DURATION));
         auction.settle(saleId);
         vm.startPrank(carol);
         auction.bid(saleId, address(0), _direct(carol, 30e18));

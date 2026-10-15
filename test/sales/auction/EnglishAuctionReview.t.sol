@@ -196,6 +196,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
         stream.setAdmittedMinter(address(auction), false);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         assertFalse(stream.exists(1), "burned");
@@ -278,13 +279,13 @@ contract EnglishAuctionReviewTest is AuctionBase {
         uint256 end = auction.auction(saleId).endTime;
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + 2 days);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         vm.warp(block.timestamp + 7 days);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.CANCELLED));
-        assertEq(a.pausedTotal, 1 days);
+        assertEq(a.pausedTotal, 2 days);
         assertEq(a.pausedAt, 0);
         assertEq(a.endTime, end);
     }

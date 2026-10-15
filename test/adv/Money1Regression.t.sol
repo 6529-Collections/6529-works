@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { LockedTerms, Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { BlocklistToken, FeeOnTransferToken, MockERC20 } from "../mocks/EconomicsMocks.sol";
@@ -129,23 +130,36 @@ contract Money1RegressionTest is IntegrationBase {
         auction.settlePayout(address(1), address(2), 3);
     }
 
+    /// @dev `claimFor` pushes an ERC-20 credit to its own account only; it refuses ETH (L5), whose
+    ///      credits are bidders' refunds, claimed by the bidder to an address it chooses.
     function test_MONEY1_ClaimForPaysOnlyTheAccountItself() public {
-        Work[] memory works = _one(_work(artist, collectionId));
-        (uint256 saleId,) = _start(_publish(works), works, 0);
-        _ethBid(saleId, bidder1, 1 ether);
-        _ethBid(saleId, bidder2, 2 ether);
+        FeeOnTransferToken token = new FeeOnTransferToken();
+        token.setFee(0);
+        _admit(token);
+        _auctionIn(token);
+        assertEq(auction.claimable(bidder1, address(token)), 100e18);
         address keeper = makeAddr("keeper");
         vm.expectEmit(address(auction));
-        emit ISaleAdapter.Claimed(bidder1, address(0), bidder1, 1 ether);
+        emit ISaleAdapter.Claimed(bidder1, address(token), bidder1, 100e18);
         vm.prank(keeper);
-        assertEq(auction.claimFor(bidder1, address(0)), 1 ether);
-        assertEq(bidder1.balance, 1 ether);
-        assertEq(keeper.balance, 0);
+        assertEq(auction.claimFor(bidder1, address(token)), 100e18);
+        assertEq(token.balanceOf(bidder1), 100e18);
+        assertEq(token.balanceOf(keeper), 0);
         vm.expectRevert(
-            abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, bidder1, address(0))
+            abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, bidder1, address(token))
         );
-        auction.claimFor(bidder1, address(0));
+        auction.claimFor(bidder1, address(token));
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
-        auction.claimFor(address(0), address(0));
+        auction.claimFor(address(0), address(token));
+
+        // ETH: an outbid bidder's refund stays its own to claim, wherever it chooses.
+        Work[] memory works = _one(_work(artist, collectionId));
+        (uint256 ethSale,) = _start(_publish(works), works, 0);
+        _ethBid(ethSale, bidder1, 1 ether);
+        _ethBid(ethSale, bidder2, 2 ether);
+        vm.prank(keeper);
+        vm.expectRevert(abi.encodeWithSelector(IRevenueEscrow.InvalidAsset.selector, address(0)));
+        auction.claimFor(bidder1, address(0));
+        assertEq(auction.claimable(bidder1, address(0)), 1 ether);
     }
 }

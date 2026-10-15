@@ -126,8 +126,6 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     error CurrencyNotActive(address currency);
     /// @notice A purchase must buy at least one copy.
     error InvalidQuantity();
-    /// @notice The permit's deadline has passed.
-    error PaymentExpired(uint256 deadline);
     /// @notice A dependency has no code, is an EIP-7702 delegated account, or does not support
     ///         its interface through ERC-165.
     error InvalidDependency(address dependency);

@@ -264,6 +264,16 @@ contract AuctionHandler is Test {
         uint256 saleId = _sale(saleSeed);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.PAUSED) return;
+        // L4: as `resume`, `cancel` waits 48 hours from the pause.
+        uint256 allowedAt = uint256(a.pausedAt) + Roles.STANDARD;
+        if (block.timestamp < allowedAt) {
+            vm.prank(setter);
+            vm.expectRevert(
+                abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt)
+            );
+            auction.cancel(saleId, bytes32(0));
+            return;
+        }
         Statement memory s = Statement(
             a.token,
             a.tokenId,
