@@ -37,10 +37,11 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
 interface ICurationDigest {
-    function approvalDigest(bytes32 packageRoot, bytes32 evidenceHash)
+    function approvalDigest(bytes32 packageRoot, bytes32 evidenceHash, uint256 signerEpoch)
         external
         view
         returns (bytes32);
+    function signerEpoch(address signer) external view returns (uint256);
 }
 
 interface IDigests {
@@ -55,8 +56,8 @@ interface IDigests {
 }
 
 /// @title Flows
-/// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r2 by default,
-///         `deployments/11155111/1791750816.json`; set `FLOWS_RECORD` for another record): the content uploads, one curated package of
+/// @notice Encodes the v1 flows run on a Sepolia rehearsal deployment (r3 by default,
+///         `deployments/11155111/1792095396.json`; set `FLOWS_RECORD` for another record): the content uploads, one curated package of
 ///         eight works, its approval and acceptance, the auction starts, bids, record opening, the
 ///         VRF request and, after the 24-hour auction, settlement and the linked edition.
 /// @dev It holds no key. Only `broadcastB64Chunk` broadcasts, from the script's sender; every
@@ -74,15 +75,17 @@ contract Flows is Script {
     using Strings for uint256;
     using Strings for address;
 
-    /// @dev The deployment record the flows run against: r2 unless `FLOWS_RECORD` names another
-    ///      (r1 is `deployments/11155111/1791746472.json`).
-    string internal constant RECORD = "deployments/11155111/1791750816.json";
-    /// @dev Seeds every file, record and evidence hash. It is kept from r1 so that r1 and r2 share
-    ///      one package (same files and root); changing it would orphan r1's pending edition.
+    /// @dev The deployment record the flows run against: r3 unless `FLOWS_RECORD` names another
+    ///      (r2 is `deployments/11155111/1791750816.json`, r1 `deployments/11155111/1791746472.json`).
+    ///      The package step signs the epoch-bound approval of the current curation verifier
+    ///      (#55), so it no longer runs on r1 or r2; their packages are registered already.
+    string internal constant RECORD = "deployments/11155111/1792095396.json";
+    /// @dev Seeds every file, record and evidence hash. It is kept from r1 so that every instance
+    ///      shares one package (same files and root).
     string internal constant LABEL = "6529-works/sepolia-r1/flows";
     /// @dev The rehearsals' artist (a throwaway testnet key).
     address internal constant DEFAULT_ARTIST = 0x111Cb972e6734feA580D403555a2a0ed4Cd3Ae1B;
-    /// @dev Curation signer 1 of r1 and r2 (holds CURATION_SIGNER).
+    /// @dev Curation signer 1 of r1, r2 and r3 (holds CURATION_SIGNER).
     address internal constant DEFAULT_SIGNER = 0xc7091A91Fa76f7494a3b847B6A08f164C7097830;
     uint256 internal constant ITEMS = 8;
     uint256 internal constant EDITION_PRICE = 0.0001 ether;
@@ -505,17 +508,25 @@ contract Flows is Script {
         }
         (IPackageRegistry.PackageStatus status,,) = IPackageRegistry(a.registry).packageOf(root);
         _info("status", uint256(status).toString());
-        _sign(
-            "approval",
-            vm.envOr("FLOWS_SIGNER", DEFAULT_SIGNER),
-            ICurationDigest(a.verifier).approvalDigest(root, _evidence(root))
-        );
+        _signApproval(a, root);
         address lead = _artist();
         uint256 artistId = IArtistRegistry(a.artists).artistIdOf(lead);
         _sign(
             "acceptance",
             artistId == 0 ? lead : IArtistRegistry(a.artists).authorityOf(artistId),
             IDigests(a.registry).acceptanceDigest(root, _acceptance(lead, acceptDeadline))
+        );
+    }
+
+    /// @dev The curation signer's approval digest. Since #55 it binds the signer's current epoch
+    ///      (r1 and r2 predate that).
+    function _signApproval(Addrs memory a, bytes32 root) internal view {
+        address signer = vm.envOr("FLOWS_SIGNER", DEFAULT_SIGNER);
+        ICurationDigest verifier = ICurationDigest(a.verifier);
+        _sign(
+            "approval",
+            signer,
+            verifier.approvalDigest(root, _evidence(root), verifier.signerEpoch(signer))
         );
     }
 

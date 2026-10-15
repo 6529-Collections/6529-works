@@ -1,0 +1,508 @@
+{
+    "addresses":  {
+                      "any":  "0x26A3f4505145b5E6164260cc868e50ddd9863697",
+                      "artist":  "0x111Cb972e6734feA580D403555a2a0ed4Cd3Ae1B",
+                      "signer":  "0xc7091A91Fa76f7494a3b847B6A08f164C7097830",
+                      "bidder2":  "0x7B412534EF3872284300b690DfB6676B5e469C74",
+                      "bidder1":  "0x1fb4E8eE7C4fcf76C2A8e22e80f5Db1Ea1152BE2",
+                      "platform":  "0x0a69CdD0d8De0680779237aFF610C90b61B83b2D"
+                  },
+    "txs":  [
+                {
+                    "label":  "writeChunk-b64-1024",
+                    "from":  "any",
+                    "hash":  "0x841d2b159855bf501189163f497ac2eb1fe8b6a9263078d6f888e4a7d42eed38",
+                    "block":  11922770,
+                    "gasUsed":  1914322,
+                    "status":  "0x1",
+                    "prague":  304754
+                },
+                {
+                    "label":  "registerManifest-b64-1024",
+                    "from":  "any",
+                    "hash":  "0x41343f2d5c9f94c41ce28c5d531cce823bae3f9a680b299040e6b4f116ddb574",
+                    "block":  11922771,
+                    "gasUsed":  577375,
+                    "status":  "0x1",
+                    "prague":  143475
+                },
+                {
+                    "label":  "attestBase64-1024",
+                    "from":  "any",
+                    "hash":  "0x673f52dfc4fb62de977c8770753f7473b09b08b954e2de28af50da10b070d867",
+                    "block":  11922772,
+                    "gasUsed":  153123,
+                    "status":  "0x1",
+                    "prague":  70103
+                },
+                {
+                    "label":  "writeChunk-b64-8192",
+                    "from":  "any",
+                    "hash":  "0x355a0dd166b284625ba90b9d2225e2c6f20535cfb480599e4e49fd6b7e63be4b",
+                    "block":  11922773,
+                    "gasUsed":  13008576,
+                    "status":  "0x1",
+                    "prague":  1864224
+                },
+                {
+                    "label":  "registerManifest-b64-8192",
+                    "from":  "any",
+                    "hash":  "0xfe531e605225e14040f4a4453126bb277132baeb0d663034d16807a5668a4793",
+                    "block":  11922774,
+                    "gasUsed":  577375,
+                    "status":  "0x1",
+                    "prague":  143475
+                },
+                {
+                    "label":  "attestBase64-8192",
+                    "from":  "any",
+                    "hash":  "0x6cbb5e2fde64060e01bfad7d357702bd7466aca1cb624d99a276a6ed8f6a1b0c",
+                    "block":  11922775,
+                    "gasUsed":  205248,
+                    "status":  "0x1",
+                    "prague":  122228
+                },
+                {
+                    "label":  "writeChunk-b64-24572",
+                    "from":  "any",
+                    "hash":  "0x18b36362873b1a0b46e41a203c9b24d43503aa1670e355b733b4dea1ccc0ef3d",
+                    "block":  11922776,
+                    "gasUsed":  38364370,
+                    "status":  "0x1",
+                    "prague":  5431552
+                },
+                {
+                    "label":  "registerManifest-b64-24572",
+                    "from":  "any",
+                    "hash":  "0x6a66814e3db60d84ff481766d143f4f19e87fd94c78f7ee68dd880f931c7c8ff",
+                    "block":  11922777,
+                    "gasUsed":  577387,
+                    "status":  "0x1",
+                    "prague":  143487
+                },
+                {
+                    "label":  "attestBase64-24572",
+                    "from":  "any",
+                    "hash":  "0x2c5e5a51b9ae5d4723d1128073df01503700947380b03437440cf6d07a7d631a",
+                    "block":  11922778,
+                    "gasUsed":  325172,
+                    "status":  "0x1",
+                    "prague":  242152
+                },
+                {
+                    "label":  "writeChunk-record-0",
+                    "from":  "any",
+                    "hash":  "0xe2f6789ba969f8499f6613b3dc4fd83a444c6fd659c78f60c0eacaa783a40b66",
+                    "block":  11922779,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-0",
+                    "from":  "any",
+                    "hash":  "0x4db7c7c3f92ad586ccd5a84c002b7e342edc45ebf1dcce714e45fee4031a5d2d",
+                    "block":  11922780,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "writeChunk-record-1",
+                    "from":  "any",
+                    "hash":  "0x514699a04dfafabda2ef94c607eec31d33eb48d7e4374a1e0515b7bc24fc9260",
+                    "block":  11922782,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-1",
+                    "from":  "any",
+                    "hash":  "0x35cb8f51a9d3c008479be230940e26e62432db892f6046a220ee16234a5080ef",
+                    "block":  11922783,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "writeChunk-record-2",
+                    "from":  "any",
+                    "hash":  "0x701eda08b5e1aac09570e1daf143ad88c3eba4b0aefd5468af071d0d94587d7f",
+                    "block":  11922784,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-2",
+                    "from":  "any",
+                    "hash":  "0xe19ca6108c080873412709ad821be69017831abf314a807d69450f98d46eb645",
+                    "block":  11922785,
+                    "gasUsed":  579885,
+                    "status":  "0x1",
+                    "prague":  145985
+                },
+                {
+                    "label":  "registerManifest-media-2",
+                    "from":  "any",
+                    "hash":  "0x88352b4307b4b4670fdd99b67dd8a154bbef28df20f79a86f9d35e021360fcb7",
+                    "block":  11922786,
+                    "gasUsed":  577351,
+                    "status":  "0x1",
+                    "prague":  143451
+                },
+                {
+                    "label":  "writeChunk-record-3",
+                    "from":  "any",
+                    "hash":  "0x8c9c3f2dcb95c780a6ed9cda4704f3feccf86db27f50c139478548ecd4869e1d",
+                    "block":  11922787,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-3",
+                    "from":  "any",
+                    "hash":  "0x32115c37726b0624e293946da84a69913dd9f7f6bf818da5665d576319236402",
+                    "block":  11922788,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "registerManifest-media-3",
+                    "from":  "any",
+                    "hash":  "0x9ff566f1088d3a4100d8380702bdd2c2305cc16fd22ca2b8608bb760ff313383",
+                    "block":  11922789,
+                    "gasUsed":  577363,
+                    "status":  "0x1",
+                    "prague":  143463
+                },
+                {
+                    "label":  "writeChunk-record-4",
+                    "from":  "any",
+                    "hash":  "0xfed4e6f9b45450ddd663c309c97fb725dc63d192f1e53570b4440397db778e12",
+                    "block":  11922790,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-4",
+                    "from":  "any",
+                    "hash":  "0x3520151a7dfae7f3959a49d41e47aa6d804e276b407f3854de1e05a0258c84ea",
+                    "block":  11922791,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "writeChunk-record-5",
+                    "from":  "any",
+                    "hash":  "0xf45e5a44de7132246bc7c436d183dc422b7ae668b85d47d19f0b3f583c3c3383",
+                    "block":  11922792,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-5",
+                    "from":  "any",
+                    "hash":  "0x7243cd638b6c86e34620d16b42788451a6138360678cfee5b1391e1d8b0afb43",
+                    "block":  11922793,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "registerManifest-media-5",
+                    "from":  "any",
+                    "hash":  "0xfb5c20333cd822f68b090f071368e321a7270634114d0a64300a8dff1bea7719",
+                    "block":  11922794,
+                    "gasUsed":  577339,
+                    "status":  "0x1",
+                    "prague":  143439
+                },
+                {
+                    "label":  "writeChunk-record-6",
+                    "from":  "any",
+                    "hash":  "0x75cddaae5d376fa1646a2686d0abfff73d694414482b9f6574ebf6dc39c6736b",
+                    "block":  11922795,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-6",
+                    "from":  "any",
+                    "hash":  "0x5d83f1cdd0814640a1123773c88816489430a1a4f805d58588e2e673e448d349",
+                    "block":  11922796,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "registerManifest-media-6",
+                    "from":  "any",
+                    "hash":  "0x6b2dc35d626df4c1118953cb95b4a59984eba6598e266e4f2c21003ada541871",
+                    "block":  11922797,
+                    "gasUsed":  577363,
+                    "status":  "0x1",
+                    "prague":  143463
+                },
+                {
+                    "label":  "writeChunk-record-7",
+                    "from":  "any",
+                    "hash":  "0x844b0f5959b57885f88ca6aababa1ca686177ded8d07031f6d62145bebc8453e",
+                    "block":  11922798,
+                    "gasUsed":  625103,
+                    "status":  "0x1",
+                    "prague":  123587
+                },
+                {
+                    "label":  "registerManifest-record-7",
+                    "from":  "any",
+                    "hash":  "0xe72c9967c3638f345c53766aa993e3b774e93704dd79234f5eb1754bd2da3f57",
+                    "block":  11922799,
+                    "gasUsed":  579897,
+                    "status":  "0x1",
+                    "prague":  145997
+                },
+                {
+                    "label":  "registerManifest-media-7",
+                    "from":  "any",
+                    "hash":  "0x9b7b86622b56c921f1d208788c2ce4cabcbb46bf2a5ca8518ff421f825e3a411",
+                    "block":  11922800,
+                    "gasUsed":  577363,
+                    "status":  "0x1",
+                    "prague":  143463
+                },
+                {
+                    "label":  "createCollection-Flows",
+                    "from":  "platform",
+                    "hash":  "0xd8a684aa6b94de329edc7056c044f6044f20fcea60b2b7057508108ac539bd24",
+                    "block":  11922803,
+                    "gasUsed":  382228,
+                    "status":  "0x1",
+                    "prague":  116668
+                },
+                {
+                    "label":  "createCollection-Flows-2",
+                    "from":  "platform",
+                    "hash":  "0x9e537308e57f82a9548d138acdd45fb91877813cb38293d68357c7b3579baf20",
+                    "block":  11922804,
+                    "gasUsed":  383174,
+                    "status":  "0x1",
+                    "prague":  117614
+                },
+                {
+                    "label":  "registerPackage",
+                    "from":  "any",
+                    "hash":  "0x0e6a2408c1fa18f99a31420abbe0e6e85bb323cf7ed84212466f02bbceaa176a",
+                    "block":  11922817,
+                    "gasUsed":  274595,
+                    "status":  "0x1",
+                    "prague":  103355
+                },
+                {
+                    "label":  "appendCurator",
+                    "from":  "curator",
+                    "hash":  "0x09bd63fc0966673bdcac8d743fb6288947a568711eb9a55ed31b22914bc75c42",
+                    "block":  11922818,
+                    "gasUsed":  274619,
+                    "status":  "0x1",
+                    "prague":  104179
+                },
+                {
+                    "label":  "acceptPackage",
+                    "from":  "any",
+                    "hash":  "0xa141c52a7e0fcb8f10de17e4456f6f43a252248728529b8d6f18ceffb50e4ff0",
+                    "block":  11922819,
+                    "gasUsed":  1381478,
+                    "status":  "0x1",
+                    "prague":  416158
+                },
+                {
+                    "label":  "start-0",
+                    "from":  "any",
+                    "hash":  "0x64be42ea8d461e201cbeaabe95bf53f3a0e5f5d66796ff807812722cb7623543",
+                    "block":  11922821,
+                    "gasUsed":  1601871,
+                    "status":  "0x1",
+                    "prague":  439311
+                },
+                {
+                    "label":  "start-1",
+                    "from":  "any",
+                    "hash":  "0xb96a2ac251f6d17698e7e9b2de66aa843ebff87b3f142cd7f1449b6b188b4ef4",
+                    "block":  11922822,
+                    "gasUsed":  735839,
+                    "status":  "0x1",
+                    "prague":  270139
+                },
+                {
+                    "label":  "start-2",
+                    "from":  "any",
+                    "hash":  "0x0225780e7f11658d5c12469089c46106c7cb674c1e7ffeb6e3bd1cfe9a621505",
+                    "block":  11922823,
+                    "gasUsed":  735859,
+                    "status":  "0x1",
+                    "prague":  270159
+                },
+                {
+                    "label":  "startWithBid-3",
+                    "from":  "bidder2",
+                    "hash":  "0xf9e00fc2d4b1464d76a393890ef898405e449d5eac9fb59e1fa32ec73e8dbedd",
+                    "block":  11922824,
+                    "gasUsed":  1213250,
+                    "status":  "0x1",
+                    "prague":  382370
+                },
+                {
+                    "label":  "start-4",
+                    "from":  "any",
+                    "hash":  "0x12d185f332b6ef24b3bcff62bd317fff7a4a44ab9530c345fefd9ce3f0796e26",
+                    "block":  11922825,
+                    "gasUsed":  735883,
+                    "status":  "0x1",
+                    "prague":  270183
+                },
+                {
+                    "label":  "start-5",
+                    "from":  "any",
+                    "hash":  "0xd07fb2f97f3dbf5cdb128a240a5dadae4bd734cd2cb159f3cfb7221a8258a148",
+                    "block":  11922826,
+                    "gasUsed":  736477,
+                    "status":  "0x1",
+                    "prague":  270777
+                },
+                {
+                    "label":  "startWithBid-7-steady",
+                    "from":  "bidder1",
+                    "hash":  "0x76a0e1252114b1c790684a2abac46cd658596287a4c6fb6d56fbba84b1c70feb",
+                    "block":  11922829,
+                    "gasUsed":  871980,
+                    "status":  "0x1",
+                    "prague":  312260
+                },
+                {
+                    "label":  "bid-6-first-bid",
+                    "from":  "bidder1",
+                    "hash":  "0x95958d0cd485edefdf2f772c0e6172e38237bf44addc2fc2b683941d71a9eb51",
+                    "block":  11922830,
+                    "gasUsed":  169410,
+                    "status":  "0x1",
+                    "prague":  73790
+                },
+                {
+                    "label":  "bid-1-first-bid",
+                    "from":  "bidder1",
+                    "hash":  "0xcd10f74d2c507e472aa5b151310541cf39985a6edac51dc625159a4fd2bca81d",
+                    "block":  11922831,
+                    "gasUsed":  169410,
+                    "status":  "0x1",
+                    "prague":  73790
+                },
+                {
+                    "label":  "bid-1-outbid",
+                    "from":  "bidder2",
+                    "hash":  "0x4cde0ba6e11854b5872af465749624c7f1d11c3241ef5a934566a55e03a8d60e",
+                    "block":  11922832,
+                    "gasUsed":  169060,
+                    "status":  "0x1",
+                    "prague":  73440
+                },
+                {
+                    "label":  "openRecord-1",
+                    "from":  "any",
+                    "hash":  "0x1b8bc73dc94890c9887bfdcd7b17caab03a21bd5c6bf28596e9b4484caab49f8",
+                    "block":  11922834,
+                    "gasUsed":  504555,
+                    "status":  "0x1",
+                    "prague":  157975
+                },
+                {
+                    "label":  "syncOnChain-1",
+                    "from":  "any",
+                    "hash":  "0x17029a2069d4a07de99c560740092efe65441ab7f66b9a924c59148f1f195ee2",
+                    "block":  11922835,
+                    "gasUsed":  66247,
+                    "status":  "0x1",
+                    "prague":  63547
+                }
+            ],
+    "notes":  {
+                  "root":  "0xde416feb06607b5040bd35ad76ad00ef9c70d0ad3ddb4637be9ec22a9c58e68d",
+                  "nextMoveNonce":  7,
+                  "registerManifest-record-0":  "Sent by the driver; the RPC dropped the connection before the receipt, so the row was added later with the record step (placed here in block order).",
+                  "simulated":  {
+                                    "method":  "eth_simulateV1 on the live state of 15 October 2026 (block time 1792096620), one block per call from 60 s after token 6\u0027s auction end; calldata from Flows.s.sol",
+                                    "blockTime":  1792182912,
+                                    "masterEnd":  1792182852,
+                                    "saleId":  1,
+                                    "rows":  [
+                                                 {
+                                                     "label":  "settle-6",
+                                                     "status":  "0x1",
+                                                     "gasUsed":  449934
+                                                 },
+                                                 {
+                                                     "label":  "createEdition-6",
+                                                     "status":  "0x1",
+                                                     "gasUsed":  887954
+                                                 },
+                                                 {
+                                                     "label":  "openSale-6",
+                                                     "status":  "0x1",
+                                                     "gasUsed":  992031
+                                                 },
+                                                 {
+                                                     "label":  "purchase-first-copy",
+                                                     "status":  "0x1",
+                                                     "gasUsed":  232182
+                                                 },
+                                                 {
+                                                     "label":  "purchase-later-copy",
+                                                     "status":  "0x1",
+                                                     "gasUsed":  232158
+                                                 },
+                                                 {
+                                                     "label":  "purchase-two-copies",
+                                                     "status":  "0x1",
+                                                     "gasUsed":  134262
+                                                 }
+                                             ]
+                                },
+                  "views":  {
+                                "method":  "eth_simulateV1: the gas each view uses as a transaction",
+                                "block":  11922836,
+                                "rows":  [
+                                             {
+                                                 "label":  "tokenURI(1): record open and synced, 1,024 bytes inlined",
+                                                 "gasUsed":  313479,
+                                                 "status":  "0x1",
+                                                 "outputBytes":  1734
+                                             },
+                                             {
+                                                 "label":  "tokenURI(2): record not open, 8,192-byte media",
+                                                 "gasUsed":  122083,
+                                                 "status":  "0x1",
+                                                 "outputBytes":  298
+                                             },
+                                             {
+                                                 "label":  "tokenURI(4): record not open (core-only metadata)",
+                                                 "gasUsed":  122083,
+                                                 "status":  "0x1",
+                                                 "outputBytes":  298
+                                             },
+                                             {
+                                                 "label":  "royaltyInfo(1, 1 ETH)",
+                                                 "gasUsed":  36426,
+                                                 "status":  "0x1",
+                                                 "outputBytes":  null
+                                             }
+                                         ]
+                            }
+              }
+}

@@ -3,7 +3,8 @@
 For integration engineers who call, decode or verify the 6529 Works contracts: where the ABIs
 come from and which build matches which deployment, the ERC-165 interface IDs and who answers
 them, every EIP-712 domain and type string, and the formulas of the protocol hashes you
-recompute off-chain. The Sepolia r2 instance runs an earlier build; see
+recompute off-chain. The current Sepolia instance, r3, runs `main` at `e5fe78c`, and every
+r3 contract is verified on Sourcify; the superseded r2 runs an earlier build, see
 [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
 [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
 
@@ -17,7 +18,7 @@ them from the commit the target deployment was built from:
 ```bash
 git clone --recurse-submodules https://github.com/6529-Collections/6529-works.git
 cd 6529-works
-git checkout 400f96d                 # Sepolia r2; use main for the current code
+git checkout e5fe78c                 # Sepolia r3 (400f96d for r2); main for the current code
 git submodule update --init --recursive
 forge build
 ```
@@ -546,6 +547,7 @@ The testing guide is
   [`WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol),
   [`foundry.toml`](../../foundry.toml).
 - Deployments: [Sepolia README](../../deployments/11155111/README.md),
+  [`1792095396.json`](../../deployments/11155111/1792095396.json) (r3),
   [`1791750816.json`](../../deployments/11155111/1791750816.json) (r2).
 - ADRs: [ADR 0001](../adr/0001-v1-scope.md): verification through CBOR metadata with an IPFS
   hash (under "Intended behavior"), and golden typehash tests (the §17 reuse plan).

@@ -2,11 +2,12 @@
 
 On 11 October 2026 the v1 flows were run on two Sepolia rehearsal deployments
 ([README](README.md)). Settlement and the edition flow followed on 13 October, once the
-24-hour auctions had ended:
+24-hour auctions had ended. A lifecycle check on r3 followed on 15 October:
 
 | Instance | Source | Record | Role here |
 | --- | --- | --- | --- |
-| **r2** | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | [`1791750816.json`](1791750816.json) | **Reference** |
+| **r3** | `main` at `e5fe78c`: every review fix, the state-growth gas diet and the source-quality pass | [`1792095396.json`](1792095396.json) | **Current.** A lifecycle check on 15 October 2026, measured against r2: [r3](#r3-the-release-candidate-15-october-2026) |
+| r2 | `main` at `400f96d`: the full v1 scope, including the Editions gas cuts ([#41](https://github.com/6529-Collections/6529-works/pull/41)) and the contested overrides ([#44](https://github.com/6529-Collections/6529-works/pull/44)) | [`1791750816.json`](1791750816.json) | Reference for every section below the r3 one |
 | r1 | `main` at `60edd9b`, before #41 and #44 | [`1791746472.json`](1791746472.json) | Measured first; kept for comparison |
 
 Every gas figure below names its instance. Where a table has an r1 column, r1 ran the
@@ -18,15 +19,164 @@ Prague costs in Foundry. This file records what the flows cost on Sepolia now.
 
 These are testnet rehearsals with throwaway keys, and the code is pre-audit.
 
-> **Measured on the deployed code, not today's `main`.** Every figure here is from r1 and r2
-> (`60edd9b` and `400f96d`). `main` has changed since, so read these as measurements of those
-> instances. The gas budgets are now defined by
+> **Measured on the deployed code, not today's `main`.** Every figure from the
+> [Summary (r2)](#summary-r2) on is from r1 and r2 (`60edd9b` and `400f96d`); the r3 section
+> measures `e5fe78c`. `main` has changed since r1 and r2, so read their figures as
+> measurements of those instances. The gas budgets are now defined by
 > [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md) (Prague gas plus exact
 > counts of new slots), so the "fail" marks against 350K below are superseded. Later changes
 > also alter some details recorded here: the consolidation adapter's per-getter stipend is
 > 200,000 gas on `main` (50,000 in r1 and r2), the VRF callback writes no new slot since
 > DEPS-2, and the renderer's media-list read has its own 1,000,000-gas cap since the content
 > fixes (#56), so `tokenURI` needs about 1.07M gas available rather than about 1.0M.
+
+## r3: the release candidate (15 October 2026)
+
+On 15 October 2026 the lifecycle ran again on **r3**, `main` at `e5fe78c`
+([README](README.md#sepolia-r3-15-october-2026-current)): every review fix, the state-growth
+gas diet and the source-quality pass. Same driver, same package (the same files, items and
+root `0xde416feb…e68d`) and the same accounts as r2. The state file is
+[`flows/r3.json`](flows/r3.json).
+
+- **Ran on chain:** the content uploads, two collections, the curation approval, the CURATOR
+  evidence statement, the artist's first acceptance (which registers the artist), seven
+  auction starts (two of them `startWithBid`), three bids, `openRecord` and `syncOnChain`,
+  and the views. Nothing reverted.
+- **Simulated until the auctions end:** `createEdition` needs the master's sale settled, and
+  every auction runs 24 hours. `settle`, `createEdition`, `openSale` and the purchases were
+  run with `eth_simulateV1` on r3's live state, in blocks after the master's end, with the
+  driver's own calldata. On r2 the same method reproduced all 18 later receipts exactly. The
+  commands that finish the run are under [Pending (r3)](#pending-r3).
+- **The driver needed one fix.** Since the review fix
+  [#55](https://github.com/6529-Collections/6529-works/pull/55) a curation approval binds the
+  signer's epoch: `approvalDigest(root, evidence, signerEpoch(signer))`. `Flows.s.sol` still
+  called the two-argument digest of r1 and r2, which r3's verifier does not have; it now reads
+  the epoch first. r3 is now the driver's default record.
+
+### The gas diet on chain
+
+Sepolia gas is the receipt's `gasUsed`, or the simulated call's; Prague is the receipt
+replayed with `cast run --quick --evm-version prague`. The slot counts are ADR 0004's (CI), and
+the estimate is ADR 0004's "Sepolia estimate (r2)": the r2 receipt minus the diet's expected
+saving.
+
+| Operation | r3 Sepolia | r3 Prague | r2 Sepolia | r3 − r2 | New slots r2 → r3 | ADR 0004 estimate |
+| --- | ---: | ---: | ---: | ---: | --- | ---: |
+| [`start`, steady state (item 2)](https://sepolia.etherscan.io/tx/0x0225780e7f11658d5c12469089c46106c7cb674c1e7ffeb6e3bd1cfe9a621505) | 735,859 | 270,159 | 846,963 | −111,104 | 6 → 5 | about 736K |
+| [`start`, the artist's second work (item 1)](https://sepolia.etherscan.io/tx/0xb96a2ac251f6d17698e7e9b2de66aa843ebff87b3f142cd7f1449b6b188b4ef4) | 735,839 | 270,139 | 846,971 | −111,132 | 6 → 5 | about 736K |
+| [`start`, an edition master (item 5)](https://sepolia.etherscan.io/tx/0xd07fb2f97f3dbf5cdb128a240a5dadae4bd734cd2cb159f3cfb7221a8258a148) | 736,477 | 270,777 | 847,598 | −111,121 | 6 → 5 | — |
+| [`startWithBid`, steady state (item 7)](https://sepolia.etherscan.io/tx/0x76a0e1252114b1c790684a2abac46cd658596287a4c6fb6d56fbba84b1c70feb) | 871,980 | 312,260 | 982,312 | −110,332 | 7 → 6 | about 872K |
+| `createEdition` (simulated) | 887,954 |  | 1,118,699 | −230,745 | 9 → 7 | about 895K |
+| `openSale`, the adapter's first sale (simulated) | 992,031 |  | 993,668 | −1,637 | 8 → 8 | — |
+| `purchase`, the first copy, new holder (simulated) | 232,182 |  | 468,086 | −235,904 | 3 → 1 | about 220K |
+| `purchase`, a later copy, new holder (simulated) | 232,158 |  | 370,142 | −137,984 | 2 → 1 | about 228K |
+| `purchase`, two copies, existing holder (simulated) | 134,262 |  | 174,326 | −40,064 | 0 → 0 | — |
+| `settle`, with a bid, first payout to the seller wallet (simulated) | 449,934 |  | 441,363 | +8,571 | 1 and an account | — |
+| Deploy, 25 transactions ([README](README.md#sepolia-r3-15-october-2026-current)) | 476,686,821 | 76,583,081 (forge) | 447,912,784 | +28,774,037 | | |
+
+- **Each slot the diet removed is about 88,000 to 89,000 gas on Sepolia,** on top of its
+  Prague saving. A steady-state `start` fell by 111,104 gas (13%), `startWithBid` by 110,332
+  (11%), `createEdition` by 230,745 (21%) and the first copy's `purchase` by 235,904 (50%).
+- **ADR 0004's estimates hold.** The starts match them to the thousand; `createEdition` is
+  about 7K under, and the purchases about 4K to 12K over.
+- **`openSale` barely moves, as expected.** Both runs measure the adapter's *first* sale,
+  which registers the fee recipient: 8 new slots before and after the diet. A later
+  `openSale` writes 6 (ADR 0004: about 762K on Sepolia); this run has one edition, so it does
+  not measure one.
+- **The deploy costs more:** the contracts grew with the review fixes; the per-transaction
+  table is in the [README](README.md#sepolia-r3-15-october-2026-current).
+- **`settle` of the first payout costs 8,571 more** than on r2. The diet did not change its
+  slots, and its Prague gas grew by about 8K with the review fixes (ADR 0004's table: 166,585,
+  against 158,414 in CI when r2 was measured).
+
+### Other r3 rows
+
+| Operation | r3 Sepolia | r3 Prague | r2 Sepolia |
+| --- | ---: | ---: | ---: |
+| [`createCollection` (PLATFORM)](https://sepolia.etherscan.io/tx/0xd8a684aa6b94de329edc7056c044f6044f20fcea60b2b7057508108ac539bd24) | 382,228 | 116,668 | 377,834 |
+| [`registerPackage` (curation signer 1's approval)](https://sepolia.etherscan.io/tx/0x0e6a2408c1fa18f99a31420abbe0e6e85bb323cf7ed84212466f02bbceaa176a) | 274,595 | 103,355 | 269,395 |
+| [`appendCurator` (CURATOR evidence statement)](https://sepolia.etherscan.io/tx/0x09bd63fc0966673bdcac8d743fb6288947a568711eb9a55ed31b22914bc75c42) | 274,619 | 104,179 | 272,040 |
+| [`acceptPackage`, first acceptance: registers the artist](https://sepolia.etherscan.io/tx/0xa141c52a7e0fcb8f10de17e4456f6f43a252248728529b8d6f18ceffb50e4ff0) | 1,381,478 | 416,158 | 1,220,987 |
+| [`start`, first work ever](https://sepolia.etherscan.io/tx/0x64be42ea8d461e201cbeaabe95bf53f3a0e5f5d66796ff807812722cb7623543) | 1,601,871 | 439,311 | 1,604,862 |
+| [`startWithBid`, first bid under new sale terms (one-time)](https://sepolia.etherscan.io/tx/0xf9e00fc2d4b1464d76a393890ef898405e449d5eac9fb59e1fa32ec73e8dbedd) | 1,213,250 | 382,370 | — |
+| [`bid`, first bid on a sale](https://sepolia.etherscan.io/tx/0x95958d0cd485edefdf2f772c0e6172e38237bf44addc2fc2b683941d71a9eb51) | 169,410 | 73,790 | 168,777 |
+| [`bid`, outbids and credits the previous bidder](https://sepolia.etherscan.io/tx/0x4cde0ba6e11854b5872af465749624c7f1d11c3241ef5a934566a55e03a8d60e) | 169,060 | 73,440 | 168,932 |
+| [`openRecord`](https://sepolia.etherscan.io/tx/0x1b8bc73dc94890c9887bfdcd7b17caab03a21bd5c6bf28596e9b4484caab49f8) | 504,555 | 157,975 | 505,728 |
+| [`syncOnChain`](https://sepolia.etherscan.io/tx/0x17029a2069d4a07de99c560740092efe65441ab7f66b9a924c59148f1f195ee2) | 66,247 | 63,547 | 58,821 |
+
+- **Content** costs the same as on r2, row for row (the content store did not change):
+  `writeChunk` of 1,024, 8,192 and 24,572 bytes is 1,914,322, 13,008,576 and 38,364,370 gas.
+- **The artist's first acceptance** records the wallets the artist had consolidated on the
+  shared delegation contract: two by now (from r1 and r2), against one when r2 registered.
+- **The first bid under new sale terms** was a `bid` on r2 (510,074) and is a `startWithBid`
+  on r3 (item 3). On r2, `startWithBid` came after that bid, so r2's `startWithBid` row is
+  steady state; r3's steady-state row is item 7's.
+- **`syncOnChain` costs 7,426 more** on both rule sets, so in execution, not new state;
+  WorkRecords changed in #53, #56 and #66.
+
+**Views** (`eth_simulateV1`: the gas each call uses as a transaction):
+
+| Call | r3 Sepolia | Output | r2 Sepolia | r2 output |
+| --- | ---: | ---: | ---: | ---: |
+| `tokenURI(1)`: 1,024 bytes of attested base64, inlined | 313,479 | 1,734 bytes | 311,148 | 1,824 bytes |
+| `tokenURI(4)`: record not open (core-only metadata) | 122,083 | 298 bytes | 117,914 | 384 bytes |
+| `royaltyInfo(1, 1 ETH)` | 36,426 |  | 40,667 |  |
+
+The views stay far inside the 8M `tokenURI` budget; the metadata JSON changed with the review
+fixes, hence the different output sizes.
+
+### Pending (r3)
+
+**What was created.** Collections 1 and 2; package root `0xde416feb…e68d`; Stream tokens 1 to
+7, each a 24-hour auction:
+
+| Token | Item | State on 15 October |
+| ---: | --- | --- |
+| 1 | 1,024-byte base64 media | Record opened and synced. Bidder 1 bid 0.001 ETH; bidder 2 outbid at 0.002 ETH. Ends 16 October, 20:33:12 UTC. |
+| 2 | 8,192-byte base64 media | No bid. Ends 20:33:24 UTC. |
+| 3 | Registered-only media | No bid. Ends 20:33:36 UTC. |
+| 4 | Registered-only media | `startWithBid` by bidder 2, 0.001 ETH. Ends 20:33:48 UTC. |
+| 5 | 24,572-byte base64 media | No bid. Ends 20:34:00 UTC. |
+| 6 | `EDITION_MASTER`: fixed edition of 10 at 0.0001 ETH | Bidder 1 bid 0.001 ETH. Ends 20:34:12 UTC. |
+| 7 | In collection 2 | `startWithBid` by bidder 1, 0.001 ETH. Ends 20:35:00 UTC. |
+
+Item 6, the VRF work, was not started on r3: its seed request is the next thing to run if
+the VRF path needs re-measuring.
+
+**To finish, from 16 October 2026, 20:35 UTC,** in the repository root (r3 is the driver's
+default record; `Flow` is the helper under [Pending](#pending) below):
+
+```powershell
+$r3 = @('-State', 'deployments/11155111/flows/r3.json')
+Flow @r3 -Step settle -TokenId 6        # the master: first payout, creates the seller wallet
+Flow @r3 -Step settle -TokenId 4
+Flow @r3 -Step settle -TokenId 1
+Flow @r3 -Step settle -TokenId 7
+Flow @r3 -Step settle -TokenId 2        # no bid: the token goes to the artist
+Flow @r3 -Step settle -TokenId 3
+Flow @r3 -Step settle -TokenId 5
+Flow @r3 -Step createEdition -TokenId 6
+Flow @r3 -Step openSale -TokenId 6
+Flow @r3 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 1 -Label purchase-first-copy
+Flow @r3 -Step purchase -SaleId 1 -Bidder bidder2 -Quantity 1 -Label purchase-later-copy
+Flow @r3 -Step purchase -SaleId 1 -Bidder bidder1 -Quantity 2 -Label purchase-two-copies
+Flow @r3 -Step prague                    # soon after: the public RPC keeps recent state only
+Flow @r3 -Step report
+```
+
+Then replace the simulated rows above with the receipts. The simulation predicts: `settle` of
+token 6, 449,934; `createEdition`, 887,954; `openSale`, 992,031; the purchases, 232,182,
+232,158 and 134,262.
+
+**An anti-snipe bid** can be placed for real this time: a bid in the last 15 minutes of a
+live r3 auction. For token 1, between 20:18:12 and 20:33:12 UTC on 16 October, bidder 1
+outbids bidder 2's 0.002 ETH:
+
+```powershell
+Flow @r3 -Step bid -TokenId 1 -Bidder bidder1 -Amount 3000000000000000 -Label bid-antisnipe
+```
+
+It moves token 1's end to 15 minutes after the bid, so settle token 1 after that.
 
 ## Summary (r2)
 
@@ -459,7 +609,8 @@ Flow @r2 -Step bid -TokenId <id> -Bidder bidder1 -Amount <at least the minimum b
 ```
 
 `Flow` is a helper that runs `script/sepolia/flows.ps1` with the operator's signer
-module, and `@r2` passes r2's state file:
+module, and `@r2` passes r2's state file and record (r3 is the driver's default since the r3
+run):
 
 ```powershell
 function Flow {
@@ -467,7 +618,7 @@ function Flow {
         -SignerModule '<module>' @args
     if ($LASTEXITCODE -ne 0) { throw "flow step failed ($LASTEXITCODE)" }
 }
-$r2 = @('-State', 'deployments/11155111/flows/r2.json')
+$r2 = @('-State', 'deployments/11155111/flows/r2.json', '-Record', 'deployments/11155111/1791750816.json')
 $r1 = @('-State', 'deployments/11155111/flows/r1.json', '-Record', 'deployments/11155111/1791746472.json')
 ```
 

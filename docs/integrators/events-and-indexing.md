@@ -37,9 +37,11 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
   ([`tools/content/keccak.py`](../../tools/content/keccak.py)).
 - **Binding names.** The `name` of a `Bound` event is an ASCII string left-aligned in a
   `bytes32` (for example `"WORK_RECORDS"`), not a hash.
-- **Where to start.** Scan from the deployment record's `startBlock`. For Sepolia r2 that is
-  block 11,894,137 ([`1791750816.json`](../../deployments/11155111/1791750816.json)). r2 runs
-  an earlier build whose events differ in a few places
+- **Where to start.** Scan from the deployment record's `startBlock`. For Sepolia r3 that is
+  block 11,922,738 ([`1792095396.json`](../../deployments/11155111/1792095396.json)). The
+  superseded r2 starts at block 11,894,137
+  ([`1791750816.json`](../../deployments/11155111/1791750816.json)) and runs an earlier build
+  whose events differ in a few places
   ([changes since r2](abis-and-interface-ids.md#changes-since-the-sepolia-r2-build)).
 - **Roles and delays.** "PARAMETER_SETTER (48 hours)" names the role the selector maps to in
   the committed genesis policy and that role's delay class: immediate, standard (48 hours),
