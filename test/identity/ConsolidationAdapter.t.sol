@@ -377,6 +377,14 @@ contract ConsolidationAdapterTest is IdentityFixture {
         _expectReadsRevert(a2, _readFailed(address(repriced)));
     }
 
+    /// @dev A delegation contract that has lost its code (it cannot today, but the adapter does
+    ///      not assume so) fails every read closed, before any call is made.
+    function test_Reads_FailClosedWhenTheDelegationContractHasNoCode() public {
+        (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();
+        vm.etch(address(repriced), "");
+        _expectReadsRevert(a2, _readFailed(address(repriced)));
+    }
+
     /// @dev IDENTITY-4: a revert with data, or oversized return data, also fails closed.
     function test_Reads_FailClosedOnARevertWithDataOrAnOversizedReturn() public {
         (RepricedDelegationMock repriced, ConsolidationAdapter a2) = _repriced();

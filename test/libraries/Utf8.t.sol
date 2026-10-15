@@ -262,6 +262,23 @@ contract Utf8Test is Test {
         assertFalse(Utf8.isValid(hex"41e0a0"));
     }
 
+    /// @dev Every ill-formed lead, and every lead whose second byte has a narrowed range, cut by
+    ///      the end of a chunk: the stream is refused, like the whole text. Mutation testing found
+    ///      these unpinned (the fast paths take only sequences that end inside the chunk).
+    function test_StreamRefusesIllFormedSequencesCutAtTheChunkEnd() public pure {
+        bytes[7] memory leads =
+            [bytes(hex"c0"), hex"c1", hex"e0", hex"ed", hex"f0", hex"f4", hex"f5"];
+        bytes[7] memory rests =
+            [bytes(hex"80"), hex"bf", hex"8080", hex"a080", hex"808080", hex"908080", hex"808080"];
+        for (uint256 i; i < leads.length; ++i) {
+            bytes memory whole = bytes.concat("a", leads[i], rests[i]);
+            assertFalse(Utf8.isValid(whole), vm.toString(whole));
+            (bool ok, uint256 state) = Utf8.validate(0, bytes.concat("a", leads[i]));
+            if (ok) (ok, state) = Utf8.validate(state, rests[i]);
+            assertFalse(ok && state == 0, vm.toString(whole));
+        }
+    }
+
     function test_StreamRejectsForgedStates() public pure {
         uint256[7] memory forged = [
             uint256(4 | (0x80 << 8) | (0xbf << 16)), // four continuations due

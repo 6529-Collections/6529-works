@@ -2,8 +2,8 @@
 
 This page tells an auditor how to build and test 6529 Works exactly as CI does, which gates
 CI enforces, and which gas, state-growth and engineering budgets every change must keep.
-Coverage, mutation testing and Halmos proofs are being added in
-[PR #58](https://github.com/6529-Collections/6529-works/pull/58).
+How strong the tests are (per-contract coverage and its floors, mutation testing, the Halmos
+proofs) is on [Testing](../testing/README.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
 

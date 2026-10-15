@@ -19,6 +19,7 @@ import {
     ProductEconomics,
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
+import { Limits } from "src/interfaces/types/Limits.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { MockERC20 } from "../mocks/EconomicsMocks.sol";
@@ -249,10 +250,47 @@ contract EconomicsResolverTest is EconomicsBase {
         econ.setDefaultLicense(PRODUCT_STREAM, 1, License("CC0-1.0", other));
         vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
         econ.setDefaultLicense(PRODUCT_STREAM, 1, License("cc0-1.0", other));
+        // Another text on either side of the pinned one (mutation testing).
+        vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
+        econ.setDefaultLicense(PRODUCT_STREAM, 1, License("CC0-1.0", bytes32(uint256(1))));
+        vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
+        econ.setDefaultLicense(PRODUCT_STREAM, 1, License("CC0-1.0", bytes32(type(uint256).max)));
         econ.setDefaultLicense(PRODUCT_STREAM, 1, License("MIT", other));
         econ.setDefaultLicense(PRODUCT_STREAM, 2, License("cc0-1.0", CC0_TEXT));
         assertEq(econ.defaultLicense(PRODUCT_STREAM).textFileId, CC0_TEXT);
         assertEq(econ.cc0TextFileId(), CC0_TEXT);
+    }
+
+    /// @dev The bounds exactly, each side of each (mutation testing: the existing cases stood at
+    ///      the bound, so `>=` read as `==`, or `!=` as `<`, still passed).
+    function test_BoundsAreExactOnEachSide() public {
+        // A fee share above the whole, not only equal to it, is refused; a royalty rate of
+        // exactly the whole is allowed.
+        vm.expectRevert(IEconomicsResolver.InvalidEconomics.selector);
+        econ.setFeeTerms(PRODUCT_STREAM, 1, network, D + 1);
+        econ.setRoyaltyRate(PRODUCT_STREAM, 1, D);
+        assertEq(_econ(PRODUCT_STREAM).royaltyRate, D);
+        // A stale revision ahead of the current one is refused too.
+        vm.expectRevert(abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, 3, 1));
+        econ.setFeeTerms(PRODUCT_STREAM, 3, network, 1);
+        // A license ID of exactly the maximum length is accepted, one byte more is refused.
+        bytes memory longest = new bytes(Limits.MAX_LICENSE_ID_BYTES);
+        for (uint256 i; i < longest.length; ++i) {
+            longest[i] = "a";
+        }
+        econ.setDefaultLicense(PRODUCT_FEDERATED, 1, License(string(longest), CC0_TEXT));
+        vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
+        econ.setDefaultLicense(
+            PRODUCT_FEDERATED, 2, License(string(bytes.concat(longest, "a")), CC0_TEXT)
+        );
+    }
+
+    /// @dev Only the CC0 key needs the pinned text: a key that sorts above it does not
+    ///      (`GPL-3.0`'s does), whatever the text.
+    function test_OnlyTheCc0KeyNeedsThePinnedText() public {
+        assertGt(uint256(WorksHashing.licenseKey("GPL-3.0")), uint256(WorksHashing.CC0_LICENSE_KEY));
+        econ.setDefaultLicense(PRODUCT_STREAM, 1, License("GPL-3.0", keccak256("GPL text")));
+        assertEq(econ.defaultLicense(PRODUCT_STREAM).spdxId, "GPL-3.0");
     }
 
     function test_SettersAreRestrictedAndNonPayable() public {

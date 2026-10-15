@@ -1,0 +1,196 @@
+{
+  "margin": {
+    "lines": 1.0,
+    "branches": 2.0
+  },
+  "default": {
+    "lines": 95.0,
+    "branches": 85.0
+  },
+  "files": {
+    "src/content/Base64Validator.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/content/ContentStore.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/content/DataUri.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/content/DependencyRegistry.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/content/HtmlScript.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/content/JsonScan.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/content/Renderer.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/curation/Eip712CurationVerifier.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/curation/PackageRegistry.sol": {
+      "lines": 97.9,
+      "branches": 93.4
+    },
+    "src/economics/AssetAllowlist.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/ClaimRouter.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/EconomicsResolver.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/ReleaseVerifier.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/RevenueEscrow.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/RevenuePayment.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/SplitFactory.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/SplitWallet.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/Splits.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/economics/TokenTransfer.sol": {
+      "lines": 97.2,
+      "branches": 90.3
+    },
+    "src/editions/EditionRules.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/editions/Editions.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/entropy/VrfEntropyModule.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/governance/BoundedParameter.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/governance/GovernanceConfig.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/governance/GovernanceConfigurator.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/governance/Roles.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/governance/WorksAccessManager.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/identity/ArtistRegistry.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/identity/ConsolidationAdapter.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/interfaces/types/WorksHashing.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/BoundedCall.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/DelegatedEOA.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/JsonEscape.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/ProtocolContracts.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/SSTORE2.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/SignatureVerifier.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/libraries/Utf8.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/records/StatementLog.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/sales/DutchPricing.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/sales/DutchSale.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/sales/EnglishAuction.sol": {
+      "lines": 99.0,
+      "branches": 95.9
+    },
+    "src/sales/FixedPriceSale.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/sales/MintSaleBase.sol": {
+      "lines": 98.4,
+      "branches": 96.0
+    },
+    "src/stream/SpdxId.sol": {
+      "lines": 99.0,
+      "branches": 98.0
+    },
+    "src/stream/Stream.sol": {
+      "lines": 99.0,
+      "branches": 92.3
+    },
+    "src/stream/WorkRecords.sol": {
+      "lines": 99.0,
+      "branches": 95.5
+    }
+  }
+}

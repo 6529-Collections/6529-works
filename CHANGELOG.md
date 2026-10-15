@@ -436,3 +436,18 @@
     `createEdition`, `openSale` and `purchase`, and lowers the counts and ceilings.
     `StreamTermsInvariant.t.sol` runs 36 real collisions of the terms positions, and
     `StreamTermsGrind.t.sol` reproduces a ground one.
+- Tests: test strength is measured. `tools/check_coverage.py` reports line and branch
+  coverage per src/ contract from `forge coverage` (under a new `lite` profile) and fails
+  when a contract drops below its floor in `tools/coverage-floors.json`.
+  `tools/mutation.py` runs mutation testing with `slither-mutate` (already pinned with
+  Slither), one shard per src/ file, re-checks survivors against the whole suite, adds a rule
+  that moves every integer constant, and gates kill rates against per-contract floors (none
+  recorded until the first full baseline). `test/symbolic/` holds
+  Halmos proofs for the base64 alphabet check, the license-ID rule, `BoundedCall`, the
+  curation signer epoch, the split payee rules and the text libraries; Halmos 0.3.3 is pinned
+  in `requirements-tools.lock`. `docs/testing/README.md` describes every layer of the suite.
+  New tests close cheap coverage gaps (JSON navigation over malformed text, `SpdxId`, a token
+  that refuses `approve`, a statement in no role, a delegation contract without code, a
+  truncated role revocation) and the gaps mutation testing found so far (UTF-8 leads cut at a
+  chunk end, escape letters, reads past the end, odd token return shapes, the resolver's
+  bounds, an exact Dutch payment).

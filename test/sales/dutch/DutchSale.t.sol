@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
@@ -216,12 +217,18 @@ contract DutchSaleTest is DutchBase {
             network,
             _fee(total)
         );
+        vm.recordLogs();
         vm.prank(alice);
         dutch.purchase{ value: total }(saleId, bob, 2, unit, _eth(alice, total));
         assertEq(editions.balanceOf(bob, LINEAR), 2);
         assertEq(seller.balance + network.balance, total);
         assertEq(address(dutch).balance, 0);
         assertEq(dutch.claimable(alice, CURRENCY_ETH), 0);
+        // No excess, no credit: not even a zero `Credited` (mutation testing).
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != ISaleAdapter.Credited.selector, "a zero credit");
+        }
     }
 
     function test_Purchase_ExcessIsCreditedAndClaimed() public {

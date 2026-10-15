@@ -13,6 +13,7 @@
 | Know why a decision was made | The [ADRs](adr/README.md) |
 | Deploy or operate | The [runbook](../script/README.md) and the [genesis configuration](../config/README.md) |
 | Contribute | [CONTRIBUTING.md](../CONTRIBUTING.md); automated agents also read [AGENTS.md](../AGENTS.md) |
+| Run or extend the tests, or see how strong they are | [Testing](testing/README.md): the layers of the suite, coverage, mutation testing and the symbolic proofs |
 | Report a vulnerability | [SECURITY.md](../SECURITY.md) |
 | Read the internal review | [Internal review, October 2026](security/internal-review-2026-10.md): by AI agents, not an external audit |
 
@@ -53,4 +54,8 @@ specification differ, the specification follows the code.
 | [`tools/check_budgets.py`](../tools/check_budgets.py), [`tools/check_slither.py`](../tools/check_slither.py) | The engineering budgets; reviewed Slither findings ([triage](security/slither-triage.md)) |
 
 All tools use only the Python standard library; CI runs them ([`ci.yml`](../.github/workflows/ci.yml)).
-The [changelog](../CHANGELOG.md) records what changed.
+The tools that measure the tests ([`tools/check_coverage.py`](../tools/check_coverage.py),
+[`tools/mutation.py`](../tools/mutation.py)) and the Halmos setup are described in
+[Testing](testing/README.md); Slither's and Halmos's versions are hash-locked in
+[`requirements-tools.lock`](../requirements-tools.lock). The [changelog](../CHANGELOG.md)
+records what changed.

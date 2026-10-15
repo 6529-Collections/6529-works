@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { Splits } from "src/economics/Splits.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
@@ -159,6 +160,47 @@ contract HostileTokenMatrixTest is EconomicsBase {
         _assertNoResidue(address(t), before);
     }
 
+    // ---------------------------------------------------------------- odd return shapes
+
+    /// @dev Only a 32-byte word of exactly 0 or 1 is an answer: a `true` with more data after
+    ///      it, or a word whose upper bits are set, fails closed; a `balanceOf` that returns more
+    ///      than one word fails the read; a reverting `approve` fails the escrow route
+    ///      (mutation testing: each of these was unpinned).
+    function test_OddReturnShapes_FailClosed() public {
+        for (uint8 mode = 1; mode <= 2; ++mode) {
+            OddReturnToken t = new OddReturnToken();
+            t.mint(address(wallet), AMOUNT);
+            t.setMode(mode);
+            vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
+            wallet.release(address(t), 0);
+        }
+        OddReturnToken r = new OddReturnToken();
+        r.mint(address(wallet), AMOUNT);
+        r.setMode(3);
+        vm.expectRevert(abi.encodeWithSelector(TokenTransfer.TokenReadFailed.selector, address(r)));
+        wallet.release(address(r), 0);
+
+        OddReturnToken a = new OddReturnToken();
+        _fund(a);
+        a.setMode(4);
+        Snapshot memory before = _snap(address(a));
+        vm.expectRevert(_failed(address(a), IERC20.approve.selector));
+        payer.payERC20(address(wallet), address(a), AMOUNT);
+        _assertNoResidue(address(a), before);
+    }
+
+    /// @dev Balances above 2**128 are read and moved exactly.
+    function test_HugeBalancesAreReadExactly() public {
+        MockERC20 t = new MockERC20("Huge", "HUGE");
+        uint256 huge = (1 << 200) + 12_345;
+        t.mint(address(wallet), huge);
+        uint256 iAlice = _indexOf(wallet, alice);
+        uint256 paid = wallet.release(address(t), iAlice);
+        assertEq(paid, Splits.entitlement(huge, 60_000));
+        assertEq(t.balanceOf(alice), paid);
+        assertEq(t.balanceOf(address(wallet)), huge - paid);
+    }
+
     // ---------------------------------------------------------------- reverts on zero
 
     /// @dev Ported from the review: a token that reverts on zero-value moves never sees one.
@@ -273,6 +315,32 @@ contract HostileTokenMatrixTest is EconomicsBase {
         vm.expectRevert(_failed(address(t), IERC20.transfer.selector));
         escrow.flush(address(wallet), address(t));
         _assertNoResidue(address(t), before);
+    }
+
+    /// @dev The escrow route approves the escrow first; a token that refuses the approval
+    ///      (returns `false`) fails the whole payment, the approval included.
+    function test_ReturnsFalse_RefusedApprovalRevertsTheEscrowRouteAtomically() public {
+        ApprovalRefusingToken t = new ApprovalRefusingToken();
+        _fund(t);
+        Snapshot memory before = _snap(address(t));
+        vm.expectRevert(_failed(address(t), IERC20.approve.selector));
+        payer.payERC20(address(wallet), address(t), AMOUNT);
+        _assertNoResidue(address(t), before);
+    }
+
+    /// @dev A refusal must move nothing: a token that returns `false` after taking the payer's
+    ///      tokens without delivering them (or delivering without taking) is a balance mismatch,
+    ///      not a refusal to route around (mutation testing: the check once needed both sides to
+    ///      move to count).
+    function test_ReturnsFalse_OneSidedMoveIsAMismatchNotARefusal() public {
+        for (uint8 side; side < 2; ++side) {
+            OneSidedFalseToken t = new OneSidedFalseToken(side);
+            _fund(t);
+            Snapshot memory before = _snap(address(t));
+            vm.expectRevert(_mismatch(address(t)));
+            payer.payERC20(address(wallet), address(t), AMOUNT);
+            _assertNoResidue(address(t), before);
+        }
     }
 
     // ---------------------------------------------------------------- rebasing
@@ -399,5 +467,76 @@ contract HostileTokenMatrixTest is EconomicsBase {
         escrow.flush(address(wallet), address(t));
         assertEq(t.balanceOf(address(wallet)), AMOUNT);
         assertEq(escrow.totalOwed(address(t)), 0);
+    }
+}
+
+/// @dev Refuses transfers and approvals by returning `false` (and moving nothing).
+contract ApprovalRefusingToken is ReturnsFalseToken {
+    function approve(address, uint256) public pure override returns (bool) {
+        return false;
+    }
+}
+
+/// @dev `transfer` returns `false` but moves one side only: side 0 takes the sender's tokens and
+///      credits nobody, side 1 credits the recipient and takes nothing.
+contract OneSidedFalseToken is MockERC20("OneSided", "ONE") {
+    uint8 internal immutable side;
+
+    constructor(uint8 side_) {
+        side = side_;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (side == 0) _balances[msg.sender] -= amount;
+        else _balances[to] += amount;
+        return false;
+    }
+}
+
+/// @dev Mode 1: `transfer` moves and returns a word with its upper bits set over a `true`.
+///      Mode 2: `transfer` moves and returns `true` followed by a second word. Mode 3:
+///      `balanceOf` returns two words. Mode 4: `transfer` refuses (returns false) and
+///      `approve` reverts.
+contract OddReturnToken is MockERC20("Odd", "ODD") {
+    uint8 public mode;
+
+    function setMode(uint8 mode_) external {
+        mode = mode_;
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (mode == 4) return false;
+        _transfer(msg.sender, to, amount);
+        if (mode == 1) {
+            assembly ("memory-safe") {
+                mstore(0, add(shl(128, 1), 1))
+                return(0, 32)
+            }
+        }
+        if (mode == 2) {
+            assembly ("memory-safe") {
+                mstore(0, 1)
+                mstore(32, 1)
+                return(0, 64)
+            }
+        }
+        return true;
+    }
+
+    function approve(address spender, uint256 amount) public override returns (bool) {
+        if (mode == 4) revert("no approvals");
+        return super.approve(spender, amount);
+    }
+
+    function balanceOf(address account) public view override returns (uint256) {
+        uint256 held = _balances[account];
+        if (mode == 3) {
+            assembly ("memory-safe") {
+                mstore(0, held)
+                mstore(32, 0)
+                return(0, 64)
+            }
+        }
+        return held;
     }
 }

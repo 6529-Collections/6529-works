@@ -1,0 +1,12 @@
+# Halmos settings for the symbolic tests in test/symbolic (docs/testing/README.md).
+# Run from the repository root: FOUNDRY_PROFILE=symbolic halmos
+# The symbolic profile in foundry.toml compiles only test/symbolic, into out-symbolic/.
+[global]
+forge-build-out = "out-symbolic"
+match-contract = "Symbolic"
+# Loops in the proofs run over concrete bounds (lengths up to 65), which Halmos still counts.
+loop = 256
+solver-timeout-assertion = "120s"
+# Python's cyclic garbage collector can free Z3 objects on one thread while the solver threads
+# use Z3 on another, which crashes Z3 (seen in CI). Reference counting still frees them.
+disable-gc = true
