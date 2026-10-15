@@ -27,13 +27,15 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      High finding). Anyone may still pay for an allowlisted recipient; the tokens go to that
 ///      recipient and count against its cap. Caps, public phases included, count per
 ///      `(token, id, phase index, keyed wallet)` across sales, so reopening a token with the
-///      same tree never resets them; a fresh drop uses new phase indices. A leaf price below the
-///      package price needs the artist's approval: the creator opens the sale, or signs the
-///      typed `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase),
-///      with a single-use, revocable nonce. Anyone may close a sale whose phases have all
-///      ended. Governance: map `openSale` and `closeSale` to PLATFORM (the creator needs no
-///      role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to PAUSER
-///      and `unpause` to UNPAUSER.
+///      same tree never resets them; a fresh drop uses new phase indices. Any leaf price other
+///      than the package price, and any sale of an OPEN edition, needs the artist's approval
+///      (MARKET-6): the creator opens the sale, or signs the typed
+///      `Typehashes.PHASE_CONFIGURATION` (token, currency, package price, every phase), with a
+///      single-use, revocable nonce. Anyone may close a sale whose phases have all ended;
+///      PLATFORM closes only a sale it opened without that approval. Governance: map `openSale`
+///      and `closeSale` to PLATFORM (the creator needs no role), `setTarget` and
+///      `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to PAUSER and `unpause` to
+///      UNPAUSER.
 contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @notice The EIP-712 struct hashed for {phaseConfigurationDigest} (phases as an array).
     struct Configuration {
@@ -61,7 +63,7 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @notice The phases are empty, too many, or one is malformed (start not before end, or an
     ///         allowlist-only flag without a root).
     error InvalidPhases();
-    /// @notice A zero-price sale prices its leaves without the artist's approval.
+    /// @notice A sale prices its leaves without the artist's approval (MARKET-6).
     error PricedLeavesNeedApproval(address token, uint256 id);
 
     /// @param authority_ The AccessManager.
@@ -94,8 +96,12 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
             _consume(token, id, t, phases_, consent);
             approved = true;
         }
-        // In a zero-price sale every leaf price is a premium, so only the artist may price leaves.
-        if (priced && t.price == 0 && !approved) revert PricedLeavesNeedApproval(token, id);
+        // MARKET-6: alone, PLATFORM sells at the package price only (any leaf price, above or
+        // below it, is the artist's), and never spends an OPEN edition's one-time window.
+        if (!approved) {
+            if (priced) revert PricedLeavesNeedApproval(token, id);
+            _requirePlatformMayOpen(token, id, federated);
+        }
         saleId = _store(token, id, t, approved, federated);
         for (uint256 i; i < phases_.length; ++i) {
             _phases[saleId].push(phases_[i]);
@@ -162,6 +168,11 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
     /// @inheritdoc IFixedPriceSale
     function openSaleOf(address token, uint256 id) external view returns (uint256) {
         return _openSales[token][id];
+    }
+
+    /// @inheritdoc IFixedPriceSale
+    function scheduleDelay(uint256 saleId) external view returns (uint256) {
+        return _scheduleDelay(saleId);
     }
 
     /// @inheritdoc IFixedPriceSale
@@ -260,8 +271,8 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         isConsentNonceUsed[t.creator][consent.nonce] = true;
     }
 
-    /// @dev Checks the phase is open, the leaf, the price and the caps; counts the purchase;
-    ///      returns the unit price.
+    /// @dev Checks the phase is open (its window moved by the schedule's delay, MARKET-1), the
+    ///      leaf, the price and the caps; counts the purchase; returns the unit price.
     function _admit(Purchase calldata p, bytes32[] calldata proof, address payer, address recipient)
         private
         returns (uint256 unit)
@@ -270,19 +281,20 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         Listing storage l = _listings[p.saleId];
         if (p.phase >= list.length || l.closed) revert PhaseNotOpen(p.saleId, p.phase);
         Phase memory phase = list[p.phase];
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < phase.start || block.timestamp >= phase.end) {
-            revert PhaseNotOpen(p.saleId, p.phase);
+        {
+            uint256 delay = _purchaseDelay(l);
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp < phase.start + delay || block.timestamp >= phase.end + delay) {
+                revert PhaseNotOpen(p.saleId, p.phase);
+            }
         }
         if (p.quantity == 0) revert InvalidQuantity();
         address account = phase.payerKeyed ? payer : recipient;
         unit = l.price;
         if (phase.root != 0) {
             _verifyLeaf(p, proof, phase.root, account, l);
-            if (phase.leafPriced) {
-                if (p.leafPrice < unit && !l.approved) revert PriceBelowPackage(p.leafPrice, unit);
-                unit = p.leafPrice;
-            }
+            // Only an approved sale has leaf-priced phases (`openSale`).
+            if (phase.leafPriced) unit = p.leafPrice;
         }
         address token = l.token;
         uint256 id = l.id;
@@ -308,12 +320,16 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
         }
     }
 
-    /// @dev Whether every phase of the sale has ended (an unknown sale has none).
+    /// @dev Whether every phase of the sale has ended, its windows moved by the schedule's
+    ///      delay (an unknown sale has none).
     function _ended(uint256 saleId) private view returns (bool) {
         Phase[] storage list = _phases[saleId];
+        if (list.length == 0) return true;
+        Listing storage l = _listings[saleId];
+        uint256 delay = _halted(l.currency) - l.haltedAtOpen;
         for (uint256 i; i < list.length; ++i) {
             // forge-lint: disable-next-line(block-timestamp)
-            if (list[i].end > block.timestamp) return false;
+            if (list[i].end + delay > block.timestamp) return false;
         }
         return true;
     }

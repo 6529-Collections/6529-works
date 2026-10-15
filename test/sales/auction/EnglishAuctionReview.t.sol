@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
@@ -139,7 +140,8 @@ contract EnglishAuctionReviewTest is AuctionBase {
         auction.settle(saleId);
         assertEq(fed.ownerOf(1), alice);
         assertEq(seller.balance, 0.75 ether);
-        assertEq(network.balance, 0.25 ether);
+        // MARKET-3: the federated network fee recipient, not the token's.
+        assertEq(federatedNetwork.balance, 0.25 ether);
     }
 
     /// @dev L-6: a federated token whose code does not match its registry entry, or a registry
@@ -194,6 +196,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
         stream.setAdmittedMinter(address(auction), false);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         assertFalse(stream.exists(1), "burned");
@@ -243,6 +246,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
 
         uint256 other = _start();
         _pause(other);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(other);
         vm.prank(guardian);
@@ -275,13 +279,13 @@ contract EnglishAuctionReviewTest is AuctionBase {
         uint256 end = auction.auction(saleId).endTime;
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + 2 days);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         vm.warp(block.timestamp + 7 days);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.CANCELLED));
-        assertEq(a.pausedTotal, 1 days);
+        assertEq(a.pausedTotal, 2 days);
         assertEq(a.pausedAt, 0);
         assertEq(a.endTime, end);
     }
@@ -423,6 +427,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
     function test_PR33_ClearingTheRecipientKeepsThePauseUsed() public {
         uint256 saleId = _start();
         _pause(saleId);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
         _bidFor(saleId, alice, carol, 1 ether);
@@ -442,9 +447,10 @@ contract EnglishAuctionReviewTest is AuctionBase {
         vm.prank(alice);
         auction.withdrawBid(saleId);
         _setFloor(ETH, 0.5 ether);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
-        assertEq(auction.minimumBid(saleId), 1, "no bid: the opening bid, at least 1");
+        assertEq(auction.minimumBid(saleId), 1 ether, "no bid: the withdrawn bid's reserve");
         _bidEth(saleId, bob, 1 ether);
         assertEq(auction.auction(saleId).incrementFloor, ETH_FLOOR, "kept, not relocked");
         uint256 minimum = _minimumAfter(1 ether, ETH_FLOOR);

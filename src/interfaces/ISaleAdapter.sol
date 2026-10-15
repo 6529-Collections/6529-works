@@ -74,10 +74,22 @@ interface ISaleAdapter is IERC165 {
     error NothingToClaim(address account, address currency);
     /// @notice The payment does not match the method, the amount, `msg.value` or the payer.
     error InvalidPayment();
+    /// @notice A PERMIT or PERMIT2 payment's deadline has passed.
+    error PaymentExpired(uint256 deadline);
     /// @notice No sale has this ID.
     error UnknownSale(uint256 saleId);
-    /// @notice The adapter is paused, so no sale may open, start or sell.
+    /// @notice The adapter is paused, so no sale may open, start or sell; also a repeated
+    ///         `pause`.
     error SalePaused();
+    /// @notice `unpause` was called while the adapter is not paused.
+    error NotPaused();
+    /// @notice An unpause (or an auction's `resume`) before `allowedAt`, which is 48 hours
+    ///         (`Roles.STANDARD`) after the pause it would end.
+    error UnpauseTooEarly(uint256 allowedAt);
+    /// @notice The address cannot receive the token or the credit (for `claim`, zero).
+    error InvalidRecipient(address recipient);
+    /// @notice An ETH claim could not be delivered to `to`; the credit is kept.
+    error ClaimFailed(address to);
     /// @notice A sale of this token is already open.
     error SaleAlreadyOpen(address token, uint256 id);
     /// @notice The caller is neither the token's creator nor the PLATFORM role.
@@ -91,7 +103,9 @@ interface ISaleAdapter is IERC165 {
     ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role
     ///         (immediate).
     function pause() external;
-    /// @notice Unpauses the adapter. UNPAUSER role.
+    /// @notice Unpauses the adapter. UNPAUSER role. Refused until 48 hours (`Roles.STANDARD`)
+    ///         after the pause, so the guardians always have the standard delay to cancel an
+    ///         unpause, even one scheduled before the pause.
     function unpause() external;
     /// @notice Whether the adapter is paused.
     function paused() external view returns (bool);

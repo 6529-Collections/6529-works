@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
+import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
     CURRENCY_DEFAULT,
@@ -99,6 +100,23 @@ contract FederationRegistryTest is FixedPriceBase {
         vm.etch(address(registry), bytes.concat(address(registry).code, hex"00"));
         assertTrue(registry.isActive(address(fed)));
         assertFalse(fixedSale.isTarget(address(fed)));
+    }
+
+    /// @dev MARKET-6: a federated token's sale configuration is its artist's (ADR 0001
+    ///      section 16), so PLATFORM alone cannot open one, even for a FIXED edition.
+    function test_FederatedSale_PlatformAloneCannotOpen() public {
+        registry.setEntry(address(fed), FED_FEE, true);
+        _install();
+        IFixedPriceSale.Phase[] memory phases = _one(_phase(0, 0, false, false));
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                MintSaleBase.ArtistApprovalRequired.selector, address(fed), FED_ID
+            )
+        );
+        fixedSale.openSale(address(fed), FED_ID, phases, _noConsent());
+        vm.prank(creator);
+        fixedSale.openSale(address(fed), FED_ID, phases, _noConsent());
     }
 
     function test_FederatedSale_PaysTheRegistryFeeShare() public {

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
+import { Roles } from "../governance/Roles.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { IAssetAllowlist } from "./interfaces/IAssetAllowlist.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -25,9 +26,13 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     /// @notice ETH, which is always identified by the zero address.
     address public constant ETH = address(0);
 
+    /// @dev `since` is when the status last changed; `inactiveTotal` sums the seconds of earlier,
+    ///      closed deprecations. Both share the status word, so recording them costs no new slot.
     struct AssetConfig {
         Status status;
         uint64 revision;
+        uint40 since;
+        uint40 inactiveTotal;
         uint256 incrementFloor;
     }
 
@@ -53,7 +58,16 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     ///      includes an emergency deprecation that returns the asset to the status and floor the
     ///      operation saw.
     function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external restricted {
-        _checkRevision(expectedRevision, _assets[asset].revision);
+        AssetConfig storage config = _assets[asset];
+        _checkRevision(expectedRevision, config.revision);
+        // As GOV-5 for unpauses: AccessManager counts the 14-day delay from scheduling, so a
+        // re-admission scheduled ahead could undo a deprecation in its own block. The delay is
+        // counted from the deprecation instead.
+        if (config.status == Status.Deprecated) {
+            uint256 allowedAt = uint256(config.since) + Roles.FUNDS;
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp < allowedAt) revert ReadmissionTooEarly(asset, allowedAt);
+        }
         if (asset != ETH) {
             if (asset.code.length == 0 || DelegatedEOA.isDelegated(asset)) {
                 revert AssetNotAdmissible(asset);
@@ -72,6 +86,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
         AssetConfig storage config = _assets[asset];
         if (config.status != Status.Active) revert InvalidStatusTransition(asset, config.status);
         config.status = Status.Deprecated;
+        config.since = uint40(block.timestamp);
         emit AssetStatusChanged(asset, Status.Active, Status.Deprecated, ++config.revision);
     }
 
@@ -125,6 +140,12 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     }
 
     /// @inheritdoc IAssetAllowlist
+    function statusClock(address asset) external view returns (Status, uint256, uint256) {
+        AssetConfig storage config = _assets[asset];
+        return (config.status, config.since, config.inactiveTotal);
+    }
+
+    /// @inheritdoc IAssetAllowlist
     function defaultCurrency(bytes32 product) external view returns (address) {
         Currency storage currency = _defaults[product];
         if (!currency.configured) revert CurrencyNotConfigured(product);
@@ -145,7 +166,11 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
         if (previous == Status.Active) revert InvalidStatusTransition(asset, previous);
         if (floor == 0) revert InvalidIncrementFloor();
         uint256 previousFloor = config.incrementFloor;
+        if (previous == Status.Deprecated) {
+            config.inactiveTotal += uint40(block.timestamp - config.since);
+        }
         config.status = Status.Active;
+        config.since = uint40(block.timestamp);
         config.incrementFloor = floor;
         uint64 revision = ++config.revision;
         emit AssetStatusChanged(asset, previous, Status.Active, revision);

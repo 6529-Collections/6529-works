@@ -33,9 +33,12 @@ interface IDutchSale is ISaleAdapter {
     error PriceAboveLimit(uint256 price, uint256 maxUnitPrice);
 
     /// @notice Opens a Dutch sale of token `id` starting at `startTime` (not in the past).
-    ///         Callable by the creator or the PLATFORM role.
+    ///         Callable by the creator or the PLATFORM role; PLATFORM only for a listed edition
+    ///         of FIXED size (an OPEN edition's one-time window is the artist's, MARKET-6).
     function openSale(address token, uint256 id, uint64 startTime) external returns (uint256 saleId);
-    /// @notice Closes a sale. Callable by the creator or the PLATFORM role.
+    /// @notice Closes a sale. Callable by the creator; by the PLATFORM role for a sale it opened,
+    ///         or for any sale while the creator resolves to zero (a pending recovery override,
+    ///         MARKET-6).
     function closeSale(uint256 saleId) external;
     /// @notice Buys `quantity` copies for `recipient` (the payer when zero) at the current price.
     function purchase(
@@ -55,4 +58,8 @@ interface IDutchSale is ISaleAdapter {
         returns (LockedTerms memory terms, Schedule memory schedule, bool closed);
     /// @notice The open sale of `(token, id)`, or zero.
     function openSaleOf(address token, uint256 id) external view returns (uint256 saleId);
+    /// @notice Seconds the sale's start and price curve have moved since it opened: the
+    ///         adapter's pauses and its currency's deprecations since then, running ones
+    ///         included (MARKET-1). Overlapping halts count twice. Reverts for an unknown sale.
+    function scheduleDelay(uint256 saleId) external view returns (uint256);
 }

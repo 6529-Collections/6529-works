@@ -17,6 +17,7 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
 import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
+import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
@@ -37,6 +38,7 @@ import {
     SaleKind
 } from "../interfaces/types/SaleTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
+import { Roles } from "../governance/Roles.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 
@@ -57,9 +59,11 @@ import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 ///      `pausedAt + MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay
 ///      exactly at day 5 still lands. After that it ends by itself: views and every mutating
 ///      entry point treat it as resumed with a {MAX_PAUSE} pause, and the first mutating call
-///      writes the resumption down. Every bid checks that the locked currency is still active in the allowlist
-///      (deprecation is an emergency stop for running auctions); settlement, refunds and claims
-///      never read the allowlist.
+///      writes the resumption down. Every bid checks that the locked currency is still active in
+///      the allowlist. Deprecation freezes a running auction (MARKET-2): a standing bid settles
+///      only once the currency is re-admitted (its bidder may withdraw meanwhile), and the first
+///      settle after a re-admission in the auction's last window or after its end reopens it
+///      instead (`AuctionResumed`). Refunds and claims never read the allowlist.
 contract EnglishAuction is
     IEnglishAuction,
     IERC721Receiver,
@@ -69,15 +73,15 @@ contract EnglishAuction is
     /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
     uint64 public constant MAX_PAUSE = 7 days;
     /// @notice Bounds of the governed duration.
-    uint32 public constant MIN_DURATION = 1 hours;
+    uint32 internal constant MIN_DURATION = 1 hours;
     /// @notice Bounds of the governed duration.
-    uint32 public constant MAX_DURATION = 7 days;
+    uint32 internal constant MAX_DURATION = 7 days;
     /// @notice Bounds of the governed anti-snipe window.
-    uint32 public constant MIN_EXTENSION_WINDOW = 1 minutes;
+    uint32 internal constant MIN_EXTENSION_WINDOW = 1 minutes;
     /// @notice Bounds of the governed anti-snipe window.
-    uint32 public constant MAX_EXTENSION_WINDOW = 1 days;
+    uint32 internal constant MAX_EXTENSION_WINDOW = 1 days;
     /// @notice The smallest governed relative increment (1%, out of 100,000).
-    uint32 public constant MIN_INCREMENT_SHARE = 1_000;
+    uint32 internal constant MIN_INCREMENT_SHARE = 1_000;
     /// @notice An opening bid is at most this many increment floors of its currency (1 ETH for
     ///         the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the
     ///         absolute ceiling of the governed opening bid.
@@ -86,9 +90,17 @@ contract EnglishAuction is
     uint256 public constant PAYOUT_GAS = 100_000;
     /// @notice Gas forwarded to the token's `safeTransferFrom` when settling; a failure leaves a
     ///         pending claim.
-    uint256 public constant DELIVERY_GAS = 300_000;
+    uint256 internal constant DELIVERY_GAS = 300_000;
     /// @notice Gas the settlement needs after the delivery attempt returns.
-    uint256 public constant DELIVERY_RESERVE = 50_000;
+    uint256 internal constant DELIVERY_RESERVE = 50_000;
+    /// @dev Gas given to an ERC-20 payout's own call frame (MONEY-1): the token's 300,000, the
+    ///      escrow fallback and new-slot costs under Glamsterdam fit with room to spare. A payout
+    ///      that fails in it is credited to the wallet instead; the caller must forward it in full.
+    uint256 private constant _ERC20_PAYOUT_GAS = 1_000_000;
+    /// @dev How long a sale's currency must have been deprecated before anyone may end the
+    ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
+    ///      to its artist.
+    uint256 private constant _FREEZE_EXIT = 30 days;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
@@ -101,8 +113,9 @@ contract EnglishAuction is
     ///      and flags again by the first bid, which locks the increment floor). Slot 1 holds the
     ///      high bidder and the high bid (at most `uint96`). Slot 2 holds the recipient only when
     ///      it differs from the bidder (`_RECIPIENT_SET`), the artist after a no-bid settlement,
-    ///      and the dispute pause (`_PAUSE_USED`). A first bid for oneself writes one fresh slot
-    ///      and does not read slot 2.
+    ///      and the dispute pause (`_PAUSE_USED`), with the lowest statement-log chain position
+    ///      an outcome recorded after the pause has (`outcomeFrom`). A first bid for oneself
+    ///      writes one fresh slot and does not read slot 2.
     struct Sale {
         address token;
         uint32 tokenId;
@@ -115,14 +128,16 @@ contract EnglishAuction is
         address recipient;
         uint32 pausedAt;
         uint24 pausedTotal;
+        uint40 outcomeFrom;
     }
 
-    /// @dev The governed parameters and the emergency start pause: one slot, read once per start.
+    /// @dev The governed parameters and the emergency start pause (when it began, zero while
+    ///      not paused): one slot, read once per start.
     struct Settings {
         uint32 duration;
         uint32 extensionWindow;
         uint32 incrementShare;
-        bool paused;
+        uint40 pausedAt;
     }
 
     /// @dev The values a sale locks, shared by every sale that locked the same ones. A start
@@ -144,6 +159,8 @@ contract EnglishAuction is
     address public immutable statementLog;
     /// @notice The economics lane's asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
+    /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3).
+    IEconomicsResolver public immutable economicsResolver;
     /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
     address public immutable permit2;
 
@@ -161,18 +178,15 @@ contract EnglishAuction is
     mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
-    /// @notice `unpause` was called while the adapter is not paused.
-    error NotPaused();
     /// @notice A dependency has no code, is a delegated account, or lacks its ERC-165 interface.
     error InvalidDependency(address dependency);
     /// @notice A configuration is outside the bounds above.
     error InvalidConfig();
-    /// @notice The token returned an unusable ID, terms or custody for the minted work.
+    /// @notice The token returned an unusable ID, terms (including the revenue escrow as seller
+    ///         or fee recipient) or custody for the minted work.
     error InvalidTerms(address token, uint256 tokenId);
     /// @notice The token contract cannot be listed (no code, delegated, or not ERC-721).
     error InvalidTarget(address token);
-    /// @notice The address cannot receive the token or the credit.
-    error InvalidRecipient(address recipient);
     /// @notice The caller is not the high bidder.
     error NotHighBidder(address caller);
     /// @notice The opening bid is above its absolute ceiling.
@@ -182,7 +196,9 @@ contract EnglishAuction is
 
     /// @param authority The AccessManager governing this adapter.
     /// @param escrow_ The revenue escrow for refused payouts.
-    /// @param allowlist_ The asset allowlist read at start and on every bid.
+    /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated): the
+    ///        federated network fee recipient, and its asset allowlist, read at start, on every
+    ///        bid and at settlement.
     /// @param statementLog_ The statement log `cancel` reads.
     /// @param permit2_ The canonical Permit2, or zero to disable PERMIT2 payments.
     /// @param config_ The initial auction parameters.
@@ -190,17 +206,23 @@ contract EnglishAuction is
     constructor(
         address authority,
         address escrow_,
-        IAssetAllowlist allowlist_,
+        IEconomicsResolver economicsResolver_,
         address statementLog_,
         address permit2_,
         AuctionConfig memory config_,
         address[] memory targets
     ) AccessManaged(authority) {
         _requireContract(escrow_);
+        _requireContract(address(economicsResolver_));
+        if (!ERC165Checker.supportsInterface(
+                address(economicsResolver_), type(IEconomicsResolver).interfaceId
+            )) revert InvalidDependency(address(economicsResolver_));
+        IAssetAllowlist allowlist_ = IAssetAllowlist(economicsResolver_.assetAllowlist());
         _requireContract(address(allowlist_));
         _requireContract(statementLog_);
         if (permit2_ != address(0)) _requireContract(permit2_);
         escrow = escrow_;
+        economicsResolver = economicsResolver_;
         allowlist = allowlist_;
         statementLog = statementLog_;
         permit2 = permit2_;
@@ -270,8 +292,13 @@ contract EnglishAuction is
     }
 
     /// @inheritdoc IEnglishAuction
+    /// @dev Also while the locked currency is deprecated (MARKET-2: the auction is frozen), so a
+    ///      currency that never returns cannot hold the bid.
     function withdrawBid(uint256 saleId) external nonReentrant {
-        Sale storage s = _require(saleId, AuctionState.PAUSED);
+        Sale storage s = _sales[saleId];
+        // MARKET-2: a live (or ended, unsettled) auction whose currency is deprecated is frozen.
+        (bool active,,) = _currencyClock(s);
+        if (s.status != AuctionState.ACTIVE || active) s = _require(saleId, AuctionState.PAUSED);
         address bidder = s.bidder;
         if (bidder == address(0) || msg.sender != bidder) revert NotHighBidder(msg.sender);
         uint256 amount = s.bid;
@@ -281,8 +308,7 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     function minimumBid(uint256 saleId) external view returns (uint256) {
-        Sale storage s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
+        Sale storage s = _existing(saleId);
         return _minimumBid(s, _terms[s.termsId]);
     }
 
@@ -299,20 +325,28 @@ contract EnglishAuction is
     ///      executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
+        if (_reopenedAfterFreeze(saleId, s)) return;
+        // MARKET-5: a delisted federated contract cannot sell; its high bid is credited back and
+        // the work goes to its artist, as with no bid. Nothing is confiscated.
+        if (_delisted(s)) _refundHighBid(saleId, s);
         s.status = AuctionState.SETTLED;
         (LockedTerms memory lt, address creator) = _lockedTerms(s);
+        // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
+        uint256 price = 0;
         if (s.bidder == address(0)) {
             if (creator == address(0)) revert InvalidRecipient(creator);
             s.recipient = creator;
             s.flags |= _RECIPIENT_SET;
+        } else {
+            price = s.bid;
         }
-        uint256 price = s.bid;
-        uint256 fee = Math.mulDiv(price, lt.feeShare, Splits.DENOMINATOR);
-        _pay(lt.currency, lt.seller, price - fee);
-        _pay(lt.currency, lt.feeRecipient, fee);
+        // Exact: a bid fits 96 bits and the share 17, so the product cannot overflow.
+        uint256 fee = price * lt.feeShare / Splits.DENOMINATOR;
+        _pay(lt.currency, lt.seller, price - fee, saleId);
+        _pay(lt.currency, lt.feeRecipient, fee, saleId);
         IMintTarget(lt.token).markPrimarySettled(lt.id);
         _deliver(saleId, s);
-        _emitSettled(saleId, s, lt, fee);
+        _emitSettled(saleId, s, lt, price, fee);
     }
 
     /// @inheritdoc IEnglishAuction
@@ -327,10 +361,9 @@ contract EnglishAuction is
         address pending = _recipientOf(s);
         if (s.flags & _DELIVERY_PENDING == 0) revert NoPendingDelivery(saleId);
         if (msg.sender != pending && msg.sender != s.bidder) {
-            if (
-                s.bidder != address(0)
-                    || msg.sender != IMintTarget(s.token).primaryTerms(s.tokenId, "").creator
-            ) revert NoPendingDelivery(saleId);
+            if (s.bidder != address(0) || msg.sender != _currentCreator(s)) {
+                revert NoPendingDelivery(saleId);
+            }
         }
         if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
@@ -352,13 +385,22 @@ contract EnglishAuction is
         if (s.flags & _PAUSE_USED != 0) revert PauseExhausted(saleId);
         s.flags |= _PAUSE_USED;
         s.pausedAt = SafeCast.toUint32(block.timestamp);
+        // LIFECYCLE-4: `cancel` must cite an outcome recorded after this pause, so one past the
+        // position of the token's own latest outcome now (none: any position).
+        (bytes32 entry, uint64 index) = _ownOutcome(s);
+        // Safe: a statement-log position is far below 2^40.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (entry != 0) s.outcomeFrom = uint40(index + 1);
         emit AuctionPaused(saleId, disputeRef);
     }
 
     /// @inheritdoc IEnglishAuction
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function resume(uint256 saleId) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
-        _endPause(saleId, s, block.timestamp - s.pausedAt);
+        uint256 pausedAt = s.pausedAt;
+        _requireUnpausable(pausedAt);
+        _endPause(saleId, s, block.timestamp - pausedAt);
     }
 
     /// @inheritdoc IEnglishAuction
@@ -369,35 +411,44 @@ contract EnglishAuction is
     ///      without one. Accepted through `pausedAt + MAX_PAUSE` inclusive.
     function cancel(uint256 saleId, bytes32 outcomeRef) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
-        (address token, uint256 tokenId) = (s.token, s.tokenId);
-        if (
-            outcomeRef == bytes32(0)
-                || outcomeRef != IStatementLog(statementLog).latestDisputeOutcome(token, tokenId)
-        ) revert OutcomeNotRecorded(saleId, outcomeRef);
+        // As `resume`: not in the pause's own window, even when scheduled before the pause.
+        _requireUnpausable(s.pausedAt);
+        // LIFECYCLE-4: the cited outcome is the token's own latest one (no item fallback) and
+        // was recorded after the pause, so neither an outcome recorded before the pause nor one
+        // about the package item can cancel.
+        (bytes32 entry, uint64 index) = _ownOutcome(s);
+        if (outcomeRef == bytes32(0) || outcomeRef != entry || index < s.outcomeFrom) {
+            revert OutcomeNotRecorded(saleId, outcomeRef);
+        }
         s.status = AuctionState.CANCELLED;
-        s.pausedTotal = SafeCast.toUint24(block.timestamp - s.pausedAt);
+        // Safe: a live pause is at most MAX_PAUSE (7 days) long, far below 2^24 seconds.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        s.pausedTotal = uint24(block.timestamp - s.pausedAt);
         s.pausedAt = 0;
         _refundHighBid(saleId, s);
-        IMintTarget(token).burn(tokenId, 1);
+        IMintTarget(s.token).burn(s.tokenId, 1);
         emit AuctionCancelled(saleId, outcomeRef);
     }
 
     // ----------------------------------------------------------------------------- credits
 
     /// @inheritdoc ISaleAdapter
-    function claim(address currency, address to) external nonReentrant returns (uint256 amount) {
-        if (to == address(0)) revert InvalidRecipient(to);
-        amount = _credits[msg.sender][currency];
-        if (amount == 0) revert NothingToClaim(msg.sender, currency);
-        _credits[msg.sender][currency] = 0;
-        emit Claimed(msg.sender, currency, to, amount);
-        if (currency == CURRENCY_ETH) {
-            if (!TokenTransfer.sendETH(to, amount, gasleft())) {
-                revert IRevenueEscrow.ETHTransferFailed(to, amount);
-            }
-        } else {
-            TokenTransfer.transferExact(currency, to, amount);
-        }
+    function claim(address currency, address to) external nonReentrant returns (uint256) {
+        return _claim(msg.sender, currency, to);
+    }
+
+    /// @inheritdoc IEnglishAuction
+    function claimFor(address account, address currency) external nonReentrant returns (uint256) {
+        // MONEY-1 credits only ERC-20 payouts; ETH credits are claimed by their account.
+        if (currency == CURRENCY_ETH) revert IRevenueEscrow.InvalidAsset(currency);
+        return _claim(account, currency, account);
+    }
+
+    /// @notice Pays one ERC-20 settlement payout in its own call frame, so that `settle` can
+    ///         catch its failure (MONEY-1). Only this contract may call it.
+    function settlePayout(address currency, address wallet, uint256 amount) external {
+        if (msg.sender != address(this)) revert InvalidRecipient(msg.sender);
+        RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
     }
 
     /// @inheritdoc ISaleAdapter
@@ -413,21 +464,24 @@ contract EnglishAuction is
     ///      because stopping a live auction near its end would distort its outcome. The
     ///      per-auction dispute pause, `pause(saleId, disputeRef)`, is separate.
     function pause() external restricted {
-        if (_settings.paused) revert SalePaused();
-        _settings.paused = true;
+        if (_settings.pausedAt != 0) revert SalePaused();
+        _settings.pausedAt = uint40(block.timestamp);
         emit Paused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
+    /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function unpause() external restricted {
-        if (!_settings.paused) revert NotPaused();
-        _settings.paused = false;
+        uint256 pausedAt = _settings.pausedAt;
+        if (pausedAt == 0) revert NotPaused();
+        _requireUnpausable(pausedAt);
+        _settings.pausedAt = 0;
         emit Unpaused(msg.sender);
     }
 
     /// @inheritdoc ISaleAdapter
     function paused() external view returns (bool) {
-        return _settings.paused;
+        return _settings.pausedAt != 0;
     }
 
     /// @inheritdoc ISaleAdapter
@@ -516,9 +570,7 @@ contract EnglishAuction is
     /// @dev `price` is zero, as for every English auction; a federated token's fee share is its
     ///      registry entry's, locked at start.
     function lockedTerms(uint256 saleId) external view returns (LockedTerms memory lt) {
-        Sale storage s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
-        (lt,) = _lockedTerms(s);
+        (lt,) = _lockedTerms(_existing(saleId));
     }
 
     /// @inheritdoc IEnglishAuction
@@ -553,7 +605,9 @@ contract EnglishAuction is
     }
 
     /// @notice Accepts only a token minted into this adapter's custody during a start, so no
-    ///         other transfer can strand a token here.
+    ///         other safe transfer can strand a token here. A plain `transferFrom` runs no hook
+    ///         and cannot be refused: a token sent to this adapter that way is stranded, since
+    ///         nothing records who sent it (CALLS-5). Never send a token here.
     /// @dev Relies on `start` and `startWithBid` holding the reentrancy guard while they mint;
     ///      any future intake path must hold it too.
     function onERC721Received(address operator, address from, uint256, bytes calldata)
@@ -571,7 +625,7 @@ contract EnglishAuction is
 
     function _start(address token, bytes calldata mintData) private returns (uint256 saleId) {
         Settings memory c = _settings;
-        if (c.paused) revert SalePaused();
+        if (c.pausedAt != 0) revert SalePaused();
         bool listed = _listed[token];
         if (!listed && !isTarget(token)) revert TargetNotAllowed(token);
         (uint256 tokenId, PrimaryTerms memory terms) =
@@ -580,10 +634,14 @@ contract EnglishAuction is
             revert IMintTarget.SaleKindMismatch(SaleKind.ENGLISH_AUCTION, terms.saleKind);
         }
         Terms memory t = _lockTerms(token, tokenId, listed, terms.currency, c);
+        // CALLS-1: the escrow refuses to be paid as a wallet, so a work whose seller or fee
+        // recipient is the escrow could never settle; it is refused while nothing is at stake.
+        // A federated token's own fee recipient is never paid ({_lockTerms} checks the network's).
         if (
-            tokenId >> 32 != 0 || terms.seller == address(0)
-                || (terms.feeRecipient == address(0)
-                    && (t.federated ? t.registryFee : terms.feeShare) != 0)
+            tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == escrow
+                || (!t.federated
+                    && (terms.feeRecipient == escrow
+                        || (terms.feeRecipient == address(0) && terms.feeShare != 0)))
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
@@ -639,9 +697,13 @@ contract EnglishAuction is
         if (!listed) {
             IFederationRegistry.Entry memory e =
                 IFederationRegistry(federationRegistry).entry(token);
-            if (e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR) {
-                revert InvalidTerms(token, tokenId);
-            }
+            // MARKET-3: the registry's fee goes to the network's federated recipient, which must
+            // be payable when the fee is nonzero.
+            address recipient = _federatedFeeRecipient();
+            if (
+                e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR
+                    || recipient == escrow || (recipient == address(0) && e.feeShare != 0)
+            ) revert InvalidTerms(token, tokenId);
             t.federated = true;
             t.registryFee = e.feeShare;
         }
@@ -658,8 +720,9 @@ contract EnglishAuction is
         }
     }
 
-    /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and the
-    ///      registry fee share for a federated token.
+    /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and for a
+    ///      federated token the registry fee share, locked at start, paid to the resolver's
+    ///      federated network fee recipient, never to a recipient the token reports (MARKET-3).
     function _lockedTerms(Sale storage s)
         private
         view
@@ -673,7 +736,7 @@ contract EnglishAuction is
             t.currency,
             0,
             p.seller,
-            p.feeRecipient,
+            t.federated ? _federatedFeeRecipient() : p.feeRecipient,
             t.federated ? t.registryFee : p.feeShare
         );
         if (lt.feeShare > Splits.DENOMINATOR) revert InvalidTerms(s.token, s.tokenId);
@@ -690,6 +753,8 @@ contract EnglishAuction is
         bool starting
     ) private {
         Sale storage s = _require(saleId, AuctionState.ACTIVE);
+        // MARKET-5: a federated contract delisted since the start takes no more bids.
+        if (_delisted(s)) revert TargetNotAllowed(s.token);
         Terms storage t = _terms[s.termsId];
         address currency = t.currency;
         if (t.incrementFloor == 0) {
@@ -753,6 +818,12 @@ contract EnglishAuction is
             return;
         }
         if (msg.value != 0) revert InvalidPayment();
+        // As in the fixed-price and Dutch adapters: an expired permit never pays, even where an
+        // allowance would.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (p.method != PaymentMethod.DIRECT && block.timestamp > p.deadline) {
+            revert PaymentExpired(p.deadline);
+        }
         if (p.method == PaymentMethod.PERMIT2) {
             if (permit2 == address(0)) revert InvalidPayment();
             uint256 held = TokenTransfer.balanceOf(currency, address(this));
@@ -795,22 +866,53 @@ contract EnglishAuction is
 
     /// @dev D12: the first bid is at least `max(openingBid, 1 wei)`; later bids add
     ///      `max(incrementShare of the high bid, rounded up; the increment floor locked by the
-    ///      first bid)`.
+    ///      first bid)`. With no bidder after a withdrawal, the withdrawn bid is a reserve: a bid
+    ///      must reach it (LIFECYCLE-1).
     function _minimumBid(Sale storage s, Terms storage t) private view returns (uint256) {
-        if (s.bidder == address(0)) return Math.max(t.openingBid, 1);
+        if (s.bidder == address(0)) return Math.max(Math.max(t.openingBid, s.bid), 1);
         uint256 high = s.bid;
-        uint256 step = Math.mulDiv(high, t.incrementShare, Splits.DENOMINATOR, Math.Rounding.Ceil);
+        // Rounded up, exactly: the high bid fits 96 bits and the share 17.
+        uint256 step = (high * t.incrementShare + Splits.DENOMINATOR - 1) / Splits.DENOMINATOR;
         return high + Math.max(step, t.incrementFloor);
     }
 
     /// @dev Pays nothing for a zero amount, so a zero-fee configuration may name no fee
     ///      recipient (`RevenuePayment` rejects a zero wallet before it looks at the amount).
-    function _pay(address currency, address wallet, uint256 amount) private {
+    ///      MONEY-1: an ERC-20 payout runs in its own frame ({settlePayout}); if it fails for
+    ///      any reason (the token changed behaviour, or blocks this adapter so even the escrow
+    ///      route fails), the amount is credited to the wallet here, and anyone may later pay it
+    ///      out with `claimFor`. Delivery never waits on a payout. ETH payouts cannot fail but
+    ///      by gas, which reverts.
+    function _pay(address currency, address wallet, uint256 amount, uint256 saleId) private {
         if (amount == 0) return;
         if (currency == CURRENCY_ETH) {
             RevenuePayment.payETH(IRevenueEscrow(escrow), wallet, amount, PAYOUT_GAS);
-        } else {
-            RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
+            return;
+        }
+        // The frame gets its gas in full, so a caller cannot force the credit route.
+        if (!BoundedCall.hasSufficientGas(gasleft(), _ERC20_PAYOUT_GAS, DELIVERY_RESERVE)) {
+            revert RevenuePayment.PaymentInsufficientGas(_ERC20_PAYOUT_GAS);
+        }
+        try this.settlePayout{ gas: _ERC20_PAYOUT_GAS }(currency, wallet, amount) { }
+        catch {
+            _credit(wallet, currency, saleId, amount);
+        }
+    }
+
+    /// @dev Sends all of `account`'s credits in `currency` to `to`.
+    function _claim(address account, address currency, address to)
+        private
+        returns (uint256 amount)
+    {
+        if (to == address(0)) revert InvalidRecipient(to);
+        amount = _credits[account][currency];
+        if (amount == 0) revert NothingToClaim(account, currency);
+        _credits[account][currency] = 0;
+        emit Claimed(account, currency, to, amount);
+        if (currency != CURRENCY_ETH) {
+            TokenTransfer.transferExact(currency, to, amount);
+        } else if (!TokenTransfer.sendETH(to, amount, gasleft())) {
+            revert ClaimFailed(to);
         }
     }
 
@@ -835,10 +937,14 @@ contract EnglishAuction is
     }
 
     /// @dev Emitted from its own frame to stay within the legacy code generator's stack. The
-    ///      high bid is zero when the auction drew no bids, so the price and fee are too.
-    function _emitSettled(uint256 saleId, Sale storage s, LockedTerms memory lt, uint256 fee)
-        private
-    {
+    ///      price is zero when no bid stands, so the fee is too.
+    function _emitSettled(
+        uint256 saleId,
+        Sale storage s,
+        LockedTerms memory lt,
+        uint256 price,
+        uint256 fee
+    ) private {
         emit SaleSettled(
             saleId,
             lt.token,
@@ -847,9 +953,9 @@ contract EnglishAuction is
             _recipientOf(s),
             1,
             lt.currency,
-            s.bid,
+            price,
             lt.seller,
-            s.bid - fee,
+            price - fee,
             lt.feeRecipient,
             fee
         );
@@ -864,12 +970,78 @@ contract EnglishAuction is
             s.flags &= ~_RECIPIENT_SET;
             s.recipient = address(0);
         }
-        s.bid = 0;
+        // `s.bid` stays as the reserve the next bid must reach (LIFECYCLE-1).
     }
 
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {
         _credits[account][currency] += amount;
         emit Credited(account, currency, saleId, amount);
+    }
+
+    /// @dev MARKET-2: a currency freeze (deprecation) stops the auction, not just its bids. While
+    ///      frozen, nothing settles, sold or unsold (a standing bidder may withdraw), until the
+    ///      currency has been deprecated for {_FREEZE_EXIT}: then anyone may end the sale, the
+    ///      standing bid is credited back and the work goes to its artist, as with no bid. If the
+    ///      currency came back in the auction's last window or after its end, the first settle
+    ///      reopens the auction instead, for {_reopening}, so the bidders the freeze shut out can
+    ///      bid.
+    function _reopenedAfterFreeze(uint256 saleId, Sale storage s) private returns (bool) {
+        (bool active, uint256 since, address currency) = _currencyClock(s);
+        if (!active) {
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp < since + _FREEZE_EXIT) {
+                revert IAssetAllowlist.AssetNotActive(currency);
+            }
+            _refundHighBid(saleId, s);
+            return false;
+        }
+        // forge-lint: disable-next-line(block-timestamp)
+        if (since + _terms[s.termsId].extensionWindow <= s.endTime) return false;
+        uint32 end = SafeCast.toUint32(block.timestamp + _reopening(s));
+        s.endTime = end;
+        emit AuctionResumed(saleId, end);
+        return true;
+    }
+
+    /// @dev Whether the sale's locked currency is active on the allowlist, since when its status
+    ///      last changed, and the currency.
+    function _currencyClock(Sale storage s)
+        private
+        view
+        returns (bool active, uint256 since, address currency)
+    {
+        currency = _terms[s.termsId].currency;
+        IAssetAllowlist.Status status;
+        (status, since,) = allowlist.statusClock(currency);
+        active = status == IAssetAllowlist.Status.Active;
+    }
+
+    /// @dev Whether the sale is of a federated contract the registry no longer serves (ADR 0001
+    ///      section 16: a delisted contract cannot sell through the network's adapters).
+    function _delisted(Sale storage s) private view returns (bool) {
+        return _terms[s.termsId].federated && !isTarget(s.token);
+    }
+
+    /// @dev The network fee recipient of federated sales (MARKET-3).
+    function _federatedFeeRecipient() private view returns (address) {
+        return economicsResolver.networkFeeRecipient(PRODUCT_FEDERATED);
+    }
+
+    /// @dev A sale that exists.
+    function _existing(uint256 saleId) private view returns (Sale storage s) {
+        s = _sales[saleId];
+        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
+    }
+
+    /// @dev The artist's current authority, as the token reports it now.
+    function _currentCreator(Sale storage s) private view returns (address creator) {
+        (, creator) = _lockedTerms(s);
+    }
+
+    /// @dev The token's own latest dispute outcome in the statement log, and its position in
+    ///      the token's chain.
+    function _ownOutcome(Sale storage s) private view returns (bytes32 entry, uint64 index) {
+        (entry, index) = IStatementLog(statementLog).disputeOutcomeOf(s.token, s.tokenId);
     }
 
     /// @dev Loads a sale after writing down an expired pause, and requires the `wanted` state.
@@ -891,7 +1063,9 @@ contract EnglishAuction is
     function _endPause(uint256 saleId, Sale storage s, uint256 length) private {
         uint32 end = SafeCast.toUint32(_resumedEnd(s, length));
         s.endTime = end;
-        s.pausedTotal = SafeCast.toUint24(length);
+        // Safe: `length` is at most MAX_PAUSE (7 days), far below 2^24 seconds.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        s.pausedTotal = uint24(length);
         s.pausedAt = 0;
         emit AuctionResumed(saleId, end);
     }
@@ -913,11 +1087,25 @@ contract EnglishAuction is
     }
 
     /// @dev The end after a pause of `length` seconds: the remaining time at the pause, but at
-    ///      least the anti-snipe window, counted from the resumption (L-2), so bidders who
-    ///      withdrew always have a window to return.
+    ///      least {_reopening} from the resumption (L-2, LIFECYCLE-1).
     function _resumedEnd(Sale storage s, uint256 length) private view returns (uint256) {
         uint256 pausedAt = s.pausedAt;
-        return pausedAt + length + Math.max(s.endTime - pausedAt, _terms[s.termsId].extensionWindow);
+        return pausedAt + length + Math.max(s.endTime - pausedAt, _reopening(s));
+    }
+
+    /// @dev The least time a halted auction gets back when it resumes after a dispute pause or a
+    ///      currency freeze: the governed duration, or the sale's anti-snipe window if longer
+    ///      (LIFECYCLE-1, MARKET-2), so the bidders the halt shut out, or refunded, can re-form
+    ///      the market.
+    function _reopening(Sale storage s) private view returns (uint256) {
+        return Math.max(_settings.duration, _terms[s.termsId].extensionWindow);
+    }
+
+    /// @dev GOV-5: a pause that began at `pausedAt` ends no earlier than `Roles.STANDARD` later.
+    function _requireUnpausable(uint256 pausedAt) private view {
+        uint256 allowedAt = pausedAt + Roles.STANDARD;
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
     }
 
     /// @dev The token's recipient: the stored one, or the bidder when none is stored.

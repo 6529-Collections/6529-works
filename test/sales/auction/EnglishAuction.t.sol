@@ -4,7 +4,9 @@ pragma solidity ^0.8.24;
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -30,6 +32,7 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_WiresDependenciesAndGenesisTarget() public view {
         assertEq(auction.escrow(), address(escrow));
         assertEq(address(auction.allowlist()), address(allowlist));
+        assertEq(address(auction.economicsResolver()), address(resolver));
         assertEq(auction.statementLog(), address(statements));
         assertEq(auction.permit2(), address(permit2));
         assertTrue(auction.isTarget(address(stream)));
@@ -50,15 +53,15 @@ contract EnglishAuctionTest is AuctionBase {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), eoa, allowlist, address(statements), address(0), _config(), none
+            address(manager), eoa, resolver, address(statements), address(0), _config(), none
         );
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), allowlist, address(statements), eoa, _config(), none
+            address(manager), address(escrow), resolver, address(statements), eoa, _config(), none
         );
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), allowlist, eoa, address(0), _config(), none
+            address(manager), address(escrow), resolver, eoa, address(0), _config(), none
         );
         address[] memory bad = new address[](1);
         bad[0] = address(escrow);
@@ -68,11 +71,51 @@ contract EnglishAuctionTest is AuctionBase {
         new EnglishAuction(
             address(manager),
             address(escrow),
-            allowlist,
+            resolver,
             address(statements),
             address(0),
             _config(),
             bad
+        );
+    }
+
+    /// @dev MARKET-3: the auction takes the economics resolver (ERC-165 checked) and derives the
+    ///      allowlist from it.
+    function test_Constructor_RejectsAnUnfitResolver() public {
+        address[] memory none = new address[](0);
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            IEconomicsResolver(eoa),
+            address(statements),
+            address(0),
+            _config(),
+            none
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, address(escrow))
+        );
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            IEconomicsResolver(address(escrow)),
+            address(statements),
+            address(0),
+            _config(),
+            none
+        );
+        resolver.setAllowlistOverride(eoa);
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            address(0),
+            _config(),
+            none
         );
     }
 
@@ -90,7 +133,7 @@ contract EnglishAuctionTest is AuctionBase {
             new EnglishAuction(
                 address(manager),
                 address(escrow),
-                allowlist,
+                resolver,
                 address(statements),
                 address(0),
                 bad[i],
@@ -185,6 +228,38 @@ contract EnglishAuctionTest is AuctionBase {
         }
     }
 
+    /// @dev CALLS-1: a work paying the revenue escrow as its seller or fee recipient is refused at
+    ///      start and at start-with-bid, while nothing is in custody, because the escrow refuses
+    ///      to be paid as a wallet and the work could never settle.
+    function test_CALLS1_StartRefusesTheEscrowAsSellerOrFeeRecipient() public {
+        for (uint256 i; i < 2; ++i) {
+            PrimaryTerms memory t = _terms(ETH);
+            if (i == 0) t.feeRecipient = address(escrow);
+            else t.seller = address(escrow);
+            stream.setTerms(t);
+            uint256 next = stream.nextId() + 1;
+            vm.expectRevert(
+                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+            );
+            _start();
+            vm.deal(alice, 1 ether);
+            vm.prank(alice);
+            vm.expectRevert(
+                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+            );
+            auction.startWithBid{ value: 1 ether }(
+                address(stream), "", address(0), _direct(alice, 1 ether)
+            );
+        }
+        // Valid wallets start and settle as usual.
+        stream.setTerms(_terms(ETH));
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), alice);
+    }
+
     function test_Start_RevertsOnBadMintResult() public {
         stream.setMode(MockMintTarget.Mode.ZERO_ID);
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
@@ -249,9 +324,10 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.claimable(alice, address(usd)), 10e18);
     }
 
-    /// @dev Deprecating the locked currency stops bidding (an emergency tightening), but never
-    ///      settlement, refunds or claims.
-    function test_DeprecatedCurrencyStopsBidsOnly() public {
+    /// @dev MARKET-2: deprecation freezes the auction: bids and settlement wait for the
+    ///      currency, claims never do, and the first settle after re-admission reopens the
+    ///      auction for the governed duration.
+    function test_DeprecatedCurrencyFreezesTheAuction() public {
         uint256 saleId = _startUsd();
         _bidUsd(saleId, alice, 10e18);
         _bidUsd(saleId, bob, 20e18);
@@ -268,9 +344,23 @@ contract EnglishAuctionTest is AuctionBase {
         auction.claim(address(usd), alice);
         assertEq(usd.balanceOf(alice), 10e18);
         _end(saleId);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
+        );
         auction.settle(saleId);
-        assertEq(usd.balanceOf(seller), 15e18);
-        assertEq(stream.ownerOf(1), bob);
+        (,, uint64 revision) = allowlist.assetConfig(address(usd));
+        vm.warp(block.timestamp + Roles.FUNDS);
+        allowlist.admitAsset(address(usd), revision, USD_FLOOR);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + DURATION));
+        auction.settle(saleId);
+        vm.startPrank(carol);
+        auction.bid(saleId, address(0), _direct(carol, 30e18));
+        vm.stopPrank();
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(usd.balanceOf(seller), 22.5e18);
+        assertEq(stream.ownerOf(1), carol);
     }
 
     /// @dev Terms naming `CURRENCY_DEFAULT` lock the product's default once, at start.
@@ -399,7 +489,7 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(a.recipient, carol);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(auction))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(auction))
         );
         auction.bid(saleId, address(auction), _direct(alice, 0));
     }
@@ -759,9 +849,7 @@ contract EnglishAuctionTest is AuctionBase {
         uint256 saleId = _start();
         stream.setLockedCreator(1, address(0));
         _end(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
     }
 
@@ -924,14 +1012,12 @@ contract EnglishAuctionTest is AuctionBase {
         auction.bid{ value: 1 ether }(saleId, address(winner), _direct(alice, 1 ether));
         _end(saleId);
         auction.settle(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         winner.execute(
             address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(0)))
         );
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(auction))
+            abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(auction))
         );
         winner.execute(
             address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, address(auction)))
@@ -944,9 +1030,7 @@ contract EnglishAuctionTest is AuctionBase {
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NothingToClaim.selector, alice, ETH));
         vm.prank(alice);
         auction.claim(ETH, alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         vm.prank(alice);
         auction.claim(ETH, address(0));
     }
@@ -959,9 +1043,7 @@ contract EnglishAuctionTest is AuctionBase {
         refusing.configure(HostileActor.Behaviour.REVERT, HostileActor.Behaviour.ACCEPT);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IRevenueEscrow.ETHTransferFailed.selector, address(refusing), 1 ether
-            )
+            abi.encodeWithSelector(ISaleAdapter.ClaimFailed.selector, address(refusing))
         );
         auction.claim(ETH, address(refusing));
         assertEq(auction.claimable(alice, ETH), 1 ether);
@@ -1004,12 +1086,21 @@ contract EnglishAuctionTest is AuctionBase {
         vm.prank(alice);
         auction.claim(ETH, alice);
         _pause(quiet);
+        // GOV-5: the start pause ends no earlier than 48 hours after it began.
         vm.prank(unpauser);
-        auction.resume(quiet);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+            )
+        );
+        auction.unpause();
         _end(live);
         auction.settle(live);
         assertEq(stream.ownerOf(_tokenIdOf(live)), bob);
         assertEq(seller.balance, 1.5 ether);
+        vm.warp(block.timestamp + Roles.STANDARD);
+        vm.prank(unpauser);
+        auction.resume(quiet);
 
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Unpaused(unpauser);
@@ -1026,7 +1117,7 @@ contract EnglishAuctionTest is AuctionBase {
         );
         auction.pause();
         vm.prank(unpauser);
-        vm.expectRevert(EnglishAuction.NotPaused.selector);
+        vm.expectRevert(ISaleAdapter.NotPaused.selector);
         auction.unpause();
         vm.prank(pauser);
         auction.pause();

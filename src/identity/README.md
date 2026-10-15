@@ -245,7 +245,9 @@ the authority (a payout-only override), restrains nothing.
   (`test_NoBidAuctionRunningAtStagingWaitsForTheOutcome`,
   `test_NoBidAuctionSettlesToTheOldAuthorityAfterAVeto`).
 - An open edition sale keeps selling, its artist share frozen. PLATFORM can
-  close it; the artist's keys cannot.
+  close it, even one the artist opened or approved, which outside the
+  restraint only the artist closes (MARKET-6); the artist's keys cannot
+  (`test_PlatformClosesTheArtistsSaleDuringTheNotice`).
 - A delivery recorded for the old authority before the staging can still be
   claimed by it.
 

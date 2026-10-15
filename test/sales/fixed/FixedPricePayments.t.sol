@@ -27,6 +27,21 @@ import {
 import { GasBurnerWallet, HostileReceiver, MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
 
+/// @dev Reports a zero balance for one hidden account while moving its tokens normally.
+contract UnderReportingToken is MockERC20 {
+    address public hidden;
+
+    constructor() MockERC20("Under-reporting", "UND") { }
+
+    function hide(address account) external {
+        hidden = account;
+    }
+
+    function balanceOf(address account) public view override returns (uint256) {
+        return account == hidden ? 0 : super.balanceOf(account);
+    }
+}
+
 /// @notice Fixed-price payments: ERC-20 direct pulls, EIP-2612 permits and Permit2 signed
 ///         payment intents (with replay, deadline and witness binding), the hostile-token
 ///         matrix, hostile payout wallets (escrow fallback) and hostile token receivers.
@@ -144,7 +159,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         Payment memory pay =
             _permitPayment(aliceKey, alice, address(fixedSale), USD_PRICE, block.timestamp - 1);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.PaymentExpired.selector, block.timestamp - 1)
+            abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, block.timestamp - 1)
         );
         _purchase(alice, _usdPurchase(alice, 1), new bytes32[](0), pay);
         pay = _permitPayment(
@@ -152,6 +167,19 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         );
         vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
         _purchase(relayer, _usdPurchase(alice, 1), new bytes32[](0), pay);
+    }
+
+    /// @dev QUALITY-7: EIP-2612 takes the documented 65-byte `r || s || v` in every adapter, so
+    ///      the 64-byte compact (ERC-2098) form of a valid permit is refused, as in the auction.
+    function test_Permit_RefusesTheCompactSignatureForm() public {
+        Payment memory pay = _permitPayment(
+            aliceKey, alice, address(fixedSale), USD_PRICE, block.timestamp + 1 hours
+        );
+        (uint8 v, bytes32 r, bytes32 s) = _split(pay.signature);
+        pay.signature = abi.encodePacked(r, bytes32(uint256(s) | (uint256(v - 27) << 255)));
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        _purchase(alice, _usdPurchase(alice, 1), new bytes32[](0), pay);
+        assertEq(usd.nonces(alice), 0, "the permit was never submitted");
     }
 
     // ------------------------------------------------------------------ Permit2
@@ -207,7 +235,7 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         uint256 deadline = block.timestamp + 10;
         Payment memory pay = _intent(aliceKey, alice, p, USD_PRICE, 1, deadline);
         vm.warp(deadline + 1);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.PaymentExpired.selector, deadline));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, deadline));
         _purchase(relayer, p, new bytes32[](0), pay);
     }
 
@@ -355,6 +383,34 @@ contract FixedPricePaymentsTest is FixedPriceBase {
     function test_HostileToken_Permit2CannotSkipTheDeltaCheck() public {
         FeeOnTransferToken token = new FeeOnTransferToken();
         uint256 id = _hostileSale(token);
+        vm.prank(alice);
+        token.approve(address(permit2), type(uint256).max);
+        IFixedPriceSale.Purchase memory p = _p(id, 0, alice, 1, 0, 0);
+        uint256 deadline = block.timestamp + 1 hours;
+        Payment memory pay = _permit2Payment(
+            aliceKey,
+            alice,
+            address(fixedSale),
+            address(token),
+            10e18,
+            0,
+            deadline,
+            _witness(p, 10e18, deadline),
+            Typehashes.PURCHASE_WITNESS_TYPE
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token))
+        );
+        _purchase(relayer, p, new bytes32[](0), pay);
+    }
+
+    /// @dev QUALITY-7: a token that reports less than the payer holds fails the payer-side
+    ///      delta check with `TokenBalanceMismatch`, as in the auction, not with an arithmetic
+    ///      panic.
+    function test_HostileToken_Permit2UnderReportedPayerBalanceReverts() public {
+        UnderReportingToken token = new UnderReportingToken();
+        uint256 id = _hostileSale(token);
+        token.hide(alice);
         vm.prank(alice);
         token.approve(address(permit2), type(uint256).max);
         IFixedPriceSale.Purchase memory p = _p(id, 0, alice, 1, 0, 0);

@@ -251,3 +251,89 @@
   (`IArtistRegistry.consolidationSourceCodeHash`) and re-checks it at every use. On a
   mismatch, staging, heartbeats and `refreshStanding` revert with `InvalidSource`, and
   registration and execution skip their standing refresh (`StandingRefreshSkipped`).
+- Sales review fixes (F2):
+  - QUALITY-7: the fixed-price, Dutch and auction adapters share their money-path rules.
+    `claim` reverts with `InvalidRecipient` for a zero recipient and `ClaimFailed` for a
+    refused ETH claim in all three; a repeated `pause` or an `unpause` while not paused
+    reverts (`SalePaused`, `NotPaused`); EIP-2612 takes only the 65-byte signature; a
+    misreported payer balance around Permit2 reverts with `TokenBalanceMismatch`. The
+    fixed-price and Dutch payout allowance is renamed `PAYOUT_GAS`, as on the auction.
+  - GOV-5: an adapter's `unpause`, and the auction's `resume(saleId)`, are refused with
+    `UnpauseTooEarly` until 48 hours after the pause they end, so a guardian can always
+    cancel them, including one scheduled before the pause. The adapters record `pausedAt`.
+  - MARKET-1: a pause of the fixed-price or Dutch adapter, or a deprecation of a sale's
+    currency, stops the sale's schedule too. Phase windows and the Dutch curve move later by
+    the halt time (`scheduleDelay(saleId)`), so trading resumes where it stopped. The
+    adapters keep `pausedTotal`, and `AssetAllowlist.statusClock` reports when an asset's
+    status last changed and its total earlier deprecation time (no new storage slot).
+  - MARKET-6: alone, PLATFORM opens an edition sale only on the package's approved terms:
+    no leaf-priced phase (prices above or below the package price need the artist) and only
+    for a listed edition of FIXED size. An OPEN edition's one-time window, or a federated
+    token's sale, needs the artist (`ArtistApprovalRequired`): the creator opens it, or
+    PLATFORM relays the creator's signed phase configuration (fixed price). `IEditions`
+    gains `formatOf(editionId)`. The unreachable `PriceBelowPackage` error is removed.
+  - CALLS-1 (adapter side): the auction's `start` and the fixed-price and Dutch `openSale`
+    refuse terms whose seller or fee recipient is the revenue escrow (`InvalidTerms`,
+    `InvalidSaleTerms`), since the escrow refuses to be paid as a wallet and such a sale
+    could never pay out.
+  - LIFECYCLE-1: a bid withdrawn during a dispute pause stays as a reserve that the next bid
+    must reach (`minimumBid`, `auction().bid` with no bidder), and the resumed auction runs at
+    least the governed duration, whether UNPAUSER resumes it or the pause lapses. With no
+    bidder, settlement pays nothing and returns the work to the artist, as before.
+  - MARKET-2: deprecating an auction's currency freezes the auction, not just its bids. A
+    standing bid cannot settle until the currency is re-admitted, and its bidder may withdraw
+    meanwhile; the first `settle` after a re-admission in the auction's last window or after
+    its end reopens it for at least the anti-snipe window (the governed duration after a
+    withdrawal). With no standing bid, the work returns to the artist as before.
+  - Auction: the fee and the increment are computed exactly in 96-bit arithmetic instead of
+    `Math.mulDiv` (same results), which frees about 330 bytes for these fixes.
+  - LIFECYCLE-4 (the auction's `cancel`): the cited dispute outcome must be the token's own
+    latest one (`StatementLog.disputeOutcomeOf`, no item fallback) and must have been recorded
+    after the dispute pause: the pause records, in spare bits of the sale's third slot, the
+    chain position a later outcome must reach. An outcome recorded before the pause, or one
+    about the package item, cannot cancel the auction.
+  - MARKET-3: a federated auction pays its registry fee share to the economics resolver's
+    federated network fee recipient, never to the recipient the token reports, as the
+    fixed-price and Dutch adapters do. The auction's constructor takes the economics resolver
+    (ERC-165 checked) in place of the asset allowlist, which it derives from the resolver;
+    `DeployV1` passes the resolver.
+  - MARKET-5: a federated contract delisted while its auction runs takes no more bids
+    (`TargetNotAllowed`), and the auction settles by crediting the high bid back and giving the
+    work to its artist, as with no bid.
+  - MONEY-1: auction delivery never depends on a payout. An ERC-20 settlement payout runs in
+    its own call frame (`settlePayout`, callable only by the auction, with 1,000,000 gas the
+    settler must forward); if it fails even through the escrow (the token changed behaviour or
+    blocks the auction), the amount is credited to the wallet and the work is still delivered.
+    `claimFor(account, currency)` lets anyone send an account's credits to that account, so a
+    split wallet's credited payout can be paid once the token works again. ETH payouts are
+    unchanged.
+  - CALLS-5: the auction's NatSpec no longer claims that no transfer can strand a token in it:
+    only safe transfers are refused, and a token sent with a plain `transferFrom` is stranded.
+    A governed rescue does not fit the auction's remaining EIP-170 headroom; it is documented.
+  - Review follow-ups:
+    - MARKET-2 (L2, L3, L7): while a sale's currency is deprecated nothing settles, sold or
+      unsold; after 30 days frozen anyone may end the sale (the standing bid is credited back,
+      the work goes to the artist). Every reopening, after a dispute pause or a freeze, gives
+      the governed duration, or the sale's anti-snipe window if longer. ADR 0003 records both
+      deviations from ADR 0001 §12 (a resumed auction gets at least the governed duration even
+      with a standing bid; a 30-day deprecation ends live auctions), and the guardian runbook
+      says when to re-admit a currency to keep its auctions alive.
+    - LIFECYCLE-4 (L4): `cancel`, like `resume`, waits 48 hours from the pause.
+    - MONEY-1 (L5): `claimFor` refuses ETH; it serves credited ERC-20 payouts.
+    - MARKET-3 (L6): a federated start checks the network's federated fee recipient, not the
+      token's own. The sales README lists, as a federation install prerequisite, that this
+      recipient must stay nonzero while a registry is installed.
+    - MARKET-6: PLATFORM closes only a sale it opened without the artist's approval. A Dutch
+      sale the creator opens counts as approved, as on fixed price. While the creator
+      resolves to zero (a pending recovery override), PLATFORM may close any sale.
+    - Re-admitting a deprecated currency waits 14 days from the deprecation
+      (`ReadmissionTooEarly`), so a re-admission scheduled ahead cannot undo it at once.
+    - The auction refuses an expired PERMIT or PERMIT2 payment with `PaymentExpired`, as the
+      fixed-price and Dutch adapters do (the error moves to `ISaleAdapter`).
+    - `scheduleDelay` is in `IFixedPriceSale` and `IDutchSale`. Overlapping halts (an adapter
+      pause during a deprecation) count twice; the sales README and the guardian runbook say
+      so, and tests pin the behaviour.
+    - The auction's bound constants (`MIN_DURATION`, `MAX_DURATION`, `MIN_EXTENSION_WINDOW`,
+      `MAX_EXTENSION_WINDOW`, `MIN_INCREMENT_SHARE`, `DELIVERY_GAS`, `DELIVERY_RESERVE`) are
+      internal, which frees 292 bytes; `setConfig`'s NatSpec states the bounds.
+    - The review's auction invariant handler is adopted (`AuctionHaltsInvariant.t.sol`).

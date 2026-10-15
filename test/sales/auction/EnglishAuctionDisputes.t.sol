@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import {
@@ -66,6 +67,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.prank(guardian);
         _expectState(saleId, IEnglishAuction.AuctionState.PAUSED);
         auction.pause(saleId, bytes32(0));
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         auction.resume(saleId);
         vm.prank(guardian);
@@ -105,9 +107,9 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.withdrawBid(saleId);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(a.bidder, address(0));
-        assertEq(a.bid, 0);
+        assertEq(a.bid, 2 ether, "kept as the reserve (LIFECYCLE-1)");
         assertEq(auction.claimable(bob, ETH), 2 ether);
-        assertEq(auction.minimumBid(saleId), 0.1 ether, "back to the locked opening bid");
+        assertEq(auction.minimumBid(saleId), 2 ether, "the reserve, above the opening bid");
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NotHighBidder.selector, bob));
         auction.withdrawBid(saleId);
@@ -115,22 +117,23 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     // ----------------------------------------------------------------------------- resume
 
-    function test_Resume_KeepsTheRemainingTime() public {
+    /// @dev After any dispute pause the auction runs at least the governed duration again (the
+    ///      remaining time if longer), so the bidders the pause shut out can return.
+    function test_Resume_GivesAtLeastTheDuration() public {
         uint256 saleId = _start();
         uint256 end = auction.auction(saleId).endTime;
         vm.warp(end - 1 hours);
         _pause(saleId);
         vm.warp(block.timestamp + 2 days);
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.AuctionResumed(saleId, uint64(end + 2 days));
+        emit IEnglishAuction.AuctionResumed(saleId, uint64(block.timestamp + DURATION));
         vm.prank(unpauser);
         auction.resume(saleId);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
-        assertEq(a.endTime, end + 2 days);
+        assertEq(a.endTime, block.timestamp + DURATION);
         assertEq(a.pausedAt, 0);
         assertEq(a.pausedTotal, 2 days);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
-        assertEq(a.endTime - block.timestamp, 1 hours);
     }
 
     function test_Resume_OnlyTheUnpauserAndOnlyWhilePaused() public {
@@ -144,6 +147,15 @@ contract EnglishAuctionDisputesTest is AuctionBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, guardian)
         );
         auction.resume(saleId);
+        // GOV-5: not before 48 hours after the pause, whoever scheduled it when.
+        uint256 allowedAt = block.timestamp + Roles.STANDARD;
+        vm.warp(allowedAt - 1);
+        vm.prank(unpauser);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnpauseTooEarly.selector, allowedAt));
+        auction.resume(saleId);
+        vm.warp(allowedAt);
+        vm.prank(unpauser);
+        auction.resume(saleId);
     }
 
     function test_Pause_EndsByItselfAfterSevenDays() public {
@@ -156,8 +168,9 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.PAUSED), "inclusive");
         vm.warp(pausedAt + 7 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
+        uint256 resumedEnd = pausedAt + 7 days + DURATION;
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE), "resumed, no call");
-        assertEq(a.endTime, end + 7 days, "the remaining 20 minutes, more than the window");
+        assertEq(a.endTime, resumedEnd, "the duration, more than the remaining 20 minutes");
         assertEq(a.pausedAt, 0);
         assertEq(a.pausedTotal, 7 days);
         vm.prank(unpauser);
@@ -165,12 +178,12 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.resume(saleId);
 
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.AuctionResumed(saleId, uint64(end + 7 days));
+        emit IEnglishAuction.AuctionResumed(saleId, uint64(resumedEnd));
         _bidEth(saleId, alice, 1 ether);
         vm.prank(guardian);
         vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.PauseExhausted.selector, saleId));
         auction.pause(saleId, bytes32(0));
-        vm.warp(end + 7 days - 1);
+        vm.warp(resumedEnd - 1);
         _bidEth(saleId, bob, 2 ether);
         assertEq(auction.auction(saleId).endTime, block.timestamp + WINDOW, "anti-snipe applies");
         vm.warp(block.timestamp + WINDOW);
@@ -184,7 +197,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _bidEth(saleId, alice, 1 ether);
         vm.warp(end - 1);
         _pause(saleId);
-        uint256 resumedEnd = block.timestamp + 7 days + WINDOW;
+        uint256 resumedEnd = block.timestamp + 7 days + DURATION;
         assertEq(auction.auction(saleId).endTime, end, "frozen while paused");
         vm.warp(resumedEnd - 1);
         assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.ACTIVE));
@@ -207,7 +220,8 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.warp(block.timestamp + 7 days + 1);
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         assertEq(uint8(a.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
-        assertEq(a.endTime, end - 1 + 7 days + WINDOW, "the window, not one second");
+        // LIFECYCLE-1: the bid was withdrawn, so the full duration, not one second.
+        assertEq(a.endTime, end - 1 + 7 days + DURATION, "the duration, not one second");
         _bidEth(saleId, alice, 10 ether);
         _end(saleId);
         auction.settle(saleId);
@@ -217,9 +231,9 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 otherEnd = auction.auction(other).endTime;
         vm.warp(otherEnd - 5 minutes);
         _pause(other);
-        vm.warp(block.timestamp + 1 days);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.expectEmit(address(auction));
-        emit IEnglishAuction.AuctionResumed(other, uint64(block.timestamp + WINDOW));
+        emit IEnglishAuction.AuctionResumed(other, uint64(block.timestamp + DURATION));
         vm.prank(unpauser);
         auction.resume(other);
     }
@@ -232,6 +246,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         _bidEth(saleId, bob, 2 ether);
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(bob, ETH, saleId, 2 ether);
         vm.expectEmit(address(auction));
@@ -257,6 +272,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         uint256 saleId = _start();
         _pause(saleId);
         bytes32 outcome = _recordOutcome(1);
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(setter);
         auction.cancel(saleId, outcome);
         assertEq(stream.burned(), 1);
@@ -265,6 +281,15 @@ contract EnglishAuctionDisputesTest is AuctionBase {
     function test_Cancel_NeedsTheRecordedOutcome() public {
         uint256 saleId = _start();
         _pause(saleId);
+        // L4: like `resume`, `cancel` waits for the pause's 48-hour window.
+        vm.prank(setter);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+            )
+        );
+        auction.cancel(saleId, bytes32(0));
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.startPrank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(IEnglishAuction.OutcomeNotRecorded.selector, saleId, bytes32(0))
@@ -530,7 +555,10 @@ contract EnglishAuctionFederationTest is AuctionBase {
         _bidEth(saleId, alice, 1 ether);
         vm.warp(block.timestamp + DURATION);
         auction.settle(saleId);
-        assertEq(network.balance, 0.1 ether);
+        // MARKET-3: the registry's fee goes to the network's federated recipient, never to the
+        // recipient the token reports.
+        assertEq(federatedNetwork.balance, 0.1 ether);
+        assertEq(network.balance, 0);
         assertEq(seller.balance, 0.9 ether);
 
         registry.setStatus(address(federated), IFederationRegistry.Status.DELISTED, bytes32(0));

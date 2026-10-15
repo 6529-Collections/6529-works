@@ -30,8 +30,9 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 ///      bounds the price with `maxUnitPrice`; `Payment.amount` is the most the payer will pay
 ///      (integrator decision D17): an ERC-20 payment pulls exactly the charge, and ETH above it is
 ///      credited to the payer and claimed (pull). `SaleStarted.endTime` is when the curve reaches
-///      its resting price. Governance: map `openSale` and `closeSale` to PLATFORM (the creator
-///      needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to
+///      its resting price. A sale the creator opens is the artist's, which PLATFORM closes only
+///      while the creator resolves to zero (MARKET-6). Governance: map `openSale` and `closeSale`
+///      to PLATFORM (the creator needs no role), `setTarget` and `setFederationRegistry` to SUCCESSOR_SETTER, `pause` to
 ///      PAUSER and `unpause` to UNPAUSER.
 contract DutchSale is IDutchSale, MintSaleBase {
     mapping(uint256 saleId => Schedule) private _schedules;
@@ -59,13 +60,18 @@ contract DutchSale is IDutchSale, MintSaleBase {
         // forge-lint: disable-next-line(block-timestamp)
         if (startTime < block.timestamp) revert InvalidSchedule();
         (PrimaryTerms memory t, bool federated) = _terms(token, id, SaleKind.DUTCH);
-        if (msg.sender != t.creator && !_isPlatform()) revert NotSaleManager(msg.sender);
+        if (msg.sender != t.creator) {
+            if (!_isPlatform()) revert NotSaleManager(msg.sender);
+            // MARKET-6: PLATFORM never spends an OPEN edition's one-time window.
+            _requirePlatformMayOpen(token, id, federated);
+        }
         if (_openSales[token][id] != 0) revert SaleAlreadyOpen(token, id);
         DutchParams memory d = abi.decode(t.params, (DutchParams));
         if (!DutchPricing.isValid(t.price, d.restingPrice, d.duration, d.stepSeconds)) {
             revert InvalidSchedule();
         }
-        saleId = _store(token, id, t, false, federated);
+        // A sale the creator opens is the artist's: PLATFORM cannot close it (MARKET-6).
+        saleId = _store(token, id, t, msg.sender == t.creator, federated);
         _schedules[saleId] = Schedule(d.restingPrice, startTime, d.duration, d.stepSeconds);
         emit SaleStarted(
             saleId,
@@ -94,13 +100,12 @@ contract DutchSale is IDutchSale, MintSaleBase {
         Payment calldata payment
     ) external payable whenNotPaused nonReentrant {
         Listing storage l = _listings[saleId];
-        if (
-            l.token == address(0) || l.closed
-                // forge-lint: disable-next-line(block-timestamp)
-                || block.timestamp < _schedules[saleId].startTime
-        ) revert SaleNotOpen(saleId);
+        if (l.token == address(0) || l.closed) revert SaleNotOpen(saleId);
+        uint256 delay = _purchaseDelay(l);
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp < _schedules[saleId].startTime + delay) revert SaleNotOpen(saleId);
         if (quantity == 0) revert InvalidQuantity();
-        uint256 unit = _priceNow(saleId);
+        uint256 unit = _priceNow(saleId, delay);
         if (unit > maxUnitPrice) revert PriceAboveLimit(unit, maxUnitPrice);
         uint256 total = unit * quantity;
         uint256 excess = _collect(
@@ -134,9 +139,10 @@ contract DutchSale is IDutchSale, MintSaleBase {
     }
 
     /// @inheritdoc IDutchSale
+    /// @dev The curve runs `scheduleDelay(saleId)` seconds later than configured (MARKET-1).
     function currentPrice(uint256 saleId) external view returns (uint256) {
-        _listing(saleId);
-        return _priceNow(saleId);
+        Listing storage l = _listing(saleId);
+        return _priceNow(saleId, _halted(l.currency) - l.haltedAtOpen);
     }
 
     /// @inheritdoc IDutchSale
@@ -154,6 +160,11 @@ contract DutchSale is IDutchSale, MintSaleBase {
         return _openSales[token][id];
     }
 
+    /// @inheritdoc IDutchSale
+    function scheduleDelay(uint256 saleId) external view returns (uint256) {
+        return _scheduleDelay(saleId);
+    }
+
     /// @inheritdoc ISaleAdapter
     function saleKind() external pure returns (bytes32) {
         return SaleKind.DUTCH;
@@ -169,12 +180,13 @@ contract DutchSale is IDutchSale, MintSaleBase {
         return interfaceId == type(IDutchSale).interfaceId || super.supportsInterface(interfaceId);
     }
 
-    function _priceNow(uint256 saleId) private view returns (uint256) {
+    /// @dev The unit price now, on the curve moved `delay` seconds later.
+    function _priceNow(uint256 saleId, uint256 delay) private view returns (uint256) {
         Schedule storage s = _schedules[saleId];
         return DutchPricing.priceAt(
             _listings[saleId].price,
             s.restingPrice,
-            s.startTime,
+            s.startTime + delay,
             s.duration,
             s.stepSeconds,
             block.timestamp

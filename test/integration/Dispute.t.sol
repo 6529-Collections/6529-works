@@ -194,7 +194,10 @@ contract DisputeFlowTest is IntegrationBase {
         _govern(hotAdmin, address(auction), abi.encodeCall(auction.resume, (saleId)));
         IEnglishAuction.Auction memory resumed = auction.auction(saleId);
         assertEq(uint8(resumed.state), uint8(IEnglishAuction.AuctionState.ACTIVE));
-        assertEq(resumed.endTime, block.timestamp + remaining, "the remaining time");
+        // LIFECYCLE-1: the bid was withdrawn, so at least the full duration.
+        uint256 left = remaining > AUCTION_DURATION ? remaining : AUCTION_DURATION;
+        assertEq(resumed.endTime, block.timestamp + left, "the remaining time, or the duration");
+        assertEq(auction.minimumBid(saleId), 1 ether, "the withdrawn bid is the reserve");
         _ethBid(saleId, makeAddr("lateBidder"), 2 ether);
         _settleAtEnd(saleId);
         assertEq(stream.ownerOf(tokenId), makeAddr("lateBidder"));

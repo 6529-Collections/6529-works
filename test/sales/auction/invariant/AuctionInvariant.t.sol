@@ -99,9 +99,10 @@ abstract contract AuctionInvariantBase is AuctionHandlerFixture {
         uint256 owed;
         for (uint256 i; i < handler.salesCount(); ++i) {
             IEnglishAuction.Auction memory a = auction.auction(handler.sales(i));
+            // With no bidder, `bid` is a withdrawn bid's reserve, already credited.
             if (
                 a.state != IEnglishAuction.AuctionState.SETTLED
-                    && a.state != IEnglishAuction.AuctionState.CANCELLED
+                    && a.state != IEnglishAuction.AuctionState.CANCELLED && a.bidder != address(0)
             ) owed += a.bid;
         }
         for (uint256 i; i < handler.actorsCount(); ++i) {
@@ -164,7 +165,9 @@ abstract contract AuctionInvariantBase is AuctionHandlerFixture {
             assertEq(a.recipient, handler.ghostRecipient(saleId), "recipient of the high bid");
             uint256 minimum;
             if (a.bidder == address(0)) {
-                minimum = l.openingBid == 0 ? 1 : l.openingBid;
+                // LIFECYCLE-1: a withdrawn bid stays as the reserve.
+                minimum = l.openingBid > a.bid ? l.openingBid : a.bid;
+                if (minimum == 0) minimum = 1;
             } else {
                 uint256 step = (a.bid * l.incrementShare + 99_999) / 100_000;
                 minimum = a.bid + (step > l.incrementFloor ? step : l.incrementFloor);

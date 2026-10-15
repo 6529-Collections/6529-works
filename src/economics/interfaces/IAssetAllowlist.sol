@@ -43,6 +43,9 @@ interface IAssetAllowlist {
     error InvalidStatusTransition(address asset, Status current);
     /// @notice `asset` is not active.
     error AssetNotActive(address asset);
+    /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, 14 days
+    ///         (`Roles.FUNDS`) after its deprecation.
+    error ReadmissionTooEarly(address asset, uint256 allowedAt);
     /// @notice An increment floor must be non-zero.
     error InvalidIncrementFloor();
     /// @notice The product identifier is zero.
@@ -65,6 +68,16 @@ interface IAssetAllowlist {
         view
         returns (Status status, uint256 floor, uint64 revision);
 
+    /// @notice When `asset`'s status last changed (its latest admission or deprecation) and the
+    ///         seconds it spent deprecated in earlier, closed deprecations, without reverting.
+    /// @dev Sale adapters stop their clocks while their currency is deprecated (MARKET-1,
+    ///      MARKET-2): the time deprecated so far is `inactiveTotal`, plus
+    ///      `block.timestamp - since` while the asset is deprecated now.
+    function statusClock(address asset)
+        external
+        view
+        returns (Status status, uint256 since, uint256 inactiveTotal);
+
     /// @notice The default currency of `product`; reverts unless it is configured and active.
     function defaultCurrency(bytes32 product) external view returns (address);
 
@@ -76,7 +89,8 @@ interface IAssetAllowlist {
 
     /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`, if the
     ///         asset is at `expectedRevision` (0 for a never-admitted asset). Re-admission is the
-    ///         only way back from deprecation.
+    ///         only way back from deprecation, and is refused until 14 days after it
+    ///         (`ReadmissionTooEarly`), even when scheduled before the deprecation.
     function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external;
 
     /// @notice Stops new sales from using active `asset`. Immediate; bumps the asset's revision,

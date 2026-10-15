@@ -21,6 +21,8 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MockArtistResolver } from "../../mocks/EconomicsMocks.sol";
 import { MockMintTarget, MockPermit2, PermitToken } from "../../mocks/auction/AuctionMocks.sol";
+import { MockAssetAllowlist, MockEconomicsResolver } from "../../mocks/sales/SaleMocks.sol";
+import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 
 /// @dev Deploys the auction against the real AccessManager, asset allowlist, revenue escrow and
 ///      statement log, with mocks for the token and Permit2. Unit tests use
@@ -47,6 +49,9 @@ abstract contract AuctionBase is Test {
 
     AccessManager internal manager;
     AssetAllowlist internal allowlist;
+    /// @dev The auction's economics resolver: the real allowlist, and the federated network fee
+    ///      recipient (MARKET-3).
+    MockEconomicsResolver internal resolver;
     RevenueEscrow internal escrow;
     StatementLog internal statements;
     MockPermit2 internal permit2;
@@ -62,6 +67,7 @@ abstract contract AuctionBase is Test {
     address internal platform = makeAddr("platform");
     address internal seller = makeAddr("sellerWallet");
     address internal network = makeAddr("network");
+    address internal federatedNetwork = makeAddr("federatedNetwork");
     address internal artist = makeAddr("artist");
     address internal relayer = makeAddr("relayer");
 
@@ -86,6 +92,9 @@ abstract contract AuctionBase is Test {
         stream = new MockMintTarget();
         usd = new PermitToken();
         allowlist.admitAsset(address(usd), 0, USD_FLOOR);
+        resolver = new MockEconomicsResolver(MockAssetAllowlist(address(0)));
+        resolver.setAllowlistOverride(address(allowlist));
+        resolver.set(PRODUCT_FEDERATED, federatedNetwork, 10_000);
         auction = _deploy(address(permit2));
         stream.setTerms(_terms(ETH));
         _grant(GUARDIAN, guardian);
@@ -109,7 +118,7 @@ abstract contract AuctionBase is Test {
         a = new EnglishAuction(
             address(manager),
             address(escrow),
-            allowlist,
+            resolver,
             address(statements),
             permit2_,
             _config(),

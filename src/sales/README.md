@@ -15,7 +15,7 @@ minter-role grant. Governed by
 | File | Role |
 | --- | --- |
 | `MintSaleBase.sol` | What both adapters share: targets (listed, or active in the federation registry), `LockedTerms` at open, one open sale per `(token, id)`, payment collection, minting per purchase, payouts with the escrow fallback, pull credits, the emergency pause, ERC-165. |
-| `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of discounts. |
+| `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of leaf prices and OPEN drops. |
 | `DutchSale.sol` | `IDutchSale`: a descending price from the token's `DutchParams`. |
 | `DutchPricing.sol` | The price curve (internal library, ported from PR #744's `StreamDutchPricing`). |
 
@@ -24,8 +24,15 @@ Permit2 is called through the shared
 
 ### Opening a sale
 
-The lead artist (the terms' `creator`) or the PLATFORM role opens a sale. The
-adapter reads the token's `primaryTerms(id, "")` and fails closed unless:
+The lead artist (the terms' `creator`) or the PLATFORM role opens a sale.
+Alone, PLATFORM opens only on the package's approved terms (ADR 0001 §6, MARKET-6):
+at the package price (no leaf-priced phase) and only for a listed 6529 Editions
+edition of FIXED size. An OPEN edition's one-time window starts at its first mint,
+whichever sale makes it, so a PLATFORM sale of one, or of a federated token, needs
+the artist (`ArtistApprovalRequired`): the creator opens it, or, for fixed price,
+PLATFORM relays the creator's signed phase configuration. The adapter reads the
+edition's format with `IEditions.formatOf`. The adapter reads the token's
+`primaryTerms(id, "")` and fails closed unless:
 - the token is a target;
 - the sale kind matches the adapter;
 - a priced sale names its currency (`CURRENCY_DEFAULT` is only for zero-price
@@ -34,7 +41,10 @@ adapter reads the token's `primaryTerms(id, "")` and fails closed unless:
   exactly the currency the token named unless it named `CURRENCY_DEFAULT`
   (`CurrencyMismatch`);
 - a seller is set, a fee recipient is set unless the fee share is zero, and the
-  fee share is at most 100,000.
+  fee share is at most 100,000;
+- neither the seller nor the fee recipient is the revenue escrow, which refuses
+  to be paid as a wallet (CALLS-1). The auction refuses the same terms at
+  `start`, while nothing is in custody.
 
 The terms are then locked as `LockedTerms`:
 - `CURRENCY_DEFAULT` is resolved once, through `resolveCurrency`. A listed
@@ -53,9 +63,14 @@ target while the federation registry reports it active (`isTarget`). Such a
 token:
 - must run the code its registry entry records;
 - pays the network fee share of its entry to the economics resolver's
-  federated fee recipient (`networkFeeRecipient`), ignoring its own fee terms;
+  federated fee recipient (`networkFeeRecipient`), ignoring its own fee terms.
+  The English auction does the same (MARKET-3): it takes the economics resolver
+  at construction, derives its asset allowlist from it, and reads the federated
+  recipient at settlement;
 - stops selling as soon as the registry delists it. Every purchase re-checks
-  `isActive`.
+  `isActive`. On the English auction every bid re-checks it, and a delisted
+  contract's auction settles by crediting the high bid back and giving the work
+  to its artist, as with no bid (MARKET-5); nothing is confiscated.
 
 The resolver is fixed at construction. It must support `IEconomicsResolver`
 through ERC-165, and EIP-7702 delegated accounts are rejected. Its asset
@@ -73,13 +88,51 @@ Installation:
 - rejects EIP-7702 delegated accounts;
 - pins the code hash. A registry whose code later differs is ignored.
 
+**Federation install prerequisites (v1.1; no registry is installed in v1).**
+Before `setFederationRegistry`, the economics resolver's `PRODUCT_FEDERATED`
+fee recipient must be set to a nonzero wallet, and it must stay nonzero while
+the registry is installed. The English auction reads that recipient when a
+federated auction settles, not when it starts (MARKET-3), so a later
+`setFeeTerms` that sets it to zero while a registry entry charges a fee share
+would leave those auctions unable to pay the fee at settlement. The
+fixed-price and Dutch adapters lock the recipient when a sale opens and refuse
+a zero one then.
+
 **Currency halts.** Every purchase requires its locked currency to be active
 on the allowlist, so deprecating an asset halts running sales in it as an
 emergency tightening. Claims are never blocked.
 
+**Halts stop the clock.** A pause of the adapter, or a deprecation of a sale's
+currency, stops the sale's schedule as well as its purchases. Each sale records,
+when it opens, how long the adapter has been paused and its currency deprecated
+so far; the growth since is the sale's `scheduleDelay(saleId)`. Fixed-price
+phase windows and the Dutch curve, including a start not yet reached, run that
+much later than configured, so a halt never uses up an allowlist phase or lets the
+Dutch price fall: trading resumes where it stopped. The adapter's own pause time is
+`pausedTotal` plus the running pause; the currency's is the allowlist's
+`statusClock`. Anyone may close a fixed-price sale once its moved phases have all
+ended.
+
+Overlapping halts count twice: a pause of the adapter while a sale's currency is
+deprecated moves the schedule by both, more than the time trading actually
+stopped. The schedule then does not resume where it stopped but rewinds by the
+overlap: a Dutch curve climbs back up (and may show "not open" again), and a
+fixed-price phase that had ended can reopen while the one that was running closes.
+Guardians therefore do not pause an adapter while a currency is deprecated; if they
+must, the creator (or PLATFORM, for a sale it opened alone) closes and reopens
+the affected sales afterwards (see the guardian practice in the
+[deploy runbook](../../script/README.md)).
+
 **Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
 `purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
-resumes them. `closeSale` and `claim` always work.
+resumes them. `closeSale` and `claim` always work. As on the auction, pausing a
+paused adapter reverts with `SalePaused`, and unpausing one that is not paused
+reverts with `NotPaused`. An unpause is refused with `UnpauseTooEarly` until 48
+hours (`Roles.STANDARD`) after the pause: AccessManager counts the UNPAUSER delay
+from scheduling, so an unpause scheduled before the pause could otherwise undo it
+in the same block. The adapter counts the delay from the pause, so the guardians
+always have that window to cancel it. The auction's `unpause` and its per-auction
+`resume` follow the same rule.
 
 ### Allowlists
 
@@ -117,8 +170,10 @@ start. An allowlist phase enforces the
 leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
 enforces `walletCap` per recipient.
 
-**Discounts need the artist** (integrator decision 4). A leaf price below the
-package price is accepted only in an approved sale. A sale is approved when:
+**Leaf prices need the artist** (integrator decision 4, widened by MARKET-6). A
+leaf-priced phase, whose leaves set prices below or above the package price, is
+accepted only in an approved sale (`PricedLeavesNeedApproval` at `openSale`
+otherwise). A sale is approved when:
 - the creator opens it; or
 - the PLATFORM role opens it with the creator's EIP-712 signature over
   `PhaseConfiguration(token, id, currency, packagePrice, Phase[] phases, nonce,
@@ -131,9 +186,7 @@ to another currency or price.
 
 The nonce is single-use and revocable (`revokeConsentNonce`), and contract
 creators sign through ERC-1271. `phaseConfigurationDigest` returns the digest
-to sign. Leaf prices at or above the package price need no approval, except in a
-zero-price sale: there every priced leaf needs the artist's approval
-(`PricedLeavesNeedApproval`), because only the approval binds the currency a
+to sign. In a zero-price sale the approval also binds the currency a
 default-currency gift resolves to.
 
 **Gifts** are zero-price sales: a package price of zero, or an approved leaf
@@ -144,7 +197,7 @@ price of zero. A gift pays no network fee, by design.
 | Method | Payer | What happens |
 | --- | --- | --- |
 | `DIRECT` | `msg.sender` | ETH as `msg.value`, or a pull of an approved ERC-20. |
-| `PERMIT` | `msg.sender` | An EIP-2612 permit for `amount`, then a pull. A permit someone already submitted is tolerated: the pull uses the allowance it granted. |
+| `PERMIT` | `msg.sender` | An EIP-2612 permit for `amount` (the 65-byte `r \|\| s \|\| v`; any other length reverts with `InvalidPayment`), then a pull. A permit someone already submitted is tolerated: the pull uses the allowance it granted. |
 | `PERMIT2` | the signer | `permitWitnessTransferFrom`; the witness binds the purchase, so a relayer can submit it. |
 
 The Permit2 witnesses are `Typehashes.PURCHASE_WITNESS` (fixed price: sale,
@@ -158,6 +211,11 @@ the deadline itself and checks both balance deltas after Permit2, because
 Permit2 does not. Every ERC-20 movement is exact, so fee-on-transfer, rebasing,
 no-return and false-returning tokens revert. Replay protection is the token's
 or Permit2's nonce, never signature bytes.
+
+The fixed-price, Dutch and auction adapters share these rules and their errors: a
+claim to the zero address reverts with `InvalidRecipient`, an ETH claim the recipient
+refuses with `ClaimFailed` (the credit is kept), and a token that misreports the
+payer's balance around a Permit2 transfer with `TokenBalanceMismatch`.
 
 Fixed price charges exactly `quantity × unit price`, and `Payment.amount` must
 equal it. In a Dutch sale, `Payment.amount` is the most the buyer will pay. An
@@ -196,6 +254,8 @@ There is no clearing price.
   curve.
 - After the curve, the price rests at `restingPrice` until the supply or window
   runs out or the sale is closed.
+- A pause or a currency deprecation moves the whole curve later by its length
+  (`scheduleDelay`), so the price resumes where it stopped.
 - `maxUnitPrice` protects a buyer whose transaction lands earlier than expected.
 
 ### Governance
@@ -211,8 +271,15 @@ There is no clearing price.
 The PLATFORM check uses the AccessManager's `canCall` for the selector, and
 needs an immediate (zero-delay) grant. The creator who may close a sale is read
 from the token at close time (the artist's active authority), so after a
-recovery the old key loses that power, and while a recovery override is pending
-nobody but PLATFORM can close it. Nothing here is payable except `purchase`.
+recovery the old key loses that power. PLATFORM closes only a sale it opened
+without the artist's approval: a sale the artist approved (opened by the creator,
+or by PLATFORM with the creator's signed configuration) closes by the artist, or
+stops by a guardian pause (MARKET-6). While a recovery override is pending, the
+creator resolves to zero (IDENTITY-1): the artist's keys cannot close any sale,
+and PLATFORM can close every sale, the artist's own included, so a sale opened
+with a key under recovery can be stopped without pausing the adapter
+(`test_PlatformClosesTheArtistsSaleDuringTheNotice`). Nothing here is payable
+except `purchase`.
 
 ### Gas
 

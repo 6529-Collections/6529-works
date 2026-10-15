@@ -83,7 +83,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(version, "1");
         assertEq(chainId, block.chainid);
         assertEq(verifying, address(fixedSale));
-        assertEq(fixedSale.ETH_PAYOUT_GAS(), 100_000);
+        assertEq(fixedSale.PAYOUT_GAS(), 100_000);
         assertEq(address(fixedSale.escrow()), address(escrow));
         assertEq(address(fixedSale.assets()), address(allowlist));
         assertFalse(fixedSale.paused());
@@ -234,6 +234,27 @@ contract FixedPriceSaleTest is FixedPriceBase {
         }
     }
 
+    /// @dev CALLS-1: terms that pay the revenue escrow as seller or fee recipient are refused at
+    ///      open, since the escrow refuses to be paid as a wallet and no purchase could pay.
+    function test_CALLS1_OpenSaleRefusesTheEscrowAsSellerOrFeeRecipient() public {
+        for (uint256 i; i < 2; ++i) {
+            PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+            if (i == 0) t.feeRecipient = address(escrow);
+            else t.seller = address(escrow);
+            editions.setTerms(30 + i, t, SIZE);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 30 + i
+                )
+            );
+            _openPublic(30 + i, 0);
+        }
+        // Valid wallets open and sell as usual.
+        uint256 saleId = _openPublic(ETH_ED, 0);
+        _buyEth(alice, saleId, 0, alice, 1, PRICE);
+        assertEq(editions.balanceOf(alice, ETH_ED), 1);
+    }
+
     function test_OpenSale_RevertsOnInvalidPhases() public {
         IFixedPriceSale.Phase[] memory tooMany = new IFixedPriceSale.Phase[](17);
         IFixedPriceSale.Phase[] memory sixteen = new IFixedPriceSale.Phase[](16);
@@ -279,16 +300,23 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
     }
 
-    function test_Approval_PlatformSaleRejectsDiscountsButNotPremiums() public {
+    /// @dev MARKET-6: alone, PLATFORM sells at the package price only: discounts and premiums
+    ///      alike need the artist.
+    function test_Approval_PlatformAloneCannotPriceLeaves() public {
         bytes32[] memory leaves = _pricedLeaves();
-        uint256 saleId = _platformPriced(leaves, _noConsent());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                FixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
+            )
+        );
+        _platformPriced(leaves, _noConsent());
+        // The creator prices leaves both ways.
+        uint256 saleId = _open(creator, ETH_ED, _one(_phase(_root(leaves), 0, false, true)));
         vm.deal(alice, 1 ether);
         vm.deal(bob, 1 ether);
-        vm.expectRevert(
-            abi.encodeWithSelector(IFixedPriceSale.PriceBelowPackage.selector, A_PRICE, PRICE)
-        );
         _purchaseEth(alice, _p(saleId, 0, alice, 1, 2, A_PRICE), _proof(leaves, 0), A_PRICE);
         _purchaseEth(bob, _p(saleId, 0, bob, 1, 1, 0.2 ether), _proof(leaves, 1), 0.2 ether);
+        assertEq(editions.balanceOf(alice, ETH_ED), 1);
         assertEq(editions.balanceOf(bob, ETH_ED), 1);
     }
 
@@ -342,7 +370,8 @@ contract FixedPriceSaleTest is FixedPriceBase {
         IFixedPriceSale.ArtistConsent memory consent =
             _consent(creatorKey, ETH_ED, phases, 1, deadline);
         uint256 saleId = _platformPriced(leaves, consent);
-        vm.prank(platform);
+        // An approved sale closes by its artist (MARKET-6), not by PLATFORM.
+        vm.prank(creator);
         fixedSale.closeSale(saleId);
         // Replaying the same approval for a new sale fails: the nonce is spent.
         vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
@@ -383,9 +412,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     // ------------------------------------------------------------------ closing
 
+    /// @dev The creator closes any sale of its edition; PLATFORM closes only a sale it opened
+    ///      without the artist's approval (MARKET-6).
     function test_CloseSale_ByCreatorOrPlatformStopsPurchases() public {
         uint256 first = _openPublic(ETH_ED, 0);
-        uint256 second = _openPublic(USD_ED, 0);
+        uint256 second = _open(platform, USD_ED, _one(_phase(0, 0, false, false)));
+        vm.prank(platform);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        fixedSale.closeSale(first);
         vm.expectEmit(address(fixedSale));
         emit IFixedPriceSale.SaleClosed(first);
         vm.prank(creator);
@@ -658,7 +692,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         vm.prank(alice);
         fixedSale.claim(CURRENCY_ETH, alice);
         assertEq(fixedSale.claimable(alice, CURRENCY_ETH), 0);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         vm.prank(alice);
         fixedSale.claim(CURRENCY_ETH, address(0));
     }

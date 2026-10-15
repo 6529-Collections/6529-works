@@ -13,4 +13,6 @@ primary and royalty split) and for indexers. v1 keeps only what makes this
 possible: the shared sale adapters in `sales/`, template-ready token code and
 the registry interface. Governed by
 [ADR 0001 §16](../../docs/adr/0001-v1-scope.md#16-6529-stream-federated), with
-the license rule in §8 and the network tiers in §2.
+the license rule in §8 and the network tiers in §2. Before a federation
+registry is installed in the sale adapters, meet the prerequisites in the
+[sales README](../sales/README.md) (federation install prerequisites).

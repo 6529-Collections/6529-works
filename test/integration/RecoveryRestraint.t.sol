@@ -10,7 +10,6 @@ import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
-import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
@@ -207,6 +206,26 @@ contract RecoveryRestraintTest is IntegrationBase {
         fixedSale.openSale(address(editions), masterId, _publicPhase(), none);
     }
 
+    /// @dev MARKET-6 with IDENTITY-1: PLATFORM cannot close a sale the artist opened, but while
+    ///      a recovery override restrains the artist (the creator resolves to zero) it can, so a
+    ///      sale opened with a compromised key is stopped without pausing the adapter.
+    function test_PlatformClosesTheArtistsSaleDuringTheNotice() public {
+        IFixedPriceSale.ArtistConsent memory none;
+        IFixedPriceSale.Phase[] memory phases = _freePhase(thiefWallet);
+        vm.prank(artist);
+        uint256 artistSale = fixedSale.openSale(address(editions), masterId, phases, none);
+        vm.prank(platform);
+        vm.expectRevert(_notManager(platform));
+        fixedSale.closeSale(artistSale);
+
+        _stageRecovery();
+        vm.expectEmit(address(fixedSale));
+        emit IFixedPriceSale.SaleClosed(artistSale);
+        vm.prank(platform);
+        fixedSale.closeSale(artistSale);
+        assertEq(fixedSale.openSaleOf(address(editions), masterId), 0);
+    }
+
     // ------------------------------------------------------------------ moves and auctions
 
     /// @dev IDENTITY-1 (b): neither the restrained key nor the reserved new key can start an
@@ -246,16 +265,12 @@ contract RecoveryRestraintTest is IntegrationBase {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         PendingChange memory p = _stageRecovery();
         _toEnd(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), address(auction), "held in custody");
 
         vm.warp(p.executableAt);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         artists.executeChange(artistId);
         auction.settle(saleId);
@@ -268,9 +283,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         _stageRecovery();
         _toEnd(saleId);
-        vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         vm.prank(guardian2);
         artists.vetoChange(artistId);

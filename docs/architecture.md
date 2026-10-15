@@ -176,7 +176,20 @@ default when the sale starts".
 9. **Settle (permissionless).** `settle` delivers the token or records a pending
    claim (`claimDelivery`, where the winner names the recipient).
    - Seller and fee terms are read back from the token, and the predicted seller
-     wallet and the fee recipient are paid; failed pushes go to the escrow.
+     wallet and the fee recipient are paid; failed pushes go to the escrow. An
+     ERC-20 payout runs in its own call frame: if it fails even through the
+     escrow (the token changed behaviour, or blocks the auction), it is credited
+     to its wallet in the auction and the work is still delivered; anyone pays
+     the credit out with `claimFor(wallet, token)` once the token works again
+     (ERC-20 only; ETH credits are bidders' refunds, claimed by the bidder). The
+     settler must forward the frame's 1,000,000 gas: an ERC-20 settle needs a
+     call gas limit of about 1.11M.
+   - A deprecated currency freezes the auction (MARKET-2): nothing settles, and
+     a standing bidder may withdraw. After a re-admission (no earlier than 14
+     days after the deprecation), the first `settle` reopens the auction for the
+     governed duration. Once the currency has been deprecated for 30 days, anyone
+     may end the sale unsold: the standing bid is credited back and the work goes
+     to the artist.
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).
@@ -206,8 +219,10 @@ default when the sale starts".
    - Allowlist leaves bind `(chainid, adapter, token, id, phase, account, cap,
      price)`, with the account being the receiving wallet (or the payer, for
      payer-keyed phases).
-   - A per-wallet price below the package price counts only if the artist
-     approved the phases.
+   - A per-wallet price (below or above the package price) needs the artist's
+     approval of the phases, and so does any sale of an OPEN edition, whose
+     one-time window starts at its first mint. Alone, PLATFORM opens a FIXED
+     edition at the package price.
 4. Each purchase mints through `IEditions.mint`. Dutch purchases charge exactly
    the current price, and `Payment.amount` is the maximum the buyer will pay.
    The edition renders its master's media and record. `WorkRecords` calls
@@ -294,13 +309,21 @@ default when the sale starts".
 
 1. A dispute is filed in the 6529 disputes wave. The GUARDIAN role calls
    `IEnglishAuction.pause`; the pause allowance is 7 days in total.
-2. While paused, the high bidder may `withdrawBid`.
+2. While paused, the high bidder may `withdrawBid`. The withdrawn amount
+   stays as a reserve the next bid must reach. When the auction resumes (by
+   `resume` or when the pause lapses) it runs for its remaining time or the
+   governed duration, whichever is longer (the anti-snipe window if longer
+   still), with or without a standing bid, so the refunded bidders can return.
 3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement about the
    token (it must exist; an outcome recorded about the item before its mint is
    also shown, until one about the token replaces it). The PARAMETER_SETTER
    role then calls `cancel(saleId, outcomeRef)` while the auction is still
    paused.
-   - `outcomeRef` must equal `latestDisputeOutcome`.
+   - `outcomeRef` must be the token's own latest outcome
+     (`disputeOutcomeOf`, with no item fallback) and must have been recorded
+     after the pause: the auction keeps, at the pause, the chain position a
+     later outcome must reach, so an outcome recorded before the pause, or one
+     about the package item, cannot cancel it.
    - The window is inclusive (`block.timestamp <= pausedUntil`).
    - The bid is credited back and the token is burned.
    - **Before the cancel executes, the guardian revokes every approved root
@@ -317,8 +340,11 @@ default when the sale starts".
      whose lead artist is the beneficiary, and the burned item is tombstoned. A
      release happens once per burned work, so the guardians check the
      beneficiary during the delay.
-4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
-   ends by itself when the allowance runs out.
+4. **Rejected.** The UNPAUSER role calls `resume`, no earlier than 48 hours
+   after the pause (the auction refuses an earlier one, even if it was
+   scheduled before the pause, so the guardians always have the standard
+   window to cancel it). With no outcome, the pause ends by itself when the
+   allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
    it through `latestDisputeOutcome`, on the work and on its edition. The
    latest outcome about a work is its current dispute status, so each outcome
@@ -332,7 +358,7 @@ default when the sale starts".
 | Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
 | Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations | Redirect funds or identities; cancel or resume an auction |
 | Storage operator | Set preferred locations among registered, hash-equal locators | Add, remove or change locators; change content hashes |
-| Platform | Create collections; add locators; open edition sales and phases | Change an approved package's prices, currencies, sizes or media; set allowlist prices below the package price without the artist's signed approval |
+| Platform | Create collections; add locators; open edition sales and phases at the package price for FIXED editions | Change an approved package's prices, currencies, sizes or media; set allowlist prices (below or above the package price), or open an OPEN edition's one-time window, without the artist's signed approval |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
 | Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |

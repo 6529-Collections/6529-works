@@ -8,10 +8,17 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IDutchSale } from "src/interfaces/IDutchSale.sol";
+import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { LockedTerms, Payment, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    DutchParams,
+    LockedTerms,
+    Payment,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { DutchSale } from "src/sales/DutchSale.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
@@ -96,6 +103,26 @@ contract DutchSaleTest is DutchBase {
         );
         _openNow(LINEAR);
         assertEq(dutch.openSaleOf(address(editions), LINEAR), saleId);
+    }
+
+    /// @dev CALLS-1: terms that pay the revenue escrow as seller or fee recipient are refused at
+    ///      open.
+    function test_CALLS1_OpenSaleRefusesTheEscrowAsSellerOrFeeRecipient() public {
+        for (uint256 i; i < 2; ++i) {
+            PrimaryTerms memory t = _terms(
+                SaleKind.DUTCH, CURRENCY_ETH, START, abi.encode(DutchParams(REST, DURATION, 0))
+            );
+            if (i == 0) t.feeRecipient = address(escrow);
+            else t.seller = address(escrow);
+            editions.setTerms(40 + i, t, SIZE);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 40 + i
+                )
+            );
+            _openNow(40 + i);
+        }
+        _openNow(LINEAR);
     }
 
     function test_OpenSale_RevertsOnInvalidCurve() public {
@@ -247,7 +274,7 @@ contract DutchSaleTest is DutchBase {
         dutch.purchase{ value: START }(77, alice, 1, START, _eth(alice, START));
         vm.stopPrank();
         vm.warp(block.timestamp + 10);
-        vm.prank(platform);
+        vm.prank(creator);
         dutch.closeSale(saleId);
         vm.expectRevert(abi.encodeWithSelector(IDutchSale.SaleNotOpen.selector, saleId));
         vm.prank(alice);
@@ -269,10 +296,15 @@ contract DutchSaleTest is DutchBase {
         vm.stopPrank();
     }
 
+    /// @dev MARKET-6: the creator closes a sale it opened, which PLATFORM cannot; PLATFORM closes
+    ///      a sale it opened alone.
     function test_CloseSale_ByCreatorOrPlatformOnly() public {
         uint256 saleId = _openNow(LINEAR);
         vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, stranger));
         vm.prank(stranger);
+        dutch.closeSale(saleId);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.NotSaleManager.selector, platform));
+        vm.prank(platform);
         dutch.closeSale(saleId);
         vm.expectEmit(address(dutch));
         emit IDutchSale.SaleClosed(saleId);
@@ -283,6 +315,12 @@ contract DutchSaleTest is DutchBase {
         vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
         vm.prank(creator);
         dutch.closeSale(saleId);
+
+        vm.prank(platform);
+        uint256 platformSale = dutch.openSale(address(editions), STEPPED, uint64(block.timestamp));
+        vm.prank(platform);
+        dutch.closeSale(platformSale);
+        assertTrue(_closed(platformSale));
     }
 
     // ------------------------------------------------------------------ claims
@@ -292,12 +330,12 @@ contract DutchSaleTest is DutchBase {
         _buy(alice, saleId, alice, 1, START, 2 ether);
         RejectingRecipient refusing = new RejectingRecipient();
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.ClaimFailed.selector, address(refusing))
+            abi.encodeWithSelector(ISaleAdapter.ClaimFailed.selector, address(refusing))
         );
         vm.prank(alice);
         dutch.claim(CURRENCY_ETH, address(refusing));
         assertEq(dutch.claimable(alice, CURRENCY_ETH), 1 ether);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         vm.prank(alice);
         dutch.claim(CURRENCY_ETH, address(0));
     }
@@ -348,8 +386,17 @@ contract DutchSaleTest is DutchBase {
         dutch.purchase{ value: START }(saleId, bob, 1, START, _eth(bob, START));
         vm.prank(alice);
         assertEq(dutch.claim(CURRENCY_ETH, alice), 1 ether);
-        vm.prank(platform);
+        vm.prank(creator);
         dutch.closeSale(saleId);
+        // GOV-5: not before 48 hours after the pause.
+        vm.prank(unpauser);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
+            )
+        );
+        dutch.unpause();
+        vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(unpauser);
         dutch.unpause();
         _openNow(LINEAR);
@@ -429,7 +476,7 @@ contract DutchSaleTest is DutchBase {
         vm.prank(relayer);
         dutch.purchase(saleId, relayer, 2, USD_START, fresh);
         vm.warp(deadline + 1);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.PaymentExpired.selector, deadline));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.PaymentExpired.selector, deadline));
         vm.prank(relayer);
         dutch.purchase(saleId, bob, 2, USD_START, fresh);
     }

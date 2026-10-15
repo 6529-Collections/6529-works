@@ -6,6 +6,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
@@ -144,6 +145,16 @@ contract LeanEconomicsResolver {
     address public feeRecipient;
     uint32 public feeShare;
     uint32 public royaltyRate;
+    /// @dev The allowlist the auction derives from its resolver (MARKET-3).
+    address public assetAllowlist;
+
+    function setAssetAllowlist(address allowlist_) external {
+        assetAllowlist = allowlist_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IEconomicsResolver).interfaceId || interfaceId == 0x01ffc9a7;
+    }
 
     constructor(ISplitFactory factory_, address feeRecipient_) {
         factory = factory_;

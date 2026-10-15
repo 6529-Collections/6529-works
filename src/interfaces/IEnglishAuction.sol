@@ -53,6 +53,9 @@ interface IEnglishAuction is ISaleAdapter {
     ///         first bid (zero before).
     /// @param bidder The high bidder (the payer of the high bid), or zero.
     /// @param recipient Who receives the token if the high bid wins.
+    /// @param bid The high bid; with no bidder, the reserve a withdrawn (or refunded) bid left,
+    ///        which the next bid must reach, or zero. A settled or cancelled sale keeps the last
+    ///        amount here even when no bid won: read `bidder` (and the `SaleSettled` price).
     /// @param pausedAt When the current pause began, or zero.
     /// @param pausedTotal Seconds paused so far, at most 7 days.
     struct Auction {
@@ -79,7 +82,8 @@ interface IEnglishAuction is ISaleAdapter {
     );
     /// @notice The guardian paused an auction for a dispute.
     event AuctionPaused(uint256 indexed saleId, bytes32 disputeRef);
-    /// @notice A paused auction resumed with its remaining time.
+    /// @notice A paused auction resumed: it ends at `endTime`, its remaining time at the pause
+    ///         or the governed duration from now, whichever is later.
     event AuctionResumed(uint256 indexed saleId, uint64 endTime);
     /// @notice An upheld dispute cancelled an auction: the bid was refunded, the token burned.
     event AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef);
@@ -123,28 +127,55 @@ interface IEnglishAuction is ISaleAdapter {
     ///         `type(uint96).max` base units (about 7.9e28); a larger one reverts.
     function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
-    ///         the seller and the network fee. Permissionless.
+    ///         the seller and the network fee. Permissionless. An ERC-20 payout runs in its own
+    ///         1,000,000-gas frame, which the caller must be able to forward in full (a call gas
+    ///         limit of about 1.11M); if it fails, even through the escrow, it is credited to its
+    ///         wallet (`Credited`, paid out later with `claimFor`), so delivery never depends on it
+    ///         (MONEY-1). While the locked currency is deprecated nothing settles
+    ///         (`AssetNotActive`; a standing bidder may withdraw); after it is re-admitted, the
+    ///         first call reopens the auction for the governed duration (or the sale's anti-snipe
+    ///         window if longer) and emits `AuctionResumed`. Once the currency has been
+    ///         deprecated for 30 days, the call ends the sale unsold: the standing bid is
+    ///         credited back and the work goes to the artist (MARKET-2).
     function settle(uint256 saleId) external;
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
     ///         token there.
     function claimDelivery(uint256 saleId, address to) external;
+    /// @notice Sends all of `account`'s credits in ERC-20 `currency` to `account` itself.
+    ///         Permissionless: a seller split wallet or fee wallet whose ERC-20 payout failed at
+    ///         settlement and was credited here (MONEY-1) cannot call `claim`. The funds only ever
+    ///         go to `account`; a transfer that fails reverts and keeps the credit. ETH is refused
+    ///         (`IRevenueEscrow.InvalidAsset`): ETH credits are bidders' refunds, which only the
+    ///         bidder claims, to the address it chooses.
+    function claimFor(address account, address currency) external returns (uint256 amount);
 
     /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
     function pause(uint256 saleId, bytes32 disputeRef) external;
-    /// @notice Resumes a paused auction with its remaining time after a rejected dispute.
-    ///         UNPAUSER role (pause and unpause have separate holders). A pause also ends by itself
-    ///         once the 7-day allowance runs out, without any call.
+    /// @notice Resumes a paused auction after a rejected dispute, for its remaining time or the
+    ///         governed duration, whichever is longer (the anti-snipe window if longer still),
+    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders). Refused until 48 hours
+    ///         (`Roles.STANDARD`) after the pause, so the guardians can always cancel a resume,
+    ///         even one scheduled before the pause. A pause also ends by itself once the 7-day
+    ///         allowance runs out, without any call.
     function resume(uint256 saleId) external;
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
-    ///         burns the token. PARAMETER_SETTER role, while paused: the window is inclusive,
-    ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and equal
-    ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`.
+    ///         burns the token. PARAMETER_SETTER role, while paused, and like `resume` no earlier
+    ///         than 48 hours after the pause (`UnpauseTooEarly`): the window is inclusive,
+    ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and be the token's
+    ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
+    ///         fallback), recorded after the pause: an outcome recorded before the pause, or one
+    ///         about the package item, cannot cancel.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
-    /// @notice The high bidder withdraws its bid while the auction is paused; it is credited back
-    ///         and the auction has no bid.
+    /// @notice The high bidder withdraws its bid while the auction is paused, or while its
+    ///         currency is deprecated and it has not settled (MARKET-2); it is credited back
+    ///         and the auction has no bid. The withdrawn amount stays as a reserve the next bid
+    ///         must reach, and the resumed auction runs at least the governed duration, so the
+    ///         refunded bidders can return (LIFECYCLE-1).
     function withdrawBid(uint256 saleId) external;
 
-    /// @notice Sets the auction parameters, within the implementation's ceilings.
+    /// @notice Sets the auction parameters, within the implementation's bounds: a duration of 1
+    ///         hour to 7 days, an anti-snipe window of 1 minute to 1 day and at most the
+    ///         duration, and an increment share of 1,000 to 100,000 (1% to 100%).
     ///         PARAMETER_SETTER role, compare-and-set.
     function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next) external;
     /// @notice Sets a currency's opening bid, raising or lowering it up to the implementation's

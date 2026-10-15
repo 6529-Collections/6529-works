@@ -275,6 +275,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IEditions
+    function formatOf(uint256 editionId) external view returns (EditionFormat) {
+        return _edition(editionId).terms.format;
+    }
+
+    /// @inheritdoc IEditions
     function contentHashOf(uint256 editionId) external view returns (bytes32) {
         return _edition(editionId).contentHash;
     }
