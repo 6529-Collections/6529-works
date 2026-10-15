@@ -414,18 +414,25 @@
   - Fixed-price and Dutch listings (QUALITY-4): each adapter stores a fee recipient once
     and references it by index, and a phase is one storage word plus its root. `openSale`
     with one public phase writes 6 new slots instead of 8; the adapter's first sale
-    registers the fee recipient.
+    registers the fee recipient (8 slots; the counter shares `nextSaleId`'s word, which is
+    now a `uint64`). A 65,536th fee recipient fails with `InvalidSaleTerms`.
   - 6529 Editions (QUALITY-5): the record is packed behind the unchanged `edition` view.
     `createEdition` writes 7 new slots instead of 9 (a Dutch edition 9 instead of 13), and a
     purchase writes only the holder's balance.
   - 6529 Stream (QUALITY-6): a token keeps two words, and the lead artist with the locked
     economics is one terms word shared by the artist's works, at the position its hash
     names or in an overflow range. A start under existing terms writes 5 new slots, 6 with
-    a bid. An artist's first start under the current economics writes 6, as before, so the
-    ADR 0004 maxima stay 6 and 7. A re-rate writes the terms word for its new rate if no
-    work has it yet.
+    a bid. A first start under new terms (an artist's first, or every artist's first after
+    an economics change or through a newly admitted adapter) writes 6, 7 with a bid, as
+    before, so the ADR 0004 maxima stay 6 and 7. Accepted limitation: on a collision of the
+    terms' 23-bit position, which a curated artist can force by grinding an address, that
+    first start writes one slot more and can exceed 350K with a bid. A re-rate writes the
+    terms word for its new rate if no work has it yet.
   - Identity: `activeAuthorityOf` is one storage read: a `restrained` flag beside the
     authority marks a pending override that moves it (about 2,200 gas less per creator read).
-  - Tests: the integration gas report adds rows for an artist's first start, a re-rate,
-    `openSale` at steady state and on the adapter's first sale, and a Dutch
+  - Tests: the integration gas report adds rows for an artist's first start (with and
+    without a bid, and two-party with a bid, the binding row of the 350K budget), a
+    re-rate, `openSale` at steady state and on the adapter's first sale, and a Dutch
     `createEdition`, `openSale` and `purchase`, and lowers the counts and ceilings.
+    `StreamTermsInvariant.t.sol` runs 36 real collisions of the terms positions, and
+    `StreamTermsGrind.t.sol` reproduces a ground one.

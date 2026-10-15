@@ -63,6 +63,12 @@ Each measured operation asserts its exact counts, so a slot one change saves
 cannot be spent again unnoticed. A steady-state `start` is also held to a
 maximum of **6** new slots, and `startWithBid` to **7**, in ETH: for one or
 two parties, and for VRF and edition-master works.
+- Since the state-growth diet (see the table's commentary): 6 (7 with a bid) at
+  steady state; an artist's first start under new terms writes one more on a
+  hashed-position collision, which a curated artist can force by grinding an
+  address. The 350K budget is for steady-state starts. First starts are
+  measured and gated separately, and a forced collision can push one first
+  start over 350K: an accepted limitation.
 - When a change lowers a count, the same pull request lowers the test's
   figure, this ADR's table and the figure in `AGENTS.md`. Lowering needs no
   new ADR.
@@ -128,7 +134,9 @@ no ceiling, or not run on Sepolia.
 | `start`, VRF work | 277,782 | 350,000 | **5** | 0 | 852,868 |
 | `start`, edition master | 270,747 | 350,000 | **5** | 0 | 847,598 |
 | `start`, an artist's first work | 290,202 | 350,000 | **6** | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 357,241 | 365,000 (regression) | 6 | 0 | — |
+| `startWithBid`, an artist's first work | 332,277 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 340,518 | 350,000 | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 357,265 | 365,000 (regression) | 6 | 0 | — |
 | `start`, first work in a new collection | 270,134 | 400,000 | 5 | 0 | 846,977 |
 | `start`, first work ever (one-time) | 439,273 | 449,000 (regression) | 13 | 0 | 1,604,862 |
 | `startWithBid`, first bid under new sale terms (one-time) | 382,332 | 390,000 (regression) | 9 | 0 | — |
@@ -136,15 +144,15 @@ no ceiling, or not run on Sepolia.
 | `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 |
 | `consume`, as Stream calls it | 94,252 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 268,938 | 274,000 (regression) | 7 | 0 | 1,118,699 |
-| `createEdition`, a Dutch edition | 317,127 | 323,000 (regression) | 9 | 0 | — |
-| `openSale` (one public phase) | 243,359 | 248,000 (regression) | 6 | 0 | 993,668 |
-| `openSale`, the adapter's first sale (one-time) | 308,158 | 315,000 (regression) | 9 | 0 | — |
+| `createEdition` | 268,938 | 275,000 (regression) | 7 | 0 | 1,118,699 |
+| `createEdition`, a Dutch edition | 317,127 | 324,000 (regression) | 9 | 0 | — |
+| `openSale` (one public phase) | 241,730 | 247,000 (regression) | 6 | 0 | 993,668 |
+| `openSale`, the adapter's first sale (one-time) | 284,847 | 291,000 (regression) | 8 | 0 | — |
 | `purchase`, the first copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 468,086 |
 | `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 370,142 |
-| `openSale`, Dutch | 261,271 | 267,000 (regression) | 7 | 0 | — |
+| `openSale`, Dutch | 259,642 | 265,000 (regression) | 7 | 0 | — |
 | `purchase`, Dutch, the first copy, new holder | 124,486 | 127,000 (regression) | 1 | 0 | — |
-| re-rate a work (governed `execute`) | 187,693 | 192,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 187,673 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 40,667 |
@@ -198,7 +206,8 @@ no ceiling, or not run on Sepolia.
     `openSale` with one public phase writes 6 new slots instead of 8 (about 46K
     less Prague gas); an allowlist or capped phase one fewer than before; a Dutch
     `openSale` 7 instead of 8. The adapter's first sale registers the fee
-    recipient: 9 slots, once per adapter. A purchase reads its phase in one word
+    recipient, both directions of its index, with the counter in `nextSaleId`'s
+    word: 8 slots, once per adapter. A purchase reads its phase in one word
     instead of four (about 6.1K less).
   - QUALITY-5: the Editions record keeps the `Edition` view but packs its words:
     the seller with the size, format and kind; the royalty receiver with the
@@ -221,18 +230,31 @@ no ceiling, or not run on Sepolia.
       would have raised the maximum. The terms word sits instead at the position
       its hash names (23 bits), or, when other terms already hold that position,
       in an overflow range keyed by the full hash. Nothing loops.
-    - An artist's first start under the current economics writes the terms word
-      in place of the old per-token word: 6 slots, as every start wrote before.
-      The 6 and 7 maxima therefore stay, and hold for that start; the exact
-      counts of the other start rows are 5 and 6. Terms are per lead artist, so
-      a new collaboration of an artist who has started before is not a first.
-    - A collision with other terms (about one in 8.4 million per pair) costs that
-      first start one slot more, once.
+    - A first start under new terms writes the terms word in place of the old
+      per-token word: 6 slots, 7 with a bid, as every start wrote before. It is
+      an artist's first start, and every artist's first after an economics
+      change or through a newly admitted adapter (the terms include the minter
+      index). Terms are per lead artist, so a new collaboration of an artist who
+      has started before is not a first. The maxima stay 6 and 7; the exact
+      counts of the other start rows are 5 and 6. The binding row of the 350K
+      budget is now an artist's first start of a two-party work with a bid.
+    - **Accepted limitation: collisions.** Two terms collide when their 23-bit
+      hashed positions are equal. That is rare per pair (one in about 8.4
+      million) but expected at scale: a few thousand distinct terms make one
+      likely (even odds at about 3,400). A curated artist can also force one on
+      another artist by grinding an address (about 89,000 tries offline). When
+      the colliding terms are interned first, the other artist's first start
+      under its terms writes the overflow word and its index: one slot more, 7,
+      or 8 with a bid (the two-party first start with a bid is then about 365K
+      Prague, over 350K). Each later start under those terms reads the overflow
+      index cold, about 2.1K more. Correctness is unaffected
+      (`test/stream/StreamTermsInvariant.t.sol` runs 36 real collisions;
+      `test/stream/StreamTermsGrind.t.sol` reproduces a ground one).
     - A re-rate (governed, with every party's consent) moves the token to the
       terms with its new rate, which writes a word if no work has them yet; it
       overwrote the token's own word before.
-    - Net: one slot less on every start except an artist's first under the
-      current economics, which is unchanged.
+    - Net: one slot less on every start except a first under new terms, which
+      is unchanged unless its position collides.
   - The restrained flag: the artist registry keeps, in the authority's storage
     word, whether the pending change is an override that moves the authority.
     Every staging sets it and every end of a change clears it, so
@@ -240,11 +262,13 @@ no ceiling, or not run on Sepolia.
     takes back the IDENTITY-1 read: about 2.2K to 2.4K less per `start`,
     `settle`, `openSale`, `consume` and re-rate, with no change in slots. The
     identity invariants check the flag against the pending change.
-  - New rows: an artist's first start, a re-rate, `openSale` at steady state
-    (the adapter's fee recipient registered) and on the adapter's first sale, and
-    a Dutch `createEdition`, `openSale` and `purchase`. Regression ceilings of the
-    rows the diet changed are the new figure plus about 2%, rounded up to the
-    thousand, or kept where that would raise them.
+  - New rows: an artist's first start, with and without a bid and as a
+    two-party work with a bid, a re-rate, `openSale` at steady state (the
+    adapter's fee recipient registered) and on the adapter's first sale, and a
+    Dutch `createEdition`, `openSale` and `purchase`. The artist's first starts
+    are gated by the 350K budget and the 6 and 7 maxima, with exact counts.
+    Regression ceilings of the rows the diet changed are the new figure plus
+    about 2%, rounded up to the thousand.
 
   **Glamsterdam, re-derived.** Each slot saved is about 89,000 gas on Sepolia
   on top of its Prague saving (about 111,000 against 22,100). The saving below
@@ -263,22 +287,25 @@ no ceiling, or not run on Sepolia.
   | `settle`, with a bid | 143,063 → 141,585 | 1 → 1 | about 1.5K | about 256K (257,763) |
   | `createEdition` | 314,734 → 268,938 | 9 → 7 | about 224K | about 895K (1,118,699) |
   | `createEdition`, a Dutch edition | 404,296 → 317,127 | 13 → 9 | about 443K | — |
-  | `openSale` (one public phase) | 295,361 → 243,359 | 8 → 6 | about 230K | about 764K (993,668) |
-  | `openSale`, the adapter's first sale (once) | 295,361 → 308,158 | 8 → 9 | about −102K | — |
-  | `openSale`, Dutch | 289,068 → 261,271 | 8 → 7 | about 117K | — |
+  | `openSale` (one public phase) | 295,361 → 241,730 | 8 → 6 | about 232K | about 762K (993,668) |
+  | `openSale`, the adapter's first sale (once) | 295,361 → 284,847 | 8 → 8 | about 11K | — |
+  | `openSale`, Dutch | 289,068 → 259,642 | 8 → 7 | about 118K | — |
   | `purchase`, the first copy, new holder | 193,971 → 123,933 | 3 → 1 | about 248K | about 220K (468,086) |
   | `purchase`, a later copy, new holder | 176,871 → 123,933 | 2 → 1 | about 142K | about 228K (370,142) |
   | `purchase`, Dutch, the first copy | 171,646 → 124,486 | 2 → 1 | about 136K | — |
-  | re-rate a work (governed) | 162,697 → 187,693 | 0 → 1 | about −114K | — |
+  | re-rate a work (governed) | 162,697 → 187,673 | 0 → 1 | about −114K | — |
 
   The two-party and VRF starts, the edition-master start, the Permit2 start and
   the first start in a new collection move as the steady-state `start` does.
   The first work ever keeps its 13 slots (about 2K less). An artist's first start
-  and the re-rate are where the shared terms word is written; the adapter's first
-  `openSale` is where its fee recipient is registered.
-- **The two-party `startWithBid` is the tightest:** 320,416, about 29.6K under
-  350K.
-- **An ERC-20 `startWithBid` paid by Permit2 costs 357,241**, about 45K more
+  and the re-rate are where the shared terms word is written (one word more on a
+  collision); the adapter's first `openSale` is where its fee recipient is
+  registered.
+- **The binding row is an artist's first start of a two-party work with a
+  bid:** 340,518, about 9.5K under 350K. The steady-state two-party
+  `startWithBid` is 320,416, about 29.6K under. A forced collision can push
+  that first start over 350K (above).
+- **An ERC-20 `startWithBid` paid by Permit2 costs 357,265**, about 45K more
   than in ETH, because of the Permit2 transfer path. That path adds:
   - the signed permit and its witness in the calldata;
   - Permit2's signature check and nonce update;
@@ -296,8 +323,8 @@ no ceiling, or not run on Sepolia.
   - the package registry's consumed-content record;
   - the auction's sale.
 
-  `startWithBid` adds the bid, and an artist's first start under the current
-  economics adds Stream's shared terms word.
+  `startWithBid` adds the bid, and a first start under new terms adds Stream's
+  shared terms word (and, on a hashed-position collision, the overflow index).
 
 ### CI against the Sepolia replays
 

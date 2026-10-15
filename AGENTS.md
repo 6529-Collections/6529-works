@@ -25,7 +25,11 @@ Instructions for automated coding agents working in this repository.
 - Starting an auction in ETH, Stream's launch currency, at steady state costs at most 350K
   Prague gas and writes at most 6 new storage slots, 7 with a bid
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)); the artist's later works,
-  which reuse Stream's shared terms word, write 5 and 6. An ERC-20 start paid by
+  which reuse Stream's shared terms word, write 5 and 6. An artist's first start under new
+  terms writes one more on a hashed-position collision, which a curated artist can force by
+  grinding an address; first starts are measured and gated separately, and such a collision
+  can push one over 350K (an accepted limitation). The binding row today is an artist's
+  first start of a two-party work with a bid, about 9.5K under 350K. An ERC-20 start paid by
   Permit2 is a supported, non-default path: it has a regression ceiling and exact counts, not
   a budget. Admitting the first ERC-20, or approving a Stream package that names one, must be
   accompanied by a re-measurement and publication of its start cost, in Prague gas and on the

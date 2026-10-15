@@ -444,7 +444,8 @@ setters for funds, recipients, verifiers and renderers are compare-and-set.
   - Stream stores two words per token (the seller with the packed fields and a
     terms ID; the item hash) and one shared terms word per artist and economics,
     and derives the royalty receiver. A start under existing terms writes 5 new
-    slots, 6 with a bid; an artist's first start writes the terms word too. The
+    slots, 6 with a bid; a first start under new terms writes the terms word too
+    (one word more on a hashed-position collision, an accepted limitation). The
     registry stores one word per consumed item.
   - Mint checks an admitted-minter mapping, not an AccessManager hop.
   - The auction locks the increment floor at the first bid, not at start, and
