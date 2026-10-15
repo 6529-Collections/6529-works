@@ -1,18 +1,28 @@
 # federated
 
-6529 Stream Federated, shipped in v1.1 and only if needed: artist-run
-contracts built from the network's audited templates and registered
-permissionlessly, without curation. Templates are the 6529 Stream ERC-721 and
-6529 Editions ERC-1155 token code with curation switched off, published by
-governance and identified by code hash; a factory deploys a template (or a
-linked 721/1155 pair, linked in the same transaction) as a full non-proxy
-contract; and the federation registry, written only by the factory, records
-each contract's address, form, artist ID, template version and code hash, fee
-terms and `ACTIVE`/`DELISTED` status for the shared sale adapters (90/10
-primary and royalty split) and for indexers. v1 keeps only what makes this
-possible: the shared sale adapters in `sales/`, template-ready token code and
-the registry interface. Governed by
-[ADR 0001 §16](../../docs/adr/0001-v1-scope.md#16-6529-stream-federated), with
-the license rule in §8 and the network tiers in §2. Before a federation
-registry is installed in the sale adapters, meet the prerequisites in the
-[sales README](../sales/README.md) (federation install prerequisites).
+Reserved for 6529 Stream Federated, which ships in v1.1 and only if needed: artist-run token
+contracts built from the network's audited templates and registered without curation through a
+factory and a federation registry ([ADR 0001 §16](../../docs/adr/0001-v1-scope.md#16-6529-stream-federated)).
+There is no code here in v1.
+
+## What v1 already has
+
+| Piece | Where |
+| --- | --- |
+| The registry interface the sale adapters read (`isActive`, the registry entry with its code hash and fee share) | [`IFederationRegistry`](../interfaces/IFederationRegistry.sol) |
+| Federated targets in the shared adapters: a token sells while the registry reports it active and runs its recorded code, and pays the registry's fee share to the network's federated fee recipient | [`MintSaleBase`](../sales/MintSaleBase.sol), [`EnglishAuction`](../sales/EnglishAuction.sol); rules ED-24 in [Editions and sales](../../docs/spec/editions-and-sales.md#rules-and-invariants) and AUC-28 in [Stream and auctions](../../docs/spec/stream-and-auctions.md#rules-and-invariants) |
+| The governed install of a registry in the adapters (`setFederationRegistry`, 30 days) and the artist registry's deferred `bindFederationRegistry` | [Role and permission matrix](../../docs/audit/roles.md) |
+| The `PRODUCT_FEDERATED` economics (90/10 primary and royalty split) | [Economics and payouts](../../docs/spec/economics-and-payouts.md#products-and-launch-terms) |
+
+## Before installing a registry
+
+No registry is installed in v1. Before one is, set the economics resolver's
+`PRODUCT_FEDERATED` fee recipient to a nonzero wallet and keep it nonzero while the registry is
+installed: the auction checks it when a federated auction starts and reads it again at
+settlement (LIM-SAL-4 in [known limitations](../../docs/audit/known-limitations.md#sales-and-auctions)).
+
+## See also
+
+[Glossary: 6529 Stream Federated](../../docs/glossary.md#6529-stream-federated),
+[trust assumptions](../../docs/audit/trust-assumptions.md),
+[sales module](../sales/README.md).

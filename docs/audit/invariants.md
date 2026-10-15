@@ -330,7 +330,7 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 
 What no stateful campaign covers yet. Suites on the real, wired stack are being added in
 [PR #62](https://github.com/6529-Collections/6529-works/pull/62); coverage, mutation testing
-and Halmos proofs in [PR #58](https://github.com/6529-Collections/6529-works/pull/58).
+and Halmos proofs are in [Testing](../testing/README.md).
 
 - **The real escrow under fixed-price and Dutch sales.** Those campaigns use
   `MockRevenueEscrow`, so INV-SAL-2, INV-SAL-3, INV-SAL-7 and INV-SAL-8 check the mock's side

@@ -221,8 +221,8 @@ sequenceDiagram
   is emitted, and refuses base64 text that `attestBase64` would reject. For `Gzip`, `Base64` and
   `GzipBase64` files, the encoded stream itself must also be published (Arweave or IPFS): the
   file ID names those exact bytes, and gzip output depends on the compressor.
-- **Gas.** One full chunk fits a transaction ([Parameters and limits](#parameters-and-limits);
-  [content module](../../src/content/README.md#upload-flow)).
+- **Gas.** One full chunk fits a transaction under Glamsterdam
+  ([Parameters and limits](#parameters-and-limits); [uploader](../../tools/content/README.md#glamsterdam)).
 
 ### Open a record
 
@@ -303,7 +303,8 @@ sequenceDiagram
 ```
 
 - **Rules.** WS-18 to WS-22; after finalize the artist's call fails with
-  `AccessManagedUnauthorized`. `ONCHAIN` matches only an on-chain complete work, read from the
+  `AccessManagedUnauthorized`. The URIs registered for a file are one set, so whichever of the
+  artist and the platform registers a URI first holds it against its own quota. `ONCHAIN` matches only an on-chain complete work, read from the
   stored flag, never from a content-store scan.
 - **Suspension.** A [suspended](governance.md#suspension-of-operational-keys) PLATFORM or
   STORAGE_OPERATOR key reverts with `AccessManagedUnauthorized` at once; the artist's own
@@ -487,8 +488,8 @@ See the [register](README.md#differences-from-the-adrs).
   [`IDependencyRegistry.sol`](../../src/interfaces/IDependencyRegistry.sol),
   [`ContentTypes.sol`](../../src/interfaces/types/ContentTypes.sol),
   [`Limits.sol`](../../src/interfaces/types/Limits.sol).
-- **Module READMEs:** [stream, records satellite](../../src/stream/README.md#records-satellite),
-  [content store, attestation and dependency registry](../../src/content/README.md),
+- **Module READMEs:** [stream](../../src/stream/README.md),
+  [content](../../src/content/README.md),
   [uploader tooling](../../tools/content/README.md).
 - **ADRs:** [ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage) and
   [§10](../adr/0001-v1-scope.md#10-permanence);

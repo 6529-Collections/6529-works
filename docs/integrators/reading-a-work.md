@@ -76,8 +76,9 @@ cast call "$RENDERER" "fullTokenURI(address,uint256)(string)" "$EDITIONS" 42 --r
   complete, too large, compressed, unattested base64, or a script it cannot wrap. Catch the
   revert and use `tokenURI`.
 - It has no 8M gas promise. 1 MiB costs about 30M gas
-  ([content README](../../src/content/README.md#renderer)). Use `eth_call` against a node whose
-  call gas cap allows it (geth's and reth's default is 50M, per the content README).
+  ([fullTokenURI](../spec/rendering-and-tokenuri.md#fulltokenuri)). Use `eth_call` against a node
+  whose call gas cap allows it (geth's and reth's default is 50M, per the
+  [uploader](../../tools/content/README.md#glamsterdam)).
 
 ### Supply enough gas
 

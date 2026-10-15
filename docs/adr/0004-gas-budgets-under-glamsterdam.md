@@ -181,7 +181,9 @@ no ceiling, or not run on Sepolia.
   (`settle`, `openSale`, `purchase`) and about 2.8K per `start`, which reads it
   twice. Re-checking the consolidation source's pinned code hash (DEPS-6) adds
   about 2.2K to each `refreshStanding`. Slot and account counts are unchanged;
-  the `consume` regression ceiling moved from 96,000 to 99,000.
+  the `consume` regression ceiling moved from 96,000 to 99,000. (Amendment note,
+  15 October 2026: the state-growth diet below lowered this and the next bullet's
+  ceilings again; the table holds the current ones.)
 - **Two regression ceilings moved with the sales fixes**, for security fixes:
   the active-authority creator read (#53) and the currency status read
   (MARKET-1/2). `openSale` (292,853) moved from 293,000 to 299,000 and the
@@ -302,11 +304,12 @@ no ceiling, or not run on Sepolia.
   collision); the adapter's first `openSale` is where its fee recipient is
   registered.
 - **The binding row is an artist's first start of a two-party work with a
-  bid:** 340,518, about 9.5K under 350K. The steady-state two-party
-  `startWithBid` is 320,416, about 29.6K under. A forced collision can push
-  that first start over 350K (above).
-- **An ERC-20 `startWithBid` paid by Permit2 costs 357,265**, about 45K more
-  than in ETH, because of the Permit2 transfer path. That path adds:
+  bid:** the table's row with the smallest margin under 350K. The steady-state
+  two-party `startWithBid` row has about three times that margin. A forced
+  collision can push that first start over 350K (above).
+- **An ERC-20 `startWithBid` paid by Permit2 costs about 45K more than in
+  ETH** (the table's Permit2 row against the steady-state `startWithBid`),
+  because of the Permit2 transfer path. That path adds:
   - the signed permit and its witness in the calldata;
   - Permit2's signature check and nonce update;
   - the token transfer, with the balance checks around it;
@@ -413,7 +416,7 @@ against 251,825 uncorrected: seven accounts at 2,500 each.
   Foundry 1.7.1 does not return.
 - **Content storage costs** about 1,548 gas per byte on Sepolia, against 218 on
   Prague: about 1.65 ETH per MiB at 1 gwei. The
-  [content module](../../src/content/README.md#glamsterdam) restates its
+  [uploader](../../tools/content/README.md#glamsterdam) restates its
   guidance; this ADR only records the measurement.
 
 ## Security impact
@@ -488,5 +491,5 @@ mainnet.
   Glamsterdam.
 - **ADR 0003.** The 350K steady-state start gate and its measured table are
   Prague gas. The "two full chunks per transaction" figure predates
-  Glamsterdam: one full chunk per transaction under Glamsterdam (content
-  module README).
+  Glamsterdam: one full chunk per transaction under Glamsterdam (uploader
+  README).

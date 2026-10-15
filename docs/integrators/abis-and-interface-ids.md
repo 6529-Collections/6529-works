@@ -200,7 +200,7 @@ no `supportsInterface`. The IDs of `IContentStore`, `IDependencyRegistry` and `I
 are pinned to catch a surface change, not because anything answers them. Installs check code
 and no EIP-7702 delegation instead ([GV-22](../spec/governance.md#rules-and-invariants)); the
 fixed-price and Dutch adapters also check `IAssetAllowlist` when the allowlist answers ERC-165
-([sales README](../../src/sales/README.md)), and `bindStatementLog` checks that the log's
+([Editions and sales, wiring](../spec/editions-and-sales.md#contracts)), and `bindStatementLog` checks that the log's
 `artistResolver()` is the registry ([`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol)).
 Code alone is checked for the work records' dependency registry, the dependency registry's
 content store, the consolidation adapter's delegation contract and the configurator's targets;
@@ -416,7 +416,7 @@ leaf = keccak256(bytes.concat(keccak256(abi.encode(
 in the phase; `price` is used only in a `leafPriced` phase
 ([ED-15](../spec/editions-and-sales.md#rules-and-invariants)). Trees are OpenZeppelin
 sorted-pair trees, proofs at most 32 nodes; emit at most one leaf per account and phase
-([sales README](../../src/sales/README.md#allowlists)).
+([LIM-SAL-6](../audit/known-limitations.md#sales-and-auctions)).
 
 ### Statement entry hash and chain head
 
@@ -499,7 +499,7 @@ string, domain label or encoding fails them.
 | [`test/content/tooling/UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) | Chunk hashes and file IDs from the Python uploader against the content store |
 
 The testing guide is
-[docs/testing/README.md](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+[docs/testing/README.md](../testing/README.md).
 
 ## References
 

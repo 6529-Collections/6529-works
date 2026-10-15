@@ -94,7 +94,7 @@ relay time.
 
 **ARTIST authority** is no stronger than the resolver's code, `setArtistResolver`
 (`SUCCESSOR_SETTER`, 30 days, so the guardians can cancel a hostile swap), and the
-AccessManager behind it ([records README](../../src/records/README.md#trust-boundary-for-artist-statements);
+AccessManager behind it ([trust assumptions](../audit/trust-assumptions.md#resolvers-and-renderer-pins);
 LIM-GV-10); no governance role has a direct path to an ARTIST or OWNER entry (DSP-6). The
 install is checked (DSP-8). Each ARTIST entry records its resolver, so a reader can discard
 the entries of a resolver it does not trust. A resolver must be immutable or never make an
@@ -551,7 +551,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`Stream.t.sol`](../../test/stream/Stream.t.sol),
   [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol),
   [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol). How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Related pages: [Stream and auctions](stream-and-auctions.md), [Curation](curation.md),
   [Identity and recovery](identity-and-recovery.md),
   [Rendering and tokenURI](rendering-and-tokenuri.md), [Governance](governance.md),

@@ -1,174 +1,76 @@
 # stream
 
-6529 Stream: the one shared, network-curated ERC-721 that holds every curated
-1/1, split into a core token and a records satellite (integrator decision D1).
-Governed by [ADR 0001](../../docs/adr/0001-v1-scope.md) §4 (token model), §5
-(permissionless start), §7 (royalties), §8 (works, content, storage and
-preferred location), §9 (seeded works), §10 (permanence) and §12 (disputes),
-with the "Core" row of the §17 reuse plan.
+6529 Stream: the one shared, network-curated ERC-721 that holds every curated 1/1, split into a
+core token and a records satellite. The core mints a work when an admitted sale adapter starts
+its auction, locks its terms, serves royalties and forwards `tokenURI`; the satellite holds
+everything that describes the work and can change after the mint. The rules are in
+[Stream and auctions](../../docs/spec/stream-and-auctions.md) (`AUC-*`, the core) and
+[Works and storage](../../docs/spec/works-and-storage.md) (`WS-*`, the satellite); renderer
+selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#renderer-selection).
 
-| File | Interface | Role |
+## Files
+
+| File | What it is |
+| --- | --- |
+| `Stream.sol` | The core ([`IStream`](../interfaces/IStream.sol), [`IMintTarget`](../interfaces/IMintTarget.sol)): minting for consumed package items, collections and serials, the terms locked at mint, `royaltyInfo`, burns, the edition link, `rendererOf` and `tokenURI`, contract URI and marketplace owner. |
+| `WorkRecords.sol` | The records satellite ([`IWorkRecords`](../interfaces/IWorkRecords.sol)): opening a work's record, the record file, media list, license and ARTIST seed, the state hash, finalize and renderer pins, amendments, on-chain completeness, locators and preferred location. |
+| `SpdxId.sol` | Internal library: the license-ID rule Stream applies at mint and `WorkRecords` at deployment and relicense. |
+
+## Entry points
+
+| Caller | Calls | Rules |
 | --- | --- | --- |
-| `Stream.sol` | [`IStream`](../interfaces/IStream.sol), [`IMintTarget`](../interfaces/IMintTarget.sol) | The ERC-721 core: minting for consumed package items, supply and burns, collections and serials, the terms locked at mint, `royaltyInfo`, the edition link, the marketplace owner and contract URI, `tokenURI` forwarding. |
-| `WorkRecords.sol` | [`IWorkRecords`](../interfaces/IWorkRecords.sol) | The records satellite: descriptive record files, media, licenses, ARTIST seeds, the state hash, finalize and renderer pins, on-chain completeness, amendments, locators and preferred location. |
-| `SpdxId.sol` | none | The license-ID rule Stream applies at mint and `WorkRecords` at deploy and relicense: 1 to 64 bytes of `[A-Za-z0-9.+-]`, in the ID's original case, one 256-bit mask lookup per byte. |
+| An admitted adapter (the English auction) | `mint` at `start`, which consumes the item through the package registry in the same call; `markPrimarySettled` at settle; `burn` on an upheld dispute; `primaryTerms` (view) | AUC-1 to AUC-9, ENT-12 |
+| PLATFORM | `createCollection` | AUC-12 |
+| Editions | `linkEdition` once per settled master | AUC-11, ED-2 |
+| The bound `WorkRecords` | `setRoyaltyRate`, `emitMetadataUpdate` | AUC-6, WS-23 |
+| Anyone | `openRecord`, `syncOnChain`; the views (`work`, `coreOf`, `artistOf`, `royaltyInfo`, `rendererOf`, `tokenURI`, `record`, `mediaOf`, `licenseOf`, `seedOf`, `preferredLocator`, ...) | WS-1 to WS-3, WS-17, AUC-7, RND-1 |
+| The lead artist's active authority | `setRecord`, `finalize`; `addLocator` before finalize; EIP-712 consents to amendments | WS-7 to WS-9, WS-19 |
+| PLATFORM; STORAGE_OPERATOR | `addLocator` (after finalize only PLATFORM); the three preference setters | WS-19, WS-22 |
+| Governance | `setAdmittedMinter`, `setDefaultRenderer`, `releaseContent`, `setContractURI`, `setOwner`; `relicense`, `setRoyaltyRate`, `repinRenderer` with every consent they need; the genesis binds | [Role matrix: Stream](../../docs/audit/roles.md#stream) and [WorkRecords](../../docs/audit/roles.md#workrecords) |
 
-Tests are in [`test/stream/`](../../test/stream) and mocks of other lanes'
-contracts in [`test/mocks/stream/`](../../test/mocks/stream).
+Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
+[Works and storage](../../docs/spec/works-and-storage.md#who-calls-workrecords-and-what-it-calls).
 
-## Core token
+## Developer notes
 
-- **Minting.** Only adapters in the admitted-minter mapping
-  (`setAdmittedMinter`, 30-day class) may mint, into their own custody, for an
-  item the package registry consumes in the same call. Stream checks what the
-  registry does not: the auction sale kind on both the item and the adapter, an
-  existing collection, a coherent seed policy, a license ID `WorkRecords`
-  accepts, and a delivered VRF seed.
-- **Curation obligation.** The media commitments `openRecord` checks (1 to 32
-  files, the PRIMARY first and alone, its SHA-256 equal to the item's
-  `contentHash`) are not visible at mint, so a mis-committed item would mint
-  and never open. The curation signer's tooling MUST simulate `openRecord` for
-  every item before attesting it. This is a trust obligation, not an on-chain
-  check.
-- **IDs.** One chronological global counter from 1; collections keep their own
-  serials from 1. A burn leaves a gap; IDs are never reused. The governed
-  `releaseContent(tokenId, contentHash, beneficiary)` (PARAMETER_SETTER, 48
-  hours) then reserves the burned work's content hash for the rightful artist
-  the dispute outcome names.
-- **Burns.** Only the adapter that minted a token can burn it, while it holds
-  the token and before the primary sale settles: the auction's cancel after an
-  upheld dispute. The gate is the minting adapter's index, not current
-  admission, so an adapter removed mid-dispute can still cancel, and another
-  admitted adapter holding the token never can. After a sale nothing is
-  confiscated.
-- **Start gas.** A mint writes the ERC-721 owner and balance, one shared counter
-  word, the collection's counter word and two work words: the seller, serial,
-  collection, kind, seed policy, flags and a terms ID; the item hash. The terms
-  (the lead artist ID, royalty rate, fee share, fee-recipient index and
-  minting-adapter index) are one word shared by every work with the same terms
-  (QUALITY-6). The word sits at a position its hash names, or, if other terms
-  hold that position, in an overflow range found again by the full hash; nothing
-  loops. A first start under new terms writes it (an artist's first, and every
-  artist's first after an economics change or through a newly admitted adapter,
-  since the terms include the minter index), and every later start reuses it:
-  one new slot fewer per start, about 89,000 gas on Sepolia
-  ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)). A re-rate
-  moves the token to the terms with its new rate, written if new.
-  - **Accepted limitation.** When other terms hold the hashed position, a first
-    start writes the overflow word and its index, one slot more, and each later
-    start under those terms reads the overflow index cold (about 2,100 gas).
-    Collisions are expected once there are a few thousand distinct terms, and a
-    curated artist can force one on another by grinding an address. Views and
-    payouts are unaffected.
-  Everything else is in `WorkMinted` and in the published package.
-- **Royalties.** The rate is stored; the receiver is derived. With no fee it is
-  the seller; otherwise it is the split factory's salt-zero wallet for the
-  canonical payee list of fee recipient and seller. `royaltyInfo` makes that
-  one view call and nothing else, so a gas shortfall reverts and never returns a
-  zero royalty. The amount is `floor(price * rate / 100,000)` without overflow.
-- **Settlement.** The minting adapter calls `markPrimarySettled` at settlement,
-  before delivery; it gates edition creation, and `linkEdition` checks it too.
-- **Fee terms.** A fee share of zero may come with a zero fee recipient; a
-  nonzero fee share needs a recipient other than the seller.
-- **Wiring.** `WorkRecords` and 6529 Editions are bound once each, with ERC-165
-  checks, EIP-7702 rejection and a check that the target serves this Stream
-  (`stream() == address(this)`). Every installed dependency is checked the same
-  way; renderers are also pinned by code hash, and the pin is checked again
-  every time `rendererOf` names a renderer (DEPS-6): the default renderer's
-  code against the hash it was installed with, a finalized work's against the
-  hash it was pinned with (`WorkRecords.pinnedRenderer`, which records each
-  renderer's hash at finalize or the errata repin and refuses to pin an address
-  again with another). Changed code makes `tokenURI` revert rather than fall
-  back to another renderer, which would show a finalized work in an output
-  format nobody pinned; a new default renderer, or the errata repin, restores
-  it. The errata repin needs the lead artist's signature (by the artist ID's
-  active authority), so a finalized work whose pinned renderer's code changed
-  stays without metadata while that key is lost: the artist first recovers the
-  authority through the artist registry (a staged change or a governed override,
-  see the [identity module](../identity/README.md)), then signs the repin.
-  `coreOf` is the cheap per-work
-  read the satellites use, including the current royalty rate an edition
-  inherits.
+- **Start-path storage (QUALITY-6).** A mint writes the ERC-721 owner, two token words (seller,
+  serial, collection, a flags byte and a 24-bit terms ID; the item hash) and rewrites two
+  nonzero counter words (the global counts and the collection's). The
+  terms (lead artist ID, royalty rate, fee share, fee-recipient index, minting-adapter index)
+  are one word shared by every work under the same terms, at the position its hash names or,
+  after a 23-bit collision, in an overflow range found by the full hash; nothing loops. A first
+  start under new terms writes it. The layout is what keeps `start` within its budget and slot
+  maximum ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)); the
+  collision cost is LIM-GAS-10. `GasReport.t.sol` asserts every start row's exact slot count,
+  so any new word on this path fails CI until the ADR's table moves.
+- **Nothing in `WorkRecords` is written at mint.** Keep it that way: the record opens later
+  with the permissionless `openRecord`, and every per-token function reverts with
+  `RecordNotOpen` until then. Its first record word packs the pin, version, media count, flags
+  and `syncedFiles`; media is one word per file plus one word of roles.
+- **`royaltyInfo` makes one view call** (the split factory's `walletFor`) and nothing else, so a
+  gas shortfall reverts instead of returning a zero royalty. Do not add reads to it.
+- **Renderer pins fail closed** (DEPS-6): `rendererOf` re-checks the default renderer's and a
+  finalized work's pinned code hash at every call and reverts instead of falling back.
+- **`syncOnChain`** checks whole files within a 512-chunk budget per call (about a quarter of the
+  EIP-7825 cap from cold storage), stores progress in the record's first word and emits
+  `OnChainSyncProgress` only when the budget stops it; the call that finishes emits
+  `WorkOnChainComplete`.
+- **Amendments** bump the version before their external calls (Stream, Editions), and every
+  consent binds the state hash, so nothing applies twice.
+- **Bytecode.** `WorkRecords` is the tighter of the two; current margins in the
+  [audit scope](../../docs/audit/scope.md#products-and-sales).
+- **Tests:** `forge test --match-path 'test/stream/**'`: core and satellite units, preferred
+  location, the terms tests (`StreamTerms*.t.sol`, including real and ground collisions), the
+  stateful invariants and `StreamTxCap.t.sol`; a Halmos proof of `SpdxId` is in
+  `test/symbolic/` ([Testing](../../docs/testing/README.md)). End to end: `CuratedSale.t.sol`,
+  `RecordAmendments.t.sol`, `SyncOnChainResume.t.sol`, `RendererCodePin.t.sol` and
+  `GasReport.t.sol` in [`test/integration/`](../../test/integration/).
 
-## Records satellite
+## See also
 
-- **Opening.** Nothing is written at mint. `openRecord` is permissionless: it
-  checks the item against the core's item hash, the media list against
-  `mediaHash`, the primary's SHA-256 against `contentHash`, every file's
-  SHA-256 against the content store's declaration, and the size of every
-  `PREVIEW` file stored as `Identity` or `Base64`: at most
-  `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity` file counting four
-  times), a small image the renderer inlines within the 8M `tokenURI` budget
-  (see the content README's budget proof). Gzip files are never inlined and not
-  bounded; a larger preview, such as a video, belongs in the media list as an
-  `AUXILIARY` file. It stores the approved
-  record file ID as it is, one word per media file plus one word of roles, an
-  ARTIST seed, and the approved license when it is not the default CC0. Neither
-  the record file nor the license text is checked here, so neither can freeze a
-  minted work. Every per-token function reverts with `RecordNotOpen` until
-  then.
-- **Record files.** `setRecord` and `finalize` accept a record file only if it
-  is registered, `Identity`-encoded, at most `Limits.MAX_RECORD_BYTES` (one chunk) and
-  complete. These checks are O(1). An approved record that breaks them still
-  opens; the renderer serves core-only metadata with a record status, and the
-  artist replaces it with `setRecord` before finalize. The JSON is not parsed
-  on-chain: the renderer validates it the same way.
-- **Licenses.** The SPDX ID keeps its original case (`CC0-1.0`); only the
-  license key, `keccak256` of the lowercased ID, is case-insensitive.
-- **State hash.** It commits to the token ID, the version, the record file, the
-  license key and text, the royalty rate and the effective renderer. The
-  version bumps only on a real change; identical re-publishes are no-ops, and
-  permissionless actions never change it.
-- **Amendments.** Relicensing and royalty-rate changes need every party's
-  EIP-712 consent, each by its active authority, plus a governed action. Only
-  CC0 irrevocability is enforced on-chain, on the canonical license key; whether
-  a new license is more permissive is the judgement of the parties' consent plus
-  governance, and the contract does not order licenses. A license whose key is
-  CC0 always names the deployment's CC0 text (`cc0TextFileId`, the legal code
-  pinned by digest at deployment): `openRecord` refuses an approved CC0 license
-  with another text (the curation simulation of `openRecord` catches it before
-  approval), and a relicense to CC0 must name it. A CC0 work's license therefore
-  never changes, and a work that reads CC0 never points at other terms. A
-  relicense's text file must be
-  registered, and stored on-chain once the work is finalized. A royalty-rate
-  change bumps the version before its external calls, emits `RoyaltyRateSet`
-  and refreshes the metadata. A repin needs the lead artist and the 30-day
-  class, and binds the renderer's code hash.
-- **On-chain completeness.** `syncOnChain` is permissionless and resumable.
-  Each call checks whole media files, in order, while their chunks fit a budget
-  of 512 (about 4.2M gas from cold storage; a file of up to 512 chunks always
-  fits), stores how many files it found complete in the record's first word
-  (no new slot) and emits `OnChainSyncProgress`; the call that reaches the end
-  marks the work on-chain complete. A file found incomplete reverts the call
-  with `NotOnChainComplete`, and earlier calls' progress stays, since media is
-  fixed and on-chain bytes are permanent.
-- **Finalize** applies the record-file checks and requires the license text,
-  the default CC0 text included, to be complete on-chain. A finalized work's
-  record and license text are therefore permanent and readable on-chain.
-- **Locators.** Append-only ARWEAVE and IPFS copies of media files: at most 8
-  per file added by the artist and 8 by the platform, so neither can exhaust
-  the other's. Each URI is a content address with nothing after it, in its one
-  canonical spelling (the padding bits of the last character zero), so the
-  content it names cannot be repointed and one copy has one URI: `ar://` and a
-  43-character base64url transaction ID, or `ipfs://` and a base32 CIDv1 with a
-  32-byte sha2-256 multihash, a raw leaf (`bafkrei...`) or a dag-pb root
-  (`bafybei...`), 59 characters. No path, query or fragment, so no `%` or `#`
-  either. Only the shape is checked on-chain: an ArNS base name is never 43
-  characters long, but an undername can be, so the storage operator serves only
-  copies the off-chain monitor verified. A URI already registered for the file
-  is refused, compared as exact bytes. The
-  set of registered URIs is shared, so whichever side adds a URI first holds it
-  against its own quota, and the URI is listed either way. Preferred location:
-  the file's index, then the collection's kind, then the global kind, then the
-  first registered locator, then the implicit ONCHAIN copy. ONCHAIN matches
-  only a work that `syncOnChain` marked on-chain complete (a stored flag, never
-  a content-store scan); with nothing found the result is the empty locator
-  (kind NONE). Locators are not verified on-chain: each is registered as a copy
-  of that one file, and the storage operator chooses only among the copies
-  registered for it.
-- **After finalize, platform only.** "Final" fixes the content, and the content
-  a locator names is not verified on-chain, so after finalize only the PLATFORM
-  role adds locators (the artist's call is unauthorized): the copies of a
-  finalized work are the platform's to register and the storage operator's to
-  choose. The platform may then fill all 16 of a file's slots, the artist's
-  unused ones included. Locators added before finalize stay as they are.
+[ADR 0001](../../docs/adr/0001-v1-scope.md) §4 (token model), §5, §7 (royalties), §8 (works,
+content, storage), §9, §10 (permanence) and §12; [ADR 0003](../../docs/adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8);
+the [differences from the ADRs](../../docs/spec/README.md#differences-from-the-adrs);
+[known limitations](../../docs/audit/known-limitations.md) LIM-GAS-10, LIM-CNT-2 and
+LIM-CNT-10; [events: Stream and WorkRecords](../../docs/integrators/events-and-indexing.md#stream).

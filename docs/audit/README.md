@@ -67,8 +67,8 @@ Areas where a small change has large effects, or where the review concentrated:
 
 - **Tests.** Unit, fuzz, stateful invariant, integration and review-regression suites in
   [`test/`](../../test/); review regressions are in [`test/adv/`](../../test/adv/), named by
-  finding ID. Coverage, mutation testing and Halmos proofs are being added in
-  [PR #58](https://github.com/6529-Collections/6529-works/pull/58).
+  finding ID. Coverage, mutation testing and Halmos proofs are in
+  [Testing](../testing/README.md).
 - **The internal review.** Findings, fixes, decisions, residual risks and how to reproduce
   them: [internal-review-2026-10.md](../security/internal-review-2026-10.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in

@@ -1,307 +1,77 @@
 # sales
 
-Shared sale adapters written against a minimal mint interface rather than
-against Stream: the English auction (Stream's only primary sale; anti-snipe
-clock, pull refunds, escrow fallback, pending claim when NFT delivery fails,
-dispute pause), fixed price with allowlist phases and ERC-20 permits, and Dutch
-pricing. Each sale locks its currency (ETH or an allowlisted standard ERC-20)
-when it starts, and new sale types arrive as new adapters through a timelocked
-minter-role grant. Governed by
-[ADR 0001 §5](../../docs/adr/0001-v1-scope.md#5-sales-and-auctions), with
-§6 (edition sales), §12 (dispute pause) and §16 (federated use).
+The shared sale adapters. Each knows a token only through
+[`IMintTarget`](../interfaces/IMintTarget.sol), so the same adapters serve 6529 Stream, 6529
+Editions and, from v1.1, federated contracts. The English auction is 6529 Stream's only primary
+sale; the fixed-price and Dutch adapters sell 6529 Editions. A token admits each adapter one by
+one with its own governed `setAdmittedMinter` (30 days), so a new sale type is a new adapter.
+The rules are in [Stream and auctions](../../docs/spec/stream-and-auctions.md) (`AUC-*`),
+[Disputes and statements](../../docs/spec/disputes-and-statements.md) (`DSP-13` to `DSP-23`, the
+dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (`ED-9` to
+`ED-24`).
 
-## Fixed price and Dutch
+## Files
 
-| File | Role |
+| File | What it is |
 | --- | --- |
-| `MintSaleBase.sol` | What both adapters share: targets (listed, or active in the federation registry), `LockedTerms` at open, one open sale per `(token, id)`, payment collection, minting per purchase, payouts with the escrow fallback, pull credits, the emergency pause, ERC-165. |
-| `FixedPriceSale.sol` | `IFixedPriceSale`: allowlist phases, per-wallet caps and prices, artist approval of leaf prices and OPEN drops. |
-| `DutchSale.sol` | `IDutchSale`: a descending price from the token's `DutchParams`. |
-| `DutchPricing.sol` | The price curve (internal library, ported from PR #744's `StreamDutchPricing`). |
+| `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start (mints into its own custody), bids with an anti-snipe window, pull credits, settlement with pending delivery and escrow fallback, the dispute pause, the currency freeze, the emergency pause. |
+| `MintSaleBase.sol` | Abstract base of the two mint-per-purchase adapters: targets, terms locked at open, one open sale per `(token, id)`, payment collection (direct, EIP-2612, Permit2), payouts with the escrow fallback, ETH credits, the pause and the schedule delay. |
+| `FixedPriceSale.sol` | [`IFixedPriceSale`](../interfaces/IFixedPriceSale.sol): up to 16 phases, Merkle allowlists, per-wallet caps and prices, the artist's signed phase configuration. |
+| `DutchSale.sol`, `DutchPricing.sol` | [`IDutchSale`](../interfaces/IDutchSale.sol): a descending price on the curve the edition's terms fix; the curve as an internal library. |
 
-Permit2 is called through the shared
-[`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
+Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
 
-### Opening a sale
+## Entry points
 
-The lead artist (the terms' `creator`) or the PLATFORM role opens a sale.
-Alone, PLATFORM opens only on the package's approved terms (ADR 0001 §6, MARKET-6):
-at the package price (no leaf-priced phase) and only for a listed 6529 Editions
-edition of FIXED size. An OPEN edition's one-time window starts at its first mint,
-whichever sale makes it, so a PLATFORM sale of one, or of a federated token, needs
-the artist (`ArtistApprovalRequired`): the creator opens it, or, for fixed price,
-PLATFORM relays the creator's signed phase configuration. The adapter reads the
-edition's format with `IEditions.formatOf`. The adapter reads the token's
-`primaryTerms(id, "")` and fails closed unless:
-- the token is a target;
-- the sale kind matches the adapter;
-- a priced sale names its currency (`CURRENCY_DEFAULT` is only for zero-price
-  gifts);
-- the economics resolver accepts the currency (`resolveCurrency`), returning
-  exactly the currency the token named unless it named `CURRENCY_DEFAULT`
-  (`CurrencyMismatch`);
-- a seller is set, a fee recipient is set unless the fee share is zero, and the
-  fee share is at most 100,000;
-- neither the seller nor the fee recipient is the revenue escrow, which refuses
-  to be paid as a wallet (CALLS-1). The auction refuses the same terms at
-  `start`, while nothing is in custody.
-
-The terms are then locked as `LockedTerms`:
-- `CURRENCY_DEFAULT` is resolved once, through `resolveCurrency`. A listed
-  token uses the 6529 Editions product; a registry token uses the 6529 Stream
-  Federated product.
-- A later change to a product default affects only sales opened afterwards.
-
-Only one sale per `(token, id)` may be open at a time, and closing it frees the
-token. Closing a sale that is already closed reverts with `SaleAlreadyClosed`.
-Anyone may close a fixed-price sale whose phases have all ended. Price and
-supply always come from the token, which enforces size, window and the admitted
-minters on every mint.
-
-**Targets.** Governance lists tokens (`setTarget`). From v1.1 a token is also a
-target while the federation registry reports it active (`isTarget`). Such a
-token:
-- must run the code its registry entry records;
-- pays the network fee share of its entry to the economics resolver's
-  federated fee recipient (`networkFeeRecipient`), ignoring its own fee terms.
-  The English auction does the same (MARKET-3): it takes the economics resolver
-  at construction, derives its asset allowlist from it, and reads the federated
-  recipient at settlement;
-- stops selling as soon as the registry delists it. Every purchase re-checks
-  `isActive`. On the English auction every bid re-checks it, and a delisted
-  contract's auction settles by crediting the high bid back and giving the work
-  to its artist, as with no bid (MARKET-5); nothing is confiscated.
-
-The resolver is fixed at construction. It must support `IEconomicsResolver`
-through ERC-165, and EIP-7702 delegated accounts are rejected. Its asset
-allowlist is read once, and it must:
-- have code;
-- not be EIP-7702 delegated;
-- support `IAssetAllowlist`, if it answers ERC-165 at all.
-
-The economics lane's `AssetAllowlist` implements no ERC-165, so it passes on
-the first two checks; it is trusted as the resolver's own dependency.
-
-The registry is installed by compare-and-set (`setFederationRegistry`).
-Installation:
-- requires ERC-165 support for `IFederationRegistry`;
-- rejects EIP-7702 delegated accounts;
-- pins the code hash. A registry whose code later differs is ignored.
-
-**Federation install prerequisites (v1.1; no registry is installed in v1).**
-Before `setFederationRegistry`, the economics resolver's `PRODUCT_FEDERATED`
-fee recipient must be set to a nonzero wallet, and it must stay nonzero while
-the registry is installed. The English auction reads that recipient when a
-federated auction settles, not when it starts (MARKET-3), so a later
-`setFeeTerms` that sets it to zero while a registry entry charges a fee share
-would leave those auctions unable to pay the fee at settlement. The
-fixed-price and Dutch adapters lock the recipient when a sale opens and refuse
-a zero one then.
-
-**Currency halts.** Every purchase requires its locked currency to be active
-on the allowlist, so deprecating an asset halts running sales in it as an
-emergency tightening. Claims are never blocked.
-
-**Halts stop the clock.** A pause of the adapter, or a deprecation of a sale's
-currency, stops the sale's schedule as well as its purchases. Each sale records,
-when it opens, how long the adapter has been paused and its currency deprecated
-so far; the growth since is the sale's `scheduleDelay(saleId)`. Fixed-price
-phase windows and the Dutch curve, including a start not yet reached, run that
-much later than configured, so a halt never uses up an allowlist phase or lets the
-Dutch price fall: trading resumes where it stopped. The adapter's own pause time is
-`pausedTotal` plus the running pause; the currency's is the allowlist's
-`statusClock`. Anyone may close a fixed-price sale once its moved phases have all
-ended.
-
-Overlapping halts count twice: a pause of the adapter while a sale's currency is
-deprecated moves the schedule by both, more than the time trading actually
-stopped. The schedule then does not resume where it stopped but rewinds by the
-overlap: a Dutch curve climbs back up (and may show "not open" again), and a
-fixed-price phase that had ended can reopen while the one that was running closes.
-Guardians therefore do not pause an adapter while a currency is deprecated; if they
-must, the creator (or PLATFORM, for a sale it opened alone) closes and reopens
-the affected sales afterwards (see the guardian practice in the
-[deploy runbook](../../script/README.md)).
-
-**Emergency pause.** `pause` (PAUSER, immediate) makes `openSale` and
-`purchase` revert with `SalePaused` on an adapter, and `unpause` (UNPAUSER)
-resumes them. `closeSale` and `claim` always work. As on the auction, pausing a
-paused adapter reverts with `SalePaused`, and unpausing one that is not paused
-reverts with `NotPaused`. An unpause is refused with `UnpauseTooEarly` until 48
-hours (`Roles.STANDARD`) after the pause: AccessManager counts the UNPAUSER delay
-from scheduling, so an unpause scheduled before the pause could otherwise undo it
-in the same block. The adapter counts the delay from the pause, so the guardians
-always have that window to cancel it. The auction's `unpause` and its per-auction
-`resume` follow the same rule.
-
-### Allowlists
-
-Each fixed-price phase has a time window `[start, end)`, an optional Merkle
-root, a per-wallet cap and an optional per-wallet price. A leaf is
-
-```
-keccak256(bytes.concat(keccak256(abi.encode(
-    keccak256("6529WORKS_ALLOWLIST_LEAF_V1"), chainid, adapter, token, id,
-    phase, account, cap, price))))
-```
-
-over OpenZeppelin sorted-pair trees (`StandardMerkleTree` compatible), with
-proofs of at most 32 nodes. `allowlistLeaf(token, id, …)` computes it before
-the sale opens. Tooling must emit at most one leaf per account and phase:
-otherwise a relayer could choose among a wallet's leaves.
-
-**Recipient binding (the fix for PR #744's High finding).** `account` is the
-wallet that receives the tokens, or the payer in a payer-keyed phase. The payer
-is always authenticated: it is `msg.sender` for direct and EIP-2612 payments,
-and the Permit2 signer for intents. Nobody can therefore use another wallet's
-leaf to mint to themselves. Anyone may still *pay* for an allowlisted
-recipient: the tokens go to that recipient and count against its cap. That is
-how gifts are pushed, and it means a third party can spend a recipient's
-allowance by buying it for them.
-
-**Caps** count per `(token, id, phase index, keyed wallet)` across sales, read
-with `purchased(token, id, phase, account)`. Capped public phases share counts
-by phase index too. Reopening a token with the same tree never resets them; a
-deliberately fresh drop uses new phase indices. That means padding: the new
-sale keeps placeholder phases (for example, already-ended windows) at the old
-indices and puts the new phases after them, within `Limits.MAX_PHASES` (16)
-per sale. Placeholders count toward `SaleStarted.startTime`, the earliest phase
-start. An allowlist phase enforces the
-leaf's cap, and the phase's `walletCap` too when it is nonzero. A public phase
-enforces `walletCap` per recipient.
-
-Only capped phases count: an allowlist phase, or a public phase with a nonzero
-`walletCap` (integrator decision on QUALITY-1). An uncapped public phase (no
-root, `walletCap` zero) checks no count, so it records none: its purchases
-leave `purchased` unchanged. A per-wallet cap therefore counts only the
-purchases made in capped phases, and a later capped phase that reuses the index
-of an uncapped one starts every wallet at zero. Not recording saves each new
-buyer in an uncapped phase a new storage slot, about 111,000 gas on Sepolia
-([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)).
-
-**Leaf prices need the artist** (integrator decision 4, widened by MARKET-6). A
-leaf-priced phase, whose leaves set prices below or above the package price, is
-accepted only in an approved sale (`PricedLeavesNeedApproval` at `openSale`
-otherwise). A sale is approved when:
-- the creator opens it; or
-- the PLATFORM role opens it with the creator's EIP-712 signature over
-  `PhaseConfiguration(token, id, currency, packagePrice, Phase[] phases, nonce,
-  deadline)`.
-
-The phases are typed (`Phase(start, end, root, walletCap, payerKeyed,
-leafPriced)`), so wallets show every window, cap and flag. The currency and
-package price are the sale's resolved terms, so an approval never carries over
-to another currency or price.
-
-The nonce is single-use and revocable (`revokeConsentNonce`), and contract
-creators sign through ERC-1271. `phaseConfigurationDigest` returns the digest
-to sign. In a zero-price sale the approval also binds the currency a
-default-currency gift resolves to.
-
-**Gifts** are zero-price sales: a package price of zero, or an approved leaf
-price of zero. A gift pays no network fee, by design.
-
-### Payments
-
-| Method | Payer | What happens |
+| Caller | Calls | Rules |
 | --- | --- | --- |
-| `DIRECT` | `msg.sender` | ETH as `msg.value`, or a pull of an approved ERC-20. |
-| `PERMIT` | `msg.sender` | An EIP-2612 permit for `amount` (the 65-byte `r \|\| s \|\| v`; any other length reverts with `InvalidPayment`), then a pull. A permit someone already submitted is tolerated: the pull uses the allowance it granted. |
-| `PERMIT2` | the signer | `permitWitnessTransferFrom`; the witness binds the purchase, so a relayer can submit it. |
+| Anyone | Auction: `start`, `startWithBid`, `bid`, `settle`, `claimFor`; fixed and Dutch: `purchase`, `closeSale` of a fixed-price sale whose phases all ended | AUC-14 to AUC-25, AUC-29, ED-14 to ED-20 |
+| A bidder or buyer | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` | AUC-18, AUC-21, DSP-15, ED-23 |
+| The token's creator (the artist's active authority) | `openSale`, `closeSale`; signs the phase configuration; `revokeConsentNonce` | ED-12 to ED-14 |
+| PLATFORM (zero delay, read with `canCall`) | `openSale` on the package's terms, relays a signed configuration, `closeSale` of a sale it opened alone or while the creator is zero | ED-12, ED-14 |
+| Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19, ED-22, ED-24; [role matrix](../../docs/audit/roles.md#englishauction) |
 
-The Permit2 witnesses are `Typehashes.PURCHASE_WITNESS` (fixed price: sale,
-phase, recipient, quantity, the exact amount, deadline) and
-`Typehashes.DUTCH_PURCHASE_WITNESS` (sale, recipient, quantity,
-`maxUnitPrice`, deadline).
+Call sequences and errors: [Buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md);
+events and their ordering: [Events and indexing](../../docs/integrators/events-and-indexing.md#englishauction).
 
-Permit2 binds the token, the maximum amount, the spender (the adapter), the
-nonce and the deadline; the witness binds everything else. The adapter checks
-the deadline itself and checks both balance deltas after Permit2, because
-Permit2 does not. Every ERC-20 movement is exact, so fee-on-transfer, rebasing,
-no-return and false-returning tokens revert. Replay protection is the token's
-or Permit2's nonce, never signature bytes.
+## Developer notes
 
-The fixed-price, Dutch and auction adapters share these rules and their errors: a
-claim to the zero address reverts with `InvalidRecipient`, an ETH claim the recipient
-refuses with `ClaimFailed` (the credit is kept), and a token that misreports the
-payer's balance around a Permit2 transfer with `TokenBalanceMismatch`.
+- **Bytecode: `EnglishAuction` is the tightest contract in the repository**, barely under
+  EIP-170 (current margin in the [audit scope](../../docs/audit/scope.md#products-and-sales)).
+  Any addition needs a matching cut; the governed rescue for tokens sent with a plain
+  `transferFrom` was declined for its size (LIM-SAL-10).
+- **Auction storage.** A steady-state start writes one `Sale` word: the token, a 32-bit token
+  ID, a 32-bit end time, a 16-bit reference to a shared terms record, the status and flags.
+  A terms record (currency, opening bid, increment share, anti-snipe window, a federated
+  token's registry fee) is written once per distinct combination; its increment floor is
+  written by the first bid. Seller and fee terms are read back from the token at settlement.
+- **Fixed-price and Dutch storage (QUALITY-4).** A `Listing` is five words, of which an ETH sale
+  writes four; the fee recipient is stored once per adapter and referenced by a 16-bit index,
+  so an adapter's first sale registers it. A phase is one word, plus its root for an allowlist
+  phase. An uncapped public phase records no purchase count (QUALITY-1).
+- **Halts cost no per-sale writes:** `scheduleDelay` is the adapter's pause time plus the
+  allowlist's `statusClock`, minus what the sale recorded at open.
+- **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours
+  from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
+- **ERC-20 transfers.** `TokenTransfer` requires exact balance deltas and exactly one `true`
+  return word; the Permit2 pulls (`EnglishAuction._collect`, `MintSaleBase._permit2`) check
+  balance deltas only, so a token that returns nothing can pass one. Admitting only standard
+  ERC-20s is the guard (ECO-23, LIM-SAL-7).
+- **Federated fee recipient.** The auction checks the network's `PRODUCT_FEDERATED` fee
+  recipient at start and reads it again at settlement; the fixed-price and Dutch adapters lock
+  it at open ([federated](../federated/README.md#before-installing-a-registry)).
+- **Transaction cap.** `FixedPriceGasCap.t.sol` and `DutchGasCap.t.sol` measure the cold worst
+  cases (16 phases with a 4 KiB ERC-1271 consent; purchases with a 32-node proof, gas-burning
+  wallets or escrowed token payouts); each stays under 1.2M Prague gas, against a mock edition.
+  Per-operation gas is in [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+- **Tests:** `forge test --match-path 'test/sales/**'` (each adapter with an invariant suite;
+  `EnglishAuctionGas.t.sol` keeps the auction's own gates); end to end, `CuratedSale.t.sol`,
+  `Dispute.t.sol` and `MasterEdition.t.sol` in [`test/integration/`](../../test/integration/);
+  coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
-Fixed price charges exactly `quantity × unit price`, and `Payment.amount` must
-equal it. In a Dutch sale, `Payment.amount` is the most the buyer will pay. An
-ERC-20 payment is charged exactly the current price, and ETH above the charge
-is credited to the payer and claimed with `claim`.
+## See also
 
-### Payouts
-
-Each purchase mints to the recipient, then pays the network fee
-(`floor(total × feeShare / 100,000)`) and the seller (the rest). A zero amount is
-not paid at all, so terms with a zero fee share need no fee recipient. The seller is
-the work's predicted split wallet, which may not be deployed yet. An ETH payout
-forwards 100,000 gas. A wallet that refuses, or a token that blocks it (as USDC
-can), is paid through the revenue escrow instead, so no recipient can block a
-sale. Nothing is kept: a fixed-price adapter holds no funds between
-transactions, and a Dutch adapter holds exactly its outstanding ETH credits.
-
-### Events for indexers
-
-A recipient's ERC-1155 hook runs inside `purchase`, and a creator's hook may
-close the sale there. So a purchase's `SaleSettled` can follow its sale's
-`SaleClosed`. Treat `SaleClosed` as "no new purchases", not as the last event
-of a sale. A Dutch `SaleStarted.endTime` is when the curve reaches its resting
-price; the sale itself continues until closed or sold out.
-
-### Dutch clearing semantics
-
-There is no clearing price.
-- Each purchase pays the unit price of the block it lands in.
-- Copies already sold are never repriced, and there is no rebate when the price
-  later falls.
-- The price falls from the package price to `restingPrice` over `duration`
-  seconds: linearly, or in equal drops every `stepSeconds`, which must divide
-  the duration.
-- The reduction is rounded down, so the price never falls below the exact
-  curve.
-- After the curve, the price rests at `restingPrice` until the supply or window
-  runs out or the sale is closed.
-- A pause or a currency deprecation moves the whole curve later by its length
-  (`scheduleDelay`), so the price resumes where it stopped.
-- `maxUnitPrice` protects a buyer whose transaction lands earlier than expected.
-
-### Governance
-
-| Selector | Role |
-| --- | --- |
-| `setTarget`, `setFederationRegistry` | SUCCESSOR_SETTER (30 days) |
-| `openSale`, `closeSale` | PLATFORM (the creator needs no role; anyone closes an ended fixed-price sale) |
-| `pause` | PAUSER (immediate) |
-| `unpause` | UNPAUSER |
-| `revokeConsentNonce` | the creator itself |
-
-The PLATFORM check uses the AccessManager's `canCall` for the selector, and
-needs an immediate (zero-delay) grant. The creator who may close a sale is read
-from the token at close time (the artist's active authority), so after a
-recovery the old key loses that power. PLATFORM closes only a sale it opened
-without the artist's approval: a sale the artist approved (opened by the creator,
-or by PLATFORM with the creator's signed configuration) closes by the artist, or
-stops by a guardian pause (MARKET-6). While a recovery override is pending, the
-creator resolves to zero (IDENTITY-1): the artist's keys cannot close any sale,
-and PLATFORM can close every sale, the artist's own included, so a sale opened
-with a key under recovery can be stopped without pausing the adapter
-(`test_PlatformClosesTheArtistsSaleDuringTheNotice`). Nothing here is payable
-except `purchase`.
-
-### Gas
-
-Measured cold in `test/sales/*/…GasCap.t.sol`, including intrinsic and calldata
-gas. The cap is EIP-7825's 16,777,216.
-
-| Transaction | Gas |
-| --- | --- |
-| `openSale` with 16 phases and a 4 KiB ERC-1271 consent | about 1.50M |
-| Fixed-price purchase: Permit2, 32-node proof, two escrowed token payouts | about 0.45M |
-| Fixed-price purchase: ETH, 32-node proof, two gas-burning wallets | about 0.48M |
-| Dutch purchase: ETH credit, two gas-burning wallets | about 0.45M |
-| Dutch purchase: Permit2, two escrowed token payouts | about 0.40M |
-
-These figures use a mock edition, so the real 6529 Editions mint adds its own
-cost.
+[ADR 0001 §5](../../docs/adr/0001-v1-scope.md#5-sales-and-auctions) (with §6, §12 and §16),
+[ADR 0003, sales and auctions](../../docs/adr/0003-build-time-decisions.md#sales-and-auctions-amends-adr-0001-5-6-and-9);
+[known limitations](../../docs/audit/known-limitations.md#sales-and-auctions);
+[trust assumptions](../../docs/audit/trust-assumptions.md#admitted-sale-adapters).

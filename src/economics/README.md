@@ -1,197 +1,79 @@
 # economics
 
-Money routing for 6529 Works, governed by
-[ADR 0001 §7 (economics)](../../docs/adr/0001-v1-scope.md#7-economics), with the
-payment-currency rules in [§5](../../docs/adr/0001-v1-scope.md#5-sales-and-auctions)
-and the artist-resolved payout recipient in
-[§11](../../docs/adr/0001-v1-scope.md#11-artist-identity-and-recovery).
-Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
+Money routing for 6529 Works: the per-product economics new works lock at mint, the currency
+allowlist, CREATE2 split wallets that artists and fixed payees pull from, the escrow that catches
+refused payments, signed releases and batch claims. The rules are in
+[Economics and payouts](../../docs/spec/economics-and-payouts.md) (`ECO-*`), including the wallet
+address derivation, the payee-list rules and both escrow-recovery flows.
 
-| Contract | Role |
+## Files
+
+| File | What it is |
 | --- | --- |
-| `SplitFactory` | Permissionless, unowned. Deploys `SplitWallet`s at CREATE2 addresses that commit to the factory (and so its resolver and verifier), the canonical payee list and a salt: `CREATE2(factory, keccak256(abi.encode(keccak256(abi.encode(payees)), salt)), walletInitCodeHash)`. Every wallet has the same init code; its constructor reads the payee list back from the factory (`pendingPayees`, transient storage during `createWallet`), so predicting an address hashes a few words, not the wallet's code. Pins the resolver and verifier at installation (code present, not EIP-7702 delegated, code hash recorded). Records each wallet's payee configuration hash. |
-| `SplitWallet` | Immutable pull-payment wallet for ETH (`address(0)`) and any ERC-20. Payee `i` may release `floor(observed × share / 100,000) − released`, where `observed` is the balance plus everything released. Fixed payees name an account. Artist-resolved payees name an `artistId` and are paid at the resolver's current address. |
-| `ReleaseVerifier` | The singleton for signed releases (EIP-712, ERC-1271, EIP-7702 through the shared `SignatureVerifier`). An authorization binds wallet, asset, payee, account, recipient, amount, nonce and deadline; the domain binds the chain. Nonces are unordered, single use, per account across all wallets, and revocable; a bitmap keeps 256 to a storage word, so nonces signed in order write one new slot per 256 releases. |
-| `AssetAllowlist` | Governed currency allowlist: a status per asset (`Active`, `Deprecated`), a per-currency increment floor and a default currency per product. ETH is admitted at deployment. Admission is compare-and-set on status and floor. |
-| `RevenueEscrow` | Credits a wallet when a payment to it fails. Anyone flushes a credit to its wallet. Governed `recover` moves a split wallet's credit only to an equivalent replacement wallet, and any other account's only to the replacement that account named (`consentToRecovery`). |
-| `EconomicsResolver` | Implements `IEconomicsResolver`: governed per-product economics for new works (Stream and Editions 75/25, Federated 90/10, royalty 6.529%), the network fee recipient, the default license (CC0; a CC0 default always names the CC0 text the resolver was deployed with, as `WorkRecords.openRecord` requires), `newWorkTerms` (predicted seller and royalty wallets) and `resolveCurrency` through the allowlist. Changes apply to new works only: works lock their terms at mint. |
-| `RevenuePayment` | Internal library for payers: pay the wallet, else credit the escrow. |
-| `ClaimRouter` | Stateless batch claims: up to 50 plain items (fixed payees) or 20 signed items (any payee). |
-| `TokenTransfer`, `Splits` | Internal libraries: strict ERC-20 moves with exact balance deltas; payee-list rules and share maths. |
+| `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`. |
+| `AssetAllowlist.sol` | Governed currencies: status, increment floor and `statusClock` per asset, and a default currency per product, each compare-and-set on its own revision. |
+| `SplitFactory.sol` | Permissionless, unowned factory: `walletFor` predicts and `createWallet` deploys a `SplitWallet` at its CREATE2 address; pins the resolver and release verifier by code hash. |
+| `SplitWallet.sol` | Immutable pull-payment wallet for ETH and any ERC-20: fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. |
+| `ReleaseVerifier.sol` | The singleton for signed releases: EIP-712 authorizations, per-account nonce bitmaps shared across wallets, `revokeNonce`. |
+| `RevenueEscrow.sol` | Credits a wallet whose payment failed; anyone flushes; governed `recover` with the consent rules; `consentToRecovery`. |
+| `ClaimRouter.sol` | Stateless batch claims: up to 50 plain items (fixed payees) or 20 signed items. |
+| `RevenuePayment.sol` | Internal library for payers: pay the wallet with a fixed gas allowance, else credit the escrow. |
+| `TokenTransfer.sol`, `Splits.sol` | Internal libraries: exact-delta ERC-20 moves; payee-list validation, royalty payees and share maths. |
+| [`interfaces/`](interfaces/) | This module's interfaces, `IArtistPayoutResolver` included. |
 
-## Who can release
+## Entry points
 
-- **Fixed payees are push.** Anyone may call `release`; the funds can only go
-  to the payee's own account.
-- **Artist-resolved payees are pull-only.** Only the current payout address may
-  release: by calling `release` or `releaseTo` itself, or by a signature that
-  anyone submits through `releaseWithAuthorization` (smart accounts sign with
-  ERC-1271). Nobody can push an accrued balance to a lost key before recovery
-  redirects it.
-- **A split wallet cannot be an artist's payout address**, because it cannot
-  pull. An artist who wants revenue to flow into another split should name that
-  wallet as a fixed payee instead. More generally, a payout address must be an
-  account that can call `release` itself, never a protocol contract. The artist
-  registry refuses the claim router, the escrow, the sale adapters, 6529 Stream
-  and 6529 Editions, the package registry and the work records (each declares
-  its interface through ERC-165, `src/libraries/ProtocolContracts.sol`) and
-  every deployed split wallet, at registration, staging and execution. A split wallet's predicted address has no
-  code before deployment, so it cannot be told apart from an empty account: the
-  re-check at execution catches a wallet deployed while the change waits, and
-  tools should check `walletFor` off-chain.
-- **Rotating a payout address does not revoke its signatures.** A key the
-  payout moved away from cannot release, but if the payout returns to it
-  (A, then B, then A), its unexpired authorizations work again. Revoke
-  outstanding nonces with `ReleaseVerifier.revokeNonce`, or sign short
-  deadlines.
-- **Push can pre-empt a fixed payee's signed release.** Anyone may push a fixed
-  payee's whole balance to its own account first; a signed release of an exact
-  amount then reverts without consuming its nonce, and the funds are already in
-  the payee's account. Sign `type(uint256).max` to take whatever is due.
-- `ClaimRouter.claim` handles fixed payees only. A plain item for an artist
-  payee fails, and continue mode skips it. Artists batch through
-  `claimSigned`, with one signature per wallet.
-
-## For sale adapters
-
-- Resolve the split to a payee list in canonical order: fixed payees first
-  (`artistId == 0`, ascending by account), then artist-resolved payees
-  (`account == 0`, ascending by `artistId`), shares summing to 100,000.
-- Pay `factory.walletFor(payees, bytes32(0))` with `RevenuePayment.payETH` or
-  `RevenuePayment.payERC20`. The wallet need not be deployed yet: funds sent to
-  the address are split once anyone calls `createWallet`. Deployment costs
-  about 1.24M Prague gas for one payee, mostly the wallet's code (about 5,350
-  bytes), and about 9M on Sepolia's Glamsterdam, so keep it off the
-  auction-start path. One seller wallet serves every work with the same payees
-  (one per solo artist), and one royalty wallet every work with the same seller
-  and fee terms.
-- Read `AssetAllowlist.defaultCurrency(product)` and `incrementFloor(asset)` when
-  a sale starts, and lock both for that sale.
-
-## Escrow recovery
-
-If a token blocks a wallet (as USDC can), payments to it land in the escrow
-and cannot flush. Governance deploys an equivalent replacement: the same payee
-list with another salt. It then calls `recover(wallet, replacement, asset)` to
-move the credit, after which anyone flushes it to the replacement.
-
-- ADR 0001 §7 requires the affected accounts' consent. For a split wallet it is
-  trivially satisfied because payees are identical. Recorded in ADR 0003.
-- A credit the replacement already holds is added to, never overwritten.
-- The original wallet must be deployed first; anyone can deploy it.
-- Recovery reaches only escrow credits. The blocked wallet's own balance stays
-  stuck until the token unblocks it.
-
-**The network fee recipient, and any other account that is not a split
-wallet.** A token can block the fee recipient's Safe too. Every fee in that
-token is then credited to the escrow under the Safe, and every existing work's
-royalty wallet keeps the Safe as a fixed payee (works lock their terms at
-mint, so rotating the fee recipient with `setFeeTerms` only helps new works).
-- **Escrow credits.** The Safe names its replacement on the escrow with
-  `consentToRecovery(replacement)`: that is its consent. Governance then calls
-  `recover(safe, replacement, asset)` in the funds class (14 days), and anyone
-  flushes the credit to the replacement. Without that consent, or to any other
-  address, `recover` reverts (`RecoveryNotConsented`). A consent is single use:
-  the recovery consumes it, so the Safe consents again for each further asset
-  or later credit, and can change or withdraw (zero) a consent not yet used.
-- **Royalty shares.** A blocked fixed payee's share stays in the royalty
-  wallet, not the escrow. The Safe releases it to any account itself with
-  `releaseTo(asset, index, recipient)`. Split wallets have no governance, so
-  nobody else can, and a lost Safe's share stays where it is.
-
-## Batch claims and gas
-
-Continue mode reverts unless every item can be offered its minimum gas: 200,000
-per plain item and 450,000 per signed item. Below a ceiling of 1,500,000 gas
-per item (`SHORTFALL_REVERT_CEILING`), it also reverts (`ClaimInsufficientGas`)
-when an item fails after spending all but EIP-150's 1/64 reserve of the gas it
-was offered (in the wallet or in a payee or token under it), or because an
-ERC-1271 check could not get its gas. Gas estimation then raises the limit
-instead of settling where such an item silently runs dry. At the estimate,
-every item is paid, fails with gas to spare, or failed despite being offered
-the ceiling; the last two are reported and skipped.
-
-- **Glamsterdam.** A first release from a wallet writes new slots and may
-  create the payee's account: about 120,000 Prague gas, about 571,000 for a
-  plain one and 716,000 for a signed one on Sepolia's Glamsterdam. The
-  minimums are Prague-sized floors; the check above, not their size, gives
-  such items their gas. The ceiling is about twice the signed figure, so honest
-  items fit with room on Sepolia's parameters; re-check it against mainnet's.
-- **Hostile items.** A party to an item (a fixed co-payee whose `receive`
-  burns gas, a signed release's recipient, a token's issuer) can make the item
-  look short of gas, and can switch that on after the keeper estimated. While
-  the item is offered less than the ceiling, that reverts the whole batch; from
-  the ceiling up, the item is skipped. Keepers should simulate privately
-  (submit through a private mempool), put items with contract payees or
-  unfamiliar tokens at the end of a batch or in batches of their own, and drop
-  an item whose revert names its index.
-- **Batch size.** A full batch of first releases may not fit one transaction
-  under Glamsterdam. It then reverts rather than paying part of the batch;
-  split it.
-
-Every loop is bounded so each transaction fits the EIP-7825 cap of 16,777,216
-gas in Prague gas. `test/economics/GasCap.t.sol` measures the cold worst cases,
-including intrinsic and calldata gas:
-
-| Case | Gas |
-| --- | --- |
-| 64-payee wallet deployment | 4.3M |
-| Full atomic plain batch | 6.3M |
-| Full atomic signed batch (4 KiB ERC-1271 signatures) | 8.7M |
-| Full continue-mode plain batch at its estimated gas | 10.3M |
-| Full continue-mode signed batch at its estimated gas | 10.8M |
-
-## Governance
-
-Delay classes follow
-[ADR 0002](../../docs/adr/0002-access-manager-hardening.md); the `recover` row is
-recorded in ADR 0003. Every allowlist setter is compare-and-set on a per-asset
-(or per-product) revision that every change bumps:
-
-| Selector | Role (`src/governance/Roles.sol`) | Class |
+| Caller | Calls | Rules |
 | --- | --- | --- |
-| `AssetAllowlist.admitAsset` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
-| `AssetAllowlist.setDefaultCurrency` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
-| `AssetAllowlist.setIncrementFloor` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
-| `AssetAllowlist.deprecateAsset` | `Roles.GUARDIAN` | Immediate (tightening) |
-| `RevenueEscrow.recover` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
-| `EconomicsResolver.setFeeTerms` | `Roles.FUNDS_SETTER` | Funds and recipients (14 days) |
-| `EconomicsResolver.setRoyaltyRate` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
-| `EconomicsResolver.setDefaultLicense` | `Roles.PARAMETER_SETTER` | Standard (48 hours) |
+| Stream at mint; Editions at `createEdition` | Stream reads `economics` and derives the seller with `walletFor(payees, 0)`; Editions calls `newWorkTerms(PRODUCT_EDITIONS, payees)`. Either way the terms are locked into the work. | ECO-6, ECO-7 |
+| Sale adapters | `resolveCurrency` (fixed price and Dutch, at `openSale`); `defaultCurrency`, `isActive`, `statusClock` and `incrementFloor` on the allowlist (the auction locks the currency at start and the increment floor at the first bid); `RevenuePayment` to the seller and fee recipient from the token's `primaryTerms` | ECO-26, ECO-34, ED-9, ED-10, AUC-15 |
+| Anyone | `createWallet`, `release` for a fixed payee, `flush`, `claim` | ECO-9 to ECO-15, ECO-27, ECO-29, ECO-30 |
+| An artist's current payout address | `release`, `releaseTo`, or a signature submitted with `releaseWithAuthorization` / `claimSigned`; `revokeNonce` | ECO-16, ECO-17, ECO-20 to ECO-22 |
+| A non-wallet account with escrow credits (the fee-recipient Safe) | `consentToRecovery(replacement)` | ECO-28 |
+| Governance | resolver and allowlist setters, `deprecateAsset`, `recover` | ECO-2 to ECO-5, ECO-32, ECO-33; [role matrix](../../docs/audit/roles.md#economicsresolver) |
 
-Withdrawals never read the allowlist: a deprecated or never-admitted asset
-stays withdrawable from wallets and the escrow (fixes RC1 Medium M-3).
-Deprecation is reversible only through a compare-and-set re-admission, no earlier
-than 14 days after the deprecation (`ReadmissionTooEarly`, counted from the
-deprecation like the adapters' unpause, so a re-admission scheduled ahead cannot undo
-a deprecation in its own block). The
-allowlist also records when each asset's status last changed and the total time
-of its earlier deprecations (`statusClock`, in the status word, so no new slot):
-sale adapters use it to stop a sale's clock while its currency is deprecated.
+Payment, release and recovery sequences are under
+[Flows](../../docs/spec/economics-and-payouts.md#flows); events under
+[Events and indexing](../../docs/integrators/events-and-indexing.md).
 
-A work locks its network fee recipient at mint, so `setFeeTerms` (and the
-launch configuration) refuses a recipient that could never be paid: the
-resolver itself, its allowlist, split factory and release verifier, and any
-contract that declares the interface of the revenue escrow, the claim router,
-a sale adapter, a mint target, the artist or package registry or the work
-records (`InvalidFeeRecipient`). Other system contracts that declare none of
-these (the content store, the statement log, the AccessManager, the renderer,
-the curation verifier, the entropy module) are not recognised on-chain. The
-recipient must be an account that accepts ETH from a 100,000-gas call; the
-runbook checks that before a `setFeeTerms` is scheduled.
+## Developer notes
 
-## New work terms
+- **Sale adapters never compute wallets.** The token supplies the seller and fee terms through
+  `primaryTerms`; an adapter pays them with `RevenuePayment.payETH` or `payERC20`, which falls
+  back to the escrow. A wallet need not be deployed: funds sent to its predicted address are
+  split once anyone calls `createWallet`, which is why deployment stays off the start path.
+- **Escrow recovery needs a deployed wallet on both sides.** `recover` compares
+  `SplitFactory.configOf` of the blocked wallet and its replacement, so anyone first deploys the
+  blocked wallet if it is not yet, and deploys the replacement (the same payees with another
+  salt) with the permissionless `createWallet`; governance only executes `recover` (14 days).
+  Recovery reaches escrow credits only, never a wallet's own balance.
+- **Constant wallet init code.** A wallet reads its payee list back from the factory
+  (`pendingPayees`, transient during `createWallet`), so predicting an address hashes a few
+  words; never move the list into constructor arguments.
+- **Withdrawals never read the allowlist**, so a deprecated or never-admitted asset stays
+  withdrawable (ECO-25); keep the allowlist out of the wallet and escrow.
+- **Transaction cap.** [`GasCap.t.sol`](../../test/economics/GasCap.t.sol) measures the cold
+  worst cases (a 64-payee wallet deployment and full atomic and continue-mode batches) against
+  75% of the EIP-7825 cap (ECO-31); the largest, a full continue-mode signed batch, is about
+  10.8M Prague gas. Rerun it after changing a batch bound or a per-item minimum; keeper guidance
+  is LIM-GAS-6.
+- **Bytecode:** wide margins; figures in the
+  [audit scope](../../docs/audit/scope.md#economics). Per-operation gas is in
+  [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+- **Tests:** `forge test --match-path 'test/economics/**'` (unit, hostile tokens, split maths,
+  gas caps, invariants); Halmos proofs of `Splits` in `test/symbolic/`
+  ([Testing](../../docs/testing/README.md)); end to end,
+  [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol).
 
-`EconomicsResolver.newWorkTerms(product, payees)` predicts, without deploying:
-- `seller`: `walletFor(payees, 0)`, the artist portion's wallet;
-- `royaltyReceiver`: `walletFor(Splits.royaltyPayees(seller, feeRecipient, feeShare), 0)`,
-  which pays `100,000 - feeShare` to the seller wallet and `feeShare` to the
-  network. It is the seller wallet itself when the fee share is zero.
+## Not in v1
 
-Deploy either wallet later with exactly those payee lists. Funds sent to the
-predicted addresses before deployment are split once they exist.
+The settlement recorder of ADR 0001 §7 (single-use settlement keys); each adapter's own state
+prevents a second settlement (LIM-ECO-5).
 
-## Not here yet
+## See also
 
-The settlement recorder (single-use settlement keys) is not part of this
-module yet.
+[ADR 0001 §7](../../docs/adr/0001-v1-scope.md#7-economics) (with §5 currencies and §11 the
+artist-resolved payout), [ADR 0003, economics](../../docs/adr/0003-build-time-decisions.md#economics-amends-adr-0001-7);
+[known limitations](../../docs/audit/known-limitations.md#economics-and-payouts) LIM-ECO-1 to
+LIM-ECO-5 and LIM-GAS-6; [invariants](../../docs/audit/invariants.md);
+[buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md).

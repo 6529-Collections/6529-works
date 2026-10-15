@@ -243,7 +243,8 @@ sequenceDiagram
   nonzero fee share a fee recipient that is neither zero nor the seller wallet).
 - **`consume`** checks the proof, acceptances, payees, the move, single use and content
   uniqueness ([Curation](curation.md)); its errors bubble up unchanged. Media checks do not run
-  at mint ([`src/stream/README.md`](../../src/stream/README.md#core-token)).
+  at mint; the curation signer simulates `openRecord`
+  ([trust obligations](curation.md#trust-obligations-of-the-curation-signer)).
 - **Effects.** Stream stores two words per work: the seller wallet with the serial, collection,
   a flags byte (item kind, seed policy, settled, edition-linked) and a terms ID; and the item
   hash. The terms (the lead artist ID, royalty rate, fee share, and the indexes of the fee
@@ -667,7 +668,7 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (the table and security impact).
 - Tests: [`test/stream/`](../../test/stream), [`test/sales/auction/`](../../test/sales/auction),
   and the regression and integration files in the rules table. How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Measurements: [Sepolia flows, section 2](../../deployments/11155111/flows.md#2-the-curated-stream-sale).
 - Related pages: [Curation](curation.md), [Works and storage](works-and-storage.md),
   [Editions and sales](editions-and-sales.md), [Economics and payouts](economics-and-payouts.md),

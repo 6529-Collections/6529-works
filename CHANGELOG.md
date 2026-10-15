@@ -463,3 +463,17 @@
   weekly workflow (`mutation.yml`, also on demand) runs every mutation shard as its own job,
   eight at a time, and, once floors are recorded, fails when a contract's kill rate drops
   below its floor; a merge that changes it or the tool runs one small shard.
+- Docs: the module READMEs under `src/` are rewritten as code maps (what the module is for,
+  its files, entry points with spec rule IDs, developer notes on storage, bytecode headroom,
+  gotchas and tests, and links), each about 800 words or fewer (28.3K words to 8.5K). Facts
+  the specification, the events page, the role matrix, ADR 0004 or the known limitations
+  already own are linked instead of repeated, and stale statements are corrected. The few
+  facts only a README held move to the specification (the entropy request gate's rationale and
+  subscription notes, the sale adapters' resolver and allowlist install checks, the script
+  rewrite cases and the `dependencies` test of the page around a script, and the shared set of
+  a file's locator URIs). Known-limitation and integrator links that cited README sections now
+  cite the specification. ADR 0002's addendum and ADR 0004 get amendment notes (a revocation or
+  the holder's own `renounceRole` also lifts a suspension; later ceilings are in the table),
+  ADR 0004's commentary cites its table instead of repeating its figures, AGENTS.md and
+  CONTRIBUTING.md state the one-owner-per-fact rule, and every page that pointed at PR #58 or
+  at the testing page by URL now links `docs/testing/README.md` relatively.

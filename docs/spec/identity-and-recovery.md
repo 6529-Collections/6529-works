@@ -33,7 +33,7 @@ The glossary defines [authority](../glossary.md#authority),
 [override](../glossary.md#override), [contest](../glossary.md#contest),
 [restraint](../glossary.md#restraint), [standing](../glossary.md#standing),
 [consolidation](../glossary.md#consolidation) and [dormancy](../glossary.md#dormancy). The module
-[README](../../src/identity/README.md) covers the same ground for contributors.
+[README](../../src/identity/README.md) maps the code.
 
 ### Artist ID, authority and payout
 
@@ -676,7 +676,7 @@ See the [register](README.md#differences-from-the-adrs).
 - Tests: [`test/identity/`](../../test/identity/),
   [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol),
   [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol). How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Related pages: [economics and payouts](economics-and-payouts.md),
   [disputes and statements](disputes-and-statements.md), [governance](governance.md);
   [trust assumptions](../audit/trust-assumptions.md), [threat model](../audit/threat-model.md),

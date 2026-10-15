@@ -590,8 +590,7 @@ and a head. Also:
 - **Blind spots.** The manager has no getter for a pending grant-delay or target-admin-delay
   cut (a `RoleGrantDelayChanged` or `TargetAdminDelayUpdated` with a future `since`), a role's
   members, or pending operations, so the deployment CI scans for them
-  ([governance README](../../src/governance/README.md#readback-limits-deployment-ci-requirements),
-  [GV-33][gv]).
+  ([genesis configure](../spec/governance.md#genesis-configure), [GV-33][gv]).
 - **Later epochs.** Each later configuration epoch publishes its manifest as a
   `GOVERNANCE_MANIFEST` statement on `(manager, 0)`, scheduled with that epoch's operations.
 
@@ -602,8 +601,7 @@ and a head. Also:
 - **A purchase's `SaleSettled` can follow `SaleClosed`.** A recipient's ERC-1155 hook runs
   inside `purchase`, and a creator's hook may close the sale there, and even open a new one.
   Treat `SaleClosed` as "no new purchases", not as a sale's last event
-  ([sales README](../../src/sales/README.md#events-for-indexers);
-  `test_PoC_ReceiverHookCloseReopenIsHarmless` in
+  (`test_PoC_ReceiverHookCloseReopenIsHarmless` in
   [`ReviewRegressions.t.sol`](../../test/sales/fixed/ReviewRegressions.t.sol)).
 - **Effects come before the summary event.** `ItemConsumed` precedes `WorkMinted`;
   `PrimarySaleSettled` and the delivery precede `SaleSettled`; `Credited` precedes

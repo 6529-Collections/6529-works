@@ -180,6 +180,12 @@ role: PLATFORM, CURATOR or STORAGE_OPERATOR.
   the 30-day class (a grant of that role to that account), or happens through
   revocation and a new grant. Guardians still never propose, and no other guardian
   can cancel a suspension, which is never scheduled.
+  (Amendment note, 15 October 2026: as implemented, a revocation alone also lifts
+  the suspension, without a new grant, and so does the holder's own
+  `renounceRole`, which is immediate: OpenZeppelin runs it through `_revokeRole`,
+  which `WorksAccessManager` overrides. Either way the account no longer holds the
+  role. See GV-28 in the
+  [governance specification](../spec/governance.md#rules-and-invariants).)
 - **Duration:** a faster lift on the manager's own functions would make
   meta-governance faster than the slowest class (ADR 0001 §13), so the lift stays in
   the 30-day class. A suspension lasts:

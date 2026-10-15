@@ -33,7 +33,12 @@ Genesis binds Editions in Stream and the package registry, calls `Editions.bindW
 once (`AlreadyBound`), admits both adapters on Editions and lists Editions on both
 ([`config/genesis.example.json`](../../config/genesis.example.json), `wiring`).
 `notifyMasterUpdated` and `setRoyaltyRate` accept only that satellite; `notifyAllUpdated`
-accepts it or Stream (`UnboundCaller`).
+accepts it or Stream (`UnboundCaller`). The fixed-price and Dutch adapters (`MintSaleBase`)
+take the economics resolver at construction, immutably: it must answer ERC-165 for
+`IEconomicsResolver` and not be EIP-7702 delegated. Each reads the resolver's asset allowlist
+once and requires code, no EIP-7702 delegation and, only if the allowlist answers ERC-165 at
+all, `IAssetAllowlist`; the deployed `AssetAllowlist` implements no ERC-165
+(`InvalidDependency`).
 
 ## Concepts
 
@@ -657,7 +662,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`Market6Regression.t.sol`](../../test/adv/Market6Regression.t.sol),
   [`SalesFollowUpRegression.t.sol`](../../test/adv/SalesFollowUpRegression.t.sol),
   [`Gov5Regression.t.sol`](../../test/adv/Gov5Regression.t.sol). How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Deployment evidence: [Sepolia flows, section 3](../../deployments/11155111/flows.md#3-6529-editions).
 - Related pages: [Stream and auctions](stream-and-auctions.md), [Curation](curation.md),
   [Economics and payouts](economics-and-payouts.md),

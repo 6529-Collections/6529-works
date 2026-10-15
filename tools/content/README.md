@@ -54,7 +54,7 @@ itself, `<manifest>.stored` beside it: the exact stored bytes. **For a gzip or
 base64 encoding, publish that `.stored` stream (Arweave or IPFS) as a locator
 next to the decoded media.** The file ID commits to those exact bytes, and gzip
 output depends on the compressor, so nobody can promise to reproduce it later;
-see the [content README](../../src/content/README.md#the-model).
+see [Works and storage](../../docs/spec/works-and-storage.md#concepts).
 
 `plan` also prints a **cost quote** for putting the file on chain (registration,
 one write per distinct chunk, and the attest calls of a base64 file) under each
@@ -516,8 +516,8 @@ python -m unittest discover -s tools/content -t . -p "test_*.py"
 
 `test_anvil.py` needs `anvil` on the `PATH` and `forge build` output; it is
 skipped without them, and CI sets `CONTENT_E2E_REQUIRE=1` so a missing
-prerequisite fails there instead. CI runs these in the Contracts job, next to
-`forge test`.
+prerequisite fails there instead. CI runs these in the Build and checks job, one of
+the parts behind the required Contracts check.
 
 ## Performance and limits
 

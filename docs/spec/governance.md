@@ -705,7 +705,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`test/integration/GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol),
   [`test/deploy/`](../../test/deploy/) and
   [`test/adv/Gov5Regression.t.sol`](../../test/adv/Gov5Regression.t.sol). How to run them:
-  [testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing docs](../testing/README.md).
 - **Related pages:** [role and permission matrix](../audit/roles.md),
   [trust assumptions](../audit/trust-assumptions.md),
   [threat model](../audit/threat-model.md), [invariants](../audit/invariants.md),

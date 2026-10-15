@@ -33,7 +33,8 @@ Each fact has one owner; other pages link to it.
 
 ## Module READMEs
 
-Each folder under `src/` has a README with design notes:
+Each folder under `src/` has a README that maps its code (files, entry points with rule IDs,
+storage and bytecode notes, the tests to run) and links to the owners above:
 [stream](../src/stream/README.md), [editions](../src/editions/README.md),
 [curation](../src/curation/README.md), [sales](../src/sales/README.md),
 [economics](../src/economics/README.md), [identity](../src/identity/README.md),
@@ -41,7 +42,8 @@ Each folder under `src/` has a README with design notes:
 [entropy](../src/entropy/README.md), [governance](../src/governance/README.md),
 [libraries](../src/libraries/README.md), [interfaces](../src/interfaces/README.md) and
 [federated](../src/federated/README.md) (v1.1, only if needed). Where a README and the
-specification differ, the specification follows the code.
+specification differ, the specification follows the code. How to run and measure the tests is
+in [Testing](testing/README.md).
 
 ## Checks that keep the docs honest
 
