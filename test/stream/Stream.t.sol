@@ -29,6 +29,7 @@ import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import {
+    MockEconomics,
     MockEditions,
     MockPackageRegistry,
     MockRenderer,
@@ -110,6 +111,22 @@ contract StreamTest is StreamFixture {
             keccak256("wrong"),
             marketOwner
         );
+    }
+
+    /// @dev The split factory comes from the economics resolver and gets the same install check:
+    ///      code and no EIP-7702 delegation (it implements no ERC-165).
+    function test_constructor_checksTheResolversSplitFactory() public {
+        address eoa = makeAddr("factory eoa");
+        address delegated = makeAddr("delegated factory");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(splitFactory)));
+        address[2] memory refused = [eoa, delegated];
+        for (uint256 i; i < refused.length; ++i) {
+            address e = address(new MockEconomics(_defaultTerms(), refused[i]));
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, refused[i])
+            );
+            _deploy(address(registry), address(artists), e, address(entropy), address(renderer));
+        }
     }
 
     function test_constructor_rejectsDelegatedAccount() public {

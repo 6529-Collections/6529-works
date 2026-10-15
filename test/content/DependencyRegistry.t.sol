@@ -304,6 +304,15 @@ contract DependencyRegistryTest is ContentBase {
         assertEq(registry.authority(), address(manager));
     }
 
+    /// @dev QUALITY-10: an EIP-7702 delegated account whose delegate is the real store is
+    ///      refused too; before the shared install check only code was required.
+    function test_Constructor_RefusesADelegatedStore() public {
+        address delegated = makeAddr("delegated store");
+        vm.etch(delegated, abi.encodePacked(hex"ef0100", address(store)));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
+        new DependencyRegistry(address(manager), IContentStore(delegated));
+    }
+
     /// @dev Independent oracle: the label is 1 to 32 characters from the alphabet, then zeros.
     function _wellFormed(bytes32 label) internal pure returns (bool) {
         bytes memory alphabet = "abcdefghijklmnopqrstuvwxyz0123456789._-";
