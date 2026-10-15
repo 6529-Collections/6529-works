@@ -929,13 +929,15 @@ contract DeployScriptTest is Test {
             )
         );
         verifier.verify(record);
-        // The canonical address with other code.
+        // The canonical address, but the recorded code hash is not the pinned one.
         address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
-        vm.etch(canonical, address(fake).code);
         string memory moved = _tamper(record, vm.toString(address(fake)), vm.toString(canonical));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Verify.NonCanonicalCode.selector, "VRF_COORDINATOR", canonical, canonical.codehash
+                Verify.NonCanonicalCode.selector,
+                "params.vrfCoordinatorCodeHash",
+                canonical,
+                address(fake).codehash
             )
         );
         verifier.verify(moved);
@@ -957,6 +959,28 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(Verify.NonCanonicalOnMainnet.selector, "PERMIT2", address(fake))
         );
         verifier.verify(otherPermit2);
+        // The canonical delegation address with other code.
+        address canonicalDelegation = DeployGuards.CANONICAL_DELEGATION;
+        vm.etch(canonicalDelegation, address(delegation).code);
+        string memory mockAtCanonical =
+            _tamper(noVrf, vm.toString(address(delegation)), vm.toString(canonicalDelegation));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector,
+                "DELEGATION_CONTRACT",
+                canonicalDelegation,
+                address(delegation).codehash
+            )
+        );
+        verifier.verify(mockAtCanonical);
+        // Permit2 without code.
+        vm.etch(DeployV1.CANONICAL_PERMIT2, "");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector, "PERMIT2", DeployV1.CANONICAL_PERMIT2, bytes32(0)
+            )
+        );
+        verifier.verify(noVrf);
     }
 
     // ------------------------------------------------------------------ DEPS-4: the subscription
@@ -1000,6 +1024,12 @@ contract DeployScriptTest is Test {
         // Off mainnet any owner is accepted (Sepolia r2's is the operator).
         coordinator.setSubscription(address(this), _one(module));
         verifier.verify(record);
+        // A coordinator that does not know the subscription fails the run (L5).
+        coordinator.setUnknown(true);
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
+        );
+        verifier.verify(record);
     }
 
     /// DEPS-4: on mainnet the subscription owner must be the hot admin Safe (ADMIN and
@@ -1026,6 +1056,76 @@ contract DeployScriptTest is Test {
             abi.encodeWithSelector(Verify.SubscriptionUnreadable.selector, address(coordinator), 7)
         );
         verifier.checkSubscriptionExternal(d, cfg, true);
+    }
+
+    /// DEPS-3 (L4): on mainnet the live coordinator (the module's `coordinator()`) and the
+    /// canonical address's code are checked as well as the recorded parameters.
+    function test_DEPS3_VerifyChecksTheLiveCoordinatorAndItsCode() public {
+        // A deployment whose module points at a fake coordinator, its record moved to the
+        // canonical address and pinned hash: the live coordinator is still the fake.
+        _sepolia();
+        MockVrfCoordinator fake = new MockVrfCoordinator();
+        _withVrf(address(fake));
+        vm.recordLogs();
+        deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        bytes32 pin = DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH;
+        string memory record = _tamper(
+            _tamper(
+                _tamper(deployer.lastRecord(), '"chainId":11155111', '"chainId":1'),
+                vm.toString(address(fake)),
+                vm.toString(canonical)
+            ),
+            vm.toString(address(fake).codehash),
+            vm.toString(pin)
+        );
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalOnMainnet.selector, "EntropyModule.coordinator", address(fake)
+            )
+        );
+        verifier.verify(record);
+    }
+
+    /// DEPS-3 (L4): a module on the canonical address whose code is not the pinned code.
+    function test_DEPS3_VerifyChecksTheCanonicalCoordinatorsCode() public {
+        _sepolia();
+        address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
+        vm.etch(canonical, address(new MockVrfCoordinator()).code);
+        _withVrf(canonical);
+        vm.recordLogs();
+        deployer.run();
+        verifier.addLogs(vm.getRecordedLogs());
+        verifier.setFile(GENESIS, bytes(_filled()));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        string memory record = _tamper(deployer.lastRecord(), '"chainId":11155111', '"chainId":1');
+        vm.chainId(1);
+        // The recorded hash is the mock's.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector,
+                "params.vrfCoordinatorCodeHash",
+                canonical,
+                canonical.codehash
+            )
+        );
+        verifier.verify(record);
+        // With the pinned hash recorded, the code on chain still differs.
+        string memory pinned = _tamper(
+            record,
+            vm.toString(canonical.codehash),
+            vm.toString(DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verify.NonCanonicalCode.selector, "VRF_COORDINATOR", canonical, canonical.codehash
+            )
+        );
+        verifier.verify(pinned);
     }
 
     function test_EnvironmentNumbersAreCheckedCasts() public {

@@ -49,10 +49,13 @@
   (`SafeHasModules`) and no transaction guard (`SafeHasGuard`).
 - Deployment (DEPS-3): on mainnet the VRF coordinator must be the canonical Chainlink v2.5
   coordinator with its pinned code hash; off mainnet `VRF_COORDINATOR_CODEHASH` optionally
-  pins it. On mainnet, `Verify.s.sol` requires the canonical coordinator, Permit2 and
-  delegation contract with their pinned code, and no delegation mock.
+  pins it. On mainnet, `Verify.s.sol` requires the canonical coordinator (recorded and the
+  module's live one), Permit2 and delegation contract with their pinned code, and no
+  delegation mock.
 - Deployment (DEPS-4): off anvil, `Verify.s.sol` requires the entropy module to be its VRF
   subscription's only consumer; on mainnet the subscription owner must be the hot admin Safe.
+  A subscription read that fails fails Verify, except off mainnet for a coordinator without
+  `getSubscription`.
   The runbook makes that the mainnet setup and lists the coordinator events guardians watch.
 - Deployment: `Verify.s.sol` gains an epoch mode (`GOVERNANCE_CONFIG`) so readback passes
   after a governance change such as an admin recovery, and fails on any operation still

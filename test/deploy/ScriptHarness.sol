@@ -366,8 +366,16 @@ contract MockNestedOwnerSafe is MockBareSafe {
 /// @notice A VRF v2.5 coordinator stand-in that also answers `getSubscription`, as the real one
 ///         does: (balance, native balance, request count, owner, consumers).
 contract MockVrfSubscriptions is MockVrfCoordinator {
+    error InvalidSubscription();
+
     address public subscriptionOwner;
     address[] internal _consumers;
+    bool public unknown;
+
+    /// @dev Answer as the real coordinator does for a subscription it does not know.
+    function setUnknown(bool value) external {
+        unknown = value;
+    }
 
     function setSubscription(address owner, address[] calldata consumers) external {
         subscriptionOwner = owner;
@@ -379,6 +387,7 @@ contract MockVrfSubscriptions is MockVrfCoordinator {
         view
         returns (uint96, uint96, uint64, address, address[] memory)
     {
+        if (unknown) revert InvalidSubscription();
         return (0, 0, 0, subscriptionOwner, _consumers);
     }
 }

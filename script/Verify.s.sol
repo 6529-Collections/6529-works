@@ -113,8 +113,8 @@ contract Verify is ScriptIO {
         returns (uint256 targets, uint256 calls, uint256 holders)
     {
         bool local = _checkRecordChain(record);
-        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) _checkCanonical(record);
         DeployV1.Deployment memory d = load(record);
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) _checkCanonical(record, d);
         VerifyV1.checkAddresses(
             DeployV1.predict(
                 paramsOf(record), d.cc0TextFileId, vm.parseJsonAddress(record, ".params.factory")
@@ -183,21 +183,26 @@ contract Verify is ScriptIO {
     }
 
     /// @dev On mainnet, every dependency the record names is the canonical contract with its
-    ///      pinned code: the VRF coordinator (when the module was deployed), Permit2 and the 6529
-    ///      delegation contract, which is no mock.
-    function _checkCanonical(string memory record) internal view {
+    ///      pinned code: the VRF coordinator (when the module was deployed), recorded and live
+    ///      (the module's current `coordinator()`), Permit2 and the 6529 delegation contract,
+    ///      which is no mock.
+    function _checkCanonical(string memory record, DeployV1.Deployment memory d) internal view {
         DeployV1.Params memory p = paramsOf(record);
         if (keccak256(bytes(vm.parseJsonString(record, ".entropy"))) != keccak256("none")) {
-            address coordinator = p.vrfCoordinator;
-            if (coordinator != DeployGuards.CANONICAL_VRF_COORDINATOR) {
-                revert NonCanonicalOnMainnet("VRF_COORDINATOR", coordinator);
-            }
+            address canonical = DeployGuards.CANONICAL_VRF_COORDINATOR;
             bytes32 pin = DeployGuards.CANONICAL_VRF_COORDINATOR_CODEHASH;
-            if (coordinator.codehash != pin) {
-                revert NonCanonicalCode("VRF_COORDINATOR", coordinator, coordinator.codehash);
+            if (p.vrfCoordinator != canonical) {
+                revert NonCanonicalOnMainnet("VRF_COORDINATOR", p.vrfCoordinator);
             }
             if (p.vrfCoordinatorCodeHash != pin) {
-                revert NonCanonicalCode("VRF_COORDINATOR", coordinator, p.vrfCoordinatorCodeHash);
+                revert NonCanonicalCode(
+                    "params.vrfCoordinatorCodeHash", canonical, p.vrfCoordinatorCodeHash
+                );
+            }
+            address live = d.entropyModule.coordinator();
+            if (live != canonical) revert NonCanonicalOnMainnet("EntropyModule.coordinator", live);
+            if (canonical.codehash != pin) {
+                revert NonCanonicalCode("VRF_COORDINATOR", canonical, canonical.codehash);
             }
         }
         if (p.permit2 != DeployV1.CANONICAL_PERMIT2) {
@@ -213,11 +218,12 @@ contract Verify is ScriptIO {
         ) revert NonCanonicalCode("DELEGATION_CONTRACT", p.delegation, p.delegation.codehash);
     }
 
-    /// @dev The live entropy module's VRF subscription, read from its current coordinator when
-    ///      the coordinator reports it (`getSubscription`, Chainlink v2.5): the module is the only
-    ///      consumer. On `mainnet` the owner must be the hot admin Safe, the configured holder of
-    ///      both ADMIN and PARAMETER_SETTER (which moves the module between subscriptions), and a
-    ///      coordinator that does not report the subscription fails.
+    /// @dev The live entropy module's VRF subscription, read from its current coordinator
+    ///      (`getSubscription`, Chainlink v2.5): the module is the only consumer. On `mainnet` the
+    ///      owner must be the hot admin Safe, the configured holder of both ADMIN and
+    ///      PARAMETER_SETTER (which moves the module between subscriptions). A read that fails
+    ///      fails Verify, except off mainnet when the coordinator has no such function (it
+    ///      reverts with no data).
     function _checkSubscription(
         DeployV1.Deployment memory d,
         GovernanceConfig.Config memory cfg,
@@ -228,10 +234,10 @@ contract Verify is ScriptIO {
         uint256 id = d.entropyModule.config().subscriptionId;
         (bool ok, bytes memory ret) =
             coordinator.staticcall(abi.encodeWithSignature("getSubscription(uint256)", id));
-        if (!ok || ret.length < 192) {
-            if (mainnet) revert SubscriptionUnreadable(coordinator, id);
-            return;
-        }
+        // Off mainnet, a coordinator without `getSubscription` (empty revert data) is skipped;
+        // any other failure, such as `InvalidSubscription`, fails.
+        if (!mainnet && ret.length == 0) return;
+        if (!ok || ret.length < 192) revert SubscriptionUnreadable(coordinator, id);
         (,,, address owner, address[] memory consumers) =
             abi.decode(ret, (uint96, uint96, uint64, address, address[]));
         if (consumers.length != 1 || consumers[0] != address(d.entropyModule)) {

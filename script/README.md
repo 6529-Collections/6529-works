@@ -508,8 +508,9 @@ The record is only an index; each check is made against the chain or the committ
 - the CC0 text: WorkRecords and every product's default name the recorded file, which is
   complete and hashes to the pinned canonical digest;
 - the manifest file hashes to the recorded digest;
-- on mainnet, the recorded VRF coordinator, Permit2 and delegation contract are the canonical
-  contracts with their pinned code, and the delegation contract is no mock;
+- on mainnet, the recorded VRF coordinator, the entropy module's live `coordinator()`,
+  Permit2 and the delegation contract are the canonical contracts with their pinned code, and
+  the delegation contract is no mock;
 - off anvil, the genesis file still matches the committed policy and names nothing the
   deployment lacks;
 - off anvil, the holders still pass the deploy's holder guards against the chain as it is
@@ -521,8 +522,9 @@ The record is only an index; each check is made against the chain or the committ
 - every wired getter and default currency, the epoch-0 manifest, and PLATFORM's immediate
   path into the sale adapters;
 - off anvil, the entropy module is its VRF subscription's only consumer, read from its
-  current coordinator; on mainnet the subscription's owner is the hot admin Safe, and a
-  coordinator that does not report the subscription fails;
+  current coordinator; on mainnet the subscription's owner is the hot admin Safe. A read
+  that fails (for example `InvalidSubscription`) fails the run; only off mainnet, a
+  coordinator without `getSubscription` (an empty revert) is skipped;
 - the `GovernanceConfigured` hashes match the configuration and wiring recomputed from the
   JSON;
 - no other grant-delay or admin-delay change is pending;
