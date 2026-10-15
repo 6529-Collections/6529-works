@@ -149,7 +149,10 @@ nobody acts as the artist (IDENTITY-1,
 The restraint starts at the override's staging and ends when it executes, is vetoed, is voided by
 a vote, is cleared at execution, or its contest lapses; a contest does not end it. A STANDARD
 change or a payout-only override restrains nothing (ID-18). The powers it withholds, and what
-keeps running, are under [the stolen-key flow](#stolen-key-override-and-restraint).
+keeps running, are under [the stolen-key flow](#stolen-key-override-and-restraint). A
+`restrained` flag in the authority's storage word records whether the pending change is an
+override that moves the authority; every staging sets it and every end of a change clears it,
+so `activeAuthorityOf` reads the pending change only while it is set.
 
 ### Recovery standing
 

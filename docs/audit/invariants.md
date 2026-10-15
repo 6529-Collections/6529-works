@@ -172,6 +172,20 @@ allowlist phase, a payer-keyed phase, a public phase capped at 3, and an ERC-20 
 | INV-SAL-10 | Copies minted equal the model and the holders' balances and never exceed the size. | `invariant_MintedWithinSupplyAndAccounted` | purchases |
 | INV-SAL-11 | `purchased(token, id, phase, wallet)` stays within the leaf cap (phases 0 and 1), the public cap (3) or the ERC-20 sale's cap (5). | `invariant_PerWalletCapsHold` | purchases |
 
+### Stream's interned terms
+
+[`StreamTermsInvariant.t.sol`](../../test/stream/StreamTermsInvariant.t.sol), handler
+`TermsHandler` in the same file. Real `Stream` and `SplitFactory`; mocks as above, two admitted
+adapters and two fee recipients. The handler mints under 36 terms that share six 23-bit
+positions (real collisions, found offline), re-rates tokens toward colliding rates, and squats
+empty positions with foreign words so that terms must overflow.
+
+| ID | Invariant | Test | Handler actions |
+| --- | --- | --- | --- |
+| INV-STR-9 | Every token's terms ID names exactly the terms it locked, at their hashed position or through the overflow index, and every view of the last token touched (`work`, `artistOf`, `royaltyInfo`, `primaryTerms`) returns those terms. | `invariant_EveryViewMatchesTheLockedTerms` | `mint`, `reRate`, `squat`, `settle` |
+| INV-STR-10 | Terms and terms IDs map one-to-one: the same terms always get the same ID, and an ID never names two terms. | handler check: `mint`, `reRate` | as named |
+| INV-STR-11 | Only the minting adapter can mark a token settled. | handler check: `settle` | as named |
+
 ## Identity and recovery
 
 [`ArtistRegistry.invariant.t.sol`](../../test/identity/ArtistRegistry.invariant.t.sol),
@@ -192,6 +206,7 @@ or the exact error before every call.
 | INV-ID-7 | The authority resolves to the artist, and the standing snapshot holds at most 16 entries and no wallet twice. | `invariant_AuthorityAndStandingAreConsistent` | `refreshStanding`, `toggleConsolidation` |
 | INV-ID-8 | The guardian's `stageOverride` and `stageChange` revert, used payloads and override acceptances never restage, `resolveContested` succeeds only for a live contest citing a latest outcome that differs from the pre-contest one (to uphold, after the 180-day notice), and `expireContest` only 365 days after the contest. | handler check: `guardianRedirect`, `replayLast`, `replayAcceptance`, `resolve`, `expire` | as named |
 | INV-ID-9 | A refresh drops an established wallet only after 30 days missing and a pending one once its consolidation ends, marks missing exactly the established wallets no longer consolidated, stamps new entries with the source's `effectiveAt`, and records every consolidated key unless the snapshot is full. | handler check: `refreshStanding` | `refreshStanding`, `toggleConsolidation`, `warp` |
+| INV-ID-10 | The `restrained` flag in the authority's storage word is set exactly while the pending change is an override that moves the authority, lapsed or not. | `invariant_RestrainedFlagMatchesThePendingChange` | as INV-ID-1 |
 
 ## Statements
 
@@ -303,7 +318,7 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 | ID | Property | Test |
 | --- | --- | --- |
 | PROP-GAS-1 | A steady-state ETH `start` and `startWithBid`, for one and two parties, a VRF work and an edition master, cost at most 350K Prague gas (`START_BUDGET` in [`IntegrationBase.sol`](../../test/integration/IntegrationBase.sol)). | [`GasReport.t.sol`](../../test/integration/GasReport.t.sol) `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_Start_TwoPartyWork`, `test_Gas_StartWithBid_TwoPartyWork`, `test_Gas_Start_VrfWork`, `test_Gas_Start_EditionMaster` |
-| PROP-GAS-2 | Every measured operation creates exactly its stated number of new storage slots and accounts, at most 6 slots for a steady-state `start` and 7 for `startWithBid` (`START_MAX_SLOTS`, `START_WITH_BID_MAX_SLOTS`). | every `test_Gas_*` in `GasReport.t.sol` |
+| PROP-GAS-2 | Every measured operation creates exactly its stated number of new storage slots and accounts, at most 6 slots for a steady-state `start` and 7 for `startWithBid` (`START_MAX_SLOTS`, `START_WITH_BID_MAX_SLOTS`), the same for an artist's first start; on a collision of its terms' hashed position, a first start writes one slot more (LIM-GAS-10). | every `test_Gas_*` in `GasReport.t.sol`; [`StreamTermsGrind.t.sol`](../../test/stream/StreamTermsGrind.t.sol) `test_GroundCollisionAddsOneSlotToTheFirstStart` |
 | PROP-GAS-3 | Every other measured operation stays under its Prague test ceiling or regression ceiling. | every `test_Gas_*` in `GasReport.t.sol` |
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
 | PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests) |

@@ -54,7 +54,7 @@ contract StreamTermsGrindTest is StreamFixture {
         _mint(1); // registers the fee recipient (index 1), as at steady state
     }
 
-    function test_Control_VictimFirstStart() public {
+    function test_FirstStartWithoutACollision() public {
         (uint256 first,) = _measure(VICTIM);
         (uint256 later, uint256 gasLater) = _measure(VICTIM);
         emit log_named_uint("victim first start, new Stream slots", first);
@@ -63,7 +63,7 @@ contract StreamTermsGrindTest is StreamFixture {
         assertEq(first, later + 1);
     }
 
-    function test_PoC_GroundCollisionAddsASlotToTheVictimsFirstStart() public {
+    function test_GroundCollisionAddsOneSlotToTheFirstStart() public {
         _mintBy(GROUND); // the ground artist starts first and takes the hashed position
         (uint256 first,) = _measure(VICTIM);
         (uint256 later, uint256 gasLater) = _measure(VICTIM);

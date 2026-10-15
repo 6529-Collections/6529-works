@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 10,322 non-blank, non-comment lines in 83 files under `src/` (budget: 12,000) |
+| Source lines | 10,501 non-blank, non-comment lines in 83 files under `src/` (budget: 12,000) |
 | Deployed contracts | 23 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,13 +33,13 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 502 | 19,608 | 21,421 | 4,968 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 566 | 20,644 | 22,457 | 3,932 |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 633 | 22,900 | 25,824 | 1,676 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 308 | 18,552 | 20,274 | 6,024 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 354 | 18,521 | 20,243 | 6,055 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 789 | 24,449 | 26,746 | **127** |
-| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | 278 | 21,999 | 23,571 | 2,577 |
-| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | 145 | 16,550 | 17,638 | 8,026 |
-| `MintSaleBase` (abstract; in both adapters above) | [`src/sales/MintSaleBase.sol`](../../src/sales/MintSaleBase.sol) | 364 | | | |
+| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | 307 | 22,843 | 24,435 | 1,733 |
+| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | 145 | 17,109 | 18,217 | 7,467 |
+| `MintSaleBase` (abstract; in both adapters above) | [`src/sales/MintSaleBase.sol`](../../src/sales/MintSaleBase.sol) | 394 |  |  |  |
 
 ### Curation, identity and records
 
@@ -47,7 +47,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 384 | 14,779 | 16,179 | 9,797 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 569 | 20,525 | 21,729 | 4,051 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 579 | 20,339 | 21,543 | 4,237 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,255 | 21,517 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 322 | 11,732 | 13,021 | 12,844 |
 | `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 242 | 8,266 | 10,222 | 16,310 |

@@ -77,7 +77,8 @@ it again at `createEdition` (`PricedDefaultCurrency(workId)`).
   package's currency (unresolved), price, params, seller, fee recipient, fee share (locked at
   `createEdition` from `PRODUCT_EDITIONS` economics) and `creator`; `data` is ignored. An
   adapter reads them when it opens a sale, resolves the currency once, and stores them as the
-  sale's `LockedTerms`, which every purchase in that sale uses.
+  sale's `LockedTerms`, which every purchase in that sale uses. `mint` returns only the sale
+  kind of its terms, since the adapters never read the rest there (QUALITY-2).
 - The creator is the active authority of the master's lead artist
   (`IArtistRegistry.activeAuthorityOf`), resolved on every read. It needs no role, and may open
   sales, sign phase configurations and close sales. After a recovery only the new key has these
@@ -406,7 +407,10 @@ keccak256(bytes.concat(keccak256(abi.encode(
   account and phase: the Permit2 witness binds neither value, so with two leaves a relayer
   could choose.
 - **Caps count per `(token, id, phase index, keyed wallet)`, across sales**
-  (`purchased(token, id, phase, account)`), so reopening a sale never resets a cap. A fresh
+  (`purchased(token, id, phase, account)`), so reopening a sale never resets a cap. Only capped
+  phases count (an allowlist, or a nonzero `walletCap`): an uncapped public phase records
+  nothing, so a later capped phase at the same index starts every wallet at zero (QUALITY-1,
+  integrator decision). A fresh
   drop uses new phase indices, keeping placeholder phases (for example, ended windows) at the
   old ones; placeholders count toward `SaleStarted.startTime`.
 
@@ -436,7 +440,8 @@ Checks in `FixedPriceSale.purchase` and `_admit`, in order: the adapter is not p
 active (`CurrencyNotActive`) and a federated token still active (`TargetNotAllowed`); `now` is
 in `[start + delay, end + delay)` (`PhaseNotOpen`); `quantity` is nonzero (`InvalidQuantity`);
 an allowlist leaf of the keyed account verifies (`NotAllowlisted`); the purchase keeps the keyed
-account within the leaf cap and `walletCap` (`WalletCapExceeded`) and is counted;
+account within the leaf cap and `walletCap` (`WalletCapExceeded`) and, in a capped phase, is
+counted;
 `payment.amount` equals the total (`InvalidPayment`); then the payment is collected and
 `_settle` mints and pays.
 
@@ -561,7 +566,7 @@ sequenceDiagram
 | ED-13 | A phase consent binds token, ID, resolved currency, package price, every phase, nonce and deadline, verifies against the current creator, and is single-use and revocable. | `FixedPriceSale._consume`, `revokeConsentNonce` | [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol): `test_Approval_RevertsOnInvalidConsent`, `test_Approval_NonceIsSingleUseAndRevocable`, `test_Approval_ContractCreatorSignsByErc1271`; [ReviewRound2.t.sol](../../test/sales/fixed/ReviewRound2.t.sol): `test_R2_PhaseConfigurationDigest_MatchesCheatcode`, `test_R2_ConsentNotReusableUnderAnotherCurrencyOrPrice`, `test_R2_GiftConsentBindsTheResolvedDefault`; [RecoveryRestraint.t.sol](../../test/integration/RecoveryRestraint.t.sol): `test_RestrainedKeyCannotManageTheEditionSale` |
 | ED-14 | A sale closes by the creator; by PLATFORM if it is not artist-approved or the creator resolves to zero; by anyone once every moved fixed-price phase has ended. | `MintSaleBase._close`; `FixedPriceSale.closeSale`, `_ended`; `DutchSale.closeSale` | [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol): `test_CloseSale_ByCreatorOrPlatformStopsPurchases`, `test_CloseSale_FollowsTheCurrentCreator`; [ReviewRegressions.t.sol](../../test/sales/fixed/ReviewRegressions.t.sol): `test_AnyoneClosesASaleWhosePhasesEnded`; [ReviewRound2.t.sol](../../test/sales/fixed/ReviewRound2.t.sol): `test_R2_Close_OpenEndedAndFuturePhasesBlockStrangers`, `test_R2_Close_BoundaryAgreesWithPurchaseWindow`; [SalesFollowUpRegression.t.sol](../../test/adv/SalesFollowUpRegression.t.sol): `test_MARKET6_PlatformCannotCloseTheArtistsOwnDutchSale`; [RecoveryRestraint.t.sol](../../test/integration/RecoveryRestraint.t.sol): `test_PlatformClosesTheArtistsSaleDuringTheNotice` |
 | ED-15 | An allowlist leaf is checked against the receiving wallet, or the authenticated payer in a payer-keyed phase, and binds chain, adapter, token, ID, phase, cap and price. | `FixedPriceSale._admit`, `_verifyLeaf`, `allowlistLeaf` | [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol): `test_AllowlistLeaf_MatchesTheDefinition`, `test_Regression_PR744High_LeafBindsTheReceivingWallet`, `test_Allowlist_PayerKeyedBindsThePayer`, `test_Allowlist_LeafBindsEditionPhaseAdapterAndChain`, `test_Allowlist_RejectsForgedCapOrPriceAndLongProofs`; [ReviewRegressions.t.sol](../../test/sales/fixed/ReviewRegressions.t.sol): `test_PoC_NoDirectRouteMintsToSelfOnAnotherWalletsLeaf`, `test_PoC_NoPermit2RouteMintsToSelfOnAnotherWalletsLeaf` |
-| ED-16 | Purchase counts persist per `(token, id, phase index, keyed wallet)` across sales; no purchase exceeds a leaf cap or a nonzero `walletCap`. | `FixedPriceSale._admit` | [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol): `test_Allowlist_CapsPersistAcrossReopenedSales`, `test_Caps_PerWalletAcrossPhases`, `testFuzz_PublicWalletCapIsNeverExceeded`; [ReviewRegressions.t.sol](../../test/sales/fixed/ReviewRegressions.t.sol): `test_PoC_Inverted_CapsSurviveAReopenedSale_PlatformOnly`; [FixedPriceInvariant.t.sol](../../test/sales/fixed/FixedPriceInvariant.t.sol): `invariant_PerWalletCapsHold`, `invariant_NoOverCapOrForeignLeafPurchaseSucceeds` |
+| ED-16 | Purchase counts in capped phases persist per `(token, id, phase index, keyed wallet)` across sales, and an uncapped public phase records none; no purchase exceeds a leaf cap or a nonzero `walletCap`. | `FixedPriceSale._admit` | [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol): `test_Allowlist_CapsPersistAcrossReopenedSales`, `test_Caps_PerWalletAcrossPhases`, `testFuzz_PublicWalletCapIsNeverExceeded`, `test_Purchase_UncappedPublicPhaseRecordsNothing`, `test_Purchase_CappedPublicPhaseCountsAcrossSales`; [ReviewRegressions.t.sol](../../test/sales/fixed/ReviewRegressions.t.sol): `test_PoC_Inverted_CapsSurviveAReopenedSale_PlatformOnly`; [FixedPriceInvariant.t.sol](../../test/sales/fixed/FixedPriceInvariant.t.sol): `invariant_PerWalletCapsHold`, `invariant_NoOverCapOrForeignLeafPurchaseSucceeds` |
 | ED-17 | Payments are exact: a fixed-price amount equals the total, ETH equals `amount`, and every ERC-20 movement, Permit2 included, matches its balance deltas. | `MintSaleBase._collect`, `_permit2`; `TokenTransfer.pullExact` | [FixedPricePayments.t.sol](../../test/sales/fixed/FixedPricePayments.t.sol): `test_Direct_PullsExactlyAndPays`, `test_HostileToken_FeeOnTransferRevertsOnTheDelta`, `test_HostileToken_Permit2CannotSkipTheDeltaCheck`, `test_HostileToken_Permit2UnderReportedPayerBalanceReverts`; [ReviewRegressions.t.sol](../../test/sales/fixed/ReviewRegressions.t.sol): `test_Kill_D1_Permit2InboundShortfallReverts`, `test_Kill_D2_Permit2PayerOverDebitReverts`, `test_Kill_D6_FixedEthOverpaymentReverts` |
 | ED-18 | A Permit2 witness binds the purchase: sale, phase, recipient, quantity, amount (or `maxUnitPrice`) and deadline. | `FixedPriceSale.purchase`, `DutchSale.purchase` | [FixedPricePayments.t.sol](../../test/sales/fixed/FixedPricePayments.t.sol): `test_Permit2_WitnessBindsThePurchase`, `test_Permit2_ReplayIsRejectedByTheNonce`, `test_Permit2_PayerKeyedLeafNeedsThePayersSignature`; [ReviewRegressions.t.sol](../../test/sales/fixed/ReviewRegressions.t.sol): `test_Kill_W1_IntentIsBoundToItsPhase`, `test_Kill_L4_RelayedZeroRecipientMintsToTheSigner`; [DutchSale.t.sol](../../test/sales/dutch/DutchSale.t.sol): `test_Erc20_Permit2IntentTakesTheChargeOnly` |
 | ED-19 | The fee is `floor(total × feeShare / 100,000)` and the seller gets the rest; a refused payout goes to the escrow; a fixed-price adapter keeps nothing and a Dutch adapter holds exactly its credits. | `MintSaleBase._settle`, `_pay`; `RevenuePayment` | [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol): `test_Purchase_FeeRoundsDownAndConserves`; [FixedPricePayments.t.sol](../../test/sales/fixed/FixedPricePayments.t.sol): `test_HostileWallet_GasBurnersCannotBlockTheSale`, `test_HostileWallet_RefusingSellerIsEscrowed`, `test_HostileToken_BlockedSellerIsPaidThroughEscrow`; [FixedPriceInvariant.t.sol](../../test/sales/fixed/FixedPriceInvariant.t.sol): `invariant_FeesAreExact`, `invariant_EthIsPaidOrEscrowedNeverKept`, `invariant_TokenIsPaidOrEscrowedNeverKept`; [DutchInvariant.t.sol](../../test/sales/dutch/DutchInvariant.t.sol): `invariant_CreditsAreFullyBacked`, `invariant_EthIsConserved` |
@@ -612,6 +617,7 @@ compare `edition(id).minted` with `terms.size`.
 | Uncapped OPEN edition | `type(uint64).max` copies | `Editions.mint` |
 | `CURRENCY_ETH`, `CURRENCY_DEFAULT` | `address(0)`, `address(type(uint160).max)` | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |
 | First sale ID per adapter | 1 | `MintSaleBase.nextSaleId` |
+| Fee recipients per adapter | at most 65,535, each stored once and referenced by index; a sale that would add another reverts with `InvalidSaleTerms` | `MintSaleBase._feeRecipientId` |
 | Unpause floor after a pause; re-admission floor after a deprecation | 48 hours; 14 days | `Roles.STANDARD` in [`Roles.sol`](../../src/governance/Roles.sol); `IAssetAllowlist.admitAsset` |
 | Per-transaction gas cap the worst cases fit | 16,777,216 | EIP-7825; `FixedPriceGasCap.t.sol`, `DutchGasCap.t.sol` |
 
