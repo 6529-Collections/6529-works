@@ -143,8 +143,10 @@ interface IPackageRegistry is IERC165 {
     /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
     ///         already record `itemHash` for it. Bound 6529 Editions only.
     function claimContent(bytes32 contentHash, bytes32 itemHash) external;
-    /// @notice Revokes one of the caller's unused move nonces. The caller must be the current
-    ///         authority of `artistId`.
+    /// @notice Revokes one of the caller's unused move nonces. The caller must be the active
+    ///         authority of `artistId` (`IArtistRegistry.activeAuthorityOf`).
+    /// @param artistId The artist whose move nonce is revoked.
+    /// @param nonce The move nonce; a used or revoked one reverts with `MoveNonceUsed`.
     function revokeMove(uint256 artistId, uint256 nonce) external;
     /// @notice Swaps the curation verifier: it must support `ICurationVerifier` (ERC-165), have
     ///         code hash `nextCodeHash`, not be an EIP-7702 delegated account, and never have

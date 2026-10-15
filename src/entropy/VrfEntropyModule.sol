@@ -19,11 +19,12 @@ import { IVRFCoordinatorV2Plus } from "./IVRFCoordinatorV2Plus.sol";
 ///         on Chainlink VRF v2.5 with a subscription. One seed per work, keyed by the work's
 ///         content hash, never per copy or per package item.
 /// @dev Flow (review decision D4). The seed is requested BEFORE a token exists: anyone calls
-///      {requestSeed} for a VRF item of an approved package; the coordinator later
-///      calls {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no
-///      call into the token or the auction. The auction's `start` requires {isDelivered}, mints
-///      and opens the clock, and the Stream reads the seed through {seedOf} by item hash. Nothing
-///      is in custody while a seed is outstanding, so nothing can be stuck.
+///      {requestSeed} for a VRF item of an approved package; the coordinator later calls
+///      {rawFulfillRandomWords}, which stores the seed and emits `SeedDelivered`, with no call into
+///      the token or the auction. The auction never calls this module: its `start` calls 6529
+///      Stream's `mint`, which consumes the item and then requires {isDelivered} before it mints;
+///      the work-records satellite and the renderer read the seed through {seedOf} by item hash.
+///      Nothing is in custody while a seed is outstanding, so nothing can be stuck.
 ///
 ///      One draw per content. The draw is keyed by the item's content hash, the registry's
 ///      per-product uniqueness key, so every approved item carrying the same work (a revised

@@ -11,7 +11,7 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///      can never sell outside the approved package. `mint` accepts only adapters in the token's
 ///      admitted-minter mapping (`isAdmittedMinter`), written by a governed setter on the 30-day
 ///      class (a mapping read is cheaper on the start path than an AccessManager hop). Removal
-///      stops new mints only: the adapter that minted a token can still settle and burn it.
+///      stops new mints only: an adapter that minted can still settle and burn.
 ///      The token checks that the calling adapter's `ISaleAdapter.saleKind()` equals
 ///      `terms.saleKind`. Token IDs are never reused.
 interface IMintTarget {

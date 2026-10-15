@@ -117,15 +117,13 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    /// @dev TODO(governance lane): map this selector to the curator role from
-    ///      `src/governance/Roles.sol`. Until mapped, the AccessManager default is ADMIN_ROLE.
+    /// @dev Genesis maps this selector to `Roles.CURATOR`, a zero-delay role.
     function appendCurator(Statement calldata statement) external restricted returns (bytes32) {
         return _append(Role.CURATOR, msg.sender, statement);
     }
 
     /// @inheritdoc IStatementLog
-    /// @dev TODO(governance lane): map this selector to the platform role from
-    ///      `src/governance/Roles.sol`. Until mapped, the AccessManager default is ADMIN_ROLE.
+    /// @dev Genesis maps this selector to `Roles.PLATFORM`, a zero-delay role.
     function appendPlatform(Statement calldata statement) external restricted returns (bytes32) {
         return _append(Role.PLATFORM, msg.sender, statement);
     }

@@ -96,7 +96,8 @@ contract Renderer is IRenderer {
     ///         page (it has the 8M promise); `fullTokenURI` wraps a larger one, up to its size
     ///         limit.
     uint256 internal constant SCRIPT_LIMIT = 8_192;
-    /// @notice The largest record file, in bytes: one store chunk.
+    /// @notice The largest record file, in bytes: half a store chunk, so one chunk always holds
+    ///         it.
     uint256 internal constant MAX_RECORD_BYTES = Limits.MAX_RECORD_BYTES;
     /// @notice The most artists a record may list.
     uint256 internal constant MAX_ARTISTS = Limits.MAX_ARTISTS;
@@ -323,10 +324,10 @@ contract Renderer is IRenderer {
     }
 
     /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
-    ///      complete yet, and never if it is not `Identity`, is over one chunk, is not UTF-8, or
-    ///      holds too many `%` and `#` to escape within the gas budget. A record file the store
-    ///      does not answer for (an approved one whose manifest was never registered) is not
-    ///      complete either: the store answered for the primary file in this same call, so the
+    ///      complete yet, and never if it is not `Identity`, is over `MAX_RECORD_BYTES`, is not
+    ///      UTF-8, or holds too many `%` and `#` to escape within the gas budget. A record file
+    ///      the store does not answer for (an approved one whose manifest was never registered) is
+    ///      not complete either: the store answered for the primary file in this same call, so the
     ///      failure is the unknown file, not a broken store.
     function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
         bytes32 id = c.rec.recordFileId;

@@ -19,8 +19,8 @@ import { IReleaseVerifier } from "./IReleaseVerifier.sol";
 ///      funds are in the payee's account. Sign `type(uint256).max` to take whatever is due.
 interface ISplitWallet {
     /// @notice One share holder. Exactly one of `artistId` and `account` is non-zero. A fixed payee
-    ///         names its `account`. An artist-resolved payee names its `artistId` and is paid at the
-    ///         address the resolver returns when funds are released (ADR 0001 section 11).
+    ///         names its `account`. An artist-resolved payee names its `artistId` and is paid at
+    ///         the address the resolver returns when funds are released (ADR 0001 section 11).
     /// @dev Field order packs `account` and `share` into one storage slot.
     struct Payee {
         uint256 artistId;
@@ -41,7 +41,8 @@ interface ISplitWallet {
 
     /// @notice The payee list is empty or longer than the maximum.
     error PayeeCountOutOfRange(uint256 count);
-    /// @notice The payee at `index` has a zero share or is neither exactly fixed nor artist-resolved.
+    /// @notice The payee at `index` has a zero share or is neither exactly fixed nor
+    ///         artist-resolved.
     error InvalidPayee(uint256 index);
     /// @notice The payee at `index` does not sort strictly after its predecessor by
     ///         `(artistId, account)`, so the list is not canonical or has a duplicate.

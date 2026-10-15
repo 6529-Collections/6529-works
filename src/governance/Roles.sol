@@ -17,7 +17,7 @@ library Roles {
     uint32 internal constant STANDARD = 48 hours;
     /// @notice Funds and network-level recipients.
     uint32 internal constant FUNDS = 14 days;
-    /// @notice Verifier and successor-level swaps, one-way freezes, and meta-governance.
+    /// @notice Verifier and successor-level swaps, minter admission, and meta-governance.
     uint32 internal constant SUCCESSOR = 30 days;
 
     // --------------------------------------------------------------------- role IDs
@@ -27,8 +27,10 @@ library Roles {
     uint64 internal constant ADMIN = 0;
     /// @notice Guardian Safes (at least two; three by default): `WorksAccessManager` lets them
     ///         cancel any scheduled operation and suspend a holder of a suspendable role
-    ///         ({isSuspendable}). Mapped to immediate vetoes: dispute pause, identity-change
-    ///         veto, curation `disableSigner`. Holds nothing but `PAUSER`.
+    ///         ({isSuspendable}). Mapped to immediate protective actions: the auction's dispute
+    ///         pause, the identity-change veto, curation `disableSigner` and `revokePackage`,
+    ///         `deprecateAsset`, and deprecating a dependency version. Holds nothing but
+    ///         `PAUSER`.
     uint64 internal constant GUARDIAN = 1;
     /// @notice Immediate `pause` selectors. Held by the guardian Safes, never by an unpauser.
     uint64 internal constant PAUSER = 2;
@@ -37,20 +39,28 @@ library Roles {
     /// @notice Curation signer keys whose EIP-712 attestations the v1 verifier accepts. A
     ///         signer registry, never an on-chain caller: no function maps to it.
     uint64 internal constant CURATION_SIGNER = 4;
-    /// @notice Switches preferred locations among registered, hash-equal locators.
+    /// @notice Chooses preferred locations among the locators registered for a file (copies the
+    ///         artist or the platform registered; their content is not verified on-chain).
     uint64 internal constant STORAGE_OPERATOR = 5;
-    /// @notice Shared sale adapters allowed to mint.
+    /// @notice Reserved and unused in v1: no selector maps to it and genesis grants it to
+    ///         nobody. Minting is gated by each token's admitted-minter mapping
+    ///         (`IMintTarget.setAdmittedMinter`), not by this role.
     uint64 internal constant MINTER = 6;
-    /// @notice Maintenance bots for permissionless-equivalent upkeep.
+    /// @notice Reserved for maintenance bots and unused in v1: every upkeep call (settlement,
+    ///         execution, refreshes, flushes, claim batches) is permissionless, no selector maps
+    ///         to it and genesis grants it to nobody.
     uint64 internal constant KEEPER = 7;
-    /// @notice Platform operations: registering locators and posting platform statements
+    /// @notice Platform operations: creating collections, opening and closing fixed-price and
+    ///         Dutch sales, registering locators, and posting platform statements
     ///         (`StatementLog.appendPlatform`). Zero delay: the log refuses delayed writers.
     uint64 internal constant PLATFORM = 8;
     /// @notice Standard-class governed setters (48 hours).
     uint64 internal constant PARAMETER_SETTER = 9;
     /// @notice Funds-and-recipients-class governed setters (14 days).
     uint64 internal constant FUNDS_SETTER = 10;
-    /// @notice Verifier, renderer, successor, freeze and manifest setters (30 days).
+    /// @notice 30-day setters: swaps of the verifier, renderers, resolvers and other pinned
+    ///         dependencies, sale targets and minter admission, signer re-enables, contested
+    ///         override resolutions and governance manifests.
     uint64 internal constant SUCCESSOR_SETTER = 11;
     /// @notice Appends curator statements, including `CURATION_EVIDENCE`
     ///         (`StatementLog.appendCurator`). Zero delay: the log refuses delayed writers.

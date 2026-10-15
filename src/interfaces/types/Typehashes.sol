@@ -2,9 +2,13 @@
 pragma solidity ^0.8.24;
 
 /// @title Typehashes
-/// @notice Every EIP-712 domain name and typehash, and every Permit2 witness, the v1 interfaces
-///         define. Implementations use these constants; golden tests in `test/interfaces/` pin
-///         their values (ADR 0001 section 17 "golden typehash tests").
+/// @notice The EIP-712 domain names and typehashes of the package registry, curation verifier,
+///         work records, artist registry and fixed-price sale, and every Permit2 witness.
+///         Implementations use these constants; golden tests in `test/interfaces/` pin their
+///         values (ADR 0001 section 17 "golden typehash tests"). The statement log and the
+///         release verifier keep their own domains and typehashes beside their code
+///         (`StatementLog`, `ReleaseVerifier.RELEASE_TYPEHASH`), pinned by their own golden
+///         tests.
 /// @dev Each signing contract uses the EIP-712 domain `(name, DOMAIN_VERSION, chainid, itself)`.
 ///      Every artist or party signature binds a deadline and either a single-use nonce or a
 ///      work's state hash. Constants only; nothing here is linked bytecode.

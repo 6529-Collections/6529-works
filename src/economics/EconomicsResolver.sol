@@ -68,8 +68,8 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     mapping(bytes32 product => Product) private _products;
 
     /// @param authority The AccessManager governing the setters.
-    /// @param allowlist_ The economics lane's asset allowlist.
-    /// @param factory_ The economics lane's split factory.
+    /// @param allowlist_ The asset allowlist.
+    /// @param factory_ The split factory.
     /// @param feeRecipient The network fee recipient for every product at launch.
     /// @param cc0TextFileId_ The content store file ID of the CC0 1.0 legal text.
     constructor(

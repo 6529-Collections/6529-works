@@ -17,6 +17,14 @@ import { TokenTransfer } from "./TokenTransfer.sol";
 ///      token always gets its full gas allowance, so a caller cannot force the escrow route by
 ///      starving the call. A zero amount is a no-op, so a zero-price sale or a share that rounds
 ///      to zero never reaches the escrow.
+///
+///      Glamsterdam (CALLS-3, observed on Sepolia): the allowance caps the wallet's or token's
+///      regular gas, not the state gas it spends creating storage or accounts, which comes from
+///      the transaction's EIP-8037 reservoir. A state-writing wallet or token can therefore be
+///      paid or escrowed depending on the caller's gas limit, and the caller can pay for a
+///      hostile callee's state growth; either way the funds reach only that wallet. Keepers
+///      should send at most 2^24 gas (`BoundedCall`; docs/audit/known-limitations.md,
+///      LIM-GAS-2).
 library RevenuePayment {
     /// @notice Gas kept for the value transfer and a possible new account on top of the
     ///         wallet's gas limit.

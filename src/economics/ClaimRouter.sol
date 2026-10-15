@@ -29,6 +29,13 @@ import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
 ///      a party can still revert a batch; keepers simulate privately and split batches whose items
 ///      involve contract payees or unfamiliar tokens. The minimums are only the floor of each
 ///      item's share.
+///
+///      Glamsterdam (CALLS-3, observed on Sepolia): an item's share caps its regular gas only.
+///      A release that creates storage or an account draws state gas from the transaction's
+///      EIP-8037 reservoir, so an item's outcome can depend on the batch's gas limit, and the
+///      caller pays for the state growth of every item it runs. A failed item pays nothing and
+///      can be claimed again. Keepers should send at most 2^24 gas, which leaves no reservoir
+///      (`BoundedCall`; docs/audit/known-limitations.md, LIM-GAS-2).
 contract ClaimRouter is IClaimRouter {
     /// @inheritdoc IClaimRouter
     /// @dev In Prague gas a worst-case plain item costs about 130,000, so a full atomic batch

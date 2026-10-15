@@ -106,16 +106,14 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error UnknownWork(uint256 tokenId);
     /// @notice No collection has this ID.
     error UnknownCollection(uint256 collectionId);
-    /// @notice The caller is not the bound contract (or minting adapter) this function serves.
+    /// @notice The caller is not the bound satellite this function serves.
     error UnboundCaller(address caller);
     /// @notice The caller is not the adapter that minted the token (`burn`,
     ///         `markPrimarySettled`).
     error NotMintingAdapter(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The target lacks code or the expected ERC-165 support, is an EIP-7702 delegated
-    ///         account, or (a satellite) serves another Stream; or the default renderer's code is
-    ///         no longer the code hash it was installed with.
+    /// @notice The satellite serves another Stream: its `stream()` is not this contract.
     error InvalidBinding(address target);
     /// @notice The item's sale is not an English auction with empty parameters.
     error InvalidItemSale();
@@ -210,8 +208,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         for that artist, who must be registered. PARAMETER_SETTER role (48 hours); reverts
     ///         with `NotBurned` for a live or unminted token.
     function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary) external;
-    /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
-    ///         Reverts with `UnknownWork`.
+    /// @notice The lead artist ID of a live work, kept in the terms word it shares with works
+    ///         under the same terms; `IArtistRegistry.isArtist` reads it. Reverts with
+    ///         `UnknownWork`.
+    /// @param tokenId A live token ID.
+    /// @return artistId The lead artist's ID.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
     /// @notice True once the minting adapter marked the token's primary sale settled
     ///         (`IMintTarget.markPrimarySettled`: to a

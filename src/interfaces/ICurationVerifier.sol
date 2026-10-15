@@ -25,14 +25,15 @@ interface ICurationVerifier is IERC165 {
 /// @notice The v1 curation verifier: EIP-712 attestations by curation-signer keys, with an
 ///         immediate per-signer kill switch (ADR 0001 sections 3 and 13).
 /// @dev `attestation` is `abi.encode(address signer, bytes signature)`, the signature being a
-///      `Typehashes.PACKAGE_APPROVAL` signature in this verifier's domain over the signer's
-///      current `signerEpoch`. A curation signer key is never an on-chain caller: it only signs.
-///      It counts while it holds the CURATION_SIGNER role with no execution delay and is not
-///      disabled. Disabling is immediate and one-way (GUARDIAN role); only `enableSigner`
-///      (SUCCESSOR_SETTER role, 30-day delay) restores a signer, at a new epoch: an approval
-///      made before the disable never counts again (nor does one made under a revoked grant of
-///      the role), and one signed during the disable cannot name the re-enable's epoch. Disabling affects packages registered afterwards; an approval already
-///      registered is withdrawn with `IPackageRegistry.revokePackage`.
+///      `Typehashes.PACKAGE_APPROVAL` signature in this verifier's domain over the signer's current
+///      `signerEpoch`. A curation signer key is never an on-chain caller: it only signs. It counts
+///      while it holds the CURATION_SIGNER role with no execution delay and is not disabled.
+///      Disabling is immediate and one-way (GUARDIAN role); only `enableSigner` (SUCCESSOR_SETTER
+///      role, 30-day delay) restores a signer, at a new epoch: an approval made before the disable
+///      never counts again (nor does one made under a revoked grant of the role), and one signed
+///      during the disable cannot name the re-enable's epoch. Disabling affects packages registered
+///      afterwards; an approval already registered is withdrawn with
+///      `IPackageRegistry.revokePackage`.
 interface ICurationSignerVerifier is ICurationVerifier {
     /// @notice The guardian disabled `signer`.
     event SignerDisabled(address indexed signer);

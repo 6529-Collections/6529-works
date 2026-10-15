@@ -103,18 +103,25 @@ interface IConsolidationSource is IERC165 {
 ///      (changes take 7 days, overrides 180 days, and the consolidation source swaps on the
 ///      30-day class). A staged override that would move the authority (48 hours) withholds the
 ///      answer until it ends, by the owner decision on IDENTITY-1; it never redirects it, and the
-///      guardian's veto restores it. It also answers the economics lane's payout question
-///      (`IArtistPayoutResolver`). The package registry, 6529 Stream, the federation registry and
-///      the split factory are each bound once (`Bound`; ERC-165 checked, not EIP-7702 delegated
-///      accounts); only the package registry may call `register`, and only the federation
-///      registry `listFederatedContract`.
+///      guardian's veto restores it. It also answers split wallets' payout question
+///      (`IArtistPayoutResolver`). The package registry, 6529 Stream, the federation registry,
+///      the split factory and the statement log are each bound once (`Bound`): never EIP-7702
+///      delegated accounts, and ERC-165 checked except the split factory and the statement log,
+///      which implement no ERC-165. Only the package registry may call `register`, and only the
+///      federation registry `listFederatedContract`.
 interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice An artist identity was created.
     event ArtistRegistered(uint256 indexed artistId, ArtistIdentity identity);
     /// @notice A change was staged.
     event ChangeStaged(uint256 indexed artistId, PendingChange change);
-    /// @notice A pending change was cancelled by `by` (a captured wallet or the previous
-    ///         authority) or vetoed by the guardian (`vetoed`).
+    /// @notice A pending change ended without taking effect: cancelled by the previous authority
+    ///         or a captured wallet, vetoed by the guardian, replaced by an override, voided by a
+    ///         vote, or cleared by the registry (a lapsed contest, or failed execution re-checks).
+    /// @param artistId The artist whose pending change ended.
+    /// @param by The canceller or the governed caller, or this registry when it cleared the
+    ///        change itself.
+    /// @param vetoed True for a guardian veto, a replacement by an override, or a voided contest;
+    ///        false for a cancel or a clear by the registry.
     event ChangeCancelled(uint256 indexed artistId, address indexed by, bool vetoed);
     /// @notice A change took effect.
     event ChangeExecuted(uint256 indexed artistId, ArtistIdentity previous, ArtistIdentity next);
@@ -141,7 +148,10 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     event StandingAdded(uint256 indexed artistId, address indexed wallet, uint64 effectiveAt);
     /// @notice A wallet is no longer established; it keeps standing for `STANDING_GRACE`.
     event StandingMissing(uint256 indexed artistId, address indexed wallet);
-    /// @notice A wallet lost recovery standing after its grace period.
+    /// @notice A wallet left the standing snapshot: it was missing for its grace period, or it
+    ///         was still pending (it never had standing) and is no longer consolidated.
+    /// @param artistId The artist whose standing snapshot changed.
+    /// @param wallet The wallet removed.
     event StandingRemoved(uint256 indexed artistId, address indexed wallet);
     /// @notice A registration's or an execution's standing refresh was skipped because the
     ///         consolidation source could not read (`IConsolidationSource.DelegationReadFailed`)
@@ -170,13 +180,12 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     error AcceptanceUsed(bytes32 digest);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The binding target lacks code or the expected ERC-165 support, or is an EIP-7702
-    ///         delegated account.
+    /// @notice The statement log to bind does not name this registry as its `artistResolver()`.
     error InvalidBinding(address target);
     /// @notice The caller is not the bound contract for this function.
     error UnboundCaller(address caller);
-    /// @notice The consolidation source lacks ERC-165 support or the pinned code hash, at install
-    ///         or at use.
+    /// @notice The consolidation source answered with more than `2 * Limits.MAX_CANCELLERS`
+    ///         consolidations, or with lists of different lengths.
     error InvalidSource(address source);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
@@ -203,7 +212,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice Binds the v1.1 federation registry (the only `listFederatedContract` caller),
     ///         once. ADMIN role.
     function bindFederationRegistry(address target) external;
-    /// @notice Binds the economics split factory, once. ADMIN role.
+    /// @notice Binds the economics split factory, once: code, not an EIP-7702 delegated account
+    ///         (the factory implements no ERC-165). ADMIN role.
+    /// @param target The split factory, whose wallets this registry refuses as payouts.
     function bindSplitFactory(address target) external;
     /// @notice Creates an identity for `authority` with ID `uint256(uint160(authority))` and
     ///         payout `authority`, and counts as its first activity. Bound package registry only,

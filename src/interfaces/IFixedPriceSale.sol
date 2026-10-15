@@ -70,7 +70,8 @@ interface IFixedPriceSale is ISaleAdapter {
 
     /// @notice A sale's phases were set when it opened, with or without the artist's approval.
     event PhasesSet(uint256 indexed saleId, Phase[] phases, bool artistApproved);
-    /// @notice A sale was closed before its supply or phases ran out.
+    /// @notice A sale was closed: it sells no more, and a new sale of its token may open.
+    /// @param saleId The closed sale.
     event SaleClosed(uint256 indexed saleId);
     /// @notice A creator revoked an unused phase-configuration nonce.
     event ConsentNonceRevoked(address indexed creator, uint256 indexed nonce);

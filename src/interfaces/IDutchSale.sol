@@ -24,7 +24,8 @@ interface IDutchSale is ISaleAdapter {
         uint64 stepSeconds;
     }
 
-    /// @notice A sale was closed before its supply ran out.
+    /// @notice A sale was closed: it sells no more, and a new sale of its token may open.
+    /// @param saleId The closed sale.
     event SaleClosed(uint256 indexed saleId);
 
     /// @notice The sale has not started or is closed.

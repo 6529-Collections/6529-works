@@ -81,7 +81,10 @@ interface IClaimRouter is IERC165 {
     function SHORTFALL_REVERT_CEILING() external view returns (uint256);
 
     /// @notice Releases every plain claim in order. In atomic mode any failure reverts the batch;
-    ///         in continue mode a failed item emits {ClaimFailed}, releases 0 and the batch goes on.
+    ///         in continue mode a failed item emits {ClaimFailed}, releases 0 and the batch goes
+    ///         on.
+    /// @param claims The plain releases, at most {MAX_CLAIMS}.
+    /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claim(Claim[] calldata claims, bool continueOnFailure)
         external

@@ -46,8 +46,8 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     mapping(bytes32 product => Currency) private _defaults;
 
     /// @param authority The AccessManager governing this contract.
-    /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is admitted
-    ///        at deployment because 6529 Stream launches with it, at revision 1.
+    /// @param ethIncrementFloor The ETH increment floor in wei (ADR 0001: 0.001 ETH); ETH is
+    ///        admitted at deployment because 6529 Stream launches with it, at revision 1.
     constructor(address authority, uint256 ethIncrementFloor) AccessManaged(authority) {
         _admit(ETH, ethIncrementFloor);
     }

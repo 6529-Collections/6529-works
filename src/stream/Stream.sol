@@ -231,7 +231,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         WorkTerms memory w;
         (terms, w) = _quote(item, artistId);
         Terms memory shared = Terms(
-            // `artistId` was checked to fit 160 bits above.
+            // `_consume` checked that `artistId` fits 160 bits.
             // forge-lint: disable-next-line(unsafe-typecast)
             uint160(artistId),
             w.royaltyRate,

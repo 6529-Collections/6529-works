@@ -67,8 +67,8 @@ library GovernanceConfig {
     uint32 internal constant TARGET_ADMIN_DELAY = Roles.SUCCESSOR;
     /// @notice Maximum genesis wiring calls. The whole configuration is one transaction under
     ///         the EIP-7825 cap of 2^24 gas: the example genesis configuration plus this many
-    ///         ERC-165-checking calls on cold accounts measures about 6.6M gas, 39% of the cap,
-    ///         including worst-case calldata (`GenesisConfig.t.sol` gates it at 60%).
+    ///         ERC-165-checking calls on cold accounts measures 6,792,419 Prague gas, 40.5% of the
+    ///         cap, including worst-case calldata (`GenesisConfig.t.sol` gates it at 60%).
     uint256 internal constant MAX_WIRING_CALLS = 64;
 
     /// @notice Fewer than {MIN_GUARDIANS} guardian grants.

@@ -35,13 +35,14 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 /// @title PackageRegistry
 /// @notice Approved package roots, party consent, single-use items, per-product content
 ///         uniqueness and the lead artist's revocable "move to Stream" (ADR 0001 section 3).
-/// @dev Gas (the 300K auction start). `consume` writes one fresh slot, 6529 Stream's
-///      `contentHash => itemHash`, which is both the consume-once record and the uniqueness
-///      record. It reads consent from `acceptedAs[root][account]`, and its only external call is
-///      the lead's active authority. Move nonces live in a per-artist bitmap of 255 nonces per
-///      word whose top bit is a sentinel: the acceptance that creates an identity writes the
-///      sentinel into word 0, so an artist's first 255 starts update a nonzero slot instead of
-///      creating one. Tools should therefore use each artist's nonces sequentially from 0.
+/// @dev Gas (the auction start's budget: 350K Prague gas, ADR 0004). `consume` writes one fresh
+///      slot, 6529 Stream's `contentHash => itemHash`, which is both the consume-once record and
+///      the uniqueness record. It reads consent from `acceptedAs[root][account]`, and its only
+///      external call is the lead's active authority. Move nonces live in a per-artist bitmap of
+///      255 nonces per word whose top bit is a sentinel: the acceptance that creates an identity
+///      writes the sentinel into word 0, so an artist's first 255 starts update a nonzero slot
+///      instead of creating one. Tools should therefore use each artist's nonces sequentially from
+///      0.
 ///
 ///      Replay protection never looks at signature bytes (a 65-byte signature and its 64-byte
 ///      ERC-2098 form both verify): a move spends a per-artist nonce, an item is single-use
@@ -259,8 +260,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev Reverts with `ClaimNotAllowed` unless 6529 Stream consumed `contentHash` for
-    ///      `itemHash` (the linked pair), and with `ContentUsed` when an edition already claimed it.
+    /// @dev Reverts with `ClaimNotAllowed` unless 6529 Stream consumed `contentHash` for `itemHash`
+    ///      (the linked pair), and with `ContentUsed` when an edition already claimed it.
     function claimContent(bytes32 contentHash, bytes32 itemHash) external {
         if (msg.sender != editions) revert UnboundCaller(msg.sender);
         if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {

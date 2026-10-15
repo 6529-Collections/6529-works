@@ -12,20 +12,25 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      requested beforehand (`IEntropyModule.requestSeed`), so the start never waits on
 ///      randomness and nothing is ever in custody without a clock. The start never deploys a
 ///      split wallet. Sale IDs are derived: `saleIdOf(token, tokenId)`. Per sale the adapter
-///      keeps two or three storage words; the seller and fee terms are read back from the token
-///      (`IMintTarget.primaryTerms`) at settlement.
-///Bidding: the first bid must be at least `max(openingBid(currency), 1)`; later bids must reach the
-///      high bid plus `max(incrementShare, the currency's increment floor)`, the floor read from
-///      the economics lane's asset allowlist and locked at the first bid. A bid in the last
-///      `extensionWindow` seconds moves the end to `extensionWindow` seconds after it. Outbid
-///      bidders are credited (pull). Settlement is permissionless after the end and never depends
-///      on the winner accepting the token: a failed delivery leaves a pending claim. With no bids
-///      the token goes to the artist's active authority, resolved at settlement; while a recovery
-///      override is pending there is none, and settlement waits for its outcome.
+///      keeps at most three storage words (one from the start, one more from the first bid, and
+///      a third only for a recipient other than the bidder or a dispute pause); the seller and
+///      fee terms are read back from the token (`IMintTarget.primaryTerms`) at settlement.
 ///
-///      Disputes: the guardian may pause a live auction for at most 7 days in total; bidders may
-///      withdraw while it is paused; an upheld dispute cancels it, refunds the bid and burns the
-///      token; a rejected dispute, or no outcome within the allowance, resumes it.
+///      Bidding: the start locks the currency, its opening bid (`openingBid(currency)` then),
+///      the increment share and the anti-snipe window. The first bid must be at least the
+///      locked opening bid, a withdrawn bid's reserve (`withdrawBid`), and 1; later bids must
+///      reach the high bid plus `max(the increment share of it, rounded up; the currency's
+///      increment floor)`, the floor read from the asset allowlist and locked at the first bid.
+///      A bid in the last `extensionWindow` seconds moves the end to `extensionWindow` seconds
+///      after it. Outbid bidders are credited (pull). Settlement is permissionless after the end
+///      and never depends on the winner accepting the token: a failed delivery leaves a pending
+///      claim. With no bids the token goes to the artist's active authority, resolved at
+///      settlement; while a recovery override is pending there is none, and settlement waits
+///      for its outcome.
+///
+///      Disputes: the guardian may pause a live auction once, for at most 7 days (`MAX_PAUSE`);
+///      bidders may withdraw while it is paused; an upheld dispute cancels it, refunds the bid
+///      and burns the token; a rejected dispute, or no outcome within the 7 days, resumes it.
 ///      `saleKind()` is `SaleKind.ENGLISH_AUCTION`. PERMIT2 bids use the `Typehashes.BID_WITNESS`
 ///      and `Typehashes.START_BID_WITNESS` witnesses.
 interface IEnglishAuction is ISaleAdapter {
@@ -82,12 +87,20 @@ interface IEnglishAuction is ISaleAdapter {
     );
     /// @notice The guardian paused an auction for a dispute.
     event AuctionPaused(uint256 indexed saleId, bytes32 disputeRef);
-    /// @notice A paused auction resumed: it ends at `endTime`, its remaining time at the pause
-    ///         or the governed duration from now, whichever is later.
+    /// @notice A halted auction resumed and ends at `endTime`: after a dispute pause, its
+    ///         remaining time at the pause, the governed duration or the sale's anti-snipe window,
+    ///         whichever is longest; reopened after a currency freeze, the governed duration or
+    ///         the anti-snipe window, whichever is longer.
+    /// @param saleId The auction's sale ID.
+    /// @param endTime The new end, in Unix seconds.
     event AuctionResumed(uint256 indexed saleId, uint64 endTime);
     /// @notice An upheld dispute cancelled an auction: the bid was refunded, the token burned.
     event AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef);
-    /// @notice The high bidder withdrew its bid while the auction was paused.
+    /// @notice The high bidder withdrew its bid while the auction was paused, or while its
+    ///         currency was deprecated before settlement.
+    /// @param saleId The auction's sale ID.
+    /// @param bidder The high bidder that withdrew.
+    /// @param amount The withdrawn bid, credited back to the bidder, in base units.
     event BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount);
     /// @notice Delivery to `recipient` failed at settlement; it may claim the token.
     event DeliveryPending(uint256 indexed saleId, address indexed recipient);
@@ -102,7 +115,7 @@ interface IEnglishAuction is ISaleAdapter {
     error InvalidAuctionState(uint256 saleId, AuctionState state);
     /// @notice The bid is below `minimumBid`.
     error BidTooLow(uint256 required, uint256 offered);
-    /// @notice The 7-day pause allowance is used up.
+    /// @notice The auction's one dispute pause was already used.
     error PauseExhausted(uint256 saleId);
     /// @notice `outcomeRef` is not the token's latest DISPUTE_OUTCOME statement.
     error OutcomeNotRecorded(uint256 saleId, bytes32 outcomeRef);
@@ -144,11 +157,14 @@ interface IEnglishAuction is ISaleAdapter {
     ///         limit of about 1.11M); if it fails, even through the escrow, it is credited to its
     ///         wallet (`Credited`, paid out later with `claimFor`), so delivery never depends on it
     ///         (MONEY-1). While the locked currency is deprecated nothing settles
-    ///         (`AssetNotActive`; a standing bidder may withdraw); after it is re-admitted, the
-    ///         first call reopens the auction for the governed duration (or the sale's anti-snipe
-    ///         window if longer) and emits `AuctionResumed`. Once the currency has been
+    ///         (`AssetNotActive`; a standing bidder may withdraw). If it was re-admitted after
+    ///         the end, or within the sale's last anti-snipe window before it, the first call
+    ///         reopens the auction for the governed duration (or the anti-snipe window if longer)
+    ///         and emits `AuctionResumed` instead of settling. Once the currency has been
     ///         deprecated for 30 days, the call ends the sale unsold: the standing bid is
-    ///         credited back and the work goes to the artist (MARKET-2).
+    ///         credited back and the work goes to the artist (MARKET-2). A sale of a federated
+    ///         contract the registry has since delisted settles the same way (MARKET-5).
+    /// @param saleId The ended auction's sale ID.
     function settle(uint256 saleId) external;
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
     ///         token there.
@@ -161,19 +177,22 @@ interface IEnglishAuction is ISaleAdapter {
     ///         bidder claims, to the address it chooses.
     function claimFor(address account, address currency) external returns (uint256 amount);
 
-    /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
+    /// @notice Pauses a live auction for a dispute, once per auction. GUARDIAN role (immediate).
+    /// @param saleId The live auction's sale ID.
+    /// @param disputeRef A reference to the dispute, emitted in `AuctionPaused`; not checked.
     function pause(uint256 saleId, bytes32 disputeRef) external;
     /// @notice Resumes a paused auction after a rejected dispute, for its remaining time or the
     ///         governed duration, whichever is longer (the anti-snipe window if longer still),
-    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders). Refused until 48 hours
-    ///         (`Roles.STANDARD`) after the pause, so the guardians can always cancel a resume,
-    ///         even one scheduled before the pause. A pause also ends by itself once the 7-day
-    ///         allowance runs out, without any call.
+    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders).
+    ///         Refused until 48 hours (`Roles.STANDARD`) after the pause, so the guardians can
+    ///         always cancel a resume, even one scheduled before the pause. A pause also ends by
+    ///         itself 7 days (`MAX_PAUSE`) after it began, without any call.
+    /// @param saleId The paused auction's sale ID.
     function resume(uint256 saleId) external;
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
     ///         burns the token. PARAMETER_SETTER role, while paused, and like `resume` no earlier
-    ///         than 48 hours after the pause (`UnpauseTooEarly`): the window is inclusive,
-    ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and be the token's
+    ///         than 48 hours after the pause (`UnpauseTooEarly`), and no later than
+    ///         `pausedAt + MAX_PAUSE` inclusive. `outcomeRef` must be nonzero and be the token's
     ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
     ///         fallback), recorded after the pause: an outcome recorded before the pause, or one
     ///         about the package item, cannot cancel.

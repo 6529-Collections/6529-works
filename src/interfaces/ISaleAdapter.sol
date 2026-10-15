@@ -32,8 +32,13 @@ interface ISaleAdapter is IERC165 {
     );
 
     /// @notice A sale settled: an auction ended, or one purchase completed.
-    /// @param buyer The paying bidder or buyer; zero when an auction drew no bids.
-    /// @param recipient Who received the tokens (the artist when there were no bids).
+    /// @param saleId The sale's ID.
+    /// @param token The token contract.
+    /// @param tokenId The token ID (the edition ID for fixed price and Dutch).
+    /// @param buyer The paying bidder or buyer; zero when no bid won an auction.
+    /// @param recipient Who receives the tokens (the artist when no bid won).
+    /// @param quantity The number of tokens sold: 1 for an auction, the copies bought otherwise.
+    /// @param currency The locked currency, zero for ETH.
     /// @param price The realized total price, equal to `sellerProceeds + fee`.
     event SaleSettled(
         uint256 indexed saleId,
@@ -50,8 +55,16 @@ interface ISaleAdapter is IERC165 {
         uint256 fee
     );
 
-    /// @notice `amount` was credited to `account` (an outbid refund, a withdrawn bid, or an
-    ///         overpayment) and is claimable.
+    /// @notice `amount` was credited to `account` and is claimable: an outbid refund, a
+    ///         withdrawn bid, or an ETH overpayment; for the auction also the high bid refunded by
+    ///         a dispute cancel or by a sale ending unsold (a currency freeze past its 30 days, or
+    ///         a delisted federated contract), and an ERC-20 settlement payout that failed in its
+    ///         own frame (MONEY-1), which `IEnglishAuction.claimFor` pays out.
+    /// @param account The account credited: the bidder or buyer, or (MONEY-1) the seller or fee
+    ///        wallet.
+    /// @param currency The credit's currency, zero for ETH.
+    /// @param saleId The sale the credit comes from.
+    /// @param amount The amount credited, in the currency's base units.
     event Credited(
         address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount
     );

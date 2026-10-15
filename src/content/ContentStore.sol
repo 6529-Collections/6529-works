@@ -28,8 +28,10 @@ contract ContentStore is IContentStore {
     uint256 public constant CHUNK_SIZE = SSTORE2.MAX_CHUNK_LENGTH;
     /// @inheritdoc IContentStore
     /// @dev 512 chunks is about 12.58 MB. Registering a manifest at the limit costs about 11.8M
-    ///      gas including calldata, inside the 16,777,216 cap that EIP-7825 (Fusaka) puts on every
-    ///      transaction, with room for repricing. The limit also bounds every file loop.
+    ///      Prague gas including calldata, inside the 16,777,216 cap that EIP-7825 (Fusaka) puts
+    ///      on every transaction. Under Glamsterdam it costs about 57.6M, mostly state gas, which
+    ///      Sepolia keeps outside that cap (docs/audit/known-limitations.md, LIM-GAS-2 and
+    ///      LIM-CNT-11). The limit also bounds every file loop.
     uint256 public constant MAX_CHUNKS = 512;
     /// @notice Longest accepted MIME type.
     uint256 public constant MAX_MIME_LENGTH = 64;

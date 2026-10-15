@@ -639,8 +639,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @dev Every party of the work's item consents, in order, each by its active authority
-    ///      (artist ID `artistIdOf(account)`, else `uint160(account)`). A wrong count or a passed
-    ///      deadline reports the party index `signatures.length`.
+    ///      (artist ID `artistIdOf(account)`, else `uint160(account)`). A wrong count reports the
+    ///      party index `signatures.length`.
     function _checkConsents(
         uint256 tokenId,
         PackageItem calldata item,

@@ -9,9 +9,11 @@ import { BoundedCall } from "../libraries/BoundedCall.sol";
 ///         when it returns exactly one word holding `true`, and both balances must then move by
 ///         exactly the amount. Fee-on-transfer, rebasing-rounding, no-return and false-returning
 ///         tokens therefore fail closed instead of corrupting accounting. ETH sends share one
-///         primitive that copies no return data.
-/// @dev Internal functions only, so nothing here is a linked library. Calls copy at most one word of
-///      return data, so a return-data bomb costs the token, not the caller.
+///         primitive that copies no return data. Permit2 pulls are the exception: Permit2 calls
+///         the token itself and accepts one that returns nothing, so the sale adapters check
+///         only the balance deltas around it, and a no-return token can pay through Permit2.
+/// @dev Internal functions only, so nothing here is a linked library. Calls copy at most one word
+///      of return data, so a return-data bomb costs the token, not the caller.
 library TokenTransfer {
     /// @notice The token reverted, returned something other than `true`, or has no code.
     error TokenCallFailed(address asset, bytes4 selector);
@@ -68,6 +70,9 @@ library TokenTransfer {
 
     /// @notice Transfers exactly `amount` of `asset` from this contract to `to`, giving the token
     ///         exactly `gasLimit` gas, so a refusal is the token's and never the caller's gas.
+    ///         Under Glamsterdam `gasLimit` caps regular gas only: a token creating storage draws
+    ///         state gas from the transaction's reservoir, so its outcome can depend on the
+    ///         caller's gas limit (CALLS-3; `BoundedCall`, LIM-GAS-2).
     /// @return moved False when the token reverted, or returned `false` and moved nothing; the
     ///         caller may then take another route. Reverts on any other misbehaviour, and when the
     ///         caller cannot forward `gasLimit` in full.

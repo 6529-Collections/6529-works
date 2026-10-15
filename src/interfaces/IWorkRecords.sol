@@ -26,7 +26,7 @@ import { Locator, LocatorKind, MediaFile } from "./types/ContentTypes.sol";
 ///      commits to the token ID, the version, the record file ID, the license key and text, the
 ///      royalty rate and the effective renderer. The version bumps only on a real change (a new
 ///      record pointer, license, royalty rate or renderer pin); an identical re-publish is a
-///      no-op, and permissionless actions (`syncOnChain`, `addLocator`) never change it. Every
+///      no-op, and delivery actions (`syncOnChain`, `addLocator`) never change it. Every
 ///      finalize and signature binds the state hash, so nothing applies to a state its signer
 ///      did not see. Every visible change asks 6529 Stream to emit ERC-4906 and, for an edition
 ///      master, calls `IEditions.notifyMasterUpdated` (this satellite is bound in both).
@@ -79,13 +79,23 @@ interface IWorkRecords {
     event LocatorAdded(
         uint256 indexed tokenId, bytes32 indexed fileId, uint256 index, Locator locator
     );
-    /// @notice The global preferred locator kind changed.
+    /// @notice The global preferred locator kind was set (emitted even when it is unchanged).
+    /// @param previous The kind before the call.
+    /// @param next The kind after the call (NONE when cleared).
     event PreferredKindSet(LocatorKind previous, LocatorKind next);
-    /// @notice A collection's preferred locator kind changed.
+    /// @notice A collection's preferred locator kind was set (emitted even when it is unchanged).
+    /// @param collectionId The 6529 Stream collection ID.
+    /// @param previous The kind before the call.
+    /// @param next The kind after the call (NONE when cleared).
     event CollectionPreferredKindSet(
         uint256 indexed collectionId, LocatorKind previous, LocatorKind next
     );
-    /// @notice A file's preferred locator index changed (`type(uint256).max` means none).
+    /// @notice A file's preferred locator index was set (emitted even when it is unchanged;
+    ///         `type(uint256).max` means none).
+    /// @param tokenId The work's token ID.
+    /// @param fileId The media file.
+    /// @param previous The index before the call.
+    /// @param next The index after the call.
     event FilePreferenceSet(
         uint256 indexed tokenId, bytes32 indexed fileId, uint256 previous, uint256 next
     );
@@ -241,17 +251,20 @@ interface IWorkRecords {
     // ----- locators and preferred location (ADR 0001 section 8) -----
 
     /// @notice Appends an ARWEAVE or IPFS locator for one of the work's media files. Callable by
-    ///         the artist or the PLATFORM role, also after finalize (delivery routing stays
-    ///         operable). The URI must be a content address with nothing after it: `ar://` and
-    ///         a 43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile (see
-    ///         `Locator`). Each file takes at most half of `Limits.MAX_LOCATORS_PER_FILE` (8)
-    ///         from the artist and half from the platform, so neither can exhaust the other's,
-    ///         and a URI already registered for the file is refused (`InvalidLocator`). After
-    ///         finalize only the PLATFORM role adds locators (the artist's call is then
-    ///         unauthorized): "Final" fixes the content, and since the content a locator names
-    ///         is not verified on-chain, a finalized work's copies are the platform's to
-    ///         register and the storage operator's to choose. The platform may then use the
-    ///         file's whole `Limits.MAX_LOCATORS_PER_FILE`, the artist's unused slots included.
+    ///         the artist until finalize, and by the PLATFORM role also after it (delivery routing
+    ///         stays operable). The URI must be a content address with nothing after it: `ar://`
+    ///         and a 43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile
+    ///         (see `Locator`). Each file takes at most half of `Limits.MAX_LOCATORS_PER_FILE` (8)
+    ///         from the artist and half from the platform, so neither can exhaust the other's, and
+    ///         a URI already registered for the file is refused (`InvalidLocator`). After finalize
+    ///         only the PLATFORM role adds locators (the artist's call is then unauthorized):
+    ///         "Final" fixes the content, and since the content a locator names is not verified
+    ///         on-chain, a finalized work's copies are the platform's to register and the storage
+    ///         operator's to choose. The platform may then use the file's whole
+    ///         `Limits.MAX_LOCATORS_PER_FILE`, the artist's unused slots included.
+    /// @param tokenId A work with an open record.
+    /// @param fileId One of the work's media files (`FileNotInWork` otherwise).
+    /// @param locator The ARWEAVE or IPFS locator of a copy of that file.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
     /// @notice A file's registered locators, in registration order.
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);

@@ -32,11 +32,18 @@ interface IDependencyRegistry {
     function store() external view returns (IContentStore);
 
     /// @notice Registers `fileId` as `(name, version)`. The file must be registered and
-    ///         on-chain complete in the store. Restricted to the registrar role.
+    ///         on-chain complete in the store. PARAMETER_SETTER role (48 hours, so a guardian can
+    ///         cancel a version before it is permanent).
+    /// @param name The library's name: 1 to 32 bytes of `[a-z0-9._-]`, left-aligned, then zero
+    ///        bytes.
+    /// @param version The version label, in the same form as `name`; not yet registered for it.
+    /// @param fileId The content-store file holding the library.
     function register(bytes32 name, bytes32 version, bytes32 fileId) external;
 
     /// @notice Marks `(name, version)` deprecated. A flag only: nothing is deleted, and works
-    ///         that pin the version keep rendering. Cannot be undone. Restricted.
+    ///         that pin the version keep rendering. Cannot be undone. GUARDIAN role (immediate).
+    /// @param name A registered library name.
+    /// @param version A registered, not yet deprecated version of `name`.
     function deprecate(bytes32 name, bytes32 version) external;
 
     /// @notice Everything a consumer needs to load `(name, version)`: the store file, whether it

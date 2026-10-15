@@ -16,14 +16,16 @@ import { EditionFormat, EditionTerms, License, PackageItem } from "./types/Packa
 ///      transaction, and never changes. An edition renders its master's media and record and
 ///      carries its master's license: `uri(id)` is served by the master's renderer
 ///      (`IStream.rendererOf(id)`). Copies are sold only through the admitted fixed-price or
-///      Dutch adapters, at the price, currency and size the package fixed; minting stops if the
-///      master is burned. There are no numbered editions.
+///      Dutch adapters, at the price, currency and size the package fixed. A master with an
+///      edition can never be burned (6529 Stream burns only before the primary sale settles), so
+///      minting reads nothing from 6529 Stream. There are no numbered editions.
 interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice An edition's state; economics are locked at creation.
     /// @param contentHash The master's content hash; unique in the Editions product.
     /// @param terms The edition terms from the approved package item.
     /// @param minted Copies minted so far.
-    /// @param windowStart When the first copy was minted (the OPEN window starts), or zero.
+    /// @param windowStart For an OPEN edition, when its first copy was minted (its window's
+    ///        start); zero before that, and always zero for a FIXED edition.
     /// @param seller The artist-portion split wallet (a predicted address).
     /// @param feeRecipient The network fee recipient.
     /// @param feeShare The network share of primary sales and royalties, out of 100,000.
@@ -70,23 +72,22 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param next The rate after the change, out of 100,000.
     event RoyaltyRateChanged(uint256 indexed editionId, uint32 previous, uint32 next);
 
-    /// @notice The item does not match the master's committed item hash or its package, the
-    ///         package is no longer approved, the item is not an EDITION_MASTER item, or the
-    ///         master's sale has not settled.
+    /// @notice The item does not match the master's committed item hash, the proof does not
+    ///         place it in `packageRoot`, the root was never registered (a revoked root is
+    ///         accepted: SIGS-4), the item is not an EDITION_MASTER item, or the master's sale
+    ///         has not settled.
     error NotEditionMaster(uint256 workId);
     /// @notice The master already has its edition.
     error EditionExists(uint256 editionId);
     /// @notice No edition has this ID.
     error UnknownEdition(uint256 editionId);
-    /// @notice The mint exceeds the edition size, falls outside the OPEN window, or the master
-    ///         was burned.
+    /// @notice The mint exceeds the edition size or falls outside the OPEN window.
     error EditionUnavailable(uint256 editionId);
     /// @notice The caller is not the bound contract this function serves.
     error UnboundCaller(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The target lacks code or the expected ERC-165 support, or is an EIP-7702 delegated
-    ///         account.
+    /// @notice The work-records satellite to bind is not the one 6529 Stream bound.
     error InvalidBinding(address target);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
@@ -130,8 +131,9 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     function bindWorkRecords(address target) external;
     /// @notice The bound work-records satellite.
     function workRecords() external view returns (address);
-    /// @notice Re-emits ERC-4906 for master `workId`'s edition after the master's record, license
-    ///         or renderer changed; a no-op when the master has no edition. Bound work-records
+    /// @notice Re-emits ERC-4906 for master `workId`'s edition after anything the edition renders
+    ///         from its master changed (record, license, renderer, locators, preferences, on-chain
+    ///         sync or royalty rate); a no-op when the master has no edition. Bound work-records
     ///         satellite only.
     function notifyMasterUpdated(uint256 workId) external;
     /// @notice Sets an edition's royalty rate after its master's changed by agreement. Bound

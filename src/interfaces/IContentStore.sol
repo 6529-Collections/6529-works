@@ -41,8 +41,8 @@ interface IContentStore {
 
     /// @notice What a manifest declares about a file.
     /// @param sha256Hash SHA-256 of the fully DECODED media: base64-decoded and then gunzipped, as
-    ///        `encoding` requires. This is the hash a work record commits to as the media hash.
-    ///        Off-chain only.
+    ///        `encoding` requires. A work's media list declares the same value per file
+    ///        (`MediaFile.sha256Hash`, committed by the item's `mediaHash`). Off-chain only.
     /// @param length Length in bytes of the STORED data, which `read` returns.
     /// @param chunkCount Number of chunks, `ceil(length / CHUNK_SIZE)`.
     /// @param encoding How to decode the stored bytes.

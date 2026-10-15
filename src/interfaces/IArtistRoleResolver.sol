@@ -5,8 +5,8 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 
 /// @title IArtistRoleResolver
 /// @notice The minimal question the statement log asks the artist registry: may `account` speak
-///         as an artist of this subject? The registry implements this later; the log only
-///         depends on this interface.
+///         as an artist of this subject? The artist registry implements it; the log depends
+///         only on this interface.
 /// @dev Must support ERC-165 for this interface, because the log checks that at install time
 ///      (ADR 0001 section 13, requirement 6). `token == address(0)` means `id` is a work ID that
 ///      has no token yet (for example an approved package item).

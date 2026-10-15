@@ -2,10 +2,10 @@
 pragma solidity ^0.8.24;
 
 /// @title IAssetAllowlist
-/// @notice The governed payment-currency allowlist (ADR 0001 section 5). Sale adapters read it when a
-///         sale starts and lock the currency and its increment floor for that sale. Withdrawals
-///         never read it: split wallets and the revenue escrow release any asset they hold.
-///         ETH is `address(0)`.
+/// @notice The governed payment-currency allowlist (ADR 0001 section 5). Sale adapters read it when
+///         a sale starts and lock the currency and its increment floor for that sale. Withdrawals
+///         never read it: split wallets and the revenue escrow release any asset they hold. ETH is
+///         `address(0)`.
 /// @dev Every governed setter is compare-and-set on a revision counter. Each asset and each
 ///      product has its own counter, bumped by every change to it (admission, deprecation, floor
 ///      change; default change), so a queued operation runs only against the exact state it was

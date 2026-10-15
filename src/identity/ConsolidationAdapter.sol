@@ -47,14 +47,14 @@ interface IDelegationManagement {
 ///      Every read forwards exactly {READ_GAS} and reverts when the caller cannot forward it
 ///      (`BoundedCall.BoundedCallInsufficientGas`), so a caller choosing its gas limit cannot
 ///      truncate a walk. Reads fail closed: only a revert with no data that did not fully exhaust
-///      the stipend is the end of an array. A read that exhausts the stipend (out of gas),
-///      reverts with data or returns too much reverts with
-///      `IConsolidationSource.DelegationReadFailed`, so a repriced or broken source halts the
-///      registry's identity calls (registration and execution skip their refresh instead)
-///      rather than reading as "not consolidated". The getters cost at most about 16K gas cold
-///      (a `GlobalData` read is seven cold slots); the 200K stipend leaves room for a large
-///      repricing, and only the gas used is paid. Walks are bounded: {MAX_DELEGATES_SCANNED} delegates per account and
-///      {MAX_REGISTRATIONS_READ} registrations per direction.
+///      the stipend is the end of an array. A read that exhausts the stipend (out of gas), reverts
+///      with data or returns too much reverts with `IConsolidationSource.DelegationReadFailed`, so
+///      a repriced or broken source halts the registry's identity calls (registration and execution
+///      skip their refresh instead) rather than reading as "not consolidated". The getters cost at
+///      most about 16K gas cold (a `GlobalData` read is seven cold slots); the 200K stipend leaves
+///      room for a large repricing, and only the gas used is paid. Walks are bounded:
+///      {MAX_DELEGATES_SCANNED} delegates per account and {MAX_REGISTRATIONS_READ} registrations
+///      per direction.
 ///
 ///      This is a live view, and the account's keys control it: its own key, and any use-case-998
 ///      sub-delegate of it (`registerDelegationAddressUsingSubDelegation`), can add, revoke or

@@ -86,6 +86,9 @@ abstract contract MintSaleBase is ISaleAdapter, ERC165, AccessManaged, Reentranc
     }
 
     /// @notice Gas forwarded with an ETH payout; a wallet that needs more is paid in escrow.
+    ///         Under Glamsterdam it caps regular gas only: a wallet that writes new state draws
+    ///         state gas from the buyer's EIP-8037 reservoir, so whether it is paid or escrowed
+    ///         can depend on the purchase's gas limit (CALLS-3, LIM-GAS-2).
     uint256 public constant PAYOUT_GAS = 100_000;
 
     /// @notice Where a payout goes when the wallet or the token refuses it.

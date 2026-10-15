@@ -45,24 +45,24 @@ import { Dependency } from "../libraries/Dependency.sol";
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
 ///         12). See {IEnglishAuction} for the behaviour; this contract adds the storage layout and
 ///         the bounds.
-/// @dev Start gas (PR #10 review, D3 and E2). A start in steady state writes one storage word:
-///      the token, its ID (at most 32 bits), the end time (32-bit seconds, so starts stop in
-///      2106), the sale's state, and a 16-bit reference to a shared "terms" record. A terms record
-///      holds the values every sale locks at start (currency, opening bid, increment share,
-///      anti-snipe window, and a federated token's registry fee) and is written once per distinct
-///      combination. The currency's increment floor is locked by the first bid (E2), which only
-///      later bids need. Seller, fee recipient, fee share and the no-bid recipient are read back from
-///      the token (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`. A VRF item's seed
-///      is checked by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint
-///      data is opaque here. A pause is recorded once (`pausedAt`) and is live through
-///      `pausedAt + MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay
-///      exactly at day 5 still lands. After that it ends by itself: views and every mutating
-///      entry point treat it as resumed with a {MAX_PAUSE} pause, and the first mutating call
-///      writes the resumption down. Every bid checks that the locked currency is still active in
-///      the allowlist. Deprecation freezes a running auction (MARKET-2): a standing bid settles
-///      only once the currency is re-admitted (its bidder may withdraw meanwhile), and the first
-///      settle after a re-admission in the auction's last window or after its end reopens it
-///      instead (`AuctionResumed`). Refunds and claims never read the allowlist.
+/// @dev Start gas (PR #10 review, D3 and E2). A start in steady state writes one storage word: the
+///      token, its ID (at most 32 bits), the end time (32-bit seconds, so starts stop in 2106), the
+///      sale's state, and a 16-bit reference to a shared "terms" record. A terms record holds the
+///      values every sale locks at start (currency, opening bid, increment share, anti-snipe
+///      window, and a federated token's registry fee) and is written once per distinct combination.
+///      The currency's increment floor is locked by the first bid (E2), which only later bids need.
+///      Seller, fee recipient, fee share and the no-bid recipient are read back from the token
+///      (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`. A VRF item's seed is checked
+///      by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint data is
+///      opaque here. A pause is recorded once (`pausedAt`) and is live through `pausedAt +
+///      MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay exactly at day
+///      5 still lands. After that it ends by itself: views and every mutating entry point treat it
+///      as resumed with a {MAX_PAUSE} pause, and the first mutating call writes the resumption
+///      down. Every bid checks that the locked currency is still active in the allowlist.
+///      Deprecation freezes a running auction (MARKET-2): a standing bid settles only once the
+///      currency is re-admitted (its bidder may withdraw meanwhile), and the first settle after a
+///      re-admission in the auction's last window or after its end reopens it instead
+///      (`AuctionResumed`). Refunds and claims never read the allowlist.
 contract EnglishAuction is
     IEnglishAuction,
     IERC721Receiver,
@@ -86,9 +86,16 @@ contract EnglishAuction is
     ///         absolute ceiling of the governed opening bid.
     uint256 public constant OPENING_BID_FLOORS = 1_000;
     /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
+    ///         Under Glamsterdam it caps regular gas only: a wallet that writes new state draws
+    ///         state gas from the settler's EIP-8037 reservoir, so whether it is paid or escrowed
+    ///         can depend on the settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should send
+    ///         at most 2^24 gas.
     uint256 public constant PAYOUT_GAS = 100_000;
     /// @notice Gas forwarded to the token's `safeTransferFrom` when settling; a failure leaves a
-    ///         pending claim.
+    ///         pending claim. Under Glamsterdam it caps regular gas only: a recipient whose
+    ///         `onERC721Received` writes new state draws state gas from the settler's EIP-8037
+    ///         reservoir, so whether delivery succeeds or stays pending can depend on the
+    ///         settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should send at most 2^24 gas.
     uint256 internal constant DELIVERY_GAS = 300_000;
     /// @notice Gas the settlement needs after the delivery attempt returns.
     uint256 internal constant DELIVERY_RESERVE = 50_000;
@@ -156,7 +163,7 @@ contract EnglishAuction is
     address public immutable escrow;
     /// @inheritdoc IEnglishAuction
     address public immutable statementLog;
-    /// @notice The economics lane's asset allowlist: currencies, defaults and increment floors.
+    /// @notice The asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
     /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3).
     IEconomicsResolver public immutable economicsResolver;
@@ -295,13 +302,13 @@ contract EnglishAuction is
     // -------------------------------------------------------------------------- settlement
 
     /// @inheritdoc IEnglishAuction
-    /// @dev Reads the seller, the fee terms and the artist's active authority back from the
-    ///      token. With no bids the artist is recorded as the recipient. Marks the token's primary
-    ///      sale settled (`IMintTarget.markPrimarySettled`, E11) while the token is still in custody,
-    ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold
-    ///      up the edition. With no bids and no active artist (the token reports a zero creator
-    ///      while a recovery override is pending) it reverts with `InvalidRecipient(address(0))`
-    ///      and moves nothing, the token staying in custody; anyone may retry once the override
+    /// @dev Reads the seller, the fee terms and the artist's active authority back from the token.
+    ///      With no bids the artist is recorded as the recipient. Marks the token's primary sale
+    ///      settled (`IMintTarget.markPrimarySettled`, E11) while the token is still in custody,
+    ///      whether or not the delivery then succeeds, so a winner who never claims cannot hold up
+    ///      the edition. With no bids and no active artist (the token reports a zero creator while
+    ///      a recovery override is pending) it reverts with `InvalidRecipient(address(0))` and
+    ///      moves nothing, the token staying in custody; anyone may retry once the override
     ///      executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);

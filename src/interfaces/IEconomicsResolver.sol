@@ -11,8 +11,8 @@ import { ProductEconomics, WorkTerms } from "./types/EconomicsTypes.sol";
 ///         network fee and royalty rate for new works, the terms a work locks at mint, the
 ///         currency a sale starting now must lock, and each product's default license.
 /// @dev Products are `PRODUCT_STREAM`, `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`. The currency
-///      allowlist, per-currency increment floors and default currencies live in the economics
-///      lane's `IAssetAllowlist`, which this resolver reads; split wallet addresses come from
+///      allowlist, per-currency increment floors and default currencies live in the
+///      `IAssetAllowlist`, which this resolver reads; split wallet addresses come from
 ///      its `ISplitFactory`. Changes apply to works and sales that start afterwards only: works
 ///      lock their terms at mint and sales lock their currency at start. Every setter is
 ///      governed, non-payable and compare-and-set on a revision counter that each change to the
@@ -51,11 +51,11 @@ interface IEconomicsResolver is IERC165 {
     ///         deployed, so the auction start stays within its gas budget; a zero fee share omits
     ///         the fee payee. Reverts for a payee list the split factory would not accept.
     /// @dev The one derivation 6529 Stream, 6529 Editions and this resolver share, with `factory`
-    ///      the economics lane's `ISplitFactory` and `D` = 100,000:
+    ///      the `ISplitFactory` and `D` = 100,000:
     ///      - `seller = factory.walletFor(payees, bytes32(0))`;
     ///      - if `feeShare == 0`, `royaltyReceiver = seller` (no wallet);
-    ///      - otherwise `royaltyReceiver = factory.walletFor(list, bytes32(0))`, where `list` is the
-    ///        two fixed payees `(seller, D - feeShare)` and `(feeRecipient, feeShare)` sorted
+    ///      - otherwise `royaltyReceiver = factory.walletFor(list, bytes32(0))`, where `list` is
+    ///        the two fixed payees `(seller, D - feeShare)` and `(feeRecipient, feeShare)` sorted
     ///        ascending by account, exactly `Splits.royaltyPayees(seller, feeRecipient, feeShare)`.
     ///      A contract that stores only `seller` and the fee terms re-derives the receiver this
     ///      way and gets the same address.
@@ -80,9 +80,11 @@ interface IEconomicsResolver is IERC165 {
         external
         view
         returns (uint64 feeTerms, uint64 royaltyRate, uint64 license);
-    /// @notice The economics lane's asset allowlist (immutable).
+    /// @notice The asset allowlist (immutable).
+    /// @return The `IAssetAllowlist` this resolver reads currencies from.
     function assetAllowlist() external view returns (address);
-    /// @notice The economics lane's split factory (immutable).
+    /// @notice The split factory (immutable).
+    /// @return The `ISplitFactory` this resolver predicts wallet addresses with.
     function splitFactory() external view returns (address);
 
     /// @notice Sets a product's network fee recipient and fee share for new works. FUNDS_SETTER
