@@ -125,7 +125,7 @@ no ceiling, or not run on Sepolia.
 | `startWithBid`, steady state | 330,161 | 350,000 | **7** | 0 | 982,312 |
 | `start`, two-party work | 297,048 | 350,000 | **6** | 0 | — |
 | `startWithBid`, two-party work | 338,411 | 350,000 | **7** | 0 | — |
-| `start`, VRF work | 294,337 | 350,000 | **6** | 0 | 852,868 |
+| `start`, VRF work | 296,555 | 350,000 | **6** | 0 | 852,868 |
 | `start`, edition master | 289,459 | 350,000 | **6** | 0 | 847,598 |
 | `startWithBid`, ERC-20 by relayed Permit2 | 375,037 | 388,000 (regression) | 7 | 0 | — |
 | `start`, first work in a new collection | 288,813 | 400,000 | 6 | 0 | 846,977 |
@@ -134,8 +134,8 @@ no ceiling, or not run on Sepolia.
 | `bid` that outbids | 73,348 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 158,414 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 133,414 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 94,009 | 96,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 314,840 | 331,000 (regression) | 9 | 0 | 1,118,699 |
+| `consume`, as Stream calls it | 94,043 | 96,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
 | `openSale` (one public phase) | 286,584 | 293,000 (regression) | 8 | 0 | 993,668 |
 | `purchase`, the first copy, new holder | 190,597 | 195,000 (regression) | 3 | 0 | 468,086 |
 | `purchase`, a later copy, new holder | 173,497 | 177,000 (regression) | 2 | 0 | 370,142 |
