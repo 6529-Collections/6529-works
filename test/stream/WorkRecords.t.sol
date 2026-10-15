@@ -76,6 +76,22 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(other.cc0TextFileId(), _license("CC0-1.0").textFileId);
     }
 
+    function test_supportsInterface_refusesALowerId() public view {
+        bytes4 lower = bytes4(uint32(type(IWorkRecords).interfaceId) - 1);
+        assertTrue(lower != 0x01ffc9a7);
+        assertFalse(records.supportsInterface(lower));
+    }
+
+    /// @dev The deployment's CC0 license must carry CC0's key: an identifier whose key sorts
+    ///      below it ("mit") or above it ("unlicense") is refused.
+    function test_constructor_refusesANonCc0KeyEitherWay() public {
+        string[2] memory ids = ["mit", "unlicense"];
+        for (uint256 i; i < ids.length; ++i) {
+            vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+            new WorkRecords(address(manager), address(stream), address(store), _license(ids[i]));
+        }
+    }
+
     // ------------------------------------------------------------------------ openRecord
 
     function test_openRecord_permissionless() public {
@@ -561,6 +577,39 @@ contract WorkRecordsTest is RecordsFixture {
         records.openRecord(tokenId, item, media);
     }
 
+    /// @dev The cap is exactly 16,384 bytes (16 KiB, as the README states): a preview declared
+    ///      `Base64` of that length opens, one byte more does not, and an `Identity` one counts
+    ///      four times its length.
+    function test_openRecord_previewCapIsExact() public {
+        uint256[3] memory lengths = [uint256(16_384), 16_385, 4_096];
+        IContentStore.Encoding[3] memory encodings = [
+            IContentStore.Encoding.Base64,
+            IContentStore.Encoding.Base64,
+            IContentStore.Encoding.Identity
+        ];
+        bool[3] memory opens = [true, false, true];
+        for (uint256 i; i < 3; ++i) {
+            MediaFile[] memory media = new MediaFile[](2);
+            media[0] = _mediaFile(50 + i, FileRole.PRIMARY, false);
+            bytes memory data = new bytes(lengths[i]);
+            data[0] = bytes1(uint8(i + 1));
+            bytes32[] memory hashes = new bytes32[](1);
+            hashes[0] = keccak256(data);
+            bytes32 fileId = store.registerManifest(
+                hashes, data.length, encodings[i], "image/png", sha256(data)
+            );
+            media[1] = MediaFile(fileId, sha256(data), FileRole.PREVIEW);
+            PackageItem memory item = _recordsItem(50 + i, media);
+            uint256 tokenId = _mint(item);
+            if (opens[i]) {
+                records.openRecord(tokenId, item, media);
+                assertTrue(records.isOpen(tokenId));
+            } else {
+                _expectBadOpen(tokenId, item, media);
+            }
+        }
+    }
+
     function _expectBadOpen(uint256 tokenId, PackageItem memory item, MediaFile[] memory media)
         internal
     {
@@ -594,6 +643,31 @@ contract WorkRecordsTest is RecordsFixture {
         assertFalse(records.isOpen(tokenId));
         // The core falls back to its default renderer for a work with no open record.
         assertEq(stream.rendererOf(tokenId), address(renderer));
+    }
+
+    /// @dev A CC0 license must name the deployment's CC0 text, whichever way another text sorts;
+    ///      and the CC0 text under another identifier, sorting below or above "cc0-1.0", is that
+    ///      identifier's license, not the default.
+    function test_openRecord_cc0TextAndDefaultLicenseEitherWay() public {
+        bytes32 cc0Text = records.cc0TextFileId();
+        bytes32[2] memory texts = [bytes32(uint256(cc0Text) - 1), bytes32(uint256(cc0Text) + 1)];
+        for (uint256 i; i < texts.length; ++i) {
+            MediaFile[] memory media = _single(10 + i, true);
+            PackageItem memory item = _recordsItem(10 + i, media);
+            item.license = License("cc0-1.0", texts[i]);
+            uint256 tokenId = _mint(item);
+            vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+            records.openRecord(tokenId, item, media);
+        }
+        string[2] memory ids = ["mit", "unlicense"];
+        for (uint256 i; i < ids.length; ++i) {
+            MediaFile[] memory media = _single(20 + i, true);
+            PackageItem memory item = _recordsItem(20 + i, media);
+            item.license = License(ids[i], cc0Text);
+            uint256 tokenId = _mint(item);
+            records.openRecord(tokenId, item, media);
+            assertEq(records.licenseOf(tokenId).spdxId, ids[i]);
+        }
     }
 
     // --------------------------------------------------------------------------- records
@@ -678,6 +752,21 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).recordFileId, next);
     }
 
+    /// @dev Only the store's `ContentFileUnknown` reads as an unknown record file: a failure whose
+    ///      selector sorts above it propagates as it is, like `Broken`, which sorts below.
+    function test_setRecord_propagatesAStoreFailureSortingAboveUnknownFile() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 next = _record(77);
+        bytes32 state = records.workStateHash(tokenId);
+        bytes memory high = abi.encodePacked(bytes4(0xffffffff));
+        vm.mockCallRevert(
+            address(store), abi.encodeWithSelector(IContentStore.fileInfo.selector), high
+        );
+        vm.prank(artist);
+        vm.expectRevert(high);
+        records.setRecord(tokenId, next, state);
+    }
+
     // -------------------------------------------------------------------------- finalize
 
     function test_finalize_pinsDefaultRenderer() public {
@@ -698,6 +787,29 @@ contract WorkRecordsTest is RecordsFixture {
         stream.setDefaultRenderer(address(renderer), address(next), address(next).codehash);
         assertEq(stream.rendererOf(tokenId), address(renderer));
         assertEq(stream.tokenURI(tokenId), renderer.tokenURI(address(stream), tokenId));
+    }
+
+    function test_finalize_emitsWorkFinalized() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 state = records.workStateHash(tokenId);
+        vm.recordLogs();
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i; i < logs.length; ++i) {
+            if (
+                logs[i].emitter == address(records)
+                    && logs[i].topics[0] == IWorkRecords.WorkFinalized.selector
+            ) {
+                assertEq(logs[i].topics[1], bytes32(tokenId));
+                (address r, bytes32 h) = abi.decode(logs[i].data, (address, bytes32));
+                assertEq(r, address(renderer));
+                assertEq(h, records.workStateHash(tokenId));
+                found = true;
+            }
+        }
+        assertTrue(found, "WorkFinalized");
     }
 
     function test_finalize_compareAndSetCatchesRendererChange() public {
@@ -810,6 +922,20 @@ contract WorkRecordsTest is RecordsFixture {
         store.writeChunk("CC-BY-SA-4.0 code");
         _relicense(tokenId, item, next);
         assertTrue(store.isComplete(records.licenseOf(tokenId).textFileId));
+    }
+
+    /// @dev Before finalize a license text needs only to be registered: a relicense to a text
+    ///      that is not stored yet goes through (found by mutation testing).
+    function test_relicense_beforeFinalizeNeedsOnlyARegisteredText() public {
+        MediaFile[] memory media = _single(2, true);
+        PackageItem memory item = _recordsItem(2, media);
+        item.license = License("CC-BY-4.0", _registerTextOnly("CC-BY-4.0 legal code"));
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        License memory next = License("CC-BY-SA-4.0", _registerTextOnly("CC-BY-SA-4.0 code"));
+        assertFalse(store.isComplete(next.textFileId));
+        _relicense(tokenId, item, next);
+        assertEq(records.licenseOf(tokenId).textFileId, next.textFileId);
     }
 
     /// @dev What the record checks cost, measured cold.
@@ -1088,6 +1214,73 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
     }
 
+    /// @dev Leaving CC0 is refused whichever way the next license's key sorts against CC0's:
+    ///      "mit" sorts below it, "unlicense" above.
+    function test_relicense_leavingCc0IsRefusedEitherWay() public {
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = License("cc0-1.0", records.cc0TextFileId());
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        string[2] memory nexts = ["mit", "unlicense"];
+        for (uint256 i; i < nexts.length; ++i) {
+            vm.prank(governor);
+            vm.expectRevert(
+                abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId)
+            );
+            records.relicense(tokenId, _license(nexts[i]), item, bytes32(0), 0, new bytes[](0));
+        }
+    }
+
+    /// @dev A license whose key sorts above CC0's is not CC0: the work can leave it.
+    function test_relicense_leavesALicenseKeyedAboveCc0() public {
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = _license("unlicense");
+        assertGt(
+            uint256(WorksHashing.licenseKey("unlicense")), uint256(WorksHashing.CC0_LICENSE_KEY)
+        );
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        _relicenseTo(tokenId, item, _license("mit"));
+        assertEq(records.licenseOf(tokenId).spdxId, "mit");
+    }
+
+    /// @dev Another identifier with the same text is a change, not a no-op, whichever way its key
+    ///      sorts: "gpl-3.0-only" sorts below "cc-by-4.0", and "mit" above both.
+    function test_relicense_anotherIdentifierWithTheSameTextEitherWay() public {
+        (uint256 tokenId, PackageItem memory item) = _byWork();
+        bytes32 text = records.licenseOf(tokenId).textFileId;
+        string[2] memory nexts = ["gpl-3.0-only", "mit"];
+        for (uint256 i; i < nexts.length; ++i) {
+            _relicenseTo(tokenId, item, License(nexts[i], text));
+            assertEq(records.licenseOf(tokenId).spdxId, nexts[i]);
+            assertEq(records.record(tokenId).version, i + 1);
+        }
+    }
+
+    function _relicenseTo(uint256 tokenId, PackageItem memory item, License memory next) internal {
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
+        vm.prank(governor);
+        records.relicense(tokenId, next, item, state, deadline, sigs);
+    }
+
+    /// @dev One signature per party: an extra one is refused, not ignored.
+    function test_relicense_refusesAnExtraSignature() public {
+        (uint256 tokenId, PackageItem memory item) = _byWork();
+        License memory next = _license("mit");
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes[] memory both = _both(_relicenseHash(tokenId, next, state, deadline));
+        bytes[] memory three = new bytes[](3);
+        (three[0], three[1], three[2]) = (both[0], both[1], both[1]);
+        vm.prank(governor);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 3));
+        records.relicense(tokenId, next, item, state, deadline, three);
+    }
+
     // ------------------------------------------------------------------------ royalty rate
 
     function test_setRoyaltyRate_withEveryConsent() public {
@@ -1192,7 +1385,9 @@ contract WorkRecordsTest is RecordsFixture {
     // ------------------------------------------------------------------------------ seeds
 
     function test_seedOf_byPolicy() public {
-        (uint256 none,) = _work(1);
+        (uint256 none, PackageItem memory noneItem) = _work(1);
+        // A work without a seed policy never asks the entropy module, even if it has a seed.
+        entropy.deliver(WorksHashing.itemHash(noneItem), keccak256("not asked"));
         (SeedPolicy policy, bytes32 seed) = records.seedOf(none);
         assertEq(uint8(policy), uint8(SeedPolicy.NONE));
         assertEq(seed, bytes32(0));
@@ -1304,6 +1499,52 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(governor);
         records.repinRenderer(tokenId, address(renderer), bytes32(0), bytes32(0), 0, "");
         assertEq(vm.getRecordedLogs().length, 0);
+    }
+
+    /// @dev A pinned renderer whose code moved is refused, whichever way its new code hash sorts
+    ///      against the pin.
+    function test_pinnedRenderer_refusesMovedCodeEitherWay() public {
+        uint256 tokenId = _finalized(1);
+        address pinned = records.pinnedRenderer(tokenId);
+        bytes memory code = pinned.code;
+        bytes32 pin = pinned.codehash;
+        bool below;
+        bool above;
+        for (uint8 i = 1; !(below && above); ++i) {
+            bytes memory moved = abi.encodePacked(code, i);
+            bool lower = keccak256(moved) < pin;
+            if (lower ? below : above) continue;
+            if (lower) below = true;
+            else above = true;
+            vm.etch(pinned, moved);
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, pinned)
+            );
+            records.pinnedRenderer(tokenId);
+        }
+    }
+
+    /// @dev A repin names the renderer's code hash exactly (a wrong one sorting below or above
+    ///      is refused), and consents are good through their deadline second.
+    function test_repinRenderer_refusesAWrongHashEitherWayAndKeepsTheDeadlineSecond() public {
+        uint256 tokenId = _finalized(1);
+        MockRenderer next = new MockRenderer("errata");
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes32[2] memory wrong = [bytes32(0), bytes32(type(uint256).max)];
+        vm.startPrank(governor);
+        for (uint256 i; i < wrong.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
+            );
+            records.repinRenderer(tokenId, address(next), wrong[i], state, deadline, "");
+        }
+        vm.stopPrank();
+        bytes memory sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
+        vm.warp(deadline);
+        vm.prank(governor);
+        records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
+        assertEq(stream.rendererOf(tokenId), address(next));
     }
 
     // -------------------------------------------------------------------- edition masters
@@ -1511,6 +1752,26 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.locators(tokenId, fileId).length, 10);
     }
 
+    /// @dev A NUL byte is in no character set: not inside an ID, not as its last character.
+    function test_addLocator_rejectsANulCharacter() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        Locator[2] memory good = [_ar("nul"), _ipfs("nul")];
+        for (uint256 i; i < 2; ++i) {
+            bytes memory uri = bytes(good[i].uri);
+            bytes memory inside = bytes.concat(uri);
+            inside[uri.length - 2] = 0x00;
+            bytes memory last = bytes.concat(uri);
+            last[uri.length - 1] = 0x00;
+            vm.prank(artist);
+            _expectBadLocator(tokenId, file, Locator(good[i].kind, string(inside)));
+            vm.prank(artist);
+            _expectBadLocator(tokenId, file, Locator(good[i].kind, string(last)));
+        }
+        vm.prank(artist);
+        records.addLocator(tokenId, file, good[0]);
+    }
+
     function _expectBadLocator(uint256 tokenId, bytes32 file, Locator memory locator) internal {
         vm.expectRevert(IWorkRecords.InvalidLocator.selector);
         records.addLocator(tokenId, file, locator);
@@ -1532,6 +1793,7 @@ contract WorkRecordsTest is RecordsFixture {
         records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
         _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         records.setFilePreference(tokenId, file, 2);
+        assertEq(records.filePreference(tokenId, file), 2);
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         records.setCollectionPreferredKind(collectionId, LocatorKind.ONCHAIN);
         _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
@@ -1597,6 +1859,34 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(chosen.uri, uri);
     }
 
+    /// @dev Every preference setter is governed: an outsider sets none of them.
+    function test_preferenceSetters_needTheStorageOperator() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        bytes memory refused =
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider);
+        vm.startPrank(outsider);
+        vm.expectRevert(refused);
+        records.setPreferredKind(LocatorKind.IPFS);
+        vm.expectRevert(refused);
+        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        vm.expectRevert(refused);
+        records.setFilePreference(tokenId, file, NONE);
+        vm.stopPrank();
+    }
+
+    /// @dev With nothing minted there is nothing to refresh: no `BatchMetadataUpdate(1, 0)`.
+    function test_preferenceSetters_refreshNothingBeforeAMint() public {
+        assertEq(stream.totalMinted(), 0);
+        vm.recordLogs();
+        vm.prank(storageOperator);
+        records.setPreferredKind(LocatorKind.ARWEAVE);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].emitter != address(stream), "the core emitted a refresh");
+        }
+    }
+
     function test_preferenceSetters_eventsAndRefresh() public {
         (uint256 tokenId,) = _work(1);
         _minted(2, true);
@@ -1658,6 +1948,63 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
         records.setPreferredKind(LocatorKind.IPFS);
+    }
+
+    /// @dev Near misses the URI and file checks must refuse: an IPFS address under a kind that is
+    ///      not IPFS, a scheme byte that sorts above `:`, an Arweave address one character short
+    ///      (its last character still valid), and a file ID above every file of the work.
+    function test_addLocator_refusesNearMisses() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        string memory txid = CA.arweave("tx");
+        string memory cid = CA.ipfs("cid");
+        bytes memory id = bytes(txid);
+        bytes memory short = new bytes(id.length - 1);
+        for (uint256 i; i < short.length; ++i) {
+            short[i] = id[i < short.length - 1 ? i : i + 1];
+        }
+        vm.startPrank(platform);
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.NONE, cid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ONCHAIN, cid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 2, ";")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string(short)));
+        bytes32 above = bytes32(type(uint256).max);
+        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, above));
+        records.addLocator(tokenId, above, _ar("tx"));
+        vm.expectRevert(
+            abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, bytes32(0))
+        );
+        records.addLocator(tokenId, bytes32(0), _ar("tx"));
+        vm.stopPrank();
+    }
+
+    /// @dev A preference index must name a listed locator: one past the end is refused, and so
+    ///      is any index further out.
+    function test_setFilePreference_refusesEveryIndexPastTheList() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.prank(platform);
+        records.addLocator(tokenId, file, _ar("a0"));
+        vm.startPrank(storageOperator);
+        for (uint256 index = 1; index < 4; ++index) {
+            vm.expectRevert(IWorkRecords.InvalidLocator.selector);
+            records.setFilePreference(tokenId, file, index);
+        }
+        records.setFilePreference(tokenId, file, 0);
+        vm.stopPrank();
+        assertEq(records.filePreference(tokenId, file), 0);
+    }
+
+    /// @dev Any existing collection takes a preferred kind, not only the newest.
+    function test_setCollectionPreferredKind_acceptsAnOlderCollection() public {
+        vm.prank(platform);
+        uint256 newer = stream.createCollection("Second", keccak256("second"));
+        assertGt(newer, collectionId);
+        vm.prank(storageOperator);
+        records.setCollectionPreferredKind(collectionId, LocatorKind.IPFS);
+        vm.prank(storageOperator);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, newer + 1));
+        records.setCollectionPreferredKind(newer + 1, LocatorKind.IPFS);
     }
 
     // ------------------------------------------------------------------------ state hash

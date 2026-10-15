@@ -141,6 +141,32 @@ contract StreamTest is StreamFixture {
         _deploy(address(registry), address(artists), address(econ), address(entropy), delegated);
     }
 
+    /// @dev The split factory the economics resolver names must be a contract.
+    function test_constructor_refusesAFactoryWithoutCode() public {
+        address eoa = makeAddr("eoa");
+        MockEconomics noFactory = new MockEconomics(_defaultTerms(), eoa);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
+        _deploy(
+            address(registry),
+            address(artists),
+            address(noFactory),
+            address(entropy),
+            address(renderer)
+        );
+    }
+
+    function test_constructor_emitsTheRendererAndTheOwner() public {
+        address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectEmit(next);
+        emit IStream.DefaultRendererSet(address(0), address(renderer), address(renderer).codehash);
+        vm.expectEmit(next);
+        emit IStream.OwnershipTransferred(address(0), marketOwner);
+        Stream deployed = _deploy(
+            address(registry), address(artists), address(econ), address(entropy), address(renderer)
+        );
+        assertEq(address(deployed), next);
+    }
+
     // ------------------------------------------------------------------------ admitted minters
 
     function test_setAdmittedMinter() public {
@@ -168,6 +194,13 @@ contract StreamTest is StreamFixture {
         assertTrue(stream.primarySaleSettled(tokenId));
         other.burn(stream, disputed, 1);
         assertEq(stream.totalSupply(), 1);
+
+        // Removal checks nothing about the address: one that never was an adapter is refused
+        // nothing.
+        address notAnAdapter = makeAddr("not an adapter");
+        vm.prank(governor);
+        stream.setAdmittedMinter(notAnAdapter, false);
+        assertFalse(stream.isAdmittedMinter(notAnAdapter));
     }
 
     function test_setAdmittedMinter_reverts() public {
@@ -565,6 +598,65 @@ contract StreamTest is StreamFixture {
         assertEq(terms.currency, address(0xBEEF));
     }
 
+    /// @dev One token per mint: an amount of zero is refused like any other but one.
+    function test_mint_refusesAnAmountOfZero() public {
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.startRaw(stream, address(auction), 0, 0, _request(_item(1)));
+    }
+
+    /// @dev A sale kind sorting below the auction's is refused like one sorting above it, from
+    ///      the adapter and in the item.
+    function test_mint_refusesASaleKindSortingBelowTheAuctions() public {
+        bytes32 low = bytes32(uint256(1));
+        assertLt(uint256(low), uint256(SaleKind.ENGLISH_AUCTION));
+        PackageItem memory item = _item(1);
+        item.sale.saleKind = low;
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
+        auction.setSaleKind(low);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.ENGLISH_AUCTION, low
+            )
+        );
+        auction.start(stream, _request(_item(1)));
+    }
+
+    /// @dev The economics resolver accepts a royalty rate of exactly 100%, and so does a mint.
+    function test_mint_acceptsARoyaltyRateOfExactlyTheDenominator() public {
+        WorkTerms memory full = _defaultTerms();
+        full.royaltyRate = 100_000;
+        econ.setTerms(full);
+        uint256 tokenId = _mint(1);
+        (, uint256 amount) = stream.royaltyInfo(tokenId, 1 ether);
+        assertEq(amount, 1 ether);
+    }
+
+    /// @dev The request's first word must be 32: one below it is refused like one above it.
+    function test_mint_refusesAFirstWordBelow32() public {
+        bytes memory data = _request(_item(1));
+        assembly ("memory-safe") {
+            mstore(add(data, 0x20), 0x1f)
+        }
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.start(stream, data);
+    }
+
+    /// @dev Kind and seed policy share one flags byte: each reads back as minted, for an
+    ///      unseeded edition master and an artist-seeded original.
+    function test_mint_kindAndSeedPolicyReadBackApart() public {
+        PackageItem memory master = _item(1);
+        master.kind = ItemKind.EDITION_MASTER;
+        uint256 a = _mint(master);
+        PackageItem memory original = _item(2);
+        original.seedPolicy = SeedPolicy.ARTIST;
+        original.seed = keccak256("seed");
+        uint256 b = _mint(original);
+        assertEq(uint8(stream.work(a).kind), uint8(ItemKind.EDITION_MASTER));
+        assertEq(uint8(stream.work(a).seedPolicy), uint8(SeedPolicy.NONE));
+        assertEq(uint8(stream.work(b).kind), uint8(ItemKind.ORIGINAL));
+        assertEq(uint8(stream.work(b).seedPolicy), uint8(SeedPolicy.ARTIST));
+    }
+
     // ----------------------------------------------------------------------- primaryTerms
 
     function test_primaryTerms_previewMatchesMint() public {
@@ -612,6 +704,14 @@ contract StreamTest is StreamFixture {
         stream.primaryTerms(0, data);
         vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         stream.primaryTerms(0, new bytes(10));
+    }
+
+    /// @dev A preview applies the Stream rules a mint does.
+    function test_primaryTerms_previewChecksTheStreamRules() public {
+        PackageItem memory item = _item(1);
+        item.sale.saleKind = SaleKind.FIXED_PRICE;
+        vm.expectRevert(IStream.InvalidItemSale.selector);
+        stream.primaryTerms(0, _request(item));
     }
 
     // ---------------------------------------------------------------------- primary sale
@@ -813,6 +913,13 @@ contract StreamTest is StreamFixture {
         stream.burn(1, 1);
     }
 
+    /// @dev One token per burn: an amount of zero is refused like any other but one.
+    function test_burn_refusesAnAmountOfZero() public {
+        _mint(1);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
+        auction.burn(stream, 1, 0);
+    }
+
     // ------------------------------------------------------------------------- collections
 
     function test_createCollection() public {
@@ -845,6 +952,22 @@ contract StreamTest is StreamFixture {
         stream.collection(0);
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownCollection.selector, 2));
         stream.collection(2);
+    }
+
+    /// @dev The name bound is exact: 256 printable bytes are accepted and 257 refused.
+    function test_createCollection_nameLengthBoundIsExact() public {
+        bytes memory name = new bytes(257);
+        for (uint256 i; i < name.length; ++i) {
+            name[i] = "a";
+        }
+        vm.prank(platform);
+        vm.expectRevert(IStream.InvalidCollectionName.selector);
+        stream.createCollection(string(name), bytes32(0));
+        assembly ("memory-safe") {
+            mstore(name, 256)
+        }
+        vm.prank(platform);
+        stream.createCollection(string(name), bytes32(0));
     }
 
     // ----------------------------------------------------------------------------- royalty
@@ -1100,6 +1223,19 @@ contract StreamTest is StreamFixture {
         stream.linkEdition(2, 2);
     }
 
+    /// @dev The edition ID must be the master's token ID: one below it is refused like one above.
+    function test_linkEdition_refusesAnEditionIdBelowTheToken() public {
+        _bindMocks();
+        _mint(1);
+        PackageItem memory master = _item(2);
+        master.kind = ItemKind.EDITION_MASTER;
+        _mint(master);
+        auction.settle(stream, 2);
+        vm.expectRevert(abi.encodeWithSelector(IStream.EditionLinkInvalid.selector, 2));
+        editionsMock.link(stream, 2, 1);
+        editionsMock.link(stream, 2, 2);
+    }
+
     // --------------------------------------------------------------------------- rendering
 
     function test_tokenURI_forwardsToDefaultThenPin() public {
@@ -1167,6 +1303,44 @@ contract StreamTest is StreamFixture {
         vm.prank(governor);
         stream.setDefaultRenderer(address(renderer), address(next), address(next).codehash);
         assertEq(vm.getRecordedLogs().length, 1);
+    }
+
+    /// @dev A pinned code hash is compared both ways: a wrong one sorting below the renderer's
+    ///      code hash or above it is refused.
+    function test_setDefaultRenderer_refusesAWrongHashEitherWay() public {
+        MockRenderer next = new MockRenderer("next");
+        bytes32[2] memory wrong = [bytes32(0), bytes32(type(uint256).max)];
+        for (uint256 i; i < wrong.length; ++i) {
+            vm.prank(governor);
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
+            );
+            stream.setDefaultRenderer(address(renderer), address(next), wrong[i]);
+        }
+    }
+
+    /// @dev `rendererOf` refuses a default renderer whose code moved, whichever way the new code
+    ///      hash sorts against the pinned one.
+    function test_rendererOf_refusesMovedDefaultCodeEitherWay() public {
+        uint256 tokenId = _mint(1);
+        bytes32 pinned = address(renderer).codehash;
+        bytes memory code = address(renderer).code;
+        bool below;
+        bool above;
+        for (uint8 i = 1; !(below && above); ++i) {
+            bytes memory moved = abi.encodePacked(code, i);
+            bool lower = keccak256(moved) < pinned;
+            if (lower ? below : above) continue;
+            if (lower) below = true;
+            else above = true;
+            vm.etch(address(renderer), moved);
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(renderer))
+            );
+            stream.rendererOf(tokenId);
+        }
+        vm.etch(address(renderer), code);
+        assertEq(stream.rendererOf(tokenId), address(renderer));
     }
 
     // ------------------------------------------------------------------------- marketplace

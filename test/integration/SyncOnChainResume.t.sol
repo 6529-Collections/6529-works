@@ -122,6 +122,65 @@ contract SyncOnChainResumeTest is IntegrationBase {
         assertEq(vm.getRecordedLogs().length, 0);
     }
 
+    /// @dev A work of planted files with `counts` chunks each, opened.
+    function _plantedWork(uint256 tag, uint256[] memory counts) internal returns (uint256 id) {
+        MediaFile[] memory media = new MediaFile[](counts.length);
+        for (uint256 f; f < counts.length; ++f) {
+            bytes32[] memory hashes = new bytes32[](counts[f]);
+            for (uint256 j; j < counts[f]; ++j) {
+                uint256 mark;
+                assembly ("memory-safe") {
+                    mark := mload(0x40)
+                }
+                bytes memory data = _chunk(tag + f, j);
+                hashes[j] = keccak256(data);
+                _plant(data);
+                assembly ("memory-safe") {
+                    mstore(0x40, mark)
+                }
+            }
+            bytes32 sha = keccak256(abi.encode("planted media", tag, f));
+            bytes32 fileId = store.registerManifest(
+                hashes,
+                counts[f] * store.CHUNK_SIZE(),
+                IContentStore.Encoding.Identity,
+                "video/mp4",
+                sha
+            );
+            media[f] = MediaFile(fileId, sha, f == 0 ? FileRole.PRIMARY : FileRole.AUXILIARY);
+        }
+        Work memory w;
+        w.media = media;
+        w.item = _item(artist, collectionId, media[0].sha256Hash, media, _record(vm.toString(tag)));
+        Work[] memory works = _one(w);
+        (, id) = _start(_publish(works), works, 0);
+        records.openRecord(id, w.item, w.media);
+    }
+
+    /// @dev The budget is spent chunk by chunk: files of 3 and 200 chunks fit one call's 512.
+    function test_SyncOnChain_SpendsTheBudgetChunkByChunk() public {
+        uint256[] memory counts = new uint256[](2);
+        (counts[0], counts[1]) = (3, 200);
+        uint256 id2 = _plantedWork(100, counts);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.WorkOnChainComplete(id2);
+        records.syncOnChain(id2);
+        assertTrue(records.record(id2).onChainComplete);
+    }
+
+    /// @dev The budget is 512 chunks exactly: after a full file, one more chunk waits.
+    function test_SyncOnChain_TheBudgetIs512Chunks() public {
+        uint256[] memory counts = new uint256[](2);
+        (counts[0], counts[1]) = (512, 1);
+        uint256 id3 = _plantedWork(200, counts);
+        vm.expectEmit(address(records));
+        emit IWorkRecords.OnChainSyncProgress(id3, 1);
+        records.syncOnChain(id3);
+        assertFalse(records.record(id3).onChainComplete);
+        records.syncOnChain(id3);
+        assertTrue(records.record(id3).onChainComplete);
+    }
+
     /// @dev Progress is kept across calls; a call that reaches an incomplete file reverts, and
     ///      the next one resumes once the file is complete.
     function test_SyncOnChain_KeepsItsPlaceUntilAFileCompletes() public {
