@@ -136,9 +136,9 @@ no ceiling, or not run on Sepolia.
 | `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
 | `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
-| `openSale` (one public phase) | 292,853 | 293,000 (regression) | 8 | 0 | 993,668 |
+| `openSale` (one public phase) | 292,853 | 299,000 (regression) | 8 | 0 | 993,668 |
 | `purchase`, the first copy, new holder | 193,971 | 195,000 (regression) | 3 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 176,871 | 177,000 (regression) | 2 | 0 | 370,142 |
+| `purchase`, a later copy, new holder | 176,871 | 181,000 (regression) | 2 | 0 | 370,142 |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
@@ -168,6 +168,11 @@ no ceiling, or not run on Sepolia.
   twice. Re-checking the consolidation source's pinned code hash (DEPS-6) adds
   about 2.2K to each `refreshStanding`. Slot and account counts are unchanged;
   the `consume` regression ceiling moved from 96,000 to 99,000.
+- **Two regression ceilings moved with the sales fixes**, for security fixes:
+  the active-authority creator read (#53) and the currency status read
+  (MARKET-1/2). `openSale` (292,853) moved from 293,000 to 299,000 and the
+  later `purchase` (176,871) from 177,000 to 181,000: each measured figure plus
+  2%, rounded up to the thousand. Slot and account counts stay exact.
 - **The two-party `startWithBid` is the tightest:** 341,251, about 8.7K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 377,833**, about 45K more
