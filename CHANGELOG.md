@@ -287,3 +287,8 @@
     withdrawal). With no standing bid, the work returns to the artist as before.
   - Auction: the fee and the increment are computed exactly in 96-bit arithmetic instead of
     `Math.mulDiv` (same results), which frees about 330 bytes for these fixes.
+  - LIFECYCLE-4 (the auction's `cancel`): the cited dispute outcome must be the token's own
+    latest one (`StatementLog.disputeOutcomeOf`, no item fallback) and must have been recorded
+    after the dispute pause: the pause records, in spare bits of the sale's third slot, the
+    chain position a later outcome must reach. An outcome recorded before the pause, or one
+    about the package item, cannot cancel the auction.

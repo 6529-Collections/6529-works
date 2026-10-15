@@ -306,7 +306,11 @@ default when the sale starts".
    also shown, until one about the token replaces it). The PARAMETER_SETTER
    role then calls `cancel(saleId, outcomeRef)` while the auction is still
    paused.
-   - `outcomeRef` must equal `latestDisputeOutcome`.
+   - `outcomeRef` must be the token's own latest outcome
+     (`disputeOutcomeOf`, with no item fallback) and must have been recorded
+     after the pause: the auction keeps, at the pause, the chain position a
+     later outcome must reach, so an outcome recorded before the pause, or one
+     about the package item, cannot cancel it.
    - The window is inclusive (`block.timestamp <= pausedUntil`).
    - The bid is credited back and the token is burned.
    - **Before the cancel executes, the guardian revokes every approved root

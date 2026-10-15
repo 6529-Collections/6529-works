@@ -144,8 +144,10 @@ interface IEnglishAuction is ISaleAdapter {
     function resume(uint256 saleId) external;
     /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
     ///         burns the token. PARAMETER_SETTER role, while paused: the window is inclusive,
-    ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and equal
-    ///         `IStatementLog.latestDisputeOutcome(token, tokenId)`.
+    ///         `block.timestamp <= pausedUntil`. `outcomeRef` must be nonzero and be the token's
+    ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
+    ///         fallback), recorded after the pause: an outcome recorded before the pause, or one
+    ///         about the package item, cannot cancel.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
     /// @notice The high bidder withdraws its bid while the auction is paused, or while its
     ///         currency is deprecated and it has not settled (MARKET-2); it is credited back

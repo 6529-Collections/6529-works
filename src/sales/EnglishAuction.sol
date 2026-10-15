@@ -104,8 +104,9 @@ contract EnglishAuction is
     ///      and flags again by the first bid, which locks the increment floor). Slot 1 holds the
     ///      high bidder and the high bid (at most `uint96`). Slot 2 holds the recipient only when
     ///      it differs from the bidder (`_RECIPIENT_SET`), the artist after a no-bid settlement,
-    ///      and the dispute pause (`_PAUSE_USED`). A first bid for oneself writes one fresh slot
-    ///      and does not read slot 2.
+    ///      and the dispute pause (`_PAUSE_USED`), with the lowest statement-log chain position
+    ///      an outcome recorded after the pause has (`outcomeFrom`). A first bid for oneself
+    ///      writes one fresh slot and does not read slot 2.
     struct Sale {
         address token;
         uint32 tokenId;
@@ -118,6 +119,7 @@ contract EnglishAuction is
         address recipient;
         uint32 pausedAt;
         uint24 pausedTotal;
+        uint40 outcomeFrom;
     }
 
     /// @dev The governed parameters and the emergency start pause (when it began, zero while
@@ -363,6 +365,12 @@ contract EnglishAuction is
         if (s.flags & _PAUSE_USED != 0) revert PauseExhausted(saleId);
         s.flags |= _PAUSE_USED;
         s.pausedAt = SafeCast.toUint32(block.timestamp);
+        // LIFECYCLE-4: `cancel` must cite an outcome recorded after this pause, so one past the
+        // position of the token's own latest outcome now (none: any position).
+        (bytes32 entry, uint64 index) = _ownOutcome(s);
+        // Safe: a statement-log position is far below 2^40.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (entry != 0) s.outcomeFrom = uint40(index + 1);
         emit AuctionPaused(saleId, disputeRef);
     }
 
@@ -383,16 +391,18 @@ contract EnglishAuction is
     ///      without one. Accepted through `pausedAt + MAX_PAUSE` inclusive.
     function cancel(uint256 saleId, bytes32 outcomeRef) external restricted nonReentrant {
         Sale storage s = _require(saleId, AuctionState.PAUSED);
-        (address token, uint256 tokenId) = (s.token, s.tokenId);
-        if (
-            outcomeRef == bytes32(0)
-                || outcomeRef != IStatementLog(statementLog).latestDisputeOutcome(token, tokenId)
-        ) revert OutcomeNotRecorded(saleId, outcomeRef);
+        // LIFECYCLE-4: the cited outcome is the token's own latest one (no item fallback) and
+        // was recorded after the pause, so neither an outcome recorded before the pause nor one
+        // about the package item can cancel.
+        (bytes32 entry, uint64 index) = _ownOutcome(s);
+        if (outcomeRef == bytes32(0) || outcomeRef != entry || index < s.outcomeFrom) {
+            revert OutcomeNotRecorded(saleId, outcomeRef);
+        }
         s.status = AuctionState.CANCELLED;
         s.pausedTotal = SafeCast.toUint24(block.timestamp - s.pausedAt);
         s.pausedAt = 0;
         _refundHighBid(saleId, s);
-        IMintTarget(token).burn(tokenId, 1);
+        IMintTarget(s.token).burn(s.tokenId, 1);
         emit AuctionCancelled(saleId, outcomeRef);
     }
 
@@ -926,6 +936,12 @@ contract EnglishAuction is
         IAssetAllowlist.Status status;
         (status, since,) = allowlist.statusClock(currency);
         active = status == IAssetAllowlist.Status.Active;
+    }
+
+    /// @dev The token's own latest dispute outcome in the statement log, and its position in
+    ///      the token's chain.
+    function _ownOutcome(Sale storage s) private view returns (bytes32, uint64) {
+        return IStatementLog(statementLog).disputeOutcomeOf(s.token, s.tokenId);
     }
 
     /// @dev Loads a sale after writing down an expired pause, and requires the `wanted` state.
