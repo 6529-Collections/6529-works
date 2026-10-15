@@ -7,24 +7,7 @@ import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { DeployV1 } from "script/DeployV1.sol";
-import { WorksForkBase } from "./WorksForkBase.sol";
-
-/// @dev The subscription calls of the Chainlink VRF v2.5 coordinator (`SubscriptionAPI`).
-interface IVrfSubscriptions {
-    function createSubscription() external returns (uint256 subId);
-    function fundSubscriptionWithNative(uint256 subId) external payable;
-    function addConsumer(uint256 subId, address consumer) external;
-    function getSubscription(uint256 subId)
-        external
-        view
-        returns (
-            uint96 balance,
-            uint96 nativeBalance,
-            uint64 reqCount,
-            address owner,
-            address[] memory consumers
-        );
-}
+import { IVrfSubscriptions, WorksForkBase } from "./WorksForkBase.sol";
 
 /// @notice The entropy module against the real Chainlink VRF v2.5 coordinator on a Sepolia
 ///         fork: a funded subscription with the module as its consumer, a seed request that the

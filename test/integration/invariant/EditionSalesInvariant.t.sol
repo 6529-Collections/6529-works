@@ -59,7 +59,11 @@ contract EditionSalesInvariantTest is EditionSalesHandler {
         s[12] = this.warp.selector;
     }
 
-    /// @notice Every Editions sales invariant (1 to 6 above), checked after each call.
+    /// @notice Every invariant above (1 to 6). In CI the state is asserted every fourth call
+    ///         and after the last call of each run (every action still checks its own outcome
+    ///         at once); the `deep` profile asserts it after every call.
+    /// forge-config: default.invariant.check_interval = 4
+    /// forge-config: deep.invariant.check_interval = 1
     function invariant_editionSales() public view {
         _assertEditionSales();
     }

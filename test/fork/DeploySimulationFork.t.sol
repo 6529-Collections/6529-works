@@ -6,20 +6,23 @@ import { Deploy } from "script/Deploy.s.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { DeployHarness, VerifyHarness } from "../deploy/ScriptHarness.sol";
+import { Forks, IVrfSubscriptions } from "./WorksForkBase.sol";
 
 /// @notice The full deploy script simulated against a Sepolia fork with sepolia-r2's inputs: its
 ///         holders (the real Safes behind the admins and guardians, its signer and operator
 ///         keys) on the committed policy, its network fee recipient and marketplace owner, the
 ///         official 6529 delegation contract, the canonical Permit2, the real VRF v2.5
-///         coordinator with r2's subscription and gas lane, and r2's epoch-0 manifest, under a
-///         fresh namespace. Every off-anvil guard must pass against the live accounts, and
-///         `Verify.s.sol` must confirm the simulated deployment five days later. Nothing is
-///         broadcast: the run happens in the fork.
+///         coordinator with r2's gas lane (and a new subscription, as the runbook creates for
+///         each deployment), and r2's epoch-0 manifest, under a fresh namespace. Every off-anvil
+///         guard must pass against the live accounts, and `Verify.s.sol` must confirm the
+///         simulated deployment five days later. Nothing is broadcast: the run happens in the
+///         fork.
 ///
 ///         The genesis is `config/genesis.example.json` with r2's holders, as a new rehearsal's
-///         would be: r2's own file predates two governed selectors added since
-///         (`Stream.releaseContent` and `EntropyModule.lowerCallbackGasLimit`), so the
-///         committed-policy guard refuses it as it stands (`PolicyMismatch("targets")`).
+///         would be. r2's own file predates later policy changes (the governed selectors
+///         `Stream.releaseContent` and `EntropyModule.lowerCallbackGasLimit`, and the `manager`
+///         section), so the committed-policy guard refuses it as it stands; its holders alone
+///         are checked against the live Safes.
 /// @dev Opt-in: skipped unless `FORK_SEPOLIA_RPC` is set (`FORK_SEPOLIA_RPC_BLOCK` pins the
 ///      block). See `test/fork/README.md`.
 contract DeploySimulationSepoliaForkTest is Test {
@@ -35,13 +38,13 @@ contract DeploySimulationSepoliaForkTest is Test {
     VerifyHarness internal verifier;
     string internal r2;
     bool internal forked;
+    address internal subscriptionOwner = makeAddr("forkSimulationSubscriptionOwner");
+    uint256 internal subscriptionId;
 
     function setUp() public {
         string memory rpc = vm.envOr("FORK_SEPOLIA_RPC", string(""));
         if (bytes(rpc).length == 0) return;
-        uint256 pinned = vm.envOr("FORK_SEPOLIA_RPC_BLOCK", uint256(0));
-        if (pinned == 0) vm.createSelectFork(rpc);
-        else vm.createSelectFork(rpc, pinned);
+        Forks.select(vm, rpc, vm.envOr("FORK_SEPOLIA_RPC_BLOCK", uint256(0)));
         require(block.chainid == SEPOLIA, "the RPC serves another chain");
         forked = true;
         deployer = new DeployHarness();
@@ -55,7 +58,7 @@ contract DeploySimulationSepoliaForkTest is Test {
         _env("NETWORK_FEE_RECIPIENT", vm.toString(_r2Address("networkFeeRecipient")));
         _env("MARKETPLACE_OWNER", vm.toString(_r2Address("marketOwner")));
         _env("VRF_COORDINATOR", vm.toString(_r2Address("vrfCoordinator")));
-        _env("VRF_SUBSCRIPTION_ID", vm.parseJsonString(r2, ".params.vrfSubscriptionId"));
+        _env("VRF_SUBSCRIPTION_ID", vm.toString(_newSubscription()));
         _env("VRF_KEY_HASH", vm.toString(vm.parseJsonBytes32(r2, ".params.vrfKeyHash")));
         _env("VRF_CALLBACK_GAS_LIMIT", vm.toString(_r2Uint("vrfCallbackGasLimit")));
         _env("VRF_CONFIRMATIONS", vm.toString(_r2Uint("vrfConfirmations")));
@@ -117,6 +120,18 @@ contract DeploySimulationSepoliaForkTest is Test {
         return string.concat(".holders[", vm.toString(j), "]", field);
     }
 
+    /// @dev As the runbook does before a deployment: a new subscription on the coordinator,
+    ///      funded in native ETH, whose only consumer will be the new entropy module.
+    function _newSubscription() internal returns (uint256 id) {
+        IVrfSubscriptions coordinator = IVrfSubscriptions(_r2Address("vrfCoordinator"));
+        vm.deal(subscriptionOwner, 10 ether);
+        vm.startPrank(subscriptionOwner);
+        id = coordinator.createSubscription();
+        coordinator.fundSubscriptionWithNative{ value: 1 ether }(id);
+        vm.stopPrank();
+        subscriptionId = id;
+    }
+
     function _env(string memory name, string memory value) internal {
         deployer.setEnv(name, value);
     }
@@ -156,7 +171,11 @@ contract DeploySimulationSepoliaForkTest is Test {
 
     /// @dev r2's own genesis file still passes every holder guard against the live Safes.
     function test_TheR2HoldersPassTheHolderGuards() public onFork {
-        DeployGuards.checkHolders(vm.readFile(R2_GENESIS), vm.readFile(EXAMPLE));
+        (address[] memory singletons, bytes32[] memory codehashes) =
+            DeployGuards.canonicalSafeSingletons();
+        DeployGuards.checkHolders(
+            vm.readFile(R2_GENESIS), vm.readFile(EXAMPLE), singletons, codehashes
+        );
     }
 
     /// @dev The whole run, simulated: deploy, the deployment guards (nothing dropped, the
@@ -164,8 +183,12 @@ contract DeploySimulationSepoliaForkTest is Test {
     ///      and the record; then Verify against the fork, after the manager's 5-day setback.
     function test_TheFullRunDeploysConfiguresAndVerifies() public onFork {
         vm.recordLogs();
-        deployer.run();
+        DeployV1.Deployment memory d = deployer.run();
         verifier.addLogs(vm.getRecordedLogs());
+        // The runbook's next step: the new module becomes its subscription's only consumer.
+        vm.prank(subscriptionOwner);
+        IVrfSubscriptions(_r2Address("vrfCoordinator"))
+            .addConsumer(subscriptionId, address(d.entropyModule));
         string memory record = deployer.lastRecord();
         assertFalse(vm.parseJsonBool(record, ".placeholders"));
         assertFalse(vm.parseJsonBool(record, ".delegationMock"), "the canonical delegation code");

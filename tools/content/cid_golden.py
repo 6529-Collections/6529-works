@@ -21,6 +21,7 @@ chunks, chunk `k` being `k` as four big-endian bytes followed by bytes 4 to 262,
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -58,7 +59,10 @@ def spec_input(spec: tuple[str, bytes | int, str | None]) -> bytes:
     return source if isinstance(source, bytes) else pattern(source)
 
 
+@functools.cache
 def build() -> dict[str, Any]:
+    """The vectors document (computed once per process: about 92 MB of input is hashed; do not
+    mutate the result)."""
     vectors = []
     for spec in SPECS:
         data = spec_input(spec)

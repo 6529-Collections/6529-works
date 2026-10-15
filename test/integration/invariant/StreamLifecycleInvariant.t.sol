@@ -33,7 +33,7 @@ import { StreamLifecycleHandler } from "./StreamLifecycleHandler.sol";
 contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
     uint256 internal constant ACTIONS = 18;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
-    uint256 internal constant RUNS = 24;
+    uint256 internal constant RUNS = 32;
 
     function setUp() public override {
         super.setUp();
@@ -63,7 +63,11 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         s[17] = this.warp.selector;
     }
 
-    /// @notice Every lifecycle invariant (1 to 8 above), checked after each call.
+    /// @notice Every invariant above (1 to 8). In CI the state is asserted every fourth call
+    ///         and after the last call of each run (every action still checks its own outcome
+    ///         at once); the `deep` profile asserts it after every call.
+    /// forge-config: default.invariant.check_interval = 4
+    /// forge-config: deep.invariant.check_interval = 1
     function invariant_streamLifecycle() public view {
         _assertLifecycle();
     }
@@ -125,6 +129,37 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         for (uint256 i; i < paths.length; ++i) {
             assertGt(totals[i], 0, paths[i]);
         }
+    }
+
+    /// @notice The deepest path, driven step by step through the handler: a copy of another
+    ///         artist's media is started and bid on, the guardian pauses it, the dispute is upheld
+    ///         (the work is burned and the bid credited back), its content is released to the
+    ///         rightful artist, and the rightful artist's own item then mints the content again.
+    ///         Every invariant holds after each step.
+    function test_CopyDisputeReleaseAndRemint() public {
+        for (uint256 i; i < ARTISTS; ++i) {
+            this.register(i);
+        }
+        for (uint256 i; i < 2 * ARTISTS; ++i) {
+            this.accept(i / 2, i);
+        }
+        _assertLifecycle();
+        // Pool item 4 is artist 0's copy of artist 2's first work (item 10).
+        this.start(4, 2);
+        assertEq(pool[4].tokenId, 1, "the copy minted first");
+        this.bid(0, 0, 1 ether);
+        this.disputePause(0);
+        _assertLifecycle();
+        this.resolveDispute(0, 0);
+        assertTrue(tok[1].burned, "the upheld dispute burned the copy");
+        _assertLifecycle();
+        this.releaseContent(0, 0);
+        assertEq(registry.releasedTo(pool[4].contentHash), uint160(lcArtists[2]));
+        _assertLifecycle();
+        this.start(0, 2);
+        assertEq(pool[10].tokenId, 2, "the rightful artist's item minted the content again");
+        assertEq(hits["reconsume"], 1);
+        _assertLifecycle();
     }
 
     /// @dev One handler call chosen and parameterised from `seed`, as the fuzzer would.

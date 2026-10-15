@@ -12,7 +12,7 @@ They are opt-in. Without an RPC URL every test here is skipped and costs nothing
 | --- | --- |
 | `FORK_MAINNET_RPC` | The mainnet tests: the delegation contract and Permit2. |
 | `FORK_SEPOLIA_RPC` | The Sepolia tests: the delegation contract, Permit2, the VRF coordinator and the deploy simulation. |
-| `FORK_MAINNET_RPC_BLOCK`, `FORK_SEPOLIA_RPC_BLOCK` | Optional: the block to fork at (default: the latest). A pinned block lets Foundry cache the RPC reads between runs. |
+| `FORK_MAINNET_RPC_BLOCK`, `FORK_SEPOLIA_RPC_BLOCK` | Optional: the block to fork at (default: eight blocks behind the head, which every node behind a load-balanced public endpoint already serves). A pinned block lets Foundry cache the RPC reads between runs. |
 
 ```bash
 export FORK_MAINNET_RPC=https://ethereum-rpc.publicnode.com
@@ -35,10 +35,10 @@ The system is deployed by the same deploy library as the integration tests
 | [`DelegationFork.t.sol`](DelegationFork.t.sol) | The 6529 delegation contract (mainnet `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`, Sepolia `0x8f86c644f845A077999939C69Bc787662377d915`), read through the deployed `ConsolidationAdapter` | Its code hash is the pinned one; a two-way consolidation counts from the later registration and is established 30 days later; one-way, specific-collection and expired registrations do not count; revocation ends it; a full bounded scan fits the read stipend; the integration mock answers as the real contract for the same history; and a consolidated wallet signs a recovery the artist registry executes. |
 | [`Permit2Fork.t.sol`](Permit2Fork.t.sol) | Canonical Permit2 (`0x000000000022D473030F116dDEE9F6B43aC78BA3`) | Its EIP-712 domain; relayed, witness-bound intents signed with test keys for a fixed-price purchase, a Dutch purchase (exactly the current price is pulled) and an ERC-20 auction's start-with-bid and outbid; a replayed nonce (`InvalidNonce`), an intent for another recipient (`InvalidSigner`) and an expired one are refused. The digests are computed from the EIP-712 definitions, not from the integration mock. |
 | [`VrfFork.t.sol`](VrfFork.t.sol) | Chainlink VRF v2.5 coordinator on Sepolia (`0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B`) | The code hash sepolia-r2 pinned; a new native-funded subscription with the entropy module as consumer; `requestSeed` reaches the coordinator, which logs the request with r2's gas lane, confirmations and callback gas; a simulated fulfilment (the real one needs the oracle's VRF proof) delivered within the callback gas lets the VRF work start and its seed render; nobody but the coordinator fulfils. |
-| [`DeploySimulationFork.t.sol`](DeploySimulationFork.t.sol) | Everything `Deploy.s.sol` touches on Sepolia | The full deploy script with sepolia-r2's inputs (its holders on the committed policy, fee recipient, marketplace owner, VRF subscription and gas lane, epoch-0 manifest) under a fresh namespace: every off-anvil guard passes against the live Safes and dependencies, and `Verify.s.sol` confirms the simulated deployment five days later. |
+| [`DeploySimulationFork.t.sol`](DeploySimulationFork.t.sol) | Everything `Deploy.s.sol` touches on Sepolia | The full deploy script with sepolia-r2's inputs (its holders on the committed policy, fee recipient, marketplace owner, VRF gas lane and limits, epoch-0 manifest; a new VRF subscription, as the runbook creates for each deployment) under a fresh namespace: every off-anvil guard passes against the live Safes and dependencies (the Safe singleton, module and guard checks included), and `Verify.s.sol` confirms the simulated deployment five days later, once the new entropy module is its subscription's only consumer. |
 
-r2's own `config/sepolia-r2/genesis.json` predates two governed selectors added since
-(`Stream.releaseContent` and `EntropyModule.lowerCallbackGasLimit`), so the committed-policy guard
-refuses it as it stands (`PolicyMismatch("targets")`). The simulation therefore uses the committed
+r2's own `config/sepolia-r2/genesis.json` predates later policy changes (the governed selectors
+`Stream.releaseContent` and `EntropyModule.lowerCallbackGasLimit`, and the `manager` section), so
+the committed-policy guard refuses it as it stands. The simulation therefore uses the committed
 example with r2's holders, as a new rehearsal would; its holders alone are checked against the
 live Safes by `test_TheR2HoldersPassTheHolderGuards`.
