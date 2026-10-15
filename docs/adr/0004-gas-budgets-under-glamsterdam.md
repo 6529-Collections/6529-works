@@ -121,44 +121,46 @@ no ceiling, or not run on Sepolia.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 293,230 | 350,000 | **6** | 0 | 846,963 |
-| `startWithBid`, steady state | 334,584 | 350,000 | **7** | 0 | 982,312 |
-| `start`, two-party work | 301,538 | 350,000 | **6** | 0 | — |
-| `startWithBid`, two-party work | 342,901 | 350,000 | **7** | 0 | — |
-| `start`, VRF work | 298,736 | 350,000 | **6** | 0 | 852,868 |
-| `start`, edition master | 293,890 | 350,000 | **6** | 0 | 847,598 |
-| `startWithBid`, ERC-20 by relayed Permit2 | 379,456 | 388,000 (regression) | 7 | 0 | — |
-| `start`, first work in a new collection | 293,244 | 400,000 | 6 | 0 | 846,977 |
-| `start`, first work ever (one-time) | 442,314 | 452,000 (regression) | 13 | 0 | 1,604,862 |
-| `startWithBid`, first bid under new sale terms (one-time) | 404,733 | 413,000 (regression) | 10 | 0 | — |
+| `start`, steady state | 288,743 | 350,000 | **6** | 0 | 846,963 |
+| `startWithBid`, steady state | 330,097 | 350,000 | **7** | 0 | 982,312 |
+| `start`, two-party work | 296,992 | 350,000 | **6** | 0 | — |
+| `startWithBid`, two-party work | 338,355 | 350,000 | **7** | 0 | — |
+| `start`, VRF work | 294,281 | 350,000 | **6** | 0 | 852,868 |
+| `start`, edition master | 289,411 | 350,000 | **6** | 0 | 847,598 |
+| `startWithBid`, ERC-20 by relayed Permit2 | 374,981 | 388,000 (regression) | 7 | 0 | — |
+| `start`, first work in a new collection | 288,769 | 400,000 | 6 | 0 | 846,977 |
+| `start`, first work ever (one-time) | 437,827 | 452,000 (regression) | 13 | 0 | 1,604,862 |
+| `startWithBid`, first bid under new sale terms (one-time) | 400,246 | 413,000 (regression) | 10 | 0 | — |
 | `bid` that outbids | 73,348 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 158,414 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 133,414 | 400,000 | 1 | 0 | 257,763 |
 | `consume`, as Stream calls it | 94,009 | 96,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 323,833 | 331,000 (regression) | 9 | 0 | 1,118,699 |
+| `createEdition` | 314,830 | 331,000 (regression) | 9 | 0 | 1,118,699 |
 | `openSale` (one public phase) | 286,584 | 293,000 (regression) | 8 | 0 | 993,668 |
 | `purchase`, the first copy, new holder | 190,597 | 195,000 (regression) | 3 | 0 | 468,086 |
 | `purchase`, a later copy, new holder | 173,497 | 177,000 (regression) | 2 | 0 | 370,142 |
 | `refreshStanding`, a first wallet | 127,467 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 156,864 | 161,000 (regression) | 1 | 0 | 247,970 |
-| `royaltyInfo` (view) | 45,853 | 50,000 of execution | 0 | 0 | 40,667 |
+| `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
 | `tokenURI` (view, the size matrix) | at most 2,733,567 | 8,000,000 | 0 | 0 | unchanged |
-| `createWallet`, a seller wallet (one artist payee) | 1,236,366 | 1,262,000 (regression) | 4 | 1 | — |
+| `createWallet`, a seller wallet (one artist payee) | 1,236,339 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,368 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,340 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,048 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,362 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,094 | 92,000 (regression) | 0 | 0 | — |
 
-- **The split-wallet rows** were added after this ADR was accepted (the review of
-  14 October 2026), measured on the same harness. A wallet's deployment is
-  mostly code: about 5,350 bytes, which Glamsterdam prices at about 1,542 gas
-  each on Sepolia.
-- **Split wallets have a constant init code** since the same review. Predicting
-  a wallet's address no longer hashes its creation code, which lowers every
-  start by about 4,400 Prague gas, `royaltyInfo` by about 4,400 and
-  `createEdition` by about 9,000 below the figures in the table. The two-party
-  `startWithBid` measures 338,367 with it.
-- **The two-party `startWithBid` is tight:** 342,901, about 7K under 350K.
-- **An ERC-20 `startWithBid` paid by Permit2 costs 379,456**, about 45K more
+- **Re-measured after the review of 14 October 2026.** The split-wallet rows
+  were added then, on the same harness; a wallet's deployment is mostly code
+  (about 5,350 bytes, which Glamsterdam prices at about 1,542 gas each on
+  Sepolia). Split wallets also got a constant init code, so predicting a
+  wallet's address no longer hashes its creation code: the `start`,
+  `startWithBid`, `createEdition` and `royaltyInfo` rows are re-measured with
+  it (about 4,500 less per start, 9,000 per `createEdition`, 4,500 per
+  `royaltyInfo`). The other rows are as accepted; they moved by a few dozen
+  gas at most. The Sepolia column and the replay comparison below are the r2
+  deployment, which predates the change.
+- **The two-party `startWithBid` is the tightest:** 338,355, about 11.6K under
+  350K.
+- **An ERC-20 `startWithBid` paid by Permit2 costs 374,981**, about 45K more
   than in ETH, because of the Permit2 transfer path. That path adds:
   - the signed permit and its witness in the calldata;
   - Permit2's signature check and nonce update;
@@ -297,7 +299,7 @@ pricing.
   releases may not fit one transaction, and then reverts for the caller to
   split.
 
-Re-check all three allowances against mainnet's Glamsterdam parameters before
+Re-check each of these allowances against mainnet's Glamsterdam parameters before
 mainnet.
 
 ## Alternatives considered

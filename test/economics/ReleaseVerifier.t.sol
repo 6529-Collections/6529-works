@@ -190,6 +190,30 @@ contract ReleaseVerifierTest is EconomicsBase {
         assertEq(recipient.balance, 1 ether);
     }
 
+    /// @dev From the review of PR 54: a wrong bit mask (`& 0x7f`) would collide nonce `n` with
+    ///      `n + 128` inside a word. Using 0 and 255 never marks 128 or 127, and a whole word used
+    ///      leaves its neighbours untouched.
+    function test_NonceBitmapNoAliasingWithinAWord() public {
+        vm.startPrank(alice);
+        verifier.revokeNonce(0);
+        verifier.revokeNonce(255);
+        vm.stopPrank();
+        assertFalse(verifier.nonceUsed(alice, 128));
+        assertFalse(verifier.nonceUsed(alice, 127));
+        assertFalse(verifier.nonceUsed(alice, 256));
+        assertFalse(verifier.nonceUsed(alice, 511));
+        vm.startPrank(bob);
+        for (uint256 n = 256; n < 512; ++n) {
+            verifier.revokeNonce(n);
+        }
+        vm.stopPrank();
+        for (uint256 n = 256; n < 512; ++n) {
+            assertTrue(verifier.nonceUsed(bob, n));
+        }
+        assertFalse(verifier.nonceUsed(bob, 255));
+        assertFalse(verifier.nonceUsed(bob, 512));
+    }
+
     /// @dev Sequential nonces share a word: only the first in each 256 writes a new slot.
     function test_SequentialNoncesShareAStorageWord() public {
         vm.startPrank(alice);

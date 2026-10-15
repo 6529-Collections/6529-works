@@ -74,7 +74,8 @@ contract SplitFactory is ISplitFactory {
             revert DependencyCodeChanged(address(verifier));
         }
         _setPending(payees);
-        new SplitWallet{ salt: walletSalt }();
+        address deployed = address(new SplitWallet{ salt: walletSalt }());
+        if (deployed != wallet) revert WalletAddressMismatch(wallet, deployed);
         assembly ("memory-safe") {
             tstore(_PENDING, 0)
         }
@@ -97,8 +98,13 @@ contract SplitFactory is ISplitFactory {
                 artistId := tload(slot)
                 packed := tload(add(slot, 1))
             }
-            payees[i] =
-                ISplitWallet.Payee(artistId, address(uint160(packed)), uint32(packed >> 160));
+            // `_setPending` packed an address into the low 160 bits and a uint32 above them, so
+            // both truncations recover exactly what it wrote.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            address account = address(uint160(packed));
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint32 share = uint32(packed >> 160);
+            payees[i] = ISplitWallet.Payee(artistId, account, share);
         }
     }
 

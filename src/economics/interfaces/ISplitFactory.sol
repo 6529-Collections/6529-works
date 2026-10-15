@@ -27,6 +27,9 @@ interface ISplitFactory {
     error InvalidDependency(address dependency);
     /// @notice A pinned resolver or verifier no longer has the code hash pinned at installation.
     error DependencyCodeChanged(address dependency);
+    /// @notice The wallet CREATE2 deployed is not at the `predicted` address
+    ///         (`walletInitCodeHash` would no longer match the wallet's init code).
+    error WalletAddressMismatch(address predicted, address deployed);
 
     /// @notice The resolver every wallet from this factory uses for artist-resolved payees.
     function resolver() external view returns (IArtistPayoutResolver);

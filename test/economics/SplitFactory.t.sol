@@ -289,6 +289,42 @@ contract SplitFactoryTest is EconomicsBase {
         assertLt(used, 5_000);
     }
 
+    /// @dev The factory checks that CREATE2 put the wallet where it predicted: with the
+    ///      prediction's hash forced to differ from the real init code, deployment reverts.
+    function test_CreateWalletRevertsIfTheDeployedAddressDiffers() public {
+        ISplitWallet.Payee[] memory payees = _list(_fixed(alice, D));
+        bytes32 slot = bytes32(0);
+        // `walletInitCodeHash` is an immutable: patch it in a copy of the factory's runtime code.
+        bytes memory code = address(factory).code;
+        bytes32 real = factory.walletInitCodeHash();
+        uint256 hits;
+        for (uint256 i; i + 32 <= code.length; ++i) {
+            bytes32 word;
+            assembly ("memory-safe") {
+                word := mload(add(add(code, 0x20), i))
+            }
+            if (word == real) {
+                bytes32 wrong = keccak256("not the wallet init code");
+                assembly ("memory-safe") {
+                    mstore(add(add(code, 0x20), i), wrong)
+                }
+                ++hits;
+            }
+        }
+        assertGt(hits, 0, "the immutable is in the runtime code");
+        vm.etch(address(factory), code);
+        address predicted = factory.walletFor(payees, slot);
+        address deployed = vm.computeCreate2Address(
+            keccak256(abi.encode(keccak256(abi.encode(payees)), slot)), real, address(factory)
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISplitFactory.WalletAddressMismatch.selector, predicted, deployed
+            )
+        );
+        factory.createWallet(payees, slot);
+    }
+
     /// @dev The largest payee list, with extreme field values, survives the transient hand-off
     ///      to the wallet's constructor exactly.
     function test_PayeeListSurvivesTheHandOffExactly() public {

@@ -125,6 +125,7 @@
   instead of a full-width `mulDiv` (identical results for every canonical share, fuzzed
   over the full range). A split wallet's code shrinks from 5,439 to 5,302 bytes: about
   27,600 less Prague gas per deployment, and about 211,000 less on Sepolia's Glamsterdam.
+  With the ETH branch below it ends at 5,350 bytes.
 - Economics: split wallets keep no receipts high-water mark for ETH, whose receipts can only
   grow (nothing but a release takes ETH out, and a release counts it first);
   `recordedObserved(address(0))` is now always zero. A wallet's first ETH release writes 2

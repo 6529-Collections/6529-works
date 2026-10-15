@@ -48,10 +48,13 @@ contract SplitWallet is ISplitWallet, ReentrancyGuardTransient {
     /// @inheritdoc ISplitWallet
     mapping(address asset => uint256) public recordedObserved;
 
-    /// @notice Deployed only by the split factory, which supplies the canonical payee list
-    ///         (see {Splits.validate}) through `pendingPayees`, its resolver (whose code hash is
-    ///         pinned here) and its verifier. The constructor takes no arguments, so every wallet
-    ///         has the same init code and the factory predicts addresses cheaply.
+    /// @notice Deployed by the split factory, which supplies the canonical payee list (see
+    ///         {Splits.validate}) through `pendingPayees`, its resolver (whose code hash is pinned
+    ///         here) and its verifier. The constructor takes no arguments, so every wallet has the
+    ///         same init code and the factory predicts addresses cheaply. Any other contract that
+    ///         answers those three calls can deploy one too, recorded as its `factory`; the split
+    ///         factory never counts such a wallet as its own (`isWallet`), and an account without
+    ///         code cannot deploy one.
     constructor() {
         ISplitFactory factory_ = ISplitFactory(msg.sender);
         Payee[] memory payees_ = factory_.pendingPayees();
