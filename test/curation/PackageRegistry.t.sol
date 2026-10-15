@@ -1399,6 +1399,29 @@ contract PackageRegistryTest is CurationBase {
         _consume(root, item, new bytes32[](0), move);
     }
 
+    /// @dev Review of SIGS-2: a verifier once replaced is retired and can never be installed
+    ///      again (A to B to A is refused), so a swap back cannot bring back the approvals and
+    ///      the signer states of the retired verifier.
+    function test_setVerifier_refusesARetiredVerifier() public {
+        Eip712CurationVerifier a = verifier;
+        Eip712CurationVerifier b = new Eip712CurationVerifier(address(manager));
+        _swapVerifier(b);
+        bytes32 aHash = address(a).codehash;
+        vm.prank(successor);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, a));
+        registry.setVerifier(ICurationVerifier(address(b)), ICurationVerifier(address(a)), aHash);
+        assertEq(address(registry.verifier()), address(b));
+        // A verifier never installed is accepted.
+        Eip712CurationVerifier c = new Eip712CurationVerifier(address(manager));
+        bytes32 cHash = address(c).codehash;
+        vm.prank(successor);
+        registry.setVerifier(ICurationVerifier(address(b)), ICurationVerifier(address(c)), cHash);
+        assertEq(address(registry.verifier()), address(c));
+        vm.prank(successor);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, b));
+        registry.setVerifier(ICurationVerifier(address(c)), ICurationVerifier(address(b)), aHash);
+    }
+
     function test_setVerifier_compareAndSet() public {
         Eip712CurationVerifier next = new Eip712CurationVerifier(address(manager));
         bytes32 h = address(next).codehash;

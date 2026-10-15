@@ -156,7 +156,8 @@ interface IPackageRegistry is IERC165 {
     ///         authority of `artistId`.
     function revokeMove(uint256 artistId, uint256 nonce) external;
     /// @notice Swaps the curation verifier: it must support `ICurationVerifier` (ERC-165), have
-    ///         code hash `nextCodeHash`, and not be an EIP-7702 delegated account.
+    ///         code hash `nextCodeHash`, not be an EIP-7702 delegated account, and never have
+    ///         been installed before (a replaced verifier is retired for good).
     ///         SUCCESSOR_SETTER role, compare-and-set. Registered approvals are unaffected.
     function setVerifier(ICurationVerifier expected, ICurationVerifier next, bytes32 nextCodeHash)
         external;

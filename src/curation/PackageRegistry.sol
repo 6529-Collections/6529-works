@@ -103,6 +103,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
     mapping(bytes32 itemHash => bool) private _released;
     mapping(bytes32 contentHash => uint256 artistId) private _releasedTo;
+    /// @dev Verifiers replaced by `setVerifier`: never installable again.
+    mapping(address verifier => bool) private _retired;
 
     /// @param authority_ The AccessManager that governs this registry.
     /// @param verifier_ The initial curation verifier.
@@ -307,15 +309,20 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). Reinstalling the current verifier is a
-    ///      no-op and reverts with `InvalidDependency`. The pinned code hash is checked again at
-    ///      every registration.
+    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The replaced verifier is retired: it,
+    ///      the current verifier and every verifier retired before revert with
+    ///      `InvalidDependency`, so a swap back never restores a retired verifier's approvals or
+    ///      signer states. One slot per swap. The pinned code hash is checked again at every
+    ///      registration.
     function setVerifier(ICurationVerifier expected, ICurationVerifier next, bytes32 nextCodeHash)
         external
         restricted
     {
         if (address(verifier) != address(expected)) revert ExpectedValueMismatch();
-        if (address(next) == address(expected)) revert InvalidDependency(address(next));
+        if (address(next) == address(expected) || _retired[address(next)]) {
+            revert InvalidDependency(address(next));
+        }
+        _retired[address(expected)] = true;
         _setVerifier(next, nextCodeHash);
     }
 
