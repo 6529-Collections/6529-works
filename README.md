@@ -135,8 +135,9 @@ forge test --match-test test_Gas_Table -vv
 
 The CI gates, Slither and the other checks are in
 [Build, test and budgets](docs/audit/build-and-test.md); coverage, mutation testing and the
-Halmos proofs, with the nightly and weekly runs, in [Testing](docs/testing/README.md). The code is Solidity 0.8.37 on the
-`prague` EVM, with OpenZeppelin 5.7.0 and forge-std 1.17.0 in `lib/`.
+Halmos proofs, which run on `main` and on a schedule, are in [Testing](docs/testing/README.md).
+The code is Solidity 0.8.37 on the `prague` EVM, with OpenZeppelin 5.7.0 and forge-std 1.17.0
+in `lib/`.
 
 ## Where to go next
 

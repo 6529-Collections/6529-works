@@ -42,25 +42,29 @@ gets a regression test that names it.
 | Job | When | What | Time | Required |
 | --- | --- | --- | --- | --- |
 | Contracts | every pull request and push to `main` | the summary of the four jobs below, green only when all four are | seconds, after the last of them | yes |
-| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the budget gate, the genesis check and the content tooling tests | about 2.5 min | through Contracts |
-| Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant` | about 2 min | through Contracts |
-| Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 3.5 min | through Contracts |
-| Tests (other invariants) | every pull request and push | every other invariant suite: 256 runs of depth 128 | about 4 min | through Contracts |
+| Build and checks | every pull request and push | `forge fmt --check`, `forge build` (from the cached compiler output), the docs facts against the build, the budget gate, the genesis check, the content tooling tests, and the coverage and mutation tools' unit tests | about 3.5 min | through Contracts |
+| Tests (unit, fuzz and integration) | every pull request and push | `forge test --no-match-test ^invariant` | about 1 min | through Contracts |
+| Tests (economics invariants) | every pull request and push | the economics invariant suite: 256 runs of depth 128 | about 2 min | through Contracts |
+| Tests (other invariants) | every pull request and push | every other invariant suite: 256 runs of depth 128 | about 7 min | through Contracts |
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
 | Docs | every pull request and push | relative links and anchors in Markdown, the generated role matrix, and the facts the docs quote from the code | under 1 min | no |
-| Coverage | every pull request and push | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 3 min | not yet |
-| Symbolic (Halmos) | every pull request and push | every `check_*` in `test/symbolic`, one test contract at a time | about 5 min (24 proofs) | not yet |
+| Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
+| Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 4 min (24 proofs) | no (not on pull requests) |
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
-| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a contract's kill rate drops below its floor | several hours | no (scheduled) |
+| Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
-`forge test` runs in three parts whose filters together select every test exactly once (2,388
-tests at the time of writing: 2,315, 7 and 66), so the parts run on separate runners. Each
+`forge test` runs in three parts whose filters together select every test exactly once (2,421
+tests at the time of writing: 2,346, 7 and 68), so the parts run on separate runners. Each
 part restores the latest compiler output and compiles only what changed. The 15-minute CI
 budget applies to each job. Before the split, one Contracts job built and ran everything in 11
-to 13 minutes; split, the longest part takes about 4 minutes, so Contracts reports about 4
-minutes after runners pick the jobs up. Coverage and Symbolic start as optional checks. Once
-each has run green on `main` for a week, a maintainer can add it to the required checks in
-branch protection.
+to 13 minutes; split, the longest part (the other invariants, where most suites are) takes
+about 7 minutes, and the rest finish in 1 to 4. The organisation's runners are shared, so a
+run's wall time is mostly the wait for them.
+
+Coverage and the Halmos proofs run after a merge rather than on the pull request, to keep the
+shared runners for the required checks. A change that may lower coverage or touch a proven
+library should run them locally first (the commands are below); a regression otherwise shows
+on `main`'s next run.
 
 ## Coverage
 
@@ -287,4 +291,5 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 **Process:**
 
-1. Make Coverage and Symbolic required checks after a week green on `main`.
+1. Coverage and Symbolic report on `main`, after the merge. If the runner queue allows, run
+   them on pull requests again and make them required checks.

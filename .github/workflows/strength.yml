@@ -1,0 +1,162 @@
+name: Test strength
+
+# How strong the tests are (docs/testing/README.md): per-contract coverage against its floors,
+# and the Halmos proofs in test/symbolic. They run after every merge to main, nightly and on
+# demand, not on pull requests, to keep the organisation's shared runners for the required
+# checks.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Every day at 04:30 UTC, after the nightly campaigns start.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Coverage
+        # Instrumented and unoptimized, under the lite profile (fewer fuzz and invariant cases;
+        # docs/testing/README.md). Without the optimizer the gas-ceiling tests fail, as they
+        # should: --allow-failure keeps the run going, and CI's Tests jobs run every test.
+        env:
+          FOUNDRY_PROFILE: lite
+        run: forge coverage --report lcov --report summary --allow-failure
+
+      - name: Coverage floors
+        # Prints the per-contract table (also to the job summary) and the unreached lines and
+        # branches; fails when a src/ contract drops below its floor in
+        # tools/coverage-floors.json.
+        run: python tools/check_coverage.py --uncovered
+
+      - name: Upload the LCOV report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: ignore
+          retention-days: 30
+
+  symbolic:
+    name: Symbolic (Halmos)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12.13"
+
+      # Halmos compiles through Foundry (`forge build --ast`).
+      - name: Install Foundry
+        id: foundry_setup
+        continue-on-error: true
+        uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09
+        with:
+          version: v1.7.1
+
+      - name: Retry Foundry installation
+        if: ${{ steps.foundry_setup.outcome == 'failure' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export FOUNDRY_DIR="$HOME/.foundry"
+          foundryup="$FOUNDRY_DIR/bin/foundryup"
+          test -x "$foundryup"
+          for attempt in 1 2 3; do
+            sleep "$((attempt * 15))"
+            if "$foundryup" --install 1.7.1; then
+              echo "$FOUNDRY_DIR/bin" >> "$GITHUB_PATH"
+              exit 0
+            fi
+          done
+          exit 1
+
+      - name: Install Halmos
+        # Every package is pinned and hash-checked; wheels only, so nothing is built. The SMT
+        # solver (yices-smt2) comes from the lock too, so Halmos downloads nothing.
+        run: >-
+          python -m pip install --disable-pip-version-check --require-hashes
+          --only-binary=:all: --no-deps -r requirements-tools.lock
+
+      - name: Halmos
+        # Every check_* in test/symbolic, with the options in halmos.toml, one test contract at
+        # a time: a solver crash then names its contract, and the other contracts still report.
+        env:
+          FOUNDRY_PROFILE: symbolic
+        shell: bash
+        run: |
+          set -uo pipefail
+          status=0
+          log=$(mktemp)
+          contracts=$(grep -ho '^contract [A-Za-z0-9_]*SymbolicTest' test/symbolic/*.sol | cut -d' ' -f2 | sort)
+          test -n "$contracts"
+          for contract in $contracts; do
+            echo "::group::$contract"
+            start=$SECONDS
+            halmos --no-status --contract "$contract" 2>&1 | tee -a "$log" || status=1
+            echo "$contract took $((SECONDS - start))s"
+            echo "::endgroup::"
+          done
+          # Every proof declared in test/symbolic ran and passed, so a test contract the name
+          # match above misses fails the job instead of being skipped.
+          declared=$(grep -ho 'function check_[A-Za-z0-9_]*' test/symbolic/*.sol | wc -l)
+          passed=$(sed 's/\x1b\[[0-9;]*m//g' "$log" | grep -c '^\[PASS\] check_' || true)
+          echo "$passed of $declared proofs passed"
+          test "$passed" -eq "$declared" || status=1
+          exit $status

@@ -2,11 +2,13 @@ name: Mutation
 
 # Mutation testing of src/ with slither-mutate (docs/testing/README.md, "Mutation testing").
 # Too slow for pull requests: it runs weekly and on demand, one job per shard of
-# tools/mutation.py, then merges the shards into one report. A pull request that changes this
-# workflow or the tool runs one small shard only, to show the pipeline still works end to end.
+# tools/mutation.py, then merges the shards into one report. A merge to main that changes this
+# workflow or the tool runs one small shard only, to show the pipeline still works end to end
+# (not on pull requests: even one shard takes minutes of a shared runner).
 
 on:
-  pull_request:
+  push:
+    branches: [main]
     paths:
       - ".github/workflows/mutation.yml"
       - "tools/mutation.py"
@@ -25,7 +27,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   plan:
@@ -49,10 +51,10 @@ jobs:
       - name: Shards
         id: shards
         env:
-          # A pull request runs one small shard (six mutants of the hash-algorithm constants);
-          # schedule and dispatch default to all of them.
+          # A push runs one small shard (six mutants of the hash-algorithm constants); schedule
+          # and dispatch default to all of them.
           REQUESTED: >-
-            ${{ github.event_name == 'pull_request' && 'interfaces-HashRef' || inputs.shards }}
+            ${{ github.event_name == 'push' && 'interfaces-HashRef' || inputs.shards }}
         run: |
           python tools/mutation.py list --json > all-shards.json
           python - <<'PY' >> "$GITHUB_OUTPUT"

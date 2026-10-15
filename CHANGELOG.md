@@ -455,8 +455,11 @@
   invariants; the other invariants) beside a Build and checks job; the required check
   Contracts is the summary of all four. Deep invariants (the `deep` profile) and the fork tests
   run nightly in `nightly.yml`.
-- CI: two jobs on every pull request, run in parallel with the others. Coverage runs
-  `forge coverage`, prints the per-contract table in the job summary and fails when a contract
-  drops below its floor. Symbolic (Halmos) runs every proof in `test/symbolic`. A weekly
-  workflow (`mutation.yml`, also on demand) runs every mutation shard as its own job, eight at a
-  time, and, once floors are recorded, fails when a contract's kill rate drops below its floor.
+- CI: `strength.yml` runs after every merge to `main`, nightly and on demand, not on pull
+  requests (the organisation's runners are shared). Coverage runs `forge coverage`, prints the
+  per-contract table in the job summary and fails when a contract drops below its floor.
+  Symbolic (Halmos) runs every proof in `test/symbolic` and fails unless all of them pass. The
+  coverage and mutation tools' unit tests run in Build and checks on every pull request. A
+  weekly workflow (`mutation.yml`, also on demand) runs every mutation shard as its own job,
+  eight at a time, and, once floors are recorded, fails when a contract's kill rate drops
+  below its floor; a merge that changes it or the tool runs one small shard.
