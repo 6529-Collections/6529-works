@@ -93,6 +93,10 @@ contract EnglishAuction is
     uint256 public constant DELIVERY_GAS = 300_000;
     /// @notice Gas the settlement needs after the delivery attempt returns.
     uint256 public constant DELIVERY_RESERVE = 50_000;
+    /// @dev Gas given to an ERC-20 payout's own call frame (MONEY-1): the token's 300,000, the
+    ///      escrow fallback and new-slot costs under Glamsterdam fit with room to spare. A payout
+    ///      that fails in it is credited to the wallet instead; the caller must forward it in full.
+    uint256 private constant _ERC20_PAYOUT_GAS = 1_000_000;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
     uint8 private constant _PAUSE_USED = 1;
@@ -334,8 +338,8 @@ contract EnglishAuction is
         }
         // Exact: a bid fits 96 bits and the share 17, so the product cannot overflow.
         uint256 fee = price * lt.feeShare / Splits.DENOMINATOR;
-        _pay(lt.currency, lt.seller, price - fee);
-        _pay(lt.currency, lt.feeRecipient, fee);
+        _pay(lt.currency, lt.seller, price - fee, saleId);
+        _pay(lt.currency, lt.feeRecipient, fee, saleId);
         IMintTarget(lt.token).markPrimarySettled(lt.id);
         _deliver(saleId, s);
         _emitSettled(saleId, s, lt, price, fee);
@@ -423,17 +427,20 @@ contract EnglishAuction is
     // ----------------------------------------------------------------------------- credits
 
     /// @inheritdoc ISaleAdapter
-    function claim(address currency, address to) external nonReentrant returns (uint256 amount) {
-        if (to == address(0)) revert InvalidRecipient(to);
-        amount = _credits[msg.sender][currency];
-        if (amount == 0) revert NothingToClaim(msg.sender, currency);
-        _credits[msg.sender][currency] = 0;
-        emit Claimed(msg.sender, currency, to, amount);
-        if (currency != CURRENCY_ETH) {
-            TokenTransfer.transferExact(currency, to, amount);
-        } else if (!TokenTransfer.sendETH(to, amount, gasleft())) {
-            revert ClaimFailed(to);
-        }
+    function claim(address currency, address to) external nonReentrant returns (uint256) {
+        return _claim(msg.sender, currency, to);
+    }
+
+    /// @inheritdoc IEnglishAuction
+    function claimFor(address account, address currency) external nonReentrant returns (uint256) {
+        return _claim(account, currency, account);
+    }
+
+    /// @notice Pays one ERC-20 settlement payout in its own call frame, so that `settle` can
+    ///         catch its failure (MONEY-1). Only this contract may call it.
+    function settlePayout(address currency, address wallet, uint256 amount) external {
+        if (msg.sender != address(this)) revert InvalidRecipient(msg.sender);
+        RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
     }
 
     /// @inheritdoc ISaleAdapter
@@ -849,12 +856,41 @@ contract EnglishAuction is
 
     /// @dev Pays nothing for a zero amount, so a zero-fee configuration may name no fee
     ///      recipient (`RevenuePayment` rejects a zero wallet before it looks at the amount).
-    function _pay(address currency, address wallet, uint256 amount) private {
+    ///      MONEY-1: an ERC-20 payout runs in its own frame ({settlePayout}); if it fails for
+    ///      any reason (the token changed behaviour, or blocks this adapter so even the escrow
+    ///      route fails), the amount is credited to the wallet here, and anyone may later pay it
+    ///      out with `claimFor`. Delivery never waits on a payout. ETH payouts cannot fail but
+    ///      by gas, which reverts.
+    function _pay(address currency, address wallet, uint256 amount, uint256 saleId) private {
         if (amount == 0) return;
         if (currency == CURRENCY_ETH) {
             RevenuePayment.payETH(IRevenueEscrow(escrow), wallet, amount, PAYOUT_GAS);
-        } else {
-            RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
+            return;
+        }
+        // The frame gets its gas in full, so a caller cannot force the credit route.
+        if (!BoundedCall.hasSufficientGas(gasleft(), _ERC20_PAYOUT_GAS, DELIVERY_RESERVE)) {
+            revert RevenuePayment.PaymentInsufficientGas(_ERC20_PAYOUT_GAS);
+        }
+        try this.settlePayout{ gas: _ERC20_PAYOUT_GAS }(currency, wallet, amount) { }
+        catch {
+            _credit(wallet, currency, saleId, amount);
+        }
+    }
+
+    /// @dev Sends all of `account`'s credits in `currency` to `to`.
+    function _claim(address account, address currency, address to)
+        private
+        returns (uint256 amount)
+    {
+        if (to == address(0)) revert InvalidRecipient(to);
+        amount = _credits[account][currency];
+        if (amount == 0) revert NothingToClaim(account, currency);
+        _credits[account][currency] = 0;
+        emit Claimed(account, currency, to, amount);
+        if (currency != CURRENCY_ETH) {
+            TokenTransfer.transferExact(currency, to, amount);
+        } else if (!TokenTransfer.sendETH(to, amount, gasleft())) {
+            revert ClaimFailed(to);
         }
     }
 

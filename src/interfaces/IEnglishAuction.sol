@@ -125,7 +125,9 @@ interface IEnglishAuction is ISaleAdapter {
     ///         `type(uint96).max` base units (about 7.9e28); a larger one reverts.
     function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
-    ///         the seller and the network fee. Permissionless. While the locked currency is
+    ///         the seller and the network fee. Permissionless. An ERC-20 payout that fails, even
+    ///         through the escrow, is credited to its wallet (`Credited`, paid out later with
+    ///         `claimFor`), so delivery never depends on it (MONEY-1). While the locked currency is
     ///         deprecated, a standing bid cannot settle (`AssetNotActive`); after it is re-admitted,
     ///         the first call reopens the auction for at least the anti-snipe window (the
     ///         governed duration after a withdrawal) and emits `AuctionResumed` (MARKET-2).
@@ -133,6 +135,11 @@ interface IEnglishAuction is ISaleAdapter {
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
     ///         token there.
     function claimDelivery(uint256 saleId, address to) external;
+    /// @notice Sends all of `account`'s credits in `currency` to `account` itself. Permissionless:
+    ///         a seller split wallet or fee wallet whose ERC-20 payout failed at settlement and
+    ///         was credited here (MONEY-1) cannot call `claim`. The funds only ever go to
+    ///         `account`; a transfer that fails reverts and keeps the credit.
+    function claimFor(address account, address currency) external returns (uint256 amount);
 
     /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
     function pause(uint256 saleId, bytes32 disputeRef) external;

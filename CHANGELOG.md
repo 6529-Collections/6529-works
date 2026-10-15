@@ -304,3 +304,10 @@
   - MARKET-5: a federated contract delisted while its auction runs takes no more bids
     (`TargetNotAllowed`), and the auction settles by crediting the high bid back and giving the
     work to its artist, as with no bid.
+  - MONEY-1: auction delivery never depends on a payout. An ERC-20 settlement payout runs in
+    its own call frame (`settlePayout`, callable only by the auction, with 1,000,000 gas the
+    settler must forward); if it fails even through the escrow (the token changed behaviour or
+    blocks the auction), the amount is credited to the wallet and the work is still delivered.
+    `claimFor(account, currency)` lets anyone send an account's credits to that account, so a
+    split wallet's credited payout can be paid once the token works again. ETH payouts are
+    unchanged.
