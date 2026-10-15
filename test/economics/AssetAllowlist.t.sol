@@ -136,6 +136,16 @@ contract AssetAllowlistTest is EconomicsBase {
         );
         allowlist.deprecateAsset(address(usdc));
 
+        // Re-admission waits 14 days from the deprecation, whenever it was scheduled.
+        uint256 allowedAt = block.timestamp + Roles.FUNDS;
+        vm.warp(allowedAt - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAssetAllowlist.ReadmissionTooEarly.selector, address(usdc), allowedAt
+            )
+        );
+        allowlist.admitAsset(address(usdc), 2, 2e6);
+        vm.warp(allowedAt);
         vm.expectEmit(true, false, false, true, address(allowlist));
         emit IAssetAllowlist.IncrementFloorChanged(address(usdc), 1e6, 2e6, 3);
         allowlist.admitAsset(address(usdc), 2, 2e6);
@@ -157,6 +167,7 @@ contract AssetAllowlistTest is EconomicsBase {
         assertEq(_revision(address(usdc)), 2);
         allowlist.deprecateAsset(address(usdc));
         assertEq(_revision(address(usdc)), 3);
+        vm.warp(block.timestamp + Roles.FUNDS);
         allowlist.admitAsset(address(usdc), 3, 2e6);
         assertEq(_revision(address(usdc)), 4);
         // Same status and floor as after revision 2, but a different revision: stale writes fail.

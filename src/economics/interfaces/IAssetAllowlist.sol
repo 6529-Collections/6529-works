@@ -43,6 +43,9 @@ interface IAssetAllowlist {
     error InvalidStatusTransition(address asset, Status current);
     /// @notice `asset` is not active.
     error AssetNotActive(address asset);
+    /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, 14 days
+    ///         (`Roles.FUNDS`) after its deprecation.
+    error ReadmissionTooEarly(address asset, uint256 allowedAt);
     /// @notice An increment floor must be non-zero.
     error InvalidIncrementFloor();
     /// @notice The product identifier is zero.
@@ -86,7 +89,8 @@ interface IAssetAllowlist {
 
     /// @notice Admits `asset`, or re-admits a deprecated one, with increment floor `floor`, if the
     ///         asset is at `expectedRevision` (0 for a never-admitted asset). Re-admission is the
-    ///         only way back from deprecation.
+    ///         only way back from deprecation, and is refused until 14 days after it
+    ///         (`ReadmissionTooEarly`), even when scheduled before the deprecation.
     function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external;
 
     /// @notice Stops new sales from using active `asset`. Immediate; bumps the asset's revision,

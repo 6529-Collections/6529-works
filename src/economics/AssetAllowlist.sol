@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
+import { Roles } from "../governance/Roles.sol";
 import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
 import { IAssetAllowlist } from "./interfaces/IAssetAllowlist.sol";
 import { TokenTransfer } from "./TokenTransfer.sol";
@@ -57,7 +58,16 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
     ///      includes an emergency deprecation that returns the asset to the status and floor the
     ///      operation saw.
     function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external restricted {
-        _checkRevision(expectedRevision, _assets[asset].revision);
+        AssetConfig storage config = _assets[asset];
+        _checkRevision(expectedRevision, config.revision);
+        // As GOV-5 for unpauses: AccessManager counts the 14-day delay from scheduling, so a
+        // re-admission scheduled ahead could undo a deprecation in its own block. The delay is
+        // counted from the deprecation instead.
+        if (config.status == Status.Deprecated) {
+            uint256 allowedAt = uint256(config.since) + Roles.FUNDS;
+            // forge-lint: disable-next-line(block-timestamp)
+            if (block.timestamp < allowedAt) revert ReadmissionTooEarly(asset, allowedAt);
+        }
         if (asset != ETH) {
             if (asset.code.length == 0 || DelegatedEOA.isDelegated(asset)) {
                 revert AssetNotAdmissible(asset);
