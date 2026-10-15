@@ -59,7 +59,19 @@ records any disagreement; the invariant function asserts there is none, then che
 | Suite | Actions | Invariants |
 | --- | --- | --- |
 | [`StreamLifecycleInvariant.t.sol`](invariant/StreamLifecycleInvariant.t.sol) (handler [`StreamLifecycleHandler.sol`](invariant/StreamLifecycleHandler.sol)) | register and accept packages; move items to Stream and start auctions (with or without a first bid, a revoked move); bid; settle; dispute pause; cancel (upheld) or resume (rejected, with a withdrawal); `releaseContent`; `openRecord`, `setRecord`, `finalize`, `addLocator`; governed relicense; transfer; stage a recovery override and end it (veto or execution); the restrained keys trying every artist power; time | every token has exactly one known owner, or auction custody while its sale is unsettled; token IDs assigned once, in order, never reused; a content hash held by at most one live item unless released to its beneficiary; a finalized record keeps its content hashes, and media never changes; a CC0 work stays CC0 with the pinned text; locators are append-only; a restrained artist never acts; the auction holds exactly the live bids and credits |
-| [`EditionSalesInvariant.t.sol`](invariant/EditionSalesInvariant.t.sol) (handler [`EditionSalesHandler.sol`](invariant/EditionSalesHandler.sol)) | create editions; open fixed-price sales (artist, PLATFORM with consent, PLATFORM alone) and Dutch sales; buy through allowlist and public phases in ETH and an ERC-20 (direct, EIP-2612, relayed Permit2); pause and unpause the adapters; deprecate and re-admit currencies; close sales; re-rate masters; claim credits; time | supply within the edition size, every copy held; every wallet within its cap in every capped phase; each adapter's ETH and ERC-20 balances cover what it owes, exactly; every purchase pays the schedule price, the schedule delay equals an independent model of the halts (MARKET-1); no purchase or opening while halted; an edition's royalty follows its master |
+| [`EditionSalesInvariant.t.sol`](invariant/EditionSalesInvariant.t.sol) (handler [`EditionSalesHandler.sol`](invariant/EditionSalesHandler.sol)) | create editions; open fixed-price sales (artist, PLATFORM with consent, PLATFORM alone) and Dutch sales; buy through allowlist and public phases in ETH and an ERC-20 (direct, EIP-2612, relayed Permit2); pause and unpause the adapters; deprecate and re-admit currencies; governed increment floors, fee terms and default license (with stale revisions); fee recipients refusing ETH (the real revenue escrow); close sales; re-rate masters; claim credits; time | supply within the edition size, every copy held; every wallet within its cap in every capped phase; each adapter's and the escrow's balances cover what they owe, exactly; every purchase pays the schedule price, the schedule delay equals an independent model of the halts (MARKET-1); no purchase or opening while halted; an edition's royalty follows its master; a sale's locked terms and an edition's economics never change; the allowlist's status clocks, floors and revisions and the resolver's terms, license and revisions equal the model |
+
+A third, smaller suite covers the content store on its own:
+[`ContentStoreInvariant.t.sol`](../content/ContentStoreInvariant.t.sol) writes and rewrites chunks,
+registers and re-registers manifests (one over the same chunks with another MIME type, one that
+breaks the layout rule), refuses malformed manifests and reads ranges back: chunks are written
+once at a fixed pointer, manifests are idempotent and immutable, a file is complete exactly when
+every chunk it names is stored with its layout length, and a read returns exactly the bytes
+written (a range over a missing or mis-sized chunk never reads).
+
+In CI each suite asserts its state every fourth call and after the last call of each run
+(`forge-config: default.invariant.check_interval = 4`); every action still checks its own
+outcome at once, and the `deep` profile asserts the state after every call.
 
 `test_EveryActionRuns` in each suite replays sequences of the campaign's shape from fixed seeds
 and asserts that every action, and the paths the invariants are about (cancel, release and
@@ -67,6 +79,7 @@ re-consumption, recovery, refusals), really ran, so a campaign cannot pass vacuo
 
 ```bash
 forge test --match-path "test/integration/invariant/*"            # CI: 256 runs x depth 128
+forge test --match-contract ContentStoreInvariantTest
 FOUNDRY_PROFILE=deep forge test --match-test "invariant_"         # nightly: 2,000 x 256
 ```
 

@@ -6,8 +6,9 @@
   256 runs of depth 128 in CI with a coverage replay that fails if any action or key path never
   runs. The Stream lifecycle suite drives the package registry, Stream, the records satellite,
   the auction and recovery overrides; the Editions sales suite drives Editions with the
-  fixed-price and Dutch adapters, pauses and currency deprecations. A `deep` Foundry profile
-  (2,000 runs of depth 256) is for a nightly run.
+  fixed-price and Dutch adapters, pauses, currency deprecations, governed allowlist and
+  economics changes and the revenue escrow. A third suite covers the content store. A `deep`
+  Foundry profile (2,000 runs of depth 256) is for a nightly run.
 - Tests: opt-in fork tests (`test/fork/`, skipped unless `FORK_MAINNET_RPC` or
   `FORK_SEPOLIA_RPC` is set) against the real 6529 delegation contract through the
   `ConsolidationAdapter`, the canonical Permit2 through the sale adapters, the Chainlink VRF

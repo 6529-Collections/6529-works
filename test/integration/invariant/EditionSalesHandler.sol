@@ -7,16 +7,31 @@ import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
-import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import {
+    CURRENCY_DEFAULT,
+    CURRENCY_ETH,
+    PRODUCT_EDITIONS
+} from "src/interfaces/types/EconomicsTypes.sol";
 import {
     EditionFormat,
     EditionTerms,
     ItemKind,
+    License,
     PackageItem
 } from "src/interfaces/types/PackageTypes.sol";
+import { LockedTerms } from "src/interfaces/types/SaleTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { IntegrationBase } from "../IntegrationBase.sol";
+
+/// @dev A payout wallet that refuses ETH, etched over a fee recipient so that payouts take the
+///      revenue escrow's fallback.
+contract EthRefuser {
+    receive() external payable {
+        revert("refused");
+    }
+}
 
 /// @notice The handler of the Editions sales invariant suite: 6529 Editions, the fixed-price
 ///         adapter and the Dutch adapter on the real stack (`IntegrationBase`), with the asset
@@ -71,6 +86,8 @@ abstract contract EditionSalesHandler is IntegrationBase {
         /// @dev The model's halt clock (adapter pauses plus currency deprecations) at open.
         uint256 haltedAtOpen;
         uint64 dutchStart;
+        /// @dev `keccak256(abi.encode(LockedTerms))` as the sale reported it when it opened.
+        bytes32 locked;
         IFixedPriceSale.Phase[3] phases;
     }
 
@@ -130,6 +147,25 @@ abstract contract EditionSalesHandler is IntegrationBase {
     uint256 internal consentNonce;
     /// @dev Dutch credits already claimed (paid in, credited, then sent back).
     uint256 internal ghostClaimed;
+
+    /// @dev The second network fee recipient governance may switch to, and the CC-BY text the
+    ///      default license may name.
+    address internal altFeeRecipient = makeAddr("editionsAltFeeRecipient");
+    bytes32 internal byTextFileId;
+    /// @dev Fee recipients currently refusing ETH (their payouts go to the revenue escrow).
+    mapping(address recipient => bool) internal refusing;
+    /// @dev The model of the asset allowlist: each currency's revision, status-change time and
+    ///      increment floor.
+    mapping(address currency => uint64) internal ghostRevision;
+    mapping(address currency => uint256) internal ghostSince;
+    mapping(address currency => uint256) internal ghostFloor;
+    /// @dev The model of the economics resolver for 6529 Editions: its fee and license revision
+    ///      counters, its fee terms and its default license.
+    uint64 internal ghostFeeRevision;
+    uint64 internal ghostLicenseRevision;
+    address internal ghostFeeRecipient;
+    uint32 internal ghostFeeShare;
+    License internal ghostLicense;
     string[] internal violations;
     mapping(bytes32 path => uint256) public hits;
 
@@ -147,6 +183,17 @@ abstract contract EditionSalesHandler is IntegrationBase {
             address(allowlist),
             abi.encodeCall(allowlist.admitAsset, (address(usd), 0, 1e16))
         );
+        byTextFileId = _storeText("Creative Commons Attribution 4.0 (fixture)", "text/plain");
+        address[2] memory currencies = [CURRENCY_ETH, address(usd)];
+        for (uint256 i; i < 2; ++i) {
+            (, ghostSince[currencies[i]],) = allowlist.statusClock(currencies[i]);
+            (, ghostFloor[currencies[i]], ghostRevision[currencies[i]]) =
+                allowlist.assetConfig(currencies[i]);
+        }
+        (ghostFeeRevision,, ghostLicenseRevision) = economics.revisions(PRODUCT_EDITIONS);
+        ghostFeeRecipient = economics.economics(PRODUCT_EDITIONS).feeRecipient;
+        ghostFeeShare = economics.economics(PRODUCT_EDITIONS).feeShare;
+        ghostLicense = economics.defaultLicense(PRODUCT_EDITIONS);
         Work[] memory works = new Work[](MASTERS);
         EditionTerms[MASTERS] memory terms = _terms();
         for (uint256 i; i < MASTERS; ++i) {
@@ -173,7 +220,7 @@ abstract contract EditionSalesHandler is IntegrationBase {
             (m.phase0Root, m.phase1Root) = _allowlists(tokenId, terms[i].price);
         }
         // Two editions exist at genesis; the rest come from `createEdition`.
-        _createEdition(0);
+        _createEdition(1);
         _createEdition(3);
     }
 
@@ -287,6 +334,8 @@ abstract contract EditionSalesHandler is IntegrationBase {
             g.master = i;
             g.approved = how != 2;
             g.haltedAtOpen = _modelHalted(address(fixedSale), masters[i].currency);
+            (LockedTerms memory terms,,) = fixedSale.sale(saleId);
+            g.locked = keccak256(abi.encode(terms));
             for (uint256 p; p < 3; ++p) {
                 g.phases[p] = phases[p];
             }
@@ -316,6 +365,8 @@ abstract contract EditionSalesHandler is IntegrationBase {
             g.approved = byArtist;
             g.haltedAtOpen = _modelHalted(address(dutchSale), masters[i].currency);
             g.dutchStart = startTime;
+            (LockedTerms memory terms,,) = dutchSale.sale(saleId);
+            g.locked = keccak256(abi.encode(terms));
             dutchCount = saleId;
             ++hits[byArtist ? bytes32("openByArtist") : bytes32("openByPlatform")];
         } catch {
@@ -423,6 +474,8 @@ abstract contract EditionSalesHandler is IntegrationBase {
         vm.prank(guardian2);
         allowlist.deprecateAsset(currency);
         frozenSince[currency] = block.timestamp;
+        ghostSince[currency] = block.timestamp;
+        ++ghostRevision[currency];
         ++hits["deprecate"];
     }
 
@@ -437,8 +490,13 @@ abstract contract EditionSalesHandler is IntegrationBase {
             address(allowlist),
             abi.encodeCall(allowlist.admitAsset, (currency, revision, floor))
         );
+        if (block.timestamp < frozenSince[currency] + 14 days) {
+            _violation("a currency was re-admitted within 14 days of its deprecation");
+        }
         frozenTotal[currency] += block.timestamp - frozenSince[currency];
         frozenSince[currency] = 0;
+        ghostSince[currency] = block.timestamp;
+        ++ghostRevision[currency];
         ++hits["readmit"];
     }
 
@@ -469,9 +527,9 @@ abstract contract EditionSalesHandler is IntegrationBase {
     }
 
     /// @notice Every party consents and FUNDS_SETTER (14 days) re-rates a master (one call in
-    ///         four); its edition, if created, follows.
+    ///         eight); its edition, if created, follows.
     function rerate(uint256 seed, uint256 rateSeed) external {
-        if ((seed >> 8) % 4 != 0) return;
+        if ((seed >> 8) % 8 != 0) return;
         Master storage m = masters[seed % MASTERS];
         uint32 rate = uint32(_bound(rateSeed, 0, 20_000));
         uint64 deadline = uint64(block.timestamp + 30 days);
@@ -505,6 +563,106 @@ abstract contract EditionSalesHandler is IntegrationBase {
         ++hits["claim"];
     }
 
+    /// @notice PARAMETER_SETTER's governed 48-hour change of an active currency's increment floor
+    ///         (one call in four), compare-and-set on the revision; one in five carries a stale
+    ///         revision and must be refused.
+    function setIncrementFloor(uint256 seed) external {
+        address currency = seed % 2 == 0 ? address(usd) : CURRENCY_ETH;
+        if (frozenSince[currency] != 0 || (seed >> 8) % 4 != 0) return;
+        bool stale = (seed >> 16) % 5 == 0;
+        uint64 revision = ghostRevision[currency] - (stale ? 1 : 0);
+        uint256 floor = ghostFloor[currency] * (2 + (seed >> 24) % 3) / 3;
+        if (floor == 0) floor = 1;
+        bool ok = _governTry(
+            hotAdmin,
+            address(allowlist),
+            abi.encodeCall(allowlist.setIncrementFloor, (currency, revision, floor))
+        );
+        if (ok == stale) _violation(ok ? "a stale floor change applied" : "a floor change failed");
+        if (!ok) {
+            ++hits["staleRefused"];
+            return;
+        }
+        ghostFloor[currency] = floor;
+        ++ghostRevision[currency];
+        ++hits["setFloor"];
+    }
+
+    /// @notice FUNDS_SETTER's governed 14-day change of 6529 Editions' fee terms (one call in
+    ///         eight): the recipient and share editions created afterwards lock. One in five
+    ///         carries a stale revision and must be refused.
+    function setFeeTerms(uint256 seed) external {
+        if ((seed >> 8) % 8 != 0) return;
+        bool stale = (seed >> 16) % 5 == 0 && ghostFeeRevision != 0;
+        address recipient = seed % 2 == 0 ? networkFee : altFeeRecipient;
+        uint32 share = [uint32(0), 10_000, 25_000][(seed >> 24) % 3];
+        bool ok = _governTry(
+            hotAdmin,
+            address(economics),
+            abi.encodeCall(
+                economics.setFeeTerms,
+                (PRODUCT_EDITIONS, ghostFeeRevision - (stale ? 1 : 0), recipient, share)
+            )
+        );
+        if (ok == stale) _violation(ok ? "stale fee terms applied" : "fee terms failed");
+        if (!ok) {
+            ++hits["staleRefused"];
+            return;
+        }
+        (ghostFeeRecipient, ghostFeeShare) = (recipient, share);
+        ++ghostFeeRevision;
+        ++hits["setFeeTerms"];
+    }
+
+    /// @notice PARAMETER_SETTER's governed 48-hour change of 6529 Editions' default license (one
+    ///         call in four): CC0 with the pinned text, or CC-BY. A CC0 license naming another
+    ///         text, and a stale revision, must be refused.
+    function setDefaultLicense(uint256 seed) external {
+        if ((seed >> 8) % 4 != 0) return;
+        uint256 kind = seed % 3;
+        License memory next = kind == 0
+            ? License("CC0-1.0", cc0TextFileId)
+            : kind == 1 ? License("CC-BY-4.0", byTextFileId) : License("CC0-1.0", byTextFileId);
+        bool stale = (seed >> 16) % 5 == 0 && ghostLicenseRevision != 0;
+        bool ok = _governTry(
+            hotAdmin,
+            address(economics),
+            abi.encodeCall(
+                economics.setDefaultLicense,
+                (PRODUCT_EDITIONS, ghostLicenseRevision - (stale ? 1 : 0), next)
+            )
+        );
+        bool expected = !stale && kind != 2;
+        if (ok != expected) _violation(ok ? "a refused license applied" : "a license failed");
+        if (!ok) {
+            ++hits["staleRefused"];
+            return;
+        }
+        ghostLicense = next;
+        ++ghostLicenseRevision;
+        ++hits["setLicense"];
+    }
+
+    /// @notice A fee recipient starts refusing ETH (its payouts then go to the revenue escrow),
+    ///         or stops, and anyone flushes what the escrow holds for it.
+    function toggleRefusal(uint256 seed) external {
+        address recipient = seed % 2 == 0 ? networkFee : altFeeRecipient;
+        if (!refusing[recipient]) {
+            vm.etch(recipient, address(new EthRefuser()).code);
+            refusing[recipient] = true;
+            ++hits["refuse"];
+            return;
+        }
+        vm.etch(recipient, "");
+        refusing[recipient] = false;
+        uint256 owed = escrow.owed(recipient, CURRENCY_ETH);
+        if (owed == 0) return;
+        uint256 before = recipient.balance;
+        escrow.flush(recipient, CURRENCY_ETH);
+        if (recipient.balance - before != owed) _violation("a flush paid the wrong amount");
+        ++hits["flush"];
+    }
+
     /// @notice Time passes: a minute to twelve hours.
     function warp(uint256 secondsSeed) external {
         vm.warp(block.timestamp + _bound(secondsSeed, 1 minutes, 12 hours));
@@ -515,6 +673,25 @@ abstract contract EditionSalesHandler is IntegrationBase {
 
     function _violation(string memory what) internal {
         violations.push(what);
+    }
+
+    /// @dev `_govern` that reports whether the governed call executed instead of reverting; a
+    ///      failed operation is cancelled so the same call can be scheduled again.
+    function _governTry(address caller, address target, bytes memory data)
+        internal
+        returns (bool ok)
+    {
+        (, uint32 delay) = manager.canCall(caller, target, bytes4(data));
+        vm.prank(caller);
+        manager.schedule(target, data, 0);
+        vm.warp(block.timestamp + delay);
+        vm.prank(caller);
+        try manager.execute(target, data) {
+            ok = true;
+        } catch {
+            vm.prank(caller);
+            manager.cancel(caller, target, data);
+        }
     }
 
     function _paused(address adapter) internal view returns (bool) {
@@ -728,15 +905,24 @@ abstract contract EditionSalesHandler is IntegrationBase {
         return currency == CURRENCY_ETH ? account.balance : usd.balanceOf(account);
     }
 
+    /// @dev What `account` has received in `currency`: its balance plus what the revenue escrow
+    ///      holds for it (a refused payout).
+    function _received(address currency, address account) internal view returns (uint256) {
+        return _balance(currency, account) + escrow.owed(account, currency);
+    }
+
     function _snapshot(Charge memory c) internal view {
-        c.sellerBefore = _balance(c.currency, c.seller);
-        c.feeBefore = _balance(c.currency, c.feeRecipient);
+        c.sellerBefore = _received(c.currency, c.seller);
+        c.feeBefore = _received(c.currency, c.feeRecipient);
     }
 
     /// @dev After a purchase: the seller got exactly `total - fee` and the network `fee`.
     function _settled(Charge memory c, uint256 id, uint256 quantity) internal {
-        uint256 seller = _balance(c.currency, c.seller) - c.sellerBefore;
-        uint256 fee = _balance(c.currency, c.feeRecipient) - c.feeBefore;
+        uint256 seller = _received(c.currency, c.seller) - c.sellerBefore;
+        uint256 fee = _received(c.currency, c.feeRecipient) - c.feeBefore;
+        if (fee != 0 && refusing[c.feeRecipient] && c.currency == CURRENCY_ETH) {
+            ++hits["escrowed"];
+        }
         if (seller != c.total - c.fee || fee != c.fee) {
             _violation("a purchase was not charged the schedule price");
         }
@@ -958,6 +1144,7 @@ abstract contract EditionSalesHandler is IntegrationBase {
         _assertCaps();
         _assertFunds();
         _assertSchedules();
+        _assertConfiguration();
     }
 
     /// @dev Per edition: supply never exceeds the edition size and every copy minted is held by
@@ -991,6 +1178,9 @@ abstract contract EditionSalesHandler is IntegrationBase {
             assertEq(e.royaltyRate, masterRate, "an edition's rate is its master's");
             assertEq(amount, ODD_PRICE * masterRate / DENOMINATOR, "the edition's royalty");
             assertEq(receiver, m.royaltyReceiver, "the edition's receiver never changes");
+            assertEq(e.seller, m.seller, "the seller locked at creation");
+            assertEq(e.feeRecipient, m.feeRecipient, "the fee recipient locked at creation");
+            assertEq(e.feeShare, m.feeShare, "the fee share locked at creation");
         }
     }
 
@@ -1040,14 +1230,54 @@ abstract contract EditionSalesHandler is IntegrationBase {
     function _assertSchedules() internal view {
         for (uint256 s = 1; s <= fixedCount; ++s) {
             SaleGhost storage g = fixedSales[s];
+            (LockedTerms memory terms,,) = fixedSale.sale(s);
+            assertEq(keccak256(abi.encode(terms)), g.locked, "a sale's locked terms never change");
             if (g.closed) continue;
             assertEq(fixedSale.scheduleDelay(s), _delay(g, address(fixedSale)), "fixed delay");
         }
         for (uint256 s = 1; s <= dutchCount; ++s) {
             SaleGhost storage g = dutchSales[s];
+            (LockedTerms memory terms,,) = dutchSale.sale(s);
+            assertEq(keccak256(abi.encode(terms)), g.locked, "a sale's locked terms never change");
             if (g.closed) continue;
             assertEq(dutchSale.scheduleDelay(s), _delay(g, address(dutchSale)), "Dutch delay");
             assertEq(dutchSale.currentPrice(s), _dutchCharge(g, 1).unit, "the curve's price");
         }
+    }
+
+    /// @dev The asset allowlist and the economics resolver move only by governed, revisioned
+    ///      changes: each currency's status clock, floor and revision, and 6529 Editions' fee
+    ///      terms, default license and revisions, are exactly the model's. The revenue escrow
+    ///      holds exactly what it owes.
+    function _assertConfiguration() internal view {
+        address[2] memory currencies = [CURRENCY_ETH, address(usd)];
+        for (uint256 i; i < 2; ++i) {
+            address c = currencies[i];
+            (IAssetAllowlist.Status status, uint256 since, uint256 inactive) =
+                allowlist.statusClock(c);
+            IAssetAllowlist.Status expected = frozenSince[c] == 0
+                ? IAssetAllowlist.Status.Active
+                : IAssetAllowlist.Status.Deprecated;
+            assertEq(uint8(status), uint8(expected), "the currency's status");
+            assertEq(since, ghostSince[c], "when the status last changed");
+            assertEq(inactive, frozenTotal[c], "closed deprecations add up");
+            (, uint256 floor, uint64 revision) = allowlist.assetConfig(c);
+            assertEq(floor, ghostFloor[c], "the increment floor");
+            assertEq(revision, ghostRevision[c], "one revision per change");
+        }
+        (uint64 feeRevision,, uint64 licenseRevision) = economics.revisions(PRODUCT_EDITIONS);
+        assertEq(feeRevision, ghostFeeRevision, "one fee revision per change");
+        assertEq(licenseRevision, ghostLicenseRevision, "one license revision per change");
+        assertEq(economics.economics(PRODUCT_EDITIONS).feeRecipient, ghostFeeRecipient);
+        assertEq(economics.economics(PRODUCT_EDITIONS).feeShare, ghostFeeShare);
+        License memory l = economics.defaultLicense(PRODUCT_EDITIONS);
+        assertEq(l.textFileId, ghostLicense.textFileId, "the default license text");
+        assertEq(
+            WorksHashing.licenseKey(l.spdxId),
+            WorksHashing.licenseKey(ghostLicense.spdxId),
+            "the default license"
+        );
+        assertEq(address(escrow).balance, escrow.totalOwed(CURRENCY_ETH), "escrow ETH");
+        assertEq(usd.balanceOf(address(escrow)), escrow.totalOwed(address(usd)), "escrow usd");
     }
 }
