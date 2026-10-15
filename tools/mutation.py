@@ -330,7 +330,9 @@ def _patch_mutators() -> None:
                 for ir in node.irs:
                     if not (isinstance(ir, Binary) and ir.type in ROR.relational_operators):
                         continue
-                    if str(ir.variable_left.type) == "address" or str(ir.variable_right) == "address":
+                    # Address comparisons are skipped, as the stock operator intends; it compares
+                    # the right operand's name, not its type, with "address".
+                    if "address" in (str(ir.variable_left.type), str(ir.variable_right.type)):
                         continue
                     left = getattr(ir.expression, "expression_left", None)
                     right = getattr(ir.expression, "expression_right", None)
