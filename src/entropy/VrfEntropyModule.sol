@@ -134,6 +134,8 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
         _requests;
 
     /// @notice The request parameters changed.
+    /// @param previous The parameters before the change (all zero at deployment).
+    /// @param next The parameters after the change.
     event ConfigSet(VrfConfig previous, VrfConfig next);
 
     /// @param authority_ The AccessManager that governs this module.

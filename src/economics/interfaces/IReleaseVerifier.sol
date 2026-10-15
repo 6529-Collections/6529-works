@@ -27,6 +27,9 @@ interface IReleaseVerifier {
     }
 
     /// @notice `account` used `nonce`: consumed by a signed release, or revoked when `revoked`.
+    /// @param account The signer whose nonce was used.
+    /// @param nonce The nonce, now unusable for every wallet.
+    /// @param revoked True for {revokeNonce}, false for a signed release.
     event NonceUsed(address indexed account, uint256 indexed nonce, bool revoked);
 
     /// @notice Only `wallet` may consume its own authorizations; `caller` is not it.
@@ -38,20 +41,31 @@ interface IReleaseVerifier {
     ///         (`SignatureVerifier.InvalidSignature`) of `authorization` and consumes its nonce.
     ///         Only the wallet the authorization names may call; the wallet checks that
     ///         `account` is the payee's current payout address.
+    /// @param authorization The signed release; its `wallet` must be the caller.
+    /// @param signature The signature of `authorization.account` over
+    ///        `releaseDigest(authorization)`: 65 or 64 (ERC-2098) bytes for an EOA, or up to
+    ///        4,096 bytes for an ERC-1271 account.
     function consume(Authorization calldata authorization, bytes calldata signature) external;
 
     /// @notice Revokes the caller's unused `nonce` for every wallet.
     /// @dev Nonces are any `uint256`, used in any order. 256 consecutive nonces (`n` with the same
     ///      `n / 256`) share one storage word, so signing them in order writes one new slot per
     ///      256 releases.
+    /// @param nonce The nonce to revoke; reverts with {NonceAlreadyUsed} if already used.
     function revokeNonce(uint256 nonce) external;
 
     /// @notice Returns whether `account` has used or revoked `nonce`.
+    /// @param account The signer.
+    /// @param nonce The nonce to check.
+    /// @return True if the nonce was consumed or revoked.
     function nonceUsed(address account, uint256 nonce) external view returns (bool);
 
     /// @notice The EIP-712 digest a payee signs for `authorization`.
+    /// @param authorization The release to sign.
+    /// @return The typed-data hash of `authorization` in this verifier's domain.
     function releaseDigest(Authorization calldata authorization) external view returns (bytes32);
 
     /// @notice The EIP-712 domain separator on the current chain.
+    /// @return The separator for the domain "6529 Works Release Verifier", version "1".
     function domainSeparator() external view returns (bytes32);
 }

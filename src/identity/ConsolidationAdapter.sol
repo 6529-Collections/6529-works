@@ -16,10 +16,23 @@ import { Dependency } from "../libraries/Dependency.sol";
 interface IDelegationManagement {
     /// @notice The `index`-th delegate registered under
     ///         `keccak256(abi.encodePacked(delegator, collection, useCase))`.
+    /// @param key The hash of the delegator, the collection and the use case.
+    /// @param index The zero-based position in the delegator's delegate list.
+    /// @return The delegate at that position.
     function delegatorHashes(bytes32 key, uint256 index) external view returns (address);
 
     /// @notice The `index`-th registration under
     ///         `keccak256(abi.encodePacked(delegator, collection, delegate, useCase))`.
+    /// @param key The hash of the delegator, the collection, the delegate and the use case.
+    /// @param index The zero-based position among the pair's registrations.
+    /// @return delegator The delegator the registration belongs to (`delegatorAddress`).
+    /// @return delegate The delegate it registered (`delegationAddress`).
+    /// @return registeredDate The block timestamp of the registration.
+    /// @return expiryDate The registration's expiry as a Unix time in seconds; it is live while
+    ///        this is later than the current block timestamp.
+    /// @return allTokens Whether the registration covers every token of the collection.
+    /// @return tokenId The single token ID covered when `allTokens` is false, otherwise zero
+    ///        (the contract's `tokens` field).
     function globalDelegationHashes(bytes32 key, uint256 index)
         external
         view

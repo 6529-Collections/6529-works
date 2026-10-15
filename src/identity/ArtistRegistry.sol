@@ -521,6 +521,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @notice The EIP-712 digest of a STANDARD change, which a new authority also signs.
+    /// @param artistId The artist to change.
+    /// @param next The identity after the change.
+    /// @param nonce The artist's change nonce the signature binds (`changeNonce` when staged).
+    /// @param deadline The Unix time in seconds after which the signatures are expired.
+    /// @return The `Typehashes.IDENTITY_CHANGE` digest in this registry's EIP-712 domain.
     function changeDigest(
         uint256 artistId,
         ArtistIdentity calldata next,
@@ -544,6 +549,12 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @notice The EIP-712 digest a new authority signs to accept an override.
+    /// @param artistId The artist to override.
+    /// @param kind The override kind: CONTESTED, ESTATE or LOST_KEY.
+    /// @param next The identity after the override.
+    /// @param evidenceHash The override's evidence hash.
+    /// @param deadline The Unix time in seconds after which the acceptance is expired.
+    /// @return The `Typehashes.OVERRIDE_ACCEPTANCE` digest in this registry's EIP-712 domain.
     function overrideDigest(
         uint256 artistId,
         ChangeKind kind,

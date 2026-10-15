@@ -78,6 +78,11 @@ interface IEnglishAuction is ISaleAdapter {
     }
 
     /// @notice A bid was placed; `endTime` includes any anti-snipe extension.
+    /// @param saleId The auction's sale ID.
+    /// @param bidder The payer of the bid, who is credited back if it is outbid.
+    /// @param recipient Who receives the token if this bid wins (the payer when none was named).
+    /// @param amount The bid, in the locked currency's base units.
+    /// @param endTime The auction's end after this bid, in Unix seconds.
     event BidPlaced(
         uint256 indexed saleId,
         address indexed bidder,
@@ -86,6 +91,8 @@ interface IEnglishAuction is ISaleAdapter {
         uint64 endTime
     );
     /// @notice The guardian paused an auction for a dispute.
+    /// @param saleId The auction's sale ID.
+    /// @param disputeRef The dispute reference the guardian passed; the adapter does not check it.
     event AuctionPaused(uint256 indexed saleId, bytes32 disputeRef);
     /// @notice A halted auction resumed and ends at `endTime`: after a dispute pause, its
     ///         remaining time at the pause, the governed duration or the sale's anti-snipe window,
@@ -95,6 +102,9 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param endTime The new end, in Unix seconds.
     event AuctionResumed(uint256 indexed saleId, uint64 endTime);
     /// @notice An upheld dispute cancelled an auction: the bid was refunded, the token burned.
+    /// @param saleId The auction's sale ID.
+    /// @param outcomeRef The statement-log entry hash of the token's latest DISPUTE_OUTCOME,
+    ///        which the cancel cited.
     event AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef);
     /// @notice The high bidder withdrew its bid while the auction was paused, or while its
     ///         currency was deprecated before settlement.
@@ -103,12 +113,22 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param amount The withdrawn bid, credited back to the bidder, in base units.
     event BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount);
     /// @notice Delivery to `recipient` failed at settlement; it may claim the token.
+    /// @param saleId The auction's sale ID.
+    /// @param recipient The winning bid's recipient, or the artist when no bid won.
     event DeliveryPending(uint256 indexed saleId, address indexed recipient);
     /// @notice A pending token was claimed.
+    /// @param saleId The auction's sale ID.
+    /// @param recipient The recipient the token was pending for.
+    /// @param to The address the token was sent to, named by the claimer.
     event DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to);
     /// @notice The governed auction parameters changed.
+    /// @param previous The parameters before the change (all zero in the constructor).
+    /// @param next The parameters after the change.
     event ConfigSet(AuctionConfig previous, AuctionConfig next);
     /// @notice A currency's opening bid changed.
+    /// @param currency The currency, zero for ETH.
+    /// @param previous The opening bid before the change, in the currency's base units.
+    /// @param next The opening bid after the change, in the currency's base units.
     event OpeningBidSet(address indexed currency, uint256 previous, uint256 next);
 
     /// @notice The auction is not in a state that allows this action.
@@ -142,6 +162,13 @@ interface IEnglishAuction is ISaleAdapter {
     function start(address token, bytes calldata mintData) external returns (uint256 saleId);
     /// @notice `start` plus a first bid in one transaction. The bid is at most
     ///         `type(uint96).max` base units (about 7.9e28), like every bid.
+    /// @param token A served token contract.
+    /// @param mintData The token-specific mint request (for 6529 Stream,
+    ///        `abi.encode(StreamMintRequest)`).
+    /// @param recipient Who receives the token if the bid wins, or zero for the payer.
+    /// @param payment The first bid's payment: `payment.amount` is the bid in the locked
+    ///        currency's base units; a PERMIT2 signature covers `Typehashes.START_BID_WITNESS`.
+    /// @return saleId `saleIdOf(token, tokenId)`.
     function startWithBid(
         address token,
         bytes calldata mintData,
@@ -150,6 +177,10 @@ interface IEnglishAuction is ISaleAdapter {
     ) external payable returns (uint256 saleId);
     /// @notice Bids `payment.amount` for `recipient` (the payer when zero). A bid is at most
     ///         `type(uint96).max` base units (about 7.9e28); a larger one reverts.
+    /// @param saleId The auction's sale ID.
+    /// @param recipient Who receives the token if the bid wins, or zero for the payer.
+    /// @param payment The bid's payment: `payment.amount` is the bid in the locked currency's
+    ///        base units; a PERMIT2 signature covers `Typehashes.BID_WITNESS`.
     function bid(uint256 saleId, address recipient, Payment calldata payment) external payable;
     /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
     ///         the seller and the network fee. Permissionless. An ERC-20 payout runs in its own
@@ -168,6 +199,8 @@ interface IEnglishAuction is ISaleAdapter {
     function settle(uint256 saleId) external;
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
     ///         token there.
+    /// @param saleId The auction's sale ID.
+    /// @param to The address that receives the token; neither zero nor this adapter.
     function claimDelivery(uint256 saleId, address to) external;
     /// @notice Sends all of `account`'s credits in ERC-20 `currency` to `account` itself.
     ///         Permissionless: a seller split wallet or fee wallet whose ERC-20 payout failed at
@@ -175,6 +208,9 @@ interface IEnglishAuction is ISaleAdapter {
     ///         go to `account`; a transfer that fails reverts and keeps the credit. ETH is refused
     ///         (`IRevenueEscrow.InvalidAsset`): ETH credits are bidders' refunds, which only the
     ///         bidder claims, to the address it chooses.
+    /// @param account The credited account, which also receives the funds.
+    /// @param currency The ERC-20 currency; zero (ETH) reverts.
+    /// @return amount The amount sent, in the currency's base units.
     function claimFor(address account, address currency) external returns (uint256 amount);
 
     /// @notice Pauses a live auction for a dispute, once per auction. GUARDIAN role (immediate).
@@ -196,41 +232,66 @@ interface IEnglishAuction is ISaleAdapter {
     ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
     ///         fallback), recorded after the pause: an outcome recorded before the pause, or one
     ///         about the package item, cannot cancel.
+    /// @param saleId The paused auction's sale ID.
+    /// @param outcomeRef The statement-log entry hash of the token's latest DISPUTE_OUTCOME.
     function cancel(uint256 saleId, bytes32 outcomeRef) external;
     /// @notice The high bidder withdraws its bid while the auction is paused, or while its
     ///         currency is deprecated and it has not settled (MARKET-2); it is credited back
     ///         and the auction has no bid. The withdrawn amount stays as a reserve the next bid
     ///         must reach, and the resumed auction runs at least the governed duration, so the
     ///         refunded bidders can return (LIFECYCLE-1).
+    /// @param saleId The auction's sale ID; the caller must be its high bidder.
     function withdrawBid(uint256 saleId) external;
 
     /// @notice Sets the auction parameters, within the implementation's bounds: a duration of 1
     ///         hour to 7 days, an anti-snipe window of 1 minute to 1 day and at most the
     ///         duration, and an increment share of 1,000 to 100,000 (1% to 100%).
     ///         PARAMETER_SETTER role, compare-and-set.
+    /// @param expected The parameters the caller expects are current; a stale value reverts.
+    /// @param next The new parameters, within the bounds above.
     function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next) external;
     /// @notice Sets a currency's opening bid, raising or lowering it up to the implementation's
     ///         ceiling (zero at launch; the first bid is still at least 1). PARAMETER_SETTER role,
     ///         compare-and-set.
+    /// @param currency The currency, zero for ETH; it must be active on the asset allowlist.
+    /// @param expected The opening bid the caller expects is current; a stale value reverts.
+    /// @param next The new opening bid, in the currency's base units.
     function setOpeningBid(address currency, uint256 expected, uint256 next) external;
 
     /// @notice The derived sale ID: `uint256(keccak256(abi.encode(token, tokenId)))`.
+    /// @param token The token contract.
+    /// @param tokenId The token ID.
+    /// @return The sale ID, whether or not that sale exists.
     function saleIdOf(address token, uint256 tokenId) external pure returns (uint256);
     /// @notice An auction. Reverts for an unknown sale ID.
+    /// @param saleId The auction's sale ID.
+    /// @return The auction, with its derived `state`; a dispute pause past `MAX_PAUSE` is shown
+    ///        as ended, with the end it resumes to.
     function auction(uint256 saleId) external view returns (Auction memory);
     /// @notice A sale's locked terms: token, token ID and currency from the auction, seller and
     ///         fee terms read back from the token.
+    /// @param saleId The auction's sale ID; an unknown one reverts.
+    /// @return The terms, with `price` zero.
     function lockedTerms(uint256 saleId) external view returns (LockedTerms memory);
     /// @notice The smallest bid accepted now.
+    /// @param saleId The auction's sale ID; an unknown one reverts.
+    /// @return The amount, in the locked currency's base units.
     function minimumBid(uint256 saleId) external view returns (uint256);
     /// @notice The governed auction parameters.
+    /// @return The current duration, anti-snipe window and increment share.
     function config() external view returns (AuctionConfig memory);
     /// @notice A currency's opening bid.
+    /// @param currency The currency, zero for ETH.
+    /// @return The opening bid in the currency's base units; zero when never set.
     function openingBid(address currency) external view returns (uint256);
     /// @notice The recipient whose delivery is pending, or zero.
+    /// @param saleId The auction's sale ID.
+    /// @return The pending recipient, or zero when no delivery is pending.
     function pendingDelivery(uint256 saleId) external view returns (address);
     /// @notice The revenue escrow that receives failed payouts (immutable).
+    /// @return The revenue escrow's address.
     function escrow() external view returns (address);
     /// @notice The statement log whose DISPUTE_OUTCOME entries `cancel` cites (immutable).
+    /// @return The statement log's address.
     function statementLog() external view returns (address);
 }

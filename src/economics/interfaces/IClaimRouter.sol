@@ -37,6 +37,13 @@ interface IClaimRouter is IERC165 {
 
     /// @notice In continue mode, item `index` failed. `size` is the size of the data the wallet
     ///         returned, and `reason` is at most its first 256 bytes, or a router error.
+    /// @param wallet The item's target wallet.
+    /// @param asset The item's asset (ETH is `address(0)`).
+    /// @param payee The item's payee index in the wallet.
+    /// @param index The item's position in the batch.
+    /// @param size The size of the wallet's return data in bytes; zero for a target with no code.
+    /// @param reason The wallet's revert data, cut to 256 bytes, or an encoded
+    ///        {ClaimTargetHasNoCode} or {InvalidClaimReturnData} error.
     event ClaimFailed(
         address indexed wallet,
         address indexed asset,
@@ -61,23 +68,28 @@ interface IClaimRouter is IERC165 {
 
     /// @notice The most plain claims one batch may carry, so a batch fits the EIP-7825
     ///         per-transaction gas cap of 16,777,216.
+    /// @return The maximum number of items in a {claim} batch.
     function MAX_CLAIMS() external view returns (uint256);
 
     /// @notice In continue mode, the least gas each plain item must be offered. A floor, not a
     ///         promise: an item that needs more (a first release under Glamsterdam) makes the
     ///         batch revert until it gets it.
+    /// @return The minimum gas per plain item.
     function MIN_ITEM_GAS() external view returns (uint256);
 
     /// @notice The most signed claims one batch may carry (each may verify an ERC-1271 signature
     ///         of up to 4 KiB), so a batch fits the EIP-7825 cap.
+    /// @return The maximum number of items in a {claimSigned} batch.
     function MAX_SIGNED_CLAIMS() external view returns (uint256);
 
     /// @notice In continue mode, the least gas each signed item must be offered. A floor, as
     ///         {MIN_ITEM_GAS} is.
+    /// @return The minimum gas per signed item.
     function MIN_SIGNED_ITEM_GAS() external view returns (uint256);
 
     /// @notice In continue mode, an item offered at least this much gas that still fails is
     ///         skipped, whatever it spent; below it, a shortfall reverts the batch.
+    /// @return The ceiling, in gas offered to one item.
     function SHORTFALL_REVERT_CEILING() external view returns (uint256);
 
     /// @notice Releases every plain claim in order. In atomic mode any failure reverts the batch;
@@ -91,6 +103,8 @@ interface IClaimRouter is IERC165 {
         returns (uint256[] memory amounts);
 
     /// @notice Executes every signed claim in order, with the same failure modes as {claim}.
+    /// @param claims The signed releases, at most {MAX_SIGNED_CLAIMS}.
+    /// @param continueOnFailure True for continue mode, false for atomic mode.
     /// @return amounts The amount each item released.
     function claimSigned(SignedClaim[] calldata claims, bool continueOnFailure)
         external

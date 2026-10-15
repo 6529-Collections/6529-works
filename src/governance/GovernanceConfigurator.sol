@@ -82,6 +82,8 @@ contract GovernanceConfigurator {
     ///      this contract deployed the manager and was its only initial admin, any other admin
     ///      can only come from a configured grant or a later 30-day, guardian-vetoable grant,
     ///      which an indexer sees as a `RoleGranted` event.
+    /// @param cfg The expected configuration: the holders and target selector mappings passed to
+    ///        {configure}.
     function verify(GovernanceConfig.Config calldata cfg) external view {
         if (GovernanceConfig.hasRecord(worksManager, Roles.ADMIN, address(this))) {
             revert ConfiguratorStillAdmin();

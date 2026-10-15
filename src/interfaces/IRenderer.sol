@@ -41,6 +41,9 @@ interface IRenderer is IERC165 {
 
     /// @notice The compact metadata URI (`data:application/json;...`) for `tokenId` of
     ///         `token`, which is 6529 Stream or 6529 Editions.
+    /// @param token The token contract: 6529 Stream, or 6529 Editions for an edition.
+    /// @param tokenId The token ID on `token`; an edition's ID is its master's token ID.
+    /// @return `data:application/json;utf8,` followed by the compact JSON metadata.
     function tokenURI(address token, uint256 tokenId) external view returns (string memory);
 
     /// @notice The full metadata URI with the media inlined, for a work with a usable record that

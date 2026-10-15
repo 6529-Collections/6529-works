@@ -44,21 +44,35 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     }
 
     /// @notice An edition was created and linked to its master.
+    /// @param editionId The new edition's ID, equal to its master's 6529 Stream token ID.
+    /// @param contentHash The master's content hash.
+    /// @param terms The edition terms from the approved package item.
     event EditionCreated(
         uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms
     );
     /// @notice ERC-4906: an edition's metadata changed (its master's record, license, renderer
     ///         or preferred location).
+    /// @param _tokenId The edition whose metadata changed.
     event MetadataUpdate(uint256 _tokenId);
     /// @notice ERC-4906: a range of editions' metadata changed.
+    /// @param _fromTokenId The first ID of the range (this contract emits 0).
+    /// @param _toTokenId The last ID of the range, inclusive (this contract emits
+    ///        `type(uint256).max`).
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
     /// @notice An OPEN edition's window began with its first mint and ends at `closesAt`.
+    /// @param editionId The OPEN edition.
+    /// @param closesAt The first timestamp at which mints are refused: the first mint's time plus
+    ///        the window, in seconds, capped at `type(uint64).max`.
     event EditionWindowOpened(uint256 indexed editionId, uint64 closesAt);
     /// @notice A contract was bound under `name` (WORK_RECORDS), once.
+    /// @param name The binding name.
+    /// @param target The bound contract.
     event Bound(bytes32 indexed name, address target);
     /// @notice ERC-7572: the contract-level metadata changed.
     event ContractURIUpdated();
     /// @notice The marketplace owner changed.
+    /// @param previousOwner The owner before the change (zero at deployment).
+    /// @param newOwner The owner after the change.
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     /// @notice The contract URI changed from `previous` to `next` (beside ERC-7572's
     ///         `ContractURIUpdated`, which carries no values).
@@ -108,6 +122,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error WorkRecordsUnbound();
 
     /// @notice The 6529 Stream contract whose masters anchor editions (immutable).
+    /// @return The 6529 Stream address.
     function stream() external view returns (address);
 
     /// @notice Creates the edition of master `workId` from its approved package item once the
@@ -118,6 +133,13 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         unconsumed items, not the edition of a master already sold). Claims the content
     ///         hash for the Editions product and locks `PRODUCT_EDITIONS` economics from the
     ///         resolver. Reverts for edition terms with a non-zero price and `CURRENCY_DEFAULT`.
+    /// @param workId The master's 6529 Stream token ID, which becomes the edition ID.
+    /// @param item The master's EDITION_MASTER package item, whose hash must be the item hash
+    ///        6529 Stream stored for `workId`.
+    /// @param packageRoot A package root the package registry registered (approved, or revoked
+    ///        since).
+    /// @param proof The Merkle proof of the item's leaf under `packageRoot`, at most
+    ///        `Limits.MAX_PROOF_DEPTH` nodes.
     /// @return editionId The new edition ID (equal to `workId`).
     function createEdition(
         uint256 workId,
@@ -128,16 +150,23 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
 
     /// @notice Binds 6529 Stream's work-records satellite, once (ERC-165 for `IWorkRecords`, not
     ///         an EIP-7702 delegated account). ADMIN role.
+    /// @param target The work-records satellite 6529 Stream bound (`IStream.workRecords()`).
     function bindWorkRecords(address target) external;
     /// @notice The bound work-records satellite.
+    /// @return The satellite's address, or zero before it is bound.
     function workRecords() external view returns (address);
     /// @notice Re-emits ERC-4906 for master `workId`'s edition after anything the edition renders
     ///         from its master changed (record, license, renderer, locators, preferences, on-chain
     ///         sync or royalty rate); a no-op when the master has no edition. Bound work-records
     ///         satellite only.
+    /// @param workId The master's 6529 Stream token ID (its edition's ID).
     function notifyMasterUpdated(uint256 workId) external;
     /// @notice Sets an edition's royalty rate after its master's changed by agreement. Bound
     ///         work-records satellite only.
+    /// @param editionId The edition ID (its master's token ID); an ID without an edition is a
+    ///        no-op.
+    /// @param rate The new ERC-2981 rate, out of 100,000; a higher value reverts with
+    ///        `InvalidRoyaltyRate`.
     function setRoyaltyRate(uint256 editionId, uint32 rate) external;
     /// @notice Emits a batch ERC-4906 update for every edition, after a global or collection
     ///         preferred-location change or a new default renderer. Bound work-records satellite
@@ -145,32 +174,52 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     function notifyAllUpdated() external;
 
     /// @notice An edition's state. Reverts with `UnknownEdition`.
+    /// @param editionId The edition ID.
+    /// @return The edition's content hash, terms as approved, mint count, window start, locked
+    ///        economics and current royalty rate.
     function edition(uint256 editionId) external view returns (Edition memory);
     /// @notice The master an edition is anchored by. Reverts with `UnknownEdition`.
+    /// @param editionId The edition ID.
+    /// @return streamContract The 6529 Stream contract (`stream()`).
+    /// @return workId The master's token ID, equal to `editionId`.
+    /// @return contentHash The master's content hash.
     function masterOf(uint256 editionId)
         external
         view
         returns (address streamContract, uint256 workId, bytes32 contentHash);
     /// @notice Whether an edition exists.
+    /// @param editionId The edition ID.
+    /// @return True once `createEdition` created it.
     function exists(uint256 editionId) external view returns (bool);
     /// @notice An edition's format: FIXED (a size) or OPEN (a one-time window from its first
     ///         mint). The sale adapters let PLATFORM open a sale alone only for a FIXED edition.
     ///         Reverts with `UnknownEdition`.
+    /// @param editionId The edition ID.
+    /// @return The format from the approved edition terms.
     function formatOf(uint256 editionId) external view returns (EditionFormat);
     /// @notice An edition's content hash (its master's). Reverts with `UnknownEdition`.
+    /// @param editionId The edition ID.
+    /// @return The content hash stored when the edition was created.
     function contentHashOf(uint256 editionId) external view returns (bytes32);
     /// @notice An edition's license: its master's current license from the work-records
     ///         satellite. Reverts with `UnknownEdition`, or `IWorkRecords.RecordNotOpen` until the
     ///         master's record is open.
+    /// @param editionId The edition ID.
+    /// @return The license's SPDX identifier and license-text file ID.
     function licenseOf(uint256 editionId) external view returns (License memory);
 
     /// @notice ERC-7572 contract-level metadata URI.
+    /// @return The URI; empty until set.
     function contractURI() external view returns (string memory);
     /// @notice Sets the contract URI. PARAMETER_SETTER role.
+    /// @param uri The new contract-level metadata URI.
     function setContractURI(string calldata uri) external;
     /// @notice The marketplace owner (held by 6529); it has no on-chain powers.
+    /// @return The current owner.
     function owner() external view returns (address);
     /// @notice Sets the marketplace owner, which marketplaces let configure creator earnings.
     ///         FUNDS_SETTER role, compare-and-set.
+    /// @param expected The current owner; any other value reverts with `ExpectedValueMismatch`.
+    /// @param next The new owner.
     function setOwner(address expected, address next) external;
 }

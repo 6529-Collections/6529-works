@@ -16,6 +16,8 @@ import { PrimaryTerms } from "./types/SaleTypes.sol";
 ///      `terms.saleKind`. Token IDs are never reused.
 interface IMintTarget {
     /// @notice An adapter was admitted or removed as a minter.
+    /// @param adapter The sale adapter.
+    /// @param admitted Whether it may now call `mint`.
     event AdmittedMinterSet(address indexed adapter, bool admitted);
 
     /// @notice The calling adapter's sale kind is not the one the terms require.
@@ -51,6 +53,9 @@ interface IMintTarget {
     ///         adapter that started the sale owns its currency. For an edition, the full terms.
     ///         For a 6529 Stream item not yet minted (`id` 0), a preview from `data`, unverified.
     ///         Reverts when no terms exist (for example an unknown edition).
+    /// @param id The token ID (the edition ID for 6529 Editions), or 0 for a 6529 Stream preview.
+    /// @param data For a 6529 Stream preview, `abi.encode(StreamMintRequest)`; ignored otherwise.
+    /// @return The terms; fields not set in the case above are zero.
     function primaryTerms(uint256 id, bytes calldata data)
         external
         view
@@ -77,8 +82,12 @@ interface IMintTarget {
     function markPrimarySettled(uint256 id) external;
 
     /// @notice Whether `adapter` may call `mint`.
+    /// @param adapter The sale adapter.
+    /// @return True while the adapter is admitted.
     function isAdmittedMinter(address adapter) external view returns (bool);
     /// @notice Admits or removes a sale adapter (ERC-165 checked for `ISaleAdapter`, not an
     ///         EIP-7702 delegated account). SUCCESSOR_SETTER role (30-day class).
+    /// @param adapter The sale adapter.
+    /// @param admitted True to admit it, false to remove it.
     function setAdmittedMinter(address adapter, bool admitted) external;
 }

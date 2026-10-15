@@ -567,6 +567,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Editions check when binding.
+    /// @param interfaceId The interface ID to test.
+    /// @return True for the `IWorkRecords` and `IERC165` interface IDs.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(IWorkRecords).interfaceId || super.supportsInterface(interfaceId);
     }

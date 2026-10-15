@@ -10,10 +10,15 @@ import { IContentStore } from "./IContentStore.sol";
 ///      encoding are not copied here: they come from the file's manifest.
 interface IDependencyRegistry {
     /// @notice A version was registered. It can never be changed or removed.
+    /// @param name The library's name label.
+    /// @param version The version label.
+    /// @param fileId The content-store file holding that version.
     event DependencyRegistered(
         bytes32 indexed name, bytes32 indexed version, bytes32 indexed fileId
     );
     /// @notice A version was marked deprecated. Its content stays readable and resolvable.
+    /// @param name The library's name label.
+    /// @param version The deprecated version label.
     event DependencyDeprecated(bytes32 indexed name, bytes32 indexed version);
 
     /// @notice `name` or `version` is empty, or is not left-aligned `[a-z0-9._-]` followed only
@@ -29,6 +34,7 @@ interface IDependencyRegistry {
     error DependencyAlreadyDeprecated(bytes32 name, bytes32 version);
 
     /// @notice The content store the registry points at.
+    /// @return The content store, fixed at deployment.
     function store() external view returns (IContentStore);
 
     /// @notice Registers `fileId` as `(name, version)`. The file must be registered and
@@ -48,6 +54,11 @@ interface IDependencyRegistry {
 
     /// @notice Everything a consumer needs to load `(name, version)`: the store file, whether it
     ///         is deprecated, and the manifest data (MIME type and encoding). Reverts if unknown.
+    /// @param name A registered library name.
+    /// @param version A registered version of `name`.
+    /// @return fileId The content-store file holding the version.
+    /// @return deprecated True once the version is deprecated.
+    /// @return file The file's manifest, as `IContentStore.fileInfo` returns it.
     function resolve(bytes32 name, bytes32 version)
         external
         view

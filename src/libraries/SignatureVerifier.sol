@@ -54,6 +54,11 @@ library SignatureVerifier {
     }
 
     /// @notice Returns whether `signature` is valid for `digest` from `signer`.
+    /// @param signer The account the signature must verify against; zero is never valid.
+    /// @param digest The signed digest.
+    /// @param signature The signature bytes: 65 or 64 (ERC-2098) bytes for an EOA, anything up to
+    ///        {MAX_SIGNATURE_LENGTH} for an ERC-1271 contract.
+    /// @return Whether the signature verifies.
     /// @dev Reverts with `BoundedCall.BoundedCallInsufficientGas` when an ERC-1271 check is
     ///      needed and the caller cannot forward {ERC1271_GAS_LIMIT} in full.
     function isValid(address signer, bytes32 digest, bytes memory signature)
@@ -71,6 +76,10 @@ library SignatureVerifier {
 
     /// @notice Low-s ECDSA over a 65-byte `r || s || v` or 64-byte ERC-2098 `r || vs`
     ///         signature, with `v` in {27, 28}.
+    /// @param signer The expected signer.
+    /// @param digest The signed digest.
+    /// @param signature The signature bytes.
+    /// @return Whether `signature` recovers to `signer`.
     function isValidECDSA(address signer, bytes32 digest, bytes memory signature)
         internal
         pure
@@ -84,6 +93,10 @@ library SignatureVerifier {
     }
 
     /// @notice ERC-1271 with a constant gas cap and an exact 32-byte magic-value return.
+    /// @param signer The contract asked to approve the signature.
+    /// @param digest The signed digest.
+    /// @param signature The signature bytes, passed through unchanged.
+    /// @return Whether `signer` returned exactly the ERC-1271 magic value.
     function isValidERC1271(address signer, bytes32 digest, bytes memory signature)
         internal
         view

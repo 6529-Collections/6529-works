@@ -32,6 +32,9 @@ contract WorksAccessManager is AccessManager {
     mapping(uint64 roleId => mapping(address account => bool)) private _suspended;
 
     /// @notice `guardian` suspended `account`'s `roleId`: it no longer acts for that role.
+    /// @param roleId The suspended role.
+    /// @param account The suspended holder.
+    /// @param guardian The guardian that called {suspend}.
     event RoleSuspended(uint64 indexed roleId, address indexed account, address indexed guardian);
     /// @notice A grant or revocation of `roleId` to `account` cleared its suspension: an ADMIN
     ///         grant or revocation, or the holder's own `renounceRole`.
@@ -53,6 +56,9 @@ contract WorksAccessManager is AccessManager {
     ///         role (`renounceRole` revokes it, which lifts the suspension with the role).
     ///         Guardians only.
     /// @dev `roleId` must be `Roles.isSuspendable` and `account` must hold or await it.
+    /// @param roleId The role to suspend: `Roles.PLATFORM`, `Roles.CURATOR` or
+    ///        `Roles.STORAGE_OPERATOR`.
+    /// @param account The holder, or pending grantee, of `roleId`; must not be suspended already.
     function suspend(uint64 roleId, address account) external {
         address sender = _msgSender();
         (bool isGuardian,) = hasRole(Roles.GUARDIAN, sender);
@@ -65,6 +71,9 @@ contract WorksAccessManager is AccessManager {
     }
 
     /// @notice Whether `account`'s `roleId` is suspended.
+    /// @param roleId The role to check.
+    /// @param account The account to check.
+    /// @return True from {suspend} until a grant, revocation or renouncement of the role lifts it.
     function isSuspended(uint64 roleId, address account) external view returns (bool) {
         return _suspended[roleId][account];
     }

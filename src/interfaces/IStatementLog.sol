@@ -63,9 +63,14 @@ interface IStatementLog {
 
     /// @notice A relayed entry spent `nonce` of `signer`. Emitted right after the entry's
     ///         {StatementAppended}, so a relayed entry is distinguishable from a direct one.
+    /// @param entryHash The relayed entry's hash.
+    /// @param signer The account that signed the statement.
+    /// @param nonce The relay nonce the entry spent.
     event StatementRelayed(bytes32 indexed entryHash, address indexed signer, uint256 nonce);
 
     /// @notice `signer` revoked an unused relay nonce.
+    /// @param signer The account that revoked the nonce.
+    /// @param nonce The revoked relay nonce.
     event NonceRevoked(address indexed signer, uint256 indexed nonce);
 
     /// @notice The artist-role resolver changed (zero disables ARTIST statements).
@@ -110,14 +115,18 @@ interface IStatementLog {
 
     /// @notice Appends a statement as the caller, speaking as ARTIST or OWNER.
     /// @dev CURATOR and PLATFORM statements use {appendCurator} and {appendPlatform}.
+    /// @param role ARTIST or OWNER; any other role reverts with `InvalidRole`.
+    /// @param statement The statement to append.
     /// @return entryHash The new entry's hash.
     function append(Role role, Statement calldata statement) external returns (bytes32 entryHash);
 
     /// @notice Appends a statement as the caller, who must hold the curator role.
+    /// @param statement The statement to append.
     /// @return entryHash The new entry's hash.
     function appendCurator(Statement calldata statement) external returns (bytes32 entryHash);
 
     /// @notice Appends a statement as the caller, who must hold the platform role.
+    /// @param statement The statement to append.
     /// @return entryHash The new entry's hash.
     function appendPlatform(Statement calldata statement) external returns (bytes32 entryHash);
 
@@ -126,6 +135,7 @@ interface IStatementLog {
     /// @dev Restricted, and the only path that may write GOVERNANCE_MANIFEST or record the
     ///      AccessManager as signer. The statement's subject must be `(authority, 0)` and its kind
     ///      GOVERNANCE_MANIFEST, so a scheduled operation shows exactly what it will record.
+    /// @param statement The manifest statement.
     /// @return entryHash The new entry's hash.
     function appendGovernanceManifest(Statement calldata statement)
         external
@@ -133,6 +143,14 @@ interface IStatementLog {
 
     /// @notice Appends a statement that `signer` authorised by an EIP-712 signature; anyone may
     ///         submit it.
+    /// @param role The role `signer` speaks as; CURATOR and PLATFORM need that role with no
+    ///        execution delay.
+    /// @param statement The statement to append.
+    /// @param signer The account that signed, recorded as the speaker.
+    /// @param nonce An unused relay nonce of `signer`; any `uint256`, spent by this call.
+    /// @param deadline The Unix time in seconds after which the signature is expired.
+    /// @param signature `signer`'s EIP-712 signature of the role, signer, nonce, deadline and
+    ///        statement.
     /// @return entryHash The new entry's hash.
     function appendSigned(
         Role role,
@@ -144,9 +162,14 @@ interface IStatementLog {
     ) external returns (bytes32 entryHash);
 
     /// @notice Revokes one of the caller's relay nonces before it is used.
+    /// @param nonce The relay nonce; a used or revoked one reverts with `NonceAlreadyUsed`.
     function revokeNonce(uint256 nonce) external;
 
     /// @notice Returns how many entries a subject has and its current chain head.
+    /// @param token The subject's token contract, or zero when `id` is a work ID.
+    /// @param id The token ID, or the work ID when `token` is zero.
+    /// @return count The number of entries in the subject's chain.
+    /// @return head The chain head after the latest entry, or zero for an empty chain.
     function chainOf(address token, uint256 id) external view returns (uint64 count, bytes32 head);
 
     /// @notice The display rule for a work's dispute status: the entry hash of the subject's
@@ -162,6 +185,9 @@ interface IStatementLog {
     ///      the outcome it replaces in `supersedes`; an edition's metadata shows its master's.
     ///      A caller that must know when an outcome about the token itself was recorded uses
     ///      {disputeOutcomeOf}, which has no item fallback.
+    /// @param token The subject's token contract, or zero when `id` is a work ID.
+    /// @param id The token ID, or the work ID when `token` is zero.
+    /// @return entryHash The entry hash of the outcome that applies, or zero.
     function latestDisputeOutcome(address token, uint256 id)
         external
         view
@@ -172,6 +198,10 @@ interface IStatementLog {
     ///         nonzero).
     /// @dev A caller that read `chainOf(token, id).count` earlier, for example when it paused a
     ///      sale, tells whether the outcome was recorded since: `index >= count then`.
+    /// @param token The subject's token contract, or zero when `id` is a work ID.
+    /// @param id The token ID, or the work ID when `token` is zero.
+    /// @return entryHash The latest DISPUTE_OUTCOME entry's hash, or zero.
+    /// @return index That entry's position in the subject's chain; zero when there is none.
     function disputeOutcomeOf(address token, uint256 id)
         external
         view

@@ -23,5 +23,9 @@ interface IArtistRoleResolver is IERC165 {
     ///         the subject `(token, id)`.
     /// @dev Should return false, not revert, for a subject it does not know. The log calls this
     ///      with `staticcall`, so it cannot change state.
+    /// @param token The subject's token contract, or zero when `id` is a work ID with no token.
+    /// @param id The token ID, or the work ID when `token` is zero.
+    /// @param account The account that would speak as an artist.
+    /// @return True if `account` may speak as an artist of the subject now.
     function isArtist(address token, uint256 id, address account) external view returns (bool);
 }

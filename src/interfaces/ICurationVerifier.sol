@@ -15,6 +15,11 @@ interface ICurationVerifier is IERC165 {
     /// @notice Whether `packageRoot` is approved with `evidenceHash`, and the attester.
     /// @dev Must not revert for a well-formed but invalid attestation: it returns
     ///      `(false, address(0))` and the caller fails closed.
+    /// @param packageRoot The package root to check.
+    /// @param evidenceHash The evidence hash the approval must bind.
+    /// @param attestation The verifier-specific approval proof.
+    /// @return approved True if the attestation approves `packageRoot` with `evidenceHash`.
+    /// @return signer The attesting signer, or zero when not approved.
     function isApproved(bytes32 packageRoot, bytes32 evidenceHash, bytes calldata attestation)
         external
         view
@@ -36,8 +41,10 @@ interface ICurationVerifier is IERC165 {
 ///      `IPackageRegistry.revokePackage`.
 interface ICurationSignerVerifier is ICurationVerifier {
     /// @notice The guardian disabled `signer`.
+    /// @param signer The disabled address.
     event SignerDisabled(address indexed signer);
     /// @notice A disabled `signer` was enabled again after the 30-day delay.
+    /// @param signer The enabled address.
     event SignerEnabled(address indexed signer);
 
     /// @notice `signer` is already disabled.
@@ -46,15 +53,25 @@ interface ICurationSignerVerifier is ICurationVerifier {
     error SignerNotDisabled(address signer);
 
     /// @notice Disables `signer`: its attestations stop counting at once. GUARDIAN role.
+    /// @param signer The address to disable, with or without the CURATION_SIGNER role; an
+    ///        already disabled one reverts with `SignerAlreadyDisabled`.
     function disableSigner(address signer) external;
     /// @notice Re-enables a disabled `signer`. SUCCESSOR_SETTER role (30-day delay).
+    /// @param signer The disabled address to enable; one not disabled reverts with
+    ///        `SignerNotDisabled`.
     function enableSigner(address signer) external;
     /// @notice Whether `signer` is disabled.
+    /// @param signer The address to check.
+    /// @return True if `signer` is disabled.
     function isDisabled(address signer) external view returns (bool);
     /// @notice Whether an attestation by `signer` counts now.
+    /// @param signer The address to check.
+    /// @return True if `signer` holds CURATION_SIGNER with no execution delay and is not disabled.
     function isSignerActive(address signer) external view returns (bool);
     /// @notice The epoch an approval by `signer` must bind to count now. It changes whenever the
     ///         signer is disabled or enabled (salted from that block, so it cannot be computed
     ///         earlier), or its CURATION_SIGNER role is granted anew.
+    /// @param signer The curation signer.
+    /// @return The signer's current epoch.
     function signerEpoch(address signer) external view returns (uint256);
 }

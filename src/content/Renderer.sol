@@ -206,6 +206,8 @@ contract Renderer is IRenderer {
     }
 
     /// @notice ERC-165: `IRenderer` and `IERC165`.
+    /// @param id The interface ID to test.
+    /// @return True for the `IRenderer` and `IERC165` interface IDs.
     function supportsInterface(bytes4 id) external pure returns (bool) {
         return id == type(IRenderer).interfaceId || id == type(IERC165).interfaceId;
     }

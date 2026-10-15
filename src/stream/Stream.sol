@@ -499,6 +499,8 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @notice The token's metadata, built by its pinned renderer once finalized, else by the
     ///         default renderer. Reverts with `UnknownWork` for a burned or unminted token.
+    /// @param tokenId A live token ID.
+    /// @return The metadata URI the renderer builds (`IRenderer.tokenURI`).
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         return IRenderer(rendererOf(tokenId)).tokenURI(address(this), tokenId);
     }

@@ -433,6 +433,10 @@ contract EnglishAuction is
 
     /// @notice Pays one ERC-20 settlement payout in its own call frame, so that `settle` can
     ///         catch its failure (MONEY-1). Only this contract may call it.
+    /// @param currency The sale's ERC-20 currency.
+    /// @param wallet The seller or fee wallet; a failed transfer is deposited in the revenue
+    ///        escrow for it.
+    /// @param amount The payout, in the currency's base units.
     function settlePayout(address currency, address wallet, uint256 amount) external {
         if (msg.sender != address(this)) revert InvalidRecipient(msg.sender);
         RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
@@ -592,6 +596,9 @@ contract EnglishAuction is
     ///         nothing records who sent it (CALLS-5). Never send a token here.
     /// @dev Relies on `start` and `startWithBid` holding the reentrancy guard while they mint;
     ///      any future intake path must hold it too.
+    /// @param operator The address that made the transfer; it must be this adapter.
+    /// @param from The previous owner; it must be zero (a mint).
+    /// @return The `onERC721Received` selector, which accepts the token.
     function onERC721Received(address operator, address from, uint256, bytes calldata)
         external
         view

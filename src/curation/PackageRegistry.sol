@@ -356,6 +356,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @notice Whether `itemHash` was burned and released, so it can never be consumed again.
+    /// @param itemHash The item hash.
+    /// @return True if `releaseContent` tombstoned the item.
     function isReleased(bytes32 itemHash) external view returns (bool) {
         return _released[itemHash];
     }
@@ -376,6 +378,11 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @notice The EIP-712 digest the lead artist signs to move an item to Stream.
+    /// @param packageRoot The package root the item is consumed through.
+    /// @param itemHash The item's hash (`WorksHashing.itemHash`).
+    /// @param nonce The lead artist's move nonce; any unused `uint256`.
+    /// @param deadline The Unix time in seconds after which the signature is expired.
+    /// @return The `Typehashes.MOVE_TO_STREAM` digest in this registry's EIP-712 domain.
     function moveDigest(bytes32 packageRoot, bytes32 itemHash, uint256 nonce, uint64 deadline)
         public
         view
@@ -387,6 +394,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @notice The EIP-712 digest a party signs to accept a package root.
+    /// @param packageRoot The package root to accept.
+    /// @param acceptance The party's account, profile fields and signature deadline.
+    /// @return The `Typehashes.PACKAGE_ACCEPTANCE` digest in this registry's EIP-712 domain.
     function acceptanceDigest(bytes32 packageRoot, PartyAcceptance calldata acceptance)
         public
         view

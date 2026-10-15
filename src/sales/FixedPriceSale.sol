@@ -257,6 +257,16 @@ contract FixedPriceSale is IFixedPriceSale, MintSaleBase, EIP712 {
 
     /// @notice The EIP-712 digest a creator signs to approve `phases_` for token `id` sold in
     ///         `currency` at `packagePrice` (the sale's resolved currency and package price).
+    /// @param token The token contract of the sale.
+    /// @param id The token ID of the sale.
+    /// @param currency The currency the sale resolves to when it opens (`CURRENCY_ETH` or an
+    ///        ERC-20), never `CURRENCY_DEFAULT`.
+    /// @param packagePrice The unit price from the token's terms, in the currency's base units.
+    /// @param phases_ The phases, in the order `openSale` will receive them.
+    /// @param nonce The creator's single-use, revocable consent nonce.
+    /// @param deadline The last timestamp, in seconds since the epoch, at which `openSale`
+    ///        accepts the signature.
+    /// @return The EIP-712 digest in this adapter's domain.
     function phaseConfigurationDigest(
         address token,
         uint256 id,

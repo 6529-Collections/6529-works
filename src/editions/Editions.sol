@@ -394,6 +394,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @notice The edition's metadata, built by its master's renderer from the master's record
     ///         and content-store bytes. Reverts with `UnknownEdition`.
+    /// @param id The edition ID.
+    /// @return The renderer's compact metadata URI (`IRenderer.tokenURI`) for this contract and
+    ///        `id`.
     function uri(uint256 id) public view override returns (string memory) {
         _edition(id);
         return IRenderer(IStream(stream).rendererOf(id)).tokenURI(address(this), id);

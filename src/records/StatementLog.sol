@@ -228,6 +228,12 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @notice Returns the EIP-712 digest `signer` must sign for {appendSigned}.
+    /// @param role The role `signer` speaks as.
+    /// @param statement The statement to authorise.
+    /// @param signer The account that signs.
+    /// @param nonce The relay nonce the entry will spend.
+    /// @param deadline The Unix time in seconds after which the signature is expired.
+    /// @return The authorization digest in this log's EIP-712 domain.
     function authorizationDigest(
         Role role,
         Statement calldata statement,
@@ -239,11 +245,17 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @notice Returns whether `signer` has used or revoked `nonce`.
+    /// @param signer The account whose relay nonce is checked.
+    /// @param nonce The relay nonce.
+    /// @return True if a relayed entry spent the nonce or `signer` revoked it.
     function nonceUsed(address signer, uint256 nonce) external view returns (bool) {
         return _nonceBitmap[signer][nonce >> 8] & _bit(nonce) != 0;
     }
 
     /// @notice Returns the key that identifies a subject in events and storage.
+    /// @param token The subject's token contract, or zero when `id` is a work ID.
+    /// @param id The token ID, or the work ID when `token` is zero.
+    /// @return `keccak256(abi.encode(token, id))`.
     function subjectKey(address token, uint256 id) public pure returns (bytes32) {
         return keccak256(abi.encode(token, id));
     }

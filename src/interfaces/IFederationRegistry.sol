@@ -41,20 +41,41 @@ interface IFederationRegistry is IERC165 {
     }
 
     /// @notice The factory registered a deployment.
+    /// @param token The federated contract.
+    /// @param artistId The artist identity it is listed under, as in `entry.artistId`.
+    /// @param entry The registered entry.
     event Registered(address indexed token, uint256 indexed artistId, Entry entry);
     /// @notice A vote changed a contract's status.
+    /// @param token The federated contract.
+    /// @param status Its new status.
+    /// @param voteRef A reference to the vote that decided the change.
     event StatusSet(address indexed token, Status status, bytes32 voteRef);
     /// @notice A vote delisted or relisted every contract of an artist identity.
+    /// @param artistId The artist identity.
+    /// @param delisted True when the identity was delisted, false when that was lifted.
+    /// @param voteRef A reference to the vote that decided the change.
     event ArtistDelistingSet(uint256 indexed artistId, bool delisted, bytes32 voteRef);
 
     /// @notice Registers a deployment. Callable only by the federation factory.
+    /// @param token The deployed contract.
+    /// @param entry Its entry, fixed from now on except `status`.
     function register(address token, Entry calldata entry) external;
     /// @notice Sets a contract's status after a vote. PARAMETER_SETTER role.
+    /// @param token The federated contract.
+    /// @param status The new status.
+    /// @param voteRef A reference to the vote that decided the change.
     function setStatus(address token, Status status, bytes32 voteRef) external;
     /// @notice Delists or relists an artist identity after a vote. PARAMETER_SETTER role.
+    /// @param artistId The artist identity.
+    /// @param delisted True to delist the identity, and so all its contracts; false to lift it.
+    /// @param voteRef A reference to the vote that decided the change.
     function setArtistDelisted(uint256 artistId, bool delisted, bytes32 voteRef) external;
     /// @notice A contract's entry.
+    /// @param token The federated contract.
+    /// @return The contract's registry entry.
     function entry(address token) external view returns (Entry memory);
     /// @notice Whether the contract and its artist identity are both listed.
+    /// @param token The federated contract.
+    /// @return True only when both are listed.
     function isActive(address token) external view returns (bool);
 }
