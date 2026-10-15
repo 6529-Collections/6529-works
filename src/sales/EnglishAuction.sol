@@ -73,15 +73,15 @@ contract EnglishAuction is
     /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
     uint64 public constant MAX_PAUSE = 7 days;
     /// @notice Bounds of the governed duration.
-    uint32 public constant MIN_DURATION = 1 hours;
+    uint32 internal constant MIN_DURATION = 1 hours;
     /// @notice Bounds of the governed duration.
-    uint32 public constant MAX_DURATION = 7 days;
+    uint32 internal constant MAX_DURATION = 7 days;
     /// @notice Bounds of the governed anti-snipe window.
-    uint32 public constant MIN_EXTENSION_WINDOW = 1 minutes;
+    uint32 internal constant MIN_EXTENSION_WINDOW = 1 minutes;
     /// @notice Bounds of the governed anti-snipe window.
-    uint32 public constant MAX_EXTENSION_WINDOW = 1 days;
+    uint32 internal constant MAX_EXTENSION_WINDOW = 1 days;
     /// @notice The smallest governed relative increment (1%, out of 100,000).
-    uint32 public constant MIN_INCREMENT_SHARE = 1_000;
+    uint32 internal constant MIN_INCREMENT_SHARE = 1_000;
     /// @notice An opening bid is at most this many increment floors of its currency (1 ETH for
     ///         the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the
     ///         absolute ceiling of the governed opening bid.
@@ -90,9 +90,9 @@ contract EnglishAuction is
     uint256 public constant PAYOUT_GAS = 100_000;
     /// @notice Gas forwarded to the token's `safeTransferFrom` when settling; a failure leaves a
     ///         pending claim.
-    uint256 public constant DELIVERY_GAS = 300_000;
+    uint256 internal constant DELIVERY_GAS = 300_000;
     /// @notice Gas the settlement needs after the delivery attempt returns.
-    uint256 public constant DELIVERY_RESERVE = 50_000;
+    uint256 internal constant DELIVERY_RESERVE = 50_000;
     /// @dev Gas given to an ERC-20 payout's own call frame (MONEY-1): the token's 300,000, the
     ///      escrow fallback and new-slot costs under Glamsterdam fit with room to spare. A payout
     ///      that fails in it is credited to the wallet instead; the caller must forward it in full.
