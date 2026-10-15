@@ -257,13 +257,17 @@ contract BoundedCallTest is Test {
         assertTrue(ok);
         assertEq(value, "hello");
 
-        bytes[6] memory bad = [
+        bytes[9] memory bad = [
             bytes.concat(good, bytes32(0)), // trailing word
             abi.encodePacked(uint256(64), uint256(5), bytes32("hello")), // wrong offset
             abi.encodePacked(uint256(32), uint256(33), bytes32("hello")), // length overruns
             abi.encodePacked(uint256(32), uint256(5), bytes32("helloX")), // dirty padding
             abi.encodePacked(uint256(32), uint256(type(uint256).max)), // absurd length
-            abi.encodePacked(uint256(32)) // truncated
+            abi.encodePacked(uint256(32)), // truncated
+            abi.encodePacked(uint256(0), uint256(5), bytes32("hello")), // offset below 32
+            // The offset and the length are whole words: high bits make them wrong too.
+            abi.encodePacked((uint256(1) << 128) | 32, uint256(5), bytes32("hello")),
+            abi.encodePacked(uint256(32), (uint256(1) << 128) | 5, bytes32("hello"))
         ];
         for (uint256 i; i < bad.length; ++i) {
             (ok,) = harness.decodeString(bad[i], type(uint256).max);

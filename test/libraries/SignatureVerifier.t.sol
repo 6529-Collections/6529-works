@@ -162,8 +162,9 @@ contract SignatureVerifierTest is Test {
     function test_SignatureLengthCapAppliesBeforeAnyCall() public {
         ReturnDataMock acceptAll = new ReturnDataMock();
         acceptAll.configure(abi.encodePacked(MAGIC), false);
-        bytes memory atCap = new bytes(SignatureVerifier.MAX_SIGNATURE_LENGTH);
-        bytes memory overCap = new bytes(SignatureVerifier.MAX_SIGNATURE_LENGTH + 1);
+        // The specification states the cap: 4,096 bytes.
+        bytes memory atCap = new bytes(4096);
+        bytes memory overCap = new bytes(4097);
         assertTrue(harness.isValid(address(acceptAll), digest, atCap));
         assertFalse(harness.isValid(address(acceptAll), digest, overCap));
     }

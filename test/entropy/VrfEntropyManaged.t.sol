@@ -205,6 +205,13 @@ contract VrfEntropyManagedTest is GovernanceFixture, EntropyItems {
         vm.prank(adminSafe);
         vm.expectRevert(IEntropyModule.ExpectedValueMismatch.selector);
         manager.execute(address(module), stale);
+        // An expected value below the current one is as stale as one above it.
+        stale = _lowerData(150_000, floor);
+        staleId = _schedule(adminSafe, address(module), stale);
+        vm.warp(manager.getSchedule(staleId));
+        vm.prank(adminSafe);
+        vm.expectRevert(IEntropyModule.ExpectedValueMismatch.selector);
+        manager.execute(address(module), stale);
 
         _governed(_lowerData(200_000, floor));
         assertEq(module.config().callbackGasLimit, floor);

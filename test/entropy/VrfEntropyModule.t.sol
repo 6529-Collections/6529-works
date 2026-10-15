@@ -89,6 +89,23 @@ contract VrfEntropyModuleTest is EntropyBase {
         assertEq(module.MIN_RETRY_DELAY(), 3 days);
     }
 
+    /// @dev The bounds by their numbers (the specification states them), and each end accepted.
+    function test_Constructor_BoundsByNumber() public {
+        assertEq(module.MIN_CALLBACK_GAS(), 100_000);
+        assertEq(module.MAX_CALLBACK_GAS(), 2_500_000);
+        assertEq(module.MIN_CONFIRMATIONS(), 3);
+        assertEq(module.MAX_CONFIRMATIONS(), 200);
+        assertEq(module.MAX_PROOF_LENGTH(), 32);
+        assertEq(module.MAX_RETRY_DELAY(), 30 days);
+        VrfEntropyModule.VrfConfig memory c = _config();
+        c.confirmations = 200;
+        c.callbackGasLimit = 2_500_000;
+        _newModule(address(coordinator), c, RETRY_DELAY, address(registry));
+        c.confirmations = 3;
+        c.callbackGasLimit = 100_000;
+        _newModule(address(coordinator), c, RETRY_DELAY, address(registry));
+    }
+
     function test_Constructor_RejectsAnInvalidCoordinator() public {
         address delegated = makeAddr("delegated EOA");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(coordinator)));
@@ -255,6 +272,23 @@ contract VrfEntropyModuleTest is EntropyBase {
         assertEq(requestId, 1);
         assertEq(requestedAt, block.timestamp);
         assertFalse(module.isDelivered(items[0]));
+    }
+
+    /// @dev A retry after the delay asks again but does not link the item again.
+    function test_Request_ARetryDoesNotLinkAgain() public {
+        _request(0);
+        vm.warp(block.timestamp + RETRY_DELAY);
+        vm.recordLogs();
+        _request(0);
+        assertEq(_countModuleLogs(IEntropyModule.SeedLinked.selector), 0);
+    }
+
+    /// @dev The request time is kept in full: past 2**32 seconds too.
+    function test_Request_KeepsATimePastTheYear2106() public {
+        vm.warp((uint256(1) << 32) + 7);
+        _request(0);
+        (, uint64 requestedAt) = module.requestOf(items[0]);
+        assertEq(requestedAt, (uint256(1) << 32) + 7);
     }
 
     function test_Request_NoRoleIsNeeded() public {
