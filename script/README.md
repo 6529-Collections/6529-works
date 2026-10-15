@@ -136,8 +136,15 @@ independent of the admins they check:
 - **Do not overlap halts.** Do not pause the fixed-price or Dutch adapter while a currency is
   deprecated. The sale clocks add both halts, so the overlap counts twice and the affected
   schedules rewind (a Dutch curve climbs back, an ended phase reopens). If an adapter must be
-  paused during a deprecation, ask the creators or PLATFORM to close and reopen the affected
-  sales once both halts end.
+  paused during a deprecation, ask the creators (or PLATFORM, for a sale it opened alone) to
+  close and reopen the affected sales once both halts end.
+- **Deprecating an auction's currency.** A deprecation freezes the live auctions in that
+  currency: nothing settles, and their high bidders may withdraw. To keep them alive,
+  re-admit the currency between day 14 and day 30 after the deprecation (`admitAsset` is in
+  the 14-day class and executes no earlier than 14 days from the deprecation); the first
+  `settle` after the re-admission reopens each auction for at least the governed duration.
+  After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
+  the bidder and the work goes to the artist.
 
 #### The network fee recipient must exist
 

@@ -310,10 +310,10 @@ default when the sale starts".
 1. A dispute is filed in the 6529 disputes wave. The GUARDIAN role calls
    `IEnglishAuction.pause`; the pause allowance is 7 days in total.
 2. While paused, the high bidder may `withdrawBid`. The withdrawn amount
-   stays as a reserve the next bid must reach, and when the auction resumes
-   (by `resume` or when the pause lapses) it runs at least the governed
-   duration, so the refunded bidders can return. Without a withdrawal it gets
-   at least the anti-snipe window.
+   stays as a reserve the next bid must reach. When the auction resumes (by
+   `resume` or when the pause lapses) it runs for its remaining time or the
+   governed duration, whichever is longer (the anti-snipe window if longer
+   still), with or without a standing bid, so the refunded bidders can return.
 3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement about the
    token (it must exist; an outcome recorded about the item before its mint is
    also shown, until one about the token replaces it). The PARAMETER_SETTER

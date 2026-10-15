@@ -268,6 +268,21 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - Upheld is a 48-hour governed `cancel`. It must cite the recorded
     `DISPUTE_OUTCOME` statement, and is accepted while the pause is live
     (inclusive of its last second).
+- **Resumed auctions get at least the governed duration (deviates from §12's
+  "resumes with its remaining time"; 14 October 2026 review, LIFECYCLE-1).**
+  - A rejected dispute, or a pause that lapses after 7 days, resumes the
+    auction for its remaining time or the governed auction duration, whichever
+    is longer (the anti-snipe window if that is longer still), even when a bid
+    is standing. Bidders refunded during the pause can return.
+- **A currency deprecation can end live auctions (beyond §12's 7-day pause;
+  MARKET-2).**
+  - While an auction's currency is deprecated, the auction is frozen: nothing
+    settles and its high bidder may withdraw. A re-admission reopens it for at
+    least the governed duration.
+  - After 30 days frozen, anyone may end it: the standing bid is credited back
+    to the bidder and the work goes to the artist, as with no bid. A
+    re-admission waits 14 days from the deprecation, so it is possible between
+    day 14 and day 30.
 - **Reserved statement kinds.**
   - `DISPUTE_OUTCOME` is reserved to PLATFORM, and `CURATION_EVIDENCE` to
     CURATOR.

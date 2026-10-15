@@ -314,7 +314,10 @@
     - MARKET-2 (L2, L3, L7): while a sale's currency is deprecated nothing settles, sold or
       unsold; after 30 days frozen anyone may end the sale (the standing bid is credited back,
       the work goes to the artist). Every reopening, after a dispute pause or a freeze, gives
-      the governed duration, or the sale's anti-snipe window if longer.
+      the governed duration, or the sale's anti-snipe window if longer. ADR 0003 records both
+      deviations from ADR 0001 §12 (a resumed auction gets at least the governed duration even
+      with a standing bid; a 30-day deprecation ends live auctions), and the guardian runbook
+      says when to re-admit a currency to keep its auctions alive.
     - LIFECYCLE-4 (L4): `cancel`, like `resume`, waits 48 hours from the pause.
     - MONEY-1 (L5): `claimFor` refuses ETH; it serves credited ERC-20 payouts.
     - MARKET-3 (L6): a federated start checks the network's federated fee recipient, not the

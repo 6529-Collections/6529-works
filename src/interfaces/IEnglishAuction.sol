@@ -82,7 +82,8 @@ interface IEnglishAuction is ISaleAdapter {
     );
     /// @notice The guardian paused an auction for a dispute.
     event AuctionPaused(uint256 indexed saleId, bytes32 disputeRef);
-    /// @notice A paused auction resumed with its remaining time.
+    /// @notice A paused auction resumed: it ends at `endTime`, its remaining time at the pause
+    ///         or the governed duration from now, whichever is later.
     event AuctionResumed(uint256 indexed saleId, uint64 endTime);
     /// @notice An upheld dispute cancelled an auction: the bid was refunded, the token burned.
     event AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef);
@@ -150,8 +151,9 @@ interface IEnglishAuction is ISaleAdapter {
 
     /// @notice Pauses a live auction for a dispute. GUARDIAN role (immediate).
     function pause(uint256 saleId, bytes32 disputeRef) external;
-    /// @notice Resumes a paused auction with its remaining time after a rejected dispute.
-    ///         UNPAUSER role (pause and unpause have separate holders). Refused until 48 hours
+    /// @notice Resumes a paused auction after a rejected dispute, for its remaining time or the
+    ///         governed duration, whichever is longer (the anti-snipe window if longer still),
+    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders). Refused until 48 hours
     ///         (`Roles.STANDARD`) after the pause, so the guardians can always cancel a resume,
     ///         even one scheduled before the pause. A pause also ends by itself once the 7-day
     ///         allowance runs out, without any call.
