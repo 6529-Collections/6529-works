@@ -68,9 +68,9 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev Regression ceilings (ADR 0004), in Prague gas: each row's figure when it was set,
     ///      plus about 2%, rounded up to the thousand. They are not budgets. A change that
     ///      crosses one says why in its pull request and moves it.
-    uint256 internal constant FIRST_START_CEILING = 452_000;
-    uint256 internal constant NEW_TERMS_CEILING = 393_000;
-    uint256 internal constant PERMIT2_START_CEILING = 367_000;
+    uint256 internal constant FIRST_START_CEILING = 449_000;
+    uint256 internal constant NEW_TERMS_CEILING = 390_000;
+    uint256 internal constant PERMIT2_START_CEILING = 365_000;
     uint256 internal constant BID_CEILING = 75_000;
     uint256 internal constant CONSUME_CEILING = 97_000;
     uint256 internal constant CREATE_EDITION_CEILING = 274_000;
@@ -82,7 +82,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PURCHASE_FIRST_CEILING = 127_000;
     uint256 internal constant PURCHASE_LATER_CEILING = 127_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
-    uint256 internal constant RERATE_CEILING = 194_000;
+    uint256 internal constant RERATE_CEILING = 192_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
