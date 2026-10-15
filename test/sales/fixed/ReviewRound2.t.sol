@@ -16,6 +16,8 @@ import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 /// @notice Regressions from the PR #18 re-review: the typed `PhaseConfiguration` digest against
 ///         Foundry's independent EIP-712 encoder, consent non-reuse, priced leaves in zero-price
@@ -120,19 +122,19 @@ contract ReviewRound2Test is FixedPriceBase {
 
         // Currency switched to USD at the same nominal price.
         editions.setCurrency(ETH_ED, address(usd));
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(SignatureReverts.invalid(creator));
         vm.prank(platform);
         fixedSale.openSale(address(editions), ETH_ED, phases, c);
 
         // Price changed, currency back.
         editions.setTerms(ETH_ED, _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE * 2, ""), SIZE);
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(SignatureReverts.invalid(creator));
         vm.prank(platform);
         fixedSale.openSale(address(editions), ETH_ED, phases, c);
 
         // Another ID with identical terms.
         editions.setTerms(77, _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, ""), SIZE);
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(SignatureReverts.invalid(creator));
         vm.prank(platform);
         fixedSale.openSale(address(editions), 77, phases, c);
 
@@ -150,7 +152,7 @@ contract ReviewRound2Test is FixedPriceBase {
         IFixedPriceSale.ArtistConsent memory c =
             _consent(creatorKey, id, phases, 1, uint64(block.timestamp + 1 days));
         allowlist.setDefault(PRODUCT_EDITIONS, address(usd));
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(SignatureReverts.invalid(creator));
         vm.prank(platform);
         fixedSale.openSale(address(editions), id, phases, c);
     }
@@ -169,7 +171,7 @@ contract ReviewRound2Test is FixedPriceBase {
         IFixedPriceSale.Phase[] memory phases = _one(_phase(_root(leaves), 0, false, true));
         vm.expectRevert(
             abi.encodeWithSelector(
-                FixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), id
+                IFixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), id
             )
         );
         _open(platform, id, phases);
@@ -244,7 +246,7 @@ contract ReviewRound2Test is FixedPriceBase {
         );
         vm.prank(stranger);
         fixedSale.closeSale(saleId);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.SaleAlreadyClosed.selector, saleId));
         vm.prank(platform);
         fixedSale.closeSale(saleId);
         // A stranger cannot reopen. The phase is an uncapped public one, which counts nothing
@@ -283,7 +285,7 @@ contract ReviewRound2Test is FixedPriceBase {
         );
         vm.expectRevert(
             abi.encodeWithSelector(
-                MintSaleBase.CurrencyMismatch.selector, CURRENCY_ETH, address(usd)
+                ISaleAdapter.CurrencyMismatch.selector, CURRENCY_ETH, address(usd)
             )
         );
         _openPublic(ETH_ED, 0);
@@ -300,9 +302,7 @@ contract ReviewRound2Test is FixedPriceBase {
             [makeAddr("eoaAllowlist"), delegated, address(new MockFederationRegistry())];
         for (uint256 i; i < unfit.length; ++i) {
             resolver.setAllowlistOverride(unfit[i]);
-            vm.expectRevert(
-                abi.encodeWithSelector(MintSaleBase.InvalidDependency.selector, unfit[i])
-            );
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, unfit[i]));
             new FixedPriceSale(address(manager), e, p, r);
         }
         // The economics lane's allowlist answers no ERC-165 and is accepted on code alone.

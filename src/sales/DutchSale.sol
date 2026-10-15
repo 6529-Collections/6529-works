@@ -37,9 +37,6 @@ import { MintSaleBase } from "./MintSaleBase.sol";
 contract DutchSale is IDutchSale, MintSaleBase {
     mapping(uint256 saleId => Schedule) private _schedules;
 
-    /// @notice The start time is in the past, or the token's curve is invalid.
-    error InvalidSchedule();
-
     /// @param authority_ The AccessManager.
     /// @param escrow_ The revenue escrow.
     /// @param permit2_ The Permit2 deployment.

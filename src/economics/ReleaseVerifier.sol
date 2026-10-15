@@ -32,16 +32,8 @@ contract ReleaseVerifier is IReleaseVerifier, EIP712 {
         if (authorization.wallet != msg.sender) {
             revert WrongWallet(authorization.wallet, msg.sender);
         }
-        // Deadlines are coarse (minutes or more); validator timestamp drift is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > authorization.deadline) {
-            revert AuthorizationExpired(authorization.deadline);
-        }
-        if (!SignatureVerifier.isValid(
-                authorization.account, releaseDigest(authorization), signature
-            )) {
-            revert InvalidSignature(authorization.account);
-        }
+        SignatureVerifier.checkDeadline(authorization.deadline);
+        SignatureVerifier.check(authorization.account, releaseDigest(authorization), signature);
         _useNonce(authorization.account, authorization.nonce, false);
     }
 

@@ -166,8 +166,6 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice The next identity has a zero authority or payout, or an override has an invalid
     ///         kind or a zero evidence hash.
     error InvalidIdentity();
-    /// @notice A signature is expired or does not verify.
-    error InvalidSignature();
     /// @notice An override acceptance with this digest was already consumed.
     error AcceptanceUsed(bytes32 digest);
     /// @notice `name` is already bound.
@@ -318,8 +316,9 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     function consolidationSource() external view returns (IConsolidationSource);
     /// @notice The code hash pinned when the consolidation source was installed, re-checked at
     ///         every use. On a mismatch, staging, heartbeats and `refreshStanding` revert with
-    ///         `InvalidSource`; registration and execution skip their standing refresh
-    ///         (`StandingRefreshSkipped`), trusting nothing from the changed source.
+    ///         `Dependency.DependencyCodeChanged`; registration and execution skip their standing
+    ///         refresh (`StandingRefreshSkipped`), trusting nothing from the changed source.
+    /// @return The pinned code hash.
     function consolidationSourceCodeHash() external view returns (bytes32);
     /// @notice An artist's listed federated contracts.
     function federatedContracts(uint256 artistId) external view returns (address[] memory);

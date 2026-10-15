@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
@@ -30,7 +29,7 @@ import {
     StreamMintRequest
 } from "../interfaces/types/PackageTypes.sol";
 import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 import { SpdxId } from "./SpdxId.sol";
 
@@ -181,15 +180,15 @@ contract Stream is ERC721, AccessManaged, IStream {
         bytes32 rendererCodeHash,
         address owner_
     ) ERC721("6529 Stream", "STREAM") AccessManaged(authority_) {
-        _requireInterface(packageRegistry_, type(IPackageRegistry).interfaceId);
-        _requireInterface(artistRegistry_, type(IArtistRegistry).interfaceId);
-        _requireInterface(economics_, type(IEconomicsResolver).interfaceId);
+        Dependency.check(packageRegistry_, type(IPackageRegistry).interfaceId);
+        Dependency.check(artistRegistry_, type(IArtistRegistry).interfaceId);
+        Dependency.check(economics_, type(IEconomicsResolver).interfaceId);
         if (entropyModule_ != address(0)) {
-            _requireInterface(entropyModule_, type(IEntropyModule).interfaceId);
+            Dependency.check(entropyModule_, type(IEntropyModule).interfaceId);
         }
-        _requireRenderer(renderer_, rendererCodeHash);
+        Dependency.checkPinned(renderer_, type(IRenderer).interfaceId, rendererCodeHash);
         address factory = IEconomicsResolver(economics_).splitFactory();
-        _requireContract(factory);
+        Dependency.check(factory);
         packageRegistry = packageRegistry_;
         artistRegistry = artistRegistry_;
         economics = economics_;
@@ -225,7 +224,6 @@ contract Stream is ERC721, AccessManaged, IStream {
         PackageItem calldata item = req.item;
         _checkItem(item);
         (bytes32 itemHash, uint256 artistId) = _consume(data);
-        if (artistId == 0 || artistId > type(uint160).max) revert InvalidMintRequest();
         if (
             item.seedPolicy == SeedPolicy.VRF
                 && !IEntropyModule(entropyModule).isDelivered(itemHash)
@@ -268,7 +266,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         StreamMintRequest calldata req = _request(data);
         _checkItem(req.item);
         uint256 artistId = IArtistRegistry(artistRegistry).artistIdOf(req.item.parties[0].account);
-        if (artistId == 0) revert InvalidMintRequest();
+        if (artistId == 0) revert InvalidLeadArtist();
         (terms,) = _quote(req.item, artistId);
     }
 
@@ -285,7 +283,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (holder != msg.sender) revert ERC721IncorrectOwner(msg.sender, id, holder);
         TokenData storage t = _tokens[id];
         if (_minters[msg.sender].id != _terms[t.termsId].minterId) {
-            revert NotAdmittedMinter(msg.sender);
+            revert NotMintingAdapter(msg.sender);
         }
         if (t.flags & SETTLED != 0) revert SaleAlreadySettled(id);
         ++_counts.burned;
@@ -321,7 +319,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         Minter storage minter = _minters[adapter];
         if (admitted) {
-            _requireInterface(adapter, type(ISaleAdapter).interfaceId);
+            Dependency.check(adapter, type(ISaleAdapter).interfaceId);
             if (minter.id == 0) minter.id = ++_counts.minters;
         }
         minter.admitted = admitted;
@@ -333,7 +331,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     function markPrimarySettled(uint256 tokenId) external {
         TokenData storage t = _live(tokenId);
         if (_minters[msg.sender].id != _terms[t.termsId].minterId) {
-            revert UnboundCaller(msg.sender);
+            revert NotMintingAdapter(msg.sender);
         }
         uint8 flags = t.flags;
         if (flags & SETTLED != 0) return;
@@ -473,7 +471,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         restricted
     {
         if (defaultRenderer != expected) revert ExpectedValueMismatch();
-        _requireRenderer(next, nextCodeHash);
+        Dependency.checkPinned(next, type(IRenderer).interfaceId, nextCodeHash);
         defaultRenderer = next;
         _defaultRendererCodeHash = nextCodeHash;
         emit DefaultRendererSet(expected, next, nextCodeHash);
@@ -495,7 +493,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         }
         if (renderer == address(0)) {
             renderer = defaultRenderer;
-            if (renderer.codehash != _defaultRendererCodeHash) revert InvalidBinding(renderer);
+            Dependency.checkUnchanged(renderer, _defaultRendererCodeHash);
         }
     }
 
@@ -512,7 +510,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      one-shot, so a satellite of another deployment could never be replaced.
     function bindWorkRecords(address target) external restricted {
         if (workRecords != address(0)) revert AlreadyBound(WORK_RECORDS);
-        _requireInterface(target, type(IWorkRecords).interfaceId);
+        Dependency.check(target, type(IWorkRecords).interfaceId);
         if (IWorkRecords(target).stream() != address(this)) revert InvalidBinding(target);
         workRecords = target;
         emit Bound(WORK_RECORDS, target);
@@ -523,7 +521,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      `bindWorkRecords`.
     function bindEditions(address target) external restricted {
         if (editions != address(0)) revert AlreadyBound(EDITIONS);
-        _requireInterface(target, type(IEditions).interfaceId);
+        Dependency.check(target, type(IEditions).interfaceId);
         if (IEditions(target).stream() != address(this)) revert InvalidBinding(target);
         editions = target;
         emit Bound(EDITIONS, target);
@@ -635,7 +633,9 @@ contract Stream is ERC721, AccessManaged, IStream {
             }
         }
         if (result.length != 64) revert InvalidMintRequest();
-        return abi.decode(result, (bytes32, uint256));
+        (itemHash, artistId) = abi.decode(result, (bytes32, uint256));
+        // The registry never returns zero; an artist ID is an address-sized value (D1).
+        if (artistId == 0 || artistId > type(uint160).max) revert InvalidMintRequest();
     }
 
     /// @dev Stream rules the registry does not know: auction-only with empty parameters, a lead
@@ -646,14 +646,17 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      here, so the curation signer's tooling must simulate `openRecord` before attesting
     ///      an item.
     function _checkItem(PackageItem calldata item) private view {
+        if (item.sale.saleKind != SaleKind.ENGLISH_AUCTION || item.sale.params.length != 0) {
+            revert InvalidItemSale();
+        }
+        if (item.parties.length == 0) revert InvalidLeadArtist();
+        if (!_collections[item.collectionId].exists) revert UnknownCollection(item.collectionId);
         SeedPolicy policy = item.seedPolicy;
         if (
-            item.sale.saleKind != SaleKind.ENGLISH_AUCTION || item.sale.params.length != 0
-                || item.parties.length == 0 || !_collections[item.collectionId].exists
-                || (policy == SeedPolicy.ARTIST) != (item.seed != 0)
+            (policy == SeedPolicy.ARTIST) != (item.seed != 0)
                 || (policy == SeedPolicy.VRF && entropyModule == address(0))
-                || !SpdxId.isValidCalldata(item.license.spdxId)
-        ) revert InvalidMintRequest();
+        ) revert InvalidSeedPolicy();
+        if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
     }
 
     /// @dev The terms a work of `item` locks now, and the primary terms the adapter applies:
@@ -673,7 +676,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (
             e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
                 || (e.feeShare != 0 && (e.feeRecipient == address(0) || e.feeRecipient == seller))
-        ) revert InvalidMintRequest();
+        ) revert InvalidWorkTerms();
         w = WorkTerms(seller, e.feeRecipient, e.feeShare, address(0), e.royaltyRate);
         terms.saleKind = SaleKind.ENGLISH_AUCTION;
         // The adapter resolves `CURRENCY_DEFAULT` and checks the allowlist when it locks the
@@ -728,7 +731,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (id == 0) {
             _feeRecipients.push(recipient);
             id = uint16(_feeRecipients.length);
-            if (id != _feeRecipients.length) revert InvalidMintRequest();
+            if (id != _feeRecipients.length) revert TermsCapacityExceeded();
             _feeRecipientIds[recipient] = id;
         }
     }
@@ -763,7 +766,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (id == 0) {
             // The overflow range holds 2^23 - 1 terms: the check reverts at the 2^23rd.
             uint24 n = ++_counts.overflowTerms;
-            if (n > HASHED) revert InvalidMintRequest();
+            if (n > HASHED) revert TermsCapacityExceeded();
             id = OVERFLOW | n;
             _terms[id] = t;
             _overflowIds[key] = id;
@@ -800,24 +803,5 @@ contract Stream is ERC721, AccessManaged, IStream {
     function _live(uint256 tokenId) private view returns (TokenData storage) {
         if (_ownerOf(tokenId) == address(0)) revert UnknownWork(tokenId);
         return _tokens[tokenId];
-    }
-
-    /// @dev Installed dependencies are contracts, never EIP-7702 delegated accounts (D8).
-    function _requireContract(address target) private view {
-        if (target.code.length == 0 || DelegatedEOA.isDelegated(target)) {
-            revert InvalidBinding(target);
-        }
-    }
-
-    /// @dev `_requireContract` plus ERC-165 support for `interfaceId` (D8, E7).
-    function _requireInterface(address target, bytes4 interfaceId) private view {
-        _requireContract(target);
-        if (!ERC165Checker.supportsInterface(target, interfaceId)) revert InvalidBinding(target);
-    }
-
-    /// @dev A renderer: `_requireInterface` for `IRenderer` plus the pinned code hash (E6).
-    function _requireRenderer(address renderer, bytes32 codeHash) private view {
-        _requireInterface(renderer, type(IRenderer).interfaceId);
-        if (renderer.codehash != codeHash) revert InvalidBinding(renderer);
     }
 }

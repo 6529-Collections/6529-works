@@ -174,7 +174,7 @@ contract Market2RegressionTest is MarketPoCBase {
         auction.settle(saleId);
         address keeper = makeAddr("keeper");
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NotHighBidder.selector, keeper));
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NotHighBidder.selector, keeper));
         auction.withdrawBid(saleId);
 
         vm.warp(frozenAt + 30 days);

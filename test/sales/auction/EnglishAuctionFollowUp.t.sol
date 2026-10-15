@@ -93,7 +93,9 @@ contract EnglishAuctionFollowUpTest is AuctionBase {
         for (uint256 i; i < 2; ++i) {
             MockMintTarget federated = _federated(_terms(currencies[i]));
             vm.expectRevert(
-                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(federated), 1)
+                abi.encodeWithSelector(
+                    ISaleAdapter.InvalidSaleTerms.selector, address(federated), 1
+                )
             );
             auction.start(address(federated), "");
             address installed = auction.federationRegistry();

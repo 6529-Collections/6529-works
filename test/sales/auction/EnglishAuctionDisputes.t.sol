@@ -18,6 +18,7 @@ import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { MockFederationRegistry, MockMintTarget } from "../../mocks/auction/AuctionMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev Dispute pauses, withdrawals, upheld cancellation, resumption, and governed setters.
 contract EnglishAuctionDisputesTest is AuctionBase {
@@ -97,7 +98,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         auction.withdrawBid(saleId);
         _pause(saleId);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NotHighBidder.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NotHighBidder.selector, alice));
         auction.withdrawBid(saleId);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(bob, ETH, saleId, 2 ether);
@@ -111,7 +112,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(auction.claimable(bob, ETH), 2 ether);
         assertEq(auction.minimumBid(saleId), 2 ether, "the reserve, above the opening bid");
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.NotHighBidder.selector, bob));
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NotHighBidder.selector, bob));
         auction.withdrawBid(saleId);
     }
 
@@ -401,7 +402,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         IEnglishAuction.AuctionConfig memory current = auction.config();
         next.incrementShare = 100_001;
         vm.prank(setter);
-        vm.expectRevert(EnglishAuction.InvalidConfig.selector);
+        vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
         auction.setConfig(current, next);
         uint256 saleId = _start();
         IEnglishAuction.Auction memory a = auction.auction(saleId);
@@ -414,7 +415,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         vm.startPrank(setter);
         vm.expectRevert(
             abi.encodeWithSelector(
-                EnglishAuction.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
+                IEnglishAuction.OpeningBidAboveCeiling.selector, ceiling + 1, ceiling
             )
         );
         auction.setOpeningBid(ETH, 0, ceiling + 1);
@@ -453,7 +454,7 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         if (next > ceiling) {
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    EnglishAuction.OpeningBidAboveCeiling.selector, next, ceiling
+                    IEnglishAuction.OpeningBidAboveCeiling.selector, next, ceiling
                 )
             );
             auction.setOpeningBid(ETH, first, next);
@@ -492,10 +493,10 @@ contract EnglishAuctionDisputesTest is AuctionBase {
 
     function test_SetTarget_RejectsNonTokens() public {
         vm.startPrank(successor);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidTarget.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
         auction.setTarget(alice, true);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTarget.selector, address(escrow))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
         );
         auction.setTarget(address(escrow), true);
         vm.stopPrank();
@@ -576,11 +577,11 @@ contract EnglishAuctionFederationTest is AuctionBase {
         );
         auction.setFederationRegistry(address(0), alice);
         vm.prank(successor);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
         auction.setFederationRegistry(address(0), alice);
         vm.prank(successor);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, address(escrow))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
         );
         auction.setFederationRegistry(address(0), address(escrow));
     }

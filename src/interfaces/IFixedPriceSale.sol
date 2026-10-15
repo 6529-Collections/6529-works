@@ -81,8 +81,15 @@ interface IFixedPriceSale is ISaleAdapter {
     error NotAllowlisted(uint256 saleId, uint256 phase, address account);
     /// @notice The purchase exceeds the wallet's cap in this phase.
     error WalletCapExceeded(uint256 saleId, uint256 phase, address account);
-    /// @notice The consent is expired, its nonce is used, or the signature is not the creator's.
-    error InvalidArtistConsent();
+    /// @notice The creator already used or revoked this consent nonce. An expired consent
+    ///         reverts with `SignatureVerifier.SignatureExpired`, and one the creator did not
+    ///         sign with `SignatureVerifier.InvalidSignature`.
+    error ConsentNonceUsed(address creator, uint256 nonce);
+    /// @notice The phases are empty, too many, or one is malformed (start not before end, or an
+    ///         allowlist-only flag without a root).
+    error InvalidPhases();
+    /// @notice A sale prices its leaves without the artist's approval (MARKET-6).
+    error PricedLeavesNeedApproval(address token, uint256 id);
 
     /// @notice Opens a sale of token `id` with 1 to `Limits.MAX_PHASES` phases. Callable by the
     ///         creator or the PLATFORM role; a PLATFORM opener may pass the creator's `consent`,

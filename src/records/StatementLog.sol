@@ -8,7 +8,7 @@ import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC16
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 import { isKnownHashAlgorithm } from "../interfaces/types/HashRef.sol";
@@ -163,13 +163,11 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         uint64 deadline,
         bytes calldata signature
     ) external returns (bytes32 entryHash) {
-        // A deadline is a wall-clock bound by design; validator timestamp drift is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (deadline < block.timestamp) revert DeadlineExpired(deadline);
+        SignatureVerifier.checkDeadline(deadline);
         _spendNonce(signer, nonce);
         bytes32 digest =
             _hashTypedDataV4(_authorizationHash(role, statement, signer, nonce, deadline));
-        if (!SignatureVerifier.isValid(signer, digest, signature)) revert InvalidSignature(signer);
+        SignatureVerifier.check(signer, digest, signature);
         if (!_isAuthorized(role, statement, signer)) revert NotAuthorized(role, signer);
         entryHash = _append(role, signer, statement);
         emit StatementRelayed(entryHash, signer, nonce);
@@ -192,7 +190,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         external
         restricted
     {
-        if (artistResolver != expected) revert ResolverMismatch(artistResolver);
+        if (artistResolver != expected) revert ExpectedValueMismatch();
         _installResolver(next, nextCodeHash);
     }
 
@@ -359,9 +357,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         if (role == Role.ARTIST) {
             address resolver = artistResolver;
             if (resolver == address(0)) return false;
-            if (resolver.codehash != _resolverCodeHash) {
-                revert ResolverCodeHashMismatch(_resolverCodeHash, resolver.codehash);
-            }
+            Dependency.checkUnchanged(resolver, _resolverCodeHash);
             return IArtistRoleResolver(resolver).isArtist(s.token, s.id, who);
         }
         if (role == Role.OWNER) return _owns(s.token, s.id, who);
@@ -405,13 +401,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
 
     function _installResolver(address next, bytes32 codeHash) private {
         if (next != address(0)) {
-            if (
-                next.code.length == 0 || DelegatedEOA.isDelegated(next)
-                    || !ERC165Checker.supportsInterface(next, type(IArtistRoleResolver).interfaceId)
-            ) revert InvalidResolver(next);
-            if (next.codehash != codeHash) {
-                revert ResolverCodeHashMismatch(codeHash, next.codehash);
-            }
+            Dependency.checkPinned(next, type(IArtistRoleResolver).interfaceId, codeHash);
         } else {
             codeHash = 0;
         }

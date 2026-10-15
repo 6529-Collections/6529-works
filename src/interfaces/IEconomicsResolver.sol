@@ -40,8 +40,6 @@ interface IEconomicsResolver is IERC165 {
     /// @notice An empty, over-long or non-`[A-Za-z0-9.+-]` SPDX ID, a zero text file ID, or a
     ///         CC0 license (by key) whose text is not the CC0 text the resolver was deployed with.
     error InvalidLicense();
-    /// @notice The asset allowlist or split factory has no code or is EIP-7702 delegated.
-    error InvalidDependency(address dependency);
     /// @notice `recipient` cannot take the network fee: it is the resolver itself, its asset
     ///         allowlist, split factory or release verifier, or a protocol contract that cannot
     ///         accept a payment (the revenue escrow, the claim router, a sale adapter, a mint

@@ -19,6 +19,7 @@ import {
     PermitToken
 } from "../../mocks/auction/AuctionMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 
 /// @dev A minimal federated template: every `IMintTarget` function, with the settlement hook as a
 ///      no-op (as 6529 Editions implements it).
@@ -167,7 +168,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         auction.setFederationRegistry(address(0), address(registry));
         assertEq(auction.federationRegistryCodeHash(), address(registry).codehash);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(fed), 1)
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(fed), 1)
         );
         auction.start(address(fed), "");
 
@@ -267,7 +268,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         t.setId(uint256(type(uint32).max) + 1);
         vm.expectRevert(
             abi.encodeWithSelector(
-                EnglishAuction.InvalidTerms.selector, address(t), uint256(type(uint32).max) + 1
+                ISaleAdapter.InvalidSaleTerms.selector, address(t), uint256(type(uint32).max) + 1
             )
         );
         auction.start(address(t), "");
@@ -467,7 +468,7 @@ contract EnglishAuctionReviewTest is AuctionBase {
         uint256 cap = type(uint96).max;
         vm.startPrank(setter);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.OpeningBidAboveCeiling.selector, cap + 1, cap)
+            abi.encodeWithSelector(IEnglishAuction.OpeningBidAboveCeiling.selector, cap + 1, cap)
         );
         auction.setOpeningBid(address(big), 0, cap + 1);
         auction.setOpeningBid(address(big), 0, cap);

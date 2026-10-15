@@ -39,8 +39,6 @@ interface IRevenueEscrow is IERC165 {
     ///         withdraws the consent.
     event RecoveryConsentSet(address indexed account, address indexed replacement);
 
-    /// @notice The factory has no code or is an EIP-7702 delegated account.
-    error InvalidFactory(address factory);
     /// @notice `wallet` is zero or the escrow itself.
     error InvalidWallet(address wallet);
     /// @notice An ERC-20 deposit named `address(0)`, which is ETH.

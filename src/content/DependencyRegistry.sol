@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IContentStore } from "../interfaces/IContentStore.sol";
 import { IDependencyRegistry } from "../interfaces/IDependencyRegistry.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title DependencyRegistry
 /// @notice Pinned library versions for generative works: `(name, version)` to a {ContentStore}
@@ -29,7 +30,7 @@ contract DependencyRegistry is IDependencyRegistry, AccessManaged {
     mapping(bytes32 name => mapping(bytes32 version => Entry)) private _entries;
 
     constructor(address authority, IContentStore store_) AccessManaged(authority) {
-        if (address(store_).code.length == 0) revert DependencyStoreInvalid(address(store_));
+        Dependency.check(address(store_));
         store = store_;
     }
 

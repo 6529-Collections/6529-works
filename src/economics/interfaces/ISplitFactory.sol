@@ -23,10 +23,6 @@ interface ISplitFactory {
         ISplitWallet.Payee[] payees
     );
 
-    /// @notice A resolver or verifier has no code, or is an EIP-7702 delegated account.
-    error InvalidDependency(address dependency);
-    /// @notice A pinned resolver or verifier no longer has the code hash pinned at installation.
-    error DependencyCodeChanged(address dependency);
     /// @notice The wallet CREATE2 deployed is not at the `predicted` address
     ///         (`walletInitCodeHash` would no longer match the wallet's init code).
     error WalletAddressMismatch(address predicted, address deployed);

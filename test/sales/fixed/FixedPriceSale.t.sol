@@ -26,6 +26,8 @@ import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { Mock1271Account } from "../../mocks/EconomicsMocks.sol";
 import { MockAssetAllowlist, MockEditionTarget } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 /// @notice Unit tests of the fixed-price adapter: configuration, opening, artist approval,
 ///         closing, purchases, allowlists (including the PR #744 recipient-binding regression)
@@ -38,16 +40,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
 
     function test_Constructor_RevertsOnMissingOrUnfitDependency() public {
         (IRevenueEscrow e, ISignatureTransfer p, IEconomicsResolver r) = _deps();
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(ISaleAdapter.InvalidAddress.selector);
         new FixedPriceSale(address(manager), IRevenueEscrow(address(0)), p, r);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(ISaleAdapter.InvalidAddress.selector);
         new FixedPriceSale(address(manager), e, ISignatureTransfer(address(0)), r);
         // The resolver must be a contract supporting IEconomicsResolver through ERC-165.
         address[3] memory unfit = [address(0), makeAddr("eoa"), address(usd)];
         for (uint256 i; i < unfit.length; ++i) {
-            vm.expectRevert(
-                abi.encodeWithSelector(MintSaleBase.InvalidDependency.selector, unfit[i])
-            );
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, unfit[i]));
             new FixedPriceSale(address(manager), e, p, IEconomicsResolver(unfit[i]));
         }
     }
@@ -120,7 +120,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
         vm.prank(platform);
         fixedSale.setTarget(address(1), true);
-        vm.expectRevert(MintSaleBase.InvalidAddress.selector);
+        vm.expectRevert(ISaleAdapter.InvalidAddress.selector);
         vm.prank(admin);
         fixedSale.setTarget(address(0), true);
     }
@@ -203,7 +203,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         t.feeRecipient = makeAddr("oneTooMany");
         editions.setTerms(42, t, SIZE);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.InvalidSaleTerms.selector, address(editions), 42)
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), 42)
         );
         _openPublic(42, 0);
     }
@@ -299,7 +299,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
             editions.setTerms(20 + i, t, SIZE);
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 20 + i
+                    ISaleAdapter.InvalidSaleTerms.selector, address(editions), 20 + i
                 )
             );
             _openPublic(20 + i, 0);
@@ -316,7 +316,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
             editions.setTerms(30 + i, t, SIZE);
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    MintSaleBase.InvalidSaleTerms.selector, address(editions), 30 + i
+                    ISaleAdapter.InvalidSaleTerms.selector, address(editions), 30 + i
                 )
             );
             _openPublic(30 + i, 0);
@@ -339,12 +339,12 @@ contract FixedPriceSaleTest is FixedPriceBase {
         IFixedPriceSale.Phase[4] memory bad = [
             empty, _phase(0, 0, true, false), _phase(0, 0, false, true), _phase(0, 0, true, true)
         ];
-        vm.expectRevert(FixedPriceSale.InvalidPhases.selector);
+        vm.expectRevert(IFixedPriceSale.InvalidPhases.selector);
         _open(creator, ETH_ED, new IFixedPriceSale.Phase[](0));
-        vm.expectRevert(FixedPriceSale.InvalidPhases.selector);
+        vm.expectRevert(IFixedPriceSale.InvalidPhases.selector);
         _open(creator, ETH_ED, tooMany);
         for (uint256 i; i < bad.length; ++i) {
-            vm.expectRevert(FixedPriceSale.InvalidPhases.selector);
+            vm.expectRevert(IFixedPriceSale.InvalidPhases.selector);
             _open(creator, ETH_ED, _one(bad[i]));
         }
         // Sixteen phases are accepted.
@@ -378,7 +378,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         bytes32[] memory leaves = _pricedLeaves();
         vm.expectRevert(
             abi.encodeWithSelector(
-                FixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
+                IFixedPriceSale.PricedLeavesNeedApproval.selector, address(editions), ETH_ED
             )
         );
         _platformPriced(leaves, _noConsent());
@@ -422,14 +422,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
         ];
         bad[3].deadline = deadline;
         for (uint256 i; i < bad.length; ++i) {
-            vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+            vm.expectRevert(SignatureReverts.invalid(creator));
             _platformPriced(leaves, bad[i]);
         }
         // Expired.
         IFixedPriceSale.ArtistConsent memory valid =
             _consent(creatorKey, ETH_ED, phases, 1, deadline);
         vm.warp(deadline + 1);
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(SignatureReverts.expired(deadline));
         vm.prank(platform);
         fixedSale.openSale(address(editions), ETH_ED, phases, valid);
     }
@@ -446,7 +446,9 @@ contract FixedPriceSaleTest is FixedPriceBase {
         vm.prank(creator);
         fixedSale.closeSale(saleId);
         // Replaying the same approval for a new sale fails: the nonce is spent.
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IFixedPriceSale.ConsentNonceUsed.selector, creator, 1)
+        );
         _platformPriced(leaves, consent);
 
         // A revoked nonce can never be used.
@@ -457,10 +459,12 @@ contract FixedPriceSaleTest is FixedPriceBase {
         vm.prank(creator);
         fixedSale.revokeConsentNonce(2);
         assertTrue(fixedSale.isConsentNonceUsed(creator, 2));
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        bytes memory used =
+            abi.encodeWithSelector(IFixedPriceSale.ConsentNonceUsed.selector, creator, 2);
+        vm.expectRevert(used);
         vm.prank(creator);
         fixedSale.revokeConsentNonce(2);
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(used);
         _platformPriced(leaves, second);
     }
 
@@ -523,7 +527,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         uint256 saleId = _openPublic(ETH_ED, 0);
         vm.prank(creator);
         fixedSale.closeSale(saleId);
-        vm.expectRevert(abi.encodeWithSelector(MintSaleBase.SaleAlreadyClosed.selector, saleId));
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.SaleAlreadyClosed.selector, saleId));
         vm.prank(platform);
         fixedSale.closeSale(saleId);
     }
@@ -665,7 +669,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         fixedSale.purchase{ value: PRICE }(
             _p(saleId, 1, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
         );
-        vm.expectRevert(MintSaleBase.InvalidQuantity.selector);
+        vm.expectRevert(ISaleAdapter.InvalidQuantity.selector);
         fixedSale.purchase(_p(saleId, 0, alice, 0, 0, 0), new bytes32[](0), _eth(alice, 0));
         vm.stopPrank();
     }
@@ -706,7 +710,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         vm.deal(alice, PRICE);
         vm.expectRevert(
             abi.encodeWithSelector(
-                MintSaleBase.InvalidSaleTerms.selector, address(editions), ETH_ED
+                ISaleAdapter.InvalidSaleTerms.selector, address(editions), ETH_ED
             )
         );
         vm.prank(alice);
@@ -729,7 +733,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         allowlist.set(CURRENCY_ETH, false);
         vm.deal(alice, PRICE);
         vm.expectRevert(
-            abi.encodeWithSelector(MintSaleBase.CurrencyNotActive.selector, CURRENCY_ETH)
+            abi.encodeWithSelector(ISaleAdapter.CurrencyNotActive.selector, CURRENCY_ETH)
         );
         vm.prank(alice);
         fixedSale.purchase{ value: PRICE }(
@@ -745,7 +749,7 @@ contract FixedPriceSaleTest is FixedPriceBase {
         allowlist.setDefault(PRODUCT_EDITIONS, address(usd));
         vm.expectRevert(
             abi.encodeWithSelector(
-                MintSaleBase.PricedDefaultCurrency.selector, address(editions), 9
+                ISaleAdapter.PricedDefaultCurrency.selector, address(editions), 9
             )
         );
         _openPublic(9, 0);

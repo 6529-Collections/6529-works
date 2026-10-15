@@ -461,7 +461,7 @@ Do not cache a revert as empty metadata.
 | `UnknownWork(tokenId)` | Burned or never minted | Drop the token. A burn is also a `Transfer` to the zero address. |
 | `UnknownEdition(id)` | No edition with this ID | Check the ID against `editionOf`. |
 | `BoundedCallInsufficientGas(gasLimit)` | Your call supplied too little gas | Retry with more gas, or with `gas` unset. |
-| `InvalidBinding(renderer)` (Stream) or `InvalidRenderer(renderer)` (WorkRecords) | The renderer's code is no longer the code it was installed or pinned with; the metadata is withheld on purpose | Keep the last good metadata and retry later. A new default renderer or an errata repin restores it, with ERC-4906 events. |
+| `DependencyCodeChanged(renderer)` (Stream or WorkRecords) | The renderer's code is no longer the code it was installed or pinned with; the metadata is withheld on purpose | Keep the last good metadata and retry later. A new default renderer or an errata repin restores it, with ERC-4906 events. |
 | `RendererReadFailed(target, selector)`, `BoundedCallFailed(target)`, `BoundedCallMalformedReturn(target)` | A contract the renderer reads failed or returned malformed data | Keep the last good metadata and retry later. |
 | `RendererNotInlineable(token, id)` | Only from `fullTokenURI`: the work cannot be served fully inline | Use `tokenURI`. |
 

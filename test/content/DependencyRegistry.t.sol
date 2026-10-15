@@ -8,6 +8,7 @@ import { ContentStore } from "src/content/ContentStore.sol";
 import { DependencyRegistry } from "src/content/DependencyRegistry.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IDependencyRegistry } from "src/interfaces/IDependencyRegistry.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 contract DependencyRegistryTest is ContentBase {
     /// @dev Local stand-in for the registrar role. TODO(governance lane): use the role from
@@ -298,9 +299,7 @@ contract DependencyRegistryTest is ContentBase {
     }
 
     function test_Constructor_RequiresAStoreContract() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(IDependencyRegistry.DependencyStoreInvalid.selector, stranger)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stranger));
         new DependencyRegistry(address(manager), IContentStore(stranger));
         assertEq(registry.authority(), address(manager));
     }

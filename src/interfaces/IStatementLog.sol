@@ -103,19 +103,10 @@ interface IStatementLog {
     error UnknownDisputeSubject(address token, uint256 id);
     /// @notice `signer` does not hold `role` for this subject.
     error NotAuthorized(Role role, address signer);
-    /// @notice The relay deadline has passed.
-    error DeadlineExpired(uint64 deadline);
     /// @notice The relay nonce was already used or revoked.
     error NonceAlreadyUsed(address signer, uint256 nonce);
-    /// @notice The signature does not verify for `signer` over this authorization.
-    error InvalidSignature(address signer);
-    /// @notice The expected current resolver did not match.
-    error ResolverMismatch(address current);
-    /// @notice The proposed resolver has no code, is a delegated account, or lacks ERC-165 support
-    ///         for {IArtistRoleResolver}.
-    error InvalidResolver(address resolver);
-    /// @notice The proposed resolver's code hash is not the reviewed one.
-    error ResolverCodeHashMismatch(bytes32 expected, bytes32 actual);
+    /// @notice A compare-and-set setter's expected current value is stale.
+    error ExpectedValueMismatch();
 
     /// @notice Appends a statement as the caller, speaking as ARTIST or OWNER.
     /// @dev CURATOR and PLATFORM statements use {appendCurator} and {appendPlatform}.

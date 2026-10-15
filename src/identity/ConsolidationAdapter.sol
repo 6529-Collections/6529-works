@@ -5,6 +5,7 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 import { IConsolidationSource } from "../interfaces/IArtistRegistry.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title IDelegationManagement
 /// @notice The two public storage getters of the 6529 delegation contract
@@ -76,12 +77,9 @@ contract ConsolidationAdapter is IConsolidationSource {
     /// @notice The 6529 delegation contract.
     IDelegationManagement public immutable delegation;
 
-    /// @notice The delegation address has no code.
-    error NoDelegationCode(address delegation);
-
     /// @param delegation_ The 6529 delegation contract (`0x2202…f43d` on mainnet).
     constructor(IDelegationManagement delegation_) {
-        if (address(delegation_).code.length == 0) revert NoDelegationCode(address(delegation_));
+        Dependency.check(address(delegation_));
         delegation = delegation_;
     }
 

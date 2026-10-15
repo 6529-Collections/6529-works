@@ -8,6 +8,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { IRenderer } from "src/interfaces/IRenderer.sol";
 
 /// @dev A records satellite whose `preferredLocator` burns gas, like a stream lane that walks a
 ///      large file to answer it.
@@ -688,7 +689,7 @@ contract RendererReviewTest is RendererBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(burning),
                 IWorkRecords.preferredLocator.selector
             )

@@ -227,7 +227,7 @@ sequenceDiagram
 
 - **The auction refuses** (`EnglishAuction._start`) a token that is not listed by governance
   or (v1.1) active in the federation registry (`TargetNotAllowed`), and a token that already
-  has a sale (`InvalidAuctionState`). It requires (`InvalidTerms`) the English-auction sale
+  has a sale (`InvalidAuctionState`). It requires (`InvalidSaleTerms`) the English-auction sale
   kind, a nonzero seller and creator, a fee share of at most 100,000, a zero price, empty
   parameters, custody in the auction, a token ID below 2^32, a fee recipient for a nonzero fee
   share, and neither seller nor fee recipient equal to the revenue escrow (CALLS-1).
@@ -501,7 +501,7 @@ sequenceDiagram
   included, up to `min(incrementFloor(currency) × OPENING_BID_FLOORS, type(uint96).max)`
   (`OpeningBidAboveCeiling`), for an active currency, for auctions started afterwards.
 - **`setTarget(token, listed)`** lists a token contract with code, not EIP-7702 delegated,
-  that supports ERC-721 through ERC-165 (`InvalidTarget`). Unlisting stops new starts only.
+  that supports ERC-721 through ERC-165 (`InvalidDependency`). Unlisting stops new starts only.
 - **`setFederationRegistry(expected, next)`** installs the v1.1 federation registry:
   compare-and-set, ERC-165 for `IFederationRegistry`, EIP-7702 rejected, code hash pinned (a
   registry whose code later differs serves no token). v1 installs none.
@@ -607,10 +607,10 @@ reopening after a currency freeze.
 | --- | --- | --- |
 | Start while the emergency pause is on | `SalePaused` | Wait for `unpause` (no earlier than 48 hours after the pause). |
 | Token contract not listed (or not active in a registry) | `TargetNotAllowed` | Governance lists it with `setTarget` (30 days). |
-| Item breaks a Stream rule, or malformed mint data | `InvalidMintRequest` | An item whose own fields break a rule never mints and needs a new package; governance fixes a missing collection or unusable economics. |
+| Item breaks a Stream rule, or malformed mint data | The rule's error (`InvalidItemSale`, `InvalidLeadArtist`, `UnknownCollection`, `InvalidSeedPolicy`, `InvalidLicenseId`, `InvalidWorkTerms`, `TermsCapacityExceeded`), or `InvalidMintRequest` for malformed mint data | An item whose own fields break a rule never mints and needs a new package; governance fixes a missing collection or unusable economics. |
 | VRF seed not delivered | `SeedNotDelivered` | Request the seed, wait for delivery, then start ([Entropy](entropy.md)). |
 | Currency inactive, or no default configured | `AssetNotActive`, `CurrencyNotConfigured` | Wait for admission or for the default to be set. |
-| Lead artist restrained by a pending override | `consume` refuses the move signature (`InvalidSignature`); the auction would refuse the zero creator (`InvalidTerms`) | Wait for the override's outcome; then the active authority signs a move. |
+| Lead artist restrained by a pending override | `consume` refuses the move signature (`InvalidSignature`); the auction would refuse the zero creator (`InvalidSaleTerms`) | Wait for the override's outcome; then the active authority signs a move. |
 | Bid below the minimum, after the end, or while paused | `BidTooLow(required, offered)`, `InvalidAuctionState` | Read `minimumBid(saleId)`; settle instead, or wait for the resumption. |
 | Unknown sale ID | `UnknownSale(saleId)` | Derive it with `saleIdOf(token, tokenId)`. |
 | Settle while the currency is deprecated | `AssetNotActive`; the bidder may `withdrawBid` | Re-admission (from day 14), then `settle`, which reopens a late re-admission; or `settle` after 30 days ends the sale unsold. |

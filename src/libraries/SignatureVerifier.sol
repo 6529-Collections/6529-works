@@ -27,6 +27,32 @@ library SignatureVerifier {
     /// @notice Gas forwarded to an ERC-1271 `isValidSignature` call.
     uint256 internal constant ERC1271_GAS_LIMIT = 200_000;
 
+    /// @notice The signature is not a valid signature of the payload by `signer`: malformed,
+    ///         from another key, or refused by `signer`'s ERC-1271 check.
+    /// @param signer The account the signature had to verify against.
+    error InvalidSignature(address signer);
+    /// @notice The signed payload's deadline has passed. A deadline is inclusive: a payload is
+    ///         valid while `block.timestamp <= deadline`.
+    /// @param deadline The payload's deadline, in seconds since the epoch.
+    error SignatureExpired(uint256 deadline);
+
+    /// @notice Reverts with `InvalidSignature(signer)` unless `isValid(signer, digest, signature)`.
+    /// @param signer The account the signature must verify against.
+    /// @param digest The signed digest.
+    /// @param signature The signature bytes.
+    function check(address signer, bytes32 digest, bytes memory signature) internal view {
+        if (!isValid(signer, digest, signature)) revert InvalidSignature(signer);
+    }
+
+    /// @notice Reverts with `SignatureExpired(deadline)` once `block.timestamp` is past
+    ///         `deadline`.
+    /// @param deadline The payload's deadline, inclusive.
+    function checkDeadline(uint256 deadline) internal view {
+        // A deadline is a wall-clock bound by design; validator timestamp drift is immaterial.
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > deadline) revert SignatureExpired(deadline);
+    }
+
     /// @notice Returns whether `signature` is valid for `digest` from `signer`.
     /// @dev Reverts with `BoundedCall.BoundedCallInsufficientGas` when an ERC-1271 check is
     ///      needed and the caller cannot forward {ERC1271_GAS_LIMIT} in full.

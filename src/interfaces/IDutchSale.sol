@@ -31,6 +31,8 @@ interface IDutchSale is ISaleAdapter {
     error SaleNotOpen(uint256 saleId);
     /// @notice The current unit price is above the buyer's limit.
     error PriceAboveLimit(uint256 price, uint256 maxUnitPrice);
+    /// @notice The start time is in the past, or the token's curve is invalid.
+    error InvalidSchedule();
 
     /// @notice Opens a Dutch sale of token `id` starting at `startTime` (not in the past).
     ///         Callable by the creator or the PLATFORM role; PLATFORM only for a listed edition

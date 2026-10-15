@@ -8,6 +8,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @notice DEPS-6 on the renderer pins: a renderer is pinned by its code hash when it is
 ///         installed (Stream's default renderer) or pinned to a work (finalize, the errata
@@ -70,9 +71,9 @@ contract RendererCodePinTest is IntegrationBase {
         assertTrue(_contains(stream.tokenURI(open), '"name":"Work'));
         address pinned = address(renderer);
         _changeCode(pinned);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, pinned));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, pinned));
         stream.tokenURI(open);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, pinned));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, pinned));
         stream.rendererOf(open);
 
         Renderer next = _newRenderer();
@@ -90,9 +91,9 @@ contract RendererCodePinTest is IntegrationBase {
         assertEq(stream.rendererOf(finalized), address(renderer), "the finalized pin");
         address pinned = address(renderer);
         _changeCode(pinned);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRenderer.selector, pinned));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, pinned));
         stream.tokenURI(finalized);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRenderer.selector, pinned));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, pinned));
         records.pinnedRenderer(finalized);
         assertTrue(_contains(stream.tokenURI(open), '"name":"Work'), "the default still serves");
 
@@ -120,7 +121,7 @@ contract RendererCodePinTest is IntegrationBase {
         vm.warp(block.timestamp + 30 days);
         vm.prank(hotAdmin);
         vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.InvalidRenderer.selector, address(renderer))
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(renderer))
         );
         manager.execute(address(records), call);
     }
@@ -130,7 +131,9 @@ contract RendererCodePinTest is IntegrationBase {
         _changeCode(address(renderer));
         bytes32 state = records.workStateHash(open);
         vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(renderer)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(renderer))
+        );
         records.finalize(open, state);
     }
 

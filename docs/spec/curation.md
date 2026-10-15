@@ -245,7 +245,7 @@ sequenceDiagram
 ```
 
 - **Preconditions.** The root's status is `NONE`. The current verifier still has its pinned
-  code hash (`InvalidDependency`). The verifier approves and the evidence hash is nonzero
+  code hash (`DependencyCodeChanged`). The verifier approves and the evidence hash is nonzero
   (`NotApproved`).
 - **Effects.** Status `APPROVED`; the signer and evidence hash are stored and emitted.
 - **Curation evidence.** Only CURATOR writes a `CURATION_EVIDENCE` statement, subject
@@ -326,7 +326,7 @@ sequenceDiagram
 `consume` fails, in order, with: `UnboundCaller`; `PackageNotApproved`; `ItemNotInPackage` (also
 for a proof over 32 nodes; the registry computes the item hash itself); `ContentUsed` (held, or
 released and this item tombstoned); `InvalidItem` or `PartyNotAccepted` (CUR-9, CUR-6, CUR-8);
-`ContentReserved` (released content, not the beneficiary); then for the move `InvalidSignature`
+`ContentReserved` (released content, not the beneficiary); then for the move `SignatureExpired`
 (deadline), `MoveNonceUsed` (the nonce is spent here) and `InvalidSignature` (over `moveDigest`).
 A revert anywhere in the start, including `SeedNotDelivered`, undoes the consume and the nonce.
 
@@ -466,7 +466,7 @@ repeat acceptance emits no `PackageAccepted`: read `isMoveNonceUsed` and `accept
 | A curation signer key is compromised. | It can attest new roots. | `disableSigner` at once; curation continues on the other key (at least two at deployment). Revoke every root the key registered that should not stand (`packageOf` names the signer); grant the role to a fresh key. |
 | The CURATOR key is compromised. | Misleading `CURATION_EVIDENCE` stays in the log. | A guardian suspends it; governance replaces it (30 days, then the 30-day grant delay). A later statement supersedes the false one. |
 | A root with a bad item is approved. | Its items can start. | Revoke that root and every other root listing the item; works already started are disputes. |
-| The verifier's code no longer has the pinned hash. | `registerPackage` reverts (`InvalidDependency`); registered roots keep working. | `setVerifier` to a reviewed verifier (30 days). |
+| The verifier's code no longer has the pinned hash. | `registerPackage` reverts (`DependencyCodeChanged`); registered roots keep working. | `setVerifier` to a reviewed verifier (30 days). |
 | Pre-signed acceptances differ in profile fields. | The first relayed sets a new identity's profile; the others revert (`ProfileMismatch`). | The artist re-signs with the recorded profile. |
 | An account to be accepted is another artist's pending new authority. | The artist registry reverts (`AccountTaken`). | Wait for the change to resolve, or list another account. |
 | An unwanted move signature exists. | Anyone holding it can start the work before its deadline. | `revokeMove`, or let the deadline pass. |

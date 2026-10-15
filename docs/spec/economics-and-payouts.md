@@ -135,7 +135,7 @@ address wallet = address(uint160(uint256(keccak256(abi.encodePacked(
   `pendingPayees()` (ECO-10). Funds sent to a predicted address are held, and split once anyone
   calls `createWallet` (ECO-11); `walletFor` reverts for a list no wallet would accept.
 - `createWallet` is idempotent and records `configOf[wallet]`, which `isWallet` reads. Deploying
-  a one-payee wallet costs 1,236,339 Prague gas
+  a one-payee wallet costs 1,241,422 Prague gas
   ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)); no sale pays it.
 - Another salt gives an equivalent wallet (same `configHash`), which the escrow accepts as a
   replacement. A `SplitWallet` deployed by any other contract is not the factory's.
@@ -155,7 +155,7 @@ releases revert with `ObservedDecreased` until they recover, and nothing is lost
   [transition table](#a-payees-balance-in-a-split-wallet) lists every entry point). A nested split
   wallet is a fixed payee.
 - **Artist payees stop alone** during a [payout freeze](../glossary.md#payout-freeze)
-  (`PayoutUnresolved`) or after a change to the resolver's code (`ResolverCodeChanged`); balances
+  (`PayoutUnresolved`) or after a change to the resolver's code (`DependencyCodeChanged`); balances
   keep accruing and fixed payees still release (ECO-18).
 - **A split wallet cannot be an artist's payout address,** because it cannot call `release`
   (ECO-19). An artist who wants revenue to flow into another split names it as a fixed payee.

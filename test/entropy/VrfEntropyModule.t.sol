@@ -16,6 +16,7 @@ import {
     MockVrfCoordinator,
     ReentrantVrfCoordinator
 } from "test/mocks/EntropyMocks.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev Different bytecode, same storage and functions as the mock (DEPS-6).
 contract AlteredVrfCoordinator is MockVrfCoordinator {
@@ -74,9 +75,9 @@ contract VrfEntropyModuleTest is EntropyBase {
         VrfEntropyModule.VrfConfig memory c = _config();
         uint64 low = module.MIN_RETRY_DELAY() - 1;
         uint64 high = module.MAX_RETRY_DELAY() + 1;
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRetryDelay.selector, low));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRetryDelay.selector, low));
         _newModule(address(coordinator), c, low, address(registry));
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRetryDelay.selector, high));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRetryDelay.selector, high));
         _newModule(address(coordinator), c, high, address(registry));
         _newModule(address(coordinator), c, module.MIN_RETRY_DELAY(), address(registry));
         _newModule(address(coordinator), c, module.MAX_RETRY_DELAY(), address(registry));
@@ -93,9 +94,7 @@ contract VrfEntropyModuleTest is EntropyBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(coordinator)));
         address[3] memory bad = [address(0), stranger, delegated];
         for (uint256 i; i < bad.length; ++i) {
-            vm.expectRevert(
-                abi.encodeWithSelector(VrfEntropyModule.InvalidCoordinator.selector, bad[i])
-            );
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, bad[i]));
             _newModule(bad[i], _config(), RETRY_DELAY, address(registry));
         }
     }
@@ -103,12 +102,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     function test_Constructor_PinsTheCoordinatorCodeHash() public {
         bytes32 wrong = keccak256("some other coordinator");
         vm.expectRevert(
-            abi.encodeWithSelector(
-                VrfEntropyModule.CodeHashMismatch.selector,
-                address(coordinator),
-                wrong,
-                address(coordinator).codehash
-            )
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(coordinator))
         );
         new VrfEntropyModule(
             address(manager),
@@ -132,9 +126,7 @@ contract VrfEntropyModuleTest is EntropyBase {
             address(manager) // a contract with a different ABI
         ];
         for (uint256 i; i < bad.length; ++i) {
-            vm.expectRevert(
-                abi.encodeWithSelector(VrfEntropyModule.InvalidRegistry.selector, bad[i])
-            );
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, bad[i]));
             _newModule(address(coordinator), _config(), RETRY_DELAY, bad[i]);
         }
     }
@@ -142,12 +134,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     function test_Constructor_PinsTheRegistryCodeHash() public {
         bytes32 wrong = keccak256("some other registry");
         vm.expectRevert(
-            abi.encodeWithSelector(
-                VrfEntropyModule.CodeHashMismatch.selector,
-                address(registry),
-                wrong,
-                address(registry).codehash
-            )
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(registry))
         );
         new VrfEntropyModule(
             address(manager),
@@ -166,15 +153,13 @@ contract VrfEntropyModuleTest is EntropyBase {
         MockPackageRegistry impl = new MockPackageRegistry();
         (address eoa, uint256 pk) = makeAddrAndKey("eoa-registry");
         vm.signAndAttachDelegation(address(impl), pk);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRegistry.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         _newModule(address(coordinator), _config(), RETRY_DELAY, eoa);
 
         // And by raw designator code.
         address designated = makeAddr("designated registry");
         vm.etch(designated, abi.encodePacked(hex"ef0100", address(impl)));
-        vm.expectRevert(
-            abi.encodeWithSelector(VrfEntropyModule.InvalidRegistry.selector, designated)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, designated));
         _newModule(address(coordinator), _config(), RETRY_DELAY, designated);
     }
 
@@ -182,17 +167,17 @@ contract VrfEntropyModuleTest is EntropyBase {
         address reg = address(registry);
         VrfEntropyModule.VrfConfig memory c = _config();
         c.subscriptionId = 0;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         _newModule(address(coordinator), c, RETRY_DELAY, reg);
 
         c = _config();
         c.keyHash = 0;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         _newModule(address(coordinator), c, RETRY_DELAY, reg);
 
         c = _config();
         c.callbackGasLimit = module.MIN_CALLBACK_GAS() - 1;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         _newModule(address(coordinator), c, RETRY_DELAY, reg);
 
         c = _config();
@@ -213,12 +198,12 @@ contract VrfEntropyModuleTest is EntropyBase {
 
         c = _config();
         c.confirmations = module.MIN_CONFIRMATIONS() - 1;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         _newModule(address(coordinator), c, RETRY_DELAY, reg);
 
         c = _config();
         c.confirmations = module.MAX_CONFIRMATIONS() + 1;
-        vm.expectRevert(VrfEntropyModule.InvalidConfig.selector);
+        vm.expectRevert(IEntropyModule.InvalidConfig.selector);
         _newModule(address(coordinator), c, RETRY_DELAY, reg);
     }
 
@@ -475,14 +460,14 @@ contract VrfEntropyModuleTest is EntropyBase {
 
     function test_Request_RejectsAZeroRequestId() public {
         coordinator.force(0, true);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRequestId.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRequestId.selector, 0));
         module.requestSeed(_item(0), root, proofs[0]);
     }
 
     function test_Request_RejectsADuplicateRequestId() public {
         coordinator.force(42, false);
         _request(0);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRequestId.selector, 42));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRequestId.selector, 42));
         module.requestSeed(_item(1), root, proofs[1]);
         (uint256 requestId,) = module.requestOf(items[0]);
         assertEq(requestId, 42);
@@ -510,7 +495,7 @@ contract VrfEntropyModuleTest is EntropyBase {
         assertFalse(evil.fulfilSucceeded());
         assertEq(
             evil.fulfilError(),
-            abi.encodeWithSelector(VrfEntropyModule.UnknownRequest.selector, evil.ISSUED_ID())
+            abi.encodeWithSelector(IEntropyModule.UnknownRequest.selector, evil.ISSUED_ID())
         );
         assertFalse(module.isDelivered(items[0]));
     }
@@ -535,7 +520,7 @@ contract VrfEntropyModuleTest is EntropyBase {
         for (uint256 i; i < callers.length; ++i) {
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    VrfEntropyModule.OnlyCoordinatorCanFulfill.selector,
+                    IEntropyModule.OnlyCoordinatorCanFulfill.selector,
                     callers[i],
                     address(coordinator)
                 )
@@ -601,10 +586,10 @@ contract VrfEntropyModuleTest is EntropyBase {
 
     function test_Fulfill_AnUnissuedRequestIdReverts() public {
         _request(0);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.UnknownRequest.selector, 999));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.UnknownRequest.selector, 999));
         _fulfillAs(address(coordinator), 999, 1);
         // Zero must not match the empty record of an unknown request.
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.UnknownRequest.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.UnknownRequest.selector, 0));
         _fulfillAs(address(coordinator), 0, 1);
     }
 
@@ -612,9 +597,9 @@ contract VrfEntropyModuleTest is EntropyBase {
         uint256 id = _request(0);
         uint256[] memory none = new uint256[](0);
         uint256[] memory two = new uint256[](2);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRandomWords.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRandomWords.selector, id));
         coordinator.deliver(address(module), id, none);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRandomWords.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRandomWords.selector, id));
         coordinator.deliver(address(module), id, two);
         assertFalse(module.isDelivered(items[0]));
     }
@@ -648,7 +633,7 @@ contract VrfEntropyModuleTest is EntropyBase {
     function test_Fulfill_AMalformedDeliveryRevertsAndTheItemStaysUndelivered() public {
         uint256 id = _request(0);
         uint256[] memory two = new uint256[](2);
-        vm.expectRevert(abi.encodeWithSelector(VrfEntropyModule.InvalidRandomWords.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEntropyModule.InvalidRandomWords.selector, id));
         coordinator.deliver(address(module), id, two);
         assertFalse(module.isDelivered(items[0]));
         coordinator.fulfill(id, 5);
@@ -666,9 +651,8 @@ contract VrfEntropyModuleTest is EntropyBase {
         vm.etch(address(coordinator), address(new AlteredVrfCoordinator()).code);
         bytes32 actual = address(coordinator).codehash;
         assertTrue(actual != pinned);
-        bytes memory mismatch = abi.encodeWithSelector(
-            VrfEntropyModule.CodeHashMismatch.selector, address(coordinator), pinned, actual
-        );
+        bytes memory mismatch =
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(coordinator));
 
         vm.expectRevert(mismatch);
         _request(1);
@@ -890,9 +874,7 @@ contract VrfEntropyModuleTest is EntropyBase {
         // B no longer delivers, and its ID 1 did not become A's.
         vm.expectRevert(
             abi.encodeWithSelector(
-                VrfEntropyModule.OnlyCoordinatorCanFulfill.selector,
-                address(b),
-                address(coordinator)
+                IEntropyModule.OnlyCoordinatorCanFulfill.selector, address(b), address(coordinator)
             )
         );
         b.fulfill(idB, 0xB);

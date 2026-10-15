@@ -19,6 +19,7 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { JsonEscape } from "src/libraries/JsonEscape.sol";
+import { IRenderer } from "src/interfaces/IRenderer.sol";
 
 /// @dev One attribute of a record.
 struct Trait {
@@ -254,7 +255,7 @@ abstract contract RendererBase is ContentBase {
         assertFalse(_has(j, ".content_hash"));
         assertTrue(_hasAttr(j, "Artist ID"));
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
         return _str(j, ".name");

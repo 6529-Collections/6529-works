@@ -21,6 +21,22 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      unreadable token: it gets core-only metadata from 6529 Stream with a `record_status`
 ///      field, and never a revert.
 interface IRenderer is IERC165 {
+    /// @notice The inline threshold is zero or above the renderer's `MAX_INLINE_BYTES`.
+    error RendererThresholdInvalid(uint256 threshold);
+    /// @notice A read of `target` failed: no code, a revert, out of its gas cap, or too much
+    ///         return data. `selector` names the call.
+    error RendererReadFailed(address target, bytes4 selector);
+    /// @notice A string from 6529 Stream, a locator or the content store is not well-formed
+    ///         UTF-8.
+    error RendererInvalidUtf8();
+    /// @notice The work's data breaks a rule: no primary file first, or an edition whose content
+    ///         hash is not its master's. (A bad record is not an error: it renders core-only.)
+    error RendererRecordInvalid(address token, uint256 tokenId);
+    /// @notice `fullTokenURI` cannot serve the work in full: its record is not open, incomplete
+    ///         or invalid, or the primary file is not on-chain complete, is incomplete, too large,
+    ///         not attested `Base64`, or not stored as `Identity` or `Base64`.
+    error RendererNotInlineable(address token, uint256 tokenId);
+
     /// @notice The compact metadata URI (`data:application/json;...`) for `tokenId` of
     ///         `token`, which is 6529 Stream or 6529 Editions.
     function tokenURI(address token, uint256 tokenId) external view returns (string memory);

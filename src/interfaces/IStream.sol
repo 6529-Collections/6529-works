@@ -108,15 +108,31 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error UnknownCollection(uint256 collectionId);
     /// @notice The caller is not the bound contract (or minting adapter) this function serves.
     error UnboundCaller(address caller);
+    /// @notice The caller is not the adapter that minted the token (`burn`,
+    ///         `markPrimarySettled`).
+    error NotMintingAdapter(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
     /// @notice The target lacks code or the expected ERC-165 support, is an EIP-7702 delegated
     ///         account, or (a satellite) serves another Stream; or the default renderer's code is
     ///         no longer the code hash it was installed with.
     error InvalidBinding(address target);
-    /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
-    ///         seed policy, license ID, fee terms).
-    error InvalidMintRequest();
+    /// @notice The item's sale is not an English auction with empty parameters.
+    error InvalidItemSale();
+    /// @notice The item names no parties, or (a preview) its lead party has no artist ID yet.
+    error InvalidLeadArtist();
+    /// @notice The item's seed does not fit its seed policy (a seed for ARTIST only, and only
+    ///         with one), or it is a VRF item and this deployment has no entropy module.
+    error InvalidSeedPolicy();
+    /// @notice The item's license ID does not follow the `SpdxId` rule.
+    error InvalidLicenseId();
+    /// @notice The economics resolver's `PRODUCT_STREAM` terms cannot be locked: a royalty rate
+    ///         above 100,000, a fee share of 100,000 or more, or a fee share with no fee
+    ///         recipient or paid to the work's own seller.
+    error InvalidWorkTerms();
+    /// @notice A storage index is full: a 65,536th fee recipient, or a 2^23rd set of terms
+    ///         displaced to the overflow range by a collision.
+    error TermsCapacityExceeded();
     /// @notice The collection name is empty, too long, not UTF-8, or holds a control character,
     ///         `<`, `"` or `\`.
     error InvalidCollectionName();
@@ -214,11 +230,13 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash) external;
     /// @notice The renderer serving a work: its pin in `IWorkRecords` once finalized, the default
     ///         before. `tokenURI` forwards to it (and 6529 Editions' `uri`). Fails closed: reverts
-    ///         with `InvalidBinding` when the default renderer's code is no longer the code hash
-    ///         `setDefaultRenderer` (or the constructor) pinned, and with
-    ///         `IWorkRecords.InvalidRenderer` when a finalized work's pinned renderer changed
-    ///         code; it never falls back to another renderer. A new default renderer, or the
-    ///         errata repin for a finalized work, restores the metadata.
+    ///         with `Dependency.DependencyCodeChanged` when the default renderer's code is no
+    ///         longer the code hash `setDefaultRenderer` (or the constructor) pinned, or when a
+    ///         finalized work's pinned renderer changed code; it never falls back to another
+    ///         renderer. A new default renderer, or the errata repin for a finalized work,
+    ///         restores the metadata.
+    /// @param tokenId A live token ID (`UnknownWork` otherwise).
+    /// @return The renderer that builds the token's metadata.
     function rendererOf(uint256 tokenId) external view returns (address);
 
     // ----- hooks for the bound satellites -----

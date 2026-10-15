@@ -33,8 +33,8 @@ forge inspect src/stream/Stream.sol:Stream errors              # custom error se
 ```
 
 Decode a deployed address with the **contract** artifact, not the interface's: some contracts
-declare events and errors their interfaces do not (6529 Editions' `ContractURISet` and
-`RoyaltyRateChanged`, the entropy module's `ConfigSet`, every adapter's errors). A revert can
+declare events and errors their interfaces do not (the entropy module's `ConfigSet`, and the
+errors of the libraries they use, such as `Dependency` and `SignatureVerifier`). A revert can
 come from a contract further down the call, so decode it against every contract on the path.
 
 ### Contract names

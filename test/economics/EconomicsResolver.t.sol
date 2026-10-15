@@ -24,6 +24,7 @@ import { License } from "src/interfaces/types/PackageTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { MockERC20 } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 contract EconomicsResolverTest is EconomicsBase {
     bytes32 internal constant CC0_TEXT = keccak256("CC0 1.0 Universal legal code");
@@ -85,15 +86,11 @@ contract EconomicsResolverTest is EconomicsBase {
         new EconomicsResolver(address(manager), allowlist, factory, address(0), CC0_TEXT);
         vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
         new EconomicsResolver(address(manager), allowlist, factory, network, bytes32(0));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.InvalidDependency.selector, alice)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
         new EconomicsResolver(address(manager), IAssetAllowlist(alice), factory, network, CC0_TEXT);
         address delegated = makeAddr("delegated");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(factory)));
-        vm.expectRevert(
-            abi.encodeWithSelector(IEconomicsResolver.InvalidDependency.selector, delegated)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         new EconomicsResolver(
             address(manager), allowlist, ISplitFactory(delegated), network, CC0_TEXT
         );

@@ -19,6 +19,7 @@ import {
     ToggleRecipient
 } from "../../mocks/EconomicsMocks.sol";
 import { PaymentHarness } from "../EconomicsBase.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
 
 /// @notice Drives the economics contracts with valid and invalid actions against an independent
 ///         model. Every action is attempted: the model predicts success (and the exact amount) or
@@ -469,7 +470,7 @@ contract EconomicsHandler is Test {
             return (err, 0);
         }
         if (t.mode == 2 && t.signer != payout) {
-            err = abi.encodeWithSelector(IReleaseVerifier.InvalidSignature.selector, payout);
+            err = abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, payout);
             return (err, 0);
         }
         uint256 current = _observed(t.w, t.asset);

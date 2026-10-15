@@ -24,6 +24,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { HostileActor, MockMintTarget } from "../../mocks/auction/AuctionMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev Unit tests for starting, bidding, settling, delivery claims and credits.
 contract EnglishAuctionTest is AuctionBase {
@@ -51,22 +52,22 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_RejectsMissingDependencies() public {
         address[] memory none = new address[](0);
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
             address(manager), eoa, resolver, address(statements), address(0), _config(), none
         );
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
             address(manager), address(escrow), resolver, address(statements), eoa, _config(), none
         );
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
             address(manager), address(escrow), resolver, eoa, address(0), _config(), none
         );
         address[] memory bad = new address[](1);
         bad[0] = address(escrow);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTarget.selector, address(escrow))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
         );
         new EnglishAuction(
             address(manager),
@@ -84,7 +85,7 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_RejectsAnUnfitResolver() public {
         address[] memory none = new address[](0);
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
             address(manager),
             address(escrow),
@@ -95,7 +96,7 @@ contract EnglishAuctionTest is AuctionBase {
             none
         );
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, address(escrow))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
         );
         new EnglishAuction(
             address(manager),
@@ -107,7 +108,7 @@ contract EnglishAuctionTest is AuctionBase {
             none
         );
         resolver.setAllowlistOverride(eoa);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
             address(manager),
             address(escrow),
@@ -129,7 +130,7 @@ contract EnglishAuctionTest is AuctionBase {
             IEnglishAuction.AuctionConfig(2 hours, 3 hours, SHARE)
         ];
         for (uint256 i; i < bad.length; ++i) {
-            vm.expectRevert(EnglishAuction.InvalidConfig.selector);
+            vm.expectRevert(IEnglishAuction.InvalidConfig.selector);
             new EnglishAuction(
                 address(manager),
                 address(escrow),
@@ -222,7 +223,9 @@ contract EnglishAuctionTest is AuctionBase {
             stream.setTerms(t);
             uint256 next = stream.nextId() + 1;
             vm.expectRevert(
-                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+                abi.encodeWithSelector(
+                    ISaleAdapter.InvalidSaleTerms.selector, address(stream), next
+                )
             );
             _start();
         }
@@ -239,13 +242,17 @@ contract EnglishAuctionTest is AuctionBase {
             stream.setTerms(t);
             uint256 next = stream.nextId() + 1;
             vm.expectRevert(
-                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+                abi.encodeWithSelector(
+                    ISaleAdapter.InvalidSaleTerms.selector, address(stream), next
+                )
             );
             _start();
             vm.deal(alice, 1 ether);
             vm.prank(alice);
             vm.expectRevert(
-                abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), next)
+                abi.encodeWithSelector(
+                    ISaleAdapter.InvalidSaleTerms.selector, address(stream), next
+                )
             );
             auction.startWithBid{ value: 1 ether }(
                 address(stream), "", address(0), _direct(alice, 1 ether)
@@ -267,13 +274,15 @@ contract EnglishAuctionTest is AuctionBase {
         stream.setMode(MockMintTarget.Mode.HUGE_ID);
         vm.expectRevert(
             abi.encodeWithSelector(
-                EnglishAuction.InvalidTerms.selector, address(stream), uint256(type(uint32).max) + 1
+                ISaleAdapter.InvalidSaleTerms.selector,
+                address(stream),
+                uint256(type(uint32).max) + 1
             )
         );
         _start();
         stream.setMode(MockMintTarget.Mode.WRONG_CUSTODY);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), 1)
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(stream), 1)
         );
         _start();
     }
@@ -405,10 +414,10 @@ contract EnglishAuctionTest is AuctionBase {
         (uint256 id,) = stream.mint(alice, 0, 1, "");
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTarget.selector, address(stream))
+            abi.encodeWithSelector(IEnglishAuction.InvalidTarget.selector, address(stream))
         );
         stream.safeTransferFrom(alice, address(auction), id);
-        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidTarget.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.InvalidTarget.selector, alice));
         vm.prank(alice);
         auction.onERC721Received(address(auction), address(0), 1, "");
     }
@@ -802,7 +811,7 @@ contract EnglishAuctionTest is AuctionBase {
         t.feeRecipient = address(0);
         stream.setTerms(t);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTerms.selector, address(stream), 1)
+            abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(stream), 1)
         );
         _start();
     }
@@ -960,7 +969,7 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Settle_RevertsWhenTheCallerStarvesDelivery() public {
         uint256 saleId = _start();
         _end(saleId);
-        vm.expectRevert(EnglishAuction.DeliveryInsufficientGas.selector);
+        vm.expectRevert(IEnglishAuction.DeliveryInsufficientGas.selector);
         auction.settle{ gas: 250_000 }(saleId);
         assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction));
     }

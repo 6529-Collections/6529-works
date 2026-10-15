@@ -88,24 +88,16 @@ interface IPackageRegistry is IERC165 {
     error PartyNotAccepted(bytes32 packageRoot, address account);
     /// @notice The parties, payees, kind, seed or edition fields are inconsistent.
     error InvalidItem(bytes32 itemHash);
-    /// @notice A signature is expired, malformed or from the wrong signer.
-    error InvalidSignature();
     /// @notice The caller is not the active authority of `artistId`.
     error NotAuthority(uint256 artistId, address caller);
     /// @notice The move nonce was used or revoked.
     error MoveNonceUsed(uint256 artistId, uint256 nonce);
     /// @notice The acceptance's profile fields do not match the artist record.
     error ProfileMismatch(uint256 artistId);
-    /// @notice A dependency lacks code, ERC-165 support or the expected code hash, or is an
-    ///         EIP-7702 delegated account.
-    error InvalidDependency(address dependency);
     /// @notice The caller is not the bound contract for this function.
     error UnboundCaller(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The target lacks code or the expected ERC-165 support, or is an EIP-7702 delegated
-    ///         account.
-    error InvalidBinding(address target);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
 

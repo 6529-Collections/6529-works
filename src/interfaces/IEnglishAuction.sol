@@ -108,6 +108,18 @@ interface IEnglishAuction is ISaleAdapter {
     error OutcomeNotRecorded(uint256 saleId, bytes32 outcomeRef);
     /// @notice Nothing is pending delivery for the caller.
     error NoPendingDelivery(uint256 saleId);
+    /// @notice An auction configuration is outside the bounds `setConfig` documents.
+    error InvalidConfig();
+    /// @notice A token arrived other than by this adapter's own mint during a start: the
+    ///         ERC-721 receiver hook refuses every other safe transfer.
+    error InvalidTarget(address token);
+    /// @notice The caller is not the high bidder.
+    error NotHighBidder(address caller);
+    /// @notice The opening bid is above its absolute ceiling.
+    error OpeningBidAboveCeiling(uint256 next, uint256 ceiling);
+    /// @notice The caller cannot forward the 300,000-gas delivery allowance (`DELIVERY_GAS`) in
+    ///         full.
+    error DeliveryInsufficientGas();
 
     /// @notice Mints a work into custody and opens its auction. Permissionless.
     /// @param token A served token contract.

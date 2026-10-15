@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Create2 } from "@openzeppelin/contracts/utils/Create2.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { IArtistPayoutResolver } from "./interfaces/IArtistPayoutResolver.sol";
 import { IReleaseVerifier } from "./interfaces/IReleaseVerifier.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
@@ -67,12 +67,8 @@ contract SplitFactory is ISplitFactory {
         bytes32 walletSalt = _walletSalt(configHash, salt);
         wallet = Create2.computeAddress(walletSalt, walletInitCodeHash);
         if (wallet.code.length != 0) return wallet;
-        if (address(resolver).codehash != resolverCodeHash) {
-            revert DependencyCodeChanged(address(resolver));
-        }
-        if (address(verifier).codehash != verifierCodeHash) {
-            revert DependencyCodeChanged(address(verifier));
-        }
+        Dependency.checkUnchanged(address(resolver), resolverCodeHash);
+        Dependency.checkUnchanged(address(verifier), verifierCodeHash);
         _setPending(payees);
         address deployed = address(new SplitWallet{ salt: walletSalt }());
         if (deployed != wallet) revert WalletAddressMismatch(wallet, deployed);
@@ -149,9 +145,7 @@ contract SplitFactory is ISplitFactory {
     }
 
     function _pin(address dependency) private view returns (bytes32) {
-        if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
-            revert InvalidDependency(dependency);
-        }
+        Dependency.check(dependency);
         return dependency.codehash;
     }
 }

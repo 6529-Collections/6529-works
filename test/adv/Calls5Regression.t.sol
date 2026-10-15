@@ -25,7 +25,7 @@ contract Calls5RegressionTest is IntegrationBase {
         (, uint256 tokenId) = _sold();
         vm.prank(bidder);
         vm.expectRevert(
-            abi.encodeWithSelector(EnglishAuction.InvalidTarget.selector, address(stream))
+            abi.encodeWithSelector(IEnglishAuction.InvalidTarget.selector, address(stream))
         );
         stream.safeTransferFrom(bidder, address(auction), tokenId);
         assertEq(stream.ownerOf(tokenId), bidder);

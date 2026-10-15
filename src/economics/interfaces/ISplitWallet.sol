@@ -52,8 +52,6 @@ interface ISplitWallet {
     error UnknownPayee(uint256 payee);
     /// @notice The resolver returned no payout address for `artistId`.
     error PayoutUnresolved(uint256 artistId);
-    /// @notice The resolver's code no longer matches the hash pinned at deployment.
-    error ResolverCodeChanged();
     /// @notice `recipient` is zero or the wallet itself.
     error InvalidRecipient(address recipient);
     /// @notice `caller` is not the payee's current payout address `payoutAddress`.

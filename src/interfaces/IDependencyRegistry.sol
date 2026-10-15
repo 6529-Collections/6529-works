@@ -27,8 +27,6 @@ interface IDependencyRegistry {
     error DependencyContentIncomplete(bytes32 fileId);
     /// @notice `(name, version)` is already deprecated.
     error DependencyAlreadyDeprecated(bytes32 name, bytes32 version);
-    /// @notice The configured store is not a contract.
-    error DependencyStoreInvalid(address store);
 
     /// @notice The content store the registry points at.
     function store() external view returns (IContentStore);

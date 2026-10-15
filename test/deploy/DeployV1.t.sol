@@ -35,6 +35,7 @@ import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { MockVrfCoordinator } from "../mocks/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @notice The deploy library the script broadcasts and the integration tests reuse: every
 ///         merged v1 contract, the genesis configuration from config/genesis.example.json, the
@@ -385,9 +386,7 @@ contract DeployV1Test is Test {
     function test_ADelegationAddressWithoutCodeIsRefused() public {
         DeployV1.Params memory p = _params();
         p.delegation = 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d; // no code here, as on Sepolia
-        vm.expectRevert(
-            abi.encodeWithSelector(ConsolidationAdapter.NoDelegationCode.selector, p.delegation)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, p.delegation));
         this.deployExternal(p);
     }
 

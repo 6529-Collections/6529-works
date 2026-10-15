@@ -32,6 +32,8 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ERC1271WalletMock } from "test/mocks/AdversarialTargets.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 import { CurationBase } from "./CurationBase.sol";
 
 /// @dev A verifier that approves every root: code that could take the place of the pinned one.
@@ -116,24 +118,24 @@ contract PackageRegistryTest is CurationBase {
         ICurationVerifier v = ICurationVerifier(address(verifier));
         bytes32 vh = address(verifier).codehash;
         bytes32 ah = address(artists).codehash;
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(address(manager), v, vh, eoa, eoa.codehash);
         // A contract without the artist registry's ERC-165 interface.
         bytes32 wrongHash = address(verifier).codehash;
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(verifier))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
         new PackageRegistry(address(manager), v, vh, address(verifier), wrongHash);
         // Code hashes are pinned: the artist registry's and the verifier's.
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(artists))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(artists))
         );
         new PackageRegistry(address(manager), v, vh, address(artists), keccak256("other"));
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(verifier))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
         new PackageRegistry(address(manager), v, keccak256("other"), address(artists), ah);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new PackageRegistry(address(manager), ICurationVerifier(eoa), vh, address(artists), ah);
     }
 
@@ -142,9 +144,7 @@ contract PackageRegistryTest is CurationBase {
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(verifier)));
         bytes32 h = delegated.codehash;
         bytes32 ah = address(artists).codehash;
-        vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, delegated)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         new PackageRegistry(address(manager), ICurationVerifier(delegated), h, address(artists), ah);
     }
 
@@ -198,12 +198,12 @@ contract PackageRegistryTest is CurationBase {
         for (uint256 i; i < notStreams.length; ++i) {
             vm.prank(admin);
             vm.expectRevert(
-                abi.encodeWithSelector(IPackageRegistry.InvalidBinding.selector, notStreams[i])
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, notStreams[i])
             );
             fresh.bindStream(notStreams[i]);
         }
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidBinding.selector, stream));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, stream));
         fresh.bindEditions(stream);
         assertEq(fresh.stream(), address(0));
         assertEq(fresh.editions(), address(0));
@@ -221,15 +221,15 @@ contract PackageRegistryTest is CurationBase {
         fresh.bindEditions(editions);
         address eoa = makeAddr("eoa");
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         fresh.bindStream(eoa);
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         fresh.bindEditions(eoa);
         address delegated = makeAddr("7702 account");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", stream));
         vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidBinding.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         fresh.bindStream(delegated);
     }
 
@@ -456,7 +456,7 @@ contract PackageRegistryTest is CurationBase {
         // The old address still names the identity, but only the new authority can sign.
         PartyAcceptance memory a = _acceptance(lead);
         bytes32 digest = registry.acceptanceDigest(root, a);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(vm.addr(newKey)));
         registry.acceptPackage(root, a, _sig(leadKey, digest));
         assertEq(registry.acceptPackage(root, a, _sig(newKey, digest)), _id(lead));
     }
@@ -512,19 +512,19 @@ contract PackageRegistryTest is CurationBase {
         bytes32 digest = registry.acceptanceDigest(root, a);
         bytes memory wrongKey = _sig(collabKey, digest);
         bytes memory malleable = _highS(leadKey, digest);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.acceptPackage(root, a, wrongKey);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.acceptPackage(root, a, malleable);
         // Bound to the root: a signature for another root does not transfer.
         bytes32 other = keccak256("other root");
         _register(other);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.acceptPackage(other, a, _sig(leadKey, digest));
         // The zero account never signs.
         a.account = address(0);
         bytes memory zeroSig = _sig(leadKey, registry.acceptanceDigest(root, a));
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(address(0)));
         registry.acceptPackage(root, a, zeroSig);
     }
 
@@ -534,7 +534,7 @@ contract PackageRegistryTest is CurationBase {
         PartyAcceptance memory a = _acceptance(lead);
         bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
         vm.warp(uint256(a.deadline) + 1);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.expired(a.deadline));
         registry.acceptPackage(root, a, sig);
     }
 
@@ -552,7 +552,7 @@ contract PackageRegistryTest is CurationBase {
         PartyAcceptance memory a = _acceptance(lead);
         bytes memory sig = _sig(leadKey, registry.acceptanceDigest(root, a));
         vm.chainId(block.chainid + 1);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.acceptPackage(root, a, sig);
     }
 
@@ -754,7 +754,7 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         vm.warp(uint256(move.deadline) + 1);
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.expired(move.deadline));
         registry.consume(root, item, new bytes32[](0), move);
     }
 
@@ -768,7 +768,7 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item,) = _ready(SHA_A);
         MoveAuthorization memory move = _move(collabKey, root, _hash(item), 0);
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.consume(root, item, new bytes32[](0), move);
     }
 
@@ -776,7 +776,7 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         move.signature = _highS(leadKey, registry.moveDigest(root, _hash(item), 0, deadline));
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.consume(root, item, new bytes32[](0), move);
     }
 
@@ -784,7 +784,7 @@ contract PackageRegistryTest is CurationBase {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         vm.chainId(block.chainid + 1);
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.consume(root, item, new bytes32[](0), move);
     }
 
@@ -793,7 +793,7 @@ contract PackageRegistryTest is CurationBase {
         PackageRegistry other = _newRegistry();
         bytes memory foreign = _sig(leadKey, other.moveDigest(root, _hash(item), 0, deadline));
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.consume(root, item, new bytes32[](0), MoveAuthorization(0, deadline, foreign));
     }
 
@@ -806,7 +806,7 @@ contract PackageRegistryTest is CurationBase {
         _accept(root, leadKey);
         MoveAuthorization memory moveFor0 = _move(leadKey, root, _hash(items[0]), 0);
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(lead));
         registry.consume(root, items[1], proofs[1], moveFor0);
     }
 
@@ -815,7 +815,7 @@ contract PackageRegistryTest is CurationBase {
         uint256 newKey = 0xA9;
         artists.recover(_id(lead), vm.addr(newKey));
         vm.prank(stream);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(vm.addr(newKey)));
         registry.consume(root, item, new bytes32[](0), oldMove);
         _consume(root, item, new bytes32[](0), _move(newKey, root, _hash(item), 0));
     }
@@ -1393,7 +1393,7 @@ contract PackageRegistryTest is CurationBase {
         vm.etch(address(verifier), address(new ApproveEverythingVerifier()).code);
         bytes32 root = keccak256("an unapproved root");
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(verifier))
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(verifier))
         );
         registry.registerPackage(root, EVIDENCE, "");
         (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
@@ -1415,7 +1415,7 @@ contract PackageRegistryTest is CurationBase {
         _swapVerifier(b);
         bytes32 aHash = address(a).codehash;
         vm.prank(successor);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, a));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, a));
         registry.setVerifier(ICurationVerifier(address(b)), ICurationVerifier(address(a)), aHash);
         assertEq(address(registry.verifier()), address(b));
         // A verifier never installed is accepted.
@@ -1425,7 +1425,7 @@ contract PackageRegistryTest is CurationBase {
         registry.setVerifier(ICurationVerifier(address(b)), ICurationVerifier(address(c)), cHash);
         assertEq(address(registry.verifier()), address(c));
         vm.prank(successor);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, b));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, b));
         registry.setVerifier(ICurationVerifier(address(c)), ICurationVerifier(address(b)), aHash);
     }
 
@@ -1442,7 +1442,7 @@ contract PackageRegistryTest is CurationBase {
         ICurationVerifier current = ICurationVerifier(address(verifier));
         vm.prank(successor);
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(verifier))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(verifier))
         );
         registry.setVerifier(current, current, h);
     }
@@ -1451,20 +1451,20 @@ contract PackageRegistryTest is CurationBase {
         ICurationVerifier current = ICurationVerifier(address(verifier));
         address eoa = makeAddr("eoa");
         vm.prank(successor);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         registry.setVerifier(current, ICurationVerifier(eoa), eoa.codehash);
         // A contract without ERC-165 support for ICurationVerifier.
         bytes32 artistsHash = address(artists).codehash;
         vm.prank(successor);
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(artists))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(artists))
         );
         registry.setVerifier(current, ICurationVerifier(address(artists)), artistsHash);
         // A verifier whose code is not the reviewed code.
         Eip712CurationVerifier next = new Eip712CurationVerifier(address(manager));
         vm.prank(successor);
         vm.expectRevert(
-            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(next))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
         );
         registry.setVerifier(current, ICurationVerifier(address(next)), keccak256("reviewed"));
     }

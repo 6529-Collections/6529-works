@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistPayoutResolver } from "../economics/interfaces/IArtistPayoutResolver.sol";
 import { ISplitFactory } from "../economics/interfaces/ISplitFactory.sol";
@@ -23,7 +22,7 @@ import {
 import { Limits } from "../interfaces/types/Limits.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
@@ -171,26 +170,26 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IArtistRegistry
     function bindPackageRegistry(address target) external restricted {
-        _checkBinding(target, type(IPackageRegistry).interfaceId);
+        Dependency.check(target, type(IPackageRegistry).interfaceId);
         packageRegistry = _bind("PACKAGE_REGISTRY", packageRegistry, target);
     }
 
     /// @inheritdoc IArtistRegistry
     function bindStream(address target) external restricted {
-        _checkBinding(target, type(IStream).interfaceId);
+        Dependency.check(target, type(IStream).interfaceId);
         stream = _bind("STREAM", stream, target);
     }
 
     /// @inheritdoc IArtistRegistry
     function bindFederationRegistry(address target) external restricted {
-        _checkBinding(target, type(IFederationRegistry).interfaceId);
+        Dependency.check(target, type(IFederationRegistry).interfaceId);
         federationRegistry = _bind("FEDERATION_REGISTRY", federationRegistry, target);
     }
 
     /// @inheritdoc IArtistRegistry
     /// @dev The factory does not implement ERC-165, so only code and no EIP-7702 are checked.
     function bindSplitFactory(address target) external restricted {
-        _checkBinding(target, bytes4(0));
+        Dependency.check(target);
         splitFactory = _bind("SPLIT_FACTORY", splitFactory, target);
     }
 
@@ -198,7 +197,7 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     /// @dev The statement log does not implement ERC-165: code, no EIP-7702, and its
     ///      `artistResolver()` naming this registry are checked instead, with a bounded read.
     function bindStatementLog(address target) external restricted {
-        _checkBinding(target, bytes4(0));
+        Dependency.check(target);
         (bool ok, bytes memory resolver) = BoundedCall.tryRead(
             target, abi.encodeWithSignature("artistResolver()"), BIND_READ_GAS, 32, 0
         );
@@ -259,15 +258,11 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         _requireSigner(artistId, a, signer);
         _checkNext(artistId, next);
         bytes32 digest = changeDigest(artistId, next, a.nonce, deadline);
-        // Deadlines and delays are wall-clock bounds; validator drift is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > deadline || !SignatureVerifier.isValid(signer, digest, signature)) {
-            revert InvalidSignature();
+        SignatureVerifier.checkDeadline(deadline);
+        SignatureVerifier.check(signer, digest, signature);
+        if (next.authority != a.authority) {
+            SignatureVerifier.check(next.authority, digest, authorityAcceptance);
         }
-        if (
-            next.authority != a.authority
-                && !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance)
-        ) revert InvalidSignature();
         _recordActivity(artistId, a);
         _stage(artistId, a, ChangeKind.STANDARD, next, bytes32(0), CHANGE_DELAY);
     }
@@ -293,13 +288,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
         }
         if (next.authority != a.authority) {
             bytes32 digest = overrideDigest(artistId, kind, next, evidenceHash, deadline);
-            // forge-lint: disable-next-line(block-timestamp)
-            bool expired = block.timestamp > deadline;
             if (_acceptanceUsed[digest]) revert AcceptanceUsed(digest);
-            if (expired || !SignatureVerifier.isValid(next.authority, digest, authorityAcceptance))
-            {
-                revert InvalidSignature();
-            }
+            SignatureVerifier.checkDeadline(deadline);
+            SignatureVerifier.check(next.authority, digest, authorityAcceptance);
             _acceptanceUsed[digest] = true;
         }
         ChangeKind pending = _pending[artistId].kind;
@@ -626,28 +617,14 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
 
     /// @dev The consolidation source, its install-time code-hash pin re-checked at use (DEPS-6):
     ///      a source whose code no longer matches is never trusted. The established-wallet check
-    ///      fails closed with `InvalidSource`; for refreshes see {_refresh}.
+    ///      fails closed with `Dependency.DependencyCodeChanged`; for refreshes see {_refresh}.
     function _source() private view returns (IConsolidationSource source) {
         source = consolidationSource;
-        if (address(source).codehash != consolidationSourceCodeHash) {
-            revert InvalidSource(address(source));
-        }
+        Dependency.checkUnchanged(address(source), consolidationSourceCodeHash);
     }
 
     function _checkSource(IConsolidationSource source, bytes32 codeHash) private view {
-        address target = address(source);
-        if (
-            target.codehash != codeHash || DelegatedEOA.isDelegated(target)
-                || !ERC165Checker.supportsInterface(target, type(IConsolidationSource).interfaceId)
-        ) revert InvalidSource(target);
-    }
-
-    /// @dev `interfaceId` zero skips ERC-165 but still requires code.
-    function _checkBinding(address target, bytes4 interfaceId) private view {
-        if (
-            target.code.length == 0 || DelegatedEOA.isDelegated(target)
-                || (interfaceId != 0 && !ERC165Checker.supportsInterface(target, interfaceId))
-        ) revert InvalidBinding(target);
+        Dependency.checkPinned(address(source), type(IConsolidationSource).interfaceId, codeHash);
     }
 
     function _bind(bytes32 name, address current, address target) private returns (address) {
@@ -701,12 +678,13 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     ///      ({StandingRefreshSkipped}) instead of reverting: what it already applied came from
     ///      successful reads, and skipping the rest removes nobody's standing. A source whose
     ///      code no longer matches its pin (DEPS-6) is treated the same way: a best-effort refresh
-    ///      skips without reading it, and the others revert with `InvalidSource`. Staging,
-    ///      heartbeats and `refreshStanding` fail closed.
+    ///      skips without reading it, and the others revert with
+    ///      `Dependency.DependencyCodeChanged`. Staging, heartbeats and `refreshStanding` fail
+    ///      closed.
     function _refresh(uint256 artistId, address authority, bool bestEffort) private {
         IConsolidationSource source = consolidationSource;
         if (address(source).codehash != consolidationSourceCodeHash) {
-            if (!bestEffort) revert InvalidSource(address(source));
+            if (!bestEffort) revert Dependency.DependencyCodeChanged(address(source));
             emit StandingRefreshSkipped(artistId);
             return;
         }

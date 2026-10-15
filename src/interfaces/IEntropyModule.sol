@@ -41,6 +41,19 @@ interface IEntropyModule is IERC165 {
     error SeedNotDelivered(bytes32 itemHash);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice A request parameter is zero or outside its bounds (the callback gas limit's
+    ///         ceiling is enforced by `BoundedParameter`).
+    error InvalidConfig();
+    /// @notice `retryDelay` is outside the module's bounds (3 to 30 days for the VRF module).
+    error InvalidRetryDelay(uint64 retryDelay);
+    /// @notice The VRF callback was called by `have`, not by the coordinator `want`.
+    error OnlyCoordinatorCanFulfill(address have, address want);
+    /// @notice The request ID was never issued by the current coordinator.
+    error UnknownRequest(uint256 requestId);
+    /// @notice The coordinator returned a zero or already used request ID.
+    error InvalidRequestId(uint256 requestId);
+    /// @notice The coordinator delivered other than exactly one random word.
+    error InvalidRandomWords(uint256 requestId);
 
     /// @notice Links an approved, unconsumed VRF item to its content's draw and requests that
     ///         draw's seed, or adds another request once `retryDelay()` has passed with no seed

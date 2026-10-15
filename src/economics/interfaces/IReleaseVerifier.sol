@@ -31,14 +31,11 @@ interface IReleaseVerifier {
 
     /// @notice Only `wallet` may consume its own authorizations; `caller` is not it.
     error WrongWallet(address wallet, address caller);
-    /// @notice The authorization's `deadline` has passed.
-    error AuthorizationExpired(uint256 deadline);
     /// @notice `account` already used or revoked `nonce`.
     error NonceAlreadyUsed(address account, uint256 nonce);
-    /// @notice The signature is not valid for `account`.
-    error InvalidSignature(address account);
 
-    /// @notice Checks the deadline and signature of `authorization` and consumes its nonce.
+    /// @notice Checks the deadline (`SignatureVerifier.SignatureExpired`) and signature
+    ///         (`SignatureVerifier.InvalidSignature`) of `authorization` and consumes its nonce.
     ///         Only the wallet the authorization names may call; the wallet checks that
     ///         `account` is the payee's current payout address.
     function consume(Authorization calldata authorization, bytes calldata signature) external;

@@ -22,6 +22,12 @@ interface IMintTarget {
     error SaleKindMismatch(bytes32 expected, bytes32 actual);
     /// @notice The caller is not an admitted minter.
     error NotAdmittedMinter(address caller);
+    /// @notice The call's arguments are malformed for this token. 6529 Stream mints with `to`
+    ///         the calling adapter, `id` 0, `amount` 1 and `data` `abi.encode(StreamMintRequest)`,
+    ///         and burns `amount` 1; it also reverts with this if the package registry's answer
+    ///         is malformed. 6529 Editions mints with empty `data`, and mints and burns a
+    ///         non-zero `amount`.
+    error InvalidMintRequest();
 
     /// @notice Mints `amount` of token `id` to `to` for a sale run by the calling adapter, and
     ///         returns the minted ID and the terms the adapter must apply.
@@ -52,18 +58,22 @@ interface IMintTarget {
 
     /// @notice Burns `amount` of token `id` from the calling adapter's own balance after its sale
     ///         was cancelled (ADR 0001 section 12: an upheld dispute burns the token, leaving a
-    ///         gap in the ID sequence). Only the adapter that minted the token, even if it has
-    ///         since been removed, so a cancelled sale can always burn; another adapter holding
-    ///         the token never can. 6529 Stream also requires that the primary sale has not
-    ///         settled (`IStream.SaleAlreadySettled`): after a sale nothing is confiscated.
+    ///         gap in the ID sequence). 6529 Stream: only the adapter that minted the token, even
+    ///         if it has since been removed, so a cancelled sale can always burn, and another
+    ///         adapter holding the token never can (`IStream.NotMintingAdapter`); and only before
+    ///         the primary sale settles (`IStream.SaleAlreadySettled`): after a sale nothing is
+    ///         confiscated. 6529 Editions: any adapter ever admitted, from its own balance.
+    /// @param id The token ID (the edition ID for 6529 Editions).
+    /// @param amount The number to burn: 1 for 6529 Stream, nonzero for 6529 Editions.
     function burn(uint256 id, uint256 amount) external;
 
     /// @notice Marks token `id`'s primary sale settled, at settlement, while the token is still
     ///         in the calling adapter's custody and without waiting for delivery, so a winner who
     ///         never claims cannot block what depends on it (6529 Stream: edition creation).
-    ///         Only the adapter that minted the token. Every mint target implements it, so a sale
-    ///         can always settle; a token with nothing to record (6529 Editions) makes it a
-    ///         no-op.
+    ///         6529 Stream: only the adapter that minted the token (`IStream.NotMintingAdapter`).
+    ///         Every mint target implements it, so a sale can always settle; a token with nothing
+    ///         to record (6529 Editions) makes it a no-op for any adapter ever admitted.
+    /// @param id The token ID whose primary sale settled (ignored by 6529 Editions).
     function markPrimarySettled(uint256 id) external;
 
     /// @notice Whether `adapter` may call `mint`.

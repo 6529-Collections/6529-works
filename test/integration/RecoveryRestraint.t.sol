@@ -25,6 +25,8 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
 ///         override that would move the authority is pending (staged or contested, until it
@@ -182,7 +184,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         IFixedPriceSale.ArtistConsent memory consent =
             IFixedPriceSale.ArtistConsent(7, deadline, _sign(artist, digest));
         vm.prank(platform);
-        vm.expectRevert(IFixedPriceSale.InvalidArtistConsent.selector);
+        vm.expectRevert(SignatureReverts.invalid(address(0)));
         fixedSale.openSale(address(editions), masterId, free, consent);
 
         // The platform's own sale at the package price still sells.
@@ -238,9 +240,9 @@ contract RecoveryRestraintTest is IntegrationBase {
         bytes memory byOldKey = _mintDataSignedBy(root, works, 1, artist, nonce);
         bytes memory byNewKey = _mintDataSignedBy(root, works, 1, newKey, nonce);
         assertEq(stream.primaryTerms(0, byOldKey).creator, address(0), "the preview has no creator");
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(address(0)));
         auction.start(address(stream), byOldKey);
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(address(0)));
         auction.start(address(stream), byNewKey);
         vm.prank(artist);
         vm.expectRevert(
@@ -380,7 +382,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         bytes memory sig = _sign(artist, registry.acceptanceDigest(root2, a));
 
         _stageRecovery();
-        vm.expectRevert(IPackageRegistry.InvalidSignature.selector);
+        vm.expectRevert(SignatureReverts.invalid(address(0)));
         registry.acceptPackage(root2, a, sig);
 
         vm.prank(guardian2);
@@ -450,7 +452,8 @@ contract RecoveryRestraintTest is IntegrationBase {
         PendingChange memory p = _stageRecovery();
         address src = address(artists.consolidationSource());
         vm.etch(src, address(new FailingConsolidationSource()).code);
-        bytes memory changed = abi.encodeWithSelector(IArtistRegistry.InvalidSource.selector, src);
+        bytes memory changed =
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, src);
         vm.warp(p.executableAt);
 
         vm.expectEmit(address(artists));

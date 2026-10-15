@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { ProtocolContracts } from "../libraries/ProtocolContracts.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import {
@@ -80,8 +80,10 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         bytes32 cc0TextFileId_
     ) AccessManaged(authority) {
         cc0TextFileId = cc0TextFileId_;
-        _allowlist = IAssetAllowlist(_pinned(address(allowlist_)));
-        _factory = ISplitFactory(_pinned(address(factory_)));
+        Dependency.check(address(allowlist_));
+        Dependency.check(address(factory_));
+        _allowlist = allowlist_;
+        _factory = factory_;
         License memory cc0 = License(CC0, cc0TextFileId_);
         ProductEconomics memory standard =
             ProductEconomics(feeRecipient, DEFAULT_FEE_SHARE, DEFAULT_ROYALTY_RATE);
@@ -254,12 +256,5 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
             if (!((c >= "A" && c <= "Z") || (c >= "a" && c <= "z") || (c >= "0" && c <= "9")
                         || c == "." || c == "+" || c == "-")) revert InvalidLicense();
         }
-    }
-
-    function _pinned(address dependency) private view returns (address) {
-        if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
-            revert InvalidDependency(dependency);
-        }
-        return dependency;
     }
 }

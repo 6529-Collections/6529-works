@@ -52,6 +52,7 @@ import {
     RevertingReceiver1155,
     WrongSelectorReceiver1155
 } from "../mocks/editions/EditionsMocks.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev An ERC-721 by ERC-165 that is not `IStream`.
 contract ERC721OnlyStream {
@@ -107,7 +108,7 @@ contract EditionsTest is EditionsBase {
 
     function test_Constructor_RejectsMissingWiring() public {
         address unwired = address(new UnwiredStream());
-        vm.expectRevert(Editions.ZeroAddress.selector);
+        vm.expectRevert(IEditions.ZeroAddress.selector);
         new Editions(address(manager), unwired, unwired.codehash, marketOwner);
     }
 
@@ -123,15 +124,13 @@ contract EditionsTest is EditionsBase {
         _expectInvalidStream(address(new ERC721OnlyStream())); // an ERC-721, but not IStream
         bytes32 wrong = keccak256("not the reviewed stream");
         vm.expectRevert(
-            abi.encodeWithSelector(
-                Editions.CodeHashMismatch.selector, wrong, address(stream).codehash
-            )
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(stream))
         );
         new Editions(address(manager), address(stream), wrong, marketOwner);
     }
 
     function _expectInvalidStream(address s) internal {
-        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidBinding.selector, s));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, s));
         new Editions(address(manager), s, s.codehash, marketOwner);
     }
 
@@ -246,7 +245,7 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);
         (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
-        vm.expectRevert(Editions.WorkRecordsUnbound.selector);
+        vm.expectRevert(IEditions.WorkRecordsUnbound.selector);
         fresh.createEdition(id, item, root, proof);
         assertEq(fresh.workRecords(), address(0));
         vm.prank(admin);
@@ -428,13 +427,13 @@ contract EditionsTest is EditionsBase {
         PackageItem memory fixedItem = _fixedItem(10);
         fixedItem.edition.currency = CURRENCY_DEFAULT;
         uint256 id = _master(fixedItem);
-        vm.expectRevert(abi.encodeWithSelector(Editions.PricedDefaultCurrency.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.PricedDefaultCurrency.selector, id));
         _createEdition(id, fixedItem);
 
         PackageItem memory dutch = _openItem(1 days, 0);
         dutch.edition.currency = CURRENCY_DEFAULT;
         uint256 dutchId = _master(dutch);
-        vm.expectRevert(abi.encodeWithSelector(Editions.PricedDefaultCurrency.selector, dutchId));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.PricedDefaultCurrency.selector, dutchId));
         _createEdition(dutchId, dutch);
 
         PackageItem memory free = _fixedItem(10);
@@ -449,7 +448,7 @@ contract EditionsTest is EditionsBase {
         item.edition.price = price;
         uint256 id = _master(item);
         if (price != 0) {
-            vm.expectRevert(abi.encodeWithSelector(Editions.PricedDefaultCurrency.selector, id));
+            vm.expectRevert(abi.encodeWithSelector(IEditions.PricedDefaultCurrency.selector, id));
         }
         _createEdition(id, item);
         assertEq(editions.exists(id), price == 0);
@@ -457,7 +456,7 @@ contract EditionsTest is EditionsBase {
 
     function _expectBadTerms(PackageItem memory item) internal {
         uint256 id = _master(item);
-        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidEditionTerms.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidEditionTerms.selector, id));
         _createEdition(id, item);
     }
 
@@ -520,10 +519,10 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);
         stream.setLinkMode(EditionsStreamMock.LinkMode.IGNORE);
-        vm.expectRevert(abi.encodeWithSelector(Editions.LinkFailed.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.LinkFailed.selector, id));
         _createEdition(id, item);
         stream.setLinkMode(EditionsStreamMock.LinkMode.WRONG_ID);
-        vm.expectRevert(abi.encodeWithSelector(Editions.LinkFailed.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.LinkFailed.selector, id));
         _createEdition(id, item);
         assertFalse(editions.exists(id), "nothing persists");
     }
@@ -677,7 +676,7 @@ contract EditionsTest is EditionsBase {
     }
 
     function _expectNotAdmissible(address adapter) internal {
-        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidBinding.selector, adapter));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, adapter));
         editions.setAdmittedMinter(adapter, true);
     }
 
@@ -703,9 +702,9 @@ contract EditionsTest is EditionsBase {
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnknownEdition.selector, 7));
         fixedAdapter.buy(editions, 7, buyer, 1);
         uint256 id = _create(_fixedItem(10));
-        vm.expectRevert(Editions.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         fixedAdapter.buy(editions, id, buyer, 0);
-        vm.expectRevert(Editions.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         fixedAdapter.buyWithData(editions, id, buyer, hex"00");
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnknownEdition.selector, 7));
         editions.primaryTerms(7, "");
@@ -890,7 +889,7 @@ contract EditionsTest is EditionsBase {
         fixedAdapter.burnHeld(editions, id, 1);
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnknownEdition.selector, 9));
         fixedAdapter.burnHeld(editions, 9, 1);
-        vm.expectRevert(Editions.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         fixedAdapter.burnHeld(editions, id, 0);
         assertEq(editions.balanceOf(buyer, id), 2);
     }
@@ -1009,7 +1008,7 @@ contract EditionsTest is EditionsBase {
         (address receiver,) = editions.royaltyInfo(id, 1 ether);
 
         vm.expectEmit(true, false, false, true, address(editions));
-        emit Editions.RoyaltyRateChanged(id, 6_529, 10_000);
+        emit IEditions.RoyaltyRateChanged(id, 6_529, 10_000);
         vm.expectEmit(false, false, false, true, address(editions));
         emit IEditions.MetadataUpdate(id);
         workRecordsMock.setRate(editions, id, 10_000);
@@ -1018,7 +1017,7 @@ contract EditionsTest is EditionsBase {
         assertEq(amount, 0.1 ether);
         assertEq(editions.edition(id).royaltyRate, 10_000);
 
-        vm.expectRevert(abi.encodeWithSelector(Editions.InvalidRoyaltyRate.selector, 100_001));
+        vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidRoyaltyRate.selector, 100_001));
         workRecordsMock.setRate(editions, id, 100_001);
         vm.prank(outsider);
         vm.expectRevert(abi.encodeWithSelector(IEditions.UnboundCaller.selector, outsider));
@@ -1173,18 +1172,18 @@ contract EditionsTest is EditionsBase {
         fresh.bindWorkRecords(records);
 
         vm.startPrank(admin);
-        _expectInvalidBinding(fresh, address(0));
-        _expectInvalidBinding(fresh, address(renderer)); // not the satellite Stream bound
+        _expectInvalidDependency(fresh, address(0));
+        _expectInvalidDependency(fresh, address(renderer)); // no IWorkRecords ERC-165
         address other = address(new EditionsWorkRecordsMock()); // a valid IWorkRecords...
         _expectInvalidBinding(fresh, other); // ...that Stream did not bind
         stream.bind(address(renderer), address(editions)); // bound, but no IWorkRecords ERC-165
-        _expectInvalidBinding(fresh, address(renderer));
+        _expectInvalidDependency(fresh, address(renderer));
         stream.bind(outsider, address(editions)); // Stream bound an EOA
-        _expectInvalidBinding(fresh, outsider);
+        _expectInvalidDependency(fresh, outsider);
         address delegated = makeAddr("delegatedRecords");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", records));
         stream.bind(delegated, address(editions));
-        _expectInvalidBinding(fresh, delegated);
+        _expectInvalidDependency(fresh, delegated);
 
         stream.bind(records, address(editions));
         vm.expectEmit(false, false, false, true, address(fresh));
@@ -1200,6 +1199,11 @@ contract EditionsTest is EditionsBase {
 
     function _expectInvalidBinding(Editions target, address records) internal {
         vm.expectRevert(abi.encodeWithSelector(IEditions.InvalidBinding.selector, records));
+        target.bindWorkRecords(records);
+    }
+
+    function _expectInvalidDependency(Editions target, address records) internal {
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, records));
         target.bindWorkRecords(records);
     }
 
@@ -1263,14 +1267,14 @@ contract EditionsTest is EditionsBase {
         );
         editions.setContractURI("ipfs://x");
         vm.expectEmit(false, false, false, true, address(editions));
-        emit Editions.ContractURISet("", "ipfs://contract");
+        emit IEditions.ContractURISet("", "ipfs://contract");
         vm.expectEmit(false, false, false, false, address(editions));
         emit IEditions.ContractURIUpdated();
         vm.prank(governor);
         editions.setContractURI("ipfs://contract");
         assertEq(editions.contractURI(), "ipfs://contract");
         vm.expectEmit(false, false, false, true, address(editions));
-        emit Editions.ContractURISet("ipfs://contract", "ipfs://v2");
+        emit IEditions.ContractURISet("ipfs://contract", "ipfs://v2");
         vm.prank(governor);
         editions.setContractURI("ipfs://v2");
     }

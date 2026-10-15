@@ -96,6 +96,31 @@ interface ISaleAdapter is IERC165 {
     error NotSaleManager(address caller);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice The token returned unusable terms: no seller, no fee recipient for a non-zero
+    ///         fee share, a fee share above the denominator, the revenue escrow as seller or fee
+    ///         recipient, federated code that differs from its registry entry, a mint that
+    ///         returned another token ID or (the auction) left custody elsewhere, or a new fee
+    ///         recipient past the fixed-price and Dutch adapters' 65,535.
+    error InvalidSaleTerms(address token, uint256 id);
+    /// @notice A required address is zero (fixed-price and Dutch adapters).
+    error InvalidAddress();
+    /// @notice A priced sale must name its currency; `CURRENCY_DEFAULT` is for gifts only
+    ///         (fixed-price and Dutch adapters).
+    error PricedDefaultCurrency(address token, uint256 id);
+    /// @notice The resolver returned another currency than the one the token named (fixed-price
+    ///         and Dutch adapters).
+    error CurrencyMismatch(address named, address resolved);
+    /// @notice The locked currency is no longer active on the asset allowlist (fixed-price and
+    ///         Dutch adapters; the auction reports `IAssetAllowlist.AssetNotActive`).
+    error CurrencyNotActive(address currency);
+    /// @notice A purchase must buy at least one copy.
+    error InvalidQuantity();
+    /// @notice The sale is already closed.
+    error SaleAlreadyClosed(uint256 saleId);
+    /// @notice PLATFORM opened, without the artist's approval, a sale only the artist may
+    ///         configure: an edition with a one-time window (OPEN), or a token that is not a
+    ///         listed 6529 Editions edition.
+    error ArtistApprovalRequired(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label.
     function saleKind() external view returns (bytes32);

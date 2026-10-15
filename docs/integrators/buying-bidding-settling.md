@@ -189,7 +189,7 @@ returns the digest to sign.
 ### Encoding `mintData`
 
 Encode the request as one tuple. Stream reads it in place and reverts with
-`IStream.InvalidMintRequest()` unless the first word is `0x20` (`_request` in
+`IMintTarget.InvalidMintRequest()` unless the first word is `0x20` (`_request` in
 [Stream.sol](../../src/stream/Stream.sol)). In Solidity, as the Sepolia driver
 [Flows.s.sol](../../script/sepolia/Flows.s.sol) does:
 
@@ -271,23 +271,23 @@ sequenceDiagram
 
 ### Errors
 
-Errors come from `EnglishAuction` (`SalePaused`, `TargetNotAllowed`, `InvalidTerms`), `Stream`
+Errors come from `EnglishAuction` (`SalePaused`, `TargetNotAllowed`, `InvalidSaleTerms`), `Stream`
 (`InvalidMintRequest`, `SeedNotDelivered`), `AssetAllowlist` (currency) or `PackageRegistry`.
 
 | Error | Cause | What to do |
 | --- | --- | --- |
 | `SalePaused()` | The emergency pause stops starts only (AUC-13). | Wait: an unpause comes at least 48 hours after the pause. |
 | `TargetNotAllowed(token)` | `token` is not a served token contract. | Use the Stream address. |
-| `InvalidMintRequest()` | Malformed `mintData`, a missing collection, or item terms Stream refuses (AUC-2). | Fix the request. |
+| `InvalidMintRequest()`, `InvalidItemSale()`, `InvalidLeadArtist()`, `UnknownCollection(collectionId)`, `InvalidSeedPolicy()`, `InvalidLicenseId()`, `InvalidWorkTerms()`, `TermsCapacityExceeded()` | Malformed `mintData`, a missing collection, or item terms Stream refuses (AUC-2). | Fix the request. |
 | `PackageNotApproved(packageRoot)`, `ContentUsed(product, contentHash, claimedBy)`, `ContentReserved(contentHash, beneficiary)` | The root is unknown or revoked; the item already started, or its content is claimed by or reserved for another item. | Nothing to start. |
 | `ItemNotInPackage(packageRoot, itemHash)` | The proof does not place the item, or has more than 32 nodes. | Rebuild the proof. |
 | `PartyNotAccepted(packageRoot, account)` | A party has not accepted the root. | Relay its signed acceptance with `acceptPackage(packageRoot, acceptance, signature)`. |
 | `InvalidItem(itemHash)` | Parties, payees, seed or edition fields are inconsistent. | Report it to curation. |
-| `InvalidSignature()` | The move expired, was signed by another key, or the lead artist is restrained. | Get a fresh move, or wait for the override's outcome. |
+| `SignatureExpired(deadline)`, `InvalidSignature(signer)` | The move expired, was signed by another key, or the lead artist is restrained. | Get a fresh move, or wait for the override's outcome. |
 | `MoveNonceUsed(artistId, nonce)` | The nonce was spent or revoked. | Ask for a move with a new nonce. |
 | `SeedNotDelivered(itemHash)` | A VRF work's seed has not arrived. | Request the seed and wait. |
 | `AssetNotActive(asset)`, `CurrencyNotConfigured(product)` | The item's currency, or the product default, is not usable. | Wait for governance. |
-| `InvalidTerms(token, tokenId)` | The token returned unusable terms (AUC-14). | Report it. |
+| `InvalidSaleTerms(token, id)` | The token returned unusable terms (AUC-14). | Report it. |
 
 `startWithBid` can also revert with any bidding error below.
 

@@ -11,6 +11,7 @@ import { ISplitFactory } from "src/economics/interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { MockArtistResolver } from "../mocks/EconomicsMocks.sol";
 import { EconomicsBase } from "./EconomicsBase.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 /// @dev Another contract that deploys a `SplitWallet` itself, answering the wallet's constructor
 ///      the way the factory does.
@@ -47,9 +48,9 @@ contract SplitFactoryTest is EconomicsBase {
     }
 
     function test_ConstructorRejectsDependenciesWithoutCode() public {
-        vm.expectRevert(abi.encodeWithSelector(ISplitFactory.InvalidDependency.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
         new SplitFactory(IArtistPayoutResolver(alice), verifier);
-        vm.expectRevert(abi.encodeWithSelector(ISplitFactory.InvalidDependency.selector, bob));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, bob));
         new SplitFactory(resolver, IReleaseVerifier(bob));
     }
 
@@ -58,22 +59,22 @@ contract SplitFactoryTest is EconomicsBase {
     function test_ConstructorRejectsDelegatedEOADependencies() public {
         address eoa = makeAddr("delegated-eoa");
         vm.etch(eoa, abi.encodePacked(hex"ef0100", address(resolver)));
-        vm.expectRevert(abi.encodeWithSelector(ISplitFactory.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new SplitFactory(IArtistPayoutResolver(eoa), verifier);
-        vm.expectRevert(abi.encodeWithSelector(ISplitFactory.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new SplitFactory(resolver, IReleaseVerifier(eoa));
     }
 
     function test_CreateWalletFailsClosedIfAPinnedDependencyChanges() public {
         vm.etch(address(resolver), address(router).code);
         vm.expectRevert(
-            abi.encodeWithSelector(ISplitFactory.DependencyCodeChanged.selector, address(resolver))
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
         );
         factory.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
         SplitFactory fresh = new SplitFactory(new MockArtistResolver(), verifier);
         vm.etch(address(verifier), address(router).code);
         vm.expectRevert(
-            abi.encodeWithSelector(ISplitFactory.DependencyCodeChanged.selector, address(verifier))
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(verifier))
         );
         fresh.createWallet(_list(_fixed(alice, D)), ZERO_SALT);
     }

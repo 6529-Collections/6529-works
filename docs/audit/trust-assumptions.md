@@ -188,8 +188,8 @@ dependencies are pinned to a reviewed code hash, and all but the last row are ch
 | --- | --- | --- | --- | --- | --- |
 | Curation verifier | `PackageRegistry` | Constructor, `setVerifier` | Every `registerPackage` | Nothing registers | [CUR-3][cur] |
 | Consolidation source | `ArtistRegistry` | Constructor, `setConsolidationSource` | Every read | Staging and refreshes revert; registration and execution skip their refresh | [ID-26][id] |
-| VRF coordinator | `VrfEntropyModule` | Constructor, `setCoordinator` | Every request and delivery | `CodeHashMismatch` | [ENT-7][ent] |
-| Artist resolver | `StatementLog` | Constructor, `setArtistResolver` | Every ARTIST authorization | `ResolverCodeHashMismatch` | [DSP-7][dsp] |
+| VRF coordinator | `VrfEntropyModule` | Constructor, `setCoordinator` | Every request and delivery | `DependencyCodeChanged` | [ENT-7][ent] |
+| Artist resolver | `StatementLog` | Constructor, `setArtistResolver` | Every ARTIST authorization | `DependencyCodeChanged` | [DSP-7][dsp] |
 | Payout resolver and release verifier | `SplitFactory`, each `SplitWallet` | Factory constructor | Resolver at every artist-payee release; both at `createWallet` | Artist payees stop; no wallet deploys | [ECO-12, ECO-18][eco] |
 | Federation registry (v1.1) | Each sale adapter | `setFederationRegistry` | Every `isTarget` | The registry is ignored | `test_IsTarget_IgnoresARegistryWhoseCodeChanged` in [`FederationRegistry.t.sol`](../../test/sales/fixed/FederationRegistry.t.sol) |
 | Default renderer; a finalized work's renderer | `Stream`; `WorkRecords` | `setDefaultRenderer`; `finalize`, `repinRenderer` | Every `tokenURI` and `uri` | Revert, with no fallback | [RND-2, RND-3][rnd] |

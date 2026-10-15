@@ -15,6 +15,8 @@ import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 contract WorkRecordsTest is RecordsFixture {
     event MetadataUpdate(uint256 _tokenId);
@@ -45,13 +47,13 @@ contract WorkRecordsTest is RecordsFixture {
     function test_constructor_rejects() public {
         address eoa = makeAddr("eoa");
         License memory cc0 = _license("cc0-1.0");
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new WorkRecords(address(manager), eoa, address(store), cc0);
         vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.InvalidDependency.selector, address(store))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(store))
         );
         new WorkRecords(address(manager), address(store), address(store), cc0);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidDependency.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new WorkRecords(address(manager), address(stream), eoa, cc0);
         vm.expectRevert(IWorkRecords.InvalidLicense.selector);
         new WorkRecords(address(manager), address(stream), address(store), _license("mit"));
@@ -794,7 +796,7 @@ contract WorkRecordsTest is RecordsFixture {
         vm.warp(deadline + 1);
         bytes[] memory late = _both(structHash);
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 2));
+        vm.expectRevert(SignatureReverts.expired(deadline));
         records.relicense(tokenId, next, item, state, deadline, late);
     }
 
@@ -999,14 +1001,14 @@ contract WorkRecordsTest is RecordsFixture {
         bytes32 state = records.workStateHash(tokenId);
         address eoa = makeAddr("eoa");
         vm.startPrank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidRenderer.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         records.repinRenderer(tokenId, eoa, bytes32(0), state, deadline, "");
         vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.InvalidRenderer.selector, address(next))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
         );
         records.repinRenderer(tokenId, address(next), keccak256("wrong"), state, deadline, "");
         vm.expectRevert(
-            abi.encodeWithSelector(IWorkRecords.InvalidRenderer.selector, address(store))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(store))
         );
         records.repinRenderer(tokenId, address(store), address(store).codehash, state, deadline, "");
         bytes memory wrong =
@@ -1025,7 +1027,7 @@ contract WorkRecordsTest is RecordsFixture {
         records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
         vm.warp(deadline + 1);
         vm.prank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IWorkRecords.InvalidConsent.selector, tokenId, 0));
+        vm.expectRevert(SignatureReverts.expired(deadline));
         records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
     }
 

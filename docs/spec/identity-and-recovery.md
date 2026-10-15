@@ -334,7 +334,7 @@ reserved new key gains none of them until execution:
 | Power | Contract and function | While restrained |
 | --- | --- | --- |
 | The sale `creator` | `Stream.primaryTerms`, `Editions.primaryTerms` | Zero |
-| Open, consent to or close an edition sale as the artist | `FixedPriceSale`, `DutchSale` (closing in `MintSaleBase`) | `NotSaleManager`; a signed consent fails with `InvalidArtistConsent`. PLATFORM still opens listed FIXED editions at the package terms and may close any sale (MARKET-6). |
+| Open, consent to or close an edition sale as the artist | `FixedPriceSale`, `DutchSale` (closing in `MintSaleBase`) | `NotSaleManager`; a signed consent fails with `InvalidSignature`. PLATFORM still opens listed FIXED editions at the package terms and may close any sale (MARKET-6). |
 | Start an approved, unminted work; revoke a move nonce | `PackageRegistry` (`consume`, `revokeMove`) | `InvalidSignature`; `NotAuthority` |
 | Accept a package for an existing artist ID | `PackageRegistry.acceptPackage` | `InvalidSignature` |
 | Receive a no-bid auction's work | `EnglishAuction.settle` | Reverts with `InvalidRecipient(0)`; the work stays in custody until the outcome |
@@ -571,7 +571,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-26 | During a source outage or code-hash mismatch, staging, heartbeats and refreshes revert, while registration and execution proceed and skip their refresh. | `ArtistRegistry._refresh`, `_skipRefresh`, `_source` | AR `test_SourceReadFailure_FailsClosed`, `test_SourceReadFailure_ExecutionSkipsTheRefresh`, `test_ConsolidationSource_CodeHashRecheckedAtUse`; RR `test_SourceMismatchDoesNotBlockRecoveryExecution` |
 | ID-27 | The source is swapped only by compare-and-set to a contract with the reviewed code hash, ERC-165 support and no EIP-7702 delegation. | `ArtistRegistry.setConsolidationSource`, `_checkSource` | AR `test_SetConsolidationSource`, `test_SetConsolidationSource_RevertsForStaleExpected`, `test_SetConsolidationSource_RevertsForBadSourceOrCodeHash`, `test_SetConsolidationSource_RevertsForNonSetter` |
 | ID-28 | `isArtist` is true only for the active authority of a Stream work's lead artist, or of an edition's master; false for anything else. | `ArtistRegistry.isArtist` | AR `test_IsArtist_StreamWorksAndEditions`, `test_IsArtist_FalseBeforeTheStreamIsSet`, `test_ActiveAuthority_RestrainedUntilTheOverrideExecutes` |
-| ID-29 | Each binding is set once, by ADMIN, to a valid target. | `ArtistRegistry._bind`, `_checkBinding`, `bindStatementLog` | AR `test_Bindings_AreOneShot`, `test_Bindings_RejectInvalidTargets`, `test_Bindings_RevertForNonAdmin`; CO `test_BindStatementLog_OneShotAndChecksTheResolver`, `test_BindStatementLog_ResolverReadIsBounded` |
+| ID-29 | Each binding is set once, by ADMIN, to a valid target. | `ArtistRegistry._bind`, `Dependency.check`, `bindStatementLog` | AR `test_Bindings_AreOneShot`, `test_Bindings_RejectInvalidTargets`, `test_Bindings_RevertForNonAdmin`; CO `test_BindStatementLog_OneShotAndChecksTheResolver`, `test_BindStatementLog_ResolverReadIsBounded` |
 
 ## Events
 
@@ -587,7 +587,7 @@ Accepted risks are listed once, with their IDs, in
 
 | Failure | Effect | Recovery |
 | --- | --- | --- |
-| The consolidation source cannot read, or no longer matches its pinned hash (LIM-ID-9) | Staging, heartbeats and `refreshStanding` revert (`DelegationReadFailed` or `InvalidSource`); registration and execution go ahead and emit `StandingRefreshSkipped` | Fix or swap the source (`setConsolidationSource`, 30 days), then `refreshStanding` for each skipped artist |
+| The consolidation source cannot read, or no longer matches its pinned hash (LIM-ID-9) | Staging, heartbeats and `refreshStanding` revert (`DelegationReadFailed` or `DependencyCodeChanged`); registration and execution go ahead and emit `StandingRefreshSkipped` | Fix or swap the source (`setConsolidationSource`, 30 days), then `refreshStanding` for each skipped artist |
 | A source answers more than 32 wallets or mismatched arrays | Every refresh reverts with `InvalidSource`, registration and execution included | Swap the source. The v1 adapter cannot answer this way. |
 | A split wallet is deployed at the pending payout while the change waits | Execution clears the change; the payout unfreezes | Stage a new change with a payout that can pull |
 | The key is lost and no wallet is established | No STANDARD path | An `ESTATE` or `LOST_KEY` override after 365 days without activity, or a `CONTESTED` override with evidence |
@@ -595,7 +595,7 @@ Accepted risks are listed once, with their IDs, in
 | A thief's captured wallet contests the recovery override (LIM-ID-3, LIM-ID-4) | The override waits; the payout stays frozen and the artist restrained | A recorded vote and `resolveContested` (30 days), a guardian veto, or the lapse 365 days after the contest |
 | A scheduled `resolveContested` cites an outcome that is no longer the latest | Reverts with `OutcomeNotRecorded` | Schedule a new resolution citing the latest outcome |
 | No statement log is bound | `resolveContested` always reverts with `OutcomeNotRecorded` | Genesis binds it; otherwise a veto or the lapse ends the contest |
-| An override acceptance expires during the 48-hour schedule, or is reused after a veto or contest | `InvalidSignature`; `AcceptanceUsed` | A new acceptance; a different deadline or evidence hash gives a new digest |
+| An override acceptance expires during the 48-hour schedule, or is reused after a veto or contest | `SignatureExpired`; `AcceptanceUsed` | A new acceptance; a different deadline or evidence hash gives a new digest |
 | Activity lands during the 48-hour scheduling of an `ESTATE` or `LOST_KEY` override | The staging reverts with `NotDormant` | Wait out the dormancy, or stage a `CONTESTED` override |
 | A contest lapses | The freeze and restraint lift; the stale entry blocks new changes | Anyone calls `expireContest`, or a guardian vetoes |
 | The new key tries to accept a package while its change waits | `register` reverts with `AccountTaken` | Accept after the change executes |
@@ -618,11 +618,11 @@ before mint (LIM-ID-11).
 | `ChangeNotDue(artistId, executableAt)` | `executeChange`, an upholding `resolveContested` | Too early. |
 | `NotDormant(artistId, lastActivity)` | `stageOverride` (`ESTATE`, `LOST_KEY`) | Activity within the last 365 days. |
 | `InvalidIdentity()` | `register`, `stageChange`, `stageOverride` | A zero authority, a refused payout, a non-override kind or a zero evidence hash. |
-| `InvalidSignature()` | `stageChange`, `stageOverride` | A passed deadline, or a signature, countersignature or acceptance that does not verify. |
+| `SignatureVerifier.SignatureExpired(deadline)`, `SignatureVerifier.InvalidSignature(signer)` | `stageChange`, `stageOverride` | A passed deadline, or a signature, countersignature or acceptance that does not verify. |
 | `AcceptanceUsed(digest)` | `stageOverride` | This acceptance was consumed. |
-| `AlreadyBound(name)`, `InvalidBinding(target)` | The bindings | One-shot, or an invalid target. |
+| `AlreadyBound(name)`, `InvalidBinding(target)` | The bindings | One-shot, or a statement log whose `artistResolver()` is not this registry. |
 | `UnboundCaller(caller)` | `register`, `listFederatedContract` | Not the bound contract. |
-| `InvalidSource(source)` | Constructor, `setConsolidationSource`, any use of a mismatched source, an oversized scan | The source fails its checks. |
+| `InvalidSource(source)` | Any refresh | The source answered more than 32 wallets or arrays of different lengths. |
 | `ExpectedValueMismatch()` | `setConsolidationSource` | Stale `expected`. |
 | `OverrideContested(artistId)` | `executeChange` | The override is contested (lapsed or not). |
 | `NotContested(artistId)` | `resolveContested`, `expireContest` | No live contest (for `resolveContested`), or no contest at all. |
@@ -632,7 +632,7 @@ before mint (LIM-ID-11).
 | `ContestWindowClosed(artistId, executableAt)` | `cancelChange` | The override's notice has ended. |
 | `FederatedListFull(artistId)` | `listFederatedContract` | 64 contracts already listed. |
 | `IConsolidationSource.DelegationReadFailed(delegation)` | Adapter reads, surfacing through registry calls | A read failed other than at an array's end. |
-| `ConsolidationAdapter.NoDelegationCode(delegation)` | Adapter constructor | The delegation address has no code. |
+| `Dependency.InvalidDependency(dependency)`, `Dependency.DependencyCodeChanged(dependency)` | Constructor, the bindings, `setConsolidationSource`, adapter constructor; any use of the source | The target has no code, is an EIP-7702 delegated account, lacks its ERC-165 interface or the reviewed code hash; or the source's code changed since install. |
 | `BoundedCall.BoundedCallInsufficientGas(gasLimit)` | Adapter reads, ERC-1271 checks | The caller cannot forward the full stipend. |
 
 ## Parameters and limits

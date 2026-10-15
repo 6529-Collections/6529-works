@@ -58,6 +58,17 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     event ContractURIUpdated();
     /// @notice The marketplace owner changed.
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    /// @notice The contract URI changed from `previous` to `next` (beside ERC-7572's
+    ///         `ContractURIUpdated`, which carries no values).
+    /// @param previous The value before the change.
+    /// @param next The value after the change.
+    event ContractURISet(string previous, string next);
+    /// @notice An edition's royalty rate changed with its master's, by every party's agreement
+    ///         plus a governed action, relayed by the work-records satellite.
+    /// @param editionId The edition whose rate changed.
+    /// @param previous The rate before the change, out of 100,000.
+    /// @param next The rate after the change, out of 100,000.
+    event RoyaltyRateChanged(uint256 indexed editionId, uint32 previous, uint32 next);
 
     /// @notice The item does not match the master's committed item hash or its package, the
     ///         package is no longer approved, the item is not an EDITION_MASTER item, or the
@@ -79,6 +90,21 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error InvalidBinding(address target);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice 6529 Stream returned a zero package registry, economics resolver or artist
+    ///         registry at deployment.
+    error ZeroAddress();
+    /// @notice The item's edition terms are malformed (format, size, window, sale kind, params).
+    error InvalidEditionTerms(uint256 workId);
+    /// @notice The edition terms price copies in `CURRENCY_DEFAULT`: a price is meaningless
+    ///         without its currency, since a governed change of the default would reprice the
+    ///         edition. `CURRENCY_DEFAULT` is allowed only with a zero price.
+    error PricedDefaultCurrency(uint256 workId);
+    /// @notice 6529 Stream did not record the link back to this edition.
+    error LinkFailed(uint256 workId);
+    /// @notice A royalty rate above 100,000.
+    error InvalidRoyaltyRate(uint32 rate);
+    /// @notice The work-records satellite is not bound yet, so no edition can be created.
+    error WorkRecordsUnbound();
 
     /// @notice The 6529 Stream contract whose masters anchor editions (immutable).
     function stream() external view returns (address);

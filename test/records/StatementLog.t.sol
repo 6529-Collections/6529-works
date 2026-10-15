@@ -27,6 +27,9 @@ import {
     ReturnBombMock,
     ReturnDataMock
 } from "../mocks/AdversarialTargets.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
+import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
+import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 
 contract StatementLogTest is StatementLogFixture {
     // ------------------------------------------------------------------ ARTIST
@@ -478,7 +481,7 @@ contract StatementLogTest is StatementLogFixture {
         bytes memory sig = _sign(artistKey, Role.ARTIST, s, 0, deadline);
 
         vm.warp(deadline + 1);
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.DeadlineExpired.selector, deadline));
+        vm.expectRevert(SignatureReverts.expired(deadline));
         _relay(Role.ARTIST, s, artist, 0, deadline, sig);
 
         vm.warp(deadline);
@@ -527,13 +530,13 @@ contract StatementLogTest is StatementLogFixture {
         uint64 deadline = uint64(block.timestamp + 1 hours);
         bytes memory sig =
             _signAs(artistKey, block.chainid + 1, address(stmtLog), Role.ARTIST, s, 0, deadline);
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, artist));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
         _relay(Role.ARTIST, s, artist, 0, deadline, sig);
 
         // A signature made for this chain stops working if the chain ID changes (a fork).
         sig = _sign(artistKey, Role.ARTIST, s, 0, deadline);
         vm.chainId(block.chainid + 1);
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, artist));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
         _relay(Role.ARTIST, s, artist, 0, deadline, sig);
     }
 
@@ -543,7 +546,7 @@ contract StatementLogTest is StatementLogFixture {
         Statement memory s = _statement();
         uint64 deadline = uint64(block.timestamp + 1 hours);
         bytes memory sig = _sign(artistKey, Role.ARTIST, s, 0, deadline);
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, artist));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
         vm.prank(stranger);
         other.appendSigned(Role.ARTIST, s, artist, 0, deadline, sig);
     }
@@ -553,7 +556,7 @@ contract StatementLogTest is StatementLogFixture {
         uint64 deadline = uint64(block.timestamp + 1 hours);
         bytes memory sig = _sign(artistKey, Role.ARTIST, s, 0, deadline);
         bytes memory invalid =
-            abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, artist);
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist);
 
         Statement memory t = _statement();
         t.uri = "ar://other";
@@ -579,7 +582,9 @@ contract StatementLogTest is StatementLogFixture {
         // A signature made for one role cannot be replayed under another.
         resolver.grant(address(nft), 1, tokenOwner);
         bytes memory ownerSig = _sign(ownerKey, Role.OWNER, s, 0, deadline);
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, tokenOwner));
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, tokenOwner)
+        );
         _relay(Role.ARTIST, s, tokenOwner, 0, deadline, ownerSig);
     }
 
@@ -587,12 +592,14 @@ contract StatementLogTest is StatementLogFixture {
         Statement memory s = _statement();
         uint64 deadline = uint64(block.timestamp + 1 hours);
         bytes memory sig = _sign(ownerKey, Role.ARTIST, s, 0, deadline); // signed by the owner
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, artist));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
         _relay(Role.ARTIST, s, artist, 0, deadline, sig);
 
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, artist));
+        vm.expectRevert(abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, artist));
         _relay(Role.ARTIST, s, artist, 0, deadline, hex"1234");
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidSignature.selector, address(0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(SignatureVerifier.InvalidSignature.selector, address(0))
+        );
         _relay(Role.ARTIST, s, address(0), 0, deadline, sig);
     }
 
@@ -823,19 +830,16 @@ contract StatementLogTest is StatementLogFixture {
         vm.prank(stranger);
         EvilResolverMock evil = new EvilResolverMock();
         vm.etch(address(resolver), address(evil).code);
+        assertTrue(address(resolver).codehash != pinned);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IStatementLog.ResolverCodeHashMismatch.selector, pinned, address(resolver).codehash
-            )
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(resolver))
         );
         _append(Role.ARTIST, stranger, _statement());
     }
 
     function test_SetArtistResolver_StaleExpectedValueReverts() public {
         ArtistResolverMock next = new ArtistResolverMock();
-        vm.expectRevert(
-            abi.encodeWithSelector(IStatementLog.ResolverMismatch.selector, address(resolver))
-        );
+        vm.expectRevert(IStatementLog.ExpectedValueMismatch.selector);
         vm.prank(admin);
         stmtLog.setArtistResolver(address(0xBEEF), address(next), address(next).codehash);
     }
@@ -845,33 +849,29 @@ contract StatementLogTest is StatementLogFixture {
         address r = address(resolver);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IStatementLog.InvalidResolver.selector, makeAddr("eoa"))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, makeAddr("eoa"))
         );
         vm.prank(admin);
         stmtLog.setArtistResolver(r, makeAddr("eoa"), bytes32(0));
 
         address wrong = address(new WrongInterfaceMock());
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidResolver.selector, wrong));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, wrong));
         vm.prank(admin);
         stmtLog.setArtistResolver(r, wrong, wrong.codehash);
 
         address plain = address(nft); // no ERC-165 at all
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidResolver.selector, plain));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, plain));
         vm.prank(admin);
         stmtLog.setArtistResolver(r, plain, plain.codehash);
 
         address delegated = makeAddr("7702 account");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(next)));
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidResolver.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         vm.prank(admin);
         stmtLog.setArtistResolver(r, delegated, delegated.codehash);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IStatementLog.ResolverCodeHashMismatch.selector,
-                bytes32(uint256(1)),
-                address(next).codehash
-            )
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
         );
         vm.prank(admin);
         stmtLog.setArtistResolver(r, address(next), bytes32(uint256(1)));
@@ -889,7 +889,7 @@ contract StatementLogTest is StatementLogFixture {
 
     function test_Constructor_RejectsUnsuitableResolver() public {
         address wrong = address(new WrongInterfaceMock());
-        vm.expectRevert(abi.encodeWithSelector(IStatementLog.InvalidResolver.selector, wrong));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, wrong));
         new StatementLog(address(manager), wrong, wrong.codehash);
     }
 

@@ -37,6 +37,7 @@ import {
     RoyaltyProbe
 } from "../mocks/stream/StreamMocks.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 
 contract StreamTest is StreamFixture {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
@@ -77,26 +78,28 @@ contract StreamTest is StreamFixture {
         address e = address(econ);
         address n = address(entropy);
         address d = address(renderer);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         _deploy(eoa, a, e, n, d);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         _deploy(r, eoa, e, n, d);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         _deploy(r, a, eoa, n, d);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         _deploy(r, a, e, eoa, d);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         _deploy(r, a, e, n, eoa);
         // A contract without the right ERC-165 answer is rejected too.
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, a));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, a));
         _deploy(a, a, e, n, d);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, r));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, r));
         _deploy(r, a, e, n, r);
         assertEq(_deploy(r, a, e, address(0), d).entropyModule(), address(0));
     }
 
     function test_constructor_pinsRendererCodeHash() public {
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(renderer)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(renderer))
+        );
         new Stream(
             address(manager),
             address(registry),
@@ -112,7 +115,7 @@ contract StreamTest is StreamFixture {
     function test_constructor_rejectsDelegatedAccount() public {
         address delegated = makeAddr("delegated");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(renderer)));
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         _deploy(address(registry), address(artists), address(econ), address(entropy), delegated);
     }
 
@@ -148,9 +151,11 @@ contract StreamTest is StreamFixture {
     function test_setAdmittedMinter_reverts() public {
         address eoa = makeAddr("eoa");
         vm.startPrank(governor);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         stream.setAdmittedMinter(eoa, true);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(econ)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(econ))
+        );
         stream.setAdmittedMinter(address(econ), true);
         vm.stopPrank();
         vm.prank(outsider);
@@ -310,7 +315,7 @@ contract StreamTest is StreamFixture {
         PackageItem memory item = _item(1);
         item.seedPolicy = SeedPolicy.VRF;
         bytes memory data = _request(item);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidSeedPolicy.selector);
         auction.start(noVrf, data);
     }
 
@@ -323,11 +328,11 @@ contract StreamTest is StreamFixture {
 
     function test_mint_revertsForWrongShape() public {
         bytes memory data = _request(_item(1));
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.startRaw(stream, outsider, 0, 1, data);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.startRaw(stream, address(auction), 1, 1, data);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.startRaw(stream, address(auction), 0, 2, data);
     }
 
@@ -383,52 +388,52 @@ contract StreamTest is StreamFixture {
     }
 
     function test_mint_revertsForMalformedData() public {
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(stream, new bytes(159));
         bytes memory data = _request(_item(1));
         assembly ("memory-safe") {
             mstore(add(data, 0x20), 0x40)
         }
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(stream, data);
     }
 
     function test_mint_revertsForStreamRuleBreaks() public {
         PackageItem memory item = _item(1);
         item.sale.saleKind = SaleKind.FIXED_PRICE;
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
 
         item = _item(1);
         item.sale.params = hex"01";
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
 
         item = _item(1);
         item.parties = new Party[](0);
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidLeadArtist.selector));
 
         item = _item(1);
         item.collectionId = 99;
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.UnknownCollection.selector, 99));
 
         item = _item(1);
         item.seedPolicy = SeedPolicy.ARTIST;
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         item = _item(1);
         item.seed = keccak256("stray");
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         item = _item(1);
         item.seedPolicy = SeedPolicy.VRF;
         item.seed = keccak256("stray");
-        _expectInvalid(item);
+        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidSeedPolicy.selector));
 
         // A license ID `WorkRecords` would refuse, so the work could never open.
         string[4] memory badIds = ["", "CC BY 4.0", "cc_by", string(new bytes(65))];
         for (uint256 i; i < badIds.length; ++i) {
             item = _item(1);
             item.license.spdxId = badIds[i];
-            _expectInvalid(item);
+            _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidLicenseId.selector));
         }
     }
 
@@ -477,10 +482,10 @@ contract StreamTest is StreamFixture {
     function test_mint_revertsForUnusableArtistId() public {
         registry.setArtistOverride(0);
         bytes memory data = _request(_item(1));
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(stream, data);
         registry.setArtistOverride(uint256(type(uint160).max) + 1);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.start(stream, data);
     }
 
@@ -581,9 +586,9 @@ contract StreamTest is StreamFixture {
         PackageItem memory item = _item(1);
         item.parties[0] = Party(makeAddr("stranger"), PartyRole.ARTIST);
         bytes memory data = _request(item);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidLeadArtist.selector);
         stream.primaryTerms(0, data);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         stream.primaryTerms(0, new bytes(10));
     }
 
@@ -595,9 +600,9 @@ contract StreamTest is StreamFixture {
         MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
-        vm.expectRevert(abi.encodeWithSelector(IStream.UnboundCaller.selector, address(other)));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
         other.settle(stream, 1);
-        vm.expectRevert(abi.encodeWithSelector(IStream.UnboundCaller.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, outsider));
         vm.prank(outsider);
         stream.markPrimarySettled(1);
 
@@ -760,15 +765,13 @@ contract StreamTest is StreamFixture {
         vm.prank(governor);
         stream.setAdmittedMinter(address(other), true);
         auction.deliver(address(stream), 1, address(other));
-        vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(other))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(other)));
         other.burn(stream, 1, 1);
     }
 
     function test_burn_reverts() public {
         _mint(1);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IMintTarget.InvalidMintRequest.selector);
         auction.burn(stream, 1, 2);
         auction.deliver(address(stream), 1, outsider);
         vm.expectRevert(
@@ -784,7 +787,7 @@ contract StreamTest is StreamFixture {
         );
         auction.burn(stream, 9, 1);
         vm.prank(outsider);
-        vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, outsider));
+        vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, outsider));
         stream.burn(1, 1);
     }
 
@@ -991,17 +994,17 @@ contract StreamTest is StreamFixture {
 
     function test_bind_reverts() public {
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         stream.bindWorkRecords(eoa);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         stream.bindEditions(eoa);
         // Each target must answer ERC-165 for its own interface.
         vm.expectRevert(
-            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(editionsMock))
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(editionsMock))
         );
         stream.bindWorkRecords(address(editionsMock));
         MockWorkRecords r = new MockWorkRecords(address(stream));
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(r)));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(r)));
         stream.bindEditions(address(r));
         // A satellite serving another Stream is refused: the bind is one-shot.
         MockWorkRecords foreignRecords = new MockWorkRecords(address(econ));
@@ -1016,7 +1019,7 @@ contract StreamTest is StreamFixture {
         stream.bindEditions(address(foreignEditions));
         address delegated = makeAddr("delegated");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(r)));
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, delegated));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         stream.bindWorkRecords(delegated);
         vm.prank(outsider);
         vm.expectRevert(
@@ -1118,11 +1121,15 @@ contract StreamTest is StreamFixture {
         vm.expectRevert(IStream.ExpectedValueMismatch.selector);
         stream.setDefaultRenderer(address(next), address(next), codeHash);
         address eoa = makeAddr("eoa");
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, eoa));
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         stream.setDefaultRenderer(address(renderer), eoa, codeHash);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(econ)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(econ))
+        );
         stream.setDefaultRenderer(address(renderer), address(econ), address(econ).codehash);
-        vm.expectRevert(abi.encodeWithSelector(IStream.InvalidBinding.selector, address(next)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(next))
+        );
         stream.setDefaultRenderer(address(renderer), address(next), keccak256("wrong"));
         vm.stopPrank();
         vm.prank(outsider);
@@ -1218,15 +1225,15 @@ contract StreamTest is StreamFixture {
 
     // ----------------------------------------------------------------------------- helpers
 
-    function _expectInvalid(PackageItem memory item) internal {
+    function _expectInvalid(PackageItem memory item, bytes memory reason) internal {
         bytes memory data = _request(item);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(reason);
         auction.start(stream, data);
     }
 
     function _expectBadTerms(WorkTerms memory terms, bytes memory data) internal {
         econ.setTerms(terms);
-        vm.expectRevert(IStream.InvalidMintRequest.selector);
+        vm.expectRevert(IStream.InvalidWorkTerms.selector);
         auction.start(stream, data);
         econ.setTerms(_defaultTerms());
     }

@@ -38,10 +38,10 @@ contract RendererTest is RendererBase {
 
     function test_Constructor_RejectsBadThresholds() public {
         IStatementLog none = IStatementLog(address(0));
-        vm.expectRevert(abi.encodeWithSelector(Renderer.RendererThresholdInvalid.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(IRenderer.RendererThresholdInvalid.selector, 0));
         new Renderer(store, none, 0);
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererThresholdInvalid.selector, 1_048_577)
+            abi.encodeWithSelector(IRenderer.RendererThresholdInvalid.selector, 1_048_577)
         );
         new Renderer(store, none, 1_048_577);
         assertEq(new Renderer(store, none, 1).inlineThreshold(), 1);
@@ -154,7 +154,7 @@ contract RendererTest is RendererBase {
         assertFalse(_has(j, ".content_hash"));
         // The full form has nothing to inline, so it reverts (L6).
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }
@@ -207,7 +207,9 @@ contract RendererTest is RendererBase {
         records.fail(IWorkRecords.isOpen.selector, true);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, address(records), IWorkRecords.isOpen.selector
+                IRenderer.RendererReadFailed.selector,
+                address(records),
+                IWorkRecords.isOpen.selector
             )
         );
         renderer.tokenURI(address(stream), ID);
@@ -518,7 +520,7 @@ contract RendererTest is RendererBase {
         _setRecordInfo(info);
         _assertCoreOnly("incomplete");
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererNotInlineable.selector, address(stream), ID)
         );
         renderer.fullTokenURI(address(stream), ID);
     }
@@ -602,7 +604,7 @@ contract RendererTest is RendererBase {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         records.setLicense(ID, License(bad, bytes32(0)));
-        vm.expectRevert(Renderer.RendererInvalidUtf8.selector);
+        vm.expectRevert(IRenderer.RendererInvalidUtf8.selector);
         renderer.tokenURI(address(stream), ID);
 
         records.setLicense(ID, _license());
@@ -610,14 +612,14 @@ contract RendererTest is RendererBase {
         core.collectionId = 1;
         stream.setWork(ID, core);
         stream.setCollection(1, IStream.Collection(bad, bytes32(0), 1));
-        vm.expectRevert(Renderer.RendererInvalidUtf8.selector);
+        vm.expectRevert(IRenderer.RendererInvalidUtf8.selector);
         renderer.tokenURI(address(stream), ID);
 
         // A locator is read only when the file is not inlined.
         bytes32 big = _file(_data(THRESHOLD + 1, 1), IDENTITY, "image/png");
         _install(big);
         records.addLocator(ID, big, Locator(LocatorKind.IPFS, bad));
-        vm.expectRevert(Renderer.RendererInvalidUtf8.selector);
+        vm.expectRevert(IRenderer.RendererInvalidUtf8.selector);
         renderer.tokenURI(address(stream), ID);
     }
 
@@ -691,7 +693,7 @@ contract RendererTest is RendererBase {
         disputeLog.setBroken(true);
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
+                IRenderer.RendererReadFailed.selector,
                 address(disputeLog),
                 IStatementLog.latestDisputeOutcome.selector
             )
@@ -722,7 +724,7 @@ contract RendererTest is RendererBase {
         editions.setMaster(5, ID, bytes32(uint256(0xbad)));
 
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererRecordInvalid.selector, address(editions), 5)
+            abi.encodeWithSelector(IRenderer.RendererRecordInvalid.selector, address(editions), 5)
         );
         renderer.tokenURI(address(editions), 5);
     }
@@ -731,7 +733,9 @@ contract RendererTest is RendererBase {
         MockEditions editions = new MockEditions(address(stream));
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, address(editions), IEditions.masterOf.selector
+                IRenderer.RendererReadFailed.selector,
+                address(editions),
+                IEditions.masterOf.selector
             )
         );
         renderer.tokenURI(address(editions), 5);
@@ -755,7 +759,7 @@ contract RendererTest is RendererBase {
             stream.fail(onStream[i], true);
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    Renderer.RendererReadFailed.selector, address(stream), onStream[i]
+                    IRenderer.RendererReadFailed.selector, address(stream), onStream[i]
                 )
             );
             renderer.tokenURI(address(stream), ID);
@@ -772,7 +776,7 @@ contract RendererTest is RendererBase {
             records.fail(onRecords[i], true);
             vm.expectRevert(
                 abi.encodeWithSelector(
-                    Renderer.RendererReadFailed.selector, address(records), onRecords[i]
+                    IRenderer.RendererReadFailed.selector, address(records), onRecords[i]
                 )
             );
             renderer.tokenURI(address(stream), ID);
@@ -783,7 +787,7 @@ contract RendererTest is RendererBase {
     function test_FailsClosed_NotAToken() public {
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, address(0xdead), IStream.work.selector
+                IRenderer.RendererReadFailed.selector, address(0xdead), IStream.work.selector
             )
         );
         renderer.tokenURI(address(0xdead), 1);
@@ -793,7 +797,7 @@ contract RendererTest is RendererBase {
         stream.fail(IStream.work.selector, true); // `UnknownWork` in the real Stream
         vm.expectRevert(
             abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector, address(stream), IStream.work.selector
+                IRenderer.RendererReadFailed.selector, address(stream), IStream.work.selector
             )
         );
         renderer.tokenURI(address(stream), ID);
@@ -822,7 +826,7 @@ contract RendererTest is RendererBase {
 
     function _expectInvalidRecord() internal {
         vm.expectRevert(
-            abi.encodeWithSelector(Renderer.RendererRecordInvalid.selector, address(stream), ID)
+            abi.encodeWithSelector(IRenderer.RendererRecordInvalid.selector, address(stream), ID)
         );
     }
 

@@ -5,7 +5,6 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -40,7 +39,7 @@ import {
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { Roles } from "../governance/Roles.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 
 /// @title EnglishAuction
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
@@ -178,22 +177,6 @@ contract EnglishAuction is
     mapping(address currency => uint256) private _openingBids;
     mapping(address account => mapping(address currency => uint256)) private _credits;
 
-    /// @notice A dependency has no code, is a delegated account, or lacks its ERC-165 interface.
-    error InvalidDependency(address dependency);
-    /// @notice A configuration is outside the bounds above.
-    error InvalidConfig();
-    /// @notice The token returned an unusable ID, terms (including the revenue escrow as seller
-    ///         or fee recipient) or custody for the minted work.
-    error InvalidTerms(address token, uint256 tokenId);
-    /// @notice The token contract cannot be listed (no code, delegated, or not ERC-721).
-    error InvalidTarget(address token);
-    /// @notice The caller is not the high bidder.
-    error NotHighBidder(address caller);
-    /// @notice The opening bid is above its absolute ceiling.
-    error OpeningBidAboveCeiling(uint256 next, uint256 ceiling);
-    /// @notice The caller cannot forward {DELIVERY_GAS} in full.
-    error DeliveryInsufficientGas();
-
     /// @param authority The AccessManager governing this adapter.
     /// @param escrow_ The revenue escrow for refused payouts.
     /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated): the
@@ -212,15 +195,12 @@ contract EnglishAuction is
         AuctionConfig memory config_,
         address[] memory targets
     ) AccessManaged(authority) {
-        _requireContract(escrow_);
-        _requireContract(address(economicsResolver_));
-        if (!ERC165Checker.supportsInterface(
-                address(economicsResolver_), type(IEconomicsResolver).interfaceId
-            )) revert InvalidDependency(address(economicsResolver_));
+        Dependency.check(escrow_);
+        Dependency.check(address(economicsResolver_), type(IEconomicsResolver).interfaceId);
         IAssetAllowlist allowlist_ = IAssetAllowlist(economicsResolver_.assetAllowlist());
-        _requireContract(address(allowlist_));
-        _requireContract(statementLog_);
-        if (permit2_ != address(0)) _requireContract(permit2_);
+        Dependency.check(address(allowlist_));
+        Dependency.check(statementLog_);
+        if (permit2_ != address(0)) Dependency.check(permit2_);
         escrow = escrow_;
         economicsResolver = economicsResolver_;
         allowlist = allowlist_;
@@ -494,12 +474,7 @@ contract EnglishAuction is
     ///      `IFederationRegistry` through ERC-165 (D8); its code hash is pinned (L-6).
     function setFederationRegistry(address expected, address next) external restricted {
         if (federationRegistry != expected) revert ExpectedValueMismatch();
-        if (next != address(0)) {
-            _requireContract(next);
-            if (!ERC165Checker.supportsInterface(next, type(IFederationRegistry).interfaceId)) {
-                revert InvalidDependency(next);
-            }
-        }
+        if (next != address(0)) Dependency.check(next, type(IFederationRegistry).interfaceId);
         federationRegistry = next;
         federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
         emit FederationRegistrySet(expected, next);
@@ -645,7 +620,7 @@ contract EnglishAuction is
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
-        ) revert InvalidTerms(token, tokenId);
+        ) revert InvalidSaleTerms(token, tokenId);
         saleId = saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
         if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId, s.status);
@@ -703,7 +678,7 @@ contract EnglishAuction is
             if (
                 e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR
                     || recipient == escrow || (recipient == address(0) && e.feeShare != 0)
-            ) revert InvalidTerms(token, tokenId);
+            ) revert InvalidSaleTerms(token, tokenId);
             t.federated = true;
             t.registryFee = e.feeShare;
         }
@@ -739,7 +714,7 @@ contract EnglishAuction is
             t.federated ? _federatedFeeRecipient() : p.feeRecipient,
             t.federated ? t.registryFee : p.feeShare
         );
-        if (lt.feeShare > Splits.DENOMINATOR) revert InvalidTerms(s.token, s.tokenId);
+        if (lt.feeShare > Splits.DENOMINATOR) revert InvalidSaleTerms(s.token, s.tokenId);
         creator = p.creator;
     }
 
@@ -1114,12 +1089,7 @@ contract EnglishAuction is
     }
 
     function _setTarget(address token, bool listed) private {
-        if (
-            listed
-                && (token.code.length == 0
-                    || DelegatedEOA.isDelegated(token)
-                    || !ERC165Checker.supportsInterface(token, type(IERC721).interfaceId))
-        ) revert InvalidTarget(token);
+        if (listed) Dependency.check(token, type(IERC721).interfaceId);
         _listed[token] = listed;
         emit TargetSet(token, listed);
     }
@@ -1141,11 +1111,5 @@ contract EnglishAuction is
     function _currentConfig() private view returns (AuctionConfig memory) {
         Settings storage st = _settings;
         return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare);
-    }
-
-    function _requireContract(address dependency) private view {
-        if (dependency.code.length == 0 || DelegatedEOA.isDelegated(dependency)) {
-            revert InvalidDependency(dependency);
-        }
     }
 }

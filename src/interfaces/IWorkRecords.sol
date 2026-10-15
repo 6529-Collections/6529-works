@@ -105,7 +105,9 @@ interface IWorkRecords {
     error WorkIsFinalized(uint256 tokenId);
     /// @notice The work's state hash is not the one the caller or signers expected.
     error StateHashMismatch(bytes32 expected, bytes32 actual);
-    /// @notice A party signature is missing, expired or does not verify.
+    /// @notice A party's signature does not verify, or (`partyIndex` equal to the number of
+    ///         signatures given) the number of signatures is not the number of parties. An
+    ///         expired consent reverts with `SignatureVerifier.SignatureExpired`.
     error InvalidConsent(uint256 tokenId, uint256 partyIndex);
     /// @notice A CC0 dedication is irrevocable, so the license key cannot change (only a CC0
     ///         text file can be corrected).
@@ -119,13 +121,6 @@ interface IWorkRecords {
     error InvalidLocator();
     /// @notice A media file still lacks chunks in the content store.
     error NotOnChainComplete(uint256 tokenId);
-    /// @notice The renderer lacks ERC-165 support for `IRenderer` or the code hash, or is an
-    ///         EIP-7702 delegated account; or its code is no longer the code hash it was pinned
-    ///         with.
-    error InvalidRenderer(address renderer);
-    /// @notice An installed dependency lacks code, ERC-165 support or the expected code hash, or
-    ///         is an EIP-7702 delegated account.
-    error InvalidDependency(address dependency);
     /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`, the deployment's
     ///         default license is not CC0, a license text file declares no SHA-256, a CC0 license
     ///         (at `openRecord` or a relicense) names a text other than the deployment's CC0
@@ -186,8 +181,9 @@ interface IWorkRecords {
     function licenseOf(uint256 tokenId) external view returns (License memory);
     /// @notice The hash every finalize and signature binds to.
     function workStateHash(uint256 tokenId) external view returns (bytes32);
-    /// @notice The pinned renderer of a finalized work, or zero. Reverts with `InvalidRenderer`
-    ///         when the renderer's code is no longer the code hash it was first pinned with
+    /// @notice The pinned renderer of a finalized work, or zero. Reverts with
+    ///         `Dependency.DependencyCodeChanged` when the renderer's code is no longer the code
+    ///         hash it was first pinned with
     ///         (finalize pins the default renderer as Stream checked it; the errata repin pins
     ///         the hash the artist signed), so 6529 Stream's `tokenURI` fails closed until the
     ///         errata repin installs a renderer again.

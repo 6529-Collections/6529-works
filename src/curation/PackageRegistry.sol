@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessManaged.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import { ERC165Checker } from "@openzeppelin/contracts/utils/introspection/ERC165Checker.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
@@ -29,7 +28,7 @@ import {
 } from "../interfaces/types/PackageTypes.sol";
 import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
-import { DelegatedEOA } from "../libraries/DelegatedEOA.sol";
+import { Dependency } from "../libraries/Dependency.sol";
 import { EditionRules } from "../editions/EditionRules.sol";
 import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 
@@ -122,8 +121,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         AccessManaged(authority_)
         EIP712(Typehashes.PACKAGE_REGISTRY_NAME, Typehashes.DOMAIN_VERSION)
     {
-        _requireInstallable(
-            artistRegistry_, artistRegistryCodeHash, type(IArtistRegistry).interfaceId
+        Dependency.checkPinned(
+            artistRegistry_, type(IArtistRegistry).interfaceId, artistRegistryCodeHash
         );
         _artists = IArtistRegistry(artistRegistry_);
         _setVerifier(verifier_, verifierCodeHash);
@@ -134,7 +133,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     ///      configurator binds it before renouncing ADMIN.
     function bindStream(address target) external restricted {
         if (stream != address(0)) revert AlreadyBound(STREAM);
-        _requireBindable(target, type(IStream).interfaceId);
+        Dependency.check(target, type(IStream).interfaceId);
         stream = target;
         emit Bound(STREAM, target);
     }
@@ -144,7 +143,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     ///      by default): the genesis configurator binds it before renouncing ADMIN.
     function bindEditions(address target) external restricted {
         if (editions != address(0)) revert AlreadyBound(EDITIONS);
-        _requireBindable(target, type(IEditions).interfaceId);
+        Dependency.check(target, type(IEditions).interfaceId);
         editions = target;
         emit Bound(EDITIONS, target);
     }
@@ -156,7 +155,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         Package storage p = _packages[packageRoot];
         if (p.status != PackageStatus.NONE) revert PackageExists(packageRoot);
         ICurationVerifier v = verifier;
-        if (address(v).codehash != _verifierCodeHash) revert InvalidDependency(address(v));
+        Dependency.checkUnchanged(address(v), _verifierCodeHash);
         (bool approved, address signer) = v.isApproved(packageRoot, evidenceHash, attestation);
         if (!approved || evidenceHash == 0) revert NotApproved(packageRoot);
         p.status = PackageStatus.APPROVED;
@@ -192,17 +191,11 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         bytes calldata signature
     ) external returns (uint256 artistId) {
         _requireApproved(packageRoot);
-        // A deadline is a wall-clock bound by design; validator timestamp drift is immaterial.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > acceptance.deadline) revert InvalidSignature();
+        SignatureVerifier.checkDeadline(acceptance.deadline);
         address account = acceptance.account;
         artistId = _artists.artistIdOf(account);
         address signer = artistId == 0 ? account : _artists.activeAuthorityOf(artistId);
-        if (!SignatureVerifier.isValid(
-                signer, acceptanceDigest(packageRoot, acceptance), signature
-            )) {
-            revert InvalidSignature();
-        }
+        SignatureVerifier.check(signer, acceptanceDigest(packageRoot, acceptance), signature);
         mapping(address => uint256) storage accepted = _acceptedAs[packageRoot];
         if (accepted[account] != 0) return accepted[account];
         if (artistId != 0) {
@@ -221,7 +214,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
             if (
                 _artists.register(account, acceptance.profileId, acceptance.profileDocHash)
                     != artistId
-            ) revert InvalidDependency(address(_artists));
+            ) revert Dependency.InvalidDependency(address(_artists));
         }
     }
 
@@ -314,16 +307,16 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @inheritdoc IPackageRegistry
     /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The replaced verifier is retired: it,
     ///      the current verifier and every verifier retired before revert with
-    ///      `InvalidDependency`, so a swap back never restores a retired verifier's approvals or
-    ///      signer states. One slot per swap. The pinned code hash is checked again at every
-    ///      registration.
+    ///      `Dependency.InvalidDependency`, so a swap back never restores a retired verifier's
+    ///      approvals or signer states. One slot per swap. The pinned code hash is checked again
+    ///      at every registration (`Dependency.DependencyCodeChanged`).
     function setVerifier(ICurationVerifier expected, ICurationVerifier next, bytes32 nextCodeHash)
         external
         restricted
     {
         if (address(verifier) != address(expected)) revert ExpectedValueMismatch();
         if (address(next) == address(expected) || _retired[address(next)]) {
-            revert InvalidDependency(address(next));
+            revert Dependency.InvalidDependency(address(next));
         }
         _retired[address(expected)] = true;
         _setVerifier(next, nextCodeHash);
@@ -501,15 +494,10 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         uint256 artistId,
         MoveAuthorization calldata move
     ) private {
-        // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp > move.deadline) revert InvalidSignature();
+        SignatureVerifier.checkDeadline(move.deadline);
         _spendMoveNonce(artistId, move.nonce);
         bytes32 digest = moveDigest(packageRoot, itemHash, move.nonce, move.deadline);
-        if (!SignatureVerifier.isValid(
-                _artists.activeAuthorityOf(artistId), digest, move.signature
-            )) {
-            revert InvalidSignature();
-        }
+        SignatureVerifier.check(_artists.activeAuthorityOf(artistId), digest, move.signature);
     }
 
     function _spendMoveNonce(uint256 artistId, uint256 nonce) private {
@@ -522,31 +510,10 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     function _setVerifier(ICurationVerifier next, bytes32 codeHash) private {
-        _requireInstallable(address(next), codeHash, type(ICurationVerifier).interfaceId);
+        Dependency.checkPinned(address(next), type(ICurationVerifier).interfaceId, codeHash);
         emit VerifierSet(address(verifier), address(next), codeHash);
         verifier = next;
         _verifierCodeHash = codeHash;
-    }
-
-    /// @dev Installs (decision D8): ERC-165 support, the pinned code hash, not delegated.
-    function _requireInstallable(address target, bytes32 codeHash, bytes4 interfaceId)
-        private
-        view
-    {
-        if (!_supports(target, interfaceId) || target.codehash != codeHash) {
-            revert InvalidDependency(target);
-        }
-    }
-
-    /// @dev Bindings: ERC-165 support for the bound role, not delegated.
-    function _requireBindable(address target, bytes4 interfaceId) private view {
-        if (!_supports(target, interfaceId)) revert InvalidBinding(target);
-    }
-
-    /// @dev Code, not an EIP-7702 delegated account, and ERC-165 support for `interfaceId`.
-    function _supports(address target, bytes4 interfaceId) private view returns (bool) {
-        return target.code.length != 0 && !DelegatedEOA.isDelegated(target)
-            && ERC165Checker.supportsInterface(target, interfaceId);
     }
 
     function _bit(uint256 nonce) private pure returns (uint256) {

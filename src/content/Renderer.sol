@@ -144,21 +144,6 @@ contract Renderer is IRenderer {
         "window.works=";
     string private constant SHELL_TAIL = "</script></body></html>";
 
-    /// @notice The threshold is zero or above `MAX_INLINE_BYTES`.
-    error RendererThresholdInvalid(uint256 threshold);
-    /// @notice A read of `target` failed: no code, a revert, out of its gas cap, or too much
-    ///         return data. `selector` names the call.
-    error RendererReadFailed(address target, bytes4 selector);
-    /// @notice A string from the Stream, a locator or the store is not well-formed UTF-8.
-    error RendererInvalidUtf8();
-    /// @notice The work's data breaks a rule: no primary file first, or an edition whose content
-    ///         hash is not its master's. (A bad record is not an error: it renders core-only.)
-    error RendererRecordInvalid(address token, uint256 tokenId);
-    /// @notice `fullTokenURI` cannot serve the work in full: its record is not open, incomplete or
-    ///         invalid, or the primary file is not on-chain complete, is incomplete, too large,
-    ///         not attested `Base64`, or not stored as `Identity` or `Base64`.
-    error RendererNotInlineable(address token, uint256 tokenId);
-
     /// @dev What a work's record file is good for: not open yet, not completely uploaded,
     ///      unacceptable, or ready.
     enum RecordState {
