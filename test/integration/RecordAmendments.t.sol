@@ -82,11 +82,17 @@ contract RecordAmendmentsFlowTest is IntegrationBase {
         manager.execute(address(records), back);
     }
 
-    /// @dev A CC0 work may still correct its text file (CC0 to CC0).
-    function test_Cc0WorkCorrectsItsTextFile() public {
+    /// @dev A CC0 work names the deployment's CC0 text and keeps it: another text is refused
+    ///      even with every consent and the governed action.
+    function test_Cc0WorkKeepsThePinnedText() public {
         bytes32 corrected = _storeText("CC0 1.0 Universal (corrected text)", "text/plain");
-        _govern(hotAdmin, address(records), _relicenseCall(2, 1, License("CC0-1.0", corrected)));
-        assertEq(records.licenseOf(2).textFileId, corrected);
+        bytes memory call = _relicenseCall(2, 1, License("CC0-1.0", corrected));
+        _schedule(hotAdmin, address(records), call);
+        vm.warp(block.timestamp + 2 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        manager.execute(address(records), call);
+        assertEq(records.licenseOf(2).textFileId, cc0TextFileId);
     }
 
     /// @dev A finalized work's new license text must be stored on-chain, not only registered.

@@ -397,16 +397,16 @@ contract RendererReviewTest is RendererBase {
 
     function test_L2_OtherNamesAreFine() public {
         string[10] memory fine = [
-            "artist",
             "Artists",
-            "Year ",
+            "Year 2",
             "Seed2",
             "Edition",
             "Dispute",
             "Dispute statements",
             "Palette",
-            unicode"Caf\u00e9",
-            "A'B 100% #1"
+            "Cafe",
+            "A'B 100% #1",
+            ""
         ];
         for (uint256 i; i < fine.length; ++i) {
             _raw(_traitRecord(fine[i]));
@@ -416,10 +416,103 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
+    /// @dev CONTENT-5: the renderer's names are matched in any case and with any spaces, and two
+    ///      spaces in a row are refused, so a name that displays like one of them (`Artist ID`,
+    ///      `SEED`, `Serial `, `ArtistID`, `Artist  ID`) is refused.
+    function test_TraitNames_ReservedInAnyCaseAndSpacing() public {
+        string[14] memory alike = [
+            "artist",
+            "ARTIST ID",
+            "ArtistID",
+            "Artist  ID",
+            " Year",
+            "Year ",
+            "Me dium",
+            "dimensions",
+            "COLLECTION",
+            "Serial   ",
+            "EditionOf",
+            "SEED",
+            "Dispute Statement",
+            "d i s p u t e s t a t e m e n t"
+        ];
+        for (uint256 i; i < alike.length; ++i) {
+            _raw(_traitRecord(alike[i]));
+            _assertCoreOnly("invalid");
+        }
+        // Long names made of spaces around a reserved name are refused (two spaces in a row).
+        _raw(_traitRecord(string.concat(string(_fill(" ", 200)), "Seed", string(_fill(" ", 200)))));
+        _assertCoreOnly("invalid");
+        _raw(_traitRecord("Color  palette"));
+        _assertCoreOnly("invalid");
+        // Only up to 16 letters are a reserved name: 17 spaced out (33 bytes) are fine, and so
+        // are long names with single spaces.
+        _raw(_traitRecord("d i s p u t e s t a t e m e n t s"));
+        assertFalse(_has(_out(), ".record_status"));
+        _raw(_traitRecord("The palette of the work as the artist describes it, in a few words"));
+        assertFalse(_has(_out(), ".record_status"));
+    }
+
+    /// @dev CONTENT-5: the word-at-a-time check finds two spaces in a row (also across a word
+    ///      boundary), a non-ASCII character and DEL at the offsets around each word boundary of
+    ///      names of the lengths around them, and takes the same names with a single space.
+    function test_TraitNames_AreCheckedAroundWordBoundaries() public {
+        uint8[11] memory lengths = [2, 3, 31, 32, 33, 34, 35, 63, 64, 65, 66];
+        uint8[11] memory offsets = [0, 1, 29, 30, 31, 32, 33, 61, 62, 63, 64];
+        for (uint256 i; i < lengths.length; ++i) {
+            uint256 length = lengths[i];
+            for (uint256 o; o < offsets.length && offsets[o] + 2 <= length; ++o) {
+                _checkAt(length, offsets[o]);
+            }
+            _checkAt(length, length - 2);
+        }
+    }
+
+    /// @dev Name `length` bytes of `a` with two bytes at `pos`: two spaces, U+00E9, DEL (each
+    ///      refused), then one space (fine).
+    function _checkAt(uint256 length, uint256 pos) internal {
+        bytes memory name = _fill("a", length);
+        (name[pos], name[pos + 1]) = (" ", " ");
+        _raw(_traitRecord(string(name)));
+        _assertCoreOnly("invalid");
+        (name[pos], name[pos + 1]) = (bytes1(0xc3), bytes1(0xa9));
+        _raw(_traitRecord(string(name)));
+        _assertCoreOnly("invalid");
+        (name[pos], name[pos + 1]) = (bytes1(0x7f), "a");
+        _raw(_traitRecord(string(name)));
+        _assertCoreOnly("invalid");
+        name[pos] = " ";
+        _raw(_traitRecord(string(name)));
+        assertFalse(_has(_out(), ".record_status"), "one space");
+    }
+
+    /// @dev CONTENT-5: a trait name is printable ASCII, so no character from another script, no
+    ///      invisible or no-break space and no DEL can make a name display like the renderer's
+    ///      own. Values may still be any UTF-8.
+    function test_TraitNames_ArePrintableAscii() public {
+        bytes[7] memory bad = [
+            bytes(hex"417274697374c2a04944"), // "Artist", U+00A0, "ID"
+            hex"436f6c6c656374696f6ee2808b", // "Collection", U+200B
+            hex"446973707574d0b52073746174656d656e74", // "Disput", U+0435, " statement"
+            bytes(unicode"Caf\u00e9"),
+            bytes(unicode"\u8272"),
+            hex"536565647f", // "Seed", DEL
+            hex"7f"
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            _raw(_traitRecord(string(bad[i])));
+            _assertCoreOnly("invalid");
+        }
+        // A non-ASCII value is fine.
+        _raw(
+            bytes(unicode'{"attributes":[{"trait_type":"Palette","value":"Caf\u00e9"}],"name":"N"}')
+        );
+        assertEq(_str(_out(), ".attributes[0].value"), unicode"Caf\u00e9");
+    }
+
     /// @dev Decision H2: a name with a backslash, as a key, is refused, so an escape cannot spell a
-    ///      reserved name and no name needs a read per byte. The refusal is for any backslash, of
-    ///      any name length, and the shortest names (19 bytes or fewer with their quotes) are the
-    ///      only ones compared with the reserved list.
+    ///      reserved name. The refusal is for any backslash, of any name length; only names of
+    ///      at most 16 characters besides spaces are compared with the reserved list.
     function test_L2_ANameWithABackslashIsRefused() public {
         string[6] memory bad = [
             "Artis\\u0074",
@@ -458,8 +551,8 @@ contract RendererReviewTest is RendererBase {
         }
     }
 
-    /// @dev The names the renderer writes are all at most 19 bytes with their quotes; the one of
-    ///      19 ("Dispute statement") is still found, and a name one longer is not reserved.
+    /// @dev The names the renderer writes have at most 16 letters; the one of 16 ("Dispute
+    ///      statement") is still found, and a name one letter longer is not reserved.
     function test_L2_TheLongestReservedNameIsFound() public {
         assertEq(bytes('"Dispute statement"').length, 19);
         _raw(_traitRecord("Dispute statement"));

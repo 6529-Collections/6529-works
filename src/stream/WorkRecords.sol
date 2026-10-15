@@ -47,9 +47,23 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
     /// @dev Locators per file the artist may add, and separately the platform (16 in all).
     uint256 private constant LOCATOR_QUOTA = Limits.MAX_LOCATORS_PER_FILE / 2;
+    /// @dev The characters of an Arweave transaction ID (base64url: `A-Z a-z 0-9 - _`) and of a
+    ///      base32 CID (`a-z 2-7`), as bit sets over ASCII.
+    uint256 private constant TXID_CHARS = 0x07fffffe87fffffe03ff200000000000;
+    uint256 private constant CID_CHARS = 0x07fffffe0000000000fc000000000000;
+    /// @dev The last characters of a canonical transaction ID and CID: the encoding's last
+    ///      character carries two padding bits, which must be zero (`AEIMQUYcgkosw048`, and
+    ///      `aeimquy4`).
+    uint256 private constant TXID_LAST = 0x888888022222220111000000000000;
+    uint256 private constant CID_LAST = 0x2222222000000000010000000000000;
+    /// @dev Chunks one `syncOnChain` call checks at most, in whole files: one file of at most
+    ///      `IContentStore.MAX_CHUNKS` (512), so it always fits. A chunk costs about 8,100 gas
+    ///      from cold storage, so a call stays at about a quarter of the EIP-7825 cap (4.2M).
+    uint256 private constant SYNC_CHUNKS = 512;
 
-    /// @dev Word 0: the pin, version, media count and flags. `roles` packs each file's role in
-    ///      eight bits, file `i` at bits `8i`.
+    /// @dev Word 0: the pin, version, media count, flags and how many leading media files
+    ///      `syncOnChain` has found complete. `roles` packs each file's role in eight bits, file
+    ///      `i` at bits `8i`.
     struct RecordData {
         address renderer;
         uint32 version;
@@ -58,6 +72,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         bool finalized;
         bool onChainComplete;
         bool customLicense;
+        uint8 syncedFiles;
         bytes32 recordFileId;
         bytes32 mediaHash;
         uint256 roles;
@@ -94,6 +109,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     mapping(uint256 tokenId => mapping(bytes32 fileId => LocatorCounts)) private _locatorCounts;
     mapping(uint256 tokenId => mapping(bytes32 fileId => mapping(bytes32 uriHash => bool))) private
         _locatorUris;
+    /// @dev The code hash each renderer was first pinned with (finalize or the errata repin),
+    ///      checked again by `pinnedRenderer`.
+    mapping(address renderer => bytes32 codeHash) private _rendererCodeHashes;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param stream_ The core token, which must bind this contract.
@@ -130,11 +148,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev The approved record file and license are stored as they are, without the
     ///      structural record-file gate or a license-text check, so neither can freeze a
     ///      minted work: an invalid record renders core-only metadata until the artist sets a
-    ///      valid one, and `finalize` enforces both. Trust obligation: the media commitments
+    ///      valid one, and `finalize` enforces both. One license rule is checked here: a CC0
+    ///      license names the deployment's CC0 text (`cc0TextFileId`), since CC0 can never be
+    ///      left or corrected later. Trust obligation: the media commitments
     ///      checked here (1 to 32 files, the PRIMARY first and alone, its SHA-256 equal to
-    ///      `item.contentHash`, every declaration matching the content store) are not checked
-    ///      at mint, so a mis-committed item mints and can never open. The curation signer's
-    ///      tooling MUST simulate `openRecord` for an item before attesting it.
+    ///      `item.contentHash`, every declaration matching the content store, every inlinable
+    ///      PREVIEW file within `Limits.MAX_PREVIEW_BYTES`) are not checked at mint, so a
+    ///      mis-committed item mints and can never open. The curation signer's tooling MUST
+    ///      simulate `openRecord` for an item before attesting it.
     function openRecord(uint256 tokenId, PackageItem calldata item, MediaFile[] calldata media)
         external
     {
@@ -152,10 +173,12 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         for (uint256 i; i < files; ++i) {
             MediaFile calldata file = media[i];
             // Reverts with the store's `ContentFileUnknown` for an unregistered file.
-            if (
-                store.sha256Of(file.fileId) != file.sha256Hash
-                    || (file.role == FileRole.PRIMARY) != (i == 0)
-            ) revert InvalidRecordData(tokenId);
+            bytes32 declared = file.role == FileRole.PREVIEW
+                ? _previewSha(tokenId, file.fileId)
+                : store.sha256Of(file.fileId);
+            if (declared != file.sha256Hash || (file.role == FileRole.PRIMARY) != (i == 0)) {
+                revert InvalidRecordData(tokenId);
+            }
             list[i] = file.fileId;
             roles |= uint256(file.role) << (8 * i);
         }
@@ -167,6 +190,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         r.mediaHash = item.mediaHash;
         r.roles = roles;
         if (!_isDefaultLicense(item.license)) {
+            if (
+                WorksHashing.licenseKey(item.license.spdxId) == WorksHashing.CC0_LICENSE_KEY
+                    && item.license.textFileId != cc0TextFileId
+            ) revert InvalidLicense();
             r.customLicense = true;
             _licenses[tokenId] = item.license;
         }
@@ -200,7 +227,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         _checkState(tokenId, expectedStateHash);
         _checkRecordFile(r.recordFileId);
         _requireLicenseText(r.customLicense ? _licenses[tokenId].textFileId : cc0TextFileId, true);
-        address renderer = IStream(stream).defaultRenderer();
+        // The default renderer, its code checked against Stream's pin (not finalized: no pin).
+        address renderer = IStream(stream).rendererOf(tokenId);
+        _pinCode(renderer, renderer.codehash);
         r.renderer = renderer;
         r.finalized = true;
         ++r.version;
@@ -209,15 +238,32 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    /// @dev Media is fixed by approval (D2), so completeness is permanent; a repeat is a no-op.
+    /// @dev Media is fixed by approval (D2) and on-chain bytes are permanent, so a file found
+    ///      complete stays complete: each call resumes at the first file not yet found complete,
+    ///      checks whole files while their chunks fit `SYNC_CHUNKS`, and keeps its place. A
+    ///      repeat after completion is a no-op.
     function syncOnChain(uint256 tokenId) external {
         RecordData storage r = _open(tokenId);
         if (r.onChainComplete) return;
+        uint256 files = r.mediaCount;
+        uint256 next = r.syncedFiles;
+        uint256 budget = SYNC_CHUNKS;
         bytes32[32] storage list = _media[tokenId];
-        for (uint256 i; i < r.mediaCount; ++i) {
-            if (!IContentStore(contentStore).isComplete(list[i])) {
+        for (; next < files; ++next) {
+            bytes32 fileId = list[next];
+            (,, uint256 chunks,) = _fileInfo(fileId);
+            if (chunks > budget) break;
+            if (!IContentStore(contentStore).isComplete(fileId)) {
                 revert NotOnChainComplete(tokenId);
             }
+            budget -= chunks;
+        }
+        // At most `Limits.MAX_MEDIA_FILES` (32).
+        // forge-lint: disable-next-line(unsafe-typecast)
+        r.syncedFiles = uint8(next);
+        if (next < files) {
+            emit OnChainSyncProgress(tokenId, next);
+            return;
         }
         r.onChainComplete = true;
         emit WorkOnChainComplete(tokenId);
@@ -286,8 +332,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    function pinnedRenderer(uint256 tokenId) external view returns (address) {
-        return _open(tokenId).renderer;
+    /// @dev The code must still be the code the renderer was pinned with (DEPS-6): a pin
+    ///      checked once could be outlived by code recreated at the same address.
+    function pinnedRenderer(uint256 tokenId) external view returns (address renderer) {
+        renderer = _open(tokenId).renderer;
+        if (renderer != address(0) && renderer.codehash != _rendererCodeHashes[renderer]) {
+            revert InvalidRenderer(renderer);
+        }
     }
 
     /// @inheritdoc IWorkRecords
@@ -305,12 +356,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     // ------------------------------------------------------------------------------ amendments
 
     /// @inheritdoc IWorkRecords
-    /// @dev Only CC0 irrevocability is enforced on-chain, on the canonical key: a CC0 work may
-    ///      only correct its text file. Whether `next` is more permissive than the current
-    ///      license is a judgement the artist's and every party's consent plus the governed
-    ///      action carry; the contract does not order licenses. A license with the current key
-    ///      and text is a no-op. The new text must be registered, and complete on-chain once
-    ///      the work is finalized.
+    /// @dev Only CC0 irrevocability is enforced on-chain, on the canonical key, and a CC0
+    ///      license always names the deployment's CC0 text (`cc0TextFileId`, pinned by digest
+    ///      at deployment): `openRecord` refuses any other, and so does a relicense to CC0. A CC0
+    ///      work therefore keeps its key and text for good. Whether `next` is more permissive
+    ///      than the current license is a judgement the artist's and every party's consent plus
+    ///      the governed action carry; the contract does not order licenses. A license with the
+    ///      current key and text is a no-op. The new text must be registered, and complete
+    ///      on-chain once the work is finalized. `finalize` needs no CC0 check of its own: the
+    ///      stored license is written only here and by `openRecord`.
     function relicense(
         uint256 tokenId,
         License calldata next,
@@ -401,6 +455,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (!SignatureVerifier.isValid(_artistOf(tokenId), digest, artistSignature)) {
             revert InvalidConsent(tokenId, 0);
         }
+        _pinCode(renderer, rendererCodeHash);
         r.renderer = renderer;
         ++r.version;
         emit RendererRepinned(tokenId, previous, renderer, rendererCodeHash);
@@ -413,19 +468,25 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev The artist and the platform each have a quota of `MAX_LOCATORS_PER_FILE / 2` (8)
     ///      locators per file, so neither can exhaust the other's. A URI already registered for
     ///      the file is refused, compared as exact bytes; the set is shared, so whichever side
-    ///      adds a URI first holds it (it is listed either way).
+    ///      adds a URI first holds it (it is listed either way). After finalize only the platform
+    ///      adds locators, up to the file's 16 in all (the artist's unused slots included):
+    ///      "Final" fixes the content, and the copies of a finalized work are the platform's and
+    ///      the storage operator's to register and choose.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external {
-        _open(tokenId);
-        bool byArtist = _isArtist(tokenId, msg.sender);
+        // After finalize the call goes through the PLATFORM role only.
+        bool finalized = _open(tokenId).finalized;
+        bool byArtist = !finalized && _isArtist(tokenId, msg.sender);
         if (!byArtist) _checkCanCall(msg.sender, _msgData());
         _requireMedia(tokenId, fileId);
         _checkUri(locator);
         LocatorCounts storage counts = _locatorCounts[tokenId][fileId];
         mapping(bytes32 => bool) storage seen = _locatorUris[tokenId][fileId];
         bytes32 uriHash = keccak256(bytes(locator.uri));
-        if ((byArtist ? counts.artist : counts.platform) >= LOCATOR_QUOTA || seen[uriHash]) {
-            revert InvalidLocator();
-        }
+        uint256 used = byArtist ? counts.artist : counts.platform;
+        uint256 quota = LOCATOR_QUOTA;
+        // After finalize the artist adds none, so the platform may use the artist's unused slots.
+        if (finalized) (used, quota) = (used + counts.artist, Limits.MAX_LOCATORS_PER_FILE);
+        if (used >= quota || seen[uriHash]) revert InvalidLocator();
         seen[uriHash] = true;
         if (byArtist) ++counts.artist;
         else ++counts.platform;
@@ -522,12 +583,21 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     // -------------------------------------------------------------------------------- internal
 
+    /// @dev Records the code hash `renderer` is pinned with, the first time it is pinned. A
+    ///      renderer already pinned with another code hash is refused: its code changed since,
+    ///      and the works pinned to it must not run code their artists never signed for.
+    function _pinCode(address renderer, bytes32 codeHash) private {
+        bytes32 pinned = _rendererCodeHashes[renderer];
+        if (pinned == 0) _rendererCodeHashes[renderer] = codeHash;
+        else if (pinned != codeHash) revert InvalidRenderer(renderer);
+    }
+
     /// @dev The canonical key of `next`, or zero when it is the current license (a no-op).
-    ///      Reverts when leaving CC0 (CC0 to CC0 with another text file is a correction) or for
-    ///      an invalid identifier.
+    ///      Reverts when leaving CC0, when a CC0 license would name any text but the
+    ///      deployment's CC0 text, or for an invalid identifier.
     function _relicenseKey(uint256 tokenId, License memory previous, License calldata next)
         private
-        pure
+        view
         returns (bytes32 nextKey)
     {
         bytes32 previousKey = WorksHashing.licenseKey(previous.spdxId);
@@ -535,7 +605,10 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (nextKey == previousKey && next.textFileId == previous.textFileId) return 0;
         bytes32 cc0 = WorksHashing.CC0_LICENSE_KEY;
         if (previousKey == cc0 && nextKey != cc0) revert LicenseIrrevocable(tokenId);
-        if (!SpdxId.isValidCalldata(next.spdxId)) revert InvalidLicense();
+        if (
+            (nextKey == cc0 && next.textFileId != cc0TextFileId)
+                || !SpdxId.isValidCalldata(next.spdxId)
+        ) revert InvalidLicense();
     }
 
     function _relicenseHash(
@@ -693,6 +766,37 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         ) revert UnknownRecordFile(fileId);
     }
 
+    /// @dev The declared SHA-256 of a PREVIEW file of work `tokenId`. One the renderer can
+    ///      inline (`Identity` or `Base64`) must be within `Limits.MAX_PREVIEW_BYTES`, an
+    ///      `Identity` file counting four times; a gzip one is served by locator only.
+    function _previewSha(uint256 tokenId, bytes32 fileId) private view returns (bytes32 sha) {
+        uint256 length;
+        uint256 encoding;
+        (sha, length,, encoding) = _fileInfo(fileId);
+        if (encoding == uint256(IContentStore.Encoding.Identity)) length *= 4;
+        else if (encoding != uint256(IContentStore.Encoding.Base64)) length = 0;
+        if (length > Limits.MAX_PREVIEW_BYTES) revert InvalidRecordData(tokenId);
+    }
+
+    /// @dev A media file's declared SHA-256, stored length, chunk count and encoding, read in
+    ///      place from the trusted store's `fileInfo` answer as in `_checkRecordFile`. A store
+    ///      revert (`ContentFileUnknown` for an unregistered file) propagates.
+    function _fileInfo(bytes32 fileId)
+        private
+        view
+        returns (bytes32 sha, uint256 length, uint256 chunks, uint256 encoding)
+    {
+        (bool ok, bytes memory info) =
+            contentStore.staticcall(abi.encodeCall(IContentStore.fileInfo, (fileId)));
+        assembly ("memory-safe") {
+            if or(iszero(ok), lt(mload(info), 0xc0)) { revert(add(info, 0x20), mload(info)) }
+            sha := mload(add(info, 0x40))
+            length := mload(add(info, 0x60))
+            chunks := mload(add(info, 0x80))
+            encoding := mload(add(info, 0xa0))
+        }
+    }
+
     function _requireMedia(uint256 tokenId, bytes32 fileId) private view {
         bytes32[32] storage list = _media[tokenId];
         uint256 files = _records[tokenId].mediaCount;
@@ -702,24 +806,37 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         revert FileNotInWork(tokenId, fileId);
     }
 
-    /// @dev Locator URIs are printable ASCII without quotes, backslashes or angle brackets,
-    ///      after the kind's scheme: `ar://` or `ipfs://` (D11).
+    /// @dev A locator URI is a content address in its one canonical spelling, with nothing after
+    ///      it (no path, query or fragment), so what it names cannot be repointed (D11, ADR 0003
+    ///      "Locator kinds") and a copy has one URI:
+    ///      - ARWEAVE: `ar://` and a 43-character base64url transaction ID (32 bytes) whose last
+    ///        character's two padding bits are zero. The shape is checked, not that the ID
+    ///        exists: an ArNS base name is never 43 characters long, but an undername can be,
+    ///        so the storage operator serves only copies the off-chain monitor verified.
+    ///      - IPFS: `ipfs://` and a base32 CIDv1 of the fixed profile (ADR 0001 section 8): a
+    ///        raw leaf or a dag-pb root with a 32-byte sha2-256 multihash (`bafkrei` or
+    ///        `bafybei`, then a character in `a-h`), whose last character's two padding bits
+    ///        are zero; 66 bytes in all.
     function _checkUri(Locator calldata locator) private pure {
         bytes calldata uri = bytes(locator.uri);
+        uint256 chars = 0;
+        uint256 lasts = 0;
         uint256 start = 0;
-        if (locator.kind == LocatorKind.ARWEAVE && uri.length > 5 && bytes5(uri[:5]) == "ar://") {
-            start = 5;
-        } else if (
-            locator.kind == LocatorKind.IPFS && uri.length > 7 && bytes7(uri[:7]) == "ipfs://"
-        ) {
-            start = 7;
-        }
-        if (start == 0 || uri.length > Limits.MAX_URI_BYTES) revert InvalidLocator();
-        for (uint256 i = start; i < uri.length; ++i) {
-            bytes1 c = uri[i];
-            if (c < 0x21 || c > 0x7e || c == '"' || c == "\\" || c == "<" || c == ">") {
-                revert InvalidLocator();
+        if (locator.kind == LocatorKind.ARWEAVE) {
+            if (uri.length == 48 && bytes5(uri[:5]) == "ar://") {
+                (chars, lasts, start) = (TXID_CHARS, TXID_LAST, 5);
             }
+        } else if (locator.kind == LocatorKind.IPFS && uri.length == 66) {
+            bytes14 head = bytes14(uri[:14]);
+            if (
+                (head == "ipfs://bafkrei" || head == "ipfs://bafybei") && uri[14] >= "a"
+                    && uri[14] <= "h"
+            ) (chars, lasts, start) = (CID_CHARS, CID_LAST, 15);
+        }
+        // The last character's set is inside the charset, so the loop stops before it.
+        if (chars == 0 || (lasts >> uint8(uri[uri.length - 1])) & 1 == 0) revert InvalidLocator();
+        for (uint256 i = start; i < uri.length - 1; ++i) {
+            if ((chars >> uint8(uri[i])) & 1 == 0) revert InvalidLocator();
         }
     }
 

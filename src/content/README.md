@@ -352,11 +352,13 @@ Editions, which it recognises by ERC-165 and follows to the master through
 `masterOf`), that Stream's `IWorkRecords` satellite, the content store it was
 deployed with, and optionally the statement log's `latestDisputeOutcome`. Every
 read is a `BoundedCall` with its own gas cap and return-size cap, and a read that
-fails reverts with `RendererReadFailed(target, selector)`: a renderer never
-returns plausible metadata for a token it cannot read, and that includes the
-preferred locator, where a failure would otherwise silently drop the media. A
-hostile `token` can only change what its own call returns, so there is no list of
-tokens.
+fails reverts with `RendererReadFailed(target, selector)`: a renderer never returns
+plausible metadata for a token it cannot read, and that includes the preferred
+locator, where a failure would otherwise silently drop the media. A hostile `token`
+can only change what its own call returns, so there is no list of tokens. The gas
+caps are 300,000 for most reads and 1,000,000 for the media list, which the satellite
+builds with a content-store read per file: 195,000 gas fully cold at 32 files, so a
+repricing of cold reads leaves room (a finalized work pins its renderer).
 
 **Records that are not usable.** `openRecord` is permissionless and runs after the
 auction starts, and every satellite view reverts until it has. So the renderer
@@ -370,7 +372,7 @@ is not available." and a field that says why:
 | `record_status` | Meaning |
 | --- | --- |
 | `not_open` | `openRecord` has not run |
-| `incomplete` | the record file is not completely in the content store |
+| `incomplete` | the record file is not completely in the content store, or not registered there at all (an approved manifest nobody registered yet) |
 | `invalid` | the record breaks a rule below |
 
 The ARTIST seed is stored when the record opens, so it appears only after.
@@ -396,7 +398,7 @@ and copies validated JSON text, never decoded text:
 | `artists` (non-empty strings, at most 16) | one `Artist` trait each |
 | `year` (an integer, at most six digits) | the `Year` trait |
 | `medium`, `dimensions` (strings) | the `Medium` and `Dimensions` traits |
-| `attributes` (at most 32 objects, each with only the keys `trait_type`, `value`, `display_type` and `max_value`, each at most once, a string `trait_type` without a backslash and a string or number `value`) | its elements, as they are, after the renderer's own traits |
+| `attributes` (at most 32 objects, each with only the keys `trait_type`, `value`, `display_type` and `max_value`, each at most once, a printable ASCII `trait_type` without a backslash or two spaces in a row, and a string or number `value`) | its elements, as they are, after the renderer's own traits |
 | `dependencies` | validated; a script whose record declares any is not wrapped in the page. Anything but exactly `[]` counts as declaring one (so `[ ]` with a space is read as having dependencies): that fails safe, the script is served by locator |
 | any other member (`files`, ...) | validated and ignored |
 
@@ -429,12 +431,20 @@ nothing is guessed):
   `trait_type` and a string or number `value`, an attribute with a key other than
   `trait_type`, `value`, `display_type` and `max_value` (the keys OpenSea documents,
   so an attribute has at most four members) or with the same key twice (so
-  `display_type` cannot be said twice and read two ways), or a `trait_type` with a
-  backslash or that is one of the names the
-  renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`, `Dimensions`,
-  `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`): those traits
-  are the only ones the renderer vouches for, and a name with a backslash could be
-  one of them spelled with an escape;
+  `display_type` cannot be said twice and read two ways), or a `trait_type` that is
+  not printable ASCII, has a backslash or two spaces in a row, or is one of the names
+  the renderer writes itself (`Artist`, `Artist ID`, `Year`, `Medium`, `Dimensions`,
+  `Collection`, `Serial`, `Edition of`, `Seed`, `Dispute statement`) in any case and
+  with or without spaces (`SEED`, `Serial `, `ArtistID` included). Those traits are
+  the only ones the renderer vouches for, so a record may not show a look-alike:
+  - an escape could spell any name, so no backslash;
+  - a letter of another script (a Cyrillic `е`), an invisible character (U+200B) or
+    a no-break space displays like Latin text, so names are printable ASCII (values
+    may be any UTF-8);
+  - what is left is case and spacing, which the comparison ignores, and displays
+    collapse runs of spaces, so two in a row are refused. ASCII letters that only
+    some fonts draw alike (`l` and `I`, `0` and `O`) remain: the renderer's own
+    traits come first in the list, and the record is the artist's own;
 - more than 512 `%` and `#` characters (`MAX_ESCAPES`).
 
 **Why these bounds.** The cost of a record has to be bounded whatever its bytes,
@@ -454,7 +464,7 @@ Measured on a record of 12 KiB of one kind of byte (the bytes, not the media):
 | a unit (value, key or escape), top-level members dearest | 1,000 to 1,500 | 1,024 together |
 | a `%` or `#` | 470 | 512 |
 | an attribute (its nine units, and a second walk over it) | 27,000 | 32 |
-| a byte of an attribute name (read once, for a backslash) | 3 | the size |
+| a byte of an attribute name (read a word at a time; a name of at most 33 bytes is also read byte by byte to compare it, about 100 gas a byte) | 3 | the size |
 
 A record is validated once, and the pieces the renderer needs are found by walking
 it again without checking. The caps are chosen together, not one at a time: a
@@ -462,7 +472,9 @@ record at every cap at once (32 attributes of four members, 512 `%`, the rest of
 the units as top-level members, an array or a nested object, and the rest of its
 12 KiB the costliest mix of UTF-8, or white space in the attributes) costs at most
 7.8M gas with 256 KiB of attested `Base64` next to it and 6.4M with the dearest
-script; those are the rows of `RendererGasBudgetTest`, the budget proof (see Gas). Because the whole file is
+script; those are the rows of `RendererGasBudgetTest`, the record matrix, and the
+dearest of them are measured again on the real stack, with every other cap at once,
+by the budget proof (see Gas). Because the whole file is
 percent-escaped first, `%` and `#` inside it survive the URI.
 
 ### Output
@@ -523,7 +535,12 @@ name, a license identifier, a MIME type, a URL) is checked as UTF-8, escaped by
 - **Fields.** `image` is the primary when it is an image and inlined; otherwise the
   on-chain preview if the work lists a `PREVIEW` image that is complete, attested if
   `Base64`, and within `PREVIEW_LIMIT` (65,536, cost-weighted like the threshold),
-  else the primary's locator for an image, else the preview's locator.
+  else the primary's locator for an image, else the preview's locator. A 6529 Stream
+  work's previews are smaller still: `WorkRecords.openRecord` refuses an `Identity` or
+  `Base64` `PREVIEW` file over `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity`
+  file counting four times, so 4 KiB of `Identity` or 16 KiB of `Base64` text), which
+  keeps the budget below. A larger preview, such as a video, belongs in the media list
+  as an `AUXILIARY` file.
   `animation_url` is the primary when it is not an image (inline, or its locator).
   `media_url` is the primary's preferred locator whenever the primary is not
   inlined.
@@ -610,14 +627,52 @@ read, for the dearest to validate (8 KiB of ASCII and U+0800 alternating). A scr
 over the size or the `<` cap is served by locator by `tokenURI` (0.6M); `fullTokenURI`
 wraps a script up to 128 KiB (its limit is the size check of the full form).
 
-**The budget proof.** A record at every cap at once, with the dearest media: a
+**The budget proof** is `test/integration/TokenUriBudget.t.sol`, on the real stack
+(Stream, WorkRecords, the content store, the statement log and this renderer, as
+deployed): every cap a work can reach at once, measured cold through
+`Stream.tokenURI` and `Editions.uri`. The dearest records of the matrix below (white
+space in all the room the attributes leave, before each or after every token, with
+top-level members or an array of zeros, and the dearest UTF-8 fill), each attribute
+named with 33 characters (the longest name the renderer compares letter by letter
+with its own), next to 256 KiB
+of attested `Base64` `text/html` (inlined), a `PREVIEW` image at the WorkRecords cap
+(4 KiB of `Identity` or 16 KiB of attested `Base64`, inlined), 32 media files, a
+64-byte `LicenseRef` license whose text file is served by locator, 16 locators on it
+(the longest, 66 bytes, served last), the dearest collection name 6529 Stream accepts,
+an ARTIST seed and a dispute statement. The name is 85 U+2028 and a `#`: JSON
+escaping makes each U+2028 six bytes (`\u2028`). `createCollection` refuses the
+names that escape longer, with control characters, `<`, `"` or `\`. 256 `%` or `#`
+cost about 0.08M less, plain ASCII about 0.2M less.
+
+| Row | Gas |
+| --- | --- |
+| white space before each attribute, an array of zeros, rendered as the edition of its master (`Editions.uri`, the dearest) | 7.79M |
+| the same, through `Stream.tokenURI` | 7.78M |
+| the same, the preview as 16 KiB of `Base64` | 7.69M |
+| white space after every token, an array of zeros | 7.78M |
+| white space before each attribute, top-level members | 7.76M |
+| `aa` and a 2-byte sequence, an array of zeros | 7.47M |
+
+These are Prague gas, as ADR 0004 defines the budget. The highest `tokenURI` found,
+by the review of this proof with the same shape, is 7,796,194 gas: about 2.5% (about
+204,000 gas) under 8M. Reads are not repriced on Sepolia's Glamsterdam, but the
+margin is small: re-measure it whenever a fork (Glamsterdam on mainnet or a later
+one) reprices compute, memory or cold reads.
+
+The WorkRecords caps are what make it hold. Without them the same work cost up to
+9.8M: a locator could be 2 KiB of `%` (each escaped at about 470 gas), and a preview
+up to the renderer's own limit (8 KiB of `Identity` or 64 KiB of `Base64`, up to 1.2M
+more).
+
+**The record matrix.** A record at every cap at once, with the dearest media: a
 non-image primary of 256 KiB attested `Base64`, the script of `</script` with the most
-`<`, or a script of ASCII and U+0800, an 8 KiB `Identity` preview, a collection whose
+`<`, or a script of ASCII and U+0800, an 8 KiB `Identity` preview (the renderer's own
+limit, above what WorkRecords lets a work have), a collection whose
 name is all `%`, a seed, a dispute and a `LicenseRef` license with a text file and a
 locator. The record is 12 KiB with 32 attributes of four members (the most each may
 have), 512 `%` and the rest of the 1,024 units as top-level members, an array of zeros
 or members of a nested object, and the rest of its bytes one fill. All are accepted,
-cold, and asserted under 8M by `RendererGasBudgetTest`:
+cold, and asserted under 8M by `RendererGasBudgetTest`, with the mocks:
 
 | The fill of the rest of the record (top-level members) | 256 KiB `Base64` | script of `a` and U+0800 |
 | --- | --- | --- |
@@ -652,10 +707,8 @@ KiB of `Base64` or the script of `</script` (asserted at most 8M by
 | 1,024 units, in an array of zeros | 4.8M | 3.5M |
 | 340 top-level members | 4.7M | 3.5M |
 | 32 attributes of four members and 727 more units | 5.6M | 4.3M |
-| 32 attributes with 132-byte names | 4.6M | 3.3M |
-| the same, 16 `%` in each name | 4.9M | 3.5M |
-| the same, names of 2-byte UTF-8 | 5.0M | 3.7M |
-| the same, 2-byte UTF-8 and 16 `%` in each name | 5.3M | 3.9M |
+| 32 attributes with 132-byte names | 4.7M | 3.3M |
+| the same, 16 `%` in each name | 5.0M | 3.6M |
 | 512 `%`, one every sixth byte | 4.7M | 3.2M |
 | 1,018 `\\` escapes in 12 KiB of text | 4.8M | 3.3M |
 | 1,018 `\u00e9` escapes in 12 KiB of text | 5.6M | 4.1M |
@@ -666,7 +719,8 @@ KiB of `Base64` or the script of `</script` (asserted at most 8M by
 and refused records stay cheap, since the scan stops at the first fault: 12 KiB of
 escapes (over the budget) 1.2M to 2.0M, of `\u0000` 0.6M, of `%` past the cap 0.6M,
 arrays of zeros or `[]` 1.5M to 1.7M, empty or tiny members 1.5M to 1.6M, 33
-attributes 0.9M, attribute names with a backslash 1.1M, and an attribute with a
+attributes 0.9M, attribute names with a backslash 1.1M, names of 2-byte UTF-8 (not
+ASCII) 1.6M, or with 16 `%` each as well 1.8M, and an attribute with a
 fifth key found only at the last of 32 (the check, then the walk to the end, with the
 record full of white space) 2.6M. Every figure includes
 the mocks' own reads.
@@ -685,6 +739,7 @@ the mocks' own reads.
 - **Core-only metadata** (a record that is not usable) has no ARTIST seed, because
   that seed is stored when the record opens.
 - **Records are bounded**: 12 KiB, 1,024 units (values, keys and escapes), 32
-  attributes with only the four OpenSea keys, 512 `%` or `#`, numbers of 24 bytes. A work
+  attributes with only the four OpenSea keys and printable ASCII names, 512 `%` or
+  `#`, numbers of 24 bytes. A work
   whose record needs more should keep the rest in the files the record points to,
   and write non-ASCII text as UTF-8 rather than `\uXXXX` escapes.

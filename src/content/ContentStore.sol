@@ -135,8 +135,11 @@ contract ContentStore is IContentStore {
     }
 
     /// @inheritdoc IContentStore
-    function sha256Of(bytes32 fileId) external view returns (bytes32) {
-        return _file(fileId).sha256Hash;
+    /// @dev One storage read: registration requires a nonzero digest, so a zero one is an
+    ///      unknown file (`_file` reads the length word instead).
+    function sha256Of(bytes32 fileId) external view returns (bytes32 sha) {
+        sha = _files[fileId].sha256Hash;
+        if (sha == 0) revert ContentFileUnknown(fileId);
     }
 
     /// @inheritdoc IContentStore

@@ -34,26 +34,27 @@ import { JsonScan } from "./JsonScan.sol";
 ///      closed).
 ///
 ///      The record. A work's descriptive record is a JSON file in the content store (stored as
-///      `Identity`, at most `MAX_RECORD_BYTES`). The renderer reads it, checks it as UTF-8 and
-///      with `JsonScan`, and copies the validated JSON text of `name`, `description`, `year`,
-///      `medium`, `dimensions` and each of `artists` into the metadata (the `attributes` array
-///      goes in as it is, after the renderer's own traits; other members are validated and
-///      ignored). Until the work's record is open (`IWorkRecords.isOpen`) and its file is
-///      complete, or when it is not acceptable, the work gets core-only metadata from Stream with
-///      a `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a
-///      revert; `fullTokenURI` reverts for such a work. A record is not acceptable if it is not
-///      `Identity`, is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a
-///      backslash, no `\u0000`, lone surrogate or bad hex digit in an escape, no number of more
-///      than 24 bytes or with more than two exponent digits, at most `JsonScan.MAX_VALUES`
-///      units (values, keys and escapes), eight levels), has no name or a wrong type, lists
-///      more than `MAX_ARTISTS` artists or `MAX_ATTRIBUTES` attributes, holds more than
-///      `MAX_ESCAPES` `%` and `#`, gives a `year` that is not an integer of at most six digits,
-///      or has an attribute that is not an object whose members are only `trait_type`, `value`,
-///      `display_type` and `max_value`, each at most once, with a string `trait_type` and a
-///      string or number `value`, or whose name has a backslash or is one the renderer writes
-///      itself. These bounds are chosen together, so that a record at every one of them at once
-///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class
-///      of byte, and the budget proof, every cap at once).
+///      `Identity`, at most `MAX_RECORD_BYTES`). The renderer reads it, checks it as UTF-8 and with
+///      `JsonScan`, and copies the validated JSON text of `name`, `description`, `year`, `medium`,
+///      `dimensions` and each of `artists` into the metadata (the `attributes` array goes in as it
+///      is, after the renderer's own traits; other members are validated and ignored). Until the
+///      work's record is open (`IWorkRecords.isOpen`) and its file is registered and complete, or
+///      when it is not acceptable, the work gets core-only metadata from Stream with a
+///      `record_status` field (`not_open`, `incomplete` or `invalid`) instead, and never a revert;
+///      `fullTokenURI` reverts for such a work. A record is not acceptable if it is not `Identity`,
+///      is over `MAX_RECORD_BYTES` (12 KiB), is not UTF-8 or JSON (no key with a backslash, no
+///      `\u0000`, lone surrogate or bad hex digit in an escape, no number of more than 24 bytes or
+///      with more than two exponent digits, at most `JsonScan.MAX_VALUES` units (values, keys and
+///      escapes), eight levels), has no name or a wrong type, lists more than `MAX_ARTISTS` artists
+///      or `MAX_ATTRIBUTES` attributes, holds more than `MAX_ESCAPES` `%` and `#`, gives a `year`
+///      that is not an integer of at most six digits, or has an attribute that is not an object
+///      whose members are only `trait_type`, `value`, `display_type` and `max_value`, each at most
+///      once, with a string `trait_type` and a string or number `value`, or whose name is not
+///      printable ASCII, has a backslash or is one the renderer writes itself in any case or
+///      spacing. These bounds are chosen together, so that a record at every one of them at once
+///      still costs under 8M gas, whatever its bytes (`RendererGas.t.sol`: a row for every class of
+///      byte, and every cap at once; `TokenUriBudget.t.sol`: the budget proof on the real stack,
+///      with the records satellite's caps).
 ///
 ///      Output is `data:application/json;utf8,` followed by compact JSON, not base64, so the
 ///      media is not encoded twice. Every string from the Stream, a locator or the store is
@@ -116,8 +117,12 @@ contract Renderer is IRenderer {
     uint256 public immutable inlineThreshold;
 
     /// @dev Gas caps per read. A read gets exactly its cap (BoundedCall), so these bound the
-    ///      cost of a hostile or broken target; they are ceilings, not estimates.
+    ///      cost of a hostile or broken target; they are ceilings, not estimates. The media list
+    ///      has its own: the satellite reads the store once per file, under 200,000 gas fully
+    ///      cold at 32 files, and its cap leaves room for a repricing of cold reads, which would
+    ///      otherwise break every large work's `tokenURI` (a finalized work pins its renderer).
     uint256 private constant SMALL_GAS = 300_000;
+    uint256 private constant MEDIA_GAS = 1_000_000;
     uint256 private constant CHUNK_GAS = 300_000;
     uint256 private constant COMPLETE_GAS = 700_000;
     /// @dev Gas the renderer needs after any one read returns (checked before the read).
@@ -320,7 +325,7 @@ contract Renderer is IRenderer {
                 c.records,
                 IWorkRecords.mediaOf.selector,
                 c.workId,
-                SMALL_GAS,
+                MEDIA_GAS,
                 64 + 96 * Limits.MAX_MEDIA_FILES
             ),
             (MediaFile[])
@@ -334,10 +339,21 @@ contract Renderer is IRenderer {
 
     /// @dev The record JSON, percent-escaped, and whether it is ready: not if its file is not
     ///      complete yet, and never if it is not `Identity`, is over one chunk, is not UTF-8, or
-    ///      holds too many `%` and `#` to escape within the gas budget.
+    ///      holds too many `%` and `#` to escape within the gas budget. A record file the store
+    ///      does not answer for (an approved one whose manifest was never registered) is not
+    ///      complete either: the store answered for the primary file in this same call, so the
+    ///      failure is the unknown file, not a broken store.
     function _record(Ctx memory c) private view returns (RecordState, bytes memory j) {
         bytes32 id = c.rec.recordFileId;
-        IContentStore.FileInfo memory fi = _fileInfo(id);
+        (bool known, bytes memory info) = BoundedCall.tryRead(
+            address(contentStore),
+            abi.encodeWithSelector(IContentStore.fileInfo.selector, id),
+            SMALL_GAS,
+            512,
+            AFTER_GAS
+        );
+        if (!known) return (RecordState.Incomplete, j);
+        IContentStore.FileInfo memory fi = abi.decode(info, (IContentStore.FileInfo));
         if (fi.encoding != IContentStore.Encoding.Identity || fi.length > MAX_RECORD_BYTES) {
             return (RecordState.Invalid, j);
         }
@@ -410,8 +426,9 @@ contract Renderer is IRenderer {
 
     /// @dev The inside of the record's `attributes` array, if every element is an object of the
     ///      OpenSea attribute keys only (`trait_type`, `value`, `display_type`, `max_value`, each
-    ///      at most once), with a string `trait_type` that is not one of the renderer's own and a
-    ///      string or number `value`. The renderer's traits are the only ones it vouches for.
+    ///      at most once), with a printable ASCII `trait_type` that is not one of the renderer's
+    ///      own (`_reserved`) and a string or number `value`. The renderer's traits are the only
+    ///      ones it vouches for.
     function _attributes(bytes memory j, uint256 span) private pure returns (bool, bytes memory) {
         bytes32[] memory keys = new bytes32[](4);
         bytes32 k0 = keccak256("trait_type");
@@ -438,41 +455,80 @@ contract Renderer is IRenderer {
         return (ok, a.length == 0 ? bytes("") : JsonScan.slice(j, (start << 128) | end));
     }
 
-    /// @dev Whether the quoted trait name `t` (a span, so never empty) is not a string, holds a
-    ///      backslash (as a key may not: an escape could spell a reserved name), or is one of the
-    ///      names the renderer uses itself, by the first four bytes of its hash. Those are all at
-    ///      most 19 bytes with their quotes, so only a name that short is hashed: the cost is one
-    ///      pass over the bytes a word at a time (about 3 gas a byte), not a read per byte. A
-    ///      clash with another name only makes that record render core-only, so four bytes are
-    ///      enough.
+    /// @dev Whether the quoted trait name `t` (a span, so never empty) is unacceptable: not a
+    ///      string; not printable ASCII (a letter of another script, an invisible character or a
+    ///      no-break space can make a name display like another); a backslash (an escape could
+    ///      spell any name); two spaces in a row (displays collapse them); or one of the names
+    ///      the renderer writes itself, in any case and with any spaces (so `SEED`, `Serial `
+    ///      and `ArtistID` are refused). With the rest refused, case and spacing are the only
+    ///      ways left for a name to look like a reserved one.
+    ///
+    ///      The bytes are checked a word at a time (a few gas a byte): with `x = word ^ (b *
+    ///      ones)`, `~(((x & 0x7f..) + 0x7f..) | x) & 0x80..` marks the top bit of exactly the
+    ///      bytes equal to `b`. A name of more than 33 bytes holds at least 17 other characters
+    ///      than spaces (no two spaces in a row), more than any reserved name, so only a shorter
+    ///      one is compared: its characters other than spaces, lowered (OR 0x20 lowers a letter
+    ///      and turns no other printable byte into one), by the first four bytes of their hash.
+    ///      A clash with another name only makes that record render core-only, so four bytes
+    ///      are enough.
     function _reserved(bytes memory t) private pure returns (bool bad) {
-        uint256 n = t.length;
         assembly ("memory-safe") {
             let p := add(t, 0x20)
-            bad := iszero(eq(byte(0, mload(p)), 0x22))
-            // A word at a time: x has a zero byte exactly at each backslash, and
-            // ((x & 0x7f..) + 0x7f..) | x has the top bit set in every other byte.
+            let e := add(p, mload(t))
             let ones := div(not(0), 255)
-            for { let e := add(p, n) } lt(p, e) { p := add(p, 32) } {
-                let x := xor(mload(p), mul(ones, 0x5c))
-                let z :=
-                    and(not(or(add(and(x, mul(ones, 0x7f)), mul(ones, 0x7f)), x)), shl(7, ones))
+            let high := shl(7, ones)
+            let low := mul(ones, 0x7f)
+            bad := iszero(eq(byte(0, mload(p)), 0x22))
+            let spaces := 0
+            for { let q := p } and(iszero(bad), lt(q, e)) { q := add(q, 32) } {
+                let w := mload(q)
+                let x := xor(w, mul(ones, 0x20))
+                let s := and(not(or(add(and(x, low), low), x)), high)
+                // Two spaces in a row, in this word or across from the last word's last byte.
+                let z := and(s, or(shl(8, s), shl(248, spaces)))
+                spaces := s
+                // A byte of 0x80 or more, a backslash or DEL.
+                x := xor(w, mul(ones, 0x5c))
+                let y := xor(w, low)
+                z := or(
+                    or(z, and(w, high)),
+                    and(not(and(or(add(and(x, low), low), x), or(add(and(y, low), low), y))), high)
+                )
                 // The bytes at and after `e` are not part of the name.
-                if lt(sub(e, p), 32) { z := and(z, not(shr(shl(3, sub(e, p)), not(0)))) }
-                if z {
-                    bad := 1
-                    break
+                if lt(sub(e, q), 32) { z := and(z, not(shr(shl(3, sub(e, q)), not(0)))) }
+                bad := iszero(iszero(z))
+            }
+            if and(iszero(bad), lt(mload(t), 36)) {
+                // Scratch space holds the lowered letters.
+                let k := 0
+                for { let q := add(p, 1) } lt(q, sub(e, 1)) { q := add(q, 1) } {
+                    let c := byte(0, mload(q))
+                    if xor(c, 0x20) {
+                        mstore8(k, or(c, 0x20))
+                        k := add(k, 1)
+                    }
+                }
+                if lt(k, 17) {
+                    // `bytes4(keccak256(name))` of each name the renderer writes, lowered and
+                    // without spaces: "artist", "artistid", "year", "medium", "dimensions",
+                    // "collection", "serial", "editionof", "seed", "disputestatement". (A test
+                    // checks every one.)
+                    let h := shr(224, keccak256(0, k))
+                    bad := or(
+                        or(
+                            or(
+                                or(eq(h, 0xf8c87671), eq(h, 0x0dda829c)),
+                                or(eq(h, 0xb4c11afb), eq(h, 0x3ab0b674))
+                            ),
+                            or(
+                                or(eq(h, 0xd59243b9), eq(h, 0xa77d3cda)),
+                                or(eq(h, 0x077e5ff4), eq(h, 0x63553a94))
+                            )
+                        ),
+                        or(eq(h, 0x66a80b61), eq(h, 0xad290f14))
+                    )
                 }
             }
-        }
-        if (!bad && n <= 19) {
-            // `bytes4(keccak256(name))` of each quoted trait name the renderer writes itself:
-            // "Artist", "Artist ID", "Year", "Medium", "Dimensions", "Collection", "Serial",
-            // "Edition of", "Seed", "Dispute statement". (A test checks every one.)
-            bytes4 h = bytes4(keccak256(t));
-            bad = h == 0xa685b276 || h == 0x4efd9a81 || h == 0x2b90e9a0 || h == 0x48d25b09
-                || h == 0xc1703126 || h == 0x3b9b07f9 || h == 0xe7eb4234 || h == 0xfc75eca5
-                || h == 0x8781d344 || h == 0x46a5ab8c;
         }
     }
 
@@ -514,7 +570,7 @@ contract Renderer is IRenderer {
         Media memory p = _primary(c);
         Media memory v = _preview(c);
         if (p.mode == Mode.Locator) m[2] = p;
-        if (_startsWith(bytes(c.primary.mimeType), "image/")) {
+        if (_isImage(c.primary.mimeType)) {
             m[0] = p.mode >= Mode.Data || v.mode == Mode.None ? p : v;
         } else {
             (m[0], m[1]) = (v, p);
@@ -537,7 +593,7 @@ contract Renderer is IRenderer {
             if (c.media[i].role != FileRole.PREVIEW) continue;
             bytes32 id = c.media[i].fileId;
             IContentStore.FileInfo memory fi = _fileInfo(id);
-            if (!_startsWith(bytes(fi.mimeType), "image/")) return m;
+            if (!_isImage(fi.mimeType)) return m;
             if (_weight(fi) <= PREVIEW_LIMIT && _complete(id)) {
                 m = _inline(c, id, fi, false);
                 if (m.mode != Mode.None) return m;
@@ -975,12 +1031,12 @@ contract Renderer is IRenderer {
         return h == keccak256("text/javascript") || h == keccak256("application/javascript");
     }
 
-    function _startsWith(bytes memory s, bytes memory prefix) private pure returns (bool) {
-        if (s.length < prefix.length) return false;
-        for (uint256 i; i < prefix.length; ++i) {
-            if (s[i] != prefix[i]) return false;
+    /// @dev Whether a MIME type is `image/*`. The store's MIME types are lowercase, so this is
+    ///      one comparison of the first six bytes.
+    function _isImage(string memory mime) private pure returns (bool yes) {
+        assembly ("memory-safe") {
+            yes := and(gt(mload(mime), 5), eq(shr(208, mload(add(mime, 0x20))), 0x696d6167652f))
         }
-        return true;
     }
 
     function _ptr(bytes memory b) private pure returns (uint256 p) {

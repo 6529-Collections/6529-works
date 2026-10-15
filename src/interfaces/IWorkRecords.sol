@@ -61,6 +61,9 @@ interface IWorkRecords {
     event WorkFinalized(uint256 indexed tokenId, address renderer, bytes32 stateHash);
     /// @notice Every media file of the work is stored on-chain; on-chain bytes are permanent.
     event WorkOnChainComplete(uint256 indexed tokenId);
+    /// @notice `syncOnChain` found the work's first `files` media files complete and stopped at
+    ///         its chunk budget; the next call resumes there.
+    event OnChainSyncProgress(uint256 indexed tokenId, uint256 files);
     /// @notice A work's license changed, by every party's agreement plus a governed action.
     event LicenseChanged(uint256 indexed tokenId, License previous, License next);
     /// @notice A work's royalty rate changed, by every party's agreement plus a governed action
@@ -109,22 +112,25 @@ interface IWorkRecords {
     error LicenseIrrevocable(uint256 tokenId);
     /// @notice The file is not one of the work's media files.
     error FileNotInWork(uint256 tokenId, bytes32 fileId);
-    /// @notice The locator kind is NONE or ONCHAIN, the URI is malformed or already registered for
-    ///         the file, or the caller's quota for the file (the artist's or the platform's half
-    ///         of `Limits.MAX_LOCATORS_PER_FILE`) is used up.
+    /// @notice The locator kind is NONE or ONCHAIN, the URI is not a content address of its kind
+    ///         (see `Locator`) or is already registered for the file, or the caller's quota for
+    ///         the file (the artist's or the platform's half of `Limits.MAX_LOCATORS_PER_FILE`)
+    ///         is used up.
     error InvalidLocator();
     /// @notice A media file still lacks chunks in the content store.
     error NotOnChainComplete(uint256 tokenId);
     /// @notice The renderer lacks ERC-165 support for `IRenderer` or the code hash, or is an
-    ///         EIP-7702 delegated account.
+    ///         EIP-7702 delegated account; or its code is no longer the code hash it was pinned
+    ///         with.
     error InvalidRenderer(address renderer);
     /// @notice An installed dependency lacks code, ERC-165 support or the expected code hash, or
     ///         is an EIP-7702 delegated account.
     error InvalidDependency(address dependency);
     /// @notice The license ID is empty, too long or outside `[A-Za-z0-9.+-]`, the deployment's
-    ///         default license is not CC0, a license text file declares no SHA-256, or a license
-    ///         text that must be permanent (at finalize, or relicensing a finalized work) is not
-    ///         complete on-chain.
+    ///         default license is not CC0, a license text file declares no SHA-256, a CC0 license
+    ///         (at `openRecord` or a relicense) names a text other than the deployment's CC0
+    ///         text, or a license text that must be permanent (at finalize, or relicensing a
+    ///         finalized work) is not complete on-chain.
     error InvalidLicense();
     /// @notice The work is not finalized (an errata repin needs a finalized work).
     error WorkNotFinalized(uint256 tokenId);
@@ -136,12 +142,17 @@ interface IWorkRecords {
 
     /// @notice Opens a work's record from its approved item and media. Permissionless (off the
     ///         auction-start path). Checks the item against Stream's stored item hash, `media`
-    ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`, and
-    ///         each file's declared SHA-256 against `IContentStore.sha256Of`; stores the record
+    ///         against `item.mediaHash`, the first file's SHA-256 against `item.contentHash`,
+    ///         each file's declared SHA-256 against `IContentStore.sha256Of`, and the size of
+    ///         each PREVIEW file stored as `Identity` or `Base64` against
+    ///         `Limits.MAX_PREVIEW_BYTES` (an `Identity` file counting four times, so `tokenURI`
+    ///         keeps its 8M budget); stores the record
     ///         file ID, the media file IDs, an ARTIST seed and a non-CC0 license as approved.
     ///         Neither the record file's bounds nor the license text are checked here, so
     ///         neither can freeze a minted work: `setRecord` corrects a record before finalize,
-    ///         and `finalize` enforces both.
+    ///         and `finalize` enforces both. The exception is CC0, which can never be left or
+    ///         corrected: a license whose key is CC0 must name the deployment's CC0 text
+    ///         (`InvalidLicense`).
     /// @dev The media commitments are not visible at mint, so a mis-committed item mints and can
     ///      never open: the curation signer's tooling MUST simulate `openRecord` for an item
     ///      before attesting it. The license ID is checked at mint by 6529 Stream.
@@ -158,6 +169,11 @@ interface IWorkRecords {
     function finalize(uint256 tokenId, bytes32 expectedStateHash) external;
     /// @notice Marks the work on-chain complete once every media file is complete in the
     ///         content store. Permissionless and one-way; does not change the state hash.
+    ///         Resumable: a call checks whole files, in media order, up to a budget of 512
+    ///         chunks (a file of up to 512 always fits), keeps its place and emits
+    ///         `OnChainSyncProgress` when the budget stops it, so a work of any size completes
+    ///         over calls that each fit the EIP-7825 cap. Reverts with `NotOnChainComplete` at
+    ///         the first file it finds incomplete (earlier calls' progress stays).
     function syncOnChain(uint256 tokenId) external;
 
     /// @notice Whether a work's record is open. Never reverts.
@@ -170,7 +186,11 @@ interface IWorkRecords {
     function licenseOf(uint256 tokenId) external view returns (License memory);
     /// @notice The hash every finalize and signature binds to.
     function workStateHash(uint256 tokenId) external view returns (bytes32);
-    /// @notice The pinned renderer of a finalized work, or zero.
+    /// @notice The pinned renderer of a finalized work, or zero. Reverts with `InvalidRenderer`
+    ///         when the renderer's code is no longer the code hash it was first pinned with
+    ///         (finalize pins the default renderer as Stream checked it; the errata repin pins
+    ///         the hash the artist signed), so 6529 Stream's `tokenURI` fails closed until the
+    ///         errata repin installs a renderer again.
     function pinnedRenderer(uint256 tokenId) external view returns (address);
     /// @notice The work's seed: ARTIST seeds stored at `openRecord`, VRF seeds from the entropy
     ///         module by item hash, zero for NONE.
@@ -181,8 +201,10 @@ interface IWorkRecords {
     /// @notice Changes a work's license toward more permissive terms. PARAMETER_SETTER role plus
     ///         an EIP-712 `Typehashes.RELICENSE` signature from every party of `item`, in order,
     ///         each by its current authority. Reverts with `LicenseIrrevocable` when the current
-    ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not (a CC0 work may
-    ///         correct its text file). The new license's text file must be registered in the
+    ///         license key is `WorksHashing.CC0_LICENSE_KEY` and `next`'s is not. A CC0 license
+    ///         names the deployment's CC0 text (`InvalidLicense` otherwise), as `openRecord`
+    ///         requires too, so a CC0 work's license never changes. The new license's text file
+    ///         must be registered in the
     ///         content store, and complete on-chain for a finalized work. Only CC0
     ///         irrevocability is enforced on-chain; whether `next` is more permissive rests with
     ///         the consents and the governed action.
@@ -224,10 +246,16 @@ interface IWorkRecords {
 
     /// @notice Appends an ARWEAVE or IPFS locator for one of the work's media files. Callable by
     ///         the artist or the PLATFORM role, also after finalize (delivery routing stays
-    ///         operable). At most `Limits.MAX_URI_BYTES` per URI. Each file takes at most half
-    ///         of `Limits.MAX_LOCATORS_PER_FILE` (8) from the artist and half from the platform,
-    ///         so neither can exhaust the other's, and a URI already registered for the file is
-    ///         refused (`InvalidLocator`).
+    ///         operable). The URI must be a content address with nothing after it: `ar://` and
+    ///         a 43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile (see
+    ///         `Locator`). Each file takes at most half of `Limits.MAX_LOCATORS_PER_FILE` (8)
+    ///         from the artist and half from the platform, so neither can exhaust the other's,
+    ///         and a URI already registered for the file is refused (`InvalidLocator`). After
+    ///         finalize only the PLATFORM role adds locators (the artist's call is then
+    ///         unauthorized): "Final" fixes the content, and since the content a locator names
+    ///         is not verified on-chain, a finalized work's copies are the platform's to
+    ///         register and the storage operator's to choose. The platform may then use the
+    ///         file's whole `Limits.MAX_LOCATORS_PER_FILE`, the artist's unused slots included.
     function addLocator(uint256 tokenId, bytes32 fileId, Locator calldata locator) external;
     /// @notice A file's registered locators, in registration order.
     function locators(uint256 tokenId, bytes32 fileId) external view returns (Locator[] memory);

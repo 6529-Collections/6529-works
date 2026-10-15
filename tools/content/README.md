@@ -446,6 +446,18 @@ themselves:
   needs two) and checks `isBase64Attested`, and confirms the contract refuses
   texts the tool refuses, with the error and chunk predicted.
 
+- **Renderer oracles** in [`oracles.py`](oracles.py): differential vectors for
+  the renderer's text checks, decided outside Solidity: CPython's strict `json`
+  for `JsonScan`, its strict UTF-8 decoder for `Utf8`, a mirror of
+  `HtmlScript.neutralize` whose every output a transcription of the WHATWG
+  tokenizer's script-data states shows closing at the renderer's own
+  `</script>`, and the trait-name rule. They are written from a fixed seed to
+  [`test/fixtures/oracles/`](../../test/fixtures/oracles) and checked by
+  [`RendererOracles.t.sol`](../../test/content/renderer/RendererOracles.t.sol),
+  which reads them at test time (compiled into Solidity, they would take minutes
+  to build). `python -m tools.content.oracles --write` regenerates them, and
+  `test_oracles.py` fails if they are stale.
+
 Regenerate after changing the vectors or the gas model, and commit the result:
 
 ```bash

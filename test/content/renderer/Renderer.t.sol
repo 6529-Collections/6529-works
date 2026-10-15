@@ -507,20 +507,20 @@ contract RendererTest is RendererBase {
         assertEq(_str(_out(), ".name"), "N");
     }
 
-    function test_Record_NotAFileTheStoreKnowsFailsClosed() public {
+    /// @dev CONTENT-2: a record file the store does not know (an approved manifest never
+    ///      registered) is not complete: core-only metadata, never a revert. The primary file's
+    ///      own read still fails closed (`test_Store_AnOversizedFileInfoFailsClosed`).
+    function test_Record_NotAFileTheStoreKnowsIsIncomplete() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         _install(file);
         IWorkRecords.RecordInfo memory info = _info();
         info.recordFileId = bytes32(uint256(0xdead));
         _setRecordInfo(info);
+        _assertCoreOnly("incomplete");
         vm.expectRevert(
-            abi.encodeWithSelector(
-                Renderer.RendererReadFailed.selector,
-                address(store),
-                IContentStore.fileInfo.selector
-            )
+            abi.encodeWithSelector(Renderer.RendererNotInlineable.selector, address(stream), ID)
         );
-        renderer.tokenURI(address(stream), ID);
+        renderer.fullTokenURI(address(stream), ID);
     }
 
     // ---------------------------------------------------------------- escaping and UTF-8

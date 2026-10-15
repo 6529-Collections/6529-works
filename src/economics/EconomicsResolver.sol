@@ -16,6 +16,7 @@ import {
 } from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { License } from "../interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { IAssetAllowlist } from "./interfaces/IAssetAllowlist.sol";
 import { ISplitFactory } from "./interfaces/ISplitFactory.sol";
 import { ISplitWallet } from "./interfaces/ISplitWallet.sol";
@@ -59,6 +60,9 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         License license;
     }
 
+    /// @notice The CC0 text the deployment pins: a default license whose key is CC0 names it,
+    ///         since `WorkRecords.openRecord` refuses a CC0 license with any other text.
+    bytes32 public immutable cc0TextFileId;
     IAssetAllowlist private immutable _allowlist;
     ISplitFactory private immutable _factory;
     mapping(bytes32 product => Product) private _products;
@@ -67,17 +71,18 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @param allowlist_ The economics lane's asset allowlist.
     /// @param factory_ The economics lane's split factory.
     /// @param feeRecipient The network fee recipient for every product at launch.
-    /// @param cc0TextFileId The content store file ID of the CC0 1.0 legal text.
+    /// @param cc0TextFileId_ The content store file ID of the CC0 1.0 legal text.
     constructor(
         address authority,
         IAssetAllowlist allowlist_,
         ISplitFactory factory_,
         address feeRecipient,
-        bytes32 cc0TextFileId
+        bytes32 cc0TextFileId_
     ) AccessManaged(authority) {
+        cc0TextFileId = cc0TextFileId_;
         _allowlist = IAssetAllowlist(_pinned(address(allowlist_)));
         _factory = ISplitFactory(_pinned(address(factory_)));
-        License memory cc0 = License(CC0, cc0TextFileId);
+        License memory cc0 = License(CC0, cc0TextFileId_);
         ProductEconomics memory standard =
             ProductEconomics(feeRecipient, DEFAULT_FEE_SHARE, DEFAULT_ROYALTY_RATE);
         _configure(PRODUCT_STREAM, standard, cc0);
@@ -126,6 +131,10 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         Product storage p = _known(product);
         _check(expectedRevision, p.licenseRevision);
         _validateLicense(next);
+        if (
+            WorksHashing.licenseKey(next.spdxId) == WorksHashing.CC0_LICENSE_KEY
+                && next.textFileId != cc0TextFileId
+        ) revert InvalidLicense();
         License memory previous = p.license;
         p.license = next;
         emit DefaultLicenseSet(product, previous, next, ++p.licenseRevision);

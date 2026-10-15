@@ -240,6 +240,21 @@ contract EconomicsResolverTest is EconomicsBase {
         econ.setDefaultLicense(PRODUCT_FEDERATED, 2, License("MIT", bytes32(0)));
     }
 
+    /// @dev A default license whose key is CC0 names the CC0 text the resolver was deployed
+    ///      with, in any casing of the identifier: `WorkRecords.openRecord` refuses a CC0
+    ///      license with another text, so such a default would leave every new work unopenable.
+    function test_ACc0DefaultLicenseNamesThePinnedText() public {
+        bytes32 other = keccak256("another CC0 text");
+        vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
+        econ.setDefaultLicense(PRODUCT_STREAM, 1, License("CC0-1.0", other));
+        vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
+        econ.setDefaultLicense(PRODUCT_STREAM, 1, License("cc0-1.0", other));
+        econ.setDefaultLicense(PRODUCT_STREAM, 1, License("MIT", other));
+        econ.setDefaultLicense(PRODUCT_STREAM, 2, License("cc0-1.0", CC0_TEXT));
+        assertEq(econ.defaultLicense(PRODUCT_STREAM).textFileId, CC0_TEXT);
+        assertEq(econ.cc0TextFileId(), CC0_TEXT);
+    }
+
     function test_SettersAreRestrictedAndNonPayable() public {
         vm.startPrank(stranger);
         bytes memory denied =

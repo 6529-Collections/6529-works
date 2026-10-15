@@ -66,9 +66,15 @@ contract MockWorkRecords {
     mapping(uint256 => mapping(bytes32 => Locator[])) internal locatorLists;
     mapping(uint256 => mapping(bytes32 => bool)) internal onchainPreferred;
     mapping(bytes4 => bool) internal failing;
+    mapping(bytes4 => uint256) internal burning;
 
     function fail(bytes4 selector, bool on) external {
         failing[selector] = on;
+    }
+
+    /// @dev Makes `selector` spend about `amount` gas more, as a costlier satellite would.
+    function burn(bytes4 selector, uint256 amount) external {
+        burning[selector] = amount;
     }
 
     function setRecord(uint256 id, IWorkRecords.RecordInfo calldata info) external {
@@ -160,6 +166,11 @@ contract MockWorkRecords {
 
     function _gate(bytes4 selector) internal view {
         require(!failing[selector], "mock failure");
+        uint256 amount = burning[selector];
+        if (amount != 0) {
+            uint256 stop = gasleft() - amount;
+            while (gasleft() > stop) { }
+        }
     }
 }
 

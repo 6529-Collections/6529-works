@@ -89,6 +89,12 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Locator kinds.**
   - Locators are ARWEAVE and IPFS only. HTTPS is dropped because its content can
     change.
+  - A locator is a bare content address in its canonical spelling: `ar://` and a
+    43-character transaction ID, or `ipfs://` and a CIDv1 of the fixed profile,
+    with no path, query or fragment (adversarial review, LIFECYCLE-3 and
+    CONTENT-3).
+  - After finalize only the PLATFORM role adds locators. Copies of a finalized
+    work are the platform's to register and the storage operator's to choose.
   - On-chain copies are served once the file is complete.
   - The artist and the platform each have a quota of 8 locators.
 - **Content store.**
@@ -317,13 +323,17 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     `tokenURI` and in full by `fullTokenURI`.
   - With every cap filled at once, `tokenURI` measures at most about 7.8M gas.
 - **Opening a record never fails.** `openRecord` stores the approved record and
-  licence as committed. The structural checks (complete, one `Identity` chunk,
+  licence as committed. (Amended by the adversarial review: a licence whose key
+  is CC0 must name the deployment's CC0 text, or the record cannot open; the
+  curation simulation of `openRecord` catches it before approval.) The structural checks (complete, one `Identity` chunk,
   within the bound, licence text registered) run at `setRecord`, `finalize` and
   `relicense`. An invalid record renders as core-only metadata until the artist
   fixes it.
 - **Finalize requires the licence text on-chain.** Deployment therefore uploads
-  the default CC0 text before any work can finalize. A CC0 work may be
-  relicensed to CC0 with a corrected text file; leaving CC0 is still refused.
+  the default CC0 text before any work can finalize. Leaving CC0 is refused.
+  (Amended by the adversarial review: a CC0 licence always names the
+  deployment's CC0 text, at `openRecord` and at relicense, so there is no
+  text to correct.)
 - **The start-gas gate is for a single artist.** (Amended by
   [ADR 0004](0004-gas-budgets-under-glamsterdam.md), which has the current
   figures.) The 350K steady-state gate

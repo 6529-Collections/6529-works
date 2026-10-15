@@ -120,6 +120,8 @@ contract Stream is ERC721, AccessManaged, IStream {
     address public editions;
     /// @inheritdoc IStream
     address public defaultRenderer;
+    /// @dev The code hash `defaultRenderer` was installed with, checked again by `rendererOf`.
+    bytes32 private _defaultRendererCodeHash;
 
     Counts private _counts;
     address private _owner;
@@ -164,6 +166,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         entropyModule = entropyModule_;
         splitFactory = factory;
         defaultRenderer = renderer_;
+        _defaultRendererCodeHash = rendererCodeHash;
         _owner = owner_;
         emit DefaultRendererSet(address(0), renderer_, rendererCodeHash);
         emit OwnershipTransferred(address(0), owner_);
@@ -296,6 +299,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     // ----------------------------------------------------------------- collections and works
 
     /// @inheritdoc IStream
+    /// @dev The name goes into every work's metadata, where a control character, `<`, `"` or
+    ///      `\` is escaped to up to six bytes: refusing them keeps `tokenURI` within its gas
+    ///      budget (the content README's budget proof).
     function createCollection(string calldata name, bytes32 metadataHash)
         external
         restricted
@@ -304,6 +310,12 @@ contract Stream is ERC721, AccessManaged, IStream {
         bytes calldata raw = bytes(name);
         if (raw.length == 0 || raw.length > MAX_NAME_BYTES || !Utf8.isValid(raw)) {
             revert InvalidCollectionName();
+        }
+        for (uint256 i; i < raw.length; ++i) {
+            bytes1 b = raw[i];
+            if (b < 0x20 || b == 0x7f || b == "<" || b == '"' || b == "\\") {
+                revert InvalidCollectionName();
+            }
         }
         collectionId = ++_counts.collections;
         CollectionData storage c = _collections[collectionId];
@@ -408,6 +420,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (defaultRenderer != expected) revert ExpectedValueMismatch();
         _requireRenderer(next, nextCodeHash);
         defaultRenderer = next;
+        _defaultRendererCodeHash = nextCodeHash;
         emit DefaultRendererSet(expected, next, nextCodeHash);
         uint256 minted = _counts.minted;
         if (minted != 0) emit BatchMetadataUpdate(1, minted);
@@ -416,13 +429,19 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
+    /// @dev The default renderer's code must still be the code it was installed with (DEPS-6):
+    ///      a pin checked once could be outlived by code recreated at the same address. A work's
+    ///      own pin is checked the same way by `IWorkRecords.pinnedRenderer`.
     function rendererOf(uint256 tokenId) public view returns (address renderer) {
         _live(tokenId);
         IWorkRecords records = IWorkRecords(workRecords);
         if (address(records) != address(0) && records.isOpen(tokenId)) {
             renderer = records.pinnedRenderer(tokenId);
         }
-        if (renderer == address(0)) renderer = defaultRenderer;
+        if (renderer == address(0)) {
+            renderer = defaultRenderer;
+            if (renderer.codehash != _defaultRendererCodeHash) revert InvalidBinding(renderer);
+        }
     }
 
     /// @notice The token's metadata, built by its pinned renderer once finalized, else by the

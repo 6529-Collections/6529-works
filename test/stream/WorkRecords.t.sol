@@ -13,6 +13,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { MockRenderer } from "../mocks/stream/StreamMocks.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 contract WorkRecordsTest is RecordsFixture {
@@ -380,6 +381,35 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.record(tokenId).recordFileId, notJson);
     }
 
+    /// @dev A PREVIEW file is at most `Limits.MAX_PREVIEW_BYTES`, an `Identity` one counting four
+    ///      times; an unregistered one reverts with the store's error, like any media file.
+    function test_openRecord_previewCap() public {
+        MediaFile[] memory media = new MediaFile[](2);
+        media[0] = _mediaFile(40, FileRole.PRIMARY, false);
+        bytes memory big = new bytes(Limits.MAX_PREVIEW_BYTES / 4 + 1);
+        media[1] = MediaFile(_file(big, "image/png", false), sha256(big), FileRole.PREVIEW);
+        PackageItem memory item = _recordsItem(40, media);
+        _expectBadOpen(_mint(item), item, media);
+
+        // At the cap it opens.
+        media[0] = _mediaFile(41, FileRole.PRIMARY, false);
+        bytes memory fits = new bytes(Limits.MAX_PREVIEW_BYTES / 4);
+        media[1] = MediaFile(_file(fits, "image/png", false), sha256(fits), FileRole.PREVIEW);
+        item = _recordsItem(41, media);
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+        assertTrue(records.isOpen(tokenId));
+
+        media[0] = _mediaFile(42, FileRole.PRIMARY, false);
+        media[1].fileId = keccak256("unregistered preview");
+        item = _recordsItem(42, media);
+        tokenId = _mint(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentFileUnknown.selector, media[1].fileId)
+        );
+        records.openRecord(tokenId, item, media);
+    }
+
     function _expectBadOpen(uint256 tokenId, PackageItem memory item, MediaFile[] memory media)
         internal
     {
@@ -679,13 +709,32 @@ contract WorkRecordsTest is RecordsFixture {
     function test_relicense_cc0IsIrrevocableInAnyCase() public {
         MediaFile[] memory media = _single(1, true);
         PackageItem memory item = _recordsItem(1, media);
-        item.license = License("cc0-1.0", _registerText("other cc0 text"));
+        // Another spelling of the identifier: stored as given, and CC0 by its key.
+        item.license = License("CC0-1.0", records.cc0TextFileId());
         uint256 tokenId = _mint(item);
         records.openRecord(tokenId, item, media);
-        assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
+        assertEq(records.licenseOf(tokenId).spdxId, "CC0-1.0");
         vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IWorkRecords.LicenseIrrevocable.selector, tokenId));
         records.relicense(tokenId, _license("mit"), item, bytes32(0), 0, new bytes[](0));
+    }
+
+    /// @dev A CC0 license names the deployment's CC0 text: `openRecord` refuses an approved one
+    ///      with another text, and a relicense to CC0 with another text is refused before the
+    ///      consents are checked.
+    function test_relicense_cc0TextOnlyToTheDeploymentText() public {
+        MediaFile[] memory media = _single(2, true);
+        PackageItem memory item = _recordsItem(2, media);
+        item.license = License("cc0-1.0", _registerText("cc0 text with a typo"));
+        uint256 tokenId = _mint(item);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.openRecord(tokenId, item, media);
+
+        (uint256 byWork, PackageItem memory byItem) = _byWork();
+        License memory other = License("CC0-1.0", _registerText("other terms"));
+        vm.prank(governor);
+        vm.expectRevert(IWorkRecords.InvalidLicense.selector);
+        records.relicense(byWork, other, byItem, bytes32(0), 0, new bytes[](0));
     }
 
     function test_relicense_identicalIsNoOp() public {
@@ -1010,12 +1059,13 @@ contract WorkRecordsTest is RecordsFixture {
 
     // --------------------------------------------------------------------------- locators
 
+    /// @dev A well-formed locator derived from `id` (`ContentAddresses`).
     function _ar(string memory id) internal pure returns (Locator memory) {
-        return Locator(LocatorKind.ARWEAVE, string.concat("ar://", id));
+        return CA.ar(id);
     }
 
     function _ipfs(string memory id) internal pure returns (Locator memory) {
-        return Locator(LocatorKind.IPFS, string.concat("ipfs://", id));
+        return CA.ipfsLocator(id);
     }
 
     function _primary(uint256 tokenId) internal view returns (bytes32) {
@@ -1036,7 +1086,7 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(tokenId, file, _ipfs("bafy1"));
         Locator[] memory list = records.locators(tokenId, file);
         assertEq(list.length, 2);
-        assertEq(list[1].uri, "ipfs://bafy1");
+        assertEq(list[1].uri, CA.ipfs("bafy1"));
         assertEq(records.workStateHash(tokenId), state);
 
         vm.prank(artist);
@@ -1044,6 +1094,12 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(platform);
         records.addLocator(tokenId, file, _ar("tx2"));
         assertEq(records.locators(tokenId, file).length, 3);
+        // After finalize only the PLATFORM role adds locators.
+        vm.prank(artist);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, artist)
+        );
+        records.addLocator(tokenId, file, _ar("tx3"));
     }
 
     function test_addLocator_reverts() public {
@@ -1060,24 +1116,38 @@ contract WorkRecordsTest is RecordsFixture {
             abi.encodeWithSelector(IWorkRecords.FileNotInWork.selector, tokenId, keccak256("x"))
         );
         records.addLocator(tokenId, keccak256("x"), _ar("tx"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.ONCHAIN, "ar://tx"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.NONE, "ar://tx"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, "ipfs://cid"));
+        string memory txid = CA.arweave("tx");
+        string memory cid = CA.ipfs("cid");
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ONCHAIN, txid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.NONE, txid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, cid));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, txid));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://"));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs:/"));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "https://example.com"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://a b"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, 'ipfs://a"b'));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://a<b"));
-        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, "ipfs://a\\b"));
+        // One byte changed, in each position class: the scheme, the profile prefix, the
+        // address, and a byte added or removed at the end.
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 2, "/")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 5, "=")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, _with(txid, 47, "+")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, string.concat(txid, "A")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 9, "y")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 14, "1")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 65, "A")));
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, string.concat(cid, "a")));
         _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, unicode"ipfs://é"));
-        _expectBadLocator(
-            tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", _repeat(2042)))
-        );
-        records.addLocator(
-            tokenId, file, Locator(LocatorKind.IPFS, string.concat("ipfs://", _repeat(2041)))
-        );
+        _expectBadLocator(tokenId, file, Locator(LocatorKind.IPFS, _with(cid, 30, hex"ff")));
+        records.addLocator(tokenId, file, Locator(LocatorKind.ARWEAVE, txid));
+        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, cid));
+        records.addLocator(tokenId, file, Locator(LocatorKind.IPFS, CA.ipfsRoot("cid")));
         vm.stopPrank();
+    }
+
+    /// @dev `s` with byte `i` replaced by `b`.
+    function _with(string memory s, uint256 i, bytes1 b) internal pure returns (string memory) {
+        bytes memory out = bytes(string.concat(s));
+        out[i] = b;
+        return string(out);
     }
 
     /// @dev The artist and the platform each add at most 8 locators per file, so neither can
@@ -1105,6 +1175,34 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(other, otherFile, _ar("p0"));
     }
 
+    /// @dev After finalize the artist adds no locators, so the platform may fill the file's 16
+    ///      slots, the artist's unused ones included, and no more.
+    function test_addLocator_platformTakesTheArtistsUnusedSlotsAfterFinalize() public {
+        (uint256 tokenId,) = _work(1);
+        bytes32 file = _primary(tokenId);
+        vm.startPrank(artist);
+        for (uint256 i; i < 3; ++i) {
+            records.addLocator(tokenId, file, _ipfs(string.concat("a", vm.toString(i))));
+        }
+        vm.stopPrank();
+        vm.startPrank(platform);
+        for (uint256 i; i < 8; ++i) {
+            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+        }
+        _expectBadLocator(tokenId, file, _ar("p8"));
+        vm.stopPrank();
+        bytes32 state = records.workStateHash(tokenId);
+        vm.prank(artist);
+        records.finalize(tokenId, state);
+        vm.startPrank(platform);
+        for (uint256 i = 8; i < 13; ++i) {
+            records.addLocator(tokenId, file, _ar(string.concat("p", vm.toString(i))));
+        }
+        assertEq(records.locators(tokenId, file).length, Limits.MAX_LOCATORS_PER_FILE);
+        _expectBadLocator(tokenId, file, _ar("p13"));
+        vm.stopPrank();
+    }
+
     /// @dev A URI already registered for the file is refused, whoever adds it again.
     function test_addLocator_rejectsDuplicateUri() public {
         (uint256 tokenId,) = _work(1);
@@ -1125,14 +1223,6 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(tokenId, file, locator);
     }
 
-    function _repeat(uint256 n) internal pure returns (string memory) {
-        bytes memory out = new bytes(n);
-        for (uint256 i; i < n; ++i) {
-            out[i] = "a";
-        }
-        return string(out);
-    }
-
     function test_preferredLocator_mostSpecificWins() public {
         (uint256 tokenId,) = _work(1);
         bytes32 file = _primary(tokenId);
@@ -1142,19 +1232,19 @@ contract WorkRecordsTest is RecordsFixture {
         records.addLocator(tokenId, file, _ar("a2"));
         vm.stopPrank();
 
-        _expectPreferred(tokenId, file, 0, "ar://a0");
+        _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         vm.startPrank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
-        _expectPreferred(tokenId, file, 1, "ipfs://i1");
+        _expectPreferred(tokenId, file, 1, CA.ipfs("i1"));
         records.setCollectionPreferredKind(collectionId, LocatorKind.ARWEAVE);
-        _expectPreferred(tokenId, file, 0, "ar://a0");
+        _expectPreferred(tokenId, file, 0, CA.arweave("a0"));
         records.setFilePreference(tokenId, file, 2);
-        _expectPreferred(tokenId, file, 2, "ar://a2");
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         records.setCollectionPreferredKind(collectionId, LocatorKind.ONCHAIN);
-        _expectPreferred(tokenId, file, 2, "ar://a2");
+        _expectPreferred(tokenId, file, 2, CA.arweave("a2"));
         records.setFilePreference(tokenId, file, NONE);
         // The media is stored but the work is not synced, so ONCHAIN falls through to IPFS.
-        _expectPreferred(tokenId, file, 1, "ipfs://i1");
+        _expectPreferred(tokenId, file, 1, CA.ipfs("i1"));
         vm.stopPrank();
         records.syncOnChain(tokenId);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);
@@ -1173,9 +1263,9 @@ contract WorkRecordsTest is RecordsFixture {
         records.setPreferredKind(LocatorKind.ONCHAIN);
         vm.prank(platform);
         records.addLocator(tokenId, file, _ipfs("i0"));
-        _expectPreferred(tokenId, file, 0, "ipfs://i0");
+        _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
         _upload(1);
-        _expectPreferred(tokenId, file, 0, "ipfs://i0");
+        _expectPreferred(tokenId, file, 0, CA.ipfs("i0"));
         records.syncOnChain(tokenId);
         vm.expectCall(address(store), abi.encodeWithSelector(IContentStore.isComplete.selector), 0);
         (Locator memory chosen, uint256 index) = records.preferredLocator(tokenId, file);

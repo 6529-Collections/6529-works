@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 
 /// @notice Fuzzes preferred-location resolution (D10: file override, then collection kind, then
@@ -44,9 +45,8 @@ contract PreferredLocationTest is RecordsFixture {
         kinds = new LocatorKind[](count);
         for (uint256 i; i < count; ++i) {
             kinds[i] = (kindBits >> i) & 1 == 0 ? LocatorKind.ARWEAVE : LocatorKind.IPFS;
-            string memory uri = string.concat(
-                kinds[i] == LocatorKind.ARWEAVE ? "ar://" : "ipfs://", vm.toString(i)
-            );
+            string memory seed = vm.toString(i);
+            string memory uri = kinds[i] == LocatorKind.ARWEAVE ? CA.arweave(seed) : CA.ipfs(seed);
             // The platform's quota of 8, then the artist's.
             vm.prank(i < 8 ? platform : artist);
             records.addLocator(tokenId, file, Locator(kinds[i], uri));
@@ -123,16 +123,16 @@ contract PreferredLocationTest is RecordsFixture {
         bytes32 fileA = mediaA[0].fileId;
         bytes32 fileB = mediaB[0].fileId;
         vm.startPrank(platform);
-        records.addLocator(idA, fileA, Locator(LocatorKind.IPFS, "ipfs://a"));
-        records.addLocator(idB, fileB, Locator(LocatorKind.ARWEAVE, "ar://b"));
+        records.addLocator(idA, fileA, CA.ipfsLocator("a"));
+        records.addLocator(idB, fileB, CA.ar("b"));
         vm.stopPrank();
         vm.startPrank(storageOperator);
         records.setPreferredKind(_kind(globalRaw));
         records.setCollectionPreferredKind(collectionId, _kind(collectionRaw));
         vm.stopPrank();
         (Locator memory chosen,) = records.preferredLocator(idA, fileA);
-        assertEq(chosen.uri, "ipfs://a");
+        assertEq(chosen.uri, CA.ipfs("a"));
         (chosen,) = records.preferredLocator(idB, fileB);
-        assertEq(chosen.uri, "ar://b");
+        assertEq(chosen.uri, CA.arweave("b"));
     }
 }

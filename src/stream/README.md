@@ -58,7 +58,20 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
 - **Wiring.** `WorkRecords` and 6529 Editions are bound once each, with ERC-165
   checks, EIP-7702 rejection and a check that the target serves this Stream
   (`stream() == address(this)`). Every installed dependency is checked the same
-  way; renderers are also pinned by code hash. `coreOf` is the cheap per-work
+  way; renderers are also pinned by code hash, and the pin is checked again
+  every time `rendererOf` names a renderer (DEPS-6): the default renderer's
+  code against the hash it was installed with, a finalized work's against the
+  hash it was pinned with (`WorkRecords.pinnedRenderer`, which records each
+  renderer's hash at finalize or the errata repin and refuses to pin an address
+  again with another). Changed code makes `tokenURI` revert rather than fall
+  back to another renderer, which would show a finalized work in an output
+  format nobody pinned; a new default renderer, or the errata repin, restores
+  it. The errata repin needs the lead artist's signature (by the artist ID's
+  current authority), so a finalized work whose pinned renderer's code changed
+  stays without metadata while that key is lost: the artist first recovers the
+  authority through the artist registry (a staged change or a governed override,
+  see the [identity module](../identity/README.md)), then signs the repin.
+  `coreOf` is the cheap per-work
   read the satellites use, including the current royalty rate an edition
   inherits.
 
@@ -66,8 +79,14 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
 
 - **Opening.** Nothing is written at mint. `openRecord` is permissionless: it
   checks the item against the core's item hash, the media list against
-  `mediaHash`, the primary's SHA-256 against `contentHash`, and every file's
-  SHA-256 against the content store's declaration. It stores the approved
+  `mediaHash`, the primary's SHA-256 against `contentHash`, every file's
+  SHA-256 against the content store's declaration, and the size of every
+  `PREVIEW` file stored as `Identity` or `Base64`: at most
+  `Limits.MAX_PREVIEW_BYTES` (16 KiB stored, an `Identity` file counting four
+  times), a small image the renderer inlines within the 8M `tokenURI` budget
+  (see the content README's budget proof). Gzip files are never inlined and not
+  bounded; a larger preview, such as a video, belongs in the media list as an
+  `AUXILIARY` file. It stores the approved
   record file ID as it is, one word per media file plus one word of roles, an
   ARTIST seed, and the approved license when it is not the default CC0. Neither
   the record file nor the license text is checked here, so neither can freeze a
@@ -89,19 +108,40 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   EIP-712 consent, each by its current authority, plus a governed action. Only
   CC0 irrevocability is enforced on-chain, on the canonical license key; whether
   a new license is more permissive is the judgement of the parties' consent plus
-  governance, and the contract does not order licenses. A CC0 work may still
-  correct its text file (CC0 to CC0). A relicense's text file must be
+  governance, and the contract does not order licenses. A license whose key is
+  CC0 always names the deployment's CC0 text (`cc0TextFileId`, the legal code
+  pinned by digest at deployment): `openRecord` refuses an approved CC0 license
+  with another text (the curation simulation of `openRecord` catches it before
+  approval), and a relicense to CC0 must name it. A CC0 work's license therefore
+  never changes, and a work that reads CC0 never points at other terms. A
+  relicense's text file must be
   registered, and stored on-chain once the work is finalized. A royalty-rate
   change bumps the version before its external calls, emits `RoyaltyRateSet`
   and refreshes the metadata. A repin needs the lead artist and the 30-day
   class, and binds the renderer's code hash.
+- **On-chain completeness.** `syncOnChain` is permissionless and resumable.
+  Each call checks whole media files, in order, while their chunks fit a budget
+  of 512 (about 4.2M gas from cold storage; a file of up to 512 chunks always
+  fits), stores how many files it found complete in the record's first word
+  (no new slot) and emits `OnChainSyncProgress`; the call that reaches the end
+  marks the work on-chain complete. A file found incomplete reverts the call
+  with `NotOnChainComplete`, and earlier calls' progress stays, since media is
+  fixed and on-chain bytes are permanent.
 - **Finalize** applies the record-file checks and requires the license text,
   the default CC0 text included, to be complete on-chain. A finalized work's
   record and license text are therefore permanent and readable on-chain.
 - **Locators.** Append-only ARWEAVE and IPFS copies of media files: at most 8
   per file added by the artist and 8 by the platform, so neither can exhaust
-  the other's. A URI already registered for the file is refused, compared as
-  exact bytes, so a different spelling of the same content counts as new. The
+  the other's. Each URI is a content address with nothing after it, in its one
+  canonical spelling (the padding bits of the last character zero), so the
+  content it names cannot be repointed and one copy has one URI: `ar://` and a
+  43-character base64url transaction ID, or `ipfs://` and a base32 CIDv1 with a
+  32-byte sha2-256 multihash, a raw leaf (`bafkrei...`) or a dag-pb root
+  (`bafybei...`), 59 characters. No path, query or fragment, so no `%` or `#`
+  either. Only the shape is checked on-chain: an ArNS base name is never 43
+  characters long, but an undername can be, so the storage operator serves only
+  copies the off-chain monitor verified. A URI already registered for the file
+  is refused, compared as exact bytes. The
   set of registered URIs is shared, so whichever side adds a URI first holds it
   against its own quota, and the URI is listed either way. Preferred location:
   the file's index, then the collection's kind, then the global kind, then the
@@ -111,3 +151,9 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   (kind NONE). Locators are not verified on-chain: each is registered as a copy
   of that one file, and the storage operator chooses only among the copies
   registered for it.
+- **After finalize, platform only.** "Final" fixes the content, and the content
+  a locator names is not verified on-chain, so after finalize only the PLATFORM
+  role adds locators (the artist's call is unauthorized): the copies of a
+  finalized work are the platform's to register and the storage operator's to
+  choose. The platform may then fill all 16 of a file's slots, the artist's
+  unused ones included. Locators added before finalize stay as they are.

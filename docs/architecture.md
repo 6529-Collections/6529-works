@@ -165,7 +165,8 @@ default when the sale starts".
 7. **Open the record (permissionless, off the start path).**
    `IWorkRecords.openRecord(tokenId, item, media)` checks the item against
    Stream's item hash, and the media against the media hash, the content hash
-   and the content store's declared SHA-256. It then stores the record file ID,
+   and the content store's declared SHA-256, and caps each PREVIEW file's size
+   (`Limits.MAX_PREVIEW_BYTES`). It then stores the record file ID,
    the media file IDs and an ARTIST seed. Until then every per-token
    `IWorkRecords` call reverts with `RecordNotOpen`, and the renderer shows
    core-only metadata.
@@ -220,18 +221,24 @@ default when the sale starts".
    (`setRecord`, bound to the state hash). Media never changes.
    - The version bumps only on a real change: the record pointer, license,
      royalty rate or renderer pin. An identical re-publish is a no-op.
-2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators.
+2. The artist or the PLATFORM role appends ARWEAVE or IPFS locators. Each is a
+   content address: `ar://` and a 43-character transaction ID, or `ipfs://` and
+   a CIDv1 of the fixed profile, with no path.
    - The STORAGE_OPERATOR role sets preferences. The most specific one wins:
      the file index, then the collection kind, then the global kind, then the
      first registered locator. A file with no locator yields an empty one.
+   - After finalize only the PLATFORM role adds locators.
    - It cannot add, remove or alter locators.
 3. The artist calls `finalize(tokenId, expectedStateHash)` once the record file
    is on-chain complete: the record becomes immutable and Stream's default
    renderer is pinned.
 4. Anyone uploads the media's chunks and calls `syncOnChain`; the work is then
-   permanently on-chain complete. This does not change the state hash.
+   permanently on-chain complete. A call checks whole files up to 512 chunks and
+   keeps its place, so a large work takes a few calls, each within the
+   per-transaction cap. This does not change the state hash.
 5. Amendments need agreement plus a governed action:
-   - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable.
+   - **Relicensing:** every party, PARAMETER_SETTER role. CC0 is irrevocable, and a
+     CC0 license (approved or set this way) names the deployment's CC0 text.
    - **Royalty-rate change:** every party, FUNDS_SETTER role. Payees never
      change. A master's change also applies to its edition
      (`IEditions.setRoyaltyRate`).
@@ -362,6 +369,13 @@ check it, pin the code hash and reject EIP-7702 delegated accounts. The curation
 verifier, the VRF coordinator, the statement log's artist resolver and the sale
 adapters' federation registry are also checked against their pinned hash at
 every use, not only at install.
+
+Renderer pins are checked again at use (DEPS-6): `Stream.rendererOf`, which
+`tokenURI` and 6529 Editions' `uri` go through, compares the default renderer's
+code hash with the one it was installed with, and `WorkRecords.pinnedRenderer`
+compares a finalized work's renderer with the hash it was pinned with. Changed code
+fails closed: the metadata view reverts, never falling back to another renderer,
+until a new default renderer or the errata repin is installed.
 
 Each configuration epoch's manifest hash is recorded through the statement log's
 restricted `appendGovernanceManifest`. Governed functions are non-payable, and

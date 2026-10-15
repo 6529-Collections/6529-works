@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
+import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { UploaderGoldenData as Golden } from "../content/tooling/UploaderGoldenData.sol";
 
@@ -67,15 +68,22 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         // Locator mode: the artist and the platform register copies; the storage operator
         // chooses among them.
         vm.prank(artist);
-        records.addLocator(
-            tokenId, v.fileId, Locator(LocatorKind.ARWEAVE, "ar://golden-arweave-tx")
-        );
+        records.addLocator(tokenId, v.fileId, CA.ar("golden arweave"));
         vm.prank(platform);
-        records.addLocator(tokenId, v.fileId, Locator(LocatorKind.IPFS, "ipfs://bafygolden"));
-        assertTrue(_contains(stream.tokenURI(tokenId), '"image":"ar://golden-arweave-tx"'));
+        records.addLocator(tokenId, v.fileId, CA.ipfsLocator("golden ipfs"));
+        assertTrue(
+            _contains(
+                stream.tokenURI(tokenId),
+                string.concat('"image":"', CA.arweave("golden arweave"), '"')
+            )
+        );
         vm.prank(storageOperator);
         records.setPreferredKind(LocatorKind.IPFS);
-        assertTrue(_contains(stream.tokenURI(tokenId), '"image":"ipfs://bafygolden"'));
+        assertTrue(
+            _contains(
+                stream.tokenURI(tokenId), string.concat('"image":"', CA.ipfs("golden ipfs"), '"')
+            )
+        );
 
         // finalize pins the default renderer; the record must be complete on-chain.
         bytes32 state = records.workStateHash(tokenId);
@@ -112,10 +120,10 @@ contract ContentToTokenURIFlowTest is IntegrationBase {
         records.openRecord(tokenId, w.item, w.media);
         records.syncOnChain(tokenId);
         vm.prank(artist);
-        records.addLocator(tokenId, v.fileId, Locator(LocatorKind.ARWEAVE, "ar://fallback"));
+        records.addLocator(tokenId, v.fileId, CA.ar("fallback"));
         string memory uri = stream.tokenURI(tokenId);
         assertFalse(_contains(uri, "base64,"), "not attested: not inlined");
-        assertTrue(_contains(uri, '"image":"ar://fallback"'));
+        assertTrue(_contains(uri, string.concat('"image":"', CA.arweave("fallback"), '"')));
     }
 
     // ------------------------------------------------------------------ the gas matrix

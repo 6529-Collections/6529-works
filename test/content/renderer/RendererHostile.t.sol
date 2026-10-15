@@ -253,6 +253,27 @@ contract RendererHostileTest is RendererBase {
         renderer.tokenURI(address(stream), ID);
     }
 
+    /// @dev The media list has a read cap of its own, 1,000,000 gas: the real satellite's
+    ///      `mediaOf` makes one content-store read per file, under 200,000 gas fully cold at 32
+    ///      files (`TokenUriBudget.t.sol`), so a repricing of cold reads does not stop
+    ///      `tokenURI` for the largest works. A read past the cap still fails closed.
+    function test_Records_TheMediaReadHasRoomAboveItsCost() public {
+        bytes32 file = _file(hex"89504e47", IDENTITY, "image/png");
+        _install(file);
+        records.burn(IWorkRecords.mediaOf.selector, 800_000);
+        assertFalse(_has(_out(), ".record_status"), "the full metadata");
+
+        records.burn(IWorkRecords.mediaOf.selector, 1_000_000);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Renderer.RendererReadFailed.selector,
+                address(records),
+                IWorkRecords.mediaOf.selector
+            )
+        );
+        renderer.tokenURI(address(stream), ID);
+    }
+
     function test_NotEnoughGasRevertsInsteadOfMisreporting() public {
         bytes32 file = _file(hex"89504e47", IDENTITY, "image/png");
         _install(file);

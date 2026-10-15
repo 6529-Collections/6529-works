@@ -300,6 +300,8 @@ The network pays Arweave and IPFS storage costs from its share.
   chunker, sha2-256), pinned by at least two independent providers plus a
   6529 node.
 - Locators are append-only. Only artist or platform roles can register them.
+  (Amended by [ADR 0003](0003-build-time-decisions.md): each is a bare content
+  address, and after finalize only the platform registers them.)
 
 **Preferred location**
 - `tokenURI` serves the locator chosen by the first match in this order: a

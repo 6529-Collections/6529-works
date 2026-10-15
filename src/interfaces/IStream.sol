@@ -108,12 +108,14 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
     /// @notice The target lacks code or the expected ERC-165 support, is an EIP-7702 delegated
-    ///         account, or (a satellite) serves another Stream.
+    ///         account, or (a satellite) serves another Stream; or the default renderer's code is
+    ///         no longer the code hash it was installed with.
     error InvalidBinding(address target);
     /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
     ///         seed policy, license ID, fee terms).
     error InvalidMintRequest();
-    /// @notice The collection name is empty or too long.
+    /// @notice The collection name is empty, too long, not UTF-8, or holds a control character,
+    ///         `<`, `"` or `\`.
     error InvalidCollectionName();
     /// @notice The royalty rate exceeds 100,000.
     error InvalidRoyaltyRate(uint32 rate);
@@ -153,7 +155,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
 
     // ----- collections, supply and works -----
 
-    /// @notice Creates a collection and returns its ID (sequential, from 1). PLATFORM role.
+    /// @notice Creates a collection and returns its ID (sequential, from 1). PLATFORM role. The
+    ///         name is 1 to 256 bytes of UTF-8 without control characters (below 0x20, and
+    ///         0x7F), `<`, `"` or `\`.
     function createCollection(string calldata name, bytes32 metadataHash)
         external
         returns (uint256 collectionId);
@@ -206,7 +210,12 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         (`IEditions.notifyAllUpdated`).
     function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash) external;
     /// @notice The renderer serving a work: its pin in `IWorkRecords` once finalized, the default
-    ///         before. `tokenURI` forwards to it.
+    ///         before. `tokenURI` forwards to it (and 6529 Editions' `uri`). Fails closed: reverts
+    ///         with `InvalidBinding` when the default renderer's code is no longer the code hash
+    ///         `setDefaultRenderer` (or the constructor) pinned, and with
+    ///         `IWorkRecords.InvalidRenderer` when a finalized work's pinned renderer changed
+    ///         code; it never falls back to another renderer. A new default renderer, or the
+    ///         errata repin for a finalized work, restores the metadata.
     function rendererOf(uint256 tokenId) external view returns (address);
 
     // ----- hooks for the bound satellites -----
