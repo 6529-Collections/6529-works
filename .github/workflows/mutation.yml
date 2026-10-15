@@ -163,6 +163,10 @@ jobs:
         with:
           pattern: mutation-*
           path: mutation
+          # Each artifact holds one `<shard>/` directory; merged, they give mutation/<shard>/
+          # whether one artifact matches or many (unmerged, one is extracted without the
+          # artifact-name directory that several get).
+          merge-multiple: true
 
       - name: Every shard reported
         # A shard that crashed or timed out leaves no results; the report would then score the
@@ -174,7 +178,7 @@ jobs:
           import json, os, pathlib, sys
           missing = [
               s for s in json.loads(os.environ["SHARDS"])
-              if not any(pathlib.Path("mutation", f"mutation-{s}").glob("**/results.json"))
+              if not pathlib.Path("mutation", s, "results.json").is_file()
           ]
           if missing:
               sys.exit(f"no results from {len(missing)} shard(s): {' '.join(missing)}")
