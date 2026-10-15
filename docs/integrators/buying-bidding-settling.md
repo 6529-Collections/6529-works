@@ -272,7 +272,8 @@ sequenceDiagram
 ### Errors
 
 Errors come from `EnglishAuction` (`SalePaused`, `TargetNotAllowed`, `InvalidSaleTerms`), `Stream`
-(`InvalidMintRequest`, `SeedNotDelivered`), `AssetAllowlist` (currency) or `PackageRegistry`.
+(`InvalidMintRequest`, the item-rule errors below, `SeedNotDelivered`), `AssetAllowlist`
+(currency), `PackageRegistry`, or the shared `SignatureVerifier` and `Dependency` errors.
 
 | Error | Cause | What to do |
 | --- | --- | --- |
