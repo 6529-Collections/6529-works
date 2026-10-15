@@ -72,13 +72,14 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant PERMIT2_START_CEILING = 388_000;
     uint256 internal constant BID_CEILING = 75_000;
     uint256 internal constant CONSUME_CEILING = 99_000;
-    uint256 internal constant CREATE_EDITION_CEILING = 331_000;
-    uint256 internal constant OPEN_SALE_CEILING = 252_000;
-    uint256 internal constant OPEN_SALE_FIRST_CEILING = 318_000;
-    uint256 internal constant OPEN_SALE_DUTCH_CEILING = 273_000;
-    uint256 internal constant PURCHASE_DUTCH_CEILING = 147_000;
-    uint256 internal constant PURCHASE_FIRST_CEILING = 146_000;
-    uint256 internal constant PURCHASE_LATER_CEILING = 129_000;
+    uint256 internal constant CREATE_EDITION_CEILING = 274_000;
+    uint256 internal constant CREATE_EDITION_DUTCH_CEILING = 323_000;
+    uint256 internal constant OPEN_SALE_CEILING = 248_000;
+    uint256 internal constant OPEN_SALE_FIRST_CEILING = 315_000;
+    uint256 internal constant OPEN_SALE_DUTCH_CEILING = 267_000;
+    uint256 internal constant PURCHASE_DUTCH_CEILING = 127_000;
+    uint256 internal constant PURCHASE_FIRST_CEILING = 127_000;
+    uint256 internal constant PURCHASE_LATER_CEILING = 127_000;
     uint256 internal constant REFRESH_FIRST_CEILING = 131_000;
     uint256 internal constant REFRESH_FURTHER_CEILING = 161_000;
     uint256 internal constant CREATE_WALLET_CEILING = 1_262_000;
@@ -613,6 +614,18 @@ contract IntegrationGasReport is IntegrationBase {
         );
         r = _row("createEdition", starter, address(editions), data, 0);
         _gasAtMost(r, CREATE_EDITION_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev A Dutch edition keeps its curve decoded in two words (QUALITY-5).
+    function _rowCreateEditionDutch() internal returns (Row memory r) {
+        (uint256 workId, bytes32 masterRoot, Work[] memory works) =
+            _settledMasterOf(_dutchMasterWorks());
+        bytes memory data = abi.encodeCall(
+            editions.createEdition, (workId, works[0].item, masterRoot, _proofOf(works, 0))
+        );
+        r = _row("createEdition, a Dutch edition", starter, address(editions), data, 0);
+        _gasAtMost(r, CREATE_EDITION_DUTCH_CEILING, "regression ceiling");
         _growthIs(r, 9, 0);
     }
 
@@ -696,8 +709,9 @@ contract IntegrationGasReport is IntegrationBase {
         saleId = abi.decode(ret, (uint256));
     }
 
-    /// @dev The edition's first copy, to a new holder: the mint path's one-time records. The phase
-    ///      is public and uncapped, so the adapter records no purchase count (QUALITY-1).
+    /// @dev The edition's first copy, to a new holder: only the holder's balance. The phase is
+    ///      public and uncapped, so the adapter records no purchase count (QUALITY-1), and the
+    ///      edition's minted counter shares a word written at creation (QUALITY-5).
     function _rowPurchaseFirst() internal returns (Row memory r) {
         uint256 saleId = _openEditionSale();
         address buyer = makeAddr("firstCopyBuyer");
@@ -709,7 +723,7 @@ contract IntegrationGasReport is IntegrationBase {
             EDITION_PRICE
         );
         _gasAtMost(r, PURCHASE_FIRST_CEILING, "regression ceiling");
-        _growthIs(r, 2, 0);
+        _growthIs(r, 1, 0);
     }
 
     function _rowPurchaseLater() internal returns (Row memory r) {
@@ -793,7 +807,7 @@ contract IntegrationGasReport is IntegrationBase {
             EDITION_PRICE
         );
         _gasAtMost(r, PURCHASE_DUTCH_CEILING, "regression ceiling");
-        _growthIs(r, 2, 0);
+        _growthIs(r, 1, 0);
     }
 
     // ------------------------------------------------------------------ identity
@@ -1027,6 +1041,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowCreateEdition();
     }
 
+    function test_Gas_CreateEdition_Dutch() public {
+        _rowCreateEditionDutch();
+    }
+
     function test_Gas_OpenSale() public {
         _rowOpenSale();
     }
@@ -1090,7 +1108,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[28] memory rows = [
+        function() internal returns (Row memory)[29] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1106,6 +1124,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSettle,
             _rowConsume,
             _rowCreateEdition,
+            _rowCreateEditionDutch,
             _rowOpenSale,
             _rowOpenSaleFirst,
             _rowPurchaseFirst,
@@ -1120,7 +1139,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[28] memory measured;
+        Row[29] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

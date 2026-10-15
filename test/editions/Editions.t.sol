@@ -809,6 +809,45 @@ contract EditionsTest is EditionsBase {
         assertEq(editions.primaryTerms(id, "").creator, recovered);
     }
 
+    /// @dev QUALITY-5: the packed record rebuilds the approved terms exactly at the field bounds
+    ///      (an OPEN Dutch edition with every width at its maximum, its curve kept decoded), and
+    ///      a mint counts and opens the window in place.
+    function test_Edition_PackedRecordRoundTripsAtTheBounds() public {
+        PackageItem memory item = _openItem(type(uint64).max, type(uint64).max);
+        item.edition.price = type(uint256).max;
+        item.edition.params =
+            abi.encode(DutchParams(type(uint256).max - 1, type(uint64).max, type(uint64).max));
+        uint256 id = _create(item);
+        IEditions.Edition memory ed = editions.edition(id);
+        assertEq(keccak256(abi.encode(ed.terms)), keccak256(abi.encode(item.edition)));
+        PrimaryTerms memory t = editions.primaryTerms(id, "");
+        assertEq(t.saleKind, SaleKind.DUTCH);
+        assertEq(t.price, type(uint256).max);
+        assertEq(keccak256(t.params), keccak256(item.edition.params));
+        assertEq(uint8(editions.formatOf(id)), uint8(EditionFormat.OPEN));
+
+        dutchAdapter.buy(editions, id, buyer, 3);
+        ed = editions.edition(id);
+        assertEq(ed.minted, 3);
+        assertEq(ed.windowStart, block.timestamp);
+        assertEq(keccak256(abi.encode(ed.terms)), keccak256(abi.encode(item.edition)));
+        assertEq(ed.royaltyRate, 6_529);
+    }
+
+    /// @dev QUALITY-5: a FIXED_PRICE edition's kind is the record's flag: only the fixed-price
+    ///      adapter mints it, and its params stay empty.
+    function test_Edition_PackedKindGatesTheAdapter() public {
+        uint256 id = _create(_fixedItem(10));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.FIXED_PRICE, SaleKind.DUTCH
+            )
+        );
+        dutchAdapter.buy(editions, id, buyer, 1);
+        assertEq(editions.primaryTerms(id, "").params, "");
+        assertEq(editions.edition(id).terms.saleKind, SaleKind.FIXED_PRICE);
+    }
+
     function test_Mint_DutchTermsCarryParams() public {
         PackageItem memory item = _openItem(1 days, 0);
         uint256 id = _create(item);

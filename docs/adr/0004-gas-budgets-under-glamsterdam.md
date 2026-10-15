@@ -135,13 +135,14 @@ no ceiling, or not run on Sepolia.
 | `settle`, first payout to a seller wallet | 168,063 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
 | `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
-| `openSale` (one public phase) | 246,877 | 252,000 (regression) | 6 | 0 | 993,668 |
-| `openSale`, the adapter's first sale (one-time) | 311,676 | 318,000 (regression) | 9 | 0 | — |
-| `purchase`, the first copy, new holder | 142,793 | 146,000 (regression) | 2 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 125,693 | 129,000 (regression) | 1 | 0 | 370,142 |
-| `openSale`, Dutch | 266,825 | 273,000 (regression) | 7 | 0 | — |
-| `purchase`, Dutch, the first copy, new holder | 143,356 | 147,000 (regression) | 2 | 0 | — |
+| `createEdition` | 268,400 | 274,000 (regression) | 7 | 0 | 1,118,699 |
+| `createEdition`, a Dutch edition | 316,589 | 323,000 (regression) | 9 | 0 | — |
+| `openSale` (one public phase) | 243,055 | 248,000 (regression) | 6 | 0 | 993,668 |
+| `openSale`, the adapter's first sale (one-time) | 307,854 | 315,000 (regression) | 9 | 0 | — |
+| `purchase`, the first copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 468,086 |
+| `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 370,142 |
+| `openSale`, Dutch | 260,967 | 267,000 (regression) | 7 | 0 | — |
+| `purchase`, Dutch, the first copy, new holder | 124,486 | 127,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,325 | 50,000 of execution | 0 | 0 | 40,667 |
@@ -196,6 +197,15 @@ no ceiling, or not run on Sepolia.
     `openSale` 7 instead of 8. The adapter's first sale registers the fee
     recipient: 9 slots, once per adapter. A purchase reads its phase in one word
     instead of four (about 6.1K less).
+  - QUALITY-5: the Editions record keeps the `Edition` view but packs its words:
+    the seller with the size, format and kind; the royalty receiver with the
+    window and rate; the artist ID with the minted count and fee share; the fee
+    recipient with the window start; the currency (zero for ETH); the content
+    hash and the price; a Dutch curve decoded into two words instead of `bytes`.
+    `createEdition` writes 7 new slots instead of 9 (about 46K less Prague gas),
+    a Dutch edition 9 instead of 13 with a stepped curve, and an edition's first
+    copy no longer opens the minted counter's word: the first `purchase` writes
+    only the holder's balance, 1 slot instead of 2, the same as a later copy.
 - **The two-party `startWithBid` is the tightest:** 341,251, about 8.7K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 377,833**, about 45K more
