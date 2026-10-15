@@ -44,8 +44,9 @@ interface IEntropyModule is IERC165 {
 
     /// @notice Links an approved, unconsumed VRF item to its content's draw and requests that
     ///         draw's seed, or adds another request once `retryDelay()` has passed with no seed
-    ///         fixed. Returns zero when the item only joined a delivered or pending draw.
-    ///         Permissionless.
+    ///         fixed. Returns zero when the item only joined a delivered or pending draw. A
+    ///         linked item called again once `retryDelay()` has passed with no seed fixed makes
+    ///         a new request for the content. Permissionless.
     function requestSeed(PackageItem calldata item, bytes32 packageRoot, bytes32[] calldata proof)
         external
         returns (uint256 requestId);

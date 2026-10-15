@@ -163,6 +163,17 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Randomness requests happen before minting (amends §9).**
   - Anyone may call `requestSeed` for an approved, unconsumed VRF item. Starting
     the auction requires the seed to have been delivered.
+  - One draw per content hash (14 October 2026 review, DEPS-1): every approved
+    item with the same content reads the same seed.
+- **The VRF callback gas limit can be lowered (deviates from ADR 0001
+  §13.9's "raise-only"; 14 October 2026 review, DEPS-5).**
+  - `setConfig` still only raises it (48 hours). `lowerCallbackGasLimit`
+    lowers it in the 30-day class, never below `MIN_CALLBACK_GAS`.
+  - Reason: Chainlink can lower its coordinator's maximum, and 6529 Stream
+    pins the module, so a limit stuck above that maximum would end VRF works
+    for the deployment. The raise-only rule guards against starving the
+    callback; the floor, about three times the callback's Glamsterdam cost,
+    and the 30-day guardian veto keep that guard.
   - Chainlink VRF v2.5 never expires a request, so a retry adds a request and
     the first delivery wins. The minimum retry delay is 3 days.
   - The module uses a dedicated subscription. Chainlink's `migrate` cannot be

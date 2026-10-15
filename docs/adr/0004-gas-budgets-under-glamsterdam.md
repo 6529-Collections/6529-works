@@ -159,6 +159,8 @@ no ceiling, or not run on Sepolia.
   identity fixes; the other rows are as accepted, and moved by a few dozen gas
   at most. The Sepolia column and the replay comparison below are the r2
   deployment, which predates the change.
+- **The VRF start row** also includes, since the same review, the read of
+  the item's content link in `isDelivered` (DEPS-1, about 2,200 gas).
 - **The two-party `startWithBid` is the tightest:** 338,411, about 11.6K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 375,037**, about 45K more
@@ -287,8 +289,9 @@ pricing.
   flushed later. Split wallets receive with an empty `receive` and are
   unaffected.
 - **The VRF callback** used about 62% of its 200,000-gas limit on Sepolia (one
-  new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours),
-  raise-only. The callback now creates no slot (the seed overwrites the request
+  new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours);
+  lowering it, never below the floor, a SUCCESSOR_SETTER one (30 days). The
+  callback now creates no slot (the seed overwrites the request
   ID, DEPS-2): about 34,000 under Glamsterdam, about a third of the 100,000
   floor.
 - **The claim router's continue-mode minimums** (200,000 per plain item,

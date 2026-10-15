@@ -48,7 +48,10 @@ the rightful artist's item after an upheld dispute released the content. A
 work has exactly one seed, whichever package lists it. The reads stay
 keyed by item hash through the link, so an item that never called
 `requestSeed` reads as undelivered (and cannot start) until it links, which
-costs one storage slot and no oracle request.
+costs one storage slot and no oracle request. A revision that changes the
+primary media is a new content hash and so a new work for the module: the
+curation runbook revokes the old root before approving a media revision of a
+VRF work whose seed was delivered.
 
 Nothing is in custody while a seed is outstanding, so a missing delivery
 delays a work but never strands one. The seed is the VRF output unchanged, so

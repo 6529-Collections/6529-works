@@ -34,6 +34,10 @@ with the linked-pair exception from §6.
   again, and one signed while the signer is disabled cannot name the epoch its
   re-enable will start. The signer re-signs what it still approves; tooling
   reads `signerEpoch(signer)` before signing.
+- **VRF media revisions.** A revision of a VRF work that changes its primary
+  media has a new content hash, so it draws a new seed. Before approving such
+  a revision of a work whose seed was delivered, the guardian revokes the old
+  root.
 - **Stopping a signer.** `disableSigner` (GUARDIAN, immediate) is the way to
   stop a signer, and only it, or revoking the role and granting it again, ends
   an epoch. An ADMIN change of the signer's execution delay makes it inactive

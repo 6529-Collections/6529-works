@@ -55,9 +55,10 @@ renderer can show dispute status (ADR 0001 §12) without scanning events.
 **Dispute outcomes.**
 - **Subjects.** A `DISPUTE_OUTCOME` about an ERC-721 token (by ERC-165) needs
   the token to exist when it is recorded (`UnknownDisputeSubject` otherwise):
-  not yet minted or burned tokens are refused. An ERC-1155 subject is refused: an edition's outcome is
-  recorded on its master, which the edition's metadata shows. Subjects that
-  are not tokens (an item before its mint, `(address(0), uint256(itemHash))`; a
+  not yet minted or burned tokens are refused. Every ERC-1155 subject is
+  refused: an edition's outcome is recorded on its master, which the edition's
+  metadata shows, and an outcome about a federated ERC-1155 work goes on its
+  master or waits for v1.1. Subjects that are not tokens (an item before its mint, `(address(0), uint256(itemHash))`; a
   work ID; an artist in the artist registry) are not checked.
 - **What `latestDisputeOutcome` answers: the display rule.** For a 6529 Stream
   token with no outcome of its own, it answers the latest outcome about the
