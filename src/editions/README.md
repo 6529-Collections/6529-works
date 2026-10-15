@@ -12,10 +12,12 @@ the exclusivity rule in §3 and the license rule in §8.
 
 **Link.** `createEdition(workId, item, packageRoot, proof)` is permissionless. It
 accepts only the exact item the master was minted from (Stream's stored item
-hash), proven by `proof` to be in a package root the registry still reports
-approved, so a guardian revocation blocks the edition at no cost to the auction
-start. An item listed in two packages passes through whichever is still
-approved; this edge case is accepted. It also needs the master's sale to have
+hash), proven by `proof` to be in a package root the registry registered. The
+root may have been revoked since: a revocation stops a package's unconsumed
+items, and Stream already consumed exactly this item, so revoking a root over
+another of its items never strands the edition of a master already sold from
+it. A root never registered, or revoked before registration, proves nothing.
+It also needs the master's sale to have
 settled (`IStream.primarySaleSettled`, marked by the minting adapter at
 settle), so a disputed or burned master never gets an edition. It locks the
 `PRODUCT_EDITIONS` economics (seller, fee, royalty receiver), claims the content

@@ -51,6 +51,8 @@ library EditionsPackages {
 ///      Stream consumed, once (`IPackageRegistry.claimContent`).
 contract EditionsRegistryMock {
     mapping(bytes32 => IPackageRegistry.PackageStatus) internal _status;
+    /// @dev Roots registered (approved at some point): only they carry an evidence hash.
+    mapping(bytes32 => bool) internal _registered;
     mapping(bytes32 => bytes32) public consumedItemOf;
     mapping(bytes32 => bytes32) public editionClaimOf;
     address public stream;
@@ -66,6 +68,7 @@ contract EditionsRegistryMock {
 
     function approve(bytes32 root) external {
         _status[root] = IPackageRegistry.PackageStatus.APPROVED;
+        _registered[root] = true;
     }
 
     function revoke(bytes32 root) external {
@@ -77,6 +80,7 @@ contract EditionsRegistryMock {
         view
         returns (IPackageRegistry.PackageStatus, bytes32, address)
     {
+        if (!_registered[root]) return (_status[root], bytes32(0), address(0));
         return (_status[root], keccak256(abi.encode("evidence", root)), address(0xC0FFEE));
     }
 

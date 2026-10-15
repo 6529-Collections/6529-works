@@ -11,7 +11,7 @@ touch this module. A package item opts in with seed policy `VRF`.
 
 | File | Role |
 | --- | --- |
-| `VrfEntropyModule.sol` (interface: [`IEntropyModule`](../interfaces/IEntropyModule.sol)) | Requests a seed for a package item, stores it once the coordinator delivers it, answers `isDelivered`, `seedOf`, `requestOf` and ERC-165. Governed `setConfig` and `setCoordinator`. |
+| `VrfEntropyModule.sol` (interface: [`IEntropyModule`](../interfaces/IEntropyModule.sol)) | Requests the seed of a package item's content, stores it once the coordinator delivers it, answers `isDelivered`, `seedOf`, `requestOf` (by item hash) and ERC-165. Governed `setConfig` and `setCoordinator`. |
 | `IVRFCoordinatorV2Plus.sol` | The one coordinator function the module calls (`requestRandomWords`), declared locally. There is no Chainlink dependency. |
 
 Tests are in [`test/entropy/`](../../test/entropy), mocks in
@@ -21,11 +21,15 @@ Tests are in [`test/entropy/`](../../test/entropy), mocks in
 
 1. **Request.** Anyone calls `requestSeed(item, packageRoot, proof)` for a VRF
    item of an approved package, before any token exists. The module hashes the
-   item itself, checks the gate (below), calls the coordinator and records the
-   request ID.
+   item itself, checks the gate (below) and links the item to its content's
+   draw (`SeedLinked`). If the content has no draw yet, it calls the coordinator
+   and records the request ID; if the content's draw is delivered or pending,
+   the item only joins it and the call returns zero.
 2. **Delivery.** The coordinator calls `rawFulfillRandomWords(requestId,
-   words)`. The module stores `bytes32(words[0])` under the item hash and emits
-   `SeedDelivered`. It calls nothing: not the token, not the auction.
+   words)`. The module stores `bytes32(words[0])` under the content hash, over
+   the word that held the request ID, so the delivery creates no storage slot,
+   and emits `SeedDelivered`. It calls nothing: not the token, not the auction.
+   `requestOf` then reads a request ID of zero.
 3. **Start.** The auction's `start` requires `isDelivered(itemHash)`, then
    consumes the item, mints and opens the 24-hour clock in one transaction.
    The Stream reads the seed with `seedOf(itemHash)` through the item hash it
@@ -34,8 +38,20 @@ Tests are in [`test/entropy/`](../../test/entropy), mocks in
    made may be requested again by anyone. A repeat **adds** a request and never
    invalidates an earlier one: a delivery for any outstanding request is
    accepted, **the first delivery fixes the seed**, and a later delivery for the
-   same item is a silent no-op (it does not revert, so the oracle's fulfilment
+   same content is a silent no-op (it does not revert, so the oracle's fulfilment
    succeeds).
+
+**One draw per content.** The draw is keyed by the item's content hash, the
+package registry's uniqueness key, not by the item hash. Every approved item
+carrying the same work reads the same seed: a revised package of the work, or
+the rightful artist's item after an upheld dispute released the content. A
+work has exactly one seed, whichever package lists it. The reads stay
+keyed by item hash through the link, so an item that never called
+`requestSeed` reads as undelivered (and cannot start) until it links, which
+costs one storage slot and no oracle request. A revision that changes the
+primary media is a new content hash and so a new work for the module: the
+curation runbook revokes the old root before approving a media revision of a
+VRF work whose seed was delivered.
 
 Nothing is in custody while a seed is outstanding, so a missing delivery
 delays a work but never strands one. The seed is the VRF output unchanged, so
@@ -59,7 +75,8 @@ of these hold, and any failure is `NotRequestable(itemHash)`:
    consumed, and its content hash was not claimed by another item (either way
    it could never mint).
 
-The gate runs on every call, repeats included.
+It also refuses an item with a zero content hash. The gate runs on every call,
+repeats included.
 
 **Why this and not a fee or a fixed caller.**
 - **A fee** would have to track the oracle's cost, which moves with gas prices
@@ -72,13 +89,13 @@ The gate runs on every call, repeats included.
   block honest requests.
 - **The package gate** keeps requests open to anyone (the artist, a relayer, a
   bot) with no privileged step. The total possible spend is one draw per VRF
-  item the network approved, plus one repeat per `retryDelay` for each item
-  whose draw never arrived. The curation signer, the party consent and the
+  content the network approved, plus one repeat per `retryDelay` for each
+  content whose draw never arrived. The curation signer, the party consent and the
   guardian's revocation already bound that set.
 
 **Accepted limits.**
-- A hostile approved package with many VRF items could still drain the
-  subscription, one draw per item. The guardian revokes it, and keeping the
+- A hostile approved package with many VRF works could still drain the
+  subscription, one draw per content. The guardian revokes it, and keeping the
   subscription balance topped up in small amounts bounds the loss.
 - A request made before a revocation still delivers; the seed can never be
   used because the item can no longer mint.
@@ -89,10 +106,11 @@ The gate runs on every call, repeats included.
 | `rawFulfillRandomWords` | The coordinator only | none |
 | `setConfig(expected, next)` | `Roles.PARAMETER_SETTER` | 48 hours, compare-and-set |
 | `setCoordinator(expected, next)` | `Roles.SUCCESSOR_SETTER` | 30 days, compare-and-set |
+| `lowerCallbackGasLimit(expected, next)` | `Roles.SUCCESSOR_SETTER` | 30 days, compare-and-set, never below the floor |
 
 Governed functions are non-payable and emit the previous and next values.
 `requestSeed` is not payable either; the subscription pays. The deploy
-configuration maps the two governed selectors as above; `test/entropy/VrfEntropyManaged.t.sol`
+configuration maps the three governed selectors as above; `test/entropy/VrfEntropyManaged.t.sol`
 configures the module under the real `GovernanceConfigurator` and proves the
 delay classes, the guardian's cancellation and that nothing is payable.
 
@@ -105,7 +123,7 @@ delegated account. The module applies the same checks to what it depends on:
 | Dependency | Checks |
 | --- | --- |
 | Package registry (constructor, immutable) | Has code, is not an EIP-7702 delegated account, answers ERC-165 for `IPackageRegistry`, and has the code hash passed as a constructor argument. |
-| VRF coordinator (constructor and `setCoordinator(expected, next, nextCodeHash)`) | Has code, is not an EIP-7702 delegated account, has the pinned code hash, and (for a swap) differs from the current coordinator. |
+| VRF coordinator (constructor and `setCoordinator(expected, next, nextCodeHash)`) | Has code, is not an EIP-7702 delegated account, has the pinned code hash, and (for a swap) differs from the current coordinator. The pinned hash is checked again at every request and delivery (`CodeHashMismatch`): code at that address without the pinned hash can neither request nor deliver. |
 
 The coordinator is a Chainlink contract with no ERC-165, so it gets the code and
 hash checks only.
@@ -118,7 +136,7 @@ current struct and reverts with `ExpectedValueMismatch` if it is stale.
 
 | Parameter | Bounds |
 | --- | --- |
-| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `BoundedParameter`: each step may at most double it, never above the ceiling, never down (or left unchanged). The callback costs about 35,000 gas with every slot cold (measured), so the floor leaves a wide margin and a hostile setter cannot starve it. |
+| Callback gas limit | 100,000 to 2,500,000. **Raise-only** through `setConfig` (`BoundedParameter`): each step may at most double it, never above the ceiling, never down (or left unchanged). Lowering it, never below the floor, is `lowerCallbackGasLimit` in the 30-day class, so the module can follow a coordinator whose maximum Chainlink lowered below the limit. The callback creates no storage slot and costs about 20,000 Prague gas with every slot cold, about 34,000 under Glamsterdam (measured, then repriced as ADR 0004 does), so the floor leaves a margin of three and a hostile setter cannot starve it. |
 | Confirmations | 3 to 200 (the coordinator's own limits on Ethereum mainnet). |
 | Subscription ID, key hash | Nonzero. |
 | `retryDelay` (constructor, immutable) | 3 days to 30 days. Not an expiry: VRF v2.5 never expires a request on-chain, so a repeat waits until a delivery is plainly overdue. |
@@ -127,7 +145,7 @@ The coordinator is changeable (`setCoordinator(expected, next, nextCodeHash)`,
 30 days) because the Stream and the auction hold this module's address
 immutably: when Chainlink retires a coordinator, the module must be able to
 follow. A swap affects only undelivered items. Every request is remembered under
-the coordinator that issued it (`coordinator => requestId => item`), so the old
+the coordinator that issued it (`coordinator => requestId => content`), so the old
 coordinator can no longer deliver, the new one cannot deliver what the old one
 issued, and the two may use the same numbers, even across A to B to A. Requests
 the old coordinator still held are requested again after `retryDelay`.
@@ -137,10 +155,10 @@ Delivered seeds never change.
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| VRF coordinator | Deliver the seed of an item for any request it was given; the first delivery is final | Pick which items are VRF, change a delivered seed, deliver for a request it was not given |
-| Anyone | Request a VRF item of an approved, unconsumed package; repeat it after `retryDelay` | Request an unapproved, revoked, consumed or non-VRF item, or one already delivered |
-| `PARAMETER_SETTER` | Change the lane, subscription, confirmations, payment mode, and raise the gas limit | Lower the gas limit, exceed the bounds, change the coordinator |
-| `SUCCESSOR_SETTER` | Replace the coordinator (30 days, guardians can cancel) | Alter a delivered seed |
+| VRF coordinator | Deliver the seed of a content for any request it was given; the first delivery is final | Pick which items are VRF, change a delivered seed, deliver for a request it was not given |
+| Anyone | Request a VRF item of an approved, unconsumed package (or join its content's draw); repeat it after `retryDelay` | Request an unapproved, revoked, consumed or non-VRF item, draw a second seed for a content, or request one already delivered |
+| `PARAMETER_SETTER` | Change the lane, subscription, confirmations, payment mode, and raise the gas limit | Lower the gas limit (a 30-day `SUCCESSOR_SETTER` action), exceed the bounds, change the coordinator |
+| `SUCCESSOR_SETTER` | Replace the coordinator; lower the gas limit to no less than the floor (30 days, guardians can cancel) | Alter a delivered seed |
 
 - **First delivery wins (and why a repeat does not supersede).** Chainlink VRF
   v2.5 never expires a pending request on-chain, so an earlier request can
@@ -203,11 +221,14 @@ Delivered seeds never change.
 
 Measured by `test/entropy/VrfEntropyModule.t.sol` (see the test logs):
 
-- **Callback:** about 35,000 gas with every slot cold, against a 100,000
-  floor.
-- **`requestSeed`:** about 153,000 gas including the two registry reads, hashing
-  the item, a two-hash proof, three new storage slots and a mock coordinator
-  that stores one slot. A real coordinator costs more. The request is off the
+- **Callback:** about 20,000 Prague gas with every slot cold and no new
+  storage slot; about 34,000 under Glamsterdam, where a new slot alone would
+  cost about 111,000. The floor is 100,000.
+- **`requestSeed`:** about 176,000 gas including the two registry reads, hashing
+  the item, a two-hash proof, four new storage slots (the item's content link,
+  the draw's two words and the request ID's record) and a mock coordinator
+  that stores one slot. An item joining an existing draw writes one slot, its
+  link, and makes no request. A real coordinator costs more. The request is off the
   auction's start path (D4), so the start budget (350K Prague gas, at most 6
   new slots; ADR 0004) does not apply to it; `start` pays only
   for reading `isDelivered`.
@@ -218,4 +239,4 @@ Measured by `test/entropy/VrfEntropyModule.t.sol` (see the test logs):
 - Per-copy seeds (ADR 0001 §9; "1/1/x" is NextGen).
 - A fallback to another randomness source. VRF alone is acceptable.
 - Wiring into the Stream and the auction: those lanes read `isDelivered` and
-  `seedOf` by item hash.
+  `seedOf` by item hash (resolved through the item's content link).

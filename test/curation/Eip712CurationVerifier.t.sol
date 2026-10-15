@@ -14,16 +14,20 @@ import { CurationBase } from "./CurationBase.sol";
 contract Eip712CurationVerifierTest is CurationBase {
     // Golden vectors computed independently with `cast keccak` and `cast abi-encode`.
     bytes32 internal constant GOLDEN_APPROVAL_TYPEHASH =
-        0x042a3f421b5117b21363cb14bb213061c468e91b1af5d8d925a04a5d0a6648c9;
+        0xbf131d47e2ddcf4bd120061a8a3c2841ef379caa26b7eec0881120e1d8a43cdd;
     address internal constant FIXED_VERIFIER = 0x1000000000000000000000000000000000000001;
     bytes32 internal constant GOLDEN_DOMAIN =
         0x81c511d2826231982036519eb645b3739e82fe2e2095098b6796cc25de79bffe;
-    /// @dev `approvalDigest(keccak256("root"), keccak256("evidence"))` at FIXED_VERIFIER on
+    /// @dev `approvalDigest(keccak256("root"), keccak256("evidence"), 1)` at FIXED_VERIFIER on
     ///      chain 31337.
     bytes32 internal constant GOLDEN_APPROVAL_DIGEST =
-        0xdbd06fb3703de56e96af8b34569c8612a2039556fb3ae8242e34ded793c5fde6;
+        0x8832dc6f5fe11be44c58102634abf24ef3ae736343fc16aeb7a54252f00009d3;
 
     bytes32 internal constant ROOT = keccak256("a package root");
+
+    function _epoch1() internal view returns (uint256) {
+        return verifier.signerEpoch(signer1);
+    }
 
     // ------------------------------------------------------------------- golden vectors
 
@@ -36,11 +40,11 @@ contract Eip712CurationVerifierTest is CurationBase {
         vm.etch(FIXED_VERIFIER, address(verifier).code);
         Eip712CurationVerifier fixedVerifier = Eip712CurationVerifier(FIXED_VERIFIER);
         assertEq(
-            fixedVerifier.approvalDigest(keccak256("root"), keccak256("evidence")),
+            fixedVerifier.approvalDigest(keccak256("root"), keccak256("evidence"), 1),
             GOLDEN_APPROVAL_DIGEST
         );
         bytes32 structHash = keccak256(
-            abi.encode(GOLDEN_APPROVAL_TYPEHASH, keccak256("root"), keccak256("evidence"))
+            abi.encode(GOLDEN_APPROVAL_TYPEHASH, keccak256("root"), keccak256("evidence"), 1)
         );
         assertEq(
             GOLDEN_APPROVAL_DIGEST,
@@ -72,12 +76,12 @@ contract Eip712CurationVerifierTest is CurationBase {
     }
 
     function test_isApproved_compactSignature() public view {
-        bytes memory sig = _compact(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory sig = _compact(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         assertTrue(_approved(verifier, ROOT, EVIDENCE, abi.encode(signer1, sig)));
     }
 
     function test_isApproved_rejectsMalleableHighS() public view {
-        bytes memory sig = _highS(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory sig = _highS(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         assertFalse(_approved(verifier, ROOT, EVIDENCE, abi.encode(signer1, sig)));
     }
 
@@ -94,7 +98,7 @@ contract Eip712CurationVerifierTest is CurationBase {
 
     function test_isApproved_rejectsSignerClaimMismatch() public view {
         // signer2 is named, but signer1 signed.
-        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         assertFalse(_approved(verifier, ROOT, EVIDENCE, abi.encode(signer2, sig)));
     }
 
@@ -135,18 +139,112 @@ contract Eip712CurationVerifierTest is CurationBase {
         assertFalse(_approved(verifier, ROOT, EVIDENCE, _attestation(signerKey1, ROOT, EVIDENCE)));
     }
 
+    // ------------------------------------------------------------------------ epochs (SIGS-2)
+
+    /// @dev The salt a disable or an enable draws: the low 64 bits of
+    ///      `keccak256(abi.encode(block.prevrandao, signer, changes))`.
+    function _salt(address signer, uint64 changes) internal view returns (uint256) {
+        return uint64(uint256(keccak256(abi.encode(block.prevrandao, signer, changes))));
+    }
+
+    function test_signerEpoch_isTheGrantTimeTheSaltAndTheChangeCount() public {
+        (uint48 since,,,) = manager.getAccess(Roles.CURATION_SIGNER, signer1);
+        assertEq(verifier.signerEpoch(signer1), uint256(since) << 128);
+        vm.prevrandao(keccak256("the disable block"));
+        vm.prank(guardian);
+        verifier.disableSigner(signer1);
+        assertEq(verifier.signerEpoch(signer1), uint256(since) << 128 | _salt(signer1, 1) << 64 | 1);
+        vm.prevrandao(keccak256("the enable block"));
+        vm.prank(successor);
+        verifier.enableSigner(signer1);
+        uint256 enabled = uint256(since) << 128 | _salt(signer1, 2) << 64 | 2;
+        assertEq(verifier.signerEpoch(signer1), enabled, "enabling changes it");
+        vm.startPrank(admin);
+        manager.revokeRole(Roles.CURATION_SIGNER, signer1);
+        assertEq(verifier.signerEpoch(signer1), uint128(enabled), "no grant");
+        vm.warp(block.timestamp + 1 days);
+        manager.grantRole(Roles.CURATION_SIGNER, signer1, 0);
+        vm.stopPrank();
+        assertEq(verifier.signerEpoch(signer1), uint256(block.timestamp) << 128 | uint128(enabled));
+        assertEq(verifier.signerEpoch(makeAddr("never a signer")), 0);
+    }
+
+    /// @dev Review of SIGS-2: the epoch an enable starts is salted from the enable's block, so
+    ///      an approval signed while the signer is disabled cannot name it, whether it guesses
+    ///      the next change count or the salt the disable's block would give.
+    function test_isApproved_anApprovalSignedWhileDisabledCannotNameTheNextEpoch() public {
+        vm.prevrandao(keccak256("the disable block"));
+        vm.prank(guardian);
+        verifier.disableSigner(signer1);
+        uint256 disabled = verifier.signerEpoch(signer1);
+        uint256[2] memory guesses =
+            [disabled + 1, (disabled >> 128) << 128 | _salt(signer1, 2) << 64 | 2];
+        bytes[2] memory signed;
+        for (uint256 i; i < 2; ++i) {
+            bytes32 digest = verifier.approvalDigest(ROOT, EVIDENCE, guesses[i]);
+            signed[i] = abi.encode(signer1, _sig(signerKey1, digest));
+        }
+        vm.roll(block.number + 1);
+        vm.prevrandao(keccak256("the enable block"));
+        vm.prank(successor);
+        verifier.enableSigner(signer1);
+        for (uint256 i; i < 2; ++i) {
+            assertTrue(verifier.signerEpoch(signer1) != guesses[i]);
+            assertFalse(_approved(verifier, ROOT, EVIDENCE, signed[i]));
+        }
+        assertTrue(_approved(verifier, ROOT, EVIDENCE, _attestation(signerKey1, ROOT, EVIDENCE)));
+    }
+
+    function test_isApproved_onlyAtTheCurrentEpoch() public view {
+        uint256 epoch = verifier.signerEpoch(signer1);
+        uint256[3] memory others = [epoch + 1, epoch - 1, 0];
+        for (uint256 i; i < others.length; ++i) {
+            bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, others[i]));
+            assertFalse(_approved(verifier, ROOT, EVIDENCE, abi.encode(signer1, sig)));
+        }
+    }
+
+    /// @dev Review SIGS-2, inverted: approvals signed before a disable, including those signed
+    ///      while disabled, never count after `enableSigner`; a fresh signature does.
+    function test_isApproved_reEnablingDoesNotReviveOlderApprovals() public {
+        bytes memory before = _attestation(signerKey1, ROOT, EVIDENCE);
+        vm.prank(guardian);
+        verifier.disableSigner(signer1);
+        bytes memory whileDisabled = _attestation(signerKey1, ROOT, EVIDENCE);
+        vm.prank(successor);
+        verifier.enableSigner(signer1);
+        assertTrue(verifier.isSignerActive(signer1));
+        assertFalse(_approved(verifier, ROOT, EVIDENCE, before));
+        assertFalse(_approved(verifier, ROOT, EVIDENCE, whileDisabled));
+        assertTrue(_approved(verifier, ROOT, EVIDENCE, _attestation(signerKey1, ROOT, EVIDENCE)));
+    }
+
+    /// @dev Review SIGS-2, inverted: a revoked and re-granted role is a new grant.
+    function test_isApproved_regrantingDoesNotReviveOlderApprovals() public {
+        bytes memory oldGrant = _attestation(signerKey1, ROOT, EVIDENCE);
+        vm.startPrank(admin);
+        manager.revokeRole(Roles.CURATION_SIGNER, signer1);
+        vm.warp(block.timestamp + 1);
+        manager.grantRole(Roles.CURATION_SIGNER, signer1, 0);
+        vm.stopPrank();
+        assertTrue(verifier.isSignerActive(signer1));
+        assertFalse(_approved(verifier, ROOT, EVIDENCE, oldGrant));
+        assertTrue(_approved(verifier, ROOT, EVIDENCE, _attestation(signerKey1, ROOT, EVIDENCE)));
+    }
+
     function test_isApproved_erc1271Signer() public {
         ERC1271WalletMock safe = new ERC1271WalletMock(signer1);
         vm.prank(admin);
         manager.grantRole(Roles.CURATION_SIGNER, address(safe), 0);
-        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        uint256 epoch = verifier.signerEpoch(address(safe));
+        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, epoch));
         assertTrue(_approved(verifier, ROOT, EVIDENCE, abi.encode(address(safe), sig)));
-        bytes memory wrong = _sig(signerKey2, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory wrong = _sig(signerKey2, verifier.approvalDigest(ROOT, EVIDENCE, epoch));
         assertFalse(_approved(verifier, ROOT, EVIDENCE, abi.encode(address(safe), wrong)));
     }
 
     function test_isApproved_malformedAttestationsReturnFalse() public view {
-        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         bytes memory good = abi.encode(signer1, sig);
         assertTrue(_approved(verifier, ROOT, EVIDENCE, good));
         // Too short, a raw signature, dirty address bits, a non-canonical offset, and a length
@@ -167,7 +265,7 @@ contract Eip712CurationVerifierTest is CurationBase {
     /// @dev Review PoC 5, inverted: only the exact canonical encoding counts (no dirty padding,
     ///      no trailing bytes, no short or overlong body).
     function test_isApproved_rejectsNonCanonicalEncodings() public view {
-        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory sig = _sig(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         bytes memory canonical = abi.encode(signer1, sig); // 65 bytes, 31 bytes of padding
         assertEq(canonical.length, 96 + 96);
         assertTrue(_approved(verifier, ROOT, EVIDENCE, canonical));
@@ -185,7 +283,8 @@ contract Eip712CurationVerifierTest is CurationBase {
         }
         assertFalse(_approved(verifier, ROOT, EVIDENCE, unpadded));
         // A 64-byte signature has no padding at all.
-        bytes memory compact = _compact(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE));
+        bytes memory compact =
+            _compact(signerKey1, verifier.approvalDigest(ROOT, EVIDENCE, _epoch1()));
         assertTrue(_approved(verifier, ROOT, EVIDENCE, abi.encode(signer1, compact)));
     }
 

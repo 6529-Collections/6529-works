@@ -146,7 +146,7 @@ contract GenesisConfigTest is Test {
     function _compiled(string memory name) internal pure returns (bytes4[] memory) {
         bytes4 z;
         if (_eq(name, "Stream")) {
-            return _s(
+            bytes4[] memory out = _s(
                 [
                     IStream.createCollection.selector,
                     IStream.setContractURI.selector,
@@ -158,6 +158,12 @@ contract GenesisConfigTest is Test {
                 ],
                 7
             );
+            bytes4[] memory all = new bytes4[](8);
+            for (uint256 i; i < 7; ++i) {
+                all[i] = out[i];
+            }
+            all[7] = IStream.releaseContent.selector;
+            return all;
         }
         if (_eq(name, "WorkRecords")) {
             return _s(
@@ -342,13 +348,13 @@ contract GenesisConfigTest is Test {
                 [
                     VrfEntropyModule.setConfig.selector,
                     VrfEntropyModule.setCoordinator.selector,
-                    z,
+                    VrfEntropyModule.lowerCallbackGasLimit.selector,
                     z,
                     z,
                     z,
                     z
                 ],
-                2
+                3
             );
         }
         revert(string.concat("no compiled selectors for ", name));
@@ -429,7 +435,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 70, "60 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 72, "62 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

@@ -254,6 +254,13 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "releaseContent(uint256,bytes32,uint256)",
+          "selector": "0x56c6d728",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
         }
       ],
       "genesisOnly": [
@@ -836,6 +843,13 @@
         {
           "signature": "setCoordinator(address,address,bytes32)",
           "selector": "0xf1fb02ec",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "lowerCallbackGasLimit(uint32,uint32)",
+          "selector": "0x37f9925e",
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000

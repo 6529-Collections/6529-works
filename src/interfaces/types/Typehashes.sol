@@ -31,9 +31,11 @@ library Typehashes {
         "PackageAcceptance(bytes32 packageRoot,address account,bytes32 profileId,"
         "bytes32 profileDocHash,uint64 deadline)"
     );
-    /// @notice A curation signer approves a package root (curation verifier domain).
-    bytes32 internal constant PACKAGE_APPROVAL =
-        keccak256("PackageApproval(bytes32 packageRoot,bytes32 evidenceHash)");
+    /// @notice A curation signer approves a package root at its epoch (curation verifier
+    ///         domain).
+    bytes32 internal constant PACKAGE_APPROVAL = keccak256(
+        "PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)"
+    );
     /// @notice Every party agrees to relicense a work (work records domain).
     bytes32 internal constant RELICENSE = keccak256(
         "Relicense(uint256 tokenId,bytes32 licenseKey,bytes32 textFileId,bytes32 stateHash,"

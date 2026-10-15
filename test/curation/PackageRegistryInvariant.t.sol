@@ -62,6 +62,8 @@ contract CurationHandler is CurationHelpers {
     mapping(bytes32 itemHash => bool) public released;
     mapping(bytes32 sha => bytes32) public streamItemOf;
     mapping(bytes32 sha => bytes32) public editionItemOf;
+    /// @dev The artist the latest release of each content hash named (its first account's ID).
+    mapping(bytes32 sha => uint256) public releasedTo;
     bool public unexpectedSuccess;
     bool public unexpectedFailure;
     bool public pairViolation;
@@ -161,7 +163,8 @@ contract CurationHandler is CurationHelpers {
         uint256 key = stale ? originalKey[t.a] : currentKey[t.a];
         t.expected = t.caller == stream && statusOf[t.root] == APPROVED && t.proofValid
             && streamItemOf[t.sha] == 0 && !released[itemHashes[t.i]] && key == currentKey[t.a]
-            && !expired && !spent[t.a][t.nonce];
+            && !expired && !spent[t.a][t.nonce]
+            && (releasedTo[t.sha] == 0 || releasedTo[t.sha] == uint160(accounts[t.a]));
         MoveAuthorization memory move = MoveAuthorization(
             t.nonce,
             t.deadline,
@@ -200,16 +203,19 @@ contract CurationHandler is CurationHelpers {
         }
     }
 
-    /// @dev Stream's dispute-burn path, honest or not, or a caller that is not Stream.
+    /// @dev Stream's dispute-burn path, honest or not, or a caller that is not Stream. The
+    ///      release names one of the artists (by its first account's ID).
     function release(uint256 shaSeed, uint256 itemSeed, bool honest, uint8 callerSeed) external {
         bytes32 sha = shas[bound(shaSeed, 0, MEDIA - 1)];
         bytes32 itemHash = honest ? streamItemOf[sha] : itemHashes[bound(itemSeed, 0, ITEMS - 1)];
         address caller = callerSeed % 4 == 1 ? editions : stream;
         bool expected = caller == stream && itemHash != 0 && streamItemOf[sha] == itemHash;
+        uint256 beneficiary = uint160(accounts[(itemSeed >> 8) % ARTISTS]);
         vm.prank(caller);
-        try registry.releaseContent(sha, itemHash) {
+        try registry.releaseContent(sha, itemHash, beneficiary) {
             if (!expected) unexpectedSuccess = true;
             streamItemOf[sha] = 0;
+            releasedTo[sha] = beneficiary;
             released[itemHash] = true;
             ++releases;
         } catch {
@@ -261,9 +267,8 @@ contract CurationHandler is CurationHelpers {
     function registerLate(uint8 rootSeed) external {
         bytes32 root = roots[rootSeed % 3];
         bytes32 evidence = keccak256(abi.encode("late evidence", root));
-        bytes memory att = abi.encode(
-            vm.addr(signerKey), _sig(signerKey, verifier.approvalDigest(root, evidence))
-        );
+        bytes memory att =
+            abi.encode(vm.addr(signerKey), _sig(signerKey, _approvalDigest(root, evidence)));
         bool expected = statusOf[root] == NONE;
         try registry.registerPackage(root, evidence, att) {
             if (!expected) unexpectedSuccess = true;
@@ -305,9 +310,13 @@ contract CurationHandler is CurationHelpers {
 
     // ------------------------------------------------------------------------ helpers
 
+    function _approvalDigest(bytes32 root, bytes32 evidence) internal view returns (bytes32) {
+        return verifier.approvalDigest(root, evidence, verifier.signerEpoch(vm.addr(signerKey)));
+    }
+
     function _register(bytes32 root) internal {
         bytes32 evidence = keccak256(abi.encode("evidence", root));
-        bytes memory sig = _sig(signerKey, verifier.approvalDigest(root, evidence));
+        bytes memory sig = _sig(signerKey, _approvalDigest(root, evidence));
         registry.registerPackage(root, evidence, abi.encode(vm.addr(signerKey), sig));
         statusOf[root] = APPROVED;
     }

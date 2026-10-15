@@ -664,21 +664,30 @@ contract StreamTest is StreamFixture {
         );
         auction.start(stream, data);
 
+        vm.prank(governor);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, tokenId));
-        stream.releaseContent(tokenId, copy.contentHash);
+        stream.releaseContent(tokenId, copy.contentHash, 7);
         auction.burn(stream, tokenId, 1);
 
+        vm.prank(governor);
         vm.expectRevert(
             abi.encodeWithSelector(
                 MockPackageRegistry.NotConsumedBy.selector, keccak256("other"), copyHash
             )
         );
-        stream.releaseContent(tokenId, keccak256("other"));
+        stream.releaseContent(tokenId, keccak256("other"), 7);
+
+        // Governed (PARAMETER_SETTER): nobody else may release.
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        stream.releaseContent(tokenId, copy.contentHash, 7);
 
         vm.expectEmit(address(registry));
-        emit MockPackageRegistry.ContentReleased(copy.contentHash, copyHash);
-        vm.prank(outsider);
-        stream.releaseContent(tokenId, copy.contentHash);
+        emit MockPackageRegistry.ContentReleased(copy.contentHash, copyHash, 7);
+        vm.prank(governor);
+        stream.releaseContent(tokenId, copy.contentHash, 7);
         assertTrue(registry.isTombstoned(copyHash));
         assertEq(registry.consumedItemOf(copy.contentHash), bytes32(0));
 
@@ -688,14 +697,17 @@ contract StreamTest is StreamFixture {
     }
 
     function test_releaseContent_reverts() public {
+        vm.startPrank(governor);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 0));
-        stream.releaseContent(0, bytes32(0));
+        stream.releaseContent(0, bytes32(0), 7);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotBurned.selector, 1));
-        stream.releaseContent(1, bytes32(0));
+        stream.releaseContent(1, bytes32(0), 7);
+        vm.stopPrank();
         uint256 tokenId = _mint(1);
         auction.burn(stream, tokenId, 1);
         bytes32 contentHash = _item(1).contentHash;
-        stream.releaseContent(tokenId, contentHash);
+        vm.startPrank(governor);
+        stream.releaseContent(tokenId, contentHash, 7);
         // A second release finds nothing to free.
         bytes32 itemHash = WorksHashing.itemHash(_item(1));
         vm.expectRevert(
@@ -703,7 +715,8 @@ contract StreamTest is StreamFixture {
                 MockPackageRegistry.NotConsumedBy.selector, contentHash, itemHash
             )
         );
-        stream.releaseContent(tokenId, contentHash);
+        stream.releaseContent(tokenId, contentHash, 7);
+        vm.stopPrank();
     }
 
     /// @dev After a sale nothing is confiscated (ADR 0001 section 12): a settled token can

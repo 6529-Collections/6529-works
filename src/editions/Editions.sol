@@ -42,9 +42,10 @@ import { EditionRules } from "./EditionRules.sol";
 /// @dev The edition ID equals the master's Stream token ID. `createEdition` is permissionless:
 ///      it accepts only the exact package item the master was minted from (its item hash is the
 ///      one Stream stored), proven by a Merkle proof to be an item of a package root the
-///      registry still reports approved, so a guardian revocation blocks the edition at no cost
-///      to the auction start. An item listed in two packages passes through whichever is still
-///      approved; that edge case is accepted. The master's sale must also have settled
+///      registry registered. The root may have been revoked since: a revocation stops a
+///      package's unconsumed items, and Stream already consumed exactly this item, so revoking a
+///      root over another of its items never strands the edition of a master already sold
+///      from it. The master's sale must also have settled
 ///      (`IStream.primarySaleSettled`, marked by the minting adapter at settle), so a disputed or
 ///      burned master never gets an edition. Creation locks the edition's economics (seller,
 ///      network fee, royalty), claims the master's content hash in the package registry (which
@@ -423,8 +424,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     /// @dev The checks of `createEdition`: the work-records satellite bound; no edition yet;
     ///      the master settled; an EDITION_MASTER item that is the master's stored one (its kind is
     ///      bound by the item hash); and the item proven (at most `Limits.MAX_PROOF_DEPTH` nodes)
-    ///      in a package root still approved. The master is read through `IStream.coreOf`, which
-    ///      skips the royalty-receiver derivation `work` performs.
+    ///      in a package root the registry registered (an evidence hash), approved or revoked
+    ///      since. The master is read through `IStream.coreOf`, which skips the royalty-receiver
+    ///      derivation `work` performs.
     function _admit(
         uint256 workId,
         PackageItem calldata item,
@@ -441,8 +443,8 @@ contract Editions is IEditions, ERC1155, AccessManaged {
                 || proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert NotEditionMaster(workId);
-        (IPackageRegistry.PackageStatus status,,) = packageRegistry.packageOf(packageRoot);
-        if (status != IPackageRegistry.PackageStatus.APPROVED) revert NotEditionMaster(workId);
+        (, bytes32 evidenceHash,) = packageRegistry.packageOf(packageRoot);
+        if (evidenceHash == 0) revert NotEditionMaster(workId);
     }
 
     /// @dev ADR 0001 section 13.6: code, no EIP-7702 delegation, and ERC-165 support.

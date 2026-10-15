@@ -95,6 +95,8 @@ Deploy scripts must use the configurator's manager, never a stock
 | MINTER grant | 30-day grant delay |
 | Dispute pause | Immediate, GUARDIAN |
 | Upheld dispute (cancel, refund, burn) | Standard (48 hours), scheduled by day 5 of the 7-day pause |
+| `Stream.releaseContent` after an upheld dispute (names the rightful artist) | Standard (48 hours), PARAMETER_SETTER, scheduled with the cancel (added by the 14 October 2026 review) |
+| Entropy `lowerCallbackGasLimit` (never below the floor) | Verifier and successor (30 days), SUCCESSOR_SETTER (added by the 14 October 2026 review) |
 
 At least two curation signers are provisioned at genesis, so disabling one does
 not halt curation.

@@ -53,9 +53,12 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      declared SHA-256 against the decoded bytes before attesting, and the evidence hash covers
 ///      that check. The one cross-product reuse, the linked pair, is enforced from the Editions
 ///      side: an edition may claim only the content hash its master item consumed on Stream.
-///      When an upheld dispute burns a work during its auction, Stream calls `releaseContent`:
-///      the content hash becomes available to its rightful artist, and the burned item is
-///      tombstoned so it can never be consumed again, through any root.
+///      When an upheld dispute burns a work during its auction, the governed
+///      `IStream.releaseContent` passes on the rightful artist the dispute outcome names: the
+///      content hash is reserved for that artist, so only an item whose lead artist it is may
+///      consume it, and the burned item is tombstoned so it can never be consumed again,
+///      through any root. The reservation is checked only on a released slot, so a fresh
+///      consume pays nothing for it.
 ///
 ///      Approvals are per root, not per item: revoking a root stops only that root, so an item
 ///      also listed in another approved root stays consumable there; the guardian revokes every
@@ -89,6 +92,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     address public stream;
     /// @inheritdoc IPackageRegistry
     address public editions;
+    /// @dev The verifier's pinned code hash, checked again at every registration, not only at
+    ///      install.
+    bytes32 private _verifierCodeHash;
 
     mapping(bytes32 root => Package) private _packages;
     mapping(bytes32 root => mapping(address account => uint256 artistId)) private _acceptedAs;
@@ -96,6 +102,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     mapping(bytes32 contentHash => bytes32 itemHash) private _editionItems;
     mapping(uint256 artistId => mapping(uint256 word => uint256 bits)) private _moveNonces;
     mapping(bytes32 itemHash => bool) private _released;
+    mapping(bytes32 contentHash => uint256 artistId) private _releasedTo;
+    /// @dev Verifiers replaced by `setVerifier`: never installable again.
+    mapping(address verifier => bool) private _retired;
 
     /// @param authority_ The AccessManager that governs this registry.
     /// @param verifier_ The initial curation verifier.
@@ -147,6 +156,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         Package storage p = _packages[packageRoot];
         if (p.status != PackageStatus.NONE) revert PackageExists(packageRoot);
         ICurationVerifier v = verifier;
+        if (address(v).codehash != _verifierCodeHash) revert InvalidDependency(address(v));
         (bool approved, address signer) = v.isApproved(packageRoot, evidenceHash, attestation);
         if (!approved || evidenceHash == 0) revert NotApproved(packageRoot);
         p.status = PackageStatus.APPROVED;
@@ -221,7 +231,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     ///      every party accepted the root and is a distinct artist; the payee list is canonical
     ///      and covered by the parties; the lead's current authority signed the move, unexpired,
     ///      on an unused nonce. A second consume of the same item, or of an item burned and
-    ///      released, reverts with `ContentUsed` naming the item itself.
+    ///      released, reverts with `ContentUsed` naming the item itself. A released content hash
+    ///      is consumed only by an item whose lead artist is the release's beneficiary
+    ///      (`ContentReserved` otherwise).
     function consume(
         bytes32 packageRoot,
         PackageItem calldata item,
@@ -245,6 +257,9 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         }
         _checkTerms(item, itemHash);
         artistId = _checkParties(packageRoot, item, itemHash);
+        if (prior == RELEASED && artistId != _releasedTo[contentHash]) {
+            revert ContentReserved(contentHash, _releasedTo[contentHash]);
+        }
         _useMove(packageRoot, itemHash, artistId, move);
         _streamItems[contentHash] = itemHash;
         emit ItemConsumed(packageRoot, itemHash, artistId, contentHash);
@@ -266,17 +281,25 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IPackageRegistry
     /// @dev Reverts with `ClaimNotAllowed(PRODUCT_STREAM, contentHash)` unless `itemHash` holds
-    ///      the slot. Editions are created only after a master's sale settles, so a burned work
-    ///      never has an edition claim to release; the Editions slot is left untouched.
-    function releaseContent(bytes32 contentHash, bytes32 itemHash) external {
+    ///      the slot, so a release happens once per burned item. The beneficiary must be a
+    ///      registered artist: the artist registry's `authorityOf` reverts with `UnknownArtist`
+    ///      for zero or an unknown ID, so the release waits until the rightful artist has an
+    ///      identity. Editions are created only after a
+    ///      master's sale settles, so a burned work never has an edition claim to release; the
+    ///      Editions slot is left untouched.
+    function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
         if (msg.sender != stream) revert UnboundCaller(msg.sender);
         // Zero (never consumed) and the release marker are not item hashes.
         if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
             revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
         }
+        if (_artists.authorityOf(beneficiary) == address(0)) {
+            revert IArtistRegistry.UnknownArtist(beneficiary);
+        }
         _streamItems[contentHash] = RELEASED;
         _released[itemHash] = true;
-        emit ContentReleased(contentHash, itemHash);
+        _releasedTo[contentHash] = beneficiary;
+        emit ContentReleased(contentHash, itemHash, beneficiary);
     }
 
     /// @inheritdoc IPackageRegistry
@@ -289,14 +312,20 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IPackageRegistry
-    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). Reinstalling the current verifier is a
-    ///      no-op and reverts with `InvalidDependency`.
+    /// @dev Governed: map to SUCCESSOR_SETTER (30 days). The replaced verifier is retired: it,
+    ///      the current verifier and every verifier retired before revert with
+    ///      `InvalidDependency`, so a swap back never restores a retired verifier's approvals or
+    ///      signer states. One slot per swap. The pinned code hash is checked again at every
+    ///      registration.
     function setVerifier(ICurationVerifier expected, ICurationVerifier next, bytes32 nextCodeHash)
         external
         restricted
     {
         if (address(verifier) != address(expected)) revert ExpectedValueMismatch();
-        if (address(next) == address(expected)) revert InvalidDependency(address(next));
+        if (address(next) == address(expected) || _retired[address(next)]) {
+            revert InvalidDependency(address(next));
+        }
+        _retired[address(expected)] = true;
         _setVerifier(next, nextCodeHash);
     }
 
@@ -335,6 +364,11 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @notice Whether `itemHash` was burned and released, so it can never be consumed again.
     function isReleased(bytes32 itemHash) external view returns (bool) {
         return _released[itemHash];
+    }
+
+    /// @inheritdoc IPackageRegistry
+    function releasedTo(bytes32 contentHash) external view returns (uint256 artistId) {
+        return _releasedTo[contentHash];
     }
 
     /// @inheritdoc IPackageRegistry
@@ -387,7 +421,8 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
     /// @dev Content, seed and edition fields: a nonzero content hash; an artist seed exactly
     ///      under `SeedPolicy.ARTIST`; an ORIGINAL with empty edition terms; an EDITION_MASTER
     ///      with edition terms `EditionRules.isValid` accepts, the same rule 6529 Editions applies
-    ///      at `createEdition`, so a master that mints can always get its edition.
+    ///      at `createEdition`, so a master that mints can always get its edition (a later
+    ///      revocation of its root does not stop that either).
     function _checkTerms(PackageItem calldata item, bytes32 itemHash) private pure {
         EditionTerms calldata e = item.edition;
         bool fixedSize = e.format == EditionFormat.FIXED;
@@ -488,6 +523,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         _requireInstallable(address(next), codeHash, type(ICurationVerifier).interfaceId);
         emit VerifierSet(address(verifier), address(next), codeHash);
         verifier = next;
+        _verifierCodeHash = codeHash;
     }
 
     /// @dev Installs (decision D8): ERC-165 support, the pinned code hash, not delegated.

@@ -50,7 +50,7 @@ decisions win. The precise contract surfaces are the interfaces in
      |   |  Registry     |           |  pinned)    |   |  signed)        |
      |   +---------------+           +-------------+   +-----------------+
      |
-     +-- IEntropyModule (optional VRF, seeds keyed by item hash, before the start)
+     +-- IEntropyModule (optional VRF, one seed per content hash, before the start)
          IFederationRegistry (v1.1 placeholder; read by the sale adapters)
 ```
 
@@ -136,9 +136,11 @@ default when the sale starts".
    `acceptedAs[root][account] = artistId`; a first acceptance creates the
    identity and counts as artist activity.
 4. **Seed (VRF works only).** Anyone calls `IEntropyModule.requestSeed(item,
-   packageRoot, proof)` for an approved, unconsumed VRF item. The seed is keyed
-   by item hash. While no seed is fixed, anyone may add another request after
-   the retry delay (at least 3 days); the first delivery wins and later ones are
+   packageRoot, proof)` for an approved, unconsumed VRF item. The seed is drawn
+   once per content hash: every approved item carrying the same work links to
+   that one draw and reads it by item hash, so re-packaging a work cannot draw
+   again. While no seed is fixed, anyone may add another request after the
+   retry delay (at least 3 days); the first delivery wins and later ones are
    no-ops. Nothing is in custody yet, so nothing can get stuck.
 5. **Move to Stream.** The lead artist signs `MoveToStream` off-chain;
    `revokeMove` cancels an unused one.
@@ -279,25 +281,41 @@ default when the sale starts".
 1. A dispute is filed in the 6529 disputes wave. The GUARDIAN role calls
    `IEnglishAuction.pause`; the pause allowance is 7 days in total.
 2. While paused, the high bidder may `withdrawBid`.
-3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement. The
-   PARAMETER_SETTER role then calls `cancel(saleId, outcomeRef)` while the
-   auction is still paused.
+3. **Upheld.** The platform appends a `DISPUTE_OUTCOME` statement about the
+   token (it must exist; an outcome recorded about the item before its mint is
+   also shown, until one about the token replaces it). The PARAMETER_SETTER
+   role then calls `cancel(saleId, outcomeRef)` while the auction is still
+   paused.
    - `outcomeRef` must equal `latestDisputeOutcome`.
    - The window is inclusive (`block.timestamp <= pausedUntil`).
-   - The bid is credited back and the token is burned. Anyone then calls
-     `IStream.releaseContent(tokenId, contentHash)`, which passes the burned
-     work's item hash to `IPackageRegistry.releaseContent`: the content hash is
-     freed for its rightful artist and the item is tombstoned.
+   - The bid is credited back and the token is burned.
+   - **Before the cancel executes, the guardian revokes every approved root
+     that lists the copier's items** (`revokePackage`): any other copy of the
+     content, and the copier's other works in those packages. Revocation is
+     per root, and the cancel tombstones only the burned item.
+   - PARAMETER_SETTER then calls `IStream.releaseContent(tokenId, contentHash,
+     beneficiary)` (48 hours; schedule it with the cancel, to execute after
+     it), naming the rightful artist's ID from the outcome. The beneficiary must
+     be a registered artist (`UnknownArtist` otherwise), so schedule the release
+     once the rightful artist has an identity (its first package acceptance
+     creates it). Stream passes the burned work's item hash to
+     `IPackageRegistry.releaseContent`: the content hash is reserved for items
+     whose lead artist is the beneficiary, and the burned item is tombstoned. A
+     release happens once per burned work, so the guardians check the
+     beneficiary during the delay.
 4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
    ends by itself when the allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows
-   it through `latestDisputeOutcome`.
+   it through `latestDisputeOutcome`, on the work and on its edition. The
+   latest outcome about a work is its current dispute status, so each outcome
+   document restates the earlier outcomes it keeps in force and cites the one
+   it replaces in `supersedes`.
 
 ## Trust boundaries
 
 | Actor | Can | Cannot |
 | --- | --- | --- |
-| Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days. |
+| Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
 | Guardian Safes | Pause a live auction (at most 7 days); veto identity changes; revoke unconsumed approvals; disable a curation signer; cancel scheduled governance operations | Redirect funds or identities; cancel or resume an auction |
 | Storage operator | Set preferred locations among registered, hash-equal locators | Add, remove or change locators; change content hashes |
 | Platform | Create collections; add locators; open edition sales and phases | Change an approved package's prices, currencies, sizes or media; set allowlist prices below the package price without the artist's signed approval |
@@ -306,7 +324,7 @@ default when the sale starts".
 | Lead artist (current authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
 | Bound contracts | Stream consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts under artists; WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
-| VRF coordinator | Deliver a seed once per requested item | Choose which items are VRF, or change a delivered seed |
+| VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
 | 6529 delegation contract | Supply consolidations used as recovery cancellers and stagers | Execute a change before 7 days, or bypass the guardian veto |
 
 On-chain content uniqueness is defense in depth: the curation signer's SHA-256
@@ -327,9 +345,9 @@ interfaces name the role each governed selector is meant to map to:
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
 | PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
-| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
+| PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IFederationRegistry.setStatus`, `setArtistDelisted`; economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
@@ -340,7 +358,10 @@ accounts and checks ERC-165, except where the target does not implement it:
 checks for code and that the log's artist resolver is the registry. Every installed dependency
 (verifier, renderer, consolidation source, entropy module, economics resolver,
 package registry, sale adapter, federation registry) supports ERC-165. Installs
-check it, pin the code hash and reject EIP-7702 delegated accounts.
+check it, pin the code hash and reject EIP-7702 delegated accounts. The curation
+verifier, the VRF coordinator, the statement log's artist resolver and the sale
+adapters' federation registry are also checked against their pinned hash at
+every use, not only at install.
 
 Each configuration epoch's manifest hash is recorded through the statement log's
 restricted `appendGovernanceManifest`. Governed functions are non-payable, and

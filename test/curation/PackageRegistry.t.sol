@@ -7,6 +7,7 @@ import { Eip712CurationVerifier } from "src/curation/Eip712CurationVerifier.sol"
 import { Roles } from "src/governance/Roles.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
@@ -32,6 +33,17 @@ import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerklePr
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { ERC1271WalletMock } from "test/mocks/AdversarialTargets.sol";
 import { CurationBase } from "./CurationBase.sol";
+
+/// @dev A verifier that approves every root: code that could take the place of the pinned one.
+contract ApproveEverythingVerifier {
+    function isApproved(bytes32, bytes32, bytes calldata) external pure returns (bool, address) {
+        return (true, address(0xBAD));
+    }
+
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return true;
+    }
+}
 
 contract PackageRegistryTest is CurationBase {
     // Golden vectors computed independently with `cast keccak` and `cast abi-encode`.
@@ -1168,7 +1180,9 @@ contract PackageRegistryTest is CurationBase {
     // ------------------------------------------------------------------- releaseContent
 
     /// @dev Review PoC 1, inverted: a copier's item consumes the rightful artist's media; an
-    ///      upheld dispute burns the token and Stream releases the hash; the artist then mints.
+    ///      upheld dispute burns the token and Stream releases the hash to the rightful artist,
+    ///      whose identity exists (its acceptance of its own package created it); the artist
+    ///      then mints.
     function test_releaseContent_rightfulArtistConsumesAfterBurn() public {
         uint256 copierKey = 0xBAD;
         PackageItem memory copy = _item(vm.addr(copierKey), SHA_A);
@@ -1176,18 +1190,19 @@ contract PackageRegistryTest is CurationBase {
         _register(copyRoot);
         _accept(copyRoot, copierKey);
         _consume(copyRoot, copy, new bytes32[](0), _move(copierKey, copyRoot, _hash(copy), 0));
-
-        vm.expectEmit(address(registry));
-        emit IPackageRegistry.ContentReleased(SHA_A, _hash(copy));
-        _release(SHA_A, _hash(copy));
-        assertEq(registry.consumedItemOf(SHA_A), bytes32(0));
-        assertTrue(registry.isReleased(_hash(copy)));
-
         PackageItem memory real = _item(lead, SHA_A);
         real.recordFileId = keccak256("the real record");
         bytes32 realRoot = WorksHashing.leaf(_hash(real));
         _register(realRoot);
         _accept(realRoot, leadKey);
+
+        vm.expectEmit(address(registry));
+        emit IPackageRegistry.ContentReleased(SHA_A, _hash(copy), uint160(lead));
+        _release(SHA_A, _hash(copy), uint160(lead));
+        assertEq(registry.consumedItemOf(SHA_A), bytes32(0));
+        assertEq(registry.releasedTo(SHA_A), uint160(lead));
+        assertTrue(registry.isReleased(_hash(copy)));
+
         vm.expectEmit(address(registry));
         emit IPackageRegistry.ItemConsumed(realRoot, _hash(real), _id(lead), SHA_A);
         _consume(realRoot, real, new bytes32[](0), _move(leadKey, realRoot, _hash(real), 0));
@@ -1210,8 +1225,13 @@ contract PackageRegistryTest is CurationBase {
         _register(pair);
         _accept(single, copierKey);
         _accept(pair, copierKey);
+        PackageItem memory other = _item(lead, SHA_A);
+        other.collectionId = 9;
+        bytes32 otherRoot = WorksHashing.leaf(_hash(other));
+        _register(otherRoot);
+        _accept(otherRoot, leadKey);
         _consume(single, copy, new bytes32[](0), _move(copierKey, single, _hash(copy), 0));
-        _release(SHA_A, _hash(copy));
+        _release(SHA_A, _hash(copy), uint160(lead));
 
         bytes32[] memory proof = _proof(leaves, 0);
         bytes32[2] memory roots = [single, pair];
@@ -1225,14 +1245,9 @@ contract PackageRegistryTest is CurationBase {
             );
             registry.consume(roots[r], copy, r == 0 ? new bytes32[](0) : proof, move);
         }
-        // Even after the hash is consumed and released again by another item.
-        PackageItem memory other = _item(lead, SHA_A);
-        other.collectionId = 9;
-        bytes32 otherRoot = WorksHashing.leaf(_hash(other));
-        _register(otherRoot);
-        _accept(otherRoot, leadKey);
+        // Even after the hash is consumed and released again by another item, to the copier.
         _consume(otherRoot, other, new bytes32[](0), _move(leadKey, otherRoot, _hash(other), 0));
-        _release(SHA_A, _hash(other));
+        _release(SHA_A, _hash(other), uint160(vm.addr(copierKey)));
         MoveAuthorization memory again = _move(copierKey, single, _hash(copy), 20);
         vm.prank(stream);
         vm.expectRevert(
@@ -1254,27 +1269,37 @@ contract PackageRegistryTest is CurationBase {
                     IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_A
                 )
             );
-            registry.releaseContent(SHA_A, wrongItems[i]);
+            registry.releaseContent(SHA_A, wrongItems[i], _id(lead));
         }
         // An unconsumed hash, and a second release of the same item.
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_B)
         );
-        registry.releaseContent(SHA_B, _hash(item));
-        _release(SHA_A, _hash(item));
+        registry.releaseContent(SHA_B, _hash(item), _id(lead));
+        // A release names a registered artist: zero and unknown IDs are refused.
+        uint256[2] memory unknown = [uint256(0), uint160(makeAddr("never an artist"))];
+        for (uint256 i; i < unknown.length; ++i) {
+            vm.prank(stream);
+            vm.expectRevert(
+                abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unknown[i])
+            );
+            registry.releaseContent(SHA_A, _hash(item), unknown[i]);
+        }
+        _release(SHA_A, _hash(item), _id(lead));
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_A)
         );
-        registry.releaseContent(SHA_A, _hash(item));
+        registry.releaseContent(SHA_A, _hash(item), _id(lead));
+        assertEq(registry.releasedTo(SHA_A), _id(lead), "a release happens once");
         // The release marker is not an item: it can neither be released nor claimed.
         bytes32 marker = bytes32(uint256(1));
         vm.prank(stream);
         vm.expectRevert(
             abi.encodeWithSelector(IPackageRegistry.ClaimNotAllowed.selector, PRODUCT_STREAM, SHA_A)
         );
-        registry.releaseContent(SHA_A, marker);
+        registry.releaseContent(SHA_A, marker, _id(lead));
         vm.prank(editions);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -1293,9 +1318,54 @@ contract PackageRegistryTest is CurationBase {
             vm.expectRevert(
                 abi.encodeWithSelector(IPackageRegistry.UnboundCaller.selector, callers[i])
             );
-            registry.releaseContent(SHA_A, _hash(item));
+            registry.releaseContent(SHA_A, _hash(item), _id(lead));
         }
         assertEq(registry.consumedItemOf(SHA_A), _hash(item));
+    }
+
+    /// @dev SIGS-1: a released content hash is reserved for the named artist. Another artist's
+    ///      approved item with the same content (here the copier's second copy) is refused, in
+    ///      the same block as the release, while the named artist's item consumes. Fresh content
+    ///      is unaffected by any reservation.
+    function test_releaseContent_reservesTheContentForTheNamedArtist() public {
+        uint256 copierKey = 0xBAD;
+        PackageItem memory copy = _item(vm.addr(copierKey), SHA_A);
+        PackageItem memory sibling = _item(vm.addr(copierKey), SHA_A);
+        sibling.recordFileId = keccak256("another record");
+        bytes32[] memory leaves = new bytes32[](2);
+        leaves[0] = WorksHashing.leaf(_hash(copy));
+        leaves[1] = WorksHashing.leaf(_hash(sibling));
+        bytes32 copyRoot = _root(leaves);
+        _register(copyRoot);
+        _accept(copyRoot, copierKey);
+        PackageItem memory real = _item(lead, SHA_A);
+        real.recordFileId = keccak256("the real record");
+        bytes32 realRoot = WorksHashing.leaf(_hash(real));
+        _register(realRoot);
+        _accept(realRoot, leadKey);
+        _consume(copyRoot, copy, _proof(leaves, 0), _move(copierKey, copyRoot, _hash(copy), 0));
+        _release(SHA_A, _hash(copy), uint160(lead));
+
+        MoveAuthorization memory move = _move(copierKey, copyRoot, _hash(sibling), 1);
+        vm.prank(stream);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentReserved.selector, SHA_A, uint256(uint160(lead))
+            )
+        );
+        registry.consume(copyRoot, sibling, _proof(leaves, 1), move);
+
+        _consume(realRoot, real, new bytes32[](0), _move(leadKey, realRoot, _hash(real), 0));
+        assertEq(registry.consumedItemOf(SHA_A), _hash(real));
+        // Consumed again, the content is used: the reservation no longer matters.
+        move = _move(copierKey, copyRoot, _hash(sibling), 2);
+        vm.prank(stream);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentUsed.selector, PRODUCT_STREAM, SHA_A, _hash(real)
+            )
+        );
+        registry.consume(copyRoot, sibling, _proof(leaves, 1), move);
     }
 
     // ---------------------------------------------------------------------- setVerifier
@@ -1311,14 +1381,52 @@ contract PackageRegistryTest is CurationBase {
         bytes memory oldAtt = _attestation(signerKey1, root, EVIDENCE);
         vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.NotApproved.selector, root));
         registry.registerPackage(root, EVIDENCE, oldAtt);
-        bytes memory sig = _sig(signerKey1, next.approvalDigest(root, EVIDENCE));
+        bytes memory sig =
+            _sig(signerKey1, next.approvalDigest(root, EVIDENCE, next.signerEpoch(signer1)));
         registry.registerPackage(root, EVIDENCE, abi.encode(signer1, sig));
+    }
+
+    /// @dev DEPS-6: the verifier's code hash is checked at every registration, so code that
+    ///      replaced the pinned code at the verifier's address (here one that approves anything)
+    ///      registers nothing.
+    function test_registerPackage_refusesAVerifierWhoseCodeChanged() public {
+        vm.etch(address(verifier), address(new ApproveEverythingVerifier()).code);
+        bytes32 root = keccak256("an unapproved root");
+        vm.expectRevert(
+            abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, address(verifier))
+        );
+        registry.registerPackage(root, EVIDENCE, "");
+        (IPackageRegistry.PackageStatus status,,) = registry.packageOf(root);
+        assertEq(uint8(status), uint8(IPackageRegistry.PackageStatus.NONE));
     }
 
     function test_setVerifier_keepsRegisteredApprovals() public {
         (bytes32 root, PackageItem memory item, MoveAuthorization memory move) = _ready(SHA_A);
         _swapVerifier(new Eip712CurationVerifier(address(manager)));
         _consume(root, item, new bytes32[](0), move);
+    }
+
+    /// @dev Review of SIGS-2: a verifier once replaced is retired and can never be installed
+    ///      again (A to B to A is refused), so a swap back cannot bring back the approvals and
+    ///      the signer states of the retired verifier.
+    function test_setVerifier_refusesARetiredVerifier() public {
+        Eip712CurationVerifier a = verifier;
+        Eip712CurationVerifier b = new Eip712CurationVerifier(address(manager));
+        _swapVerifier(b);
+        bytes32 aHash = address(a).codehash;
+        vm.prank(successor);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, a));
+        registry.setVerifier(ICurationVerifier(address(b)), ICurationVerifier(address(a)), aHash);
+        assertEq(address(registry.verifier()), address(b));
+        // A verifier never installed is accepted.
+        Eip712CurationVerifier c = new Eip712CurationVerifier(address(manager));
+        bytes32 cHash = address(c).codehash;
+        vm.prank(successor);
+        registry.setVerifier(ICurationVerifier(address(b)), ICurationVerifier(address(c)), cHash);
+        assertEq(address(registry.verifier()), address(c));
+        vm.prank(successor);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidDependency.selector, b));
+        registry.setVerifier(ICurationVerifier(address(c)), ICurationVerifier(address(b)), aHash);
     }
 
     function test_setVerifier_compareAndSet() public {

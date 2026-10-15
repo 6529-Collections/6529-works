@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
+import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
@@ -91,6 +92,43 @@ contract MasterEditionFlowTest is IntegrationBase {
     }
 
     // ------------------------------------------------------------------ the link
+
+    /// @dev SIGS-4: the guardian revokes the root over another item after a master from it sold.
+    ///      Revocation stops unconsumed items only: the sold master still gets its edition
+    ///      through the root it was minted from, with no new curation step.
+    function test_RevokingTheRootDoesNotStrandASoldMastersEdition() public {
+        Work[] memory works = _package(root);
+        (uint256 saleId, uint256 workId) = _start(root, works, 0);
+        _ethBid(saleId, collector, 1 ether);
+        _settleAtEnd(saleId);
+        vm.prank(guardian1);
+        registry.revokePackage(root, keccak256("another item of the package is disputed"));
+
+        assertEq(editions.createEdition(workId, works[0].item, root, _proofOf(works, 0)), workId);
+        assertTrue(editions.exists(workId));
+        // The revocation still stops the package's unconsumed masters.
+        bytes memory unsold = _mintData(root, works, 1);
+        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.PackageNotApproved.selector, root));
+        auction.start(address(stream), unsold);
+    }
+
+    /// @dev The root must be one the registry registered: a root revoked before anyone
+    ///      registered it, or never seen, proves nothing.
+    function test_AnEditionNeedsARegisteredRoot() public {
+        Work[] memory works = _package(root);
+        (uint256 saleId, uint256 workId) = _start(root, works, 0);
+        _ethBid(saleId, collector, 1 ether);
+        _settleAtEnd(saleId);
+        Work[] memory alone = _one(works[0]);
+        bytes32 unregistered = _rootOf(alone);
+        bytes memory notMaster = abi.encodeWithSelector(IEditions.NotEditionMaster.selector, workId);
+        vm.expectRevert(notMaster);
+        editions.createEdition(workId, works[0].item, unregistered, _proofOf(alone, 0));
+        vm.prank(guardian1);
+        registry.revokePackage(unregistered, keccak256("pre-revoked"));
+        vm.expectRevert(notMaster);
+        editions.createEdition(workId, works[0].item, unregistered, _proofOf(alone, 0));
+    }
 
     function test_EditionLinksBothWaysToItsMaster() public {
         uint256 workId = _masterAndEdition(0);

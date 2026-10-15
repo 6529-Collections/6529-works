@@ -29,10 +29,10 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      published package.
 ///
 ///      An upheld dispute burns the token from auction custody (`IMintTarget.burn`, by the
-///      adapter that minted it, before the primary sale settled). Anyone may
-///      then call `releaseContent`, which passes the burned work's stored item hash to
-///      `IPackageRegistry.releaseContent`: the content hash is freed for its rightful artist and
-///      the item is tombstoned.
+///      adapter that minted it, before the primary sale settled). The governed `releaseContent`
+///      then passes the burned work's stored item hash, and the rightful artist the dispute
+///      outcome names, to `IPackageRegistry.releaseContent`: the content hash is reserved for
+///      that artist's items and the burned item is tombstoned.
 ///
 ///      Satellites are bound once each (`bindWorkRecords`, `bindEditions`): ERC-165 checked, not
 ///      EIP-7702 delegated accounts, serving this Stream (`stream() == address(this)`), never
@@ -181,10 +181,12 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
             SeedPolicy seedPolicy,
             uint32 royaltyRate
         );
-    /// @notice After an upheld-dispute burn, passes the burned work's stored item hash and
-    ///         `contentHash` to `IPackageRegistry.releaseContent`, which checks the pair.
-    ///         Permissionless; reverts with `NotBurned` for a live or unminted token.
-    function releaseContent(uint256 tokenId, bytes32 contentHash) external;
+    /// @notice After an upheld-dispute burn, passes the burned work's stored item hash,
+    ///         `contentHash` and the rightful artist `beneficiary` the dispute outcome names to
+    ///         `IPackageRegistry.releaseContent`, which checks the pair and reserves the content
+    ///         for that artist, who must be registered. PARAMETER_SETTER role (48 hours); reverts
+    ///         with `NotBurned` for a live or unminted token.
+    function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary) external;
     /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
     ///         Reverts with `UnknownWork`.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);

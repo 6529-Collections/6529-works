@@ -35,7 +35,7 @@ import { Limits } from "../../src/interfaces/types/Limits.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x4b62279d), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0x6d0d5203), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xa5bd946e), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
@@ -44,14 +44,14 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IDutchSale).interfaceId, bytes4(0xb1c10995), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
-            type(ICurationSignerVerifier).interfaceId, bytes4(0xb7ab1d96), "ICurationSignerVerifier"
+            type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xc0f6f835), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe69cc8c7), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0x3f437f81), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
         assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x310247d8), "IEconomicsResolver");
-        assertEq(type(IStatementLog).interfaceId, bytes4(0x276fbc56), "IStatementLog");
+        assertEq(type(IStatementLog).interfaceId, bytes4(0xbb5574c7), "IStatementLog");
         assertEq(type(IArtistRoleResolver).interfaceId, bytes4(0x3074ca00), "IArtistRoleResolver");
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"

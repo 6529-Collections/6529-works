@@ -14,14 +14,36 @@ with the linked-pair exception from §6.
   "move to Stream" signature (a deadline and a per-artist nonce bitmap). The
   bound 6529 Editions claims an edition's content hash, which must be the hash
   its master item consumed on Stream. When an upheld dispute burns a work during
-  its auction, Stream calls `releaseContent`: the hash becomes free for its
-  rightful artist, and the burned item is tombstoned for good.
+  its auction, Stream's governed `releaseContent` (PARAMETER_SETTER, 48 hours)
+  names the rightful artist the dispute outcome identifies: the hash is reserved
+  for that artist, so only an item whose lead artist it is may consume it
+  (`ContentReserved` otherwise), and the burned item is tombstoned for good.
+  The release happens once per burned item and names a registered artist
+  (`UnknownArtist` otherwise), so it is scheduled once the rightful artist has
+  an identity; `releasedTo` reads the beneficiary.
 - **`Eip712CurationVerifier`.** It accepts a `PackageApproval(packageRoot,
-  evidenceHash)` EIP-712 signature by an active curation signer, encoded exactly
-  as `abi.encode(signer, signature)`, and reports that signer. A signer is
-  active while it holds `Roles.CURATION_SIGNER` with no execution delay and the
-  guardian has not disabled it. Disabling is immediate and one-way; re-enabling
-  is in the 30-day class. Deployments grant the role to at least two keys.
+  evidenceHash, signerEpoch)` EIP-712 signature by an active curation signer,
+  encoded exactly as `abi.encode(signer, signature)`, and reports that signer. A
+  signer is active while it holds `Roles.CURATION_SIGNER` with no execution
+  delay and the guardian has not disabled it. Disabling is immediate and
+  one-way; re-enabling is in the 30-day class. Deployments grant the role to at
+  least two keys. The signature binds the signer's current `signerEpoch`: the
+  time its role grant took effect, how many times it was disabled or enabled,
+  and a salt drawn from `block.prevrandao` at each of those changes. An approval
+  made before a disable (or under a revoked grant of the role) never counts
+  again, and one signed while the signer is disabled cannot name the epoch its
+  re-enable will start. The signer re-signs what it still approves; tooling
+  reads `signerEpoch(signer)` before signing.
+- **VRF media revisions.** A revision of a VRF work that changes its primary
+  media has a new content hash, so it draws a new seed. Before approving such
+  a revision of a work whose seed was delivered, the guardian revokes the old
+  root.
+- **Stopping a signer.** `disableSigner` (GUARDIAN, immediate) is the way to
+  stop a signer, and only it, or revoking the role and granting it again, ends
+  an epoch. An ADMIN change of the signer's execution delay makes it inactive
+  while the delay is nonzero but keeps its epoch. After any suspected
+  compromise, use a fresh key: disable the old one and grant the role to a new
+  address.
 
 **Governance.** The genesis configurator, which holds ADMIN with no delay until
 it renounces it, binds Stream and Editions (`bindStream`, `bindEditions`, each
@@ -31,7 +53,11 @@ attestation), which can then never be registered. Revocation is per root, not
 per item: an item listed in two roots stays consumable through the other, so
 the guardian revokes every root that lists it. Disabling a curation signer
 stops only future registrations. The verifier is swapped through the 30-day
-class: compare-and-set, ERC-165 checked, code-hash pinned, never a no-op.
+class: compare-and-set, ERC-165 checked, code-hash pinned, never a no-op, and
+never back to a verifier installed before (a replaced verifier is retired). The
+pinned hash is checked again at every registration (`InvalidDependency`), so
+code that replaced the reviewed code at the verifier's address registers
+nothing.
 
 **Consent is per account.** An acceptance is recorded as
 `acceptedAs[root][account] = artistId` for the account that the item lists,

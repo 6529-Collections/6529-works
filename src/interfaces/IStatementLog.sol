@@ -98,6 +98,9 @@ interface IStatementLog {
     error InvalidGovernanceManifest();
     /// @notice The URI is longer than the limit or is not well-formed UTF-8.
     error InvalidUri();
+    /// @notice A DISPUTE_OUTCOME names an ERC-721 token that does not exist (not yet minted, or
+    ///         burned), or an ERC-1155 edition, whose outcomes go on its master.
+    error UnknownDisputeSubject(address token, uint256 id);
     /// @notice `signer` does not hold `role` for this subject.
     error NotAuthorized(Role role, address signer);
     /// @notice The relay deadline has passed.
@@ -155,11 +158,31 @@ interface IStatementLog {
     /// @notice Returns how many entries a subject has and its current chain head.
     function chainOf(address token, uint256 id) external view returns (uint64 count, bytes32 head);
 
-    /// @notice Returns the entry hash of a subject's latest DISPUTE_OUTCOME entry, or zero.
+    /// @notice The display rule for a work's dispute status: the entry hash of the subject's
+    ///         latest DISPUTE_OUTCOME entry, or zero; for a 6529 Stream token with no outcome of
+    ///         its own, the latest outcome about the package item it was minted from (subject
+    ///         `(address(0), uint256(itemHash))`), if any.
     /// @dev This is how a renderer shows dispute status (ADR 0001 section 12) without scanning
-    ///      events: the entry itself is in the log's events under that hash.
+    ///      events; the entry itself is in the log's events under that hash. Precedence: the
+    ///      latest outcome recorded about the token is the work's current dispute status and
+    ///      replaces every earlier one, both about the token and about its item, in this answer.
+    ///      Earlier outcomes stay in the subject's chain and events. So every DISPUTE_OUTCOME
+    ///      document must state the status of each earlier dispute it keeps in force, and cite
+    ///      the outcome it replaces in `supersedes`; an edition's metadata shows its master's.
+    ///      A caller that must know when an outcome about the token itself was recorded uses
+    ///      {disputeOutcomeOf}, which has no item fallback.
     function latestDisputeOutcome(address token, uint256 id)
         external
         view
         returns (bytes32 entryHash);
+
+    /// @notice The subject's own latest DISPUTE_OUTCOME entry (no item fallback), or zero, and
+    ///         its zero-based position in the subject's chain (meaningful when `entryHash` is
+    ///         nonzero).
+    /// @dev A caller that read `chainOf(token, id).count` earlier, for example when it paused a
+    ///      sale, tells whether the outcome was recorded since: `index >= count then`.
+    function disputeOutcomeOf(address token, uint256 id)
+        external
+        view
+        returns (bytes32 entryHash, uint64 index);
 }

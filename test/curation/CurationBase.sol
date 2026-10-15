@@ -247,7 +247,9 @@ abstract contract CurationBase is CurationHelpers {
         view
         returns (bytes memory)
     {
-        return abi.encode(vm.addr(key), _sig(key, verifier.approvalDigest(root, evidence)));
+        address signer = vm.addr(key);
+        bytes32 digest = verifier.approvalDigest(root, evidence, verifier.signerEpoch(signer));
+        return abi.encode(signer, _sig(key, digest));
     }
 
     function _register(bytes32 root) internal {
@@ -288,10 +290,10 @@ abstract contract CurationBase is CurationHelpers {
         registry.claimContent(contentHash, itemHash);
     }
 
-    /// @dev Stream's dispute-burn path.
-    function _release(bytes32 contentHash, bytes32 itemHash) internal {
+    /// @dev Stream's dispute-burn path, releasing to `beneficiary`.
+    function _release(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) internal {
         vm.prank(stream);
-        registry.releaseContent(contentHash, itemHash);
+        registry.releaseContent(contentHash, itemHash, beneficiary);
     }
 
     /// @dev A registered one-item package by `lead`, accepted, with its move signed at nonce 0.

@@ -125,7 +125,7 @@ no ceiling, or not run on Sepolia.
 | `startWithBid`, steady state | 330,161 | 350,000 | **7** | 0 | 982,312 |
 | `start`, two-party work | 297,048 | 350,000 | **6** | 0 | — |
 | `startWithBid`, two-party work | 338,411 | 350,000 | **7** | 0 | — |
-| `start`, VRF work | 294,337 | 350,000 | **6** | 0 | 852,868 |
+| `start`, VRF work | 296,555 | 350,000 | **6** | 0 | 852,868 |
 | `start`, edition master | 289,459 | 350,000 | **6** | 0 | 847,598 |
 | `startWithBid`, ERC-20 by relayed Permit2 | 375,037 | 388,000 (regression) | 7 | 0 | — |
 | `start`, first work in a new collection | 288,813 | 400,000 | 6 | 0 | 846,977 |
@@ -134,8 +134,8 @@ no ceiling, or not run on Sepolia.
 | `bid` that outbids | 73,348 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 158,414 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 133,414 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 94,009 | 96,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 314,840 | 331,000 (regression) | 9 | 0 | 1,118,699 |
+| `consume`, as Stream calls it | 94,043 | 96,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 314,734 | 331,000 (regression) | 9 | 0 | 1,118,699 |
 | `openSale` (one public phase) | 286,584 | 293,000 (regression) | 8 | 0 | 993,668 |
 | `purchase`, the first copy, new holder | 190,597 | 195,000 (regression) | 3 | 0 | 468,086 |
 | `purchase`, a later copy, new holder | 173,497 | 177,000 (regression) | 2 | 0 | 370,142 |
@@ -159,6 +159,8 @@ no ceiling, or not run on Sepolia.
   identity fixes; the other rows are as accepted, and moved by a few dozen gas
   at most. The Sepolia column and the replay comparison below are the r2
   deployment, which predates the change.
+- **The VRF start row** also includes, since the same review, the read of
+  the item's content link in `isDelivered` (DEPS-1, about 2,200 gas).
 - **The two-party `startWithBid` is the tightest:** 338,411, about 11.6K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 375,037**, about 45K more
@@ -287,8 +289,11 @@ pricing.
   flushed later. Split wallets receive with an empty `receive` and are
   unaffected.
 - **The VRF callback** used about 62% of its 200,000-gas limit on Sepolia (one
-  new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours),
-  raise-only.
+  new slot). Raising the limit is a PARAMETER_SETTER operation (48 hours);
+  lowering it, never below the floor, a SUCCESSOR_SETTER one (30 days). The
+  callback now creates no slot (the seed overwrites the request
+  ID, DEPS-2): about 34,000 under Glamsterdam, about a third of the 100,000
+  floor.
 - **The claim router's continue-mode minimums** (200,000 per plain item,
   450,000 per signed item) are Prague-sized floors. A first release needs more
   under Glamsterdam: new slots, and possibly the payee's account (about 716,000

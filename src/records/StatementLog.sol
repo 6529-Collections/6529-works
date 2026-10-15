@@ -14,6 +14,7 @@ import { Utf8 } from "../libraries/Utf8.sol";
 import { isKnownHashAlgorithm } from "../interfaces/types/HashRef.sol";
 import { IArtistRoleResolver } from "../interfaces/IArtistRoleResolver.sol";
 import { IStatementLog, Role, Statement } from "../interfaces/IStatementLog.sol";
+import { IStream } from "../interfaces/IStream.sol";
 import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 
 /// @title StatementLog
@@ -26,6 +27,15 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      from events. The log does not link a work-ID subject to the token-ID subject it later
 ///      becomes: the Stream or the package registry holds that link.
 ///
+///      Dispute outcomes. A DISPUTE_OUTCOME about a token must name one that exists when it is
+///      recorded. Every ERC-1155 subject is refused: an edition's outcome is recorded on its
+///      master, which the edition's metadata shows, and an outcome about a federated ERC-1155
+///      work goes on its master or waits for v1.1. Other subjects (an item before its mint, a
+///      work ID, an artist in the artist registry) are not checked.
+///      {latestDisputeOutcome} answers for a work: the latest outcome about the token, or, while
+///      it has none, the latest about the package item it was minted from (read from the token's
+///      `IStream.coreOf`).
+///
 ///      Authorization per role:
 ///      - ARTIST: the pluggable {IArtistRoleResolver} says the signer is an artist of the subject.
 ///      - OWNER: the signer owns the subject's ERC-721 token or holds a balance of its ERC-1155 ID.
@@ -36,9 +46,10 @@ import { StatementKinds } from "../interfaces/types/StatementKinds.sol";
 ///      roles never consult the AccessManager. But ARTIST authority is exactly as strong as the
 ///      resolver's code, whatever governs the resolver's answers, {setArtistResolver}, and the
 ///      AccessManager that can call it or replace this contract's authority. The code-hash pin
-///      binds bytecode, not behaviour. So {setArtistResolver} must map to the 30-day class, and
-///      every ARTIST entry records the resolver that vouched for it, in its hash and its event, so
-///      a swap can never pass unnoticed. OWNER authority is only as strong as the token contract.
+///      binds bytecode, not behaviour; it is checked again at every ARTIST authorization. So
+///      {setArtistResolver} must map to the 30-day class, and every ARTIST entry records the
+///      resolver that vouched for it, in its hash and its event, so a swap can never pass
+///      unnoticed. OWNER authority is only as strong as the token contract.
 ///      No statement is ever attributed to the AccessManager, with one exception: a governance
 ///      manifest (ADR 0002 section 6) written by {appendGovernanceManifest}, which records the
 ///      AccessManager as the signer of a statement about itself.
@@ -60,8 +71,11 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     bytes32 private constant ENTRY_DOMAIN = keccak256("6529.works.StatementLog.entry.v1");
     bytes32 private constant HEAD_DOMAIN = keccak256("6529.works.StatementLog.head.v1");
 
+    /// @dev `disputeIndex` is the chain position of the latest DISPUTE_OUTCOME entry; it shares
+    ///      the count's slot.
     struct Chain {
         uint64 count;
+        uint64 disputeIndex;
         bytes32 head;
     }
 
@@ -77,6 +91,9 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
 
     /// @notice The contract answering "is this account an artist of this subject?".
     address public artistResolver;
+    /// @dev The resolver's pinned code hash, checked again at every ARTIST authorization, not
+    ///      only at install.
+    bytes32 private _resolverCodeHash;
 
     mapping(bytes32 subjectKey => Chain) private _chains;
     mapping(bytes32 subjectKey => bytes32 entryHash) private _latestDispute;
@@ -186,8 +203,32 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IStatementLog
-    function latestDisputeOutcome(address token, uint256 id) external view returns (bytes32) {
-        return _latestDispute[subjectKey(token, id)];
+    function disputeOutcomeOf(address token, uint256 id)
+        external
+        view
+        returns (bytes32 entryHash, uint64 index)
+    {
+        bytes32 key = subjectKey(token, id);
+        return (_latestDispute[key], _chains[key].disputeIndex);
+    }
+
+    /// @inheritdoc IStatementLog
+    /// @dev The item fallback is one bounded read of `coreOf(id)` on `token`; any other answer
+    ///      (not a Stream, a burned or unminted token) leaves the token's own result, zero.
+    function latestDisputeOutcome(address token, uint256 id)
+        external
+        view
+        returns (bytes32 entryHash)
+    {
+        entryHash = _latestDispute[subjectKey(token, id)];
+        if (entryHash != 0 || token == address(0)) return entryHash;
+        (bool ok, bytes memory core) = BoundedCall.tryRead(
+            token, abi.encodeCall(IStream.coreOf, (id)), OWNER_READ_GAS, 192, 0
+        );
+        if (ok && core.length == 192) {
+            bytes32 itemHash = abi.decode(core, (bytes32));
+            entryHash = _latestDispute[subjectKey(address(0), uint256(itemHash))];
+        }
     }
 
     /// @notice Returns the EIP-712 digest `signer` must sign for {appendSigned}.
@@ -238,6 +279,9 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
             entryHash: 0,
             head: 0
         });
+        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) {
+            _checkDisputeSubject(statement.token, statement.id);
+        }
         Chain storage chain = _chains[e.key];
         e.index = chain.count;
         // Every word is static, so two encodings joined equal one `abi.encode` of all ten.
@@ -250,7 +294,10 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         e.head = keccak256(abi.encode(HEAD_DOMAIN, chain.head, e.entryHash));
         chain.count = e.index + 1;
         chain.head = e.head;
-        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) _latestDispute[e.key] = e.entryHash;
+        if (statement.kind == StatementKinds.DISPUTE_OUTCOME) {
+            chain.disputeIndex = e.index;
+            _latestDispute[e.key] = e.entryHash;
+        }
         emit StatementAppended(
             e.key,
             statement.kind,
@@ -286,6 +333,24 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         }
     }
 
+    /// @dev A DISPUTE_OUTCOME's token subject (see the contract notes): an ERC-721 (by ERC-165)
+    ///      must own the ID now, and an ERC-1155 is refused. Each read is bounded.
+    function _checkDisputeSubject(address token, uint256 id) private view {
+        if (token == address(0)) return;
+        bytes4[] memory kinds = new bytes4[](2);
+        kinds[0] = type(IERC721).interfaceId;
+        kinds[1] = type(IERC1155).interfaceId;
+        bool[] memory supported = ERC165Checker.getSupportedInterfaces(token, kinds);
+        if (!supported[0] && !supported[1]) return;
+        if (!supported[1]) {
+            (bool ok, bytes memory owner) = BoundedCall.tryRead(
+                token, abi.encodeCall(IERC721.ownerOf, (id)), OWNER_READ_GAS, 32, 0
+            );
+            if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) return;
+        }
+        revert UnknownDisputeSubject(token, id);
+    }
+
     function _isAuthorized(Role role, Statement calldata s, address who)
         private
         view
@@ -293,8 +358,11 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
     {
         if (role == Role.ARTIST) {
             address resolver = artistResolver;
-            return
-                resolver != address(0) && IArtistRoleResolver(resolver).isArtist(s.token, s.id, who);
+            if (resolver == address(0)) return false;
+            if (resolver.codehash != _resolverCodeHash) {
+                revert ResolverCodeHashMismatch(_resolverCodeHash, resolver.codehash);
+            }
+            return IArtistRoleResolver(resolver).isArtist(s.token, s.id, who);
         }
         if (role == Role.OWNER) return _owns(s.token, s.id, who);
         if (role != Role.CURATOR && role != Role.PLATFORM) return false;
@@ -349,6 +417,7 @@ contract StatementLog is IStatementLog, AccessManaged, EIP712 {
         }
         emit ArtistResolverSet(artistResolver, next, codeHash);
         artistResolver = next;
+        _resolverCodeHash = codeHash;
     }
 
     /// @dev EIP-712 `hashStruct(Statement)`; also the statement's identity inside the entry hash.

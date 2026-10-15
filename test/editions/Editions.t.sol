@@ -289,9 +289,10 @@ contract EditionsTest is EditionsBase {
         assertTrue(editions.exists(soldId));
     }
 
-    /// @dev Integrator decision (option c): the caller proves the item in a package root the
-    ///      registry still reports approved, so a guardian revocation blocks the edition.
-    function test_CreateEdition_RequiresApprovedPackageProof() public {
+    /// @dev The caller proves the item in a package root the registry registered. SIGS-4: a
+    ///      revocation after the master sold no longer blocks its edition (it stops unconsumed
+    ///      items only); a root never registered, or revoked before registration, proves nothing.
+    function test_CreateEdition_RequiresARegisteredPackageProof() public {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);
         (bytes32 root, bytes32[] memory proof) = EditionsPackages.packageOf(item, 0);
@@ -305,11 +306,13 @@ contract EditionsTest is EditionsBase {
         (bytes32 unknownRoot, bytes32[] memory unknownProof) = EditionsPackages.packageOf(item, 7);
         vm.expectRevert(notMaster);
         editions.createEdition(id, item, unknownRoot, unknownProof); // never approved
+        registry.revoke(unknownRoot);
+        vm.expectRevert(notMaster);
+        editions.createEdition(id, item, unknownRoot, unknownProof); // revoked unregistered
 
         registry.revoke(root);
-        vm.expectRevert(notMaster);
         editions.createEdition(id, item, root, proof);
-        assertFalse(editions.exists(id));
+        assertTrue(editions.exists(id), "revoked after the master sold: still its edition");
     }
 
     /// @dev A chain-shaped package puts the item `depth` levels deep, so its proof has `depth`
@@ -350,8 +353,7 @@ contract EditionsTest is EditionsBase {
         }
     }
 
-    /// @dev The accepted edge case: an item listed in two packages passes through whichever is
-    ///      still approved, even when the one it was minted from was revoked.
+    /// @dev An item listed in two packages passes through either registered root.
     function test_CreateEdition_SecondApprovedPackageAdmits() public {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);

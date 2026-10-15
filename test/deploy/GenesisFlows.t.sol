@@ -169,7 +169,12 @@ contract GenesisFlowsTest is Test {
                 root,
                 evidence,
                 abi.encode(
-                    signer, _sign(signerKey, d.curationVerifier.approvalDigest(root, evidence))
+                    signer,
+                    _sign(
+                        signerKey,
+                        d.curationVerifier
+                        .approvalDigest(root, evidence, d.curationVerifier.signerEpoch(signer))
+                    )
                 )
             );
         vm.prank(CURATOR);

@@ -13,6 +13,7 @@ import {
     HASH_BLAKE3
 } from "src/interfaces/types/HashRef.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
+import { EvilResolverMock } from "../mocks/RecordsResolvers.sol";
 import { StatementLogFixture } from "./StatementLogFixture.sol";
 import { StatementModel } from "./StatementModel.sol";
 import {
@@ -799,6 +800,22 @@ contract StatementLogTest is StatementLogFixture {
             abi.encodeWithSelector(IStatementLog.NotAuthorized.selector, Role.ARTIST, artist)
         );
         _append(Role.ARTIST, artist, _statement());
+    }
+
+    /// @dev DEPS-6: the resolver's code hash is checked at every ARTIST authorization, so code
+    ///      that replaced the pinned code at its address (here one naming its deployer an artist
+    ///      of everything) authorizes nobody.
+    function test_Artist_AResolverWhoseCodeChangedIsRefused() public {
+        bytes32 pinned = address(resolver).codehash;
+        vm.prank(stranger);
+        EvilResolverMock evil = new EvilResolverMock();
+        vm.etch(address(resolver), address(evil).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStatementLog.ResolverCodeHashMismatch.selector, pinned, address(resolver).codehash
+            )
+        );
+        _append(Role.ARTIST, stranger, _statement());
     }
 
     function test_SetArtistResolver_StaleExpectedValueReverts() public {

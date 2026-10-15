@@ -52,6 +52,30 @@ written under any role, so consumers read `kind` together with `role`. The log k
 (`latestDisputeOutcome(token, id)`, one slot, written only for that kind), so a
 renderer can show dispute status (ADR 0001 §12) without scanning events.
 
+**Dispute outcomes.**
+- **Subjects.** A `DISPUTE_OUTCOME` about an ERC-721 token (by ERC-165) needs
+  the token to exist when it is recorded (`UnknownDisputeSubject` otherwise):
+  not yet minted or burned tokens are refused. Every ERC-1155 subject is
+  refused: an edition's outcome is recorded on its master, which the edition's
+  metadata shows, and an outcome about a federated ERC-1155 work goes on its
+  master or waits for v1.1. Subjects that are not tokens (an item before its mint, `(address(0), uint256(itemHash))`; a
+  work ID; an artist in the artist registry) are not checked.
+- **What `latestDisputeOutcome` answers: the display rule.** For a 6529 Stream
+  token with no outcome of its own, it answers the latest outcome about the
+  package item the token was minted from (one bounded `coreOf` read), so a
+  pre-mint outcome is shown on the work and its edition.
+  `disputeOutcomeOf(token, id)` answers the subject's own latest outcome, with
+  no fallback, and its position in the subject's chain, so a caller that read
+  `chainOf(token, id).count` earlier (when it paused a sale, for example) can
+  tell whether the outcome was recorded since.
+- **Precedence.** The latest outcome about the token is the work's current
+  dispute status: it replaces every earlier outcome, about the token or about
+  its item, in that answer and in the metadata. Earlier outcomes stay in the
+  chain and its events. So each `DISPUTE_OUTCOME` document must state the
+  status of every earlier dispute it keeps in force (a rejected second
+  dispute restates an upheld first one) and cite the outcome it replaces in
+  `supersedes`.
+
 **Entry hash** (the identity other entries cite), all words ABI-encoded:
 
 ```
@@ -125,7 +149,9 @@ strong as**:
    `setAuthority`).
 
 The install checks (compare-and-set, ERC-165, code present, not an EIP-7702
-account, reviewed code hash) bind bytecode, not behaviour. What the log adds is
+account, reviewed code hash) bind bytecode, not behaviour. The code hash is
+checked again at every ARTIST authorization (`ResolverCodeHashMismatch`), not
+only at install. What the log adds is
 visibility: every ARTIST entry records the resolver that vouched for it, in its
 entry hash and its event, and every swap emits `ArtistResolverSet`. A reader can
 therefore discard or flag the entries of any resolver it does not trust. OWNER

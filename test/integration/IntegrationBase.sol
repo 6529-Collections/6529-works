@@ -271,7 +271,9 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      the evidence statement (subject `(address(0), uint256(root))`).
     function _approve(bytes32 root) internal {
         bytes32 evidence = _evidence(root);
-        bytes memory signature = _sign(signer1, verifier.approvalDigest(root, evidence));
+        bytes memory signature = _sign(
+            signer1, verifier.approvalDigest(root, evidence, verifier.signerEpoch(signer1))
+        );
         registry.registerPackage(root, evidence, abi.encode(signer1, signature));
         vm.prank(curator);
         statements.appendCurator(

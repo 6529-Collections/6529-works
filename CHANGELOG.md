@@ -156,3 +156,44 @@
   they already declare), and `EconomicsResolver` also refuses its factory's release
   verifier as a fee recipient. The resolver NatSpec, the economics README and the runbook
   name the system contracts still not recognised on-chain.
+- Entropy (DEPS-1): VRF seeds are drawn once per content hash. Every approved item with the
+  same content links to that draw (`SeedLinked`) and reads it by item hash; an item whose
+  content already has a delivered or pending draw joins it without a new oracle request.
+  `SeedDelivered` is indexed by content hash. The entropy invariant campaign adds items that
+  share content and asserts they read one seed.
+- Entropy (DEPS-2): the VRF callback creates no storage slot. The seed overwrites the word
+  that held the request ID (`requestOf` reads zero once delivered), so a delivery costs about
+  34,000 gas under Glamsterdam (with the DEPS-6 pin check), about a third of the 100,000
+  callback floor; the floor's NatSpec and the entropy README give the Glamsterdam figures.
+- Entropy (DEPS-5): `lowerCallbackGasLimit(expected, next)` lowers the VRF callback gas limit,
+  never below the floor, in the 30-day SUCCESSOR_SETTER class (new genesis selector), so the
+  module can follow a coordinator whose maximum Chainlink lowered below the limit. `setConfig`
+  stays raise-only.
+- Curation (SIGS-1): `IStream.releaseContent(tokenId, contentHash, beneficiary)` is governed
+  (PARAMETER_SETTER, 48 hours, new genesis selector) and names the rightful artist from the
+  dispute outcome, who must be a registered artist. The package registry reserves the
+  released content hash for that artist
+  (`releasedTo`, `ContentReserved`); `ContentReleased` carries the beneficiary. The dispute
+  runbook adds the guardian's revocation of the copier's roots before the cancel executes.
+- Curation (SIGS-2): a curation approval binds the signer's epoch,
+  `PackageApproval(packageRoot, evidenceHash, signerEpoch)`. The epoch combines the time the
+  signer's CURATION_SIGNER grant took effect with a count of its disables and enables
+  (`signerEpoch`), so re-enabling a signer or granting its role again never revives an older
+  approval. `approvalDigest` takes the epoch. Each disable and enable also draws a salt from
+  `block.prevrandao` into the epoch, and `setVerifier` refuses a verifier installed before.
+- Editions (SIGS-4): `createEdition` accepts a package root the registry registered, even if it
+  was revoked since. A revocation stops a package's unconsumed items; it no longer strands the
+  edition of a master already sold from the root.
+- Records (LIFECYCLE-4): a `DISPUTE_OUTCOME` about an ERC-721 token needs the token to exist
+  when it is recorded, and an ERC-1155 (edition) subject is refused: an edition's outcome is
+  recorded on its master (`UnknownDisputeSubject`). `latestDisputeOutcome` of a Stream token
+  with no outcome of its own answers the latest outcome about the item it was minted from, so
+  pre-mint outcomes are shown on the work and its edition (the display rule);
+  `disputeOutcomeOf` answers a subject's own latest outcome and its chain position, in the
+  slot of the chain's count. The precedence of a later outcome
+  over earlier ones is documented, with the rule that each outcome restates those it keeps in
+  force.
+- Pins (DEPS-6): the curation verifier (package registry), the VRF coordinator (entropy
+  module, at every request and delivery) and the artist resolver (statement log, at every
+  ARTIST authorization) are checked against their pinned code hash at every use, not only at
+  install.
