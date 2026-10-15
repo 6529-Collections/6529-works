@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+# A type or a name inside a parameter list; a qualified type (`IFoo.Kind`) is one word.
+PARAM_WORD = re.compile(r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*")
 CONTAINERS = {"contract", "interface", "library"}
 # Words that end a parameter's type without naming it (`address payable`, `bytes calldata`).
 NOT_A_NAME = {"memory", "calldata", "storage", "indexed", "payable"}
@@ -192,7 +194,7 @@ def parameter_names(code: str) -> list[str | None]:
     names: list[str | None] = []
     for part in _split_top(code):
         flat = _flatten(part)
-        words = IDENT.findall(flat)
+        words = PARAM_WORD.findall(flat)
         last = words[-1] if words else ""
         named = len(words) >= 2 and last not in NOT_A_NAME and not part.rstrip().endswith("]")
         names.append(last if named else None)

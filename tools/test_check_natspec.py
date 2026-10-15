@@ -79,6 +79,11 @@ class ParameterTest(unittest.TestCase):
     def test_nested_types(self) -> None:
         self.assertEqual(cn.parameter_names("IFoo.Bar[] calldata bars, uint256[]"), ["bars", None])
 
+    def test_a_qualified_type_alone_is_unnamed(self) -> None:
+        self.assertEqual(
+            cn.parameter_names("IFoo.Kind, IFoo.Kind kind, IFoo.Bar memory"), [None, "kind", None]
+        )
+
 
 class DeclarationRulesTest(unittest.TestCase):
     def test_a_complete_function_passes(self) -> None:
@@ -117,6 +122,31 @@ class DeclarationRulesTest(unittest.TestCase):
         }
         """
         self.assertEqual(issues(src), ["function f: @param wrong names no parameter"])
+
+    def test_an_unnamed_qualified_return_needs_no_name(self) -> None:
+        src = """
+        interface I {
+            /// @notice F.
+            /// @return The kind.
+            function f() external view returns (IFoo.Kind);
+            /// @notice E.
+            event E(IFoo.Kind);
+        }
+        """
+        self.assertEqual(issues(src), [])
+
+    def test_each_overload_is_checked_on_its_own(self) -> None:
+        src = """
+        interface I {
+            /// @notice One.
+            /// @param a A.
+            function f(uint256 a) external;
+            /// @notice Two.
+            /// @param a A.
+            function f(uint256 a, uint256 b) external;
+        }
+        """
+        self.assertEqual(issues(src), ["function f: no @param b"])
 
     def test_a_named_return_must_be_cited_by_name(self) -> None:
         src = """
