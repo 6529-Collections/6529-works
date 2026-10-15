@@ -124,7 +124,7 @@ or stores a key:
 | VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
 
-Delays and responsibilities are in the [role table](../src/governance/README.md).
+Delays and responsibilities are in the [role table](../docs/spec/governance.md#roles).
 
 **Guardians.** They veto any scheduled operation and pause in an emergency, so they must be
 independent of the admins they check:

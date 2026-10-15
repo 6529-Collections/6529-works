@@ -54,7 +54,7 @@ itself, `<manifest>.stored` beside it: the exact stored bytes. **For a gzip or
 base64 encoding, publish that `.stored` stream (Arweave or IPFS) as a locator
 next to the decoded media.** The file ID commits to those exact bytes, and gzip
 output depends on the compressor, so nobody can promise to reproduce it later;
-see the [content README](../../src/content/README.md#the-model).
+see [Works and storage](../../docs/spec/works-and-storage.md#concepts).
 
 `plan` also prints a **cost quote** for putting the file on chain (registration,
 one write per distinct chunk, and the attest calls of a base64 file) under each

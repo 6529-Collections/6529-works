@@ -33,7 +33,7 @@ The glossary defines [authority](../glossary.md#authority),
 [override](../glossary.md#override), [contest](../glossary.md#contest),
 [restraint](../glossary.md#restraint), [standing](../glossary.md#standing),
 [consolidation](../glossary.md#consolidation) and [dormancy](../glossary.md#dormancy). The module
-[README](../../src/identity/README.md) covers the same ground for contributors.
+[README](../../src/identity/README.md) maps the code.
 
 ### Artist ID, authority and payout
 

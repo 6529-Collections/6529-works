@@ -178,8 +178,11 @@ sequenceDiagram
   gas each) straight into the single output buffer.
 - **Gas.** At most 8M Prague gas for every work the protocol allows (RND-26;
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table), decision 1). With every
-  cap filled at once the highest figure found is 7,796,194; the matrix is in the
-  [content README](../../src/content/README.md#renderer).
+  cap filled at once the highest figure found is 7,796,194. The budget proof is
+  [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) on the real stack; the
+  record matrix and each limit on its own are in
+  [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol), which print their
+  figures with `-vv`.
 
 ### `Editions.uri`
 
@@ -329,9 +332,16 @@ A JavaScript primary is wrapped in a fixed page:
   hex, or `null` without a seed). A change to its fields needs a new `v`, which means a new
   renderer.
 - `HtmlScript.neutralize` inserts a backslash after the `<` of every `</script` (any case) and
-  every `<!--` in the artist's script. That is exact inside JavaScript strings, template
-  literals and comments, and changes code elsewhere; the
-  [content README](../../src/content/README.md#the-page-around-a-script) gives the cases.
+  every `<!--` in the artist's script. `<!--` matters because it can start the HTML parser's
+  "double escaped" state, after which the next `</script>` no longer closes the element. The
+  rewrite is exact inside JavaScript strings, template literals and comments, and changes code
+  elsewhere: the page uses a classic script, in which `<!--` starts a single-line comment, so
+  `a<!--b` is a comment to the browser and a syntax error after the rewrite, and
+  `x</script/i.test(s)` (a comparison with a regular expression) becomes a different
+  expression. Code that needs either sequence splits it (`"<" + "/script"`), which passes
+  through unchanged.
+- A record declares `dependencies` when that member's JSON value is longer than two bytes, so
+  `[]` declares none but `[ ]` does; a script whose record declares any is served by locator.
 - A `text/html` primary is inlined as it is, never rewritten.
 
 ### fullTokenURI
@@ -446,7 +456,7 @@ See the [register](README.md#differences-from-the-adrs).
 
 - Code: the sources under [Contracts](#contracts),
   [`WorkRecords.sol`](../../src/stream/WorkRecords.sol),
-  [content README](../../src/content/README.md#renderer).
+  [content README](../../src/content/README.md).
 - ADRs: [ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage) and
   [§10](../adr/0001-v1-scope.md#10-permanence);
   [ADR 0003](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8);

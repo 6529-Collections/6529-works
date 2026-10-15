@@ -110,7 +110,7 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - Two full chunks (about 49 KB) fit in one transaction, not the 72 KB stated
     in ADR 0001 §8. (Pre-Glamsterdam: under Glamsterdam it is one full chunk
     per transaction; see the
-    [content module](../../src/content/README.md#upload-flow) and
+    [uploader](../../tools/content/README.md#glamsterdam) and
     [ADR 0004](0004-gas-budgets-under-glamsterdam.md).)
   - Encodings are `Identity`, `Gzip`, `Base64` and `GzipBase64`.
   - The file ID binds the chunk list, length, encoding, MIME type and decoded

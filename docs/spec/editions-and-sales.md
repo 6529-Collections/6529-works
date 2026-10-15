@@ -33,7 +33,12 @@ Genesis binds Editions in Stream and the package registry, calls `Editions.bindW
 once (`AlreadyBound`), admits both adapters on Editions and lists Editions on both
 ([`config/genesis.example.json`](../../config/genesis.example.json), `wiring`).
 `notifyMasterUpdated` and `setRoyaltyRate` accept only that satellite; `notifyAllUpdated`
-accepts it or Stream (`UnboundCaller`).
+accepts it or Stream (`UnboundCaller`). The fixed-price and Dutch adapters (`MintSaleBase`)
+take the economics resolver at construction, immutably: it must answer ERC-165 for
+`IEconomicsResolver` and not be EIP-7702 delegated. Each reads the resolver's asset allowlist
+once and requires code, no EIP-7702 delegation and, only if the allowlist answers ERC-165 at
+all, `IAssetAllowlist`; the deployed `AssetAllowlist` implements no ERC-165
+(`InvalidDependency`).
 
 ## Concepts
 

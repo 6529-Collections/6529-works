@@ -649,7 +649,7 @@ One `SaleSettled` per purchase (`price` is the total, `tokenId` the edition ID),
 [Editions](events-and-indexing.md#editions)); the escrow's `Credited` for a refused payout
 ([RevenueEscrow](events-and-indexing.md#revenueescrow)). A recipient's hook may close a sale inside
 a purchase, so `SaleSettled` can follow `SaleClosed`
-([sales README](../../src/sales/README.md#events-for-indexers)).
+([event ordering](events-and-indexing.md#event-ordering-within-a-transaction)).
 
 ### Errors
 
@@ -674,7 +674,8 @@ a purchase, so `SaleSettled` can follow `SaleClosed`
 
 A purchase's Prague gas and new slots, first copy and later copies, fixed price and Dutch, are
 in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Worst cases with a
-32-node proof and escrowed payouts are in the [sales README](../../src/sales/README.md#gas).
+32-node proof and escrowed payouts are measured against the transaction cap by the adapters' gas-cap tests
+([sales module notes](../../src/sales/README.md#developer-notes)).
 
 ## Claiming
 
@@ -712,7 +713,7 @@ Anyone may flush; the funds only go to `wallet` (ECO-27). `flush` reverts with
 `NothingOwed(wallet, asset)` when nothing is owed, and with `ETHTransferFailed(wallet, amount)` when
 the wallet refuses ETH again. A credit for a wallet a token has blocked moves to an equivalent
 replacement only by a governed `recover` (ECO-28,
-[economics README](../../src/economics/README.md#escrow-recovery)).
+[recovery flows](../spec/economics-and-payouts.md#escrow-recovery-for-a-blocked-split-wallet)).
 
 ### Split wallets
 
@@ -786,7 +787,7 @@ payee fails. A batch holds at most 50 plain items (`MAX_CLAIMS`) or 20 signed on
   an item offered less than `SHORTFALL_REVERT_CEILING` runs dry, so gas estimation raises the limit
   instead of silently skipping it.
 
-Keeper guidance ([economics README](../../src/economics/README.md#batch-claims-and-gas)):
+Keeper guidance ([LIM-GAS-6](../audit/known-limitations.md#gas-and-glamsterdam)):
 - Estimate every batch; a full batch of first releases may not fit one transaction, and then
   reverts whole, so split it.
 - A party to an item (a gas-burning co-payee, a signed release's recipient, a token issuer) can
@@ -808,7 +809,7 @@ function royaltyInfo(uint256 tokenId, uint256 salePrice)
 | --- | --- | --- |
 | Receiver | Derived on each call: the seller wallet at a zero fee share, otherwise the royalty split wallet (AUC-7, ECO-7) | Stored when the edition was created (ED-7) |
 | Amount | `floor(salePrice × rate / 100,000)`, without overflow for any price | `Math.mulDiv(salePrice, rate, 100,000)`, rounded down |
-| Rate | Set at mint from the product default, 6,529 (6.529%) at launch ([economics README](../../src/economics/README.md)) | Starts at the master's current rate and follows its re-rates |
+| Rate | Set at mint from the product default, 6,529 (6.529%) at launch ([launch terms](../spec/economics-and-payouts.md#products-and-launch-terms)) | Starts at the master's current rate and follows its re-rates |
 | Unknown token | `UnknownWork(tokenId)` | `UnknownEdition(editionId)` |
 | Rate change event | `RoyaltyRateChanged` ([Stream](events-and-indexing.md#stream)) | `RoyaltyRateChanged` and `MetadataUpdate` ([Editions](events-and-indexing.md#editions)) |
 

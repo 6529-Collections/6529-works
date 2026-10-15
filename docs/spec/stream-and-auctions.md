@@ -243,7 +243,8 @@ sequenceDiagram
   nonzero fee share a fee recipient that is neither zero nor the seller wallet).
 - **`consume`** checks the proof, acceptances, payees, the move, single use and content
   uniqueness ([Curation](curation.md)); its errors bubble up unchanged. Media checks do not run
-  at mint ([`src/stream/README.md`](../../src/stream/README.md#core-token)).
+  at mint; the curation signer simulates `openRecord`
+  ([trust obligations](curation.md#trust-obligations-of-the-curation-signer)).
 - **Effects.** Stream stores two words per work: the seller wallet with the serial, collection,
   a flags byte (item kind, seed policy, settled, edition-linked) and a terms ID; and the item
   hash. The terms (the lead artist ID, royalty rate, fee share, and the indexes of the fee

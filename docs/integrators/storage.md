@@ -65,7 +65,7 @@ cast call $STORE "readChunk(bytes32,uint256)(bytes)" $FILE_ID 0
    chunk but the last is exactly 24,575 bytes (`CHUNK_SIZE`).
 4. For a byte range, `read(fileId, offset, length)` works too, but every chunk it touches is read
    whole, and memory cost grows faster than linearly: reading 1 MB in one call costs about 9.7M
-   gas in Prague terms ([content module](../../src/content/README.md#gas)). Prefer `readChunk`
+   gas in Prague terms ([content module](../../src/content/README.md#developer-notes)). Prefer `readChunk`
    for whole files, or ranges of a few hundred KB.
 
 A read that touches a missing chunk reverts with `ContentChunkMissing(fileId, index, hash)`.
@@ -215,7 +215,7 @@ selectors and delays are in the [role matrix](../audit/roles.md).
 off-chain health monitor that verifies copies and re-pins or re-uploads from a surviving copy
 ([ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage)), and the storage operator
 serves only copies the monitor verified
-([stream module](../../src/stream/README.md#records-satellite)). Monitoring results can be
+([LIM-CNT-2](../audit/known-limitations.md#content-records-and-rendering)). Monitoring results can be
 published in the statement log under the kinds `STORAGE_COPY` and `FIXITY_CHECK`
 ([`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol)); any role may write those
 kinds, so read each entry's kind together with its signer's role
@@ -320,7 +320,7 @@ contract code: about 1,548 gas per stored byte on Sepolia, so about 1.65 ETH per
 [`flows.md`](../../deployments/11155111/flows.md#1-content)). Two limits follow:
 
 - **One full chunk per transaction.** Two full chunks are more than a node with the default 50M
-  RPC gas cap can estimate ([content module](../../src/content/README.md#upload-flow)).
+  RPC gas cap can estimate ([uploader](../../tools/content/README.md#glamsterdam)).
 - **Large manifests.** Registration grows with the chunk count; above about 440 chunks a node with
   a 50M estimate cap cannot estimate it, so use the uploader's offline model, which is the default
   ([uploader](../../tools/content/README.md#gas-schedules-the-cap-and-quotes)).
@@ -328,7 +328,7 @@ contract code: about 1,548 gas per stored byte on Sepolia, so about 1.65 ETH per
 `plan` and `calls` print a quote for any file under both schedules
 ([cost quotes](../../tools/content/README.md#cost-quotes)). Mainnet's Glamsterdam parameters may
 differ from Sepolia's; re-measure there. The full figures are in the
-[content module](../../src/content/README.md#glamsterdam) and
+[uploader](../../tools/content/README.md#gas-schedules-the-cap-and-quotes) and
 [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ## 8. Who pays, and when

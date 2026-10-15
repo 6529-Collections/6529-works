@@ -67,7 +67,12 @@ a seed. Anyone may call it; there is no role and no fee. Every failure is
 3. The proof has at most 32 hashes and places the item's leaf under the root.
 4. `packageRegistry.consumedItemOf(item.contentHash)` is zero: no item has consumed the content.
 
-The gate runs on every call, repeats included.
+The gate runs on every call, repeats included. It bounds the total spend to one draw per VRF
+content the network approved, plus one repeat per `retryDelay` for each draw that never arrived,
+without a privileged step: a fee would have to track the oracle's cost and need a payable
+funding path, a fixed requester (a keeper or the platform) would put a trusted operator into an
+otherwise permissionless start, and a rate limit alone would let a spammer drain the
+subscription at the cap.
 
 ### First delivery wins
 
@@ -222,8 +227,8 @@ sequenceDiagram
 ### Coordinator change
 
 Stream pins the module, so when Chainlink retires a coordinator the module must follow. A new
-coordinator needs a new subscription, so the change is two scheduled operations executed together ([`src/entropy/README.md`](../../src/entropy/README.md),
-"Operations").
+coordinator needs a new subscription, so the change is two scheduled operations executed
+together.
 
 ```mermaid
 sequenceDiagram
@@ -304,11 +309,13 @@ keyed by content hash, not item hash: map items to it through `SeedLinked`.
 | Two deliveries for one content are outstanding. | Whoever orders them chooses which of two random words becomes the seed. | Accepted risk [LIM-ENT-1](../audit/known-limitations.md#entropy); the 3-day minimum `retryDelay` keeps it rare. |
 | A hostile approved package requests many VRF draws. | It spends one draw per content, plus repeats, until a guardian revokes it. | Accepted risk [LIM-ENT-2](../audit/known-limitations.md#entropy); a dedicated subscription with a modest, topped-up balance bounds the loss. |
 
-**Subscription operations** ([LIM-ENT-3](../audit/known-limitations.md#entropy),
-[`src/entropy/README.md`](../../src/entropy/README.md)): use a dedicated subscription with this
-module as its only consumer, added before the first request (the subscription pays, never the
-caller); keep the balance modest and topped up; and keep an old subscription funded until its
-requests deliver. On Sepolia each instance has its own native-paid subscription
+**Subscription operations** ([LIM-ENT-3](../audit/known-limitations.md#entropy)): use a
+dedicated subscription with this module as its only consumer, added before the first request
+(the subscription pays, never the caller; a shared subscription can be drained by its other
+consumers, which the module cannot see); keep the balance modest and topped up; and keep an old
+subscription funded until its requests deliver, since the coordinator refuses to cancel a
+subscription with a pending request and VRF v2.5 never expires one (confirm against Chainlink's
+current documentation). On Sepolia each instance has its own native-paid subscription
 ([`deployments/11155111/README.md`](../../deployments/11155111/README.md)).
 
 ## Parameters and limits

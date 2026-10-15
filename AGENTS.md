@@ -28,8 +28,8 @@ Instructions for automated coding agents working in this repository.
   which reuse Stream's shared terms word, write 5 and 6. An artist's first start under new
   terms writes one more on a hashed-position collision, which a curated artist can force by
   grinding an address; first starts are measured and gated separately, and such a collision
-  can push one over 350K (an accepted limitation). The binding row today is an artist's
-  first start of a two-party work with a bid, about 9.5K under 350K. An ERC-20 start paid by
+  can push one over 350K (an accepted limitation). The binding row, an artist's first start
+  of a two-party work with a bid, and its margin are in ADR 0004's table. An ERC-20 start paid by
   Permit2 is a supported, non-default path: it has a regression ceiling and exact counts, not
   a budget. Admitting the first ERC-20, or approving a Stream package that names one, must be
   accompanied by a re-measurement and publication of its start cost, in Prague gas and on the
@@ -61,6 +61,32 @@ custom errors.
 **Reuse.** Port from the ADR 0001 §17 keep list by rewriting within the budgets.
 Never copy 6529Stream PR #744 code wholesale.
 
+## Documentation: one source of truth per fact
+
+Each fact has one owner; every other page links to it instead of repeating it
+([where each fact lives](docs/README.md#where-each-fact-lives)):
+
+| Fact | Owner |
+| --- | --- |
+| Rules, state machines, parameters | The [specification](docs/spec/README.md) page of the area, by rule ID (`AUC-3`, `WS-17`, ...) |
+| Where the code departs from an ADR | The [register](docs/spec/README.md#differences-from-the-adrs) in the specification index |
+| Events and topic0 values | [Events and indexing](docs/integrators/events-and-indexing.md) |
+| Selector, role, delay | The generated [role matrix](docs/audit/roles.md) (from `config/genesis.example.json`) |
+| Gas budgets and measured gas | [ADR 0004's table](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table) |
+| Accepted risks and known gaps | [Known limitations](docs/audit/known-limitations.md) |
+| Sizes and nSLOC | [Audit scope](docs/audit/scope.md) and the README's module table, refreshed by `check_docs_facts.py --update` |
+
+- **Module READMEs under `src/` are code maps:** what the module is for, its files, entry
+  points with rule IDs, developer notes (storage layout, bytecode headroom, gotchas, tests)
+  and links. Keep each under about 800 words and put rules, events, roles, gas figures and
+  risks on their owning page, not in the README.
+- **ADRs are history.** Never rewrite one; record a later correction as a dated amendment
+  note, and the current behavior in the specification and its ADR register. The exception is
+  ADR 0004's table, which its decision 2 keeps current.
+- Testing guidance (coverage, mutation testing, Halmos proofs) is coming in
+  [PR #58](https://github.com/6529-Collections/6529-works/pull/58) as `docs/testing/`;
+  until then, [Build, test and budgets](docs/audit/build-and-test.md) covers the CI gates.
+
 ## Workflow
 
 ```bash
@@ -72,10 +98,14 @@ forge test
 - One focused change per PR, branched from `origin/main`. Describe the summary,
   the validation you ran, and the security impact.
 - A change of behavior updates its page in [docs/spec/](docs/spec/README.md) in the
-  same PR. A change to `config/genesis.example.json` regenerates the role matrix
+  same PR, and the module README if a file, entry point or developer note changed. A
+  change to `config/genesis.example.json` regenerates the role matrix
   (`python tools/gen_role_matrix.py`). A source change that moves nSLOC or bytecode sizes
-  refreshes the docs with `python tools/check_docs_facts.py --artifacts out --update`. CI
-  checks all three.
+  refreshes the docs: run `forge build`, then
+  `python tools/check_docs_facts.py --artifacts out --update`, and commit what it rewrote.
+  CI checks all three: the Docs job runs `gen_role_matrix.py --check`, `check_docs_facts.py`
+  and `check_markdown_links.py`, and the required Contracts job runs
+  `check_docs_facts.py --artifacts out`.
 - Keep the **Static analysis** job green. Fix a new High or Medium Slither finding; only
   disposition a real false positive or an accepted risk, with a reason, in
   [docs/security/slither-triage.md](docs/security/slither-triage.md).
