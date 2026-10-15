@@ -1009,8 +1009,8 @@ contract EnglishAuction is
 
     /// @dev The token's own latest dispute outcome in the statement log, and its position in
     ///      the token's chain.
-    function _ownOutcome(Sale storage s) private view returns (bytes32, uint64) {
-        return IStatementLog(statementLog).disputeOutcomeOf(s.token, s.tokenId);
+    function _ownOutcome(Sale storage s) private view returns (bytes32 entry, uint64 index) {
+        (entry, index) = IStatementLog(statementLog).disputeOutcomeOf(s.token, s.tokenId);
     }
 
     /// @dev Loads a sale after writing down an expired pause, and requires the `wanted` state.
