@@ -37,9 +37,9 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0x6d0d5203), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
-        assertEq(type(IEditions).interfaceId, bytes4(0xa5bd946e), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0x9c689136), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
-        assertEq(type(IEnglishAuction).interfaceId, bytes4(0xc1a8b12f), "IEnglishAuction");
+        assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
         assertEq(type(IFixedPriceSale).interfaceId, bytes4(0xfedd2754), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0xb1c10995), "IDutchSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
