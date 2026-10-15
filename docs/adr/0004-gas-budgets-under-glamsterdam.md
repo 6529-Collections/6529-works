@@ -78,6 +78,10 @@ two parties, and for VRF and edition-master works.
 **3. Publish the Glamsterdam totals next to the budgets.** The table below
 gives each operation's Sepolia gas from the r2 rehearsal. Mainnet's Glamsterdam
 parameters may differ. Every figure will be re-measured when they are final.
+(Amendment note, 16 October 2026: the table's Sepolia column now gives the r3
+rehearsal's receipts, from `e5fe78c`, the code of release candidate v1.0.0-rc.1.
+Rows r3 has not yet run keep r2's receipt or show r3's simulation, each marked; r2's
+column as accepted is kept below the table.)
 
 **4. Restate the per-transaction cap.** EIP-7825's limit of 16,777,216 gas
 applies to regular gas.
@@ -122,45 +126,69 @@ Prague gas, counts and ceilings are from `test/integration/GasReport.t.sol`
 (`forge test --match-test test_Gas_Table -vv`) at the head of this ADR's pull
 request. Prague figures move by a few dozen gas whenever a source file changes:
 metadata hashes change CREATE2 addresses, and with them the calldata. Sepolia
-gas is the r2 receipt ([flows](../../deployments/11155111/flows.md)). "—" means
-no ceiling, or not run on Sepolia.
+gas is the receipt on the r3 rehearsal (`e5fe78c`,
+[flows](../../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026)).
+A figure marked "sim." is r3's `eth_simulateV1` of a call that waits for its
+auction to end (on r2 the same method reproduced every later receipt exactly);
+one marked "r2" or "r1" is that rehearsal's receipt, for a row r3 has not run.
+"—" means no ceiling, or not run on Sepolia.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 270,138 | 350,000 | **5** | 0 | 846,963 |
-| `startWithBid`, steady state | 312,213 | 350,000 | **6** | 0 | 982,312 |
+| `start`, steady state | 270,138 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 312,213 | 350,000 | **6** | 0 | 871,980 |
 | `start`, two-party work | 278,370 | 350,000 | **5** | 0 | — |
 | `startWithBid`, two-party work | 320,454 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 277,852 | 350,000 | **5** | 0 | 852,868 |
-| `start`, edition master | 270,809 | 350,000 | **5** | 0 | 847,598 |
+| `start`, VRF work | 277,852 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 270,809 | 350,000 | **5** | 0 | 736,477 |
 | `start`, an artist's first work | 290,252 | 350,000 | **6** | 0 | — |
 | `startWithBid`, an artist's first work | 332,327 | 350,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party | 340,580 | 350,000 | **7** | 0 | — |
 | `startWithBid`, ERC-20 by relayed Permit2 | 357,315 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 270,184 | 400,000 | 5 | 0 | 846,977 |
-| `start`, first work ever (one-time) | 439,343 | 449,000 (regression) | 13 | 0 | 1,604,862 |
-| `startWithBid`, first bid under new sale terms (one-time) | 382,362 | 390,000 (regression) | 9 | 0 | — |
-| `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 168,932 |
-| `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 441,363 |
-| `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 |
+| `start`, first work in a new collection | 270,184 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 439,343 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 382,362 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 169,060 |
+| `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 (r2) |
 | `consume`, as Stream calls it | 94,300 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 268,938 | 275,000 (regression) | 7 | 0 | 1,118,699 |
+| `createEdition` | 268,938 | 275,000 (regression) | 7 | 0 | 887,954 (sim.) |
 | `createEdition`, a Dutch edition | 317,127 | 324,000 (regression) | 9 | 0 | — |
-| `openSale` (one public phase) | 241,730 | 247,000 (regression) | 6 | 0 | 993,668 |
-| `openSale`, the adapter's first sale (one-time) | 284,847 | 291,000 (regression) | 8 | 0 | — |
-| `purchase`, the first copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 468,086 |
-| `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 370,142 |
+| `openSale` (one public phase) | 241,730 | 247,000 (regression) | 6 | 0 | — |
+| `openSale`, the adapter's first sale (one-time) | 284,847 | 291,000 (regression) | 8 | 0 | 992,031 (sim.) |
+| `purchase`, the first copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 232,182 (sim.) |
+| `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 232,158 (sim.) |
 | `openSale`, Dutch | 259,642 | 265,000 (regression) | 7 | 0 | — |
 | `purchase`, Dutch, the first copy, new holder | 124,486 | 127,000 (regression) | 1 | 0 | — |
 | re-rate a work (governed `execute`) | 187,694 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
-| `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
-| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 40,667 |
+| `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
+| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 36,426 |
 | `tokenURI` (view, the size matrix) | at most 2,735,362 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,241,422 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 141,484 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 90,196 | 92,000 (regression) | 0 | 0 | — |
+
+r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes
+and the state-growth diet; the flows file compares the two rehearsals row by
+row): `start` 846,963 at steady state, 852,868 for a VRF work, 847,598 for an
+edition master, 846,977 for the first work in a new collection and 1,604,862
+for the first work ever; `startWithBid` 982,312; a `bid` that outbids 168,932;
+`settle` 441,363 for the first payout to a seller wallet and 257,763 with a bid;
+`createEdition` 1,118,699; `openSale` 993,668 (the adapter's first sale, then 8
+new slots); `purchase` 468,086 for the first copy and 370,142 for a later one;
+`refreshStanding` 247,970 for a further wallet (299,112 on r1 for a first
+wallet); `royaltyInfo` 40,667.
+
+r3 also checks the table. Its receipts, replayed with Prague costs
+(`cast run --evm-version prague`), agree with the Prague column within 50 gas:
+270,159 for the steady-state `start`, 312,260 for `startWithBid`, 270,777 for an
+edition master, 439,311 for the first work ever, 382,370 for the first bid under
+new sale terms and 73,440 for an outbid. The Sepolia estimates the state-growth
+diet derived from r2 (below) hold: about 736K and 872K for the steady-state
+starts, against 735,859 and 871,980 measured. The comparison of CI with the
+replays further down is r2's.
 
 - **Re-measured after the review of 14 October 2026.** The split-wallet rows
   were added then, on the same harness; a wallet's deployment is mostly code
@@ -172,7 +200,8 @@ no ceiling, or not run on Sepolia.
   `royaltyInfo`). The `refreshStanding` rows were re-measured with the
   identity fixes; the other rows are as accepted, and moved by a few dozen gas
   at most. The Sepolia column and the replay comparison below are the r2
-  deployment, which predates the change.
+  deployment, which predates the change. (Amendment note, 16 October 2026: the
+  Sepolia column is now r3's, which includes it; see decision 3.)
 - **The VRF start row** also includes, since the same review, the read of
   the item's content link in `isDelivered` (DEPS-1, about 2,200 gas).
 - **Re-measured again with the restrained authority (IDENTITY-1, ADR 0003
