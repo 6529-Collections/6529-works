@@ -3,25 +3,28 @@ pragma solidity ^0.8.24;
 
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
-import { MarketPoCBase } from "./MarketPoCBase.sol";
+import { SalesStackBase } from "./SalesStackBase.sol";
 import { IMintSale } from "src/interfaces/IMintSale.sol";
 
-/// @notice MARKET-1 regression, on the real stack: an emergency pause of the fixed-price or Dutch
-///         adapter, or a deprecation of a sale's currency, stops the sale's schedule as well as
-///         its purchases. On resumption the Dutch curve and the phase windows continue from
-///         where they stopped (`scheduleDelay`).
-contract Market1RegressionTest is MarketPoCBase {
+/// @notice Fixed-price and Dutch sale schedules under halts, on the real stack: an emergency pause
+///         of the adapter, or a deprecation of a sale's currency, stops the sale's schedule as
+///         well as its purchases. On resumption the Dutch curve and the phase windows continue
+///         from where they stopped (`scheduleDelay`). Overlapping halts count twice, a
+///         documented limit.
+contract SaleSchedulesUnderHaltsTest is SalesStackBase {
     function _openDutchNow() internal returns (uint256 saleId, uint256 workId) {
         workId = _masterAndEdition(0);
         vm.prank(artist);
         saleId = dutchSale.openSale(address(editions), workId, uint64(block.timestamp));
     }
 
-    function test_MARKET1_PauseStopsTheDutchCurve() public {
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md)
+    function test_Pause_StopsTheDutchCurve() public {
         (uint256 saleId, uint256 workId) = _openDutchNow();
         uint256 opened = block.timestamp;
         vm.warp(block.timestamp + 1 hours);
@@ -68,7 +71,8 @@ contract Market1RegressionTest is MarketPoCBase {
         assertEq(dutchSale.currentPrice(saleId), DUTCH_REST);
     }
 
-    function test_MARKET1_PauseKeepsAnAllowlistPhaseOpenForItsRemainingLength() public {
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md)
+    function test_Pause_KeepsAnAllowlistPhaseOpenForItsRemainingLength() public {
         uint256 workId = _masterAndEdition(1);
         bytes32 leaf = fixedSale.allowlistLeaf(address(editions), workId, 0, fan, 5, FIXED_PRICE);
         uint64 t0 = uint64(block.timestamp);
@@ -107,7 +111,8 @@ contract Market1RegressionTest is MarketPoCBase {
         assertEq(editions.balanceOf(fan, workId), 1);
     }
 
-    function test_MARKET1_AnyoneClosesOnlyOnceTheMovedPhasesEnded() public {
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md)
+    function test_CloseSale_AnyoneClosesOnlyOnceTheMovedPhasesEnded() public {
         uint256 workId = _masterAndEdition(1);
         uint64 t0 = uint64(block.timestamp);
         IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
@@ -141,7 +146,8 @@ contract Market1RegressionTest is MarketPoCBase {
         fixedSale.closeSale(saleId);
     }
 
-    function test_MARKET1_CurrencyDeprecationStopsTheDutchCurve() public {
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md)
+    function test_DeprecateAsset_StopsTheDutchCurve() public {
         (uint256 saleId,) = _openDutchNow();
         vm.warp(block.timestamp + 1 hours);
         uint256 priceAtFreeze = dutchSale.currentPrice(saleId);
@@ -173,9 +179,10 @@ contract Market1RegressionTest is MarketPoCBase {
         assertEq(paid, priceAtFreeze);
     }
 
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md)
     /// @dev The allowlist's status clock: the time of the latest status change, and the sum of
     ///      closed deprecations, kept in the asset's status word.
-    function test_MARKET1_AllowlistStatusClockSumsDeprecations() public {
+    function test_DeprecateAsset_StatusClockSumsDeprecations() public {
         (IAssetAllowlist.Status status, uint256 since, uint256 inactive) =
             allowlist.statusClock(makeAddr("neverAdmitted"));
         assertEq(uint8(status), uint8(IAssetAllowlist.Status.None));
@@ -204,11 +211,136 @@ contract Market1RegressionTest is MarketPoCBase {
         assertEq(total, 2 * Roles.FUNDS);
     }
 
-    function test_MARKET1_SaleOpenedAfterAHaltStartsWithNoDelay() public {
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md)
+    function test_OpenSale_AfterAHaltStartsWithNoDelay() public {
         _govern(guardian1, address(dutchSale), abi.encodeCall(dutchSale.pause, ()));
         _govern(hotAdmin, address(dutchSale), abi.encodeCall(dutchSale.unpause, ()));
         (uint256 saleId,) = _openDutchNow();
         assertEq(dutchSale.scheduleDelay(saleId), 0, "earlier halts do not move a later sale");
         assertEq(dutchSale.currentPrice(saleId), DUTCH_START);
+    }
+
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md); L1 in the review of #57
+    /// @dev Documents a known limit: an adapter pause during a deprecation of the sale's
+    ///      currency counts twice, so the Dutch curve does not resume where it stopped but rewinds
+    ///      by the overlap (here back to the start price, and the sale is "not open" again for a
+    ///      while). The guardian runbook says not to pause an adapter during a deprecation, or to
+    ///      close and reopen the affected sales afterwards.
+    function test_ScheduleDelay_OverlappingHaltsCountTwice_DutchCurveRewinds() public {
+        uint256 workId = _masterAndEdition(0);
+        vm.prank(artist);
+        uint256 saleId = dutchSale.openSale(address(editions), workId, uint64(block.timestamp));
+        vm.warp(block.timestamp + 20 hours);
+        _dutchBuy(saleId, makeAddr("earlyBuyer"), 1);
+
+        _deprecateEth();
+        _govern(guardian1, address(dutchSale), abi.encodeCall(dutchSale.pause, ()));
+        uint256 haltStart = block.timestamp;
+        _govern(hotAdmin, address(dutchSale), abi.encodeCall(dutchSale.unpause, ()));
+        _readmitEth();
+        uint256 realHalt = block.timestamp - haltStart;
+        assertEq(realHalt, Roles.STANDARD + Roles.FUNDS);
+        assertEq(dutchSale.scheduleDelay(saleId), realHalt + Roles.STANDARD, "counted twice");
+        assertEq(dutchSale.currentPrice(saleId), DUTCH_START, "rewound to the start price");
+        vm.deal(bot, 1 ether);
+        vm.prank(bot);
+        vm.expectRevert(abi.encodeWithSelector(IDutchSale.SaleNotOpen.selector, saleId));
+        dutchSale.purchase{ value: 1 ether }(
+            saleId, address(0), 1, 1 ether, Payment(PaymentMethod.DIRECT, bot, 1 ether, 0, 0, "")
+        );
+    }
+
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md); L1 in the review of #57
+    /// @dev Documents the same limit for fixed price: the overlap reopens an allowlist phase that
+    ///      had ended, and closes the public phase that was running when trading stopped.
+    function test_ScheduleDelay_OverlappingHaltsCountTwice_EndedAllowlistPhaseReopens() public {
+        uint256 workId = _masterAndEdition(1);
+        bytes32 leaf = fixedSale.allowlistLeaf(address(editions), workId, 0, fan, 5, FIXED_PRICE);
+        uint64 t0 = uint64(block.timestamp);
+        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](2);
+        phases[0] = IFixedPriceSale.Phase(t0, t0 + 3 days, leaf, 0, false, false);
+        phases[1] = IFixedPriceSale.Phase(t0 + 3 days, t0 + 30 days, bytes32(0), 0, false, false);
+        vm.prank(artist);
+        uint256 saleId = fixedSale.openSale(
+            address(editions), workId, phases, IFixedPriceSale.ArtistConsent(0, 0, "")
+        );
+        vm.warp(t0 + 3 days + 1 hours);
+        _deprecateEth();
+        _govern(guardian1, address(fixedSale), abi.encodeCall(fixedSale.pause, ()));
+        _govern(hotAdmin, address(fixedSale), abi.encodeCall(fixedSale.unpause, ()));
+        _readmitEth();
+
+        vm.deal(bot, FIXED_PRICE);
+        vm.prank(bot);
+        vm.expectRevert(abi.encodeWithSelector(IFixedPriceSale.PhaseNotOpen.selector, saleId, 1));
+        fixedSale.purchase{ value: FIXED_PRICE }(
+            IFixedPriceSale.Purchase(saleId, 1, bot, 1, 0, 0),
+            new bytes32[](0),
+            Payment(PaymentMethod.DIRECT, bot, FIXED_PRICE, 0, 0, "")
+        );
+        vm.deal(fan, FIXED_PRICE);
+        vm.prank(fan);
+        fixedSale.purchase{ value: FIXED_PRICE }(
+            IFixedPriceSale.Purchase(saleId, 0, fan, 1, 5, FIXED_PRICE),
+            new bytes32[](0),
+            Payment(PaymentMethod.DIRECT, fan, FIXED_PRICE, 0, 0, "")
+        );
+        assertEq(editions.balanceOf(fan, workId), 1, "the ended allowlist phase sold again");
+    }
+
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md); mutants M5 and M42
+    ///             in the review of #57
+    /// @dev A deprecation still running moves the schedule in the views and in the
+    ///      anyone-may-close rule, not only once it ends.
+    function test_ScheduleDelay_ARunningDeprecationMovesViewsAndTheCloseRule() public {
+        uint256 dutchId = _masterAndEdition(0);
+        vm.prank(artist);
+        uint256 dutch = dutchSale.openSale(address(editions), dutchId, uint64(block.timestamp));
+        uint256 fixedId = _masterAndEdition(1);
+        uint64 t0 = uint64(block.timestamp);
+        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
+        phases[0] = IFixedPriceSale.Phase(t0, t0 + 1 days, bytes32(0), 0, false, false);
+        vm.prank(artist);
+        uint256 fixedId2 = fixedSale.openSale(
+            address(editions), fixedId, phases, IFixedPriceSale.ArtistConsent(0, 0, "")
+        );
+
+        vm.warp(t0 + 1 hours);
+        uint256 priceAtFreeze = dutchSale.currentPrice(dutch);
+        _deprecateEth();
+        vm.warp(t0 + 2 days);
+        assertEq(dutchSale.scheduleDelay(dutch), 2 days - 1 hours);
+        assertEq(fixedSale.scheduleDelay(fixedId2), 2 days - 1 hours);
+        assertEq(dutchSale.currentPrice(dutch), priceAtFreeze, "the curve waits");
+        address stranger = makeAddr("stranger");
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, stranger));
+        fixedSale.closeSale(fixedId2);
+    }
+
+    /// Regression: MARKET-1 (docs/security/internal-review-2026-10.md); mutants M5 and M42
+    ///             in the review of #57
+    /// @dev A halt before a Dutch sale's start moves its start too.
+    function test_ScheduleDelay_AHaltBeforeTheStartMovesTheDutchStart() public {
+        uint256 workId = _masterAndEdition(0);
+        uint64 startTime = uint64(block.timestamp + 1 days);
+        vm.prank(artist);
+        uint256 saleId = dutchSale.openSale(address(editions), workId, startTime);
+        _govern(guardian1, address(dutchSale), abi.encodeCall(dutchSale.pause, ()));
+        _govern(hotAdmin, address(dutchSale), abi.encodeCall(dutchSale.unpause, ()));
+        assertGt(block.timestamp, startTime, "the configured start has passed");
+        vm.deal(bot, DUTCH_START);
+        vm.prank(bot);
+        vm.expectRevert(abi.encodeWithSelector(IDutchSale.SaleNotOpen.selector, saleId));
+        dutchSale.purchase{ value: DUTCH_START }(
+            saleId,
+            address(0),
+            1,
+            DUTCH_START,
+            Payment(PaymentMethod.DIRECT, bot, DUTCH_START, 0, 0, "")
+        );
+        vm.warp(startTime + Roles.STANDARD);
+        assertEq(dutchSale.currentPrice(saleId), DUTCH_START);
+        assertEq(_dutchBuy(saleId, bot, 1), DUTCH_START, "opens at the start price");
     }
 }

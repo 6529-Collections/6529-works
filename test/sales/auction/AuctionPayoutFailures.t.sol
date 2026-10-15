@@ -10,15 +10,16 @@ import {
     BlocklistToken,
     FeeOnTransferToken,
     MockERC20
-} from "../mocks/economics/EconomicsMocks.sol";
-import { IntegrationBase } from "../integration/IntegrationBase.sol";
+} from "../../mocks/economics/EconomicsMocks.sol";
+import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 
-/// @notice MONEY-1 regression, on the real stack: NFT delivery never depends on a payout
-///         succeeding. When an admitted ERC-20 changes behaviour after the bids (a transfer fee,
-///         or a block on the auction itself, so even the escrow route fails), settlement still
-///         delivers the work and credits each failed payout to its wallet; anyone pays the
-///         credit out with `claimFor` once the token works again, to that wallet only.
-contract Money1RegressionTest is IntegrationBase {
+/// @notice An English auction's settlement when payouts fail, on the real stack: NFT delivery
+///         never depends on a payout succeeding. When an admitted ERC-20 changes behaviour after
+///         the bids (a transfer fee, or a block on the auction itself, so even the escrow route
+///         fails), settlement still delivers the work and credits each failed payout to its
+///         wallet; anyone pays the credit out with `claimFor` once the token works again, to that
+///         wallet only.
+contract AuctionPayoutFailuresTest is IntegrationBase {
     address internal artist;
     address internal bidder1 = makeAddr("bidder1");
     address internal bidder2 = makeAddr("bidder2");
@@ -54,7 +55,8 @@ contract Money1RegressionTest is IntegrationBase {
         _bid(token, saleId, bidder2, 200e18);
     }
 
-    function test_MONEY1_FeeSwitchAfterTheBidsDoesNotHoldTheWork() public {
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md)
+    function test_Settle_AFeeSwitchAfterTheBidsDoesNotHoldTheWork() public {
         FeeOnTransferToken fee = new FeeOnTransferToken();
         fee.setFee(0);
         _admit(fee);
@@ -93,7 +95,8 @@ contract Money1RegressionTest is IntegrationBase {
         assertEq(fee.balanceOf(address(auction)), 0);
     }
 
-    function test_MONEY1_ATokenThatBlocksTheAuctionDoesNotHoldTheWork() public {
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md)
+    function test_Settle_ATokenThatBlocksTheAuctionDoesNotHoldTheWork() public {
         BlocklistToken usdb = new BlocklistToken();
         _admit(usdb);
         (uint256 saleId, uint256 tokenId) = _auctionIn(usdb);
@@ -113,9 +116,10 @@ contract Money1RegressionTest is IntegrationBase {
         assertEq(usdb.balanceOf(lt.seller), owed);
     }
 
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md)
     /// @dev A wallet the token blocks, with the auction unblocked, still goes to the escrow as
     ///      before: only a payout that cannot be made at all is credited here.
-    function test_MONEY1_ABlockedWalletIsStillPaidThroughTheEscrow() public {
+    function test_Settle_ABlockedWalletIsStillPaidThroughTheEscrow() public {
         BlocklistToken usdb = new BlocklistToken();
         _admit(usdb);
         (uint256 saleId,) = _auctionIn(usdb);
@@ -127,16 +131,18 @@ contract Money1RegressionTest is IntegrationBase {
         assertGt(escrow.owed(lt.seller, address(usdb)), 0, "escrowed for the seller");
     }
 
-    function test_MONEY1_OnlyTheAuctionRunsAPayoutFrame() public {
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md)
+    function test_SettlePayout_OnlyTheAuctionRunsAPayoutFrame() public {
         vm.expectRevert(
             abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(this))
         );
         auction.settlePayout(address(1), address(2), 3);
     }
 
-    /// @dev `claimFor` pushes an ERC-20 credit to its own account only; it refuses ETH (L5), whose
+    /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md); L5 in the review of #57
+    /// @dev `claimFor` pushes an ERC-20 credit to its own account only; it refuses ETH, whose
     ///      credits are bidders' refunds, claimed by the bidder to an address it chooses.
-    function test_MONEY1_ClaimForPaysOnlyTheAccountItself() public {
+    function test_ClaimFor_PaysOnlyTheAccountItself() public {
         FeeOnTransferToken token = new FeeOnTransferToken();
         token.setFee(0);
         _admit(token);

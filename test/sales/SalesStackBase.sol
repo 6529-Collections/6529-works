@@ -28,10 +28,13 @@ import { MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
 import { MockFederationRegistry } from "../mocks/sales/SaleMocks.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
 
-/// @notice Shared setup for the MARKET lens PoCs, on the real stack deployed through `DeployV1` and the committed
-///         genesis policy (guardians hold PAUSER and GUARDIAN with no delay; the hot admin holds
-///         UNPAUSER and SUCCESSOR_SETTER with 48-hour and 30-day delays).
-abstract contract MarketPoCBase is IntegrationBase {
+/// @notice Shared setup for the sale adapters' tests on the real stack, deployed through
+///         `DeployV1` with the committed genesis policy (guardians hold PAUSER and GUARDIAN with
+///         no delay; the hot admin holds UNPAUSER and SUCCESSOR_SETTER with 48-hour and 30-day
+///         delays). One package holds edition masters for a Dutch, a fixed-price and an OPEN
+///         edition, and a plain 1/1 for the auction; helpers sell a master and create its
+///         edition, buy on the Dutch curve, and register a federated token.
+abstract contract SalesStackBase is IntegrationBase {
     uint256 internal constant DUTCH_START = 1 ether;
     uint256 internal constant DUTCH_REST = 0.1 ether;
     uint64 internal constant DUTCH_DECAY = 24 hours;
@@ -145,6 +148,21 @@ abstract contract MarketPoCBase is IntegrationBase {
                 10_000,
                 IFederationRegistry.Status.ACTIVE
             )
+        );
+    }
+
+    function _deprecateEth() internal {
+        _govern(
+            guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (CURRENCY_ETH))
+        );
+    }
+
+    function _readmitEth() internal {
+        (,, uint64 revision) = allowlist.assetConfig(CURRENCY_ETH);
+        _govern(
+            hotAdmin,
+            address(allowlist),
+            abi.encodeCall(allowlist.admitAsset, (CURRENCY_ETH, revision, 0.001 ether))
         );
     }
 }

@@ -7,15 +7,16 @@ import { EditionFormat, EditionTerms } from "src/interfaces/types/PackageTypes.s
 import { DutchParams, Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { MintSaleBase } from "src/sales/MintSaleBase.sol";
-import { MarketPoCBase } from "./MarketPoCBase.sol";
+import { SalesStackBase } from "./SalesStackBase.sol";
 import { IMintSale } from "src/interfaces/IMintSale.sol";
 
-/// @notice MARKET-6 regression, on the real stack (ADR 0001 section 6: the artist chooses an
-///         edition's format and price within the package). Alone, PLATFORM opens a sale only at
-///         the package price and only for an edition of FIXED size; a leaf price (above or
-///         below the package price) or an OPEN edition's one-time window needs the artist,
-///         who opens the sale or signs the phase configuration PLATFORM relays.
-contract Market6RegressionTest is MarketPoCBase {
+/// @notice Who may open and close an edition's sale, on the real stack (ADR 0001 section 6: the
+///         artist chooses an edition's format and price within the package). Alone, PLATFORM
+///         opens a sale only at the package price and only for an edition of FIXED size; a leaf
+///         price (above or below the package price) or an OPEN edition's one-time window needs
+///         the artist, who opens the sale or signs the phase configuration PLATFORM relays. A
+///         sale the artist opened is the artist's to close.
+contract EditionSaleAuthorityTest is SalesStackBase {
     function _consent(uint256 workId, IFixedPriceSale.Phase[] memory phases, uint256 price)
         internal
         view
@@ -40,7 +41,8 @@ contract Market6RegressionTest is MarketPoCBase {
         );
     }
 
-    function test_MARKET6_PlatformAloneCannotPriceAboveThePackage() public {
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
+    function test_OpenSale_PlatformAloneCannotPriceAboveThePackage() public {
         uint256 workId = _masterAndEdition(1);
         uint256 premium = 3 * FIXED_PRICE;
         bytes32 leaf = fixedSale.allowlistLeaf(address(editions), workId, 0, fan, 10, premium);
@@ -67,7 +69,8 @@ contract Market6RegressionTest is MarketPoCBase {
         assertEq(editions.balanceOf(fan, workId), 1);
     }
 
-    function test_MARKET6_PlatformAloneStillOpensAtThePackagePrice() public {
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
+    function test_OpenSale_PlatformAloneStillOpensAtThePackagePrice() public {
         uint256 workId = _masterAndEdition(1);
         uint64 t0 = uint64(block.timestamp);
         IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
@@ -80,7 +83,8 @@ contract Market6RegressionTest is MarketPoCBase {
         assertEq(editions.balanceOf(fan, workId), 1);
     }
 
-    function test_MARKET6_PlatformAloneCannotSpendAnOpenWindow() public {
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
+    function test_OpenSale_PlatformAloneCannotSpendAnOpenWindow() public {
         uint256 workId = _masterAndEdition(3);
         uint64 t0 = uint64(block.timestamp);
         IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
@@ -109,7 +113,8 @@ contract Market6RegressionTest is MarketPoCBase {
         assertEq(editions.balanceOf(fan, workId), 1);
     }
 
-    function test_MARKET6_PlatformMayRelayTheArtistsOpenEditionDrop() public {
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
+    function test_OpenSale_PlatformMayRelayTheArtistsOpenEditionDrop() public {
         uint256 workId = _masterAndEdition(3);
         uint64 t0 = uint64(block.timestamp);
         IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
@@ -121,9 +126,10 @@ contract Market6RegressionTest is MarketPoCBase {
         assertEq(editions.balanceOf(fan, workId), 1);
     }
 
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
     /// @dev Dutch has no phase configuration to sign: PLATFORM may open a FIXED edition's curve,
     ///      and only the artist opens an OPEN one.
-    function test_MARKET6_PlatformAloneCannotOpenAnOpenDutchEdition() public {
+    function test_OpenSale_PlatformAloneCannotOpenAnOpenDutchEdition() public {
         uint256 fixedId = _masterAndEdition(0);
         vm.prank(platform);
         dutchSale.openSale(address(editions), fixedId, uint64(block.timestamp));
@@ -156,5 +162,51 @@ contract Market6RegressionTest is MarketPoCBase {
         dutchSale.openSale(address(editions), openId, uint64(block.timestamp));
         vm.prank(artist);
         dutchSale.openSale(address(editions), openId, uint64(block.timestamp));
+    }
+
+    function _openDutchEdition() internal returns (uint256 openId) {
+        Work[] memory works = new Work[](1);
+        works[0] = _master(
+            _work(artist, collectionId),
+            EditionTerms(
+                EditionFormat.OPEN,
+                0,
+                48 hours,
+                DUTCH_START,
+                CURRENCY_ETH,
+                SaleKind.DUTCH,
+                abi.encode(DutchParams(DUTCH_REST, DUTCH_DECAY, 0))
+            )
+        );
+        bytes32 openRoot = _publish(works);
+        uint256 saleId;
+        (saleId, openId) = _start(openRoot, works, 0);
+        _ethBid(saleId, collector, 1 ether);
+        _settleAtEnd(saleId);
+        editions.createEdition(openId, works[0].item, openRoot, _proofOf(works, 0));
+    }
+
+    /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md); L-a in the review of #57
+    /// @dev A Dutch sale the creator opened is the artist's, as on fixed price: PLATFORM cannot
+    ///      close it mid-window; the artist can. PLATFORM still closes a sale it opened alone.
+    function test_CloseSale_PlatformCannotCloseTheArtistsOwnDutchSale() public {
+        uint256 openId = _openDutchEdition();
+        vm.prank(artist);
+        uint256 saleId = dutchSale.openSale(address(editions), openId, uint64(block.timestamp));
+        _dutchBuy(saleId, fan, 1);
+        vm.prank(platform);
+        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
+        dutchSale.closeSale(saleId);
+        assertEq(dutchSale.openSaleOf(address(editions), openId), saleId);
+        vm.prank(artist);
+        dutchSale.closeSale(saleId);
+
+        uint256 fixedId = _masterAndEdition(0);
+        vm.prank(platform);
+        uint256 platformSale =
+            dutchSale.openSale(address(editions), fixedId, uint64(block.timestamp));
+        vm.prank(platform);
+        dutchSale.closeSale(platformSale);
+        assertEq(dutchSale.openSaleOf(address(editions), fixedId), 0);
     }
 }

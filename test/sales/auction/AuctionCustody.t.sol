@@ -3,13 +3,13 @@ pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { IntegrationBase } from "../integration/IntegrationBase.sol";
+import { IntegrationBase } from "../../integration/IntegrationBase.sol";
 
-/// @notice CALLS-5, on the real stack: the auction refuses every safe transfer except its own
-///         mint during a start, and documents that a plain `transferFrom` (which runs no hook)
-///         strands the token, since nothing records who sent it. A governed rescue does not fit
-///         the auction's EIP-170 headroom.
-contract Calls5RegressionTest is IntegrationBase {
+/// @notice What the English auction takes into custody, on the real stack: it refuses every safe
+///         transfer except its own mint during a start, and documents that a plain
+///         `transferFrom` (which runs no hook) strands the token, since nothing records who sent
+///         it. A governed rescue does not fit the auction's EIP-170 headroom.
+contract AuctionCustodyTest is IntegrationBase {
     address internal bidder = makeAddr("callsBidder");
 
     function _sold() internal returns (uint256 saleId, uint256 tokenId) {
@@ -21,7 +21,8 @@ contract Calls5RegressionTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), bidder);
     }
 
-    function test_CALLS5_SafeTransfersIntoTheAuctionAreRefused() public {
+    /// Regression: CALLS-5 (docs/security/internal-review-2026-10.md)
+    function test_OnERC721Received_RefusesSafeTransfersIntoTheAuction() public {
         (, uint256 tokenId) = _sold();
         vm.prank(bidder);
         vm.expectRevert(
@@ -31,8 +32,9 @@ contract Calls5RegressionTest is IntegrationBase {
         assertEq(stream.ownerOf(tokenId), bidder);
     }
 
+    /// Regression: CALLS-5 (docs/security/internal-review-2026-10.md)
     /// @dev The documented limit: a plain transfer cannot be refused or traced to its sender.
-    function test_CALLS5_APlainTransferIsTheSendersLoss() public {
+    function test_TransferFrom_APlainTransferIsTheSendersLoss() public {
         (uint256 saleId, uint256 tokenId) = _sold();
         vm.prank(bidder);
         stream.transferFrom(bidder, address(auction), tokenId);
