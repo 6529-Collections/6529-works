@@ -101,9 +101,9 @@ pay 75% to the artist's side and 25% to the network, and royalties are 6.529% (E
 | [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 774 | 24,397 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 322 | 11,732 |
 | [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 242 | 8,266 |
-| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel any scheduled operation | 26 + 43 | 10,737, 10,634 |
+| [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel any scheduled operation and can suspend operational keys | 71 + 43 | 11,636, 10,634 |
 
-Sizes are at `c4b3355`; the [audit scope](docs/audit/scope.md) lists every file, its libraries
+Sizes are at `46941d6`; the [audit scope](docs/audit/scope.md) lists every file, its libraries
 and how the figures are measured. Shared code lives in internal
 [libraries](src/libraries/README.md) and the [interfaces](src/interfaces/README.md); nothing is
 linked, proxied or `delegatecall`ed. 6529 Stream Federated (artist-owned contracts from the
@@ -115,7 +115,7 @@ network's templates) is [v1.1, only if needed](src/federated/README.md).
 | --- | --- |
 | Maturity | **Pre-audit.** Not production-ready. An internal adversarial review ran in October 2026 and its fixes are merged; no external audit has started. |
 | Scope | Fixed by [ADR 0001](docs/adr/0001-v1-scope.md), amended by ADRs [0002](docs/adr/0002-access-manager-hardening.md), [0003](docs/adr/0003-build-time-decisions.md) and [0004](docs/adr/0004-gas-budgets-under-glamsterdam.md). |
-| Code | Every v1 module is on `main`, with about 2,200 unit, fuzz and integration tests in 127 test files, and 61 stateful invariants in 12 invariant suites ([invariants](docs/audit/invariants.md)). |
+| Code | Every v1 module is on `main`, with about 2,250 unit, fuzz and integration tests in 129 test files, and 62 stateful invariants in 12 invariant suites ([invariants](docs/audit/invariants.md)). |
 | Testnet | Sepolia rehearsal **r2**, deployed on 11 October 2026 from `400f96d` with throwaway signers in the mainnet Safe structure: [addresses](docs/integrators/addresses.md), [deployment record](deployments/11155111/README.md), [flows and their gas](deployments/11155111/flows.md). It predates the review fixes. |
 | Mainnet | Not deployed. It follows an external audit ([delivery plan](ops/DELIVERY_PLAN.md)). |
 | Gas | Budgets are in Prague gas: a steady-state ETH auction start costs at most 350K and writes at most 6 new storage slots, `tokenURI` at most 8M. Sepolia runs Glamsterdam, which prices new state higher ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md)). |

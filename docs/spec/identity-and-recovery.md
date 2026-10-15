@@ -8,7 +8,7 @@ the package registry, the work records and the statement log all ask it who the 
 recovery standing; `ConsolidationAdapter` reads 6529 consolidations from the 6529 delegation
 contract. This page is for auditors, integrators and whoever operates recovery.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 

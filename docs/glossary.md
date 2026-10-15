@@ -5,7 +5,7 @@ follows the code on `main`. The "See" line links where the term is defined (code
 (ADR) or specified (spec page). Other pages link a term as `glossary.md#<term>` from `docs/`
 and `../glossary.md#<term>` from `docs/spec/`.
 
-> **Status.** Pre-audit. These definitions describe `main` at `c4b3355` (15 October 2026).
+> **Status.** Pre-audit. These definitions describe `main` at `46941d6` (15 October 2026).
 > Where an ADR or a module README uses another name or rule, this page follows the code.
 
 Governed delays are named by [delay class](#delay-class): immediate, standard (48 hours), funds
@@ -94,7 +94,8 @@ See: [`IArtistRegistry`](../src/interfaces/IArtistRegistry.sol),
 A holder of `Roles.ADMIN` (ID 0, OpenZeppelin's `ADMIN_ROLE`), with a 30-day execution delay.
 ADMIN administers every role and the manager's own functions, and unmapped selectors fall back to
 it. The policy has two: the hot admin Safe and a cold recovery admin Safe that exists to revoke a
-compromised hot admin.
+compromised hot admin. An admin can cancel another account's operations, except a role
+revocation (Rule 3), and only an admin grant or revocation lifts a [suspension](#suspension).
 
 See: [`Roles.sol`](../src/governance/Roles.sol),
 [ADR 0002 decision 5](adr/0002-access-manager-hardening.md#decision),
@@ -540,7 +541,8 @@ See: [`IPackageRegistry`](../src/interfaces/IPackageRegistry.sol),
 A key holding `Roles.CURATION_SIGNER` (ID 4) whose approvals the v1 verifier
 (`Eip712CurationVerifier`) accepts while the role has no execution delay and the guardian has not
 disabled the key. It only signs and never calls a contract. Before attesting it must, off-chain,
-verify every declared SHA-256 and simulate `openRecord`; the contracts cannot check this.
+verify every declared SHA-256 and simulate `openRecord`; the contracts cannot check this. It is
+not a [suspendable role](#suspendable-role): the guardian's `disableSigner` is its kill switch.
 
 See: [`ICurationVerifier`](../src/interfaces/ICurationVerifier.sol),
 [curation README](../src/curation/README.md), [curation](spec/curation.md).
@@ -550,6 +552,7 @@ See: [`ICurationVerifier`](../src/interfaces/ICurationVerifier.sol),
 The holder of `Roles.CURATOR` (ID 12), the curation team's key, with zero execution delay. It
 appends curator statements through `StatementLog.appendCurator`, including `CURATION_EVIDENCE`.
 It does not approve packages: that is the [curation signer](#curation-signer)'s attestation.
+A guardian can [suspend](#suspension) it at once.
 
 See: [`Roles.sol`](../src/governance/Roles.sol), [records README](../src/records/README.md#who-may-write).
 
@@ -1013,12 +1016,15 @@ See: [`IStatementLog`](../src/interfaces/IStatementLog.sol),
 ### guardian
 
 A holder of `Roles.GUARDIAN` (ID 1): a guardian Safe that holds only GUARDIAN and PAUSER, at
-least two by the code and three at deployment. Guardians cancel scheduled operations (never their
-own removal) and act at once to pause, veto, revoke, disable and deprecate. They can block, never
-redirect.
+least two by the code and three at deployment, each with signers independent of every other
+admin and guardian Safe. Guardians cancel scheduled operations (never their own removal), and
+only they can cancel another account's role revocation. They act at once to pause, veto,
+revoke, disable, deprecate and [suspend](#suspension) an operational key. They can block, never
+redirect, and cannot lift a suspension.
 
 See: [`Roles.sol`](../src/governance/Roles.sol),
 [governance README](../src/governance/README.md#how-the-guardians-cancel-the-admin),
+[governance](spec/governance.md#cancellation-rules),
 [trust assumptions](audit/trust-assumptions.md).
 
 ## H
@@ -1402,6 +1408,7 @@ See: [trust assumptions](audit/trust-assumptions.md#pinned-code-hashes),
 The holder of `Roles.PLATFORM` (ID 8), 6529's platform key, with zero execution delay. It creates
 collections, adds locators (alone after finalize), opens FIXED edition sales at the package terms
 and closes the sales it opened alone, and appends platform statements, including DISPUTE_OUTCOME.
+A guardian can [suspend](#suspension) it at once, which closes every one of these paths.
 
 See: [`Roles.sol`](../src/governance/Roles.sol), [trust assumptions](audit/trust-assumptions.md).
 
@@ -1843,7 +1850,7 @@ See: [`IArtistRegistry`](../src/interfaces/IArtistRegistry.sol),
 
 The holder of `Roles.STORAGE_OPERATOR` (ID 5), with zero delay. It sets the global, collection and
 file [preferred locator](#preferred-locator) settings, choosing only among registered copies; it
-cannot add, remove or change locators or hashes.
+cannot add, remove or change locators or hashes. A guardian can [suspend](#suspension) it at once.
 
 See: [`IWorkRecords`](../src/interfaces/IWorkRecords.sol),
 [trust assumptions](audit/trust-assumptions.md).
@@ -1865,6 +1872,28 @@ How a statement corrects or replaces an earlier one: its `supersedes` field name
 rebuilt chain.
 
 See: [records README](../src/records/README.md#what-is-stored-what-is-emitted).
+
+### suspendable role
+
+A role whose holders a guardian may [suspend](#suspension): `PLATFORM`, `CURATOR` and
+`STORAGE_OPERATOR` (`Roles.isSuspendable`), the zero-delay roles held by single keys that call
+contracts. No governance or pause role, no `MINTER` or `KEEPER`, and no `CURATION_SIGNER` is
+suspendable. The genesis JSON marks each role's `suspendable` flag.
+
+See: [`Roles.sol`](../src/governance/Roles.sol), [governance](spec/governance.md#suspension-of-operational-keys).
+
+### suspension
+
+A guardian's immediate stop of one holder of a [suspendable role](#suspendable-role)
+(`WorksAccessManager.suspend(roleId, account)`, review finding GOV-2). From that block the
+holder fails `hasRole`, and so `canCall` and every role check built on them; its record stays,
+so read `isSuspended`. Only an [admin](#admin) grant or revocation of that role to that account
+(30 days, guardian-vetoable), or the holder's own renounce, lifts it; no guardian can lift or
+cancel one. Events: `RoleSuspended`, `RoleSuspensionLifted`.
+
+See: [`WorksAccessManager.sol`](../src/governance/WorksAccessManager.sol),
+[governance README](../src/governance/README.md#suspending-an-operational-key),
+[governance](spec/governance.md#suspension-of-operational-keys).
 
 ## T
 
@@ -2002,11 +2031,15 @@ See: [`IWorkRecords`](../src/interfaces/IWorkRecords.sol),
 
 ### WorksAccessManager
 
-OpenZeppelin's `AccessManager` with one change, to its cancel check: any GUARDIAN holder may cancel
-any scheduled operation (Rule 1), and only its scheduler may cancel an operation that revokes one of
-the canceller's own roles (Rule 2). `GovernanceConfigurator` deploys it, and the configuration
-rejects a stock manager.
+OpenZeppelin's `AccessManager` with two changes. Its cancel check has three rules: any GUARDIAN
+holder may cancel any scheduled operation (Rule 1); only its scheduler may cancel an operation
+that revokes one of the canceller's own roles (Rule 2); and only a guardian, or its scheduler,
+may cancel a role revocation on the manager (Rule 3). And a guardian may
+[suspend](#suspension) a holder of a [suspendable role](#suspendable-role), which `hasRole` then
+reports as not a member. `GovernanceConfigurator` deploys it, and the configuration rejects a
+stock manager.
 
 See: [`WorksAccessManager.sol`](../src/governance/WorksAccessManager.sol),
-[ADR 0002 decision 1](adr/0002-access-manager-hardening.md#decision),
+[ADR 0002 decision 1](adr/0002-access-manager-hardening.md#decision) and
+[addendum](adr/0002-access-manager-hardening.md#addendum-review-of-14-october-2026),
 [governance](spec/governance.md).

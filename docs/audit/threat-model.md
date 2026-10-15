@@ -6,7 +6,7 @@ written for an external audit team and expert Solidity reviewers. The roles and 
 these defenses rely on are in [trust assumptions](trust-assumptions.md); the per-selector roles
 and delays are in the [role and permission matrix](roles.md).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 
@@ -18,8 +18,8 @@ and delays are in the [role and permission matrix](roles.md).
   (v1.1) is out of scope: no federation registry is installed in v1.
 - **Review history.** The modules were reviewed adversarially while they were built
   ([ADR 0003](../adr/0003-build-time-decisions.md)), and the integrated system had an internal
-  adversarial review on 14 October 2026, whose fixes merged in PRs #51 and #53 to #57 (open
-  PR #52, GOV-1 to GOV-4, DEPS-3 and DEPS-4, is not on `main`). Finding IDs such
+  adversarial review on 14 October 2026, whose fixes merged in PRs #51 to #57 (the governance
+  and deployment fixes, GOV-1 to GOV-4, DEPS-3 and DEPS-4, last, in #52). Finding IDs such
   as MARKET-2 or IDENTITY-1 appear below where a mitigation came from that review; the
   regression tests for the sales findings are in [`test/adv/`](../../test/adv/). This is not an
   audit.
@@ -39,8 +39,8 @@ and delays are in the [role and permission matrix](roles.md).
 | Artist identity and payout routing | `ArtistRegistry`: authority, payout, profile, standing snapshot, pending change | The artist (7-day change); governance (180-day override); captured wallets cancel or contest; guardians veto | Key theft, planted wallets, abuse of the recovery path, a broken identity source |
 | Curation integrity | `PackageRegistry`: root status, acceptances, consume-once and content-uniqueness records, move nonces; `Eip712CurationVerifier` signer epochs | The curation signer approves; the guardian revokes; only the bound Stream consumes | Forged or leaked approvals, signer compromise, reuse, squatting, copies |
 | Metadata integrity and permanence | `WorkRecords` (records, licenses, finalize and renderer pins, locators, preferences); `ContentStore` (bytes); the renderer | The artist until finalize; governance with every party's consent; PLATFORM and STORAGE_OPERATOR for copies and routing; nobody for stored bytes | JSON injection, unbounded gas, look-alike traits, script break-out, renderer substitution, locator repointing |
-| Governance control | `WorksAccessManager`: roles, delays, selector map | ADMIN after 30 days; any guardian cancels | Takeover, entrenchment, hidden delay reductions, value sent through `execute` |
-| VRF subscription funds | The Chainlink subscription the entropy module consumes | The coordinator, per request; the subscription owner | Draining by spam requests; re-rolling a seed |
+| Governance control | `WorksAccessManager`: roles, delays, selector map, suspensions | ADMIN after 30 days; any guardian cancels, and suspends an operational key at once | Takeover, entrenchment, hidden delay reductions, value sent through `execute`, a stalled recovery |
+| VRF subscription funds | The Chainlink subscription the entropy module consumes | The coordinator, per request; the subscription owner (on mainnet the hot admin Safe, checked by Verify) | Draining by spam requests; re-rolling a seed; a compromised owner cancelling it |
 | Reputation and display | `StatementLog` entries shown in metadata: dispute outcomes, curation evidence, artist and owner statements | PLATFORM, CURATOR, the artist through the resolver, token holders | False, stale or forged statements |
 
 ## Actors
@@ -55,13 +55,13 @@ and delays are in the [role and permission matrix](roles.md).
 | Curator (CURATOR key) | Append `CURATION_EVIDENCE` statements | Evidence only |
 | Curation signer | Sign approvals off-chain; never calls a contract | Approving only voted packages, after checking the bytes |
 | Storage operator | Choose preferred copies among registered locators | Display routing only |
-| Guardians (three Safes) | Cancel scheduled operations, pause, veto, revoke, disable, deprecate | Vetoes; never actions |
+| Guardians (three Safes) | Cancel scheduled operations, pause, veto, revoke, disable, deprecate, suspend an operational key | Vetoes and tightening actions; never proposals |
 | Admins (hot and cold Safes) | Every governed action at its class delay | Executing the network's decisions |
 | Keepers and relayers | Call every permissionless entry point; relay signed payloads | Liveness only |
 | VRF coordinator | Deliver random words for requests it was given | Unbiased randomness |
 | Token issuers | Blocklist accounts, charge fees on transfer, rebase, upgrade token behavior | Standard transfers, judged at admission |
 | MEV searchers and block builders | Order, insert and front-run transactions | Nothing |
-| Attackers with stolen keys | An artist key, a curation signer key, an admin Safe, a guardian Safe or the platform key; each is bounded in [trust assumptions](trust-assumptions.md) | Nothing |
+| Attackers with stolen keys | An artist key, a curation signer key, an admin Safe, a guardian Safe, or the platform, curator or storage operator key; each is bounded in [trust assumptions](trust-assumptions.md) | Nothing |
 | Copiers | Submit another artist's content as their own work | Nothing |
 
 ## Attack surfaces
@@ -165,13 +165,16 @@ Test files are linked once per table cell; the test functions follow their file.
 | Entry point | Threat | Mitigation | Enforced in | Proven by |
 | --- | --- | --- | --- | --- |
 | Admin operations on the manager | A compromised admin revokes guardians, remaps selectors or grants itself roles | Every admin operation waits 30 days, and any guardian cancels it (Rule 1); a cold admin removes a compromised hot admin, which cannot cancel its own revocation (Rule 2) | `WorksAccessManager._canCancel`; `Roles` | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol): `test_GuardianCancelsCompromisedAdminRevokingGuardian`, `test_CompromisedAdminCannotCancelItsOwnRevocation`; [`Hardening.t.sol`](../../test/governance/Hardening.t.sol): `test_ColdAdminRecoversFromACompromisedHotAdmin` |
-| Guardian rotation | A guardian vetoes its own removal and entrenches itself | Nobody but its scheduler cancels an operation that revokes the canceller's role; a revocation wrapped in `multicall` or a nested `execute` never executes, so it cannot slip past the rule | `WorksAccessManager._canCancel`, `_revokesRoleOf`; OpenZeppelin `AccessManager._canCallSelf` | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol): `test_GuardianCannotCancelItsOwnReplacement`, `test_MulticallWrappedRevocationNeverExecutes`, `test_NestedExecuteRevocationNeverExecutes` |
+| Revocations on the manager (GOV-1) | A compromised hot admin and one dishonest guardian, acting together, keep the cold admin's recovery from finishing | Only a guardian, or its scheduler, cancels a role revocation (Rule 3), and never the guardian it names (Rule 2): the cold admin removes the guardian in one 30-day round and the hot admin in the next. Admins keep the stock power to cancel each other's other operations | `WorksAccessManager._canCancel` | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol): `test_GOV1_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`, `test_GOV1_TheGuardianVetoIsUnchanged`; [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol): `test_AdminCannotCancelAnotherAccountsRevocation`, `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation`, `test_AdminStillCancelsAnotherAdminsOtherOperations` |
+| Zero-delay operational keys (GOV-2) | A stolen PLATFORM, CURATOR or STORAGE_OPERATOR key acts for 30 days while its revocation matures, on targets that mostly have no pause | Any guardian suspends the key at once: it fails `hasRole`, so `canCall` and every manual check built on it close in the same block. Only an ADMIN grant or revocation of that role to that account lifts it (30 days, guardian-vetoable). No other role can be suspended | `WorksAccessManager.suspend`, `hasRole`, `_grantRole`, `_revokeRole`; `Roles.isSuspendable` | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol): `test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce`, `test_GOV2_EveryOperationalRoleCanBeSuspended`; [`Suspension.t.sol`](../../test/governance/Suspension.t.sol): `test_OnlyGuardiansSuspend`, `testFuzz_OnlyOperationalRolesCanBeSuspended`, `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat` |
+| `suspend` by a dishonest guardian | A guardian stops the operational keys and blocks every lift | One way for the guardian: it cannot lift, and it cannot cancel its own removal; the lift lands 30 days after its removal executes, about 60 days in all (90 with a compromised hot admin). An accepted residual | `WorksAccessManager.suspend`, `_canCancel` | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol): `test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays` |
+| Guardian rotation | A guardian vetoes its own removal and entrenches itself | Nobody but its scheduler cancels an operation that revokes the canceller's role, and no admin cancels another account's revocation; a revocation wrapped in `multicall` or a nested `execute` never executes, so it cannot slip past the rules | `WorksAccessManager._canCancel`, `_revokesRoleOf`; OpenZeppelin `AccessManager._canCallSelf` | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol): `test_GuardianCannotCancelItsOwnReplacement`, `test_MulticallWrappedRevocationNeverExecutes`, `test_NestedExecuteRevocationNeverExecutes` |
 | `setAuthority` on a target | The admin moves a target to a rogue manager through an operation a stock manager's guardians cannot cancel | Rule 1 covers it | `WorksAccessManager._canCancel` | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol): `test_GuardianCancelsDirectSetAuthorityOnTarget`, `test_StockManagerCannotStopDirectSetAuthority` |
 | Unmapped selectors | A `restricted` function left unmapped escapes its class | It falls back to ADMIN (30 days), any guardian cancels it, and `tools/check_genesis.py` requires every `restricted` function to be mapped, genesis-only or deferred | `AccessManager`; `WorksAccessManager._canCancel` | [`Hardening.t.sol`](../../test/governance/Hardening.t.sol): `test_UnmappedSelectorFallsBackToAdminDelay`; [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol): `test_GuardianCancelsUnmappedTargetSelector` |
 | Delay changes | The admin shortens a delay or remaps a funds selector to a faster role | Grant, target admin and execution delay changes wait out the old delay; readback rejects a pending execution-delay cut; `Verify.s.sol` scans `RoleGrantDelayChanged` and `TargetAdminDelayUpdated` for future effect times, which `verify` alone cannot see | `AccessManager`; `GovernanceConfigurator.verify`; `script/Verify.s.sol` | [`Hardening.t.sol`](../../test/governance/Hardening.t.sol): `test_AdminCannotShortenGrantDelayWithoutWaiting`, `test_RemappingAFundsSelectorToAFasterRoleTakesThirtyDays`; [`GovernanceConfigurator.t.sol`](../../test/governance/GovernanceConfigurator.t.sol): `test_Limitation_ReadbackCannotSeePendingDelayReductions` |
 | `execute` with value | ETH sent through `AccessManager.execute` lands in a governed target | Every governed function is non-payable | Every target | [`Hardening.t.sol`](../../test/governance/Hardening.t.sol): `test_EveryGovernedSelectorIsNonPayable`, `test_GovernedFunctionsRejectValueThroughExecute` |
 | Stale operations | An operation written against an old value executes after the value changed | Compare-and-set on funds, recipient, verifier and renderer setters; operations expire a week after they mature | Each setter; `AccessManager.expiration` | [`Hardening.t.sol`](../../test/governance/Hardening.t.sol): `test_StaleCompareAndSetOperationReverts`, `test_ScheduledOperationExpiresAfterOneWeek` |
-| Whole system | A compromised admin acting against vigilant guardians gains control | Stateful invariant campaign | `WorksAccessManager` | [`GovernanceInvariant.t.sol`](../../test/governance/GovernanceInvariant.t.sol): `invariant_GovernanceStaysContained` |
+| Whole system | A compromised admin acting against vigilant guardians gains control; an admin vetoes another account's removal; a suspension escapes its roles | Stateful invariant campaign with Rule 3 and suspension actions | `WorksAccessManager` | [`GovernanceInvariant.t.sol`](../../test/governance/GovernanceInvariant.t.sol): `invariant_GovernanceStaysContained`, `invariant_SuspensionsStayContained` |
 
 ### Content and rendering
 
@@ -196,6 +199,8 @@ Test files are linked once per table cell; the test functions follow their file.
 | Repeats and deliveries | An observer re-rolls a seed it dislikes by forcing a repeat or ordering deliveries | A repeat adds a request and never invalidates one; the first delivery fixes the seed; later deliveries are no-ops. Residual: with two requests outstanding, whoever orders the two deliveries chooses between two random words | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Fulfill_ARepeatCannotDiscardAPendingDelivery`, `test_Fulfill_TheFirstDeliveryWinsInEitherOrder` |
 | Re-packaging | A revised package draws a second seed for the same work | Draws are keyed by content hash, so every item with the same content reads one seed (DEPS-1) | `VrfEntropyModule` | [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_ARevisionOfTheWorkReadsTheSameSeed`; [`VrfEntropyInvariant.t.sol`](../../test/entropy/VrfEntropyInvariant.t.sol): `invariant_ItemsThatShareContentReadOneSeed` |
 | Coordinator | An old or replaced coordinator delivers | Requests are scoped to the coordinator that issued them; the code hash is checked at every request and delivery | `VrfEntropyModule.setCoordinator`, `rawFulfillRandomWords` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_OldCoordinatorCanNoLongerDeliver`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Pin_ACoordinatorWhoseCodeChangedIsRefused` |
+| Coordinator at deployment (DEPS-3) | A mainnet deployment installs a look-alike coordinator | On mainnet the deploy and Verify accept only the canonical Chainlink v2.5 coordinator with its pinned runtime code hash, recorded and live | `Deploy.s.sol` (`_vrf`), `DeployGuards.CANONICAL_VRF_COORDINATOR`, `Verify.s.sol` (`_checkCanonical`) | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_DEPS3_MainnetRefusesANonCanonicalCoordinator`, `test_DEPS3_VerifyChecksTheLiveCoordinatorAndItsCode` |
+| Subscription (DEPS-4) | Another consumer drains the subscription, or an owner outside governance controls it | Verify requires the module to be the only consumer, and on mainnet the owner to be the hot admin Safe; an unreadable subscription fails. Residual: a compromised hot admin can still cancel it at once (see [known limitations](known-limitations.md)) | `Verify.s.sol` (`_checkSubscription`) | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_DEPS4_VerifyChecksTheSubscriptionConsumers`, `test_DEPS4_OnMainnetTheSubscriptionOwnerIsTheHotAdminSafe` |
 | Callback gas | A hostile setter starves the callback, or a limit above the coordinator's maximum ends VRF works | `setConfig` only raises (at most 2x per step, ceiling 2,500,000); lowering is a 30-day action never below 100,000 (DEPS-5); the callback writes no new slot (DEPS-2) | `VrfEntropyModule.setConfig`, `lowerCallbackGasLimit`; `BoundedParameter` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam` |
 
 ### Storage
@@ -213,17 +218,25 @@ Test files are linked once per table cell; the test functions follow their file.
 | --- | --- | --- | --- | --- |
 | `GovernanceConfigurator.configure` | The configuration is applied to a stock or pre-seeded manager, or by someone other than the operator | The configurator deploys and owns its own `WorksAccessManager`; validation rejects a target answering any other authority; only the named deployer configures, once | `GovernanceConfigurator`, `GovernanceConfig.validate` | [`GovernanceConfigurator.t.sol`](../../test/governance/GovernanceConfigurator.t.sol): `test_TargetGovernedByAStockManagerIsRejected`, `test_PreSeededManagerIsRejected`, `test_AForeignConfiguratorOnlyGovernsItsOwnManager`, `test_OnlyDeployerCanConfigure` |
 | Genesis wiring | A zero-delay verifier or recipient change is smuggled in as genesis wiring | Only the genesis allow-list runs, at most 64 calls, before any selector is mapped | `GovernanceConfig.isGenesisSelector` | [`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol): `test_RejectsZeroDelaySwapsThroughWiring`, `test_GenesisSelectorsAreExactlyTheAllowList` |
-| Holders | A holder nobody can operate (no Safe, a placeholder, a system address) becomes permanent | Off a local chain: admins and guardians must be Safes with a threshold, two admin Safes, three guardians, two curation signers, no admin Safe signer shared with another admin or guardian Safe, no placeholder, system or deployment address | `DeployGuards.checkHolders`, `checkHoldersAgainst` | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_OffAnvilAdminsAndGuardiansMustBeSafesWithAThreshold`, `test_OffAnvilNeedsThreeGuardiansAndTwoCurationSigners`, `test_HoldersCannotBeDeploymentContracts` |
+| Holders | A holder nobody can operate (no Safe, a placeholder, a system address) becomes permanent | Off a local chain: admins and guardians must be Safes, two admin Safes, three guardians, two curation signers, no placeholder, system or deployment address | `DeployGuards.checkHolders`, `checkHoldersAgainst` | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_OffAnvilAdminsAndGuardiansMustBeSafesWithAThreshold`, `test_OffAnvilNeedsThreeGuardiansAndTwoCurationSigners`, `test_HoldersCannotBeDeploymentContracts` |
+| Safe topology (GOV-4) | One key, a module, a guard or a nested owner acts for an admin or guardian Safe, or one person signs for several of them | Every admin and guardian Safe: threshold at least 2, plain-key owners (`NestedOwner`, `DelegatedOwner`), a canonical Safe 1.3.0 or 1.4.1 singleton, no module, no guard, and no signer shared by any two of them, guardians included | `DeployGuards.checkHolders`, `requireSafe`, `requireBareSafe`, `ownersOf` | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_GOV4_OneKeyBehindEveryGuardianSafeIsRefused`, `test_GOV4_ANestedOwnerIsRefused`, `test_ASafeWithAModuleIsRefused`, `test_ASafeWithAGuardIsRefused`, `test_ASafeOnAnotherSingletonIsRefused` |
+| Deployer and namespace | A delegated deployer account, or a squatter who creates contracts at predictable addresses before the broadcast | The deploy refuses an EIP-7702 delegated sender; off anvil `DEPLOY_NAMESPACE` has no default, and every predictable address must be free | `Deploy.s.sol` (`prepare`, `checkAddressesFree`) | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_ADelegatedDeployerIsRefused`, `test_OffAnvilTheNamespaceIsExplicit`, `test_ATakenAddressIsRefusedBeforeTheBroadcast` |
 | Policy drift | A deployment's selector map or wiring differs from the committed policy, or drops a contract | The genesis file may differ from the committed one only in holders; nothing the genesis names may be dropped | `DeployGuards.checkPolicy`, `checkNothingDropped`; `tools/check_genesis.py` | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_ReviewPoC_ARemappedSelectorIsRefused`, `test_ChangedWiringIsRefused`, `test_NothingTheGenesisNamesMayBeDropped` |
-| After deployment | The deployed system differs from the record or the policy | `Verify.s.sol` checks addresses, code hashes, the CC0 text, the manifest, governance, wiring and events against the chain | `script/Verify.s.sol`, `VerifyV1` | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_VerifyChecksEveryCodeHash`; [`DeployV1.t.sol`](../../test/deploy/DeployV1.t.sol): `test_AGuardianCancelsAHostileAdminOperationOnTheLiveSystem` |
+| After deployment | The deployed system differs from the record or the policy, or drifts from it later (a Safe gains a module, a holder is suspended, an operation is left pending) | `Verify.s.sol` checks addresses, code hashes, the CC0 text, the manifest, governance, wiring and events against the chain; repeats the holder guards against the chain as it is then (GOV-3); names a suspended holder; fails on a pending operation; checks the VRF subscription; runs in epoch mode after a governance change | `script/Verify.s.sol`, `VerifyV1` | [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_VerifyChecksEveryCodeHash`, `test_GOV3_VerifyRepeatsTheHolderGuards`, `test_VerifyRefusesAModuleEnabledAfterGenesis`, `test_VerifyReportsPendingOperations`, `test_ReverifyAfterAdminRecoveryPassesInEpochMode`; [`DeployV1.t.sol`](../../test/deploy/DeployV1.t.sol): `test_AGuardianCancelsAHostileAdminOperationOnTheLiveSystem`, `test_ReadbackRejectsASuspendedHolder` |
 
 ## Out of scope or not defended
 
 - **Off-chain judgement.** Whether a package deserved approval, the curation tooling's SHA-256
   check and `openRecord` simulation, and the conduct of the TDH vote. The chain enforces only
   that a signer signed and that governed actions cite a recorded outcome.
-- **Collusion beyond the stated bounds.** All guardians colluding; the hot admin Safe and a
-  guardian Safe compromised together; a Safe's signers above its threshold.
+- **Collusion beyond the stated bounds.** Two or more guardians colluding; both admin Safes
+  compromised together; a Safe's signers above its threshold. The hot admin Safe and one
+  guardian Safe compromised together are within bounds: the cold admin's recovery finishes in
+  two 30-day rounds (Rule 3), though VRF works and suspended keys stay stopped longer
+  ([known limitations](known-limitations.md)).
+- **A Safe changed between readbacks.** The deploy and Verify check each admin and guardian
+  Safe's threshold, owners, singleton, modules and guard, but nothing on chain stops a Safe
+  from adding a module after Verify has run.
 - **Token issuers' powers.** Freezing or seizing balances that a protocol contract holds.
 - **Marketplace behavior.** ERC-2981 royalties are advisory; marketplaces decide whether to pay
   them, and the marketplace `owner()` gates nothing on-chain.
@@ -256,6 +269,12 @@ The accepted residual risks, with their reasons, are collected in
   ([entropy README](../../src/entropy/README.md#trust-and-failure-modes)).
 - Guardian liveness: the veto holds only while at least two honest guardians are online
   ([governance README](../../src/governance/README.md#residual-risks)).
+- A dishonest guardian's suspensions of operational keys last about 60 days, or about 90 with a
+  compromised hot admin, because only a 30-day ADMIN action lifts them
+  ([ADR 0002 addendum](../adr/0002-access-manager-hardening.md#addendum-review-of-14-october-2026)).
+- On mainnet the hot admin Safe owns the VRF subscription, so a hot-admin compromise stops VRF
+  works for about 64 days or more
+  ([script README, step 7](../../script/README.md#7-chainlink-vrf-the-entropy-module)).
 - Raise-only parameters double per operation, not per window, so a chain of raises reaches the
   ceiling in one window ([ADR 0002](../adr/0002-access-manager-hardening.md#security-impact)).
 - A signed release authorization works again if the payout returns to its account (A, then B,
@@ -281,6 +300,8 @@ The accepted residual risks, with their reasons, are collected in
   (ADR 0003).
 - **ADR 0001 §9, the start.** "The start transaction requests randomness." The seed is requested
   and delivered before the start, which requires it (ADR 0003).
+- **ADR 0002, decision 1, two cancellation rules.** The code adds Rule 3 and the guardians'
+  suspension of operational keys (ADR 0002 addendum); the guardians still never propose.
 
 ## References
 
@@ -288,6 +309,8 @@ The accepted residual risks, with their reasons, are collected in
   [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol),
   [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol),
   [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol),
+  [`script/DeployGuards.sol`](../../script/DeployGuards.sol),
+  [`script/Verify.s.sol`](../../script/Verify.s.sol),
   [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol),
   [`src/content/Renderer.sol`](../../src/content/Renderer.sol),
   [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol).

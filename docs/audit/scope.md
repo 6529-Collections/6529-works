@@ -3,11 +3,11 @@
 What an audit of 6529 Works v1 covers: every Solidity file under `src/`, with its size, and what
 lies outside.
 
-> **Status.** Pre-audit. The figures on this page were measured on `main` at `c4b3355`
+> **Status.** Pre-audit. The figures on this page were measured on `main` at `46941d6`
 > (15 October 2026). Other work in progress changes gas and storage layouts, so re-measure
 > at the audit commit with the commands under [How the figures are measured](#how-the-figures-are-measured).
-> An internal adversarial review ran on 14 October 2026; its fixes merged in PRs #51 and #53 to
-> #57, and open PR #52 (GOV-1 to GOV-4, DEPS-3, DEPS-4) is not on `main`. It is not an audit.
+> An internal adversarial review ran on 14 October 2026; its fixes merged in PRs #51 to #57,
+> the last being #52 (GOV-1 to GOV-4, DEPS-3, DEPS-4) at `46941d6`. It is not an audit.
 
 ## Summary
 
@@ -15,7 +15,7 @@ lies outside.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 10,274 non-blank, non-comment lines in 83 files under `src/` (budget: 12,000) |
+| Source lines | 10,322 non-blank, non-comment lines in 83 files under `src/` (budget: 12,000) |
 | Deployed contracts | 23 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -74,10 +74,10 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 26 | 10,737 | 11,964 | 13,839 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 10,634 | 22,900 | 13,942 |
+| `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 71 | 11,636 | 13,045 | 12,940 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 10,634 | 23,981 | 13,942 |
 
-`WorksAccessManager` is 26 lines over OpenZeppelin's `AccessManager`, whose code is part of
+`WorksAccessManager` is 71 lines over OpenZeppelin's `AccessManager`, whose code is part of
 what it deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
 
 ### Internal libraries
@@ -96,7 +96,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | `DataUri` | [`src/content/DataUri.sol`](../../src/content/DataUri.sol) | 82 | Renderer |
 | `Base64Validator` | [`src/content/Base64Validator.sol`](../../src/content/Base64Validator.sol) | 78 | ContentStore |
 | `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 76 | `ContentStore`, `Renderer` |
-| `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 57 | Governance, `Eip712CurationVerifier`, `AssetAllowlist`, the sale adapters |
+| `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 60 | Governance, `Eip712CurationVerifier`, `AssetAllowlist`, the sale adapters |
 | `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 47 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `FixedPriceSale`, `ReleaseVerifier` |
 | `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 44 | Economics, `Stream`, `Editions`, `PackageRegistry`, the sale adapters |
 | `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 43 | `EnglishAuction`, `MintSaleBase` |
@@ -128,7 +128,7 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 
 | OpenZeppelin contract | Inherited by |
 | --- | --- |
-| `AccessManager` (with `Multicall`) | `WorksAccessManager`, which overrides `_canCancel` only |
+| `AccessManager` (with `Multicall`) | `WorksAccessManager`, which overrides `_canCancel` (three cancellation rules), `hasRole`, `_grantRole` and `_revokeRole` (suspension), and adds `suspend` and `isSuspended` |
 | `AccessManaged` | Every governed contract |
 | `ERC721` | `Stream` |
 | `ERC1155` | `Editions` |
@@ -143,7 +143,9 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
   reviewers should read them, but they are not deployed.
 - **`script/`:** the deploy library, deploy and verify scripts. They are not deployed, but
   [`DeployGuards.sol`](../../script/DeployGuards.sol) enforces deployment preconditions
-  (Safes, guardian count, committed policy) that the trust model relies on, so a review of
+  (bare, independent admin and guardian Safes, guardian count, committed policy, canonical
+  dependencies on mainnet) that the trust model relies on, and
+  [`Verify.s.sol`](../../script/Verify.s.sol) repeats them at readback, so a review of
   the deployment path should include them. [SECURITY.md](../../SECURITY.md) accepts
   vulnerability reports against them.
 - **`tools/`:** off-chain Python: CI gates and the uploader.

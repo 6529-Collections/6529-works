@@ -6,7 +6,7 @@ deployed contract can emit, with its exact signature and topic0, says which func
 and what it means, shows the event sequences that build each entity, and lists what the
 events do not tell you, so you know when to read the chain instead.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The
 > Sepolia r2 instance runs `400f96d`, whose events differ in a few places: see
 > [ABIs and interface IDs](abis-and-interface-ids.md#changes-since-the-sepolia-r2-build).
 > Addresses are in [Addresses](addresses.md).
@@ -392,7 +392,8 @@ contract at a CREATE2 address.
 and [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol). The
 manager is OpenZeppelin 5.7.0's `AccessManager`
 ([`IAccessManager.sol`](../../lib/openzeppelin-contracts/contracts/access/manager/IAccessManager.sol))
-with a different cancellation rule, and adds no events. Role IDs are in
+with three cancellation rules and the guardians' suspension of operational keys, which adds two
+events, `RoleSuspended` and `RoleSuspensionLifted`. Role IDs are in
 [`Roles.sol`](../../src/governance/Roles.sol): 0 `ADMIN`, 1 `GUARDIAN`, 2 `PAUSER`, 3
 `UNPAUSER`, 4 `CURATION_SIGNER`, 5 `STORAGE_OPERATOR`, 6 `MINTER`, 7 `KEEPER`, 8 `PLATFORM`,
 9 `PARAMETER_SETTER`, 10 `FUNDS_SETTER`, 11 `SUCCESSOR_SETTER`, 12 `CURATOR`.
@@ -402,9 +403,11 @@ with a different cancellation rule, and adds no events. Role IDs are in
 | `GovernanceConfigured(address indexed manager, bytes32 indexed configHash, bytes32 indexed manifestHash, bytes32 wiringHash)` | `0xeb9f30f8…` | `GovernanceConfigurator.configure` (the deployer, once) | Genesis is installed. `configHash = keccak256(abi.encode(cfg))`, `wiringHash = keccak256(abi.encode(wiring))`, `manifestHash` the signed epoch-0 manifest. The last event of the genesis transaction. |
 | `OperationScheduled(bytes32 indexed operationId, uint32 indexed nonce, uint48 schedule, address caller, address target, bytes data)` | `0x82a2da5d…` | `schedule` | A delayed call is queued. `operationId = keccak256(abi.encode(caller, target, data))`; `schedule` is the earliest execution time; `data` is the full calldata. `nonce` counts reschedulings of the same operation. |
 | `OperationExecuted(bytes32 indexed operationId, uint32 indexed nonce)` | `0x76a2a469…` | `execute`, or the target's `restricted` check when the scheduler calls the target directly (`consumeScheduledOp`) | A scheduled operation ran. Calls that need no schedule (an immediate role) emit nothing here. |
-| `OperationCanceled(bytes32 indexed operationId, uint32 indexed nonce)` | `0xbd9ac67a…` | `cancel` (the scheduler, an admin, or any GUARDIAN holder, except that only the scheduler can cancel a revocation of the canceller's own role) | The operation will not run. |
+| `OperationCanceled(bytes32 indexed operationId, uint32 indexed nonce)` | `0xbd9ac67a…` | `cancel` (the scheduler, an admin, or any GUARDIAN holder; a `revokeRole` another account scheduled only by a guardian, and never by the account it names) | The operation will not run. |
 | `RoleGranted(uint64 indexed roleId, address indexed account, uint32 delay, uint48 since, bool newMember)` | `0xf98448b9…` | `grantRole` (genesis, or a 30-day admin operation) | A new member is active from `since`. For an existing member, `since` is when its new execution `delay` applies. |
-| `RoleRevoked(uint64 indexed roleId, address indexed account)` | `0xf229baa5…` | `revokeRole` (an admin operation), `renounceRole` | Membership ends when the call runs, with no grant-style delay. The configurator renounces `ADMIN` at the end of `configure`. |
+| `RoleRevoked(uint64 indexed roleId, address indexed account)` | `0xf229baa5…` | `revokeRole` (an admin operation), `renounceRole` | Membership ends when the call runs, with no grant-style delay. The configurator renounces `ADMIN` at the end of `configure`. Preceded by `RoleSuspensionLifted` when the holder was suspended. |
+| `RoleSuspended(uint64 indexed roleId, address indexed account, address indexed guardian)` | `0xe1ae3024…` | `suspend` (any GUARDIAN holder, immediate), for a `PLATFORM`, `CURATOR` or `STORAGE_OPERATOR` holder | From this block `account` no longer acts for `roleId`: `hasRole` and `canCall` answer false. No `RoleRevoked` follows, and `getAccess` still shows the record. |
+| `RoleSuspensionLifted(uint64 indexed roleId, address indexed account)` | `0x4c939cf9…` | `grantRole` or `revokeRole` of that role to that account (an admin operation, 30 days), or the holder's `renounceRole` | The suspension is over. Emitted just before the same call's `RoleGranted` or `RoleRevoked`: after a grant the holder acts again; after a revocation or renounce it holds no role. |
 | `RoleLabel(uint64 indexed roleId, string label)` | `0x1256f5b5…` | `labelRole`, at genesis for roles 1 to 12 | Names from `Roles.label`. |
 | `RoleAdminChanged(uint64 indexed roleId, uint64 indexed admin)` | `0x1fd6dd76…` | `setRoleAdmin` | Not used at genesis: every role's admin stays `ADMIN`. |
 | `RoleGuardianChanged(uint64 indexed roleId, uint64 indexed guardian)` | `0x7a805963…` | `setRoleGuardian`, at genesis for roles 1 to 12 | Every role but `ADMIN` has `GUARDIAN` as guardian. |
@@ -670,6 +673,13 @@ an entry hash and a head. Also:
   are never scheduled: they show only as the target's own event.
 - **Roles.** Membership is the replay of `RoleGranted` and `RoleRevoked` per
   `(roleId, account)`; a new member is active only from `RoleGranted.since`.
+- **Suspensions.** A suspended holder still appears granted in that replay: a suspension emits
+  `RoleSuspended`, not `RoleRevoked`, and `getAccess` keeps the record. Track a
+  `suspended` flag per `(roleId, account)`, set by `RoleSuspended` and cleared by
+  `RoleSuspensionLifted`, or read `isSuspended(roleId, account)` (or `hasRole`, which answers
+  false). Only `PLATFORM`, `CURATOR` and `STORAGE_OPERATOR` can be suspended. A suspension
+  takes effect in its own block; the lift takes effect when the 30-day grant or revocation
+  executes, so its `OperationScheduled` announces it 30 days ahead.
 - **Selectors.** `TargetFunctionRoleUpdated` per `(target, selector)`; `TargetClosed` per
   target.
 - **Blind spots that need an event scan.** These are the deployment CI's requirements in the
@@ -678,7 +688,9 @@ an entry hash and a head. Also:
     `RoleGrantDelayChanged` and `TargetAdminDelayUpdated` for a `since` in the future;
   - the manager cannot list a role's members: reconcile `RoleGranted` and `RoleRevoked`;
   - pending operations: `OperationScheduled` with no matching `OperationExecuted` or
-    `OperationCanceled`, minus the expired ones.
+    `OperationCanceled`, minus the expired ones (`Verify.s.sol` fails on any such operation on
+    the manager);
+  - a suspension leaves the membership replay unchanged: read `isSuspended`.
 - **Later epochs.** Each later configuration epoch publishes its manifest as a
   `GOVERNANCE_MANIFEST` statement (subject `(manager, 0)`), scheduled with that epoch's
   operations.
@@ -795,8 +807,10 @@ and [Reading a work](reading-a-work.md).
 
 ## Appendix: full topic0 values
 
-Every distinct event signature in the ABIs of the deployed contracts at `c4b3355`, built with
-`forge build`, with structs expanded to tuples. 121 signatures.
+Every distinct event signature in the ABIs of the deployed contracts at `46941d6`, built with
+`forge build`, with structs expanded to tuples, plus the two that `46941d6` added to
+`WorksAccessManager` (`RoleSuspended`, `RoleSuspensionLifted`; their topic0 computed with
+[`tools/content/keccak.py`](../../tools/content/keccak.py)). 123 signatures.
 
 <details>
 <summary>All topic0 values</summary>
@@ -894,6 +908,8 @@ Every distinct event signature in the ABIs of the deployed contracts at `c4b3355
 | `RoleGuardianChanged(uint64,uint64)` | `0x7a8059630b897b5de4c08ade69f8b90c3ead1f8596d62d10b6c4d14a0afb4ae2` | WorksAccessManager |
 | `RoleLabel(uint64,string)` | `0x1256f5b5ecb89caec12db449738f2fbcd1ba5806cf38f35413f4e5c15bf6a450` | WorksAccessManager |
 | `RoleRevoked(uint64,address)` | `0xf229baa593af28c41b1d16b748cd7688f0c83aaf92d4be41c44005defe84c166` | WorksAccessManager |
+| `RoleSuspended(uint64,address,address)` | `0xe1ae302406100645ea7518db99f4eec3f03e4c4115f58871c94ee2c96029505d` | WorksAccessManager |
+| `RoleSuspensionLifted(uint64,address)` | `0x4c939cf9582b90782641e9eb9bbd308c3522c902eb4f53ced7ed3fecede67020` | WorksAccessManager |
 | `RoyaltyRateChanged(uint256,uint32,uint32)` | `0x2114cdf53fc75abac90fa604432eefa896d1dd5272aa96c82c01f9b543f8cd53` | Stream, Editions |
 | `RoyaltyRateSet(uint256,uint32,uint32,bytes32)` | `0xe8cb89229984389ed515ad4468d11354162343e1f8a6428bec4ffc6c1f6b04a5` | WorkRecords |
 | `SaleClosed(uint256)` | `0xcb67f20f64495b30f15524c55f90201dd6571d6b5c19dac183d2aeb25315b2dc` | FixedPriceSale, DutchSale |

@@ -10,7 +10,7 @@ in SSTORE2 chunks; and `DependencyRegistry`, the governed map of pinned librarie
 works. How metadata is built from these records (`tokenURI`, the renderer, inline rules) is
 specified in [Rendering and tokenURI](rendering-and-tokenuri.md).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 
@@ -378,6 +378,10 @@ sequenceDiagram
   the stored flag, never from a content-store scan.
 - **The storage operator** chooses only among copies registered for that file. It cannot add,
   remove or change a locator, and nothing it does changes the state hash.
+- **Suspension.** A guardian can [suspend](governance.md#suspension-of-operational-keys) the
+  PLATFORM or STORAGE_OPERATOR key at once: its `addLocator` and preference calls then revert
+  with `AccessManagedUnauthorized` in the same block, while the artist's own `addLocator`
+  before finalize stays open. Preferences already set stay in force.
 - **Effects.** Each call asks Stream for ERC-4906. A global or collection change refreshes every
   minted token (`BatchMetadataUpdate(1, totalMinted)`) and every edition.
 
@@ -584,6 +588,7 @@ token) or `BatchMetadataUpdate` (a global or collection preference change), and 
 | The state changed between signing and execution (a new record file, rate, license or default renderer) | `StateHashMismatch` at execution. | Read the new state hash, collect new signatures, schedule again. |
 | A consent's deadline passed during the delay, or a party's authority changed or is restrained | `InvalidConsent(tokenId, partyIndex)`. | New signatures from the current authorities with a deadline that covers the delay. |
 | A locator names the wrong content or goes dark | Not detected on-chain; `tokenURI` may serve it. Locators cannot be removed. | STORAGE_OPERATOR, immediately, points the file, collection or global preference at another registered copy; the off-chain monitor re-pins or re-uploads from a surviving copy. |
+| The PLATFORM or STORAGE_OPERATOR key is compromised | It can add junk locators (up to its quota) or point preferences at a bad registered copy. | A guardian suspends the key at once; governance revokes it and grants a new key (30 days, then the 48-hour grant delay), and the new storage operator restores the preferences. Locators cannot be removed: preferences route around junk ones. |
 | A file's locator quota is used up | `addLocator` reverts with `InvalidLocator`. | Before finalize, the other side's quota remains. After finalize, PLATFORM may use all 16 slots. |
 | A wrong file was registered as a dependency version | The entry can never change. | GUARDIAN deprecates it immediately; PARAMETER_SETTER registers a new version label (48 hours). |
 

@@ -9,7 +9,7 @@ an immutable, stateless `Renderer`; `WorkRecords` holds the record, media list, 
 locators and renderer pin it reads; the content store holds the bytes. Integrators who only
 read metadata should start with [Reading a work](../integrators/reading-a-work.md).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 

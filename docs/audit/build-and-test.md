@@ -8,7 +8,7 @@ checks, the Python tools, the Prague-gas and new-state rules of
 and the other engineering budgets. The test strategy, coverage and mutation testing are
 described in the [testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 
@@ -64,6 +64,8 @@ forge test
 | A deeper campaign than CI's | `FOUNDRY_INVARIANT_RUNS=1024 FOUNDRY_INVARIANT_DEPTH=256 forge test --match-contract Invariant` |
 | More fuzz runs | `FOUNDRY_FUZZ_RUNS=10000 forge test --match-test testFuzz_` |
 | The integration flows on the real, wired contracts | `forge test --match-path "test/integration/*"` |
+| Governance: the cancellation rules, suspension and recovery | `forge test --match-path "test/governance/*"`, then `forge test --match-contract GovernanceRecoveryTest` |
+| The deploy guards and the readback (`Deploy.s.sol`, `DeployGuards`, `Verify.s.sol`) | `forge test --match-path test/deploy/DeployScript.t.sol` |
 | The gas and state-growth gates | `forge test --match-path test/integration/GasReport.t.sol` |
 | The gas table (operation, Prague gas, new slots, new accounts) | `forge test --match-test test_Gas_Table -vv` |
 | The `tokenURI` budget proof | `forge test --match-path test/integration/TokenUriBudget.t.sol -vv` |
@@ -98,7 +100,7 @@ request and every push to `main`. They run in parallel; each has its own timeout
 | Build | A compile error | `forge build` |
 | Tests | Any failing unit, fuzz, invariant or integration test, including the gas and state-growth gates | `forge test` |
 | Budgets | More than 12,000 code lines under `src/`; `delegatecall` or `callcode` in `src/`; more than 5 libraries with a public or external function; any contract of the `default` profile over 24,576 bytes of runtime (EIP-170) or 49,152 bytes of initcode (EIP-3860) | [`tools/check_budgets.py`](../../tools/check_budgets.py) |
-| Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
+| Genesis configuration | A selector in [`config/genesis.example.json`](../../config/genesis.example.json) that is not in its contract's compiled ABI; a `restricted` function (inherited ones included) that is neither mapped, genesis-only nor deferred; a wiring call to an unlisted target or with a non-genesis selector; a delay that does not match its role's class; a role whose `suspendable` flag is not a boolean, or is set on a role with a delay or on GUARDIAN, PAUSER or CURATION_SIGNER; a function `WorksAccessManager` adds to its OpenZeppelin base that `manager` does not list, or lists with another selector, role or delay. `GenesisConfig.t.sol` checks the flags against `Roles.isSuspendable` exactly | [`tools/check_genesis.py`](../../tools/check_genesis.py) |
 | Content tooling | A failing `unittest` in `tools/content`. `test_anvil.py` sends the uploader's calldata to the compiled `ContentStore` on a local Anvil node; `CONTENT_E2E_REQUIRE=1` makes a missing `anvil` or build output a failure, not a skip | `python -m unittest discover -s tools/content -t . -p "test_*.py"` |
 | Slither | A High or Medium finding in a file outside `lib/`, `test/` and `script/` with no row in [`docs/security/slither-triage.md`](../security/slither-triage.md); any `src/**/*.sol` file Slither did not analyze; an unreadable report. Low, Informational and Optimization findings are counted, not gated | [`tools/check_slither.py`](../../tools/check_slither.py) |
 | Markdown links | A relative link or `#anchor` in a tracked `*.md` file (outside `lib/`) that does not resolve, with exact letter case. External links are not fetched | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) |

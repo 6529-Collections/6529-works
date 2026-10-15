@@ -6,7 +6,7 @@ every field means, where the media is, how to read dispute status, royalties and
 when to refresh a cache. The rules behind each answer are in the spec page
 [Rendering and tokenURI](../spec/rendering-and-tokenuri.md); this page is the practical view.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). Contract
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). Contract
 > addresses are in [Addresses](addresses.md); ABIs and ERC-165 interface IDs are in
 > [ABIs and interface IDs](abis-and-interface-ids.md).
 

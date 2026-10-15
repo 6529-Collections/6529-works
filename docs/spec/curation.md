@@ -11,7 +11,7 @@ integrators and curation operators. `PackageRegistry` and
 `Eip712CurationVerifier` implement it, with the hashing rules in
 `WorksHashing` and `Typehashes` and the shared edition rule in `EditionRules`.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 
@@ -305,7 +305,9 @@ sequenceDiagram
 - **Curation evidence.** The CURATOR role (zero delay) appends a `CURATION_EVIDENCE` statement
   with subject `(address(0), uint256(root))`. The statement log reserves that kind to CURATOR
   ([`StatementLog.sol`](../../src/records/StatementLog.sol)). The registry does not require or
-  check this statement; it is an operational step.
+  check this statement; it is an operational step. While a guardian has the CURATOR key
+  [suspended](governance.md#suspension-of-operational-keys), no evidence can be appended, directly
+  or by relay; registration is unaffected.
 - **Gas.** On Sepolia r2, `registerPackage` used 98,155 Prague gas and created 2 slots
   ([flows.md, section 2](../../deployments/11155111/flows.md#2-the-curated-stream-sale)).
 
@@ -482,6 +484,10 @@ sequenceDiagram
   The new epoch is salted from the re-enable's block, so nothing signed while disabled counts.
 - **After a suspected compromise,** use a fresh key: disable the old one and grant the role to a
   new address (a 30-day grant delay).
+- **Not suspendable.** The guardians' `WorksAccessManager.suspend`, which stops the PLATFORM,
+  CURATOR and STORAGE_OPERATOR keys, refuses `CURATION_SIGNER` (`RoleNotSuspendable`):
+  `disableSigner` also ends the signer's epoch, and a lift by grant would not
+  ([governance](governance.md#suspension-of-operational-keys)).
 
 ### Verifier swap
 
@@ -577,7 +583,8 @@ specifies the pause, the auction cancel that burns the token, and the governed
 | Failure | Effect | Recovery |
 | --- | --- | --- |
 | An attestation leaks before anyone registers it. | Anyone could register the root. | The guardian revokes the root in advance; `registerPackage` then reverts with `PackageExists`. |
-| A curation signer key is compromised. | It can attest new roots. | The guardian calls `disableSigner` at once; curation continues on the other key. The guardian revokes every root the key registered that should not stand (`packageOf` names the signer). Grant the role to a fresh key. |
+| A curation signer key is compromised. | It can attest new roots. | The guardian calls `disableSigner` at once (the role cannot be suspended); curation continues on the other key. The guardian revokes every root the key registered that should not stand (`packageOf` names the signer). Grant the role to a fresh key. |
+| The CURATOR key is compromised. | It can append misleading `CURATION_EVIDENCE`, which stays in the log. | A guardian suspends it at once (`suspend`); governance revokes it and grants a new key (30 days, then the 30-day grant delay). A later evidence statement supersedes the false one. |
 | A root with a bad item is approved. | Its items can start. | The guardian revokes that root and every other root listing the item. Works already started are handled as disputes. |
 | Code at the verifier's address no longer has the pinned hash. | `registerPackage` reverts with `InvalidDependency`; registered roots keep working. | `setVerifier` to a reviewed verifier (30 days). |
 | Pre-signed acceptances carry different profile fields. | Only the first relayed succeeds; others revert with `ProfileMismatch`. | The artist re-signs with the profile now on record. |

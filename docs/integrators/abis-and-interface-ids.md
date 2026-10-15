@@ -7,7 +7,7 @@ domain and type string, and gives the exact formulas of the protocol hashes you 
 off-chain: item hashes, Merkle leaves and roots, media hashes, file IDs, allowlist leaves,
 statement entry hashes and chain heads.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The
 > Sepolia r2 instance was built from `400f96d`; what differs is in
 > [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
 > [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
@@ -86,7 +86,7 @@ The deployment records name some contracts differently from their source.
 
 ### Compiler settings
 
-From [`foundry.toml`](../../foundry.toml), unchanged between `400f96d` and `c4b3355`. These are
+From [`foundry.toml`](../../foundry.toml), unchanged between `400f96d` and `46941d6`. These are
 the settings a block explorer or Sourcify needs to verify the bytecode.
 
 | Setting | Value |
@@ -108,7 +108,7 @@ records hold each contract's code hash, and the runbook's
 ## Changes since the Sepolia r2 build
 
 r2 runs `400f96d` ([Sepolia README](../../deployments/11155111/README.md)); `main` is at
-`c4b3355`. `git diff --stat 400f96d c4b3355 -- src/interfaces src/economics/interfaces` lists
+`46941d6`. `git diff --stat 400f96d 46941d6 -- src/interfaces src/economics/interfaces` lists
 28 changed files. The external surface changed in these:
 
 | File | Change on `main` |
@@ -137,11 +137,29 @@ The other changed files (`IArtistPayoutResolver`, `IArtistRoleResolver`, `IRelea
 `ISplitWallet`, `IRenderer`, and the `ContentTypes`, `IdentityTypes`, `PackageTypes` and
 `SaleTypes` types) changed only in NatSpec: no function, event, error, struct or constant
 differs. Two contracts also gained ERC-165 support after r2: the claim router and the revenue
-escrow implement `supportsInterface` on `main` and not on r2. Contract-level behavior changed
-too (the October 2026 internal review fixes, PRs #51 and #53 to #57), so read the `400f96d` source
-for r2's semantics; this table covers only the declared surface. The method: compare the
-declarations of each file at both commits, not only `git diff --stat`, which also counts
-comment changes.
+escrow implement `supportsInterface` on `main` and not on r2.
+
+`WorksAccessManager`, which has no interface file, gained functions, events and errors in
+`46941d6` (review finding GOV-2, the guardians' suspension of operational keys):
+
+| Kind | Signature | Selector or topic0 |
+| --- | --- | --- |
+| Function (GUARDIAN only, checked by the manager) | `suspend(uint64 roleId, address account)` | `0x64bf6e5d` |
+| View | `isSuspended(uint64 roleId, address account) returns (bool)` | `0xbd2e6ac3` |
+| Event | `RoleSuspended(uint64 indexed roleId, address indexed account, address indexed guardian)` | `0xe1ae302406100645ea7518db99f4eec3f03e4c4115f58871c94ee2c96029505d` |
+| Event | `RoleSuspensionLifted(uint64 indexed roleId, address indexed account)` | `0x4c939cf9582b90782641e9eb9bbd308c3522c902eb4f53ced7ed3fecede67020` |
+| Error | `RoleNotSuspendable(uint64 roleId)` | `0x3bf24b39` |
+| Error | `NotSuspendable(uint64 roleId, address account)` | `0x48431385` |
+
+`hasRole` keeps its signature but now answers false for a suspended holder. The function
+selectors are those in the `manager` section of
+[`config/genesis.example.json`](../../config/genesis.example.json); the event and error
+values were computed with [`tools/content/keccak.py`](../../tools/content/keccak.py).
+
+Contract-level behavior changed too (the October 2026 internal review fixes, PRs #51 to #57),
+so read the `400f96d` source for r2's semantics; these tables cover only the declared
+surface. The method: compare the declarations of each file at both commits, not only
+`git diff --stat`, which also counts comment changes.
 
 ## ERC-165 interface IDs
 

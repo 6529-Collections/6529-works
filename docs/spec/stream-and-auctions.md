@@ -12,7 +12,7 @@ call it and with which delay, and what happens when a step fails. The records sa
 (`WorkRecords`), rendering, 6529 Editions, payouts after the sale and the dispute process have
 their own pages, linked under [References](#references).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 
@@ -647,7 +647,10 @@ sequenceDiagram
   character (below 0x20, or 0x7F), `<`, `"` or `\` (`InvalidCollectionName`): the name goes into
   every work's metadata, and refusing those characters keeps `tokenURI` within its gas budget.
   `metadataHash` may be zero. `collection(id)` returns the name, the hash and the number minted
-  (also the last serial).
+  (also the last serial). A guardian can [suspend](governance.md#suspension-of-operational-keys)
+  a compromised PLATFORM key at once, which stops it creating collections (and recording the
+  dispute outcomes an upheld `cancel` cites) until an admin lifts the suspension or grants a
+  new key.
 - **`setContractURI(uri)`** (PARAMETER_SETTER, 48 hours) sets the ERC-7572 contract URI and
   emits `ContractURISet` and `ContractURIUpdated`.
 - **`setOwner(expected, next)`** (FUNDS_SETTER, 14 days, compare-and-set) sets the marketplace

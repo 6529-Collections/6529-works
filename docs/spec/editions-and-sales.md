@@ -12,7 +12,7 @@ implement the edition side; `MintSaleBase`, `FixedPriceSale`, `DutchSale` and
 `DutchPricing` implement the sales. The English auction, which sells masters like any other
 Stream work, is specified in [Stream and auctions](stream-and-auctions.md).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 

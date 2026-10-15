@@ -148,7 +148,8 @@ MANAGER_FUNCTIONS: tuple[tuple[str, str, str, str], ...] = (
     ("grantRole(uint64,address,uint32)", "The role's admin (ADMIN for every role)", "admin",
      "The grant then waits the role's grant delay."),
     ("revokeRole(uint64,address)", "The role's admin (ADMIN for every role)", "admin",
-     "The account being revoked cannot cancel it unless it scheduled it."),
+     "Only a guardian or its scheduler can cancel it, and the account it revokes only if it "
+     "scheduled it."),
     ("renounceRole(uint64,address)", "The holder itself", "none",
      "Immediate; the second argument must be the caller."),
     ("labelRole(uint64,string)", "ADMIN", "admin", ""),

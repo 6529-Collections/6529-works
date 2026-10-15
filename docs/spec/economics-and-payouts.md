@@ -10,7 +10,7 @@ govern the economics all need it. The economics lane in `src/economics/` impleme
 `TokenTransfer` and `Splits`. `Stream`, `Editions` and the sale adapters consume it, and the
 artist registry resolves artist payouts for it.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 

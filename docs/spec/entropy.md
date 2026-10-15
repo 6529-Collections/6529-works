@@ -8,7 +8,7 @@ per work's content hash, stores the first delivery for good, and answers `isDeli
 module is optional per deployment: 6529 Stream pins it immutably, or pins zero and refuses VRF
 items. This page is for auditors, integrators, and the operators who run the VRF subscription.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 

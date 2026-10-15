@@ -23,7 +23,8 @@ namespace `keccak256("6529-works/sepolia/r2")`. Every address comes from the rec
 [`1791750816.json`](../../deployments/11155111/1791750816.json).
 
 **r2 runs `400f96d`, not today's `main`.** The fixes from the October 2026 internal review
-(PRs #51 and #53 to #57) and later changes are not in r2. Build ABIs for r2 from `400f96d`
+(PRs #51 to #57) and later changes are not in r2: its manager, for example, has no Rule 3 and
+no `suspend`. Build ABIs for r2 from `400f96d`
 ([ABIs and interface IDs](abis-and-interface-ids.md)); a later rehearsal will deploy a newer
 `main` under a new namespace.
 

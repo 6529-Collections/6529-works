@@ -30,21 +30,21 @@ committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_m
 
 ## Roles
 
-| Role | ID | Execution delay | Grant delay | Holders at genesis | Mapped selectors |
-| --- | ---: | --- | --- | --- | ---: |
-| `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe | 0 |
-| `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 6 |
-| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 3 |
-| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 4 |
-| `CURATION_SIGNER` | 4 | immediate | 30 days | Curation signer key 1, Curation signer key 2 | 0 |
-| `STORAGE_OPERATOR` | 5 | immediate | 48 hours | Storage operator key | 3 |
-| `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 |
-| `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 |
-| `PLATFORM` | 8 | immediate | 48 hours | Platform key | 7 |
-| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 13 |
-| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 7 |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 18 |
-| `CURATOR` | 12 | immediate | 30 days | Curator key | 1 |
+| Role | ID | Execution delay | Grant delay | Holders at genesis | Mapped selectors | Guardian may suspend |
+| --- | ---: | --- | --- | --- | ---: | --- |
+| `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe | 0 | No |
+| `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 6 | No |
+| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 3 | No |
+| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 4 | No |
+| `CURATION_SIGNER` | 4 | immediate | 30 days | Curation signer key 1, Curation signer key 2 | 0 | No |
+| `STORAGE_OPERATOR` | 5 | immediate | 48 hours | Storage operator key | 3 | Yes |
+| `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 | No |
+| `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
+| `PLATFORM` | 8 | immediate | 48 hours | Platform key | 7 | Yes |
+| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 13 | No |
+| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 7 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 18 | No |
+| `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
 ([`Roles.sol`](../../src/governance/Roles.sol)). Guardians hold only GUARDIAN and PAUSER.
@@ -295,7 +295,7 @@ delay applies if it is longer. Every target's admin delay is the successor class
 | Function | Selector | Caller | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `grantRole(uint64,address,uint32)` | `0x25c471a0` | The role's admin (ADMIN for every role) | 30 days | Yes: any guardian, during the delay | The grant then waits the role's grant delay. |
-| `revokeRole(uint64,address)` | `0xb7d2b162` | The role's admin (ADMIN for every role) | 30 days | Yes, except by the account being revoked | The account being revoked cannot cancel it unless it scheduled it. |
+| `revokeRole(uint64,address)` | `0xb7d2b162` | The role's admin (ADMIN for every role) | 30 days | Yes, except by the account being revoked | Only a guardian or its scheduler can cancel it, and the account it revokes only if it scheduled it. |
 | `renounceRole(uint64,address)` | `0xfe0776f5` | The holder itself | immediate | No: executes at once | Immediate; the second argument must be the caller. |
 | `labelRole(uint64,string)` | `0x853551b8` | ADMIN | 30 days | Yes: any guardian, during the delay |  |
 | `setRoleAdmin(uint64,uint64)` | `0x30cae187` | ADMIN | 30 days | Yes: any guardian, during the delay |  |
@@ -306,6 +306,7 @@ delay applies if it is longer. Every target's admin delay is the successor class
 | `setTargetClosed(address,bool)` | `0x167bd395` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
 | `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
 | `setAuthority(address)` | `0x7a9e5e4b` | ADMIN, scheduled on the target itself | 30 days (or the target's admin delay) | Yes: any guardian, during the delay | Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too. |
+| `suspend(uint64,address)` | `0x64bf6e5d` | `GUARDIAN` | immediate | No: executes at once | One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it |
 
 `schedule`, `execute` and `cancel` are open to anyone and check the caller's permission
 for the call they carry.

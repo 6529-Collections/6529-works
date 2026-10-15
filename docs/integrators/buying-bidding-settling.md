@@ -11,7 +11,7 @@ and the gas. The rules themselves are specified in [Stream and auctions](../spec
 [Economics and payouts](../spec/economics-and-payouts.md). Deployed addresses are in
 [Addresses](addresses.md).
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The Sepolia
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The Sepolia
 > rehearsal instance r2 runs `main` at `400f96d`, which predates the sales, auction, economics and
 > identity review fixes. On r2 there is no `claimFor`, no ERC-20 payout frame, no `scheduleDelay`,
 > no currency freeze, no `SHORTFALL_REVERT_CEILING` and no identity restraint. The Sepolia gas

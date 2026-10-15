@@ -13,7 +13,7 @@ After a sale a dispute produces only a statement, which the renderer shows in th
 of the work and its edition. The artist registry (`ArtistRegistry`) uses the same outcome
 records to settle contested identity overrides.
 
-> **Status.** Pre-audit. This page describes `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this page is how it works now. Where they differ, this
 > page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
 
@@ -135,7 +135,10 @@ but `appendGovernanceManifest` reverts with `AuthorityCannotSign` when the signe
 `authority()`. A CURATOR or PLATFORM holder with a non-zero execution delay therefore cannot
 write at once, cannot write by relay (`NotAuthorized`: the relay needs a zero-delay holder),
 and cannot write through `AccessManager.execute` (the manager would be the signer). Genesis
-grants both roles with zero delay.
+grants both roles with zero delay. A CURATOR or PLATFORM key that a guardian has
+[suspended](governance.md#suspension-of-operational-keys) fails the same check: it can write
+neither directly nor by relay, and a statement it signed earlier is refused when relayed, since
+the check runs at relay time, until an admin lifts the suspension.
 
 **Trust boundary for ARTIST statements.** No governance role has a direct path to an ARTIST
 or OWNER entry: those roles never consult the AccessManager. ARTIST authority is exactly as
@@ -668,7 +671,8 @@ sequenceDiagram
 | The content release names the wrong content hash, or runs a second time. | `ClaimNotAllowed(PRODUCT_STREAM, contentHash)`. | Use the burned item's content hash (public in `WorkMinted`, `ItemConsumed` and the package). A release is final once executed. |
 | A content release scheduled with the wrong beneficiary. | Executes after 48 hours unless cancelled. | Any guardian cancels the scheduled operation during its delay (`test_AGuardianCancelsAPendingRelease`). |
 | An outcome is aimed at an unminted or burned token, or at an edition. | `UnknownDisputeSubject(token, id)`. | Before the mint, record it on the item subject `(address(0), uint256(itemHash))`, which the work shows once minted. For an edition, record it on the master. |
-| A wrong or unauthorized statement is appended. | It stays in the log forever. | The signer, or another role, appends a correction whose `supersedes` cites it; readers decide whose corrections to honour. A misused CURATOR or PLATFORM key is revoked through governance. |
+| A wrong or unauthorized statement is appended. | It stays in the log forever. | The signer, or another role, appends a correction whose `supersedes` cites it; readers decide whose corrections to honour. A guardian suspends a misused CURATOR or PLATFORM key at once, which stops its direct and relayed writes; governance then revokes it and grants a new key (30 days, then the role's grant delay). |
+| The PLATFORM key is suspended during a dispute pause. | With the genesis policy's single platform key, no `DISPUTE_OUTCOME` can be recorded, directly or by relay, so no upheld `cancel` can cite one. A replacement key needs 30 days plus PLATFORM's 48-hour grant delay, longer than the 7-day pause. | Let the pause lapse; the dispute follows the after-sale path once a platform key is active again. Suspend the platform key during a pause only if it is compromised. |
 | The resolver's code changes after install. | Every ARTIST append reverts with `ResolverCodeHashMismatch`. | `setArtistResolver` to a reviewed resolver (30 days). |
 | The lead artist is restrained by a pending authority-moving override. | ARTIST appends revert with `NotAuthorized`. | Wait for the override to execute, be vetoed or voided, or lapse ([identity and recovery](identity-and-recovery.md)). |
 | A relay uses a spent or revoked nonce, a passed deadline, or a bad signature. | `NonceAlreadyUsed`, `DeadlineExpired`, or `InvalidSignature`. | Sign again with a fresh nonce and deadline. |

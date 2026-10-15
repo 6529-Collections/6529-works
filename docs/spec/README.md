@@ -4,7 +4,7 @@ How 6529 Works v1 behaves now, one page per area. Each page gives the state mach
 call sequences with the role and delay of every governed step, the rules with the tests that
 prove them, the events, and the failure modes with their recovery.
 
-> **Status.** Pre-audit. The pages describe `main` at `c4b3355` (15 October 2026). The ADRs
+> **Status.** Pre-audit. The pages describe `main` at `46941d6` (15 October 2026). The ADRs
 > record how the design was decided; this specification is how it works now. Where an ADR, a
 > module README and the code differ, the page follows the code and lists the difference under
 > its "Differences from the ADRs" heading.

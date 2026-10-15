@@ -4,11 +4,11 @@ Everything an audit team needs to start on 6529 Works: what is in scope, what ea
 dependency is trusted with, every governed selector, the threat model, the invariants the
 tests prove, the risks already accepted, and how to build, test and measure.
 
-> **Status.** Pre-audit. The pack describes `main` at `c4b3355` (15 October 2026). An internal
-> adversarial review ran on 14 October 2026. Its fixes merged in PRs #51 and #53 to #57 and are
-> cited by finding ID in the ADRs and the code. The governance and deployment fixes (GOV-1 to
-> GOV-4, DEPS-3, DEPS-4) are in open PR #52 and are not on `main`. The review reports are not
-> public. No external audit has started.
+> **Status.** Pre-audit. The pack describes `main` at `46941d6` (15 October 2026). An internal
+> adversarial review ran on 14 October 2026. Its fixes merged in PRs #51 to #57 (the governance
+> and deployment fixes, GOV-1 to GOV-4, DEPS-3 and DEPS-4, last, in #52) and are cited by
+> finding ID in the ADRs and the code. The review reports are not public. No external audit
+> has started.
 
 ## The pack
 
@@ -51,8 +51,14 @@ Areas where a small change has large effects, or where the review concentrated:
 - **Identity recovery.** The 7-day changes, 180-day overrides, contests decided by a recorded
   vote, the sticky standing snapshot and the restraint while an override is pending
   ([identity spec](../spec/identity-and-recovery.md)).
-- **The governance cancel rules.** `WorksAccessManager` overrides one OpenZeppelin check
-  ([governance spec](../spec/governance.md), [ADR 0002](../adr/0002-access-manager-hardening.md)).
+- **The governance cancel rules and suspension.** `WorksAccessManager` overrides
+  OpenZeppelin's cancel check (three rules) and its membership check (`hasRole`, for the
+  guardians' suspension of operational keys)
+  ([governance spec](../spec/governance.md), [ADR 0002](../adr/0002-access-manager-hardening.md)
+  and its addendum).
+- **The deployment and readback guards.** The trust model assumes bare, independent admin and
+  guardian Safes and canonical dependencies, which only `Deploy.s.sol` and `Verify.s.sol`
+  check, off chain ([trust assumptions](trust-assumptions.md#admin-safes)).
 - **`tokenURI` within 8M gas** for any record within bounds; the worst measured case is about
   2.5% under the budget ([rendering spec](../spec/rendering-and-tokenuri.md)).
 
