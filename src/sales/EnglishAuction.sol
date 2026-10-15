@@ -309,7 +309,8 @@ contract EnglishAuction is
         } else {
             price = s.bid;
         }
-        uint256 fee = Math.mulDiv(price, lt.feeShare, Splits.DENOMINATOR);
+        // Exact: a bid fits 96 bits and the share 17, so the product cannot overflow.
+        uint256 fee = price * lt.feeShare / Splits.DENOMINATOR;
         _pay(lt.currency, lt.seller, price - fee);
         _pay(lt.currency, lt.feeRecipient, fee);
         IMintTarget(lt.token).markPrimarySettled(lt.id);
@@ -809,7 +810,8 @@ contract EnglishAuction is
     function _minimumBid(Sale storage s, Terms storage t) private view returns (uint256) {
         if (s.bidder == address(0)) return Math.max(Math.max(t.openingBid, s.bid), 1);
         uint256 high = s.bid;
-        uint256 step = Math.mulDiv(high, t.incrementShare, Splits.DENOMINATOR, Math.Rounding.Ceil);
+        // Rounded up, exactly: the high bid fits 96 bits and the share 17.
+        uint256 step = (high * t.incrementShare + Splits.DENOMINATOR - 1) / Splits.DENOMINATOR;
         return high + Math.max(step, t.incrementFloor);
     }
 
