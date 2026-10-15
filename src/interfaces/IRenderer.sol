@@ -16,12 +16,13 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      statement. `tokenURI` stays small: it inlines the media only when the work is on-chain
 ///      complete and the primary file is at most `inlineThreshold()` cost-weighted bytes; otherwise
 ///      it gives the preferred locator, plus the work's PREVIEW image if it lists one: inline when
-///      complete and small, by locator otherwise. Above 1 MiB the media is reachable only through
-///      the content store's chunked reads. Reads are bounded and fail closed: a renderer never
-///      returns plausible metadata for a token it cannot read. A work whose record is not open yet,
-///      not completely uploaded (or not registered in the store at all) or not acceptable is not an
-///      unreadable token: it gets core-only metadata from 6529 Stream with a `record_status` field,
-///      and never a revert.
+///      complete and small, by locator otherwise. Above 1 MiB `fullTokenURI` cannot inline it
+///      either: on chain the media is then reachable only through the content store's chunked
+///      reads, and off chain through its locators. Reads are bounded and fail closed: a renderer
+///      never returns plausible metadata for a token it cannot read. A work whose record is not
+///      open yet, not completely uploaded (or not registered in the store at all) or not acceptable
+///      is not an unreadable token: it gets core-only metadata from 6529 Stream with a
+///      `record_status` field, and never a revert.
 interface IRenderer is IERC165 {
     /// @notice The inline threshold is zero or above the renderer's `MAX_INLINE_BYTES`.
     error RendererThresholdInvalid(uint256 threshold);

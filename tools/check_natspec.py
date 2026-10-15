@@ -368,7 +368,11 @@ def main(argv: list[str] | None = None) -> int:
     files = sorted(src.rglob("*.sol"))
     failures: list[str] = []
     for path in files:
-        failures += check_file(path, path.relative_to(root).as_posix())
+        display = path.relative_to(root).as_posix()
+        try:
+            failures += check_file(path, display)
+        except (ValueError, UnicodeDecodeError) as exc:
+            failures.append(f"{display}: cannot parse: {exc}")
     for line in failures:
         print(line)
     if failures:

@@ -152,7 +152,7 @@ no ceiling, or not run on Sepolia.
 | `purchase`, a later copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 370,142 |
 | `openSale`, Dutch | 259,642 | 265,000 (regression) | 7 | 0 | — |
 | `purchase`, Dutch, the first copy, new holder | 124,486 | 127,000 (regression) | 1 | 0 | — |
-| re-rate a work (governed `execute`) | 187,682 | 192,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 187,694 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
 | `royaltyInfo` (view) | 41,632 | 50,000 of execution | 0 | 0 | 40,667 |

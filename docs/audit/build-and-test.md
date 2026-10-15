@@ -162,7 +162,7 @@ All are standard library only and run from anywhere in the repository.
 | [`tools/check_genesis.py`](../../tools/check_genesis.py) | The genesis configuration against the compiled contracts and `src/`; with `--config <file>`, a deployment's copy against the committed policy |
 | [`tools/check_slither.py`](../../tools/check_slither.py) | Slither, gated by the triage record |
 | [`tools/check_markdown_links.py`](../../tools/check_markdown_links.py) | Relative links and anchors in Markdown (`--no-git` checks untracked files too) |
-| [`tools/check_natspec.py`](../../tools/check_natspec.py) | NatSpec completeness in `src/`: every external or public function, getter and event has `@notice` (or `@inheritdoc`) and a `@param` and `@return` for each parameter and return value; every error has `@notice` |
+| [`tools/check_natspec.py`](../../tools/check_natspec.py) | NatSpec completeness in `src/`: every external or public function and getter has `@notice` (or `@inheritdoc`), every event `@notice`; functions and events have a `@param` for each named parameter, functions a `@return` for each return value; every error has `@notice` |
 | `tools/gen_role_matrix.py` | Generates [Roles](roles.md) from the genesis configuration; `--check` fails if it is stale |
 | [`tools/content/`](../../tools/content/README.md) | The content uploader: chunking, manifests, calldata, gas quotes under the Prague and Glamsterdam schedules, verification |
 

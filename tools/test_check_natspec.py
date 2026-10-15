@@ -277,6 +277,17 @@ class MainTest(unittest.TestCase):
         self.assertIn("src/a/I.sol:3: function f: no NatSpec", out)
         self.assertIn("1 problem(s) in 1 files", out)
 
+    def test_an_unparsable_file_is_reported_and_the_others_still_checked(self) -> None:
+        code, out = self.run_main(
+            {
+                "A.sol": "contract A {\n function f() external {\n",
+                "B.sol": "interface B {\n function g() external;\n}\n",
+            }
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("src/A.sol: cannot parse: unbalanced", out)
+        self.assertIn("src/B.sol:2: function g: no NatSpec", out)
+
     def test_a_missing_src_directory_is_an_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(SystemExit):
             cn.main(["--root", directory])
