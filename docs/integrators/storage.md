@@ -4,31 +4,31 @@ This guide is for integrators, artists' tooling and indexers that need to fetch 
 check that they are the committed bytes, or put them on chain. A 6529 Stream work's media can
 live in three places: the on-chain content store, Arweave and IPFS. The work records satellite
 (`WorkRecords`) lists the work's files, registers the off-chain copies (locators) and says which
-copy to serve. The rules behind everything here are specified in
-[Works and storage](../spec/works-and-storage.md); this page is the practical side.
+copy to serve. The rules are in
+[Works and storage](../spec/works-and-storage.md#rules-and-invariants), cited here by ID (`WS-n`);
+this page is the practical side.
 
-The contracts are pre-audit. Contract addresses per network are in [Addresses](addresses.md),
-ABIs in [ABIs and interface IDs](abis-and-interface-ids.md). The shell examples use Foundry's
-`cast` with `$RECORDS` (WorkRecords), `$STORE` (ContentStore) and `$ETH_RPC_URL` set.
+> Pre-audit. See the [project status](../../README.md#status).
+
+Addresses are in [Addresses](addresses.md), ABIs in
+[ABIs and interface IDs](abis-and-interface-ids.md). The shell examples use Foundry's `cast` with
+`$RECORDS` (WorkRecords), `$STORE` (ContentStore) and `$ETH_RPC_URL` set.
 
 ## What to trust
 
-- **The content store checks every chunk on every read.** Each chunk is read whole and compared
-  with its keccak256 before any byte is returned, and a read that touches a missing chunk
-  reverts. It never returns partial or wrong bytes for a file ID.
-- **The content store does not check the declared SHA-256.** Hashing a large file on chain costs
-  quadratic gas, so the SHA-256 of the decoded file is a declaration in the manifest. You verify
-  it off chain. A manifest with a wrong digest is a different file ID from the honest one, so it
-  cannot displace it.
-- **Locators are checked for shape, not content.** `WorkRecords` accepts only bare Arweave and
-  IPFS content addresses, but it never sees the bytes behind them. Hash what you fetch.
+- **Chunks are checked on every read** (WS-28). A read never returns partial or wrong bytes for a
+  file ID; a read that touches a missing chunk reverts.
+- **The declared SHA-256 is not checked** (WS-30). Hashing a large file on chain costs quadratic gas, so the
+  SHA-256 of the decoded file is a declaration in the manifest, which you verify off chain. A
+  manifest with a wrong digest is a different file ID (WS-25), so it cannot displace the honest one.
+- **Locators are checked for shape, not content** (WS-18). `WorkRecords` never sees the bytes
+  behind an Arweave or IPFS address. Hash what you fetch.
 - **Your RPC node is not trusted either.** Recompute the file ID from the manifest fields and the
   SHA-256 from the bytes. The uploader's `verify` command does both.
 
 ## 1. Find a work's files
 
-A work's record must be open before any of its per-token views answer (they revert with
-`RecordNotOpen` until `openRecord` has run).
+A work's per-token views revert with `RecordNotOpen` until anyone has called `openRecord` (WS-1).
 
 ```bash
 cast call $RECORDS "isOpen(uint256)(bool)" $TOKEN_ID
@@ -69,7 +69,7 @@ cast call $STORE "readChunk(bytes32,uint256)(bytes)" $FILE_ID 0
    for whole files, or ranges of a few hundred KB.
 
 A read that touches a missing chunk reverts with `ContentChunkMissing(fileId, index, hash)`.
-Upload the chunk (any account may) and read again.
+Upload the chunk (any account may, WS-29) and read again.
 
 ## 3. Verify the bytes off chain
 
@@ -122,9 +122,9 @@ the encoded stream) only if every check passed.
 
 ## 4. Locators: content addresses only
 
-A locator is `(kind, uri)`: kind `1` `ARWEAVE` or `2` `IPFS`. Kind `0` `NONE` is the unset value
-of a preference, and kind `3` `ONCHAIN` is the content store itself, implicit and never
-registered. `WorkRecords.addLocator` accepts exactly these shapes and nothing else:
+A [locator](../glossary.md#locator) is `(kind, uri)`: kind `1` `ARWEAVE` or `2` `IPFS`. Kind `0`
+`NONE` is the unset value of a preference, and kind `3` `ONCHAIN` is the content store itself,
+implicit and never registered. `WorkRecords.addLocator` accepts exactly these shapes (WS-18):
 
 | Kind | URI | Length | Character rules |
 | --- | --- | --- | --- |
@@ -143,16 +143,11 @@ examples, all from the tests
   root (`bafyrei...`);
 - a non-canonical last character (padding bits set), or an Arweave address under kind `IPFS`.
 
-Why so strict:
-
-- **A content address names exact bytes.** What an HTTPS URL serves can change, so HTTPS was
-  dropped ([ADR 0003](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8)).
-  A path, an ArNS name or an IPNS link could be repointed under the same URI.
-- **One copy, one URI.** With a single canonical spelling, the duplicate check (exact bytes) is
-  meaningful. A raw-leaf CID and a dag-pb CID are different addresses, and both may be listed.
-- **Bounded cost.** A locator is at most 66 bytes with no characters that need escaping, which is
-  part of what keeps `tokenURI` within its 8M-gas budget
-  ([content module](../../src/content/README.md#gas-1)).
+A content address names exact bytes, while what an HTTPS URL, a path, an ArNS name or an IPNS
+link serves can change, so only bare content addresses are accepted
+([ADR 0003](../adr/0003-build-time-decisions.md#token-model-and-storage-amends-adr-0001-4-and-8)).
+One canonical spelling also makes the duplicate-URI check meaningful: a raw-leaf CID and a dag-pb
+CID are different addresses, and both may be listed.
 
 **Producing the addresses.** An Arweave transaction ID is the 43-character ID that gateways and
 wallets print. For IPFS, add the file with CIDv1, raw leaves and sha2-256 (with Kubo,
@@ -181,30 +176,25 @@ cast call $RECORDS "preferredLocator(uint256,bytes32)((uint8,string),uint256)" $
 cast call $RECORDS "locators(uint256,bytes32)((uint8,string)[])" $TOKEN_ID $FILE_ID
 ```
 
-`preferredLocator` returns the locator `tokenURI` serves, and its registration index. The most
-specific setting wins:
+`preferredLocator` returns the [preferred locator](../glossary.md#preferred-locator), the copy
+`tokenURI` serves, and its registration index. The most specific setting wins: the file's
+preferred index (`setFilePreference`), then the collection's and the global preferred kind
+(`setCollectionPreferredKind`, `setPreferredKind`), then the first registered copy (WS-21). Two
+results carry the index `type(uint256).max`:
 
-1. the file's preferred index (`setFilePreference`);
-2. else the first locator of the collection's preferred kind (`setCollectionPreferredKind`);
-3. else the first locator of the global preferred kind (`setPreferredKind`);
-4. else the first registered locator;
-5. else, if the work is on-chain complete, the implicit `ONCHAIN` copy (index
-   `type(uint256).max`): read it from the content store as in section 2;
-6. else the empty locator (kind `NONE`, index `type(uint256).max`): no copy is known.
+- kind `ONCHAIN`: the work is on-chain complete, and a preferred kind names `ONCHAIN` or no copy
+  is registered; read it from the content store as in section 2;
+- kind `NONE`: no copy is known.
 
-A kind of `ONCHAIN` at step 2 or 3 matches only an on-chain complete work. `locators` returns
-every registered copy in registration order, so a client can fall back to the next copy itself
-when the preferred one fails to verify. The renderer does not: it uses the preferred locator as
-it is ([Rendering and tokenURI](../spec/rendering-and-tokenuri.md)).
+`locators` returns every registered copy in registration order, so a client can fall back to the
+next copy itself when the preferred one fails to verify. The renderer does not: it uses the
+preferred locator as it is ([Rendering and tokenURI](../spec/rendering-and-tokenuri.md)).
 
-Who sets what:
-
-| Action | Who | Delay |
-| --- | --- | --- |
-| Add a locator before finalize | The artist (8 per file) or the PLATFORM role (8 per file) | Immediate |
-| Add a locator after finalize | The PLATFORM role only, up to 16 per file in all | Immediate |
-| Set the file, collection or global preference | The STORAGE_OPERATOR role | Immediate |
-| Remove or change a locator | Nobody: locators are append-only | |
+**Who sets what.** The artist and the PLATFORM role each add up to 8 locators per file before
+finalize; after it, only PLATFORM adds, up to 16 per file in all (WS-19). Locators are
+append-only (WS-20). The STORAGE_OPERATOR role sets the file, collection and global preferences,
+with no delay, and can only choose among registered copies or the on-chain bytes (WS-22). The
+selectors and delays are in the [role matrix](../audit/roles.md).
 
 **Off-chain monitoring.** Because locators are not verified on chain, the network runs an
 off-chain health monitor that verifies copies and re-pins or re-uploads from a surviving copy
@@ -220,10 +210,10 @@ kinds, so read each entry's kind together with its signer's role
 `https://arweave.net/<id>`) and `ipfs://<cid>` through any IPFS gateway (`https://<gateway>/ipfs/<cid>`)
 or your own node. Gateways are not trusted: verify the bytes as in section 3.
 
-**Events to index.** `LocatorAdded(tokenId, fileId, index, locator)`, `FilePreferenceSet`,
-`CollectionPreferredKindSet`, `PreferredKindSet` and `WorkOnChainComplete`, plus Stream's
-ERC-4906 events. A global or collection change affects many tokens and arrives as
-`BatchMetadataUpdate`. See [Events and indexing](events-and-indexing.md).
+**Events to index.** `LocatorAdded`, `FilePreferenceSet`, `CollectionPreferredKindSet`,
+`PreferredKindSet` and `WorkOnChainComplete` ([WorkRecords](events-and-indexing.md#workrecords)),
+plus Stream's ERC-4906 events ([Stream](events-and-indexing.md#stream)). A global or collection
+change affects many tokens and arrives as `BatchMetadataUpdate` (WS-23).
 
 ## 6. Put a file on chain with the uploader
 
@@ -304,36 +294,33 @@ attestation calls if the file is already attested. Its quote is what finishing c
   `attestBase64` applies, so no transaction pays for a file that can never be attested.
 
 Its file IDs, chunk hashes, calldata and attestation verdicts are tested against the contract
-([`UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol),
+(WS-33; [`UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol),
 [`UploaderAttest.t.sol`](../../test/content/tooling/UploaderAttest.t.sol)).
 
 ## 7. Costs
 
 Glamsterdam, which Sepolia has run since 6 October 2026, prices every stored byte as new
-contract code. Measured on Sepolia:
+contract code: about 1,548 gas per stored byte on Sepolia, so about 1.65 ETH per MiB at 1 gwei
+([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences),
+[`flows.md`](../../deployments/11155111/flows.md#1-content)). Two limits follow:
 
-- **About 1,548 gas per stored byte**, against about 218 under Prague, so about 1.65 ETH per MiB
-  at 1 gwei ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#consequences),
-  [`flows.md`](../../deployments/11155111/flows.md#1-content)).
-- **One full chunk per transaction.** A full 24,575-byte chunk costs about 38.4M gas; two would
-  be about 77M, more than a node with the default 50M RPC gas cap can estimate. Under Prague,
-  two chunks fit ([content module](../../src/content/README.md#upload-flow)).
-- **Large manifests.** Registration grows with the chunk count, to about 57.6M gas at the
-  512-chunk maximum. Above about 440 chunks a node with a 50M estimate cap cannot estimate it:
-  use the uploader's offline model, which is the default
+- **One full chunk per transaction.** Two full chunks are more than a node with the default 50M
+  RPC gas cap can estimate ([content module](../../src/content/README.md#upload-flow)).
+- **Large manifests.** Registration grows with the chunk count; above about 440 chunks a node with
+  a 50M estimate cap cannot estimate it, so use the uploader's offline model, which is the default
   ([uploader](../../tools/content/README.md#gas-schedules-the-cap-and-quotes)).
 
 `plan` and `calls` print a quote for any file under both schedules
 ([cost quotes](../../tools/content/README.md#cost-quotes)). Mainnet's Glamsterdam parameters may
-differ from Sepolia's; re-measure before relying on these figures there. The full tables are in
-[ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) and the
-[content module](../../src/content/README.md#glamsterdam).
+differ from Sepolia's; re-measure there. The full figures are in the
+[content module](../../src/content/README.md#glamsterdam) and
+[ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 
 ## 8. Who pays, and when
 
 - **Anyone can pay, at any time, in any order.** `writeChunk`, `registerManifest`,
   `attestBase64` and `syncOnChain` are permissionless, and the mint never waits for them. The
-  store has no payable function: gas is the only cost.
+  store has no payable function: gas is the only cost (WS-17, WS-29).
 - **The artist, the platform or a collector** may pay for any part. The approved record file
   should be complete before the work is shown (until then it renders core-only metadata marked
   `incomplete`), and the record file and license text must be complete before the artist can
@@ -350,7 +337,8 @@ On-chain bytes are permanent. Nothing in the protocol deletes a chunk or a manif
 ## 9. Dependencies of generative works
 
 A work's record may list `dependencies` as `[{name, version}]`. The `DependencyRegistry` maps
-each pair, as left-aligned lowercase `bytes32` labels, to a complete content-store file:
+each pair, as left-aligned lowercase `bytes32` labels, to one complete content-store file forever
+(WS-34):
 
 ```bash
 cast call $DEPS "resolve(bytes32,bytes32)(bytes32,bool,(bytes32,uint256,uint256,uint8,string))" \
@@ -358,7 +346,7 @@ cast call $DEPS "resolve(bytes32,bytes32)(bytes32,bool,(bytes32,uint256,uint256,
 ```
 
 It returns the file ID, whether the version is deprecated, and the file's manifest data. A
-deprecated version still resolves and reads. Read and verify the file as in sections 2 and 3.
+deprecated version still resolves and reads (WS-35). Read and verify the file as in sections 2 and 3.
 In v1 the renderer does not bundle dependencies: a script whose record declares any is served by
 locator ([Rendering and tokenURI](../spec/rendering-and-tokenuri.md)).
 

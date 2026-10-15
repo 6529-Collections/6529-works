@@ -4,11 +4,12 @@ Everything an audit team needs to start on 6529 Works: what is in scope, what ea
 dependency is trusted with, every governed selector, the threat model, the invariants the
 tests prove, the risks already accepted, and how to build, test and measure.
 
-> **Status.** Pre-audit. The pack describes `main` at `46941d6` (15 October 2026). An internal
-> adversarial review ran on 14 October 2026. Its fixes merged in PRs #51 to #57 (the governance
-> and deployment fixes, GOV-1 to GOV-4, DEPS-3 and DEPS-4, last, in #52) and are cited by
-> finding ID in the ADRs and the code. The review reports are not public. No external audit
-> has started.
+> Pre-audit. See the [project status](../../README.md#status).
+
+AI agents carried out an internal adversarial review on 14 October 2026; its report, with every
+finding, decision and residual risk, is
+[docs/security/internal-review-2026-10.md](../security/internal-review-2026-10.md). The fixes
+merged in PRs #51 to #57 and are cited by finding ID. No external audit has started.
 
 ## The pack
 
@@ -39,8 +40,8 @@ tests prove, the risks already accepted, and how to build, test and measure.
 
 Areas where a small change has large effects, or where the review concentrated:
 
-- **Contract size.** `EnglishAuction` and `Renderer` sit 127 and 179 bytes under EIP-170
-  ([scope](scope.md#how-the-figures-are-measured)).
+- **Contract size.** `EnglishAuction` and `Renderer` have the smallest EIP-170 margins
+  ([scope](scope.md#contracts-in-scope)).
 - **The auction start path.** `EnglishAuction.start` → `Stream.mint` →
   `PackageRegistry.consume` carries a 350K Prague-gas budget and a cap of 6 new storage
   slots, asserted exactly in `test/integration/GasReport.t.sol`
@@ -66,8 +67,10 @@ Areas where a small change has large effects, or where the review concentrated:
 
 - **Tests.** Unit, fuzz, stateful invariant, integration and review-regression suites in
   [`test/`](../../test/); review regressions are in [`test/adv/`](../../test/adv/), named by
-  finding ID. The testing strategy, coverage and mutation testing are documented in
-  [`docs/testing/`](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  finding ID. Coverage, mutation testing and Halmos proofs are being added in
+  [PR #58](https://github.com/6529-Collections/6529-works/pull/58).
+- **The internal review.** Findings, fixes, decisions, residual risks and how to reproduce
+  them: [internal-review-2026-10.md](../security/internal-review-2026-10.md).
 - **Static analysis.** Slither runs in CI; every High or Medium finding has a reviewed row in
   the [triage record](../security/slither-triage.md).
 - **Sepolia.** Two rehearsal deployments with the mainnet Safe structure, and every v1 flow run

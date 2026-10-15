@@ -4,11 +4,11 @@ This page is for marketplaces, wallets, indexers and front ends that show 6529 S
 and 6529 Editions editions. It shows how to fetch a token's metadata, how to decode it, what
 every field means, where the media is, how to read dispute status, royalties and licenses, and
 when to refresh a cache. The rules behind each answer are in the spec page
-[Rendering and tokenURI](../spec/rendering-and-tokenuri.md); this page is the practical view.
+[Rendering and tokenURI](../spec/rendering-and-tokenuri.md), cited here by rule ID; this page is
+the practical view. Contract addresses are in [Addresses](addresses.md); ABIs and ERC-165
+interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
 
-> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). Contract
-> addresses are in [Addresses](addresses.md); ABIs and ERC-165 interface IDs are in
-> [ABIs and interface IDs](abis-and-interface-ids.md).
+> Pre-audit. See the [project status](../../README.md#status).
 
 ## Quick reference
 
@@ -71,10 +71,10 @@ cast call "$RENDERER" "fullTokenURI(address,uint256)(string)" "$EDITIONS" 42 --r
 ```
 
 - It inlines a primary file of up to 1 MiB of attested base64 text, or 128 KiB of raw bytes.
-- It reverts with `RendererNotInlineable(token, id)` instead of falling back to a locator: for
-  a work without a usable record, and for media that is not on-chain complete, too large,
-  compressed, unattested base64, or a script it cannot wrap. Catch the revert and use
-  `tokenURI`.
+- It reverts with `RendererNotInlineable(token, id)` instead of falling back to a locator
+  ([RND-21][rnd]): for a work without a usable record, and for media that is not on-chain
+  complete, too large, compressed, unattested base64, or a script it cannot wrap. Catch the
+  revert and use `tokenURI`.
 - It has no 8M gas promise. 1 MiB costs about 30M gas
   ([content README](../../src/content/README.md#renderer)). Use `eth_call` against a node whose
   call gas cap allows it (geth's and reth's default is 50M, per the content README).
@@ -82,7 +82,8 @@ cast call "$RENDERER" "fullTokenURI(address,uint256)(string)" "$EDITIONS" 42 --r
 ### Supply enough gas
 
 Every call the renderer makes is bounded: before each read it checks that the gas left covers
-that read's cap plus a margin, and reverts with `BoundedCallInsufficientGas(gasLimit)` if not.
+that read's cap plus a margin, and reverts with `BoundedCallInsufficientGas(gasLimit)` if not
+([RND-6][rnd], [RND-7][rnd]).
 A work with an open record needs about 1.07M gas left when the renderer reads its media list
 (the 1,000,000 cap plus EIP-150's retention and a 51,000 margin), even though a typical
 `tokenURI` uses about 0.3M ([flows.md](../../deployments/11155111/flows.md), section 4). The
@@ -182,7 +183,7 @@ RFC 8785 canonical form, as the tooling does) is:
 
 - `name` and `description` come from the record; `name` keeps its `#` (it was `%23` in the URI).
 - The first six attributes are the renderer's own; the last two are the record's, copied as the
-  record wrote them, member order included.
+  record wrote them, member order included ([RND-14][rnd]).
 - `license_text_file` is the content-store file of the CC0 legal code the deployment pinned. The
   file ID depends only on the bytes, so it is the same on every deployment that uploads the committed
   text (`cc0TextFileId` in each deployment record).
@@ -205,9 +206,9 @@ Work 40 is serial 12 of "Spring", a VRF-seeded work whose record nobody has open
 }
 ```
 
-- `record_status` is the signal: `not_open` (nobody has called `WorkRecords.openRecord`),
-  `incomplete` (the record file is not fully uploaded) or `invalid` (the record breaks a rule).
-  There is no media, no license and no `content_hash` in this form.
+- `record_status` is the signal ([RND-9][rnd]): `not_open` (nobody has called
+  `WorkRecords.openRecord`), `incomplete` (the record file is not fully uploaded) or `invalid`
+  (the record breaks a rule). There is no media, no license and no `content_hash` in this form.
 - The name is the collection and the serial, not the token ID.
 - `Artist ID` is the lead artist ID as lowercase hex, with leading zero bytes dropped. For most
   artists it is their first authority address, but it is an ID, not a wallet to pay.
@@ -284,7 +285,7 @@ sandboxed iframe, as you would any HTML artwork.
 ### Traits the renderer writes
 
 These come first in `attributes`, in this order. The renderer vouches for them: a record may not
-use these names, in any case or spacing.
+use these names, in any case or spacing ([RND-13][rnd]).
 
 | Trait | When | Value |
 | --- | --- | --- |
@@ -301,10 +302,10 @@ use these names, in any case or spacing.
 
 ### The record's own attributes
 
-After the renderer's traits come the record's `attributes`, copied as the artist wrote them.
-Each has a string `trait_type` (printable ASCII) and a string or number `value`, and may have
-`display_type` and `max_value`; there are at most 32. They are the artist's, not the
-protocol's: show them as the work's traits, and do not treat one as a fact the chain checked.
+After the renderer's traits come the record's `attributes`, copied as the artist wrote them:
+at most 32, each with a string `trait_type` and a string or number `value`, and optionally
+`display_type` and `max_value` ([RND-12][rnd]). They are the artist's, not the protocol's: show
+them as the work's traits, and do not treat one as a fact the chain checked.
 
 Record text (names, descriptions, artists, attribute values) can hold any UTF-8, including `<`
 and markup. Escape it before you put it in HTML.
@@ -316,16 +317,16 @@ and markup. Escape it before you put it in HTML.
 An inline value is a `data:<mime>;base64,…` URI you can use directly. The primary is inlined
 only when the work is on-chain complete (every media file stored in the content store and
 `syncOnChain` called), the file is under the threshold, and it is stored as attested base64
-text or as raw bytes small enough to encode. A preview image is inlined as soon as the preview
-file itself is stored (and, if it is base64 text, attested), before the work is on-chain
-complete. The base64 payload of an inlined primary decodes to bytes whose SHA-256 is
+text or as raw bytes small enough to encode ([RND-17][rnd], [RND-18][rnd]). A preview image
+is inlined as soon as the preview file itself is stored (and, if it is base64 text, attested),
+before the work is on-chain complete. The base64 payload of an inlined primary decodes to bytes whose SHA-256 is
 `content_hash` (except a script page, which wraps the script).
 
 ### Locators
 
 When the primary is not inlined, `media_url` is its preferred copy, and `image` or
 `animation_url` points at the same copy (or at the preview, for an image work). A locator is a
-bare content address:
+bare content address ([WS-18][ws]):
 
 - `ar://` and a 43-character Arweave transaction ID;
 - `ipfs://` and a base32 CIDv1 (`bafkrei…` or `bafybei…`, 66 characters in all).
@@ -335,8 +336,8 @@ media equals `content_hash`; a copy of a compressed or base64-encoded file holds
 stream, which you decode first. Encodings, on-chain chunked reads and gateway advice are in
 [Storage](storage.md).
 
-The STORAGE_OPERATOR role chooses which registered copy is preferred and can switch it at any
-time; each switch emits ERC-4906. Re-read the metadata on those events rather than storing a
+The STORAGE_OPERATOR role chooses which registered copy is preferred ([WS-21][ws],
+[WS-22][ws]) and can switch it at any time; each switch emits ERC-4906. Re-read the metadata on those events rather than storing a
 locator for good.
 
 ### No media member
@@ -372,16 +373,16 @@ The value is an entry hash in the statement log, not the outcome itself. To read
    `kind` = `keccak256("DISPUTE_OUTCOME")`. The event's `statement` holds the content hash and
    a `uri` or a content-store `fileId` for the outcome document.
 
-The latest outcome replaces earlier ones in this answer, so each outcome document restates the
-earlier disputes it keeps in force. For an edition, query the master: `(stream, editionId)`.
-Outcomes are never recorded against the edition itself. The rules are in
-[Disputes and statements](../spec/disputes-and-statements.md).
+The latest outcome replaces earlier ones in this answer ([DSP-12][dsp], [RND-23][rnd]), so each
+outcome document restates the earlier disputes it keeps in force. For an edition, query the
+master: `(stream, editionId)`. The log refuses an outcome about an ERC-1155 subject, so none is
+ever recorded against the edition itself ([DSP-11][dsp]).
 
 ## Other reads
 
 | Read | Contract | Returns | Notes |
 | --- | --- | --- | --- |
-| `royaltyInfo(tokenId, salePrice)` | Stream | receiver, amount | ERC-2981. Rate out of 100,000 (`Splits.DENOMINATOR`). The receiver is fixed at mint; the rate changes only with every party's consent plus a governed action (FUNDS_SETTER, 14 days). It makes one view call to the split factory: it can run out of gas and revert, but never returns a zero royalty for lack of gas. About 41K gas ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). |
+| `royaltyInfo(tokenId, salePrice)` | Stream | receiver, amount | ERC-2981. Rate out of 100,000 (`Splits.DENOMINATOR`). The receiver is fixed at mint; the rate changes only with every party's consent plus a governed action (FUNDS_SETTER, 14 days, [WS-14][ws]). It makes one view call to the split factory: it can run out of gas and revert, but never returns a zero royalty for lack of gas ([AUC-7][auc]). About 41K gas ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). |
 | `royaltyInfo(id, salePrice)` | Editions | receiver, amount | Read from storage, no external call. Receiver locked at creation; the rate follows the master's. |
 | `licenseOf(tokenId)` | WorkRecords | `(spdxId, textFileId)` | Reverts with `RecordNotOpen` until the record opens. Defaults to the deployment's CC0. |
 | `licenseOf(editionId)` | Editions | the master's license | Reverts with `UnknownEdition`, or `RecordNotOpen` until the master's record opens. |
@@ -415,9 +416,9 @@ Both tokens report ERC-4906 (`0x49064906`) and ERC-2981 through ERC-165.
 
 Stream emits `MetadataUpdate` when a record opens, changes or is finalized, when a work becomes
 on-chain complete, when a locator is added or a file preference set, after a relicense, a
-royalty change or an errata repin, and when an edition is linked to a master. Editions emits the same
-for a master's edition. The spec lists every source under
-[Events](../spec/rendering-and-tokenuri.md#events).
+royalty change or an errata repin, and when an edition is linked to a master. Editions emits the
+same for a master's edition ([RND-27][rnd]). Every source is listed under
+[ERC-4906 refresh triggers](events-and-indexing.md#erc-4906-refresh-triggers).
 
 Three changes reach `tokenURI` without an ERC-4906 event, because the contract that changes does
 not know which works use the file:
@@ -435,18 +436,20 @@ indexing these in full.
 ### What never changes
 
 - **The media.** The media list, `content_type` and `content_hash` are fixed by the approved
-  package from the moment the record opens. Bytes in the content store are permanent.
+  package from the moment the record opens ([WS-6][ws]). Bytes in the content store are
+  permanent.
 - **The record, after finalize.** Once `WorkFinalized` is emitted, `name`, `description`, the
   artist, year, medium and dimensions traits and the record's attributes never change, and the
   renderer is pinned, so the output format does not change either. Only an errata repin
-  (`RendererRepinned`, the artist's signature plus a 30-day governed delay) installs another
-  renderer for that work.
+  (`RendererRepinned`, the artist's signature plus a 30-day governed delay, [WS-15][ws])
+  installs another renderer for that work.
 - **The collection and serial.** Collections cannot be renamed; serials never change.
-- **A CC0 license.** It is irrevocable.
+- **A CC0 license.** It is irrevocable ([WS-12][ws]).
 
 What can still change after finalize: the media members (new copies, a new preference,
 on-chain completion, attestation), a non-CC0 license (a relicense needs every party plus a
-48-hour governed action), the dispute statement, and the royalty rate (not part of the JSON).
+48-hour governed action, [WS-13][ws]), the dispute statement, and the royalty rate (not part
+of the JSON).
 
 ### When a call reverts
 
@@ -460,3 +463,8 @@ Do not cache a revert as empty metadata.
 | `InvalidBinding(renderer)` (Stream) or `InvalidRenderer(renderer)` (WorkRecords) | The renderer's code is no longer the code it was installed or pinned with; the metadata is withheld on purpose | Keep the last good metadata and retry later. A new default renderer or an errata repin restores it, with ERC-4906 events. |
 | `RendererReadFailed(target, selector)`, `BoundedCallFailed(target)`, `BoundedCallMalformedReturn(target)` | A contract the renderer reads failed or returned malformed data | Keep the last good metadata and retry later. |
 | `RendererNotInlineable(token, id)` | Only from `fullTokenURI`: the work cannot be served fully inline | Use `tokenURI`. |
+
+[rnd]: ../spec/rendering-and-tokenuri.md#rules-and-invariants
+[ws]: ../spec/works-and-storage.md#rules-and-invariants
+[dsp]: ../spec/disputes-and-statements.md#rules-and-invariants
+[auc]: ../spec/stream-and-auctions.md#rules-and-invariants

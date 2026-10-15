@@ -3,11 +3,13 @@
 What an audit of 6529 Works v1 covers: every Solidity file under `src/`, with its size, and what
 lies outside.
 
-> **Status.** Pre-audit. The figures on this page were measured on `main` at `46941d6`
-> (15 October 2026). Other work in progress changes gas and storage layouts, so re-measure
-> at the audit commit with the commands under [How the figures are measured](#how-the-figures-are-measured).
-> An internal adversarial review ran on 14 October 2026; its fixes merged in PRs #51 to #57,
-> the last being #52 (GOV-1 to GOV-4, DEPS-3, DEPS-4) at `46941d6`. It is not an audit.
+> Pre-audit. See the [project status](../../README.md#status).
+
+The nSLOC and bytecode figures below are checked against the code in CI by
+[`tools/check_docs_facts.py`](../../tools/check_docs_facts.py); after a source change, run it
+with `--artifacts out --update` to refresh them. The internal review that preceded this pack is
+[docs/security/internal-review-2026-10.md](../security/internal-review-2026-10.md); it is not
+an audit.
 
 ## Summary
 
@@ -161,13 +163,15 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 ## How the figures are measured
 
 ```bash
-forge build --sizes                            # runtime and initcode sizes, default profile
-python tools/check_budgets.py --profile default # total lines, linked libraries, delegatecall, sizes
+forge build --sizes                                        # runtime and initcode sizes
+python tools/check_budgets.py --profile default            # total lines, libraries, delegatecall, sizes
+python tools/check_docs_facts.py --artifacts out --update  # refresh the figures on this page
 ```
 
-Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`.
-The two tightest contracts, `EnglishAuction` (127 bytes under EIP-170) and `Renderer`
-(179 bytes), leave little room for change; CI fails any change that crosses the limit.
+Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
+sizes are the compiled `bytecode` and `deployedBytecode` lengths. `EnglishAuction` and
+`Renderer` have the smallest EIP-170 margins (see the tables); CI fails any change that crosses
+the limit.
 
 ## Related
 

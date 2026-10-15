@@ -1,15 +1,13 @@
 # Invariants
 
 This page lists every protocol invariant the test suite checks, for auditors who want to know
-what has been proven, under which campaign settings, and against which real or mocked
-contracts. It covers the stateful invariant campaigns (an `invariant_*` function over a
-handler), the checks the handlers make inside each action, and the most important properties
-that fuzz and unit tests prove instead. Each statement is taken from the assertion, not from
-the test's name. The [Gaps](#gaps) section lists what no campaign covers yet.
+what is tested, under which campaign settings, and against which real or mocked contracts. It
+covers the stateful invariant campaigns (an `invariant_*` function over a handler), the checks
+the handlers make inside each action, and the most important properties that fuzz and unit
+tests check instead. Each statement is taken from the assertion, not from the test's name. The
+[Gaps](#gaps) section lists what no campaign covers yet.
 
-> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
-> record how the design was decided; this page is how it works now. Where they differ, this
-> page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
+> Pre-audit. See the [project status](../../README.md#status).
 
 ## Campaign settings
 
@@ -104,7 +102,8 @@ unregistered. The handler is an exact model: it predicts every call's outcome be
 | INV-CUR-6 | Every artist's move-nonce flags (31 per artist) and every root's status equal the model. | stateful invariant | `invariant_noncesAndStatuses` | `revokeMove`, `rotate`, `revokePackage`, `registerLate`, `acceptLate` |
 
 The nine actions are `consume`, `claimEdition`, `release`, `revokeMove`, `rotate`,
-`revokePackage`, `registerLate`, `acceptLate` and `rebind`.
+`revokePackage`, `registerLate`, `acceptLate` and `rebind`. No dedicated invariant covers the
+single use of a package's registration; the model's exactness (INV-CUR-1, INV-CUR-6) tests it.
 
 ## Economics
 
@@ -160,7 +159,7 @@ fee payouts take the escrow route too. Real `EnglishAuction`, `AssetAllowlist`,
 | INV-AUC-5 | Every sale, settled and cancelled ones included, keeps in storage the opening bid, increment share and anti-snipe window it locked at start, and the floor its first bid locked, whatever governance changed since. The test reads the storage directly and cross-checks the layout against the public view. | stateful invariant | `invariant_StoredTermsMatchWhatEachSaleLocked` | `govern` |
 | INV-AUC-6 | After 30 days, settling every sale and claiming every delivery and credit leaves the auction with no funds and no token, and every deposit accounted for. | after-campaign | `AuctionInvariantBase.afterInvariant` | all |
 | INV-AUC-7 | Settlement is eventually possible: once the token stops blocking the auction and the currency is re-admitted, every sale ends settled or cancelled, and the auction holds no funds and no token. | after-campaign | `AuctionHaltsInvariantBase.afterInvariant` | `drain` |
-| INV-AUC-8 | A bid extends the end to at least `now + the locked window`. A settlement delivers the token to (or leaves it pending for) the recipient the high bid named, or the artist with no bid. A second dispute pause of the same sale reverts with `PauseExhausted`; a withdrawal leaves the sale paused; `resume` and `unpause` earlier than 48 hours (`Roles.STANDARD`) after the pause revert with `UnpauseTooEarly` (GOV-5). | handler check | `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
+| INV-AUC-8 | A bid extends the end to at least `now + the locked window`. A settlement delivers the token to (or leaves it pending for) the recipient the high bid named, or the artist with no bid. A second dispute pause of the same sale reverts with `PauseExhausted`; a withdrawal leaves the sale paused; `resume` and `unpause` earlier than 48 hours (`Roles.STANDARD`) after the pause revert with `UnpauseTooEarly` (review finding GOV-5). | handler check | `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
 | INV-AUC-9 | A sale that has not ended refuses `settle`. While its currency is deprecated, nothing settles for 30 days; then `settle` credits the standing bid back to its bidder and gives the work to its artist. A re-admission in the last window, or after the end, reopens the sale for the governed duration or the locked window, whichever is longer, and keeps the standing bid. | handler check | `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
 
 ## Fixed-price and Dutch sales
@@ -261,21 +260,21 @@ handler `GovernanceHandler` in the same file. Real `GovernanceConfigurator` and
 `AccessManager` exists for hostile operations. Admins schedule random hostile operations next
 to benign guardian and admin rotations; a random vigilant guardian cancels every hostile
 operation before time moves; the handler runs the configurator's full readback
-(`configurator.verify`) at every warp. Since `46941d6` the handler also has guardians suspend
+(`configurator.verify`) at every warp. The handler also has guardians suspend
 the fixed PLATFORM, CURATOR and STORAGE_OPERATOR keys (and try a role that is not
 suspendable), admins schedule 30-day grants that lift those suspensions and that the guardians
 let through, and admins try to cancel revocations another account scheduled (Rule 3).
 
 | ID | Invariant | Kind | Test | Handler actions |
 | --- | --- | --- | --- | --- |
-| INV-GOV-1 | Hostile operations never change the target (its authority, recipient, verifier, fee and admin calls) or give the attacker any role; nothing executes early or through a wrapper; no account cancels the operation that revokes its own role; no admin ever cancels a revocation another account scheduled (Rule 3); benign rotations and lifts always execute; the on-chain GUARDIAN, PAUSER and ADMIN membership of the rotating accounts equals the model; the hot admin keeps ADMIN; at least two guardians stay active. | stateful invariant | `invariant_GovernanceStaysContained` | `scheduleHostile`, `scheduleBenign`, `executeBenign`, `adminCancelAndReschedule`, `adminCancelsOthersRevocation`, `scheduleLift`, `tryExecute`, `tryDirect`, `trySelfRescue`, `warp` |
-| INV-GOV-2 | The configuration on chain reads back as the model's configuration after every warp: the fixed holders that are not suspended, plus the active rotators. | handler check | `warp` (`configurator.verify(modelConfig())`) | `warp` |
-| INV-GOV-3 | No role that is not suspendable is ever suspended, for any guardian, admin, keeper or attacker account; each fixed operational key's on-chain suspension equals the model (set by `suspend`, cleared by an executed 30-day lift); a suspended key fails `hasRole` and an unsuspended one passes; for the CURATOR key, `canCall` on the target answers immediate exactly when it is not suspended, with zero delay. | stateful invariant | `invariant_SuspensionsStayContained` | `guardianSuspends`, `scheduleLift`, `executeBenign`, `warp` |
-| INV-GOV-4 | A guardian's suspension of a fixed key that is not suspended succeeds, and its attempt on a role that is not suspendable (ADMIN on the hot admin, or another role on a guardian) never succeeds. | handler check | `guardianSuspends` (`fail_on_revert`; `nonSuspendableSuspended` checked by INV-GOV-3) | `guardianSuspends` |
+| INV-GV-1 | Hostile operations never change the target (its authority, recipient, verifier, fee and admin calls) or give the attacker any role; nothing executes early or through a wrapper; no account cancels the operation that revokes its own role; no admin ever cancels a revocation another account scheduled (Rule 3); benign rotations and lifts always execute; the on-chain GUARDIAN, PAUSER and ADMIN membership of the rotating accounts equals the model; the hot admin keeps ADMIN; at least two guardians stay active. | stateful invariant | `invariant_GovernanceStaysContained` | `scheduleHostile`, `scheduleBenign`, `executeBenign`, `adminCancelAndReschedule`, `adminCancelsOthersRevocation`, `scheduleLift`, `tryExecute`, `tryDirect`, `trySelfRescue`, `warp` |
+| INV-GV-2 | The configuration on chain reads back as the model's configuration after every warp: the fixed holders that are not suspended, plus the active rotators. | handler check | `warp` (`configurator.verify(modelConfig())`) | `warp` |
+| INV-GV-3 | No role that is not suspendable is ever suspended, for any guardian, admin, keeper or attacker account; each fixed operational key's on-chain suspension equals the model (set by `suspend`, cleared by an executed 30-day lift); a suspended key fails `hasRole` and an unsuspended one passes; for the CURATOR key, `canCall` on the target answers immediate exactly when it is not suspended, with zero delay. | stateful invariant | `invariant_SuspensionsStayContained` | `guardianSuspends`, `scheduleLift`, `executeBenign`, `warp` |
+| INV-GV-4 | A guardian's suspension of a fixed key that is not suspended succeeds, and its attempt on a role that is not suspendable (ADMIN on the hot admin, or another role on a guardian) never succeeds. | handler check | `guardianSuspends` (`fail_on_revert`; `nonSuspendableSuspended` checked by INV-GV-3) | `guardianSuspends` |
 
-## Properties proven by fuzz and unit tests
+## Properties tested by fuzz and unit tests
 
-These properties have no stateful campaign of their own, or are proven more directly by a
+These properties have no stateful campaign of their own, or are tested more directly by a
 fuzz or unit test.
 
 ### Value conservation and money maths
@@ -305,13 +304,13 @@ fuzz or unit test.
 | PROP-CUR-3 | Only active signers' attestations count, and arbitrary signature bytes are never approved. | fuzz | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol) `testFuzz_isApproved_onlyActiveSignersCount`, `testFuzz_isApproved_neverRevertsOnGarbage` |
 | PROP-ED-1 | An edition never mints beyond its size, and `createEdition` refuses a tampered item. | fuzz | [`Editions.t.sol`](../../test/editions/Editions.t.sol) `testFuzz_Mint_NeverExceedsSize`, `testFuzz_CreateEdition_RefusesTamperedItem` |
 | PROP-ENT-1 | The first of many deliveries wins; only the coordinator delivers; an unissued request ID never delivers; non-VRF items and items outside an approved package are always refused. | fuzz | [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol) `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_UnissuedRequestIdsNeverDeliver`, `testFuzz_NonVrfItemsAreAlwaysRefused`, `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested` |
-| PROP-GOV-1 | Nobody cancels the operation that revokes their own role. | fuzz | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_NobodyCancelsTheirOwnRevocation` |
-| PROP-GOV-2 | A raise-only parameter moves by at most 2× per step and never above its ceiling, for any sequence of raises. | fuzz | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol) `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded` |
-| PROP-GOV-3 | Only genesis selectors pass wiring validation. | fuzz | [`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol) `testFuzz_OnlyGenesisSelectorsPassValidation` |
-| PROP-GOV-4 | For any role, any victim and any canceller among the guardians, the cold admin, a keeper and a key holder, another account's revocation is cancelled exactly when the canceller is a guardian and not the victim (Rules 2 and 3). | fuzz | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation` |
-| PROP-GOV-5 | Every role ID from 0 to 13 (`Roles.COUNT`, one past the last role) other than PLATFORM, CURATOR and STORAGE_OPERATOR is refused by `suspend` (`RoleNotSuspendable`); `test_SuspendableRolesAreTheZeroDelayOperationalKeys` also checks `PUBLIC`. | fuzz | [`Suspension.t.sol`](../../test/governance/Suspension.t.sol) `testFuzz_OnlyOperationalRolesCanBeSuspended` |
-| PROP-GOV-6 | A suspension takes effect in the same block on `hasRole`, `canCall` and the target; the record and other roles stay; only guardians suspend; a pending holder can be suspended and never activates; only an ADMIN grant (guardian-vetoable) or a revocation, or the holder's renounce, lifts it; readback rejects a suspended holder. | unit | `Suspension.t.sol` `test_AGuardianSuspendsAKeyInTheSameBlock`, `test_OnlyGuardiansSuspend`, `test_APendingGrantCanBeSuspended`, `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat`, `test_ARevocationClearsItAndTheKeyCanRenounce`, `test_ReadbackRejectsASuspendedHolder` |
-| PROP-GOV-7 | On the genesis deployment: a suspended PLATFORM key fails every PLATFORM path, manual checks included, while the creator's path stays open; a dishonest guardian's suspension lasts 60 days (still in force at day 59, lifted at day 60); the cold admin removes a hot admin and a guardian acting together in two 30-day rounds; demotions by grant stay cancellable by the demoted account. | unit | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol) `test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce`, `test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays`, `test_GOV1_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`, `test_GOV1_DemotionsByGrantStayCancellable` |
+| PROP-GV-1 | Nobody cancels the operation that revokes their own role. | fuzz | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_NobodyCancelsTheirOwnRevocation` |
+| PROP-GV-2 | A raise-only parameter moves by at most 2× per step and never above its ceiling, for any sequence of raises. | fuzz | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol) `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded` |
+| PROP-GV-3 | Only genesis selectors pass wiring validation. | fuzz | [`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol) `testFuzz_OnlyGenesisSelectorsPassValidation` |
+| PROP-GV-4 | For any role, any victim and any canceller among the guardians, the cold admin, a keeper and a key holder, another account's revocation is cancelled exactly when the canceller is a guardian and not the victim (Rules 2 and 3). | fuzz | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation` |
+| PROP-GV-5 | Every role ID from 0 to 13 (`Roles.COUNT`, one past the last role) other than PLATFORM, CURATOR and STORAGE_OPERATOR is refused by `suspend` (`RoleNotSuspendable`); `test_SuspendableRolesAreTheZeroDelayOperationalKeys` also checks `PUBLIC`. | fuzz | [`Suspension.t.sol`](../../test/governance/Suspension.t.sol) `testFuzz_OnlyOperationalRolesCanBeSuspended` |
+| PROP-GV-6 | A suspension takes effect in the same block on `hasRole`, `canCall` and the target; the record and other roles stay; only guardians suspend; a pending holder can be suspended and never activates; only an ADMIN grant (guardian-vetoable) or a revocation, or the holder's renounce, lifts it; readback rejects a suspended holder. | unit | `Suspension.t.sol` `test_AGuardianSuspendsAKeyInTheSameBlock`, `test_OnlyGuardiansSuspend`, `test_APendingGrantCanBeSuspended`, `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat`, `test_ARevocationClearsItAndTheKeyCanRenounce`, `test_ReadbackRejectsASuspendedHolder` |
+| PROP-GV-7 | On the genesis deployment: a suspended PLATFORM key fails every PLATFORM path, manual checks included, while the creator's path stays open; a dishonest guardian's suspension lasts 60 days (still in force at day 59, lifted at day 60); the cold admin removes a hot admin and a guardian acting together in two 30-day rounds; demotions by grant stay cancellable by the demoted account. | unit | [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol) `test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce`, `test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays`, `test_GOV1_ColdAdminRemovesAHotAdminAndAGuardianActingTogether`, `test_GOV1_DemotionsByGrantStayCancellable` |
 | PROP-ID-1 | A change never executes before its delay; the uphold window of a contested override is always open; the adapter's "established" answer matches a model. | fuzz | [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `testFuzz_ExecuteChange_RespectsTheDelay`; [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) `testFuzz_L3_UpholdWindowAlwaysOpen`; [`ConsolidationAdapter.t.sol`](../../test/identity/ConsolidationAdapter.t.sol) `testFuzz_IsEstablished_MatchesModel` |
 | PROP-DSP-1 | Any append sequence matches the model; relays round-trip and never replay; the nonce bitmap tracks exactly the spent nonces. | fuzz | [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) `testFuzz_SequenceMatchesModel`, `testFuzz_RelayRoundTripAndReplay`, `testFuzz_NonceBitmapTracksExactlyTheSpentNonces` |
 | PROP-HASH-1 | The item hash binds the collection and the shares and does not depend on the chain. | fuzz | [`WorksHashing.t.sol`](../../test/interfaces/WorksHashing.t.sol) `testFuzz_itemHash_bindsCollection`, `testFuzz_itemHash_bindsShares`, `testFuzz_itemHash_independentOfChain` |
@@ -343,9 +342,10 @@ The figures behind these rows are in
 
 ## Gaps
 
-What no stateful campaign covers on `main` at `46941d6`. Another lane (T2) is adding
-invariant suites; the test strategy, coverage and mutation testing are described in the
-[testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+What no stateful campaign covers yet. Stateful suites on the real, wired stack are being added
+in [PR #62](https://github.com/6529-Collections/6529-works/pull/62). Coverage, mutation testing
+and Halmos proofs are being added in
+[PR #58](https://github.com/6529-Collections/6529-works/pull/58).
 
 **Money-moving contracts.**
 - **`ClaimRouter` and `RevenueEscrow` do have campaign coverage**, in the economics campaign:
@@ -378,8 +378,8 @@ invariant suites; the test strategy, coverage and mutation testing are described
 - **Suspension in the governance campaign** covers the fixed keys on a mock target only, checks
   `canCall` for the CURATOR key alone, and lifts by grant only. The manual PLATFORM and CURATOR
   paths (sale adapters, `WorkRecords.addLocator`, relayed statements), lifts by revocation and
-  renounce, and the dishonest-guardian timeline are unit and integration tests (PROP-GOV-6,
-  PROP-GOV-7).
+  renounce, and the dishonest-guardian timeline are unit and integration tests (PROP-GV-6,
+  PROP-GV-7).
 - **Deployment and readback guards** (`DeployGuards`, `Verify.s.sol`: Safe topology, canonical
   dependencies, the VRF subscription, epoch mode, pending operations) have unit tests only, in
   [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol).
@@ -396,13 +396,7 @@ campaign.
 
 ## Differences from the ADRs
 
-- **ADR 0001 test plan** names "single-use packages and items" as a stateful invariant. The
-  curation campaign proves single use for items and content hashes (INV-CUR-3, INV-CUR-4); the
-  single use of a package's registration is proven by the model's exactness (INV-CUR-1,
-  INV-CUR-6), not by a dedicated invariant.
-- **ADR 0001 and AGENTS.md** require stateful invariants for every contract that moves money.
-  `EconomicsResolver` and `AssetAllowlist` hold no funds but govern where funds go, and have
-  none; the fixed-price and Dutch campaigns run against a mock escrow (see [Gaps](#gaps)).
+See the [register](../spec/README.md#differences-from-the-adrs).
 
 ## References
 

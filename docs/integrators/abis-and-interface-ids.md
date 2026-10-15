@@ -5,12 +5,11 @@ It says where the ABIs come from and which build matches which deployment, gives
 interface ID of every interface and which deployed contract answers it, lists every EIP-712
 domain and type string, and gives the exact formulas of the protocol hashes you recompute
 off-chain: item hashes, Merkle leaves and roots, media hashes, file IDs, allowlist leaves,
-statement entry hashes and chain heads.
+statement entry hashes and chain heads. The Sepolia r2 instance runs an earlier build; what
+differs is in [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build).
+Addresses are in [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
 
-> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The
-> Sepolia r2 instance was built from `400f96d`; what differs is in
-> [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
-> [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
+> Pre-audit. See the [project status](../../README.md#status).
 
 ## Contents
 
@@ -86,7 +85,7 @@ The deployment records name some contracts differently from their source.
 
 ### Compiler settings
 
-From [`foundry.toml`](../../foundry.toml), unchanged between `400f96d` and `46941d6`. These are
+From [`foundry.toml`](../../foundry.toml), unchanged since the r2 build. These are
 the settings a block explorer or Sourcify needs to verify the bytecode.
 
 | Setting | Value |
@@ -107,9 +106,9 @@ records hold each contract's code hash, and the runbook's
 
 ## Changes since the Sepolia r2 build
 
-r2 runs `400f96d` ([Sepolia README](../../deployments/11155111/README.md)); `main` is at
-`46941d6`. `git diff --stat 400f96d 46941d6 -- src/interfaces src/economics/interfaces` lists
-28 changed files. The external surface changed in these:
+r2 runs `400f96d` ([Sepolia README](../../deployments/11155111/README.md)).
+`git diff --stat 400f96d main -- src/interfaces src/economics/interfaces` lists 28 changed
+files. The external surface changed in these:
 
 | File | Change on `main` |
 | --- | --- |
@@ -139,8 +138,8 @@ The other changed files (`IArtistPayoutResolver`, `IArtistRoleResolver`, `IRelea
 differs. Two contracts also gained ERC-165 support after r2: the claim router and the revenue
 escrow implement `supportsInterface` on `main` and not on r2.
 
-`WorksAccessManager`, which has no interface file, gained functions, events and errors in
-`46941d6` (review finding GOV-2, the guardians' suspension of operational keys):
+`WorksAccessManager`, which has no interface file, gained functions, events and errors after
+r2 (review finding GOV-2, the guardians' suspension of operational keys):
 
 | Kind | Signature | Selector or topic0 |
 | --- | --- | --- |
@@ -151,8 +150,10 @@ escrow implement `supportsInterface` on `main` and not on r2.
 | Error | `RoleNotSuspendable(uint64 roleId)` | `0x3bf24b39` |
 | Error | `NotSuspendable(uint64 roleId, address account)` | `0x48431385` |
 
-`hasRole` keeps its signature but now answers false for a suspended holder. The function
-selectors are those in the `manager` section of
+`hasRole` keeps its signature but answers false for a suspended holder until an admin grant or
+revocation of that role, or the holder's own `renounceRole`, lifts the suspension
+([GV-28](../spec/governance.md#rules-and-invariants)). The function selectors are those in the
+`manager` section of
 [`config/genesis.example.json`](../../config/genesis.example.json); the event and error
 values were computed with [`tools/content/keccak.py`](../../tools/content/keccak.py).
 
@@ -240,23 +241,41 @@ allowlist, release verifier, split factory, split wallets, the configurator and 
 AccessManager have no `supportsInterface`; confirm with their ABIs. The protocol installs
 them by other checks:
 
-- the fixed-price and Dutch adapters check the asset allowlist for code and no EIP-7702
-  delegation, and for `IAssetAllowlist` only if it answers ERC-165 at all (the `MintSaleBase`
+- the fixed-price and Dutch adapters check the asset allowlist for code, no EIP-7702
+  delegation, and `IAssetAllowlist` only if it answers ERC-165 at all (the `MintSaleBase`
   constructor; [sales README](../../src/sales/README.md)); the English auction checks it for
   code and no delegation only;
-- the artist registry's `bindSplitFactory` checks only for code, and `bindStatementLog` checks
-  for code and that the log's `artistResolver()` is the registry
+- the artist registry's `bindSplitFactory` checks for code and no delegation, and
+  `bindStatementLog` also checks that the log's `artistResolver()` is the registry
   ([`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol));
-- the work-records satellite and the dependency registry check the content store for code
-  in their constructors; the renderer takes it as a constructor argument unchecked.
+- the work-records satellite checks the content store for code and no delegation in its
+  constructor, the dependency registry for code only; the renderer takes it unchecked.
 
 The interface IDs of `IContentStore`, `IDependencyRegistry` and `IStatementLog` are pinned so
 that a surface change is caught, not because any contract answers them.
 
+**EIP-7702 delegated accounts.** `DelegatedEOA.isDelegated`
+([`DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol)) recognizes the `0xef0100`
+delegation designator. It refuses a delegated account as a dependency in the constructors'
+dependency checks, in every `bind*`, in the governed setters that install a verifier,
+renderer, coordinator, resolver, consolidation source, admitted minter or sale target
+([GV-22](../spec/governance.md#rules-and-invariants)), and when the asset allowlist admits a
+token ([ECO-32](../spec/economics-and-payouts.md#rules-and-invariants)). A few install checks
+require only code: the dependency registry's content store, the consolidation adapter's
+delegation contract and the configurator's targets; the renderer checks nothing. As a
+**signer**, a delegated account is accepted: `SignatureVerifier` first checks an ECDSA
+signature against the account's own address, then ERC-1271 through its delegate
+([`SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol)). Nothing else is
+checked for delegation on-chain, so payees, payout addresses, recipients and bidders may be
+delegated accounts. Off-chain, the deploy refuses a delegated sender and, off anvil, a
+delegated Safe owner ([GV-29, GV-34](../spec/governance.md#rules-and-invariants)).
+
 `ProtocolContracts.isProtocolContract`
 ([`ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol)) refuses a payout or fee
 recipient that answers `IRevenueEscrow`, `IClaimRouter`, `ISaleAdapter`, `IMintTarget`,
-`IArtistRegistry`, `IPackageRegistry` or `IWorkRecords`.
+`IArtistRegistry`, `IPackageRegistry` or `IWorkRecords`
+([ECO-3](../spec/economics-and-payouts.md#rules-and-invariants),
+[ECO-19](../spec/economics-and-payouts.md#rules-and-invariants)).
 
 ## EIP-712 domains
 
@@ -376,7 +395,8 @@ the adapter takes the exact charge.
 ## Protocol hashes recomputed off-chain
 
 None of these binds a chain ID or contract address unless it says so, so the same package has
-the same item hashes and root on every chain.
+the same item hashes and root on every chain
+([CUR-20](../spec/curation.md#rules-and-invariants)).
 
 ### Item hash, leaf and package root
 
@@ -456,7 +476,8 @@ leaf = keccak256(bytes.concat(keccak256(abi.encode(
 This leaf binds the chain and the adapter. `account` is the recipient, or the payer in a
 `payerKeyed` phase; `cap` is the wallet's limit in the phase; `price` is used only in a
 `leafPriced` phase. Trees are OpenZeppelin sorted-pair trees, proofs at most 32 nodes. Emit at
-most one leaf per account and phase ([sales README](../../src/sales/README.md#allowlists)).
+most one leaf per account and phase ([sales README](../../src/sales/README.md#allowlists),
+[ED-15](../spec/editions-and-sales.md#rules-and-invariants)).
 
 ### Statement entry hash and chain head
 
@@ -480,7 +501,8 @@ head_(n+1)    = keccak256(abi.encode(HEAD_DOMAIN, head_n, entryHash_n))
 
 `statementHash` is EIP-712 `hashStruct(Statement)`. The contract hashes the entry as two
 `abi.encode` calls joined with `bytes.concat`; every word is static, so that equals one
-`abi.encode` of all ten values. The entry hash binds the chain and the log's address. Every
+`abi.encode` of all ten values ([DSP-10](../spec/disputes-and-statements.md#rules-and-invariants)).
+The entry hash binds the chain and the log's address. Every
 input is in the `StatementAppended` event; the rebuild procedure is in
 [Events and indexing](events-and-indexing.md#statements).
 
@@ -498,7 +520,8 @@ stateHash = keccak256(abi.encode(STATE_DOMAIN, tokenId, version, recordFileId,
 
 `license` is the stored license, or the deployment's CC0 when none is stored. `renderer` is the
 pinned renderer once finalized, else 6529 Stream's current `defaultRenderer()`, so a new
-default renderer changes every unfinalized work's state hash.
+default renderer changes every unfinalized work's state hash
+([WS-10](../spec/works-and-storage.md#rules-and-invariants)).
 
 ### Other derived values
 

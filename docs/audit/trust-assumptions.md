@@ -1,357 +1,247 @@
 # Trust assumptions
 
 Who and what 6529 Works trusts, written for an audit team starting an engagement. For each
-governance role, each operational key, each external dependency and each link between the
-protocol's own contracts, this page says what it is trusted to do, the worst it can do if it is
-malicious or its key is compromised, what the code stops it from doing, and how the system
-recovers. Per-selector detail (every restricted function, its role and its delay) is in the
-generated [role and permission matrix](roles.md). The attacker's view of the same system is the
-[threat model](threat-model.md).
+governance role, operational key and external dependency, this page says what it is trusted to
+do, the worst it can do if it is hostile or its key is compromised, what bounds it, and how the
+system recovers. The selector, role and delay of every restricted function are in the generated
+[role and permission matrix](roles.md). Mechanics are cited by the rule IDs of the
+[protocol specification](../spec/README.md), each linking to its page's rules table. The
+attacker's view is the [threat model](threat-model.md); accepted risks are in
+[known limitations](known-limitations.md).
 
-> **Status.** Pre-audit. This page describes `main` at `46941d6` (15 October 2026). The ADRs
-> record how the design was decided; this page is how it works now. Where they differ, this
-> page follows the code and says so under [Differences from the ADRs](#differences-from-the-adrs).
+> Pre-audit. See the [project status](../../README.md#status).
 
 ## How to read this page
 
 - **Delay classes.** Immediate; standard, 48 hours; funds, 14 days; successor, 30 days
-  (`Roles.STANDARD`, `Roles.FUNDS`, `Roles.SUCCESSOR` in
-  [`Roles.sol`](../../src/governance/Roles.sol)). A holder of a delayed role schedules the call on
-  the `WorksAccessManager`, waits the delay, then executes it within one week
-  (`expiration()`), or the operation dies.
+  ([delay class](../glossary.md#delay-class)). A delayed role schedules its call on the
+  `WorksAccessManager` and executes it after the delay, within one week ([GV-7][gv]).
 - **Who can cancel a scheduled operation.**
   [`WorksAccessManager._canCancel`](../../src/governance/WorksAccessManager.sol) adds three rules
   to OpenZeppelin 5.7.0's `AccessManager`:
-  - Rule 1: any GUARDIAN holder can cancel any scheduled operation.
-  - Rule 2: nobody but its scheduler can cancel an operation that revokes one of the
-    canceller's own roles.
-  - Rule 3: only a guardian, or its scheduler, can cancel a role revocation on the manager. No
-    admin can veto another account's removal (review finding GOV-1).
+  - Rule 1: any guardian can cancel any scheduled operation ([GV-1][gv]).
+  - Rule 2: nobody but its scheduler can cancel an operation that revokes one of the canceller's
+    own roles ([GV-2][gv]).
+  - Rule 3: an operation that revokes a role on the manager, scheduled by another account, can
+    be cancelled only by a guardian, and Rule 2 still bars the account it names
+    ([GV-25][gv], review finding GOV-1).
 
-  OpenZeppelin's own rule still lets the scheduler and any ADMIN holder cancel every other
-  operation. "Guardian veto" below therefore covers every governed action that is not immediate.
-- **Suspension.** Any guardian can also stop a PLATFORM, CURATOR or STORAGE_OPERATOR key at once
-  with `WorksAccessManager.suspend`: the key fails `hasRole`, and so every check built on it.
-  Only a 30-day ADMIN grant or revocation of that role to that account lifts it (review finding
-  GOV-2, [governance spec](../spec/governance.md#suspension-of-operational-keys)).
+  Every other operation keeps the stock OpenZeppelin rules: its scheduler and any ADMIN holder
+  can cancel it, so admins can still cancel each other's grants, remaps and authority moves.
+- **Suspension.** Any guardian can stop a PLATFORM, CURATOR or STORAGE_OPERATOR holder at once
+  with `suspend`: it fails `hasRole`, and so every check built on it ([GV-26, GV-27][gv],
+  review finding GOV-2). An ADMIN grant or revocation of that role to that account lifts it
+  (30 days, guardian-vetoable), and so does the holder's own `renounceRole`, which OpenZeppelin
+  runs through `_revokeRole` ([GV-28][gv]). No guardian can lift or cancel one.
 - **Holders.** [`config/genesis.example.json`](../../config/genesis.example.json) is the committed
-  policy. It names each holder by label, and a deployment may change only the addresses
-  ([script README, step 3](../../script/README.md#3-the-genesis-configuration)).
-- **Worst case** assumes that an attacker fully controls the key or Safe in question and that
-  every other party is honest, unless the row says otherwise.
+  policy; a deployment may change only the addresses.
+- **Worst case** assumes an attacker fully controls the key or Safe in question and every other
+  party is honest. A governed worst case lands only after its delay, and any guardian can cancel
+  it meanwhile.
 
 ## The model in brief
 
-- **No upgrades.** Every contract is immutable and nothing in `src/` uses `delegatecall`,
-  except the `Multicall` self-call inherited by `WorksAccessManager`
-  ([ADR 0002](../adr/0002-access-manager-hardening.md#security-impact)). Governance changes
-  parameters, pins and role holders, never the code at an address.
-- **Every governed change waits its class, in public.** The immediate powers are the
-  guardians' tightening actions (pauses, vetoes, revocations, deprecations) and the operational
-  keys' bounded duties (collections, locators, edition sales at the package terms, statements,
-  storage preferences). Nothing that moves funds, recipients, verifiers or renderers is
-  immediate ([role matrix](roles.md)).
-- **What a work locks, governance cannot reach.** At its start a Stream work locks its seller
-  wallet, fee recipient, fee share and royalty rate (`Stream.mint`, `_quote`, `_store` in
-  [`Stream.sol`](../../src/stream/Stream.sol)). Afterwards only every party's signature plus a
-  governed action changes the rate or the license (`WorkRecords.setRoyaltyRate`, `relicense`),
-  and nothing changes the payees. A finalized work's record is fixed, and its renderer pin moves
-  only with the lead artist's signature plus a 30-day action (`WorkRecords.repinRenderer`).
-- **Money is pulled or escrowed.** Split wallets have no owner and no governance
-  ([`SplitWallet`](../../src/economics/SplitWallet.sol)). A failed push goes to the
-  `RevenueEscrow`, whose governed `recover` moves a credit only to an equivalent wallet or to the
-  replacement its holder named ([`RevenueEscrow`](../../src/economics/RevenueEscrow.sol)).
-- **Off-chain trust is explicit.** Until the 6529 chain exists, curation rests on the curation
-  signer and the evidence it publishes; disputes and contested recoveries rest on an off-chain
-  TDH vote that PLATFORM records and the admin Safe executes; display rests on Arweave and IPFS
-  until a work is on-chain complete
+- **No upgrades.** Every contract is immutable; governance changes parameters, pins and role
+  holders, never code ([LIM-GV-8][lim-gv] covers the one `delegatecall`).
+- **Nothing that moves funds, recipients, verifiers or renderers is immediate.** The immediate
+  powers are the guardians' tightening actions and the operational keys' bounded duties.
+- **What a work locks, governance cannot reach.** Seller wallet, fee recipient, fee share and
+  royalty rate are locked at the start ([AUC-6][auc]); the rate and license change only with
+  every party's signature ([WS-13, WS-14][ws]).
+- **Money is pulled or escrowed.** Split wallets have no owner; a failed push goes to the escrow.
+- **Off-chain trust is explicit:** the curation signer, the TDH vote that PLATFORM records and the
+  admin Safe executes, and Arweave and IPFS until a work is on-chain complete
   ([ADR 0001, accepted risks](../adr/0001-v1-scope.md#accepted-risks)).
-- **The veto needs live, independent guardians.** Safety needs at least two honest guardians
-  online at all times
-  ([governance README](../../src/governance/README.md#operating-procedures)). The cold admin's
-  recovery finishes even when the hot admin Safe and one guardian Safe act together, in two
-  30-day rounds (Rule 3). It does not finish when both admin Safes are compromised, or when two
-  guardians collude, since each can cancel the other's removal.
 
 ## Governance roles
 
-The hot admin Safe holds ADMIN, UNPAUSER and the three setter roles; the cold recovery admin
-Safe holds ADMIN only; the guardian Safes hold GUARDIAN and PAUSER only
-([`config/genesis.example.json`](../../config/genesis.example.json)). The code enforces only part
-of this: `GovernanceConfig.validate` in [`GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol)
-requires at least two guardians holding nothing but GUARDIAN and PAUSER, a holder for ADMIN,
-PAUSER and UNPAUSER, and no account holding both PAUSER and UNPAUSER. The admin split is policy.
+The hot admin Safe holds ADMIN, UNPAUSER and the three setter roles; the cold recovery admin Safe
+holds ADMIN only; the guardian Safes hold GUARDIAN and PAUSER only. The code enforces at least two
+guardians holding nothing else, and no account holding both PAUSER and UNPAUSER ([GV-8][gv]);
+the deploy enforces the Safe counts; the admin split is policy.
 
 ### What each role can do
 
-Each worst case below happens only after the role's delay, and any guardian can cancel it during
-that delay.
-
-| Role | Delay (grant delay) | Trusted to | Worst case if its holder is hostile | Cannot (enforced by) |
+| Role | Delay (grant delay) | Trusted to | Worst case if its holder is hostile | Cannot |
 | --- | --- | --- | --- | --- |
-| ADMIN | 30 days (30 days) | Grant and revoke roles, map selectors to roles, set target admin delays, onboard targets; the one deferred bind, `ArtistRegistry.bindFederationRegistry` (v1.1) | Grant any role to any account (30 days, then the role's grant delay); remap a selector or close a target; move a target to another authority (`updateAuthority`, or `setAuthority` scheduled on the target); cancel any operation another account scheduled, except a role revocation | Act faster than 30 days: every ADMIN operation waits ADMIN's 30-day execution delay, every target's admin delay is 30 days, and a role's grant delay is never shorter than its class delay (`Roles.executionDelay`, `Roles.grantDelay`; `test_MetaGovernanceIsNeverFasterThanTheSlowestClass` in [`Hardening.t.sol`](../../test/governance/Hardening.t.sol)); cancel its own revocation scheduled by another admin (Rule 2, `test_CompromisedAdminCannotCancelItsOwnRevocation` in [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol)); cancel any other account's revocation (Rule 3, `test_AdminCannotCancelAnotherAccountsRevocation`, `testFuzz_OnlyGuardiansCancelAnotherAccountsRevocation`); suspend a key (`suspend` checks GUARDIAN), or lift a suspension faster than 30 days (`test_OnlyGuardiansSuspend`, `test_OnlyAnAdminGrantLiftsItAndAGuardianCanVetoThat` in [`Suspension.t.sol`](../../test/governance/Suspension.t.sol)) |
-| UNPAUSER | 48 hours (48 hours) | Lift an adapter's emergency pause; resume a dispute-paused auction | Resume a disputed auction, after which an upheld `cancel` can no longer land (one pause per auction) | Act earlier than 48 hours after the pause, even with an operation scheduled before it (GOV-5, `EnglishAuction._requireUnpausable`, `MintSaleBase.unpause`; [`Gov5Regression.t.sol`](../../test/adv/Gov5Regression.t.sol)) |
-| PARAMETER_SETTER | 48 hours (48 hours) | Sale parameters and defaults for new works; upheld disputes (`EnglishAuction.cancel`, `Stream.releaseContent`); recovery overrides (`ArtistRegistry.stageOverride`); relicensing with consent; dependency registration; the VRF lane and subscription | Stage a recovery override against any artist: from the staging, an override that moves the authority restrains the artist and one that moves the payout freezes it, for the 180-day notice. A payout-only override needs no consent from the artist and executes unless a captured wallet contests it or a guardian vetoes it (`test_Override_PayoutOnlyNeedsNoAcceptance` in [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)). Set the royalty rate and default license that later works take. Change the auction duration, anti-snipe window and increment within bounds, and the opening bid up to 1,000 increment floors (`EnglishAuction.OPENING_BID_FLOORS`). Point the entropy module at another subscription | Change a minted work's license without every party (`WorkRecords._checkConsents`; `test_relicense_rejectsMissingOrBadConsent` in [`WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol)); leave CC0 (`LicenseIrrevocable`); cancel an auction a guardian did not pause, or cite an outcome recorded before the pause (LIFECYCLE-4, `EnglishAuction.cancel`); release the content of a work that is not burned (`NotBurned`); lower the VRF callback gas limit (`BoundedParameter`) |
-| FUNDS_SETTER | 14 days (14 days) | Network fee terms for new works; a minted work's royalty rate, with every party's consent (`WorkRecords.setRoyaltyRate`); the currency allowlist and default currencies; escrow recovery; the marketplace `owner()` | Redirect the network fee of every work started afterwards, and raise its share to just under 100% (`EconomicsResolver._validate` requires `feeShare < 100,000`). This includes works already approved but not yet started, because fee terms are read at the start. Admit a hostile ERC-20 (`AssetAllowlist.admitAsset` probes only code, EIP-7702 delegation and balance against supply). Change Stream's and Editions' marketplace owner | Change a minted work's rate without every party (`WorkRecords._checkConsents`). Reach a minted work's fee terms: they are stored at mint (`Stream._store`; `test_ChangesApplyToNewWorksOnly` in [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol)); move an escrow credit except to an equivalent wallet or the replacement its holder named (MONEY-2, `RevenueEscrow.recover`); re-admit a deprecated currency within 14 days of the deprecation (`ReadmissionTooEarly`) |
-| SUCCESSOR_SETTER | 30 days (30 days) | Verifier, default renderer, consolidation source, VRF coordinator, artist resolver and federation registry swaps; admitting sale adapters; the errata repin; re-enabling a curation signer; resolving contested overrides; governance manifests | Install a curation verifier that approves anything (`PackageRegistry.setVerifier`); install a default renderer that misrepresents every work not yet finalized (`Stream.setDefaultRenderer`); admit a sale adapter that takes custody of every work it starts (`setAdmittedMinter`); install a consolidation source that grants or denies standing (`ArtistRegistry.setConsolidationSource`); install an artist resolver that vouches for anyone (`StatementLog.setArtistResolver`); swap the VRF coordinator; uphold or void a contest, citing an outcome PLATFORM recorded (`resolveContested`) | Repin a finalized work without the lead artist's signature (`WorkRecords.repinRenderer`); reinstall a retired curation verifier (`test_setVerifier_refusesARetiredVerifier` in [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol)); install a dependency that is an EIP-7702 account, lacks its ERC-165 interface or differs from the reviewed code hash; uphold a contest with an outcome recorded before it (`OutcomePredatesContest`); change a delivered seed |
-| GUARDIAN, PAUSER | immediate (30 days, 48 hours) | Veto: cancel scheduled operations, pause, revoke, disable, deprecate, suspend an operational key | See [Guardian Safes](#guardian-safes) | See [Guardian Safes](#guardian-safes) |
+| ADMIN | 30 days (30 days) | Grant and revoke roles, map selectors, set target admin delays, onboard targets; v1.1's `bindFederationRegistry` | Grant any role to any account (30 days, then the role's grant delay). Remap a selector or close a target. Move a target to another authority (`updateAuthority`, or `setAuthority` on the target). Cancel another account's operations, except a role revocation | Act faster than 30 days, or shorten a delay without waiting ([GV-4, GV-5][gv]). Cancel its own revocation (Rule 2) or another account's (Rule 3). Suspend a key |
+| UNPAUSER | 48 hours (48 hours) | Lift an adapter's emergency pause; resume a dispute-paused auction | Resume a disputed auction, after which an upheld `cancel` can no longer land | Act before 48 hours after the pause, even if scheduled earlier ([GV-23][gv], GOV-5) |
+| PARAMETER_SETTER | 48 hours (48 hours) | Sale parameters and defaults for new works; upheld disputes; recovery overrides; relicensing with consent; dependency registration; the VRF configuration | Stage a recovery override against any artist, which from the staging restrains the artist or freezes the payout for the 180-day notice; a payout-only override needs no consent ([LIM-ID-8][lim-id]). Set the royalty rate and license of later works. Move auction parameters within bounds, and the opening bid up to 1,000 increment floors (`EnglishAuction.OPENING_BID_FLOORS`). Point the entropy module at another subscription | Relicense without every party, or leave CC0 ([WS-12, WS-13][ws]). Cancel an auction a guardian did not pause, or cite an earlier outcome ([DSP-18][dsp]). Release an unburned work's content ([AUC-10][auc]). Lower the VRF callback limit ([ENT-10][ent]) |
+| FUNDS_SETTER | 14 days (14 days) | Network fee terms for new works; a minted work's royalty rate with every party's consent; currencies; escrow recovery; the marketplace `owner()` | Redirect the network fee of every work started afterwards, approved works included, at a share just under 100% ([ECO-2][eco]). Admit a hostile ERC-20, since the admission probe is not proof ([ECO-32][eco]). Change the marketplace owner | Reach a minted work's fee terms ([ECO-6][eco]) or rate ([WS-14][ws]). Move an escrow credit except to an equivalent wallet or a consented replacement ([ECO-28][eco], MONEY-2). Re-admit a currency within 14 days of its deprecation ([ECO-33][eco]) |
+| SUCCESSOR_SETTER | 30 days (30 days) | Verifier, default renderer, consolidation source, VRF coordinator, artist resolver and federation registry swaps; admitting sale adapters; the errata repin; re-enabling a signer; resolving contests; governance manifests | Install a verifier that approves anything, a renderer that misrepresents every unfinalized work, a sale adapter that takes custody of every work it starts, a consolidation source that grants or denies standing, or an artist resolver that vouches for anyone. Swap the VRF coordinator. Uphold or void a contest on a recorded outcome | Repin a finalized work without the artist ([RND-5][rnd]). Reinstall a retired verifier ([CUR-18][cur]). Install a dependency that is delegated, lacks its interface or differs from the reviewed code hash ([GV-22][gv]). Resolve a contest on an outcome older than it ([ID-14][id]). Change a delivered seed ([ENT-4][ent]) |
+| GUARDIAN, PAUSER | immediate (30 days, 48 hours) | Veto: cancel, pause, revoke, disable, deprecate, suspend | See [Guardian Safes](#guardian-safes) | See [Guardian Safes](#guardian-safes) |
 
-Every governed function is non-payable, because `AccessManager.execute` forwards `msg.value`
-(`test_EveryGovernedSelectorIsNonPayable` in [`Hardening.t.sol`](../../test/governance/Hardening.t.sol)).
-Setters for funds, recipients, verifiers and renderers are compare-and-set, so an operation
-scheduled against a stale value reverts (`test_StaleCompareAndSetOperationReverts`).
+Every governed function is non-payable, and setters for funds, recipients, verifiers and renderers
+are compare-and-set ([GV-18, GV-19][gv]).
 
 ### Admin Safes
 
 | Safe | Holds | Trusted to | If compromised | Recovery |
 | --- | --- | --- | --- | --- |
-| Hot admin Safe | ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER; on mainnet also the owner of the VRF subscription (no role) | Every governed change, each at its class delay, executing the network's decisions (including off-chain TDH votes) | Everything in the table above, each after its delay and each cancellable by any guardian. It can also cancel any operation another account schedules, except a role revocation (Rules 2 and 3). On mainnet it can cancel the VRF subscription or remove the module as a consumer at once, outside governance, which stops VRF works for about 64 days or more (see [Accounts with no role](#accounts-with-no-role)) | The cold admin schedules `revokeRole` for all five roles (30 days). The hot Safe cannot cancel them; the guardians cancel its counter-moves and suspend any operational key it could reach; after execution the cold admin grants the roles to a new Safe, which moves the VRF subscription. If a guardian cancels the revocations, the cold admin first removes that guardian, which neither it nor the hot admin can stop (Rules 2 and 3), so recovery takes two 30-day rounds ([script README, admin recovery](../../script/README.md#admin-recovery); `test_ColdAdminRecoversFromACompromisedHotAdmin` in [`Hardening.t.sol`](../../test/governance/Hardening.t.sol), `test_ColdAdminRemovesTheHotAdmin` in [`Genesis.t.sol`](../../test/integration/Genesis.t.sol), `test_GOV1_ColdAdminRemovesAHotAdminAndAGuardianActingTogether` in [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol)) |
-| Cold recovery admin Safe | ADMIN only; kept offline; 3-of-5 recommended | Replace a compromised hot admin and nothing else ([ADR 0003, owner decision 2](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)) | As ADMIN: grants, remaps and authority moves after 30 days, guardian-vetoable. It can also cancel the hot admin's operations other than revocations, which stalls governance | The hot admin schedules `revokeRole(ADMIN, cold)`, which the cold Safe cannot cancel (Rule 2). Without a second admin, a compromised sole admin can be vetoed forever but never removed ([ADR 0002, decision 5](../adr/0002-access-manager-hardening.md#decision)) |
+| Hot admin Safe | ADMIN, UNPAUSER and the three setters; on mainnet also the VRF subscription (no role) | Every governed change at its class delay, executing the network's decisions | Everything in the table above, each after its delay and cancellable by any guardian; it can also cancel another account's operations other than revocations. On mainnet it can cancel the VRF subscription at once ([LIM-ENT-5][lim-ent]) | The cold admin schedules `revokeRole` for all five roles (30 days), which the hot Safe cannot cancel (Rules 2 and 3); guardians cancel its counter-moves and suspend the keys it could reach; the cold admin then grants the roles to a new Safe. If a guardian cancels the revocations, the cold admin first removes that guardian: two 30-day rounds ([script README, admin recovery](../../script/README.md#admin-recovery); [governance flows](../spec/governance.md#flows)) |
+| Cold recovery admin Safe | ADMIN only; offline; 3-of-5 recommended | Replace a compromised hot admin and nothing else ([ADR 0003, owner decision 2](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)) | Grants, remaps and authority moves after 30 days, guardian-vetoable; it can stall governance by cancelling the hot admin's other operations | The hot admin schedules `revokeRole(ADMIN, cold)`, which the cold Safe cannot cancel (Rule 2). A sole compromised admin could be vetoed forever but never removed ([ADR 0002, decision 5](../adr/0002-access-manager-hardening.md#decision)) |
 
-The admin and guardian topology is checked at deployment and again at every readback. Off a
-local chain, the deploy requires two admin Safes and three guardian Safes, and both the deploy
-and `Verify.s.sol` refuse (`DeployGuards.checkHolders` in
-[`DeployGuards.sol`](../../script/DeployGuards.sol), reviews GOV-3 and GOV-4):
-- a Safe whose threshold is below 2 (`ThresholdTooLow`);
-- an owner with code, such as a nested Safe or a passkey signer (`NestedOwner`), or an EIP-7702
-  delegated owner (`DelegatedOwner`);
-- a signer shared by any two of the admin and guardian Safes, guardians with guardians included
-  (`SharedSigner`);
-- a proxy that does not run a canonical Safe 1.3.0 or 1.4.1 singleton with its code hash
-  (`NotACanonicalSafe`), an enabled module (`SafeHasModules`) or a transaction guard
-  (`SafeHasGuard`).
-
-Tests: `test_OffAnvilNeedsTwoAdminSafes`, `test_OffAnvilAdminSafesShareNoSigner`,
-`test_GOV4_OneKeyBehindEveryGuardianSafeIsRefused`, `test_GOV4_ANestedOwnerIsRefused`,
-`test_ASafeWithAModuleIsRefused`, `test_ASafeWithAGuardIsRefused`,
-`test_ASafeOnAnotherSingletonIsRefused`, `test_VerifyRefusesAModuleEnabledAfterGenesis` and
-`test_GOV3_VerifyRepeatsTheHolderGuards` in
-[`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol). Between readbacks the protocol
-relies on each Safe's owners; nothing on chain stops a Safe from adding a module later.
-
-```mermaid
-sequenceDiagram
-    participant Cold as Cold admin Safe
-    participant Hot as Hot admin Safe
-    participant G as Guardian Safes
-    participant M as WorksAccessManager
-    Cold->>M: schedule revokeRole of the five hot roles (30 days)
-    Hot->>M: cancel the revocation
-    M-->>Hot: refused (Rule 2)
-    Hot->>M: schedule counter-moves
-    G->>M: cancel the counter-moves (Rule 1)
-    Note over Cold,M: 30 days later
-    Cold->>M: execute the revocations
-    Cold->>M: schedule grantRole of the five roles to a new hot Safe
-```
+Off a local chain the deploy requires two admin Safes and three guardian Safes, each with a
+threshold of at least 2, plain-key owners, a canonical Safe singleton, no module, no guard and no
+signer shared with another, and `Verify.s.sol` repeats the checks at every readback
+([GV-14, GV-29][gv], GOV-3, GOV-4). Between readbacks
+nothing on chain stops a Safe from changing ([LIM-GV-15][lim-gv]).
 
 ### Guardian Safes
 
-Three Safes, 2-of-3 each, signers independent of the admin Safes and of each other
-([ADR 0003, owner decision 3](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)
-and its [addendum](../adr/0003-build-time-decisions.md#addendum-review-of-14-october-2026); the
-deploy and Verify refuse a shared signer). They hold GUARDIAN and PAUSER and nothing else.
+Three Safes, 2-of-3 each, with signers independent of the admin Safes and of each other
+([ADR 0003, owner decision 3](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)).
+They hold GUARDIAN and PAUSER only.
 
 | | |
 | --- | --- |
-| Trusted to | Watch every scheduled operation and cancel hostile ones; pause a disputed auction; veto identity changes; revoke bad package roots; disable a compromised curation signer; suspend a compromised PLATFORM, CURATOR or STORAGE_OPERATOR key; deprecate a misbehaving currency; pause the sale adapters in an emergency |
-| Worst case, one compromised guardian Safe | Cancel every scheduled operation except its own removal, so governance stalls until it is removed. Pause each live auction once, for up to 7 days (`EnglishAuction.MAX_PAUSE`); its high bidder may withdraw, and the auction then runs for at least the governed duration again (LIFECYCLE-1). Pause the three sale adapters: no new auction starts, edition sales or purchases, until an unpause 48 hours later, which it may follow with another pause. Veto every pending identity change and override (`ArtistRegistry.vetoChange`). Revoke any package root, registered or not, for good (`PackageRegistry.revokePackage`): its unconsumed items need a new root. Disable every curation signer (`disableSigner`), halting curation until a 30-day re-enable or a new grant. Deprecate any currency, ETH included (`AssetAllowlist.deprecateAsset`): live auctions in it freeze and fixed-price and Dutch sales in it halt; re-admission waits 14 days from the deprecation, and after 30 days frozen anyone may end a frozen auction unsold, crediting the bid back and giving the work to the artist (MARKET-2). Deprecate a dependency-registry version (a flag only). Suspend the platform, curator and storage operator keys: collections, locators after finalize, platform-opened sales, curator and platform statements and storage preferences stop until an admin lifts each suspension, about 60 days, because it cancels each lift until its own removal executes (`test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays` in [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol)) |
-| Cannot | Schedule anything or hold another role (`GovernanceConfig.validate`; `test_GuardianCannotSchedule`, `test_GuardiansHoldOnlyGuardianAndPauser` in [`Hardening.t.sol`](../../test/governance/Hardening.t.sol)). Cancel or resume an auction. Redirect funds or identities: a veto only deletes (`test_Attack_GuardianCannotRedirect` in [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)). Block refunds and withdrawals: `withdrawBid` works while paused or frozen, claims work while an adapter is paused, and split wallets and the escrow never read the allowlist (`test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable` in [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol)). Cancel its own removal (Rule 2, `test_GuardianCannotCancelItsOwnReplacement` in [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol)). Suspend any role other than PLATFORM, CURATOR and STORAGE_OPERATOR (`RoleNotSuspendable`), lift a suspension, or cancel another guardian's suspension (a suspension is never scheduled) ([`Suspension.t.sol`](../../test/governance/Suspension.t.sol)) |
-| Recovery | An admin schedules `revokeRole(GUARDIAN, g)` and `revokeRole(PAUSER, g)` (30 days), which neither the compromised guardian (Rule 2) nor any admin (Rule 3) can cancel. Revoke first, then grant a replacement: a guardian still in office can cancel the grant (Rule 1). Then lift its suspensions with 30-day grants |
-| Residual | All guardians colluding can shield each other from removal (`test_Residual_ColludingGuardiansCanShieldEachOther`). With only one honest guardian online, a compromised admin removes it in 30 days and then nothing stops a target takeover (`test_Residual_LivenessNeedsTwoHonestGuardiansOnline`). Both are in [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol). An admin can no longer defend a guardian against another admin's revocation; only the other guardians can (Rule 3). A dishonest guardian's suspensions outlast its removal by 30 days, or by 60 days if it acts with a compromised hot admin |
+| Trusted to | Watch every scheduled operation and cancel hostile ones; pause a disputed auction; veto identity changes; revoke package roots; disable a curation signer; suspend an operational key; deprecate a currency; pause the sale adapters |
+| Worst case, one compromised guardian Safe | Cancel every operation except its own removal, so governance stalls until it is removed. Pause each live auction once, for up to 7 days ([DSP-13, DSP-17][dsp]). Re-pause the sale adapters after each 48-hour unpause. Veto every pending identity change. Revoke any package root for good and disable every curation signer ([CUR-16, CUR-17][cur]). Deprecate any currency, ETH included, freezing its auctions and halting its sales; after 30 days frozen anyone may end an auction unsold ([AUC-25][auc], MARKET-2). Suspend the three operational keys for about 60 days ([LIM-GV-14][lim-gv]) |
+| Cannot | Schedule anything or hold another role ([GV-6, GV-8][gv]). Cancel or resume an auction. Redirect funds or identities: a veto only deletes ([ID-10][id]). Block refunds and withdrawals ([DSP-15][dsp], [ECO-25][eco]). Cancel its own removal (Rule 2). Suspend another role, or lift or cancel a suspension ([GV-26, GV-28][gv]) |
+| Recovery | An admin schedules `revokeRole(GUARDIAN, g)` and `revokeRole(PAUSER, g)` (30 days). As revocations another account scheduled, only a guardian can cancel them (Rule 3), never `g` itself (Rule 2), and no admin. Revoke first, then grant a replacement, because a guardian in office can cancel the grant. Then lift its suspensions |
+| Residual | Colluding guardians shield each other ([LIM-GV-4][lim-gv]); one honest guardian online is not enough ([LIM-GV-5][lim-gv]); only guardians can defend a guardian against an admin's revocation ([LIM-GV-12][lim-gv]) |
 
 ### Operational keys
 
-| Holder (role) | Trusted to | Worst case if compromised | Cannot (enforced by) | Recovery |
+| Holder (role) | Trusted to | Worst case if compromised | Cannot | Recovery |
 | --- | --- | --- | --- | --- |
-| Curation signer keys (CURATION_SIGNER, at least two; never a caller) | Sign `PackageApproval` only for roots the 6529 wave approved, after checking every declared SHA-256 against the decoded bytes and simulating `openRecord` for every item ([curation README](../../src/curation/README.md), [stream README](../../src/stream/README.md)) | Approve any root, including a package that copies another artist's content, until disabled. A root registered before the disable stays usable (`test_disabledSigner_registeredRootsStayUsable` in [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol)) | Mint on its own: a start also needs every party's acceptance and the lead artist's move signature (`PackageRegistry.consume`). Revive an approval after a disable, a re-enable or a re-grant: approvals bind the signer's epoch (SIGS-2, `Eip712CurationVerifier.signerEpoch`; `test_isApproved_reEnablingDoesNotReviveOlderApprovals` in [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol)). Approve on another chain or deployment (EIP-712 domain). Sign while its role carries a delay (`isSignerActive`) | A guardian disables it at once (`disableSigner`, one-way) and revokes each root it wrongly approved (`revokePackage`, per root). CURATION_SIGNER is not suspendable: `disableSigner` is its kill switch and also ends its signer epoch. Re-enabling is a 30-day action that starts a new epoch; a fresh key is preferred. Content already minted goes through the dispute flow |
-| Curator key (CURATOR) | Append `CURATION_EVIDENCE` statements (`StatementLog.appendCurator`) | Append misleading curation evidence, which is permanent | Approve packages; write another reserved kind, or an ARTIST or OWNER statement (`ReservedKind`; `test_Curator_CannotWriteArtistOrOwner` in [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol)); write with a delayed role (`test_Curator_DelayedRoleCannotWriteDirectlyOrByRelay`) | A guardian suspends the key at once (`suspend`), which also closes its relayed statements; an admin revokes the role and grants a new key (30 days, then the 30-day grant delay). A later entry cites the false one in `supersedes`; readers decide whose corrections to honor |
-| Platform key (PLATFORM) | Create collections; add locators (the only one who can after finalize); open FIXED edition sales at the package terms and close them; record dispute outcomes and TDH votes as `DISPUTE_OUTCOME` statements (`StatementLog.appendPlatform`) | Record false dispute outcomes, which metadata shows as the work's dispute status and which governed dispute actions cite ([records README](../../src/records/README.md)). Register junk content addresses as locators (8 per file before finalize, all 16 after). Open FIXED edition sales at the package price at a time it chooses, and close sales it opened alone; while an artist is restrained, close any of that artist's sales. Create collections | Price below or above the package, or open an OPEN edition, without the artist's signed approval (MARKET-6, `FixedPriceSale.openSale`; [`Market6Regression.t.sol`](../../test/adv/Market6Regression.t.sol)); cancel an auction; remove, change or prefer a locator; write an ARTIST statement | A guardian suspends the key at once: every PLATFORM path, `restricted` or checked by hand, closes in the same block (`test_GOV2_AGuardianSuspendsThePlatformKeyAtOnce` in [`GovernanceRecovery.t.sol`](../../test/integration/GovernanceRecovery.t.sol)). An admin revokes the role and grants a new key (30 days, then 48 hours). The artist (the creator) can close any sale. A new platform key's outcome supersedes a false one. The storage operator sets file preferences away from junk locators |
-| Storage operator key (STORAGE_OPERATOR) | Choose the preferred copy, globally, per collection or per file, among registered copies, serving only copies the off-chain monitor verified ([stream README](../../src/stream/README.md#records-satellite)) | Point works at a registered copy that is missing or wrong, so wallets show broken media until it is switched back; every switch emits ERC-4906 | Add, remove or change a locator; prefer a locator registered for another file (`WorkRecords.setFilePreference`; `testFuzz_preferredLocator_staysWithinFile` in [`PreferredLocation.t.sol`](../../test/stream/PreferredLocation.t.sol)); override inline media: an on-chain complete file under the inline threshold is inlined whatever the preference ([content README](../../src/content/README.md#media)) | A guardian suspends the key at once; an admin revokes the role (30 days); a new operator restores the preferences |
+| Curation signer keys (CURATION_SIGNER, at least two; never a caller) | Sign `PackageApproval` only for roots the 6529 wave approved, after checking the bytes ([LIM-GV-2][lim-gv]) | Approve any root, including a copy of another artist's content, until disabled; roots registered before the disable stay usable ([CUR-17][cur]) | Mint alone: a start needs every party's acceptance and the lead's move ([CUR-6, CUR-10][cur]). Revive an approval after a disable or re-grant, or approve elsewhere or while delayed ([CUR-4][cur], SIGS-2) | A guardian disables it (one-way, ending its epoch) and revokes each root it wrongly approved. It is not suspendable. Re-enabling takes 30 days; a fresh key is preferred. Minted copies go through the dispute flow |
+| Curator key (CURATOR) | Append `CURATION_EVIDENCE`, directly (`appendCurator`) or by relay (`appendSigned`) | Append misleading evidence, permanently | Approve packages; write another reserved kind or an ARTIST or OWNER entry ([DSP-4, DSP-6][dsp]). While its role carries a delay, it cannot write at once or by relay ([DSP-3][dsp]), but could schedule the call and then make it itself; genesis grants CURATOR and PLATFORM with no delay | A guardian suspends it, which also closes its relayed statements; an admin revokes it and grants a new key (30 days, then 30 days). A later entry supersedes |
+| Platform key (PLATFORM) | Create collections; add locators (alone after finalize); open FIXED edition sales at the package terms and close them; record dispute outcomes and TDH votes. It is the only `DISPUTE_OUTCOME` writer, directly (`appendPlatform`) or by relay (`appendSigned`) | Record false dispute outcomes, which metadata shows and governed actions cite. Register junk locators (8 per file before finalize, 16 after). Open FIXED sales at the package price when it chooses; close sales it opened alone, or any sale of a restrained artist | Price off the package or open an OPEN edition without the artist ([ED-12][ed], MARKET-6). Cancel an auction. Remove, change or prefer a locator ([WS-20][ws]). Write an ARTIST entry | A guardian suspends it, closing every PLATFORM path in the same block ([GV-27][gv]); an admin replaces it (30 days, then 48 hours). The creator can close any sale. A new key's outcome supersedes a false one |
+| Storage operator key (STORAGE_OPERATOR) | Choose the preferred copy among registered copies, serving only verified ones | Point works at a missing or wrong copy until switched back | Add or change a locator, prefer another file's locator ([WS-22][ws]), or override inline media ([RND-17][rnd]) | Suspend; revoke (30 days); a new operator restores the preferences |
 
 ### Deployment and upkeep
 
-| Actor | Trusted to | Worst case | Cannot (enforced by) | Recovery |
+| Actor | Trusted to | Worst case | Cannot | Recovery |
 | --- | --- | --- | --- | --- |
-| Genesis deployer (operator EOA, the configurator's `deployer`) and `GovernanceConfigurator` | Deploy every contract with the reviewed constructor parameters and call `configure` once, with the committed policy and the owner's holders ([governance README](../../src/governance/README.md#deploying-and-configuring)) | Bypass the script's checks and configure other holders, another policy or substituted dependencies. Nothing is hidden: `GovernanceConfigured` carries the configuration and wiring hashes. Front-running a creation under the namespace only spends the namespace: the deploy stops before the broadcast (`ConfiguratorAddressTaken`, `AddressTaken`), and off anvil `DEPLOY_NAMESPACE` has no default, so it can be kept private until the broadcast | Keep a role: the configurator renounces ADMIN in the configuring transaction (`test_ConfiguratorEndsWithNoRoleAfterWiring` in [`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol)). Configure twice, or let another account configure (`test_ConfigureIsOneShot`, `test_OnlyDeployerCanConfigure` in [`GovernanceConfigurator.t.sol`](../../test/governance/GovernanceConfigurator.t.sol)). Make any genesis call outside the allow-list, such as a zero-delay verifier swap (`GovernanceConfig.isGenesisSelector`, at most 64 calls; `test_RejectsZeroDelaySwapsThroughWiring`). Deploy from an EIP-7702 delegated account (`DelegatedDeployer`, `test_ADelegatedDeployerIsRefused`) | After the manager's 5-day `minSetback`, `Verify.s.sol` checks every address, code hash and constructor parameter, the CC0 text, the manifest, roles, selectors, wiring, every `RoleGranted`, every pending delay change and every operation still pending on the manager against the chain and the committed policy. It repeats the holder guards against the chain as it is then, checks the VRF subscription, and on mainnet requires the canonical coordinator and delegation contract with their pinned code hashes and Permit2 at its canonical address ([script README, step 11](../../script/README.md#11-verify-after-5-days)). After a governance change it runs in epoch mode (`GOVERNANCE_CONFIG`). A deployment that fails Verify is not adopted. Not yet built: a verifier that rebuilds the bytecode ([script README](../../script/README.md)) |
-| Keepers and relayers (no role; KEEPER is unused in v1) | Nothing for safety; liveness only. `settle`, `executeChange`, `expireContest`, `refreshStanding`, `syncOnChain`, `attestBase64`, VRF repeats, escrow flushes and claim-router batches are permissionless | Withhold or delay calls. Choose the order of signed payloads it relays: the first acceptance relayed sets a new identity's profile (`test_acceptPackage_relayOrderPicksProfile`). A hostile item in a continue-mode claim batch can revert the batch ([economics README](../../src/economics/README.md#batch-claims-and-gas)) | Alter anything signed: it can submit only the exact payload a digest binds. Push an artist's share anywhere: artist payees are pull-only (`SplitWallet.release`). Starve a call into a worse outcome: settlement needs its delivery and ERC-20 payout gas in full (`DeliveryInsufficientGas`, `PaymentInsufficientGas`), and consolidation reads need their full stipend (IDENTITY-4, `BoundedCall`) | Anyone else makes the call |
+| Genesis deployer and `GovernanceConfigurator` | Deploy with the reviewed parameters and call `configure` once, with the committed policy and the owner's holders | Bypass the script's checks to configure other holders, policy or dependencies; `GovernanceConfigured` carries the configuration and wiring hashes, so nothing is hidden. A namespace squatter only stops the deploy before the broadcast | Keep a role or configure twice ([GV-11][gv]); make a genesis call outside the allow-list ([GV-12][gv]); deploy from a delegated account ([GV-34][gv]) | After the 5-day `minSetback`, `Verify.s.sol` checks the deployment against the chain and the policy ([GV-15, GV-31 to GV-33][gv]); a deployment that fails is not adopted. Verify does not rebuild bytecode ([LIM-REL-1][lim-rel]) |
+| Keepers and relayers (no role; KEEPER is unused) | Liveness only: settlement, execution, refreshes, sync, attestation, VRF repeats, flushes and claim batches are permissionless | Withhold or delay calls; choose the order of relayed payloads ([CUR-7][cur]); see a hostile item revert a batch ([LIM-GAS-6][lim-gas]) | Alter anything signed; push an artist's share ([ECO-16][eco]); starve a call into a worse outcome ([AUC-22][auc], [ECO-26][eco], [ID-25][id]) | Anyone else makes the call |
 
 ### Accounts with no role
 
 | Account | Trusted to | If lost, blocked or hostile | Recovery |
 | --- | --- | --- | --- |
-| Network fee recipient | Receive the network fee and the network share of royalty wallets; an existing account that accepts ETH from a 100,000-gas call ([script README](../../script/README.md#the-network-fee-recipient-must-exist)) | Every existing work locks it at mint. A refused ETH payment is escrowed; a token that blocks it escrows its fees; its royalty shares stay in each royalty wallet | It names a replacement with `RevenueEscrow.consentToRecovery`, then FUNDS_SETTER runs `recover` (14 days); it releases royalty shares with `releaseTo`; `setFeeTerms` helps only new works ([economics README](../../src/economics/README.md#escrow-recovery)) |
-| Marketplace owner (`Stream.owner()`, `Editions.owner()`) | Administer the collections on marketplaces | Change marketplace settings off-chain. It gates nothing on-chain | FUNDS_SETTER `setOwner` (14 days, compare-and-set) |
-| VRF subscription owner (on mainnet the hot admin Safe; Verify requires it to hold ADMIN and PARAMETER_SETTER, and the module to be the only consumer, review finding DEPS-4) | Keep a dedicated subscription funded, with the entropy module its only consumer | Cancel the subscription and take its balance, or remove the module as a consumer, at once and outside governance: VRF works cannot draw seeds and so cannot start. Nothing is in custody, so nothing strands. If the hot admin Safe is compromised, VRF works stop for about 64 days or more, an accepted trade-off ([script README, step 7](../../script/README.md#7-chainlink-vrf-the-entropy-module)) | Fund a new subscription and point the module at it with `setConfig` (PARAMETER_SETTER, 48 hours). After a hot-admin compromise that waits for the cold admin's recovery: removal (30 days), the new hot Safe's PARAMETER_SETTER grant (30 days plus a 48-hour grant delay), then `setConfig` (48 hours); a guardian acting with the hot admin adds 30 days. Guardians alert on the coordinator's `SubscriptionCanceled`, `SubscriptionConsumerRemoved` and `SubscriptionOwnerTransferRequested` |
+| Network fee recipient | Receive the network fee and royalty share; exist and accept ETH from a 100,000-gas call | Locked into every work at mint; a refused payment is escrowed | It consents to a replacement and FUNDS_SETTER runs `recover` (14 days); `setFeeTerms` helps only new works ([LIM-ECO-4][lim-eco]) |
+| Marketplace owner (`owner()`) | Administer the collections on marketplaces | Change marketplace settings; it gates nothing on-chain | FUNDS_SETTER `setOwner` (14 days) |
+| VRF subscription owner (the hot admin Safe on mainnet, DEPS-4) | Keep a dedicated subscription funded, the module its only consumer ([GV-32][gv]) | Cancel the subscription at once, outside governance: VRF works cannot start; nothing is in custody | A new subscription and `setConfig` (48 hours); after a hot-admin compromise, about 64 days or more ([LIM-ENT-5][lim-ent]) |
 
-The MINTER and KEEPER roles exist in `Roles.sol` but no v1 selector maps to them and no holder is
-granted them ([`config/genesis.example.json`](../../config/genesis.example.json), `unusedRoles`).
-Sale adapters mint through each token's admitted-minter mapping instead
-(see [Admitted sale adapters](#admitted-sale-adapters)).
-
-Artists, collaborators, collectors and copiers are not trusted beyond their own works and funds;
-their capabilities are in the [threat model](threat-model.md#actors).
+MINTER and KEEPER exist in `Roles.sol`, but no v1 selector maps to them and nobody holds them.
+Artists, collaborators, collectors and copiers are trusted only with their own works and funds
+([threat model](threat-model.md#actors)).
 
 ## External dependencies
 
-| Dependency | Trusted to | If it fails or is hostile | Bounded by (code) | Recovery |
+| Dependency | Trusted to | If it fails or is hostile | Bounded by | Recovery |
 | --- | --- | --- | --- | --- |
-| 6529 delegation contract `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d`, read by `ConsolidationAdapter` | Report two-way, all-collections, use-case-999 consolidations with their registration and expiry dates. The adapter assumes a revocation deletes every registration of a pair, so a stored registration has been live since its date | It decides which wallets can stage a STANDARD change and which can cancel or contest one. The account's own key and any use-case-998 sub-delegate control its delegate list ([identity README](../../src/identity/README.md#consolidation-standing)) | A wallet counts only when both directions are at least 30 days old and unexpired (`ConsolidationAdapter.MIN_AGE`), read from the raw getters rather than `checkConsolidationStatus`. Walks are bounded (32 entries, 4 registrations, 16 wallets). Each getter gets exactly 200,000 gas (`READ_GAS`) or the call reverts. Reads fail closed (`DelegationReadFailed`), never as "not consolidated". The sticky standing snapshot strips a recorded wallet only after a public 30-day grace. The registry pins the adapter's code hash and checks it at every use. On mainnet the deploy accepts only the canonical address and records its code hash (`DeployGuards.CANONICAL_DELEGATION_CODEHASH`) | In an outage, staging, heartbeats and refreshes revert, while registration and execution proceed and emit `StandingRefreshSkipped`. Swap the adapter with `setConsolidationSource` (30 days), then refresh every skipped artist ([script README, step 12](../../script/README.md#12-standing-refresh-refreshstanding)) |
-| Chainlink VRF v2.5 coordinator and subscription | Deliver an unbiased random word for each request; the subscription stays funded | No delivery delays a VRF work, which cannot start without its seed; nothing is in custody. A hostile coordinator could choose the word: the module stores it unchanged and does not verify the proof, which anyone can check off-chain | Only the coordinator delivers. Its code hash is pinned at install and checked at every request and delivery (`CodeHashMismatch`; `test_Pin_ACoordinatorWhoseCodeChangedIsRefused` in [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol)). On mainnet the deploy and Verify accept only the canonical v2.5 coordinator, `0xD7f86b4b8Cae7D942340FF628F82735b7a20893a`, with its pinned runtime code hash (`DeployGuards.CANONICAL_VRF_COORDINATOR`, review finding DEPS-3); off mainnet `VRF_COORDINATOR_CODEHASH` may pin it. Requests are keyed by coordinator, one draw per content hash, and the first delivery is final. Only approved, unconsumed VRF items may request | Repeat after `retryDelay` (at least 3 days, `MIN_RETRY_DELAY`). Change coordinators with `setCoordinator` (30 days) and `setConfig` (48 hours) executed together; never use Chainlink's `migrate` ([entropy README](../../src/entropy/README.md#operations-the-subscription-and-a-coordinator-change)) |
-| Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` | Enforce the payer's signature over token, maximum amount, spender, nonce, deadline and witness, and spend each nonce once | A broken Permit2 could move a signer's tokens beyond its intent; only PERMIT2 payments use it | Each adapter fixes the address at construction, and on mainnet the deploy and Verify accept only the canonical one, with code. Adapters check the deadline themselves and both balance deltas after the call (`TokenBalanceMismatch`). The witness binds the sale, the recipient, the amount and the deadline; at an auction start it also binds the token and the mint data (`Typehashes.START_BID_WITNESS`). Its code hash is not pinned | None in place: the address is immutable in each adapter. ETH, DIRECT and EIP-2612 payments do not use Permit2 |
-| Safe wallets (admin and guardian Safes) | Execute only what a threshold of independent owners signs | The Safe's role, as above | Off a local chain the deploy refuses an ADMIN or GUARDIAN holder with no code, an EIP-7702 delegated EOA, a threshold below 2, an owner with code or an EIP-7702 delegation, a non-canonical Safe singleton, an enabled module or a transaction guard; it requires two admin Safes and three guardians, and refuses a signer shared by any two of the admin and guardian Safes (`DeployGuards.checkHolders`, `requireBareSafe`). `Verify.s.sol` repeats these checks at every readback. Between readbacks the protocol relies on each Safe's owners to keep it bare and independent | The role recoveries above |
-| Admitted ERC-20 tokens, including blocklisting tokens such as USDC | Standard transfer semantics. Admission is a 14-day governance judgement; the probe in `admitAsset` is not proof | Fee-on-transfer, rebasing, no-return and false-returning tokens fail closed on exact balance deltas (`TokenTransfer`). A token that blocks a wallet: the payment goes to the escrow. Blocks the escrow too: a fixed-price or Dutch purchase reverts; an auction settlement credits the payout in the auction and still delivers the work (MONEY-1), payable later with `claimFor`. Blocks a payee: its release reverts and it redirects with `releaseTo`. A negative rebase freezes releases (`ObservedDecreased`). An issuer can freeze or seize balances any contract holds | Exact deltas on every move ([`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol), [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol)); the ERC-20 payout frame (`EnglishAuction._ERC20_PAYOUT_GAS`, 1,000,000) | A guardian deprecates the token at once. Escrow recovery moves blocked credits. Withdrawals never read the allowlist |
-| Arweave, IPFS and the off-chain storage monitor | Keep the bytes each locator names. The monitor verifies copies, re-pins or re-uploads them and posts fixity statements; the storage operator serves only verified copies ([ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage)) | A lost copy shows missing media in wallets. Content hashes, file IDs and records do not change | Locators are bare content addresses in one canonical spelling (CONTENT-3, `WorkRecords._checkUri`), at most 16 per file. The preference chooses only among a file's registered copies. On-chain complete media under the inline threshold is inlined whatever the preference | Register another copy (the artist before finalize, PLATFORM after), switch the preference, or upload the chunks and `syncOnChain` (permissionless; on-chain bytes are permanent). A `Gzip` or `Base64` file needs a copy of its encoded stream, because its file ID commits to the encoded bytes ([content README](../../src/content/README.md#the-model)) |
-| 6529 waves and the TDH vote (off-chain) | Decide which packages are approved, dispute outcomes and contested overrides | The chain sees only the curation signer's attestation and evidence hash, PLATFORM's `DISPUTE_OUTCOME` statement and the governed action that cites it. The v1 verifier trusts the key, not the vote, and the admin Safe is trusted to execute the vote's result ([ADR 0003, owner decision 1](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)) | `cancel` must cite the token's own latest outcome, recorded after the pause (LIFECYCLE-4); `resolveContested` must cite the artist subject's latest outcome, recorded after the contest. Both wait their class and any guardian can cancel them | Guardian veto; a later statement that supersedes |
-| The CC0 1.0 legal text | Be the official CC0 1.0 Universal legal code: 7,048 bytes, SHA-256 `0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499` (`DeployV1.CC0_LEGALCODE_SHA256`). Its legal effect is for counsel ([ADR 0001 §8](../adr/0001-v1-scope.md#8-works-content-and-storage)) | A wrong text would be the license every CC0 work names, for good | Deploy and Verify refuse any other text off a local chain (`test_ReviewPoC_TheCc0TextMustBeTheCanonicalOne` in [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol)). `WorkRecords` requires it registered at construction; every CC0 license names `cc0TextFileId` at `openRecord` and `relicense`; finalize requires it complete on-chain; CC0 is irrevocable on the license key | None: the text is fixed per deployment |
+| 6529 delegation contract `0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d` | Report two-way, all-collections, use-case-999 consolidations with their dates; a revocation deletes every registration of a pair | It decides which wallets gain standing to cancel or contest a change ([LIM-ID-4][lim-id]) | Consolidations at least 30 days old ([ID-24][id]); fixed-gas reads that fail closed ([ID-25][id]); a public 30-day grace ([ID-21][id]); the adapter's code hash at every use ([ID-27][id]); the canonical address on mainnet ([GV-31][gv]) | In an outage, staging and refreshes revert while registration and execution skip their refresh ([ID-26][id]); swap the adapter (30 days) ([LIM-ID-9][lim-id]) |
+| Chainlink VRF v2.5 coordinator and subscription | Deliver an unbiased word per request; the subscription stays funded | No delivery stalls a VRF work, which cannot start without its seed. A hostile coordinator could choose the word: the module does not verify the proof | Only the current coordinator, code-hash checked at every use ([ENT-6 to ENT-8][ent]), canonical on mainnet ([GV-31][gv], DEPS-3); one draw per content hash, first delivery final ([ENT-2, ENT-4][ent]) | Repeat after `retryDelay` ([ENT-5][ent]); change coordinators with `setCoordinator` and `setConfig` together, never Chainlink's `migrate` ([entropy README](../../src/entropy/README.md#operations-the-subscription-and-a-coordinator-change)) |
+| Permit2 `0x000000000022D473030F116dDEE9F6B43aC78BA3` | Enforce the payer's signature, witness and nonce | A broken Permit2 could move a signer's tokens beyond its intent; only PERMIT2 payments use it | Fixed per adapter and canonical on mainnet ([GV-31][gv]); the adapter checks the deadline and both balance deltas, and the witness binds the sale ([AUC-19][auc], [ED-17, ED-18][ed]). Its pulls check balances only, not the token's return value. No code-hash pin | None: the address is immutable |
+| Safe wallets | Execute only what a threshold of independent owners signs | The Safe's role, as above | The deploy and every Verify ([GV-14, GV-29][gv]); between readbacks, the owners | The role recoveries above |
+| Admitted ERC-20 tokens, including blocklisting tokens such as USDC | Standard transfer semantics | Exact balance deltas are enforced on every path, so fee-on-transfer and rebasing tokens fail closed ([ECO-23][eco]); return values are not, since a Permit2 pull checks only balances. A blocked wallet's payment is escrowed; with the escrow blocked too, a fixed-price or Dutch purchase reverts and an auction credits the payout and still delivers ([ECO-36][eco], MONEY-1). An issuer can freeze or seize what a contract holds | The real guard is governance vetting at `AssetAllowlist.admitAsset` (14 days), which admits standard ERC-20s only; its probe is not proof ([LIM-SAL-7][lim-sal]) | A guardian deprecates the token at once; escrow recovery moves blocked credits; withdrawals never read the allowlist ([ECO-25][eco]) |
+| Arweave, IPFS and the off-chain storage monitor | Keep the bytes each locator names; verify and re-pin copies | Missing media in wallets; content hashes and records do not change | Canonical content-address locators ([WS-18, WS-19][ws]); preferences within a file's copies ([WS-22][ws]) | Register another copy, switch the preference, or complete the work on-chain ([WS-17][ws]) |
+| 6529 waves and the TDH vote (off-chain) | Decide approvals, dispute outcomes and contested overrides | The chain sees only the signer's attestation, PLATFORM's `DISPUTE_OUTCOME` and the governed action citing it ([LIM-GV-9][lim-gv]) | Actions cite the subject's latest outcome, recorded after the pause or contest ([DSP-18][dsp], [ID-14][id]) | Guardian veto; a superseding statement |
+| The CC0 1.0 legal text | Be the official legal code: 7,048 bytes, SHA-256 `0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499` (`DeployV1.CC0_LEGALCODE_SHA256`); legal effect is for counsel | A wrong text would bind every CC0 work for good | Deploy and Verify refuse any other text; every CC0 license names it and finalize requires it on-chain ([WS-5, WS-9][ws]) | None: fixed per deployment |
 
 ### EVM and network assumptions
 
 | Assumption | What the code relies on | If it does not hold |
 | --- | --- | --- |
-| **Prague bytecode.** solc 0.8.37, `evm_version = "prague"`, optimizer 200 runs ([`foundry.toml`](../../foundry.toml)) | Transient storage (`ReentrancyGuardTransient` in the auction, the sale adapters, split wallets and the escrow; `SplitFactory.pendingPayees`) and EIP-7702 account detection | The contracts cannot run on a chain before Cancun |
-| **Glamsterdam pricing on Sepolia.** Since 6 October 2026 a new storage slot costs about 111,000 gas and a code byte about 1,542 ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#problem)) | Fixed gas allowances: `DELIVERY_GAS` (300,000), `PAYOUT_GAS` (100,000), the auction's ERC-20 payout frame (1,000,000), the VRF callback floor (100,000), and the claim router's per-item minimums and `SHORTFALL_REVERT_CEILING` (1,500,000) | Each degrades to a recoverable path: a failed delivery is left pending for `claimDelivery`, an ETH payout goes to the escrow, a starved ERC-20 frame reverts the settlement for a retry with more gas. Mainnet's parameters may differ; each allowance is re-checked before mainnet ([ADR 0004, security impact](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact)) |
-| **EIP-7825 transaction cap of 16,777,216 gas** | Every user-supplied array is bounded (`Limits` in [`Limits.sol`](../../src/interfaces/types/Limits.sol)) so the worst transaction fits the cap in Prague gas; CI tests the worst cases against it | On Sepolia, transactions whose state-creation gas took them above the cap were accepted (the largest used 38.4M). That is an observation, not the final EIP rule, and is re-checked against mainnet ([ADR 0004, decision 4](../adr/0004-gas-budgets-under-glamsterdam.md#decision)) |
-| **EIP-7702 delegated EOAs exist** | `DelegatedEOA.isDelegated` matches the exact 23-byte designator. Every install and one-shot bind rejects a delegated account, and so do the deploy and Verify for admin and guardian holders and their owners (`DelegatedOwner`), and the deploy for its own sender (`DelegatedDeployer`). `SignatureVerifier.isValid` accepts a delegated EOA's own ECDSA signature, then ERC-1271 through its delegate | An artist whose new authority is an ERC-1271 or EIP-7702 wallet that accepts the old key's signatures revives them ([ADR 0003, identity](../adr/0003-build-time-decisions.md#identity-and-recovery-amends-adr-0001-11)). An EOA payee can gain code later and refuse ETH; its payouts then go to the escrow |
+| **Prague bytecode** (solc 0.8.37, [`foundry.toml`](../../foundry.toml)) | Transient storage and EIP-7702 account detection | The contracts cannot run before Cancun |
+| **Glamsterdam pricing** on Sepolia since 6 October 2026 ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#problem)) | Fixed gas allowances sized on Prague (`DELIVERY_GAS`, `PAYOUT_GAS`, the ERC-20 payout frame, the VRF floor, the claim router's minimums) | Each degrades to a recoverable path and is re-checked before mainnet ([LIM-GAS-5][lim-gas]) |
+| **EIP-7825 cap of 16,777,216 gas** | Bounded arrays (`Limits.sol`) so the worst transaction fits in Prague gas | State gas sits outside the cap on Sepolia, an observation only ([LIM-GAS-2][lim-gas]) |
+| **EIP-7702 delegated EOAs exist** | Every install, bind, deploy and Verify holder check rejects a delegated account; `SignatureVerifier` accepts a delegated EOA's own signature, then ERC-1271 | A new authority accepting the old key's signatures revives them ([LIM-ID-1][lim-id]); a payee that gains code and refuses ETH is escrowed |
 
 ## Trust between protocol components
 
 ### One-shot bindings
 
 Contract-to-contract calls use no AccessManager role: each target accepts one caller, bound once
-at genesis by the configurator's wiring and then locked (`AlreadyBound`). There is no shared
-SYSTEM role ([ADR 0003, governance](../adr/0003-build-time-decisions.md#governance-extends-adr-0002)).
-A repeated bind aborts the whole genesis (`test_RepeatedOneShotBindAbortsTheWholeConfiguration` in
-[`GenesisWiring.t.sol`](../../test/governance/GenesisWiring.t.sol)).
+by the genesis wiring and then locked ([GV-24][gv]).
 
-| Binding | Install checks | What the bound contract may call | Proven by |
+| Binding | Install checks | What the bound contract may call | Rule |
 | --- | --- | --- | --- |
-| `Stream.bindWorkRecords`, `Stream.bindEditions` | Code, no EIP-7702, ERC-165, and the target's `stream()` is this Stream | WorkRecords: `Stream.setRoyaltyRate`, `emitMetadataUpdate`. Editions: `Stream.linkEdition`, once per settled master | `test_bind_oncePerTargetWithEvents` in [`Stream.t.sol`](../../test/stream/Stream.t.sol); `test_bindRefusesSatelliteOfAnotherStream` in [`ReviewRegressions.t.sol`](../../test/stream/ReviewRegressions.t.sol) |
-| `Editions.bindWorkRecords` | Code, no EIP-7702, ERC-165 | `Editions.setRoyaltyRate`, `notifyMasterUpdated`, `notifyAllUpdated` (the last also from Stream) | `test_BindWorkRecords_OnceAdminAndChecked`, `test_SetRoyaltyRate_OnlyThroughWorkRecords` in [`Editions.t.sol`](../../test/editions/Editions.t.sol) |
-| `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | Stream: `consume`, `releaseContent`. Editions: `claimContent`, only for the item Stream consumed | `test_consume_onlyBoundStream`, `test_claimContent_onlyBoundEditions`, `test_releaseContent_onlyBoundStream` in [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol) |
-| `ArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` | Code and no EIP-7702 for all four; ERC-165 for the first two (the factory and the log implement none); for the log also that its `artistResolver()` is this registry, read with a bounded call | The package registry calls `register`. The factory answers `isWallet` for payout validation; the log answers `latestDisputeOutcome` for `resolveContested` | `test_BindStatementLog_OneShotAndChecksTheResolver` in [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol) |
-| `ArtistRegistry.bindFederationRegistry` | Code, no EIP-7702, ERC-165; deferred to v1.1 as a 30-day ADMIN action | `listFederatedContract`, at most 64 per artist | None in v1 |
+| `Stream.bindWorkRecords`, `bindEditions` | Code, no EIP-7702, ERC-165, and its `stream()` is this Stream | `setRoyaltyRate`, `emitMetadataUpdate`; `linkEdition` once per settled master | [AUC-11][auc] |
+| `Editions.bindWorkRecords` | Code, no EIP-7702, ERC-165 | `setRoyaltyRate`, `notifyMasterUpdated`, `notifyAllUpdated` | [ED-7][ed] |
+| `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | `consume`, `releaseContent`; `claimContent` for the consumed item | [CUR-15][cur] |
+| `ArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` | Code and no EIP-7702; ERC-165 for the first two; the log's resolver is this registry | `register`; `isWallet`; `latestDisputeOutcome` | [ID-29][id] |
+| `ArtistRegistry.bindFederationRegistry` (v1.1) | As above; a 30-day ADMIN action | `listFederatedContract`, at most 64 per artist | None in v1 |
 
 ### Admitted sale adapters
 
-- **Admission.** `setAdmittedMinter` on Stream and Editions (SUCCESSOR_SETTER, 30 days) checks
-  code, ERC-165 for `ISaleAdapter` and no EIP-7702 delegation. Genesis admits the English auction
-  on Stream and the fixed-price and Dutch adapters on Editions.
-- **Full trust over what it mints.** Stream mints into the adapter's own custody
-  (`to == msg.sender`), and the artist's move signature does not name an adapter
-  (`Typehashes.MOVE_TO_STREAM` binds the root, the item, the nonce and the deadline). An admitted
-  adapter therefore holds every work it starts, and an Editions adapter mints copies within each
-  edition's size and window. Admitting one is a successor-class decision for that reason.
-- **Removal stops new mints only.** The minting adapter keeps `burn` (before settlement) and
-  `markPrimarySettled`, so a running dispute can finish; another adapter can never burn its tokens
-  (`test_removedAdapterStillBurnsItsDisputedToken`, `test_nonMintingAdmittedAdapterCannotBurn` in
-  [`ReviewRegressions.t.sol`](../../test/stream/ReviewRegressions.t.sol)).
-- **The auction holds nothing it did not mint.** `onERC721Received` refuses every safe transfer
-  except a mint into custody during a start (CALLS-5,
-  [`Calls5Regression.t.sol`](../../test/adv/Calls5Regression.t.sol)).
+- **Full trust over what it mints.** Stream mints into the adapter's own custody, and the move
+  signature names no adapter, so an admitted adapter holds every work it starts. Admission
+  (`setAdmittedMinter`) is therefore a 30-day action
+  ([AUC-1][auc]).
+- **Removal stops new mints only.** The minting adapter keeps `burn` and `markPrimarySettled`, so
+  a running dispute can finish ([AUC-8, AUC-9][auc]).
+- **The auction holds nothing it did not mint**
+  ([AUC-29][auc]), except a token sent with a
+  plain `transferFrom` ([LIM-SAL-10][lim-sal]).
 
 ### Pinned code hashes
 
-Every installed dependency (verifier, renderer, consolidation source, entropy module, economics
-resolver, package registry, sale adapter, federation registry) is checked at install for code,
-ERC-165 support where it has it, and no EIP-7702 delegation. The dependencies below are also
-pinned to a reviewed code hash, and all but the last row are checked against it again at use,
-so code that replaced the reviewed code at the same address is not trusted. Stream's package
-registry, artist registry, economics resolver and entropy module, and admitted sale adapters,
-are checked at install only, with no code-hash pin (`Stream._requireInterface`,
-`setAdmittedMinter`).
+Besides the install checks ([GV-22][gv]), these
+dependencies are pinned to a reviewed code hash, and all but the last row are checked again at use
+(DEPS-6). Stream's other dependencies and admitted sale adapters are checked at install only.
 
-| Dependency | Held by | Pinned at | Checked again at | On mismatch | Proven by |
+| Dependency | Held by | Pinned at | Checked again at | On mismatch | Rule or test |
 | --- | --- | --- | --- | --- | --- |
-| Curation verifier | `PackageRegistry` | Constructor, `setVerifier` | Every `registerPackage` | `InvalidDependency`; nothing registers | `test_registerPackage_refusesAVerifierWhoseCodeChanged` in [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol) |
-| Consolidation source | `ArtistRegistry` | Constructor, `setConsolidationSource` | Every read | Staging, heartbeats and refreshes revert; registration and execution skip their refresh | `test_ConsolidationSource_CodeHashRecheckedAtUse` in [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) |
-| VRF coordinator | `VrfEntropyModule` | Constructor, `setCoordinator` | Every request and delivery | `CodeHashMismatch` | `test_Pin_ACoordinatorWhoseCodeChangedIsRefused` in [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) |
-| Artist resolver | `StatementLog` | Constructor, `setArtistResolver` | Every ARTIST authorization | `ResolverCodeHashMismatch` | `test_Artist_AResolverWhoseCodeChangedIsRefused` in [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol) |
-| Payout resolver (the artist registry) and release verifier | `SplitFactory`, then each `SplitWallet` | Factory constructor (immutable) | The resolver at every artist-payee release; both at every `createWallet` | `ResolverCodeChanged` for artist payees only; `DependencyCodeChanged` | `test_ResolverCodeChangeFailsClosedForArtistPayeesOnly` in [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol); `test_CreateWalletFailsClosedIfAPinnedDependencyChanges` in [`SplitFactory.t.sol`](../../test/economics/SplitFactory.t.sol) |
+| Curation verifier | `PackageRegistry` | Constructor, `setVerifier` | Every `registerPackage` | Nothing registers | [CUR-3][cur] |
+| Consolidation source | `ArtistRegistry` | Constructor, `setConsolidationSource` | Every read | Staging and refreshes revert; registration and execution skip their refresh | [ID-26][id] |
+| VRF coordinator | `VrfEntropyModule` | Constructor, `setCoordinator` | Every request and delivery | `CodeHashMismatch` | [ENT-7][ent] |
+| Artist resolver | `StatementLog` | Constructor, `setArtistResolver` | Every ARTIST authorization | `ResolverCodeHashMismatch` | [DSP-7][dsp] |
+| Payout resolver and release verifier | `SplitFactory`, each `SplitWallet` | Factory constructor | Resolver at every artist-payee release; both at `createWallet` | Artist payees stop; no wallet deploys | [ECO-12, ECO-18][eco] |
 | Federation registry (v1.1) | Each sale adapter | `setFederationRegistry` | Every `isTarget` | The registry is ignored | `test_IsTarget_IgnoresARegistryWhoseCodeChanged` in [`FederationRegistry.t.sol`](../../test/sales/fixed/FederationRegistry.t.sol) |
-| Default renderer | `Stream` | Constructor, `setDefaultRenderer` | Every `rendererOf`, so every `tokenURI` and Editions `uri` | `tokenURI` reverts; there is no fallback renderer | `test_DefaultRendererWithChangedCodeIsRefused` in [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) |
-| A finalized work's renderer | `WorkRecords` | `finalize`, `repinRenderer`; one hash per renderer address (`_pinCode`) | Every `pinnedRenderer` | `InvalidRenderer` | `test_PinnedRendererWithChangedCodeIsRefused`, `test_RepinRefusesARendererWhoseCodeChangedSincePinned` in [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol) |
-| Stream (for Editions); the artist registry (for the package registry); the package registry (for the entropy module) | `Editions`, `PackageRegistry`, `VrfEntropyModule` | Constructor | Not checked again | Construction reverts | `test_Constructor_PinsTheRegistryCodeHash` in [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) |
+| Default renderer; a finalized work's renderer | `Stream`; `WorkRecords` | `setDefaultRenderer`; `finalize`, `repinRenderer` | Every `tokenURI` and `uri` | Revert, with no fallback | [RND-2, RND-3][rnd] |
+| Stream; the artist registry; the package registry | `Editions`; `PackageRegistry`; `VrfEntropyModule` | Constructor | Not checked again | Construction reverts | [ENT-16][ent] (the module's) |
 
-### The renderer pin
+### Resolvers and renderer pins
 
-- **Before finalize** a work renders through Stream's default renderer, which SUCCESSOR_SETTER
-  can replace (30 days). The replacement applies at once to every unfinalized work and every
-  edition of an unfinalized master, and Stream emits ERC-4906 for all of them.
-- **At finalize** `WorkRecords` pins the then-default renderer and its code hash, after checking
-  that code against Stream's pin (`test_FinalizeRefusesADefaultRendererWhoseCodeChanged` in
-  [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol)).
-- **After finalize** only the errata repin moves the pin: the lead artist's EIP-712 signature (by
-  the artist ID's active authority), bound to the work's state hash and a deadline, plus a 30-day
-  SUCCESSOR_SETTER action.
-- **Changed code fails closed** (DEPS-6). If the pinned renderer's code changes, the work has no
-  metadata until a repin; while the artist's key is lost, the artist first recovers its authority
-  ([stream README](../../src/stream/README.md#core-token)).
-
-### The artist resolver and the payout resolver
-
-- **ARTIST statements** are exactly as strong as the statement log's artist resolver, the
-  30-day `setArtistResolver` that can replace it, and the AccessManager that can move the log to
-  another authority. The log adds visibility: every ARTIST entry records the resolver that
-  vouched for it, in its entry hash and its event
-  ([records README](../../src/records/README.md#trust-boundary-for-artist-statements);
-  `test_ResolverSwap_IsTheOnlyGovernedPathToArtistEntriesAndIsRecorded` in
-  [`StatementLogPolicy.t.sol`](../../test/records/StatementLogPolicy.t.sol)).
-- **The resolver rule.** A resolver must never make `isArtist` true faster than the 30-day class.
-  The artist registry withholds it while an authority-moving override is pending, which a
-  guardian can veto and which never grants the answer to anyone
+- **ARTIST statements** are exactly as strong as the statement log's artist resolver and the
+  30-day `setArtistResolver`; every entry records its resolver
+  ([DSP-7, DSP-8][dsp]). A resolver must
+  never make `isArtist` true faster than the 30-day class; the artist registry withholds it only
+  while an authority-moving override is pending
   ([ADR 0003, owner decision 6](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)).
-- **Payouts.** Each split wallet resolves an artist payee through the artist registry at release
-  time and checks the registry's code hash every time. The registry returns zero while a pending
-  change would move the payout, and the wallet then refuses to release, so accrued balances wait
-  for the outcome (`test_Attack_ThiefCannotPullDuringARecoveryOverride` in
-  [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)).
-- **The registry's address never changes.** Split wallets pin it immutably; a new identity
-  source is installed inside it, not by redeploying it
-  ([identity README](../../src/identity/README.md#contracts)).
+- **Payouts.** Split wallets pin the artist registry immutably and refuse to release while it
+  answers zero for a pending payout move
+  ([ECO-18][eco],
+  [ID-16][id]).
+- **Renderers.** A default-renderer swap reaches every unfinalized work at once; a finalized work's
+  pin moves only with the lead artist's signature, and a changed pinned renderer leaves the work
+  without metadata until a repin ([RND-1, RND-5][rnd],
+  [LIM-CNT-10][lim-cnt]).
 
 ## Differences from the ADRs
 
-- **ADR 0001 §13, guardian rules.** "A guardian Safe can cancel scheduled operations" through a
-  meta role or a TimelockController. The code uses `WorksAccessManager` Rules 1 to 3 instead
-  (Rule 3 from the [ADR 0002 addendum](../adr/0002-access-manager-hardening.md#addendum-review-of-14-october-2026)),
-  and "the guardian set cannot change while a terminal action is pending" is replaced by the
-  30-day delay plus the other guardians' veto ([ADR 0002](../adr/0002-access-manager-hardening.md)).
-- **ADR 0001 §13, guardians only veto.** Guardians can also suspend a PLATFORM, CURATOR or
-  STORAGE_OPERATOR key at once, a tightening action lifted only by a 30-day ADMIN grant or
-  revocation (ADR 0002 addendum). The addendum names a grant, or a revocation and a new grant,
-  as the lift; in the code a revocation alone lifts it too, as does the holder's own
-  `renounceRole` (`WorksAccessManager._revokeRole`).
-- **ADR 0001 §13, role holders.** One admin Safe and one guardian Safe were proposed. The policy
-  has a hot and a cold admin Safe and three guardian Safes, and the deploy enforces both counts
-  ([ADR 0003, owner decisions 2 and 3](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)).
-- **ADR 0001 §13, minting.** Sale adapters do not hold a MINTER role; they are admitted per token
-  through `setAdmittedMinter` in the 30-day class (ADR 0003, governance).
-- **ADR 0001 §13.9, raise-only gas parameters.** The VRF callback gas limit can also be lowered,
-  never below 100,000, by a 30-day `lowerCallbackGasLimit` (DEPS-5, ADR 0003).
-- **ADR 0001 §11, cancelling an override.** A captured wallet's cancel no longer deletes a recovery
-  override; it contests it, and a recorded TDH vote decides it through `resolveContested`
-  ([ADR 0003, owner decision 1](../adr/0003-build-time-decisions.md#owner-decisions-11-october-2026)).
-- **ADR 0001 §7, royalties.** `royaltyInfo` makes one external view call to derive the receiver
-  rather than none (ADR 0003, economics).
+See the [register](../spec/README.md#differences-from-the-adrs).
 
 ## References
 
-- Code: [`src/governance/`](../../src/governance/README.md),
-  [`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol),
-  [`Roles.sol`](../../src/governance/Roles.sol),
-  [`DeployGuards.sol`](../../script/DeployGuards.sol),
+- Code: [`WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol),
+  [`Roles.sol`](../../src/governance/Roles.sol), [`DeployGuards.sol`](../../script/DeployGuards.sol),
   [`config/genesis.example.json`](../../config/genesis.example.json).
-- ADRs: [0001](../adr/0001-v1-scope.md) §11, §13 and "Accepted risks";
-  [0002](../adr/0002-access-manager-hardening.md); [0003](../adr/0003-build-time-decisions.md),
-  security impact and owner decisions; [0004](../adr/0004-gas-budgets-under-glamsterdam.md),
-  security impact.
-- Module READMEs: [governance](../../src/governance/README.md),
-  [identity](../../src/identity/README.md), [curation](../../src/curation/README.md),
-  [economics](../../src/economics/README.md), [sales](../../src/sales/README.md),
-  [stream](../../src/stream/README.md), [records](../../src/records/README.md),
-  [content](../../src/content/README.md), [entropy](../../src/entropy/README.md).
-- Operations: [script README](../../script/README.md) (Sepolia runbook, Safe pre-flight, admin
-  recovery), [architecture: trust boundaries](../architecture.md#trust-boundaries).
-- Audit pack: [role and permission matrix](roles.md), [threat model](threat-model.md),
-  [known limitations](known-limitations.md).
+- ADRs: [0001](../adr/0001-v1-scope.md), [0002](../adr/0002-access-manager-hardening.md),
+  [0003](../adr/0003-build-time-decisions.md), [0004](../adr/0004-gas-budgets-under-glamsterdam.md).
+- Review: [internal adversarial review, October 2026](../security/internal-review-2026-10.md).
+- Operations: [script README](../../script/README.md),
+  [architecture: trust boundaries](../architecture.md#trust-boundaries).
+
+[auc]: ../spec/stream-and-auctions.md#rules-and-invariants
+[cur]: ../spec/curation.md#rules-and-invariants
+[dsp]: ../spec/disputes-and-statements.md#rules-and-invariants
+[eco]: ../spec/economics-and-payouts.md#rules-and-invariants
+[ed]: ../spec/editions-and-sales.md#rules-and-invariants
+[ent]: ../spec/entropy.md#rules-and-invariants
+[gv]: ../spec/governance.md#rules-and-invariants
+[id]: ../spec/identity-and-recovery.md#rules-and-invariants
+[rnd]: ../spec/rendering-and-tokenuri.md#rules-and-invariants
+[ws]: ../spec/works-and-storage.md#rules-and-invariants
+[lim-gas]: known-limitations.md#gas-and-glamsterdam
+[lim-gv]: known-limitations.md#trust-and-governance
+[lim-id]: known-limitations.md#identity-and-recovery
+[lim-sal]: known-limitations.md#sales-and-auctions
+[lim-eco]: known-limitations.md#economics-and-payouts
+[lim-cnt]: known-limitations.md#content-records-and-rendering
+[lim-ent]: known-limitations.md#entropy
+[lim-rel]: known-limitations.md#release-evidence

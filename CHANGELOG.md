@@ -401,3 +401,6 @@
   index. `tools/gen_role_matrix.py` generates the role and permission matrix
   (`docs/audit/roles.md`) from `config/genesis.example.json`, checking each selector against
   its signature and each delay against its role; CI's Docs job runs it with `--check`.
+  `tools/check_docs_facts.py` checks the facts the docs quote from the code (cited test names,
+  interface IDs, event topic0 values, nSLOC and bytecode sizes) in the Docs and Contracts
+  jobs; `--update` refreshes the figures.

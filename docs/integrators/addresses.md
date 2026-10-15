@@ -2,9 +2,10 @@
 
 Where the 6529 Works contracts are deployed, and which source each deployment runs.
 
-> **Status.** Pre-audit. There is no mainnet deployment. The Sepolia instances are testnet
-> rehearsals with throwaway signers; do not treat them as production contracts, and do not
-> send them value you care about.
+> Pre-audit. See the [project status](../../README.md#status).
+
+There is no mainnet deployment. The Sepolia instances are testnet rehearsals with throwaway
+signers; do not send them value you care about.
 
 | Network | Chain ID | Instance | Source | Record |
 | --- | ---: | --- | --- | --- |

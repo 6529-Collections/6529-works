@@ -8,20 +8,24 @@ maps to, the role's delay class and delay, and whether a guardian can cancel it 
 waits. Generated from [`config/genesis.example.json`](../../config/genesis.example.json), the
 committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_matrix.py).
 
-> **Status.** Pre-audit. Every address in the configuration is a placeholder; a deployment
-> may change only its holders. `tools/check_genesis.py` checks the configuration against the
-> compiled selectors and every `restricted` function in `src/` (CI job Contracts), and
-> `python tools/gen_role_matrix.py --check` checks this page against the configuration
-> (CI job Docs).
+> Pre-audit. See the [project status](../../README.md#status).
+
+Every address in the configuration is a placeholder; a deployment may change only its
+holders. `tools/check_genesis.py` checks the configuration against the compiled selectors and
+every `restricted` function in `src/` (CI job Contracts), and
+`python tools/gen_role_matrix.py --check` checks this page against the configuration (CI job
+Docs).
 
 ## How to read the matrix
 
 - **Role.** The selector's role in the `WorksAccessManager`. A holder whose role has a delay
   schedules the call, waits the delay, then executes it.
-- **Guardian cancel.** [`WorksAccessManager`](../../src/governance/WorksAccessManager.sol)
-  lets any GUARDIAN holder cancel any scheduled operation before it executes, except an
-  operation that revokes one of its own roles, which only its scheduler can cancel. An
-  immediate function executes at once, so there is nothing to cancel.
+- **Guardian cancel.** In [`WorksAccessManager`](../../src/governance/WorksAccessManager.sol)
+  any GUARDIAN holder may cancel any scheduled operation before it executes (Rule 1), except
+  an operation that revokes one of the guardian's own roles and that someone else scheduled
+  (Rule 2). A role revocation on the manager that another account scheduled can be cancelled
+  only by a guardian (Rule 3); a scheduler may always cancel its own operation. An immediate
+  function executes at once, so there is nothing to cancel.
 - **Expiry.** A scheduled operation must execute within one week of becoming executable
   (`expiration()`), or it must be scheduled again with the full delay.
 - **Unmapped selectors** fall back to ADMIN and its delay (30 days).
@@ -136,8 +140,8 @@ Source: [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol).
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `appendCurator((…))` | `0xa054305a` | `CURATOR` | Immediate | immediate | No: executes at once | The log refuses delayed writers. |
-| `appendPlatform((…))` | `0x8479b292` | `PLATFORM` | Immediate | immediate | No: executes at once | The log refuses delayed writers. The only path for DISPUTE_OUTCOME. |
+| `appendCurator((…))` | `0xa054305a` | `CURATOR` | Immediate | immediate | No: executes at once | Keep the grant zero-delay: a relayed `appendSigned` refuses a delayed signer, and a delayed holder could only schedule this call. |
+| `appendPlatform((…))` | `0x8479b292` | `PLATFORM` | Immediate | immediate | No: executes at once | PLATFORM is the only writer of DISPUTE_OUTCOME, here or by a relayed `appendSigned`. Keep the grant zero-delay, as for `appendCurator`. |
 | `appendGovernanceManifest((…))` | `0x5cab7fab` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | One entry per configuration epoch; also wired at genesis. |
 | `setArtistResolver(address,address,bytes32)` | `0x4585913a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Compare-and-set; code hash re-checked at every artist statement. |
 
@@ -306,7 +310,7 @@ delay applies if it is longer. Every target's admin delay is the successor class
 | `setTargetClosed(address,bool)` | `0x167bd395` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
 | `updateAuthority(address,address)` | `0x18ff183c` | ADMIN | 30 days (or the target's admin delay) | Yes: any guardian, during the delay |  |
 | `setAuthority(address)` | `0x7a9e5e4b` | ADMIN, scheduled on the target itself | 30 days (or the target's admin delay) | Yes: any guardian, during the delay | Stock OpenZeppelin lets only ADMIN cancel this; the guardians can too. |
-| `suspend(uint64,address)` | `0x64bf6e5d` | `GUARDIAN` | immediate | No: executes at once | One-way suspension of a holder of a suspendable role (roles[].suspendable); an ADMIN grantRole or revokeRole of that role to that account (30 days) clears it |
+| `suspend(uint64,address)` | `0x64bf6e5d` | `GUARDIAN` | immediate | No: executes at once | Suspends a holder of a suspendable role at once. Lifted by an ADMIN `grantRole` or `revokeRole` of that role to that account (30 days), or by the holder's own `renounceRole`; no guardian can lift it. |
 
 `schedule`, `execute` and `cancel` are open to anyone and check the caller's permission
 for the call they carry.

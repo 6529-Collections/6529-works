@@ -83,9 +83,11 @@ NOTES: dict[tuple[str, str], str] = {
     ("ArtistRegistry", "resolveContested(uint256,bool,bytes32)"):
         "Must cite the DISPUTE_OUTCOME statement recorded after the contest.",
     ("StatementLog", "appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,"
-     "bytes32,bytes32))"): "The log refuses delayed writers.",
+     "bytes32,bytes32))"): "Keep the grant zero-delay: a relayed `appendSigned` refuses a "
+     "delayed signer, and a delayed holder could only schedule this call.",
     ("StatementLog", "appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,"
-     "bytes32,bytes32))"): "The log refuses delayed writers. The only path for DISPUTE_OUTCOME.",
+     "bytes32,bytes32))"): "PLATFORM is the only writer of DISPUTE_OUTCOME, here or by a relayed "
+     "`appendSigned`. Keep the grant zero-delay, as for `appendCurator`.",
     ("StatementLog", "appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),"
      "string,bytes32,bytes32))"): "One entry per configuration epoch; also wired at genesis.",
     ("StatementLog", "setArtistResolver(address,address,bytes32)"):
@@ -139,6 +141,14 @@ NOTES: dict[tuple[str, str], str] = {
     ("EntropyModule", "setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,"
      "uint16,bool))"): "Compare-and-set; the callback gas limit only rises (at most 2x a step).",
     ("EntropyModule", "lowerCallbackGasLimit(uint32,uint32)"): "Never below the floor.",
+}
+
+# Notes that replace the configuration's own note for the manager's added functions (the
+# `manager` section of the configuration), where the matrix states the rule more precisely.
+MANAGER_NOTES: dict[str, str] = {
+    "suspend(uint64,address)": "Suspends a holder of a suspendable role at once. Lifted by an ADMIN "
+    "`grantRole` or `revokeRole` of that role to that account (30 days), or by the holder's own "
+    "`renounceRole`; no guardian can lift it.",
 }
 
 # The AccessManager's own restricted functions (OpenZeppelin 5.7.0, `_getAdminRestrictions`),
@@ -281,6 +291,10 @@ def validate(config: dict) -> None:
     for call in config["wiring"]:
         if call["contract"] not in contracts:
             raise ConfigError(f"wiring call on unknown contract {call['contract']!r}")
+    manager = {f["signature"] for f in (config.get("manager") or {}).get("functions", [])}
+    for sig in MANAGER_NOTES:
+        if config.get("manager") is not None and sig not in manager:
+            raise ConfigError(f"manager note for {sig} names no configured manager function")
     for contract, sig in NOTES:
         if contract == "*":
             if not any(s == sig for _, s in seen):
@@ -320,20 +334,24 @@ def render(config: dict) -> str:
     w("waits. Generated from [`config/genesis.example.json`](../../config/genesis.example.json), the")
     w("committed genesis policy, by [`tools/gen_role_matrix.py`](../../tools/gen_role_matrix.py).")
     w("")
-    w("> **Status.** Pre-audit. Every address in the configuration is a placeholder; a deployment")
-    w("> may change only its holders. `tools/check_genesis.py` checks the configuration against the")
-    w("> compiled selectors and every `restricted` function in `src/` (CI job Contracts), and")
-    w("> `python tools/gen_role_matrix.py --check` checks this page against the configuration")
-    w("> (CI job Docs).")
+    w("> Pre-audit. See the [project status](../../README.md#status).")
+    w("")
+    w("Every address in the configuration is a placeholder; a deployment may change only its")
+    w("holders. `tools/check_genesis.py` checks the configuration against the compiled selectors and")
+    w("every `restricted` function in `src/` (CI job Contracts), and")
+    w("`python tools/gen_role_matrix.py --check` checks this page against the configuration (CI job")
+    w("Docs).")
     w("")
     w("## How to read the matrix")
     w("")
     w("- **Role.** The selector's role in the `WorksAccessManager`. A holder whose role has a delay")
     w("  schedules the call, waits the delay, then executes it.")
-    w("- **Guardian cancel.** [`WorksAccessManager`](../../src/governance/WorksAccessManager.sol)")
-    w("  lets any GUARDIAN holder cancel any scheduled operation before it executes, except an")
-    w("  operation that revokes one of its own roles, which only its scheduler can cancel. An")
-    w("  immediate function executes at once, so there is nothing to cancel.")
+    w("- **Guardian cancel.** In [`WorksAccessManager`](../../src/governance/WorksAccessManager.sol)")
+    w("  any GUARDIAN holder may cancel any scheduled operation before it executes (Rule 1), except")
+    w("  an operation that revokes one of the guardian's own roles and that someone else scheduled")
+    w("  (Rule 2). A role revocation on the manager that another account scheduled can be cancelled")
+    w("  only by a guardian (Rule 3); a scheduler may always cancel its own operation. An immediate")
+    w("  function executes at once, so there is nothing to cancel.")
     w("- **Expiry.** A scheduled operation must execute within one week of becoming executable")
     w("  (`expiration()`), or it must be scheduled again with the full delay.")
     w(f"- **Unmapped selectors** fall back to ADMIN and its delay ({format_delay(admin_delay)}).")
@@ -453,8 +471,9 @@ def render(config: dict) -> str:
             cancel = "Yes, except by the account being revoked"
         w(f"| `{sig}` | `{selector(sig)}` | {caller} | {shown} | {cancel} | {note} |")
     for f in (config.get("manager") or {}).get("functions", []):
+        note = MANAGER_NOTES.get(f["signature"], f.get("note", ""))
         w(f"| `{f['signature']}` | `{f['selector']}` | `{f['role']}` | "
-          f"{format_delay(f['delay'])} | {guardian_cancel(f['delay'])} | {f.get('note', '')} |")
+          f"{format_delay(f['delay'])} | {guardian_cancel(f['delay'])} | {note} |")
     w("")
     w("`schedule`, `execute` and `cancel` are open to anyone and check the caller's permission")
     w("for the call they carry.")

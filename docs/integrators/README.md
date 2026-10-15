@@ -3,9 +3,10 @@
 For marketplaces, wallets, indexers, analytics and front ends that read 6529 Works or send
 transactions to it.
 
-> **Status.** Pre-audit. The guide describes `main` at `46941d6` (15 October 2026). The
-> Sepolia rehearsal r2 runs the earlier `400f96d`; build its ABIs from that commit. There is
-> no mainnet deployment, and interfaces may still change before the audit.
+> Pre-audit. See the [project status](../../README.md#status).
+
+The Sepolia rehearsal r2 runs the earlier `400f96d`; build its ABIs from that commit. There is
+no mainnet deployment, and interfaces may still change before the audit.
 
 ## The pages
 
