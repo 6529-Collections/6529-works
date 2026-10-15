@@ -150,3 +150,8 @@
 - Economics (MONEY-2 follow-up): a `consentToRecovery` consent is single use. The governed
   `recover` that moves the account's credit consumes it, so the account consents again for
   each further asset or later credit.
+- Economics and identity (CALLS-1 and MONEY-4 follow-up): `ProtocolContracts` also
+  recognises the artist registry, the package registry and the work records (ERC-165 IDs
+  they already declare), and `EconomicsResolver` also refuses its factory's release
+  verifier as a fee recipient. The resolver NatSpec, the economics README and the runbook
+  name the system contracts still not recognised on-chain.

@@ -80,8 +80,9 @@ import { SignatureVerifier } from "../libraries/SignatureVerifier.sol";
 ///      pause too. Payouts are validated at registration, staging and execution: never zero,
 ///      this registry, the bound package registry, Stream or its Editions, a split wallet of
 ///      the bound split factory, or a protocol contract that cannot pull (the revenue escrow,
-///      the claim router, a sale adapter or a mint target, recognised by ERC-165 through
-///      `ProtocolContracts`). A predicted, undeployed CREATE2 wallet is undetectable.
+///      the claim router, a sale adapter, a mint target, a registry or the work records,
+///      recognised by ERC-165 through `ProtocolContracts`). A predicted, undeployed CREATE2
+///      wallet is undetectable.
 ///
 ///      Dormancy counts the artist's own activity: registration, a staged change, a heartbeat,
 ///      a cancel by the old key or a captured wallet, a nonce revocation, and an execution

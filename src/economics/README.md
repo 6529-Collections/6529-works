@@ -33,9 +33,9 @@ Rates use a 100,000 denominator, so the 6.529% royalty is exact (6,529).
   wallet as a fixed payee instead. More generally, a payout address must be an
   account that can call `release` itself, never a protocol contract. The artist
   registry refuses the claim router, the escrow, the sale adapters, 6529 Stream
-  and 6529 Editions (each declares its interface through ERC-165,
-  `src/libraries/ProtocolContracts.sol`) and every deployed split wallet, at
-  registration, staging and execution. A split wallet's predicted address has no
+  and 6529 Editions, the package registry and the work records (each declares
+  its interface through ERC-165, `src/libraries/ProtocolContracts.sol`) and
+  every deployed split wallet, at registration, staging and execution. A split wallet's predicted address has no
   code before deployment, so it cannot be told apart from an empty account: the
   re-check at execution catches a wallet deployed while the change waits, and
   tools should check `walletFor` off-chain.
@@ -165,11 +165,14 @@ Deprecation is reversible only through a compare-and-set re-admission.
 
 A work locks its network fee recipient at mint, so `setFeeTerms` (and the
 launch configuration) refuses a recipient that could never be paid: the
-resolver itself, its allowlist and split factory, and any contract that
-declares the interface of the revenue escrow, the claim router, a sale adapter
-or a mint target (`InvalidFeeRecipient`). The recipient must still be an
-account that accepts ETH from a 100,000-gas call; the runbook checks that it
-exists.
+resolver itself, its allowlist, split factory and release verifier, and any
+contract that declares the interface of the revenue escrow, the claim router,
+a sale adapter, a mint target, the artist or package registry or the work
+records (`InvalidFeeRecipient`). Other system contracts that declare none of
+these (the content store, the statement log, the AccessManager, the renderer,
+the curation verifier, the entropy module) are not recognised on-chain. The
+recipient must be an account that accepts ETH from a 100,000-gas call; the
+runbook checks that before a `setFeeTerms` is scheduled.
 
 ## New work terms
 

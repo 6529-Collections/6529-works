@@ -33,9 +33,14 @@ import { Splits } from "./Splits.sol";
 ///      {setRoyaltyRate} and {setDefaultLicense} map to `Roles.PARAMETER_SETTER` (48 hours).
 ///      Each setter compares its own revision, bumped by every change to that setting.
 ///      A fee recipient must be able to accept payments, because works lock it at mint: the
-///      resolver refuses itself, its allowlist and factory, and every protocol contract that
-///      declares an interface it cannot be paid through (`ProtocolContracts`: the revenue
-///      escrow, the claim router, the sale adapters, 6529 Stream and 6529 Editions).
+///      resolver refuses itself, its allowlist and factory, the factory's release verifier, and
+///      every protocol contract that declares an interface it cannot be paid through
+///      (`ProtocolContracts`: the revenue escrow, the claim router, the sale adapters, 6529
+///      Stream and 6529 Editions, the artist and package registries and the work records).
+///      Residual: system contracts that declare none of those interfaces and that the resolver
+///      does not know (the content store, the statement log, the AccessManager, the renderer,
+///      the curation verifier, the entropy module) are not refused here; the runbook's check
+///      that a new recipient is an existing account that accepts ETH covers them.
 contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @notice The launch network share of Stream and Editions primary sales and royalties.
     uint32 public constant DEFAULT_FEE_SHARE = 25_000;
@@ -226,7 +231,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         address r = e.feeRecipient;
         if (
             r == address(this) || r == address(_allowlist) || r == address(_factory)
-                || ProtocolContracts.isProtocolContract(r)
+                || r == address(_factory.verifier()) || ProtocolContracts.isProtocolContract(r)
         ) revert InvalidFeeRecipient(r);
     }
 

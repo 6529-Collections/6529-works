@@ -218,8 +218,9 @@ These are rejected at registration, at staging, and again at execution:
 - 6529 Stream and its Editions;
 - any split wallet the bound split factory deployed (`ISplitFactory.isWallet`);
 - any contract that declares, through ERC-165, the interface of the revenue
-  escrow, the claim router, a sale adapter or a mint target
-  (`src/libraries/ProtocolContracts.sol`). None of these can call `release`.
+  escrow, the claim router, a sale adapter, a mint target, the artist or
+  package registry or the work records (`src/libraries/ProtocolContracts.sol`).
+  None of these can call `release`.
 
 Limitations:
 - A split wallet's predicted CREATE2 address cannot be detected on-chain before

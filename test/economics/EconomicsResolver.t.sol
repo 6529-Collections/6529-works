@@ -156,8 +156,13 @@ contract EconomicsResolverTest is EconomicsBase {
     /// @dev CALLS-1 (resolver side): a recipient that could never be paid is refused, because
     ///      works lock their fee recipient at mint.
     function test_FeeRecipientMustBePayable() public {
-        address[5] memory refused = [
-            address(escrow), address(router), address(econ), address(allowlist), address(factory)
+        address[6] memory refused = [
+            address(escrow),
+            address(router),
+            address(econ),
+            address(allowlist),
+            address(factory),
+            address(verifier)
         ];
         for (uint256 i; i < refused.length; ++i) {
             vm.expectRevert(

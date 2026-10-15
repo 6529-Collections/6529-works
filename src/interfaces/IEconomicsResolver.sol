@@ -42,8 +42,9 @@ interface IEconomicsResolver is IERC165 {
     /// @notice The asset allowlist or split factory has no code or is EIP-7702 delegated.
     error InvalidDependency(address dependency);
     /// @notice `recipient` cannot take the network fee: it is the resolver itself, its asset
-    ///         allowlist or split factory, or a protocol contract that cannot accept a payment
-    ///         (the revenue escrow, the claim router, a sale adapter or a mint target).
+    ///         allowlist, split factory or release verifier, or a protocol contract that cannot
+    ///         accept a payment (the revenue escrow, the claim router, a sale adapter, a mint
+    ///         target, the artist or package registry, or the work records).
     error InvalidFeeRecipient(address recipient);
 
     /// @notice The terms a new work of `product` locks at mint, for the artist-portion payees of

@@ -85,8 +85,15 @@ contract RecipientValidationTest is IntegrationBase {
             vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
             this.stagePayout(refused[i]);
         }
-        // Still refused as before: Stream, Editions and a deployed split wallet.
-        address[3] memory before = [address(stream), address(editions), _otherWallet(true)];
+        // Also refused: the work records (ERC-165), and as before Stream, Editions, the package
+        // registry and a deployed split wallet.
+        address[5] memory before = [
+            address(records),
+            address(stream),
+            address(editions),
+            address(registry),
+            _otherWallet(true)
+        ];
         for (uint256 i; i < before.length; ++i) {
             vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
             this.stagePayout(before[i]);
@@ -160,7 +167,7 @@ contract RecipientValidationTest is IntegrationBase {
     ///      payment. The governed execution reverts after its delay, and the product keeps its
     ///      recipient.
     function test_FeeRecipientRefusesSystemContracts() public {
-        address[10] memory refused = [
+        address[14] memory refused = [
             address(escrow),
             address(claimRouter),
             address(auction),
@@ -170,7 +177,11 @@ contract RecipientValidationTest is IntegrationBase {
             address(editions),
             address(economics),
             address(allowlist),
-            address(splitFactory)
+            address(splitFactory),
+            address(artists),
+            address(registry),
+            address(records),
+            address(releaseVerifier)
         ];
         bytes32[3] memory products = [PRODUCT_STREAM, PRODUCT_EDITIONS, PRODUCT_FEDERATED];
         for (uint256 i; i < refused.length; ++i) {

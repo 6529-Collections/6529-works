@@ -142,6 +142,10 @@ Glamsterdam that costs whoever settles or buys about 184K more gas
   Name a Safe, or fund the address first.
 - A later `EconomicsResolver.setFeeTerms` must also name an existing account, for the same
   reason. Nothing on-chain checks it.
+- It must also accept ETH from a 100,000-gas call: works lock their fee recipient at mint.
+  `setFeeTerms` refuses the protocol contracts it recognises (`InvalidFeeRecipient`), but not
+  the content store, the statement log, the AccessManager, the renderer, the curation verifier
+  or the entropy module. Check the address against the deployment record before scheduling.
 
 ### 2. Safe pre-flight
 

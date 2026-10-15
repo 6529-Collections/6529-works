@@ -174,8 +174,9 @@ default when the sale starts".
    claim (`claimDelivery`, where the winner names the recipient).
    - Seller and fee terms are read back from the token, and the predicted seller
      wallet and the fee recipient are paid; failed pushes go to the escrow.
-     The resolver never accepts a fee recipient that could not be paid (the
-     escrow, the claim router, a sale adapter, Stream, Editions).
+     The resolver never accepts a fee recipient it can recognise as unable to
+     be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
+     the registries, the work records, the release verifier).
    - With no bids, the token goes to the artist's current authority, resolved
      at settlement.
    - Settlement calls `IMintTarget.markPrimarySettled`, even when delivery is still
