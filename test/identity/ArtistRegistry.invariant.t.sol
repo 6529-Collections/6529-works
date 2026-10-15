@@ -73,6 +73,21 @@ contract ArtistRegistryInvariantTest is IdentityFixture {
         assertEq(registry.activeAuthorityOf(artistId), restrained ? address(0) : current);
     }
 
+    /// @dev The `restrained` flag beside the authority (the state-growth diet) is exactly
+    ///      whether the pending change is an override that moves the authority, lapsed or not:
+    ///      set at every staging, cleared at every end of a change. `_artists` is at slot 3
+    ///      (`forge inspect ArtistRegistry storageLayout`); the authority in the same word
+    ///      guards the layout.
+    function invariant_RestrainedFlagMatchesThePendingChange() public view {
+        uint256 word =
+            uint256(vm.load(address(registry), keccak256(abi.encode(artistId, uint256(3)))));
+        address current = registry.authorityOf(artistId);
+        assertEq(address(uint160(word)), current, "layout");
+        PendingChange memory p = registry.pendingChange(artistId);
+        bool moving = p.kind > ChangeKind.STANDARD && p.next.authority != current;
+        assertEq((word >> 160) & 0xff != 0, moving);
+    }
+
     /// @dev Dormancy counts only the artist's own activity and executions (never overrides,
     ///      vetoes or refreshes), and the nonce moves only with stagings and revocations.
     function invariant_ActivityAndNonceMatchTheModel() public view {

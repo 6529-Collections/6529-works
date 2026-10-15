@@ -135,7 +135,7 @@ no ceiling, or not run on Sepolia.
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 168,063 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 143,063 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 96,456 | 99,000 (regression) | 1 | 0 | part of `start` |
+| `consume`, as Stream calls it | 94,252 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 268,400 | 274,000 (regression) | 7 | 0 | 1,118,699 |
 | `createEdition`, a Dutch edition | 316,589 | 323,000 (regression) | 9 | 0 | — |
 | `openSale` (one public phase) | 243,055 | 248,000 (regression) | 6 | 0 | 993,668 |
@@ -232,6 +232,13 @@ no ceiling, or not run on Sepolia.
       overwrote the token's own word before.
     - Net: one slot less on every start except an artist's first under the
       current economics, which is unchanged.
+  - The restrained flag: the artist registry keeps, in the authority's storage
+    word, whether the pending change is an override that moves the authority.
+    Every staging sets it and every end of a change clears it, so
+    `activeAuthorityOf` reads the pending change only while the flag is set. That
+    takes back the IDENTITY-1 read: about 2.2K to 2.4K less per `start`,
+    `settle`, `openSale`, `consume` and re-rate, with no change in slots. The
+    identity invariants check the flag against the pending change.
 - **The two-party `startWithBid` is the tightest:** 322,824, about 27.2K under
   350K.
 - **An ERC-20 `startWithBid` paid by Permit2 costs 359,693**, about 45K more

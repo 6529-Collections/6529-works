@@ -72,7 +72,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant NEW_TERMS_CEILING = 393_000;
     uint256 internal constant PERMIT2_START_CEILING = 367_000;
     uint256 internal constant BID_CEILING = 75_000;
-    uint256 internal constant CONSUME_CEILING = 99_000;
+    uint256 internal constant CONSUME_CEILING = 97_000;
     uint256 internal constant CREATE_EDITION_CEILING = 274_000;
     uint256 internal constant CREATE_EDITION_DUTCH_CEILING = 323_000;
     uint256 internal constant OPEN_SALE_CEILING = 248_000;
