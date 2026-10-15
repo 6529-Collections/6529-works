@@ -351,4 +351,87 @@ contract GovernanceRecoveryTest is IntegrationBase {
         vm.prank(newPlatform);
         stream.createCollection("Replacement", keccak256("replacement"));
     }
+
+    function _grant(uint64 role, address account) internal pure returns (bytes memory) {
+        return abi.encodeCall(IAccessManager.grantRole, (role, account, 0));
+    }
+
+    /// @dev The documented duration: one dishonest guardian keeps its suspensions for about 60
+    ///      days. It cancels every lift until its own removal executes (30 days); the lift then
+    ///      takes another 30 days. No other guardian can cancel or lift a suspension.
+    function test_GOV2_ADishonestGuardiansSuspensionLastsAboutSixtyDays() public {
+        vm.warp(block.timestamp + manager.minSetback());
+        uint256 t0 = block.timestamp;
+        uint64[3] memory roles = [Roles.PLATFORM, Roles.CURATOR, Roles.STORAGE_OPERATOR];
+        address[3] memory keys = [platform, curator, storageOperator];
+        vm.startPrank(guardian1);
+        for (uint256 i; i < 3; ++i) {
+            manager.suspend(roles[i], keys[i]);
+        }
+        vm.stopPrank();
+
+        // The honest hot admin removes guardian 1 and schedules the lifts; guardian 1 cancels
+        // the lifts (Rule 1) but not its own removal (Rule 2).
+        _schedule(hotAdmin, address(manager), _revoke(Roles.GUARDIAN, guardian1));
+        _schedule(hotAdmin, address(manager), _revoke(Roles.PAUSER, guardian1));
+        for (uint256 i; i < 3; ++i) {
+            _schedule(hotAdmin, address(manager), _grant(roles[i], keys[i]));
+            vm.prank(guardian1);
+            manager.cancel(hotAdmin, address(manager), _grant(roles[i], keys[i]));
+        }
+        // The honest guardians can neither lift a suspension nor grant.
+        vm.prank(guardian2);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerUnauthorizedAccount.selector, guardian2, Roles.ADMIN
+            )
+        );
+        manager.grantRole(Roles.PLATFORM, platform, 0);
+
+        // Day 30: guardian 1 is removed and the lifts are scheduled again.
+        vm.warp(t0 + 30 days);
+        vm.startPrank(hotAdmin);
+        manager.execute(address(manager), _revoke(Roles.GUARDIAN, guardian1));
+        manager.execute(address(manager), _revoke(Roles.PAUSER, guardian1));
+        vm.stopPrank();
+        for (uint256 i; i < 3; ++i) {
+            _schedule(hotAdmin, address(manager), _grant(roles[i], keys[i]));
+        }
+        // Day 59: still suspended.
+        vm.warp(t0 + 59 days);
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
+        );
+        stream.createCollection("still suspended", keccak256("suspended"));
+        // Day 60: the lifts execute.
+        vm.warp(t0 + 60 days);
+        vm.startPrank(hotAdmin);
+        for (uint256 i; i < 3; ++i) {
+            manager.execute(address(manager), _grant(roles[i], keys[i]));
+        }
+        vm.stopPrank();
+        vm.prank(platform);
+        stream.createCollection("lifted", keccak256("lifted"));
+    }
+
+    /// @dev A raised execution delay through `grantRole` is not a revocation, so Rule 3 does
+    ///      not apply: the cold admin still cancels a demotion of itself, and a guardian a
+    ///      demotion of itself.
+    function test_GOV1_DemotionsByGrantStayCancellable() public {
+        vm.warp(block.timestamp + manager.minSetback());
+        bytes memory demoteCold =
+            abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, coldAdmin, type(uint32).max));
+        bytes32 id = _schedule(hotAdmin, address(manager), demoteCold);
+        vm.prank(coldAdmin);
+        manager.cancel(hotAdmin, address(manager), demoteCold);
+        assertEq(manager.getSchedule(id), 0);
+        bytes memory demoteGuardian = abi.encodeCall(
+            IAccessManager.grantRole, (Roles.GUARDIAN, guardian2, type(uint32).max)
+        );
+        id = _schedule(hotAdmin, address(manager), demoteGuardian);
+        vm.prank(guardian2);
+        manager.cancel(hotAdmin, address(manager), demoteGuardian);
+        assertEq(manager.getSchedule(id), 0);
+    }
 }
