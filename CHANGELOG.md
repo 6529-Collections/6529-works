@@ -44,7 +44,9 @@
   (`DeployGuards.checkHolders` and `checkHoldersAgainst`) against the chain as it is now.
 - Deployment (GOV-4): off anvil, every admin and guardian Safe needs a threshold of at least 2
   (`ThresholdTooLow`) and owners without code (`NestedOwner`), and no two of the admin and
-  guardian Safes may share a signer, guardians included (`SharedSigner`).
+  guardian Safes may share a signer, guardians included (`SharedSigner`). Each must run a
+  canonical Safe 1.3.0 or 1.4.1 singleton (`NotACanonicalSafe`) with no enabled module
+  (`SafeHasModules`) and no transaction guard (`SafeHasGuard`).
 - Deployment (DEPS-3): on mainnet the VRF coordinator must be the canonical Chainlink v2.5
   coordinator with its pinned code hash; off mainnet `VRF_COORDINATOR_CODEHASH` optionally
   pins it. On mainnet, `Verify.s.sol` requires the canonical coordinator, Permit2 and

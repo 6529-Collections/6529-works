@@ -25,6 +25,8 @@ import {
     MockOneKeySafe,
     MockSafe,
     MockSafeWithoutOwners,
+    MockModuleSafe,
+    MockSafeSingleton,
     MockSharedSignerSafe,
     MockTwoKeySafe,
     MockVrfSubscriptions,
@@ -81,10 +83,11 @@ contract DeployScriptTest is Test {
     ///      NO_VRF, the manifest file and URI.
     function _sepolia() internal returns (DelegationManagementMock delegation) {
         vm.chainId(SEPOLIA);
+        _allowTestSingleton();
         bytes memory safe = address(new MockSafe()).code;
         string[5] memory safes = ["01", "02", "11", "12", "13"];
         for (uint256 i; i < safes.length; ++i) {
-            vm.etch(_account(safes[i]), safe);
+            _etchSafe(_account(safes[i]), safe);
         }
         _genesisFile(_filled());
         vm.deal(makeAddr("fee"), 1); // an existing account
@@ -98,6 +101,26 @@ contract DeployScriptTest is Test {
         deployer.setEnv("MANIFEST_PATH", "config/manifest.json");
         deployer.setEnv("MANIFEST_URI", "ar://epoch-0");
         deployer.setEnv("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/script-test")));
+    }
+
+    /// @dev The test singleton: its address and code hash replace the canonical Safe
+    ///      singletons in both scripts (a test cannot reproduce their code).
+    address internal testSingleton;
+
+    function _allowTestSingleton() internal {
+        testSingleton = address(new MockSafeSingleton());
+        address[] memory singletons = new address[](1);
+        bytes32[] memory hashes = new bytes32[](1);
+        singletons[0] = testSingleton;
+        hashes[0] = testSingleton.codehash;
+        deployer.setSafeSingletons(singletons, hashes);
+        verifier.setSafeSingletons(singletons, hashes);
+    }
+
+    /// @dev Etches a mock Safe proxy at `safe`, pointing at the test singleton (slot 0).
+    function _etchSafe(address safe, bytes memory code) internal {
+        vm.etch(safe, code);
+        vm.store(safe, bytes32(0), bytes32(uint256(uint160(testSingleton))));
     }
 
     /// @dev A deployment on anvil with recorded logs, verified-ready (5 days later).
@@ -526,6 +549,105 @@ contract DeployScriptTest is Test {
         deployer.prepare();
         vm.etch(inner, "");
         deployer.prepare();
+    }
+
+    /// L1 (review of #52): a Safe with an enabled module is refused; a module acts without the
+    ///     owners' signatures. (The reviewer's PoC, inverted.)
+    function test_ASafeWithAModuleIsRefused() public {
+        _sepolia();
+        bytes memory moduled = address(new MockModuleSafe()).code;
+        _etchSafe(_account("01"), moduled); // hot admin
+        _etchSafe(_account("11"), moduled); // a guardian
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SafeHasModules.selector,
+                "ADMIN",
+                _account("01"),
+                MockModuleSafe(_account("01")).MODULE()
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// L1: a Safe with a transaction guard is refused.
+    function test_ASafeWithAGuardIsRefused() public {
+        _sepolia();
+        address guard = makeAddr("safeGuard");
+        vm.store(_account("12"), DeployGuards.SAFE_GUARD_SLOT, bytes32(uint256(uint160(guard))));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SafeHasGuard.selector, "GUARDIAN", _account("12"), guard
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// L1: a Safe proxy must run a canonical singleton, at its address and with its code.
+    function test_ASafeOnAnotherSingletonIsRefused() public {
+        _sepolia();
+        address other = address(new MockSafeSingleton()); // same code, another address
+        vm.store(_account("02"), bytes32(0), bytes32(uint256(uint160(other))));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("02"), other
+            )
+        );
+        deployer.prepare();
+        // The allowed address with other code.
+        vm.store(_account("02"), bytes32(0), bytes32(uint256(uint160(testSingleton))));
+        vm.etch(testSingleton, address(new MockSafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("01"), testSingleton
+            )
+        );
+        deployer.prepare();
+    }
+
+    /// L1: the canonical singletons both scripts allow by default.
+    function test_TheCanonicalSafeSingletonsArePinned() public {
+        (address[] memory s, bytes32[] memory h) = new Deploy().safeSingletons();
+        assertEq(s.length, 6);
+        assertEq(s[0], 0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552, "1.3.0 L1");
+        assertEq(s[1], 0x69f4D1788e39c87893C980c06EdF4b7f686e2938, "1.3.0 L1, EIP-155");
+        assertEq(s[2], 0x3E5c63644E683549055b9Be8653de26E0B4CD36E, "1.3.0 L2");
+        assertEq(s[3], 0xfb1bffC9d739B8D520DaF37dF666da4C687191EA, "1.3.0 L2, EIP-155");
+        assertEq(s[4], 0x41675C099F32341bf84BFc5382aF534df5C7461a, "1.4.1 L1");
+        assertEq(s[5], 0x29fcB43b46531BcA003ddC8FCB67FFE91900C762, "1.4.1 L2");
+        assertEq(h[0], 0xbba688fbdb21ad2bb58bc320638b43d94e7d100f6f3ebaab0a4e4de6304b1c2e);
+        assertEq(h[1], h[0]);
+        assertEq(h[2], 0x21842597390c4c6e3c1239e434a682b054bd9548eee5e9b1d6a4482731023c0f);
+        assertEq(h[3], h[2]);
+        assertEq(h[4], 0x1fe2df852ba3299d6534ef416eefa406e56ced995bca886ab7a553e6d0c5e1c4);
+        assertEq(h[5], 0xb1f926978a0f44a2c0ec8fe822418ae969bd8c3f18d61e5103100339894f81ff);
+        (address[] memory v,) = new Verify().safeSingletons();
+        assertEq(keccak256(abi.encode(v)), keccak256(abi.encode(s)), "Verify uses the same list");
+        // Without the test singleton, a mock Safe is refused.
+        _sepolia();
+        Deploy plain = new DeployHarness();
+        DeployHarness(address(plain)).setEnv("GENESIS_CONFIG", GENESIS);
+        DeployHarness(address(plain)).setFile(GENESIS, bytes(_filled()));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.NotACanonicalSafe.selector, "ADMIN", _account("01"), testSingleton
+            )
+        );
+        plain.prepare();
+    }
+
+    /// L1: Verify repeats it. A module enabled after genesis fails the readback.
+    function test_VerifyRefusesAModuleEnabledAfterGenesis() public {
+        (string memory record,) = _offAnvilRecord();
+        _etchSafe(_account("13"), address(new MockModuleSafe()).code);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.SafeHasModules.selector,
+                "GUARDIAN",
+                _account("13"),
+                MockModuleSafe(_account("13")).MODULE()
+            )
+        );
+        verifier.verify(record);
     }
 
     function test_OffAnvilNeedsThreeGuardiansAndTwoCurationSigners() public {
@@ -1327,7 +1449,7 @@ contract DeployScriptTest is Test {
         address hot = _account("01");
         address cold = _account("02");
         newHot = _account("03");
-        vm.etch(newHot, address(new MockSharedSignerSafe()).code);
+        _etchSafe(newHot, address(new MockSharedSignerSafe()).code);
         uint64[5] memory roles = [
             Roles.ADMIN,
             Roles.UNPAUSER,

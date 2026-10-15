@@ -180,7 +180,23 @@ in these cases:
 - it does not answer `getThreshold()` with a nonzero value, or `getOwners()` with a list;
 - its threshold is below 2 (`ThresholdTooLow`);
 - one of its owners has code: a nested Safe, another contract or an EIP-7702 delegated EOA
-  (`NestedOwner`). Owners must be plain keys, so the script can compare them.
+  (`NestedOwner`). Owners must be plain keys, so the script can compare them;
+- its proxy (storage slot 0) does not point to a canonical Safe singleton with that
+  singleton's code hash (`NotACanonicalSafe`). The allowed singletons, from
+  safe-global/safe-deployments, with code hashes read on mainnet and Sepolia:
+
+  | Singleton | Address | Runtime code hash |
+  | --- | --- | --- |
+  | Safe 1.3.0 L1 | `0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552`, and the EIP-155 deployment `0x69f4D1788e39c87893C980c06EdF4b7f686e2938` | `0xbba688fb…6304b1c2e` |
+  | Safe 1.3.0 L2 | `0x3E5c63644E683549055b9Be8653de26E0B4CD36E`, and the EIP-155 deployment `0xfb1bffC9d739B8D520DaF37dF666da4C687191EA` | `0x21842597…731023c0f` |
+  | Safe 1.4.1 L1 | `0x41675C099F32341bf84BFc5382aF534df5C7461a` | `0x1fe2df85…6d0c5e1c4` |
+  | Safe 1.4.1 L2 | `0x29fcB43b46531BcA003ddC8FCB67FFE91900C762` | `0xb1f92697…894f81ff` |
+
+  The full hashes are in `script/DeployGuards.sol`;
+- it has an enabled module (`getModulesPaginated(0x1, 1)` is not empty, `SafeHasModules`)
+  or a transaction guard (`SafeHasGuard`): either can act for the Safe or block it without
+  the owners' signatures. Disable both before the run, and keep them disabled: Verify
+  repeats every check.
 
 It also requires at least two admin Safes, the hot and the cold, and refuses a signer that any
 two of the admin and guardian Safes share: two admin Safes, an admin and a guardian Safe, or

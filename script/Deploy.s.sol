@@ -136,7 +136,10 @@ contract Deploy is ScriptIO {
         r.genesisPath = _envString("GENESIS_CONFIG", r.local ? EXAMPLE_GENESIS : "");
         if (bytes(r.genesisPath).length == 0) revert MissingParameter("GENESIS_CONFIG");
         r.json = _read(r.genesisPath);
-        if (!r.local) DeployGuards.checkHolders(r.json, _read(EXAMPLE_GENESIS));
+        if (!r.local) {
+            (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
+            DeployGuards.checkHolders(r.json, _read(EXAMPLE_GENESIS), singletons, codehashes);
+        }
         r.p = params(r.local);
         r.p.deployer = msg.sender;
         (r.manifest, r.manifestPath) = manifest(r.local);

@@ -2,12 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { Script } from "forge-std/Script.sol";
+import { DeployGuards } from "./DeployGuards.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
 /// @title ScriptIO
 /// @notice What the deploy and verify scripts read from outside the EVM: environment
-///         variables, files under ./config and ./deployments, the RPC's chain ID and the pinned
-///         CC0 digest. Each read is one virtual function, so the tests run the scripts with
+///         variables, files under ./config and ./deployments, the RPC's chain ID, the pinned
+///         CC0 digest and the canonical Safe singletons. Each read is one virtual function, so the tests run the scripts with
 ///         their own inputs instead of the process environment.
 abstract contract ScriptIO is Script {
     /// @notice The RPC endpoint reports a different chain than the script runs on.
@@ -30,6 +31,17 @@ abstract contract ScriptIO is Script {
     /// @notice The canonical CC0 legal code digest that off-anvil runs require.
     function cc0Digest() public view virtual returns (bytes32) {
         return DeployV1.CC0_LEGALCODE_SHA256;
+    }
+
+    /// @notice The Safe singletons (with their runtime code hashes) that off-anvil admin and
+    ///         guardian Safes may run: the canonical Safe 1.3.0 and 1.4.1 deployments.
+    function safeSingletons()
+        public
+        view
+        virtual
+        returns (address[] memory singletons, bytes32[] memory codehashes)
+    {
+        return DeployGuards.canonicalSafeSingletons();
     }
 
     /// @dev An environment variable; unset and empty are the same.

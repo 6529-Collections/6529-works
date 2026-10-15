@@ -347,7 +347,8 @@ contract Verify is ScriptIO {
             d, json, keccak256(bytes(vm.parseJsonString(record, ".entropy"))) == keccak256("none")
         );
         DeployGuards.checkPolicy(d, json, example, manifest);
-        DeployGuards.checkHolders(json, example);
+        (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
+        DeployGuards.checkHolders(json, example, singletons, codehashes);
         DeployGuards.checkHoldersAgainst(d, paramsOf(record), cfg);
     }
 

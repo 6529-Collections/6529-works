@@ -27,6 +27,31 @@ library DeployGuards {
     uint256 internal constant MIN_CURATION_SIGNERS = 2;
     /// @notice Off anvil, every admin and guardian Safe needs at least two signatures.
     uint256 internal constant MIN_THRESHOLD = 2;
+    /// @notice A Safe's transaction guard slot (`GuardManager`:
+    ///         `keccak256("guard_manager.guard.address")`).
+    bytes32 internal constant SAFE_GUARD_SLOT =
+        0x4a204f620c8c5ccdca3fd54d003badd85ba500436a431f0cbda4f558c93c34c8;
+    /// @notice The start (and end) of a Safe's module list (`ModuleManager.SENTINEL_MODULES`).
+    address internal constant SAFE_SENTINEL = address(1);
+    /// @notice The canonical Safe singletons a holder's proxy may point to (storage slot 0), from
+    ///         safe-global/safe-deployments. Runtime code hashes read on mainnet and Sepolia on
+    ///         15 October 2026 (identical on both). Safe 1.3.0, L1 and L2, at the canonical and
+    ///         the EIP-155 deployment addresses (same code):
+    address internal constant SAFE_130_L1 = 0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552;
+    address internal constant SAFE_130_L1_EIP155 = 0x69f4D1788e39c87893C980c06EdF4b7f686e2938;
+    address internal constant SAFE_130_L2 = 0x3E5c63644E683549055b9Be8653de26E0B4CD36E;
+    address internal constant SAFE_130_L2_EIP155 = 0xfb1bffC9d739B8D520DaF37dF666da4C687191EA;
+    bytes32 internal constant SAFE_130_L1_CODEHASH =
+        0xbba688fbdb21ad2bb58bc320638b43d94e7d100f6f3ebaab0a4e4de6304b1c2e;
+    bytes32 internal constant SAFE_130_L2_CODEHASH =
+        0x21842597390c4c6e3c1239e434a682b054bd9548eee5e9b1d6a4482731023c0f;
+    /// @notice ...and Safe 1.4.1, L1 and L2.
+    address internal constant SAFE_141_L1 = 0x41675C099F32341bf84BFc5382aF534df5C7461a;
+    address internal constant SAFE_141_L2 = 0x29fcB43b46531BcA003ddC8FCB67FFE91900C762;
+    bytes32 internal constant SAFE_141_L1_CODEHASH =
+        0x1fe2df852ba3299d6534ef416eefa406e56ced995bca886ab7a553e6d0c5e1c4;
+    bytes32 internal constant SAFE_141_L2_CODEHASH =
+        0xb1f926978a0f44a2c0ec8fe822418ae969bd8c3f18d61e5103100339894f81ff;
     /// @notice The 6529 delegation contract on Ethereum mainnet (`DelegationManagementContract`,
     ///         github.com/6529-Collections/nftdelegation).
     address internal constant CANONICAL_DELEGATION = 0x2202CB9c00487e7e8EF21e6d8E914B32e709f43d;
@@ -65,6 +90,15 @@ library DeployGuards {
     error SharedSigner(address safe, address other, address signer);
     /// @notice An admin or guardian Safe needs fewer than `MIN_THRESHOLD` signatures.
     error ThresholdTooLow(string role, address safe, uint256 threshold);
+    /// @notice An admin or guardian Safe's proxy does not point to a canonical Safe singleton
+    ///         with its pinned code (`canonicalSafeSingletons`).
+    error NotACanonicalSafe(string role, address safe, address singleton);
+    /// @notice An admin or guardian Safe has an enabled module, which can act without the
+    ///         owners' signatures.
+    error SafeHasModules(string role, address safe, address module);
+    /// @notice An admin or guardian Safe has a transaction guard, which can block its
+    ///         transactions.
+    error SafeHasGuard(string role, address safe, address guard);
     /// @notice An owner of an admin or guardian Safe has code (a nested Safe, another contract
     ///         or an EIP-7702 delegated EOA), so its signers cannot be compared.
     error NestedOwner(address safe, address owner);
@@ -83,15 +117,24 @@ library DeployGuards {
     ///         holder reachable (M-1).
     ///         - ADMIN and GUARDIAN holders must be deployed Safes (code, not an EIP-7702
     ///           delegated EOA, a `getThreshold()` of at least `MIN_THRESHOLD`, a
-    ///           `getOwners()` list of keys without code).
+    ///           `getOwners()` list of keys without code) whose proxy points to one of
+    ///           `singletons` (a canonical Safe singleton, with its code hash), with no
+    ///           enabled module and no transaction guard.
     ///         - No holder may be a placeholder or a system address.
     ///         - At least `MIN_ADMINS` admins (hot and cold), `MIN_GUARDIANS` guardians and
     ///           `MIN_CURATION_SIGNERS` curation signers. `GovernanceConfig` rejects duplicate
     ///           grants, so the counts are of distinct accounts.
     ///         - No signer is shared between any two of the admin and guardian Safes (owner
     ///           decisions 2 and 3).
-    function checkHolders(string memory json, string memory example) internal view {
-        if (keccak256(bytes(json)) == keccak256(bytes(example))) revert ExampleGenesisOffAnvil();
+    function checkHolders(
+        string memory json,
+        string memory example,
+        address[] memory singletons,
+        bytes32[] memory codehashes
+    ) internal view {
+        if (keccak256(bytes(json)) == keccak256(bytes(example))) {
+            revert ExampleGenesisOffAnvil();
+        }
         uint256 holders;
         while (vm.keyExistsJson(json, _holder(holders, ""))) ++holders;
         address[] memory admins = new address[](holders);
@@ -105,7 +148,10 @@ library DeployGuards {
             if (uint160(account) <= MAX_PLACEHOLDER) revert PlaceholderHolder(role, account);
             if (isSystemAddress(account)) revert ForbiddenHolder(role, account);
             bytes32 r = keccak256(bytes(role));
-            if (r == keccak256("ADMIN") || r == keccak256("GUARDIAN")) requireSafe(role, account);
+            if (r == keccak256("ADMIN") || r == keccak256("GUARDIAN")) {
+                requireSafe(role, account);
+                requireBareSafe(role, account, singletons, codehashes);
+            }
             if (r == keccak256("ADMIN")) admins[nAdmins++] = account;
             if (r == keccak256("GUARDIAN")) guardians[nGuardians++] = account;
             if (r == keccak256("CURATION_SIGNER")) ++signers;
@@ -182,6 +228,47 @@ library DeployGuards {
         uint256 threshold = abi.decode(ret, (uint256));
         if (threshold == 0) revert HolderNotASafe(role, account);
         if (threshold < MIN_THRESHOLD) revert ThresholdTooLow(role, account, threshold);
+    }
+
+    /// @notice Reverts unless the Safe `safe` runs a canonical singleton (`singletons`, with
+    ///         the matching `codehashes`) and has no module and no guard: only its owners'
+    ///         signatures can act for it.
+    function requireBareSafe(
+        string memory role,
+        address safe,
+        address[] memory singletons,
+        bytes32[] memory codehashes
+    ) internal view {
+        address singleton = address(uint160(uint256(vm.load(safe, bytes32(0)))));
+        bool canonical;
+        for (uint256 i; i < singletons.length && !canonical; ++i) {
+            canonical = singleton == singletons[i] && singleton.codehash == codehashes[i];
+        }
+        if (!canonical) revert NotACanonicalSafe(role, safe, singleton);
+        (bool ok, bytes memory ret) = safe.staticcall(
+            abi.encodeWithSignature("getModulesPaginated(address,uint256)", SAFE_SENTINEL, 1)
+        );
+        if (!ok || ret.length < 96) revert HolderNotASafe(role, safe);
+        (address[] memory modules,) = abi.decode(ret, (address[], address));
+        if (modules.length != 0) revert SafeHasModules(role, safe, modules[0]);
+        address guard = address(uint160(uint256(vm.load(safe, SAFE_GUARD_SLOT))));
+        if (guard != address(0)) revert SafeHasGuard(role, safe, guard);
+    }
+
+    /// @notice The canonical Safe singletons and their runtime code hashes.
+    function canonicalSafeSingletons()
+        internal
+        pure
+        returns (address[] memory singletons, bytes32[] memory codehashes)
+    {
+        singletons = new address[](6);
+        codehashes = new bytes32[](6);
+        (singletons[0], codehashes[0]) = (SAFE_130_L1, SAFE_130_L1_CODEHASH);
+        (singletons[1], codehashes[1]) = (SAFE_130_L1_EIP155, SAFE_130_L1_CODEHASH);
+        (singletons[2], codehashes[2]) = (SAFE_130_L2, SAFE_130_L2_CODEHASH);
+        (singletons[3], codehashes[3]) = (SAFE_130_L2_EIP155, SAFE_130_L2_CODEHASH);
+        (singletons[4], codehashes[4]) = (SAFE_141_L1, SAFE_141_L1_CODEHASH);
+        (singletons[5], codehashes[5]) = (SAFE_141_L2, SAFE_141_L2_CODEHASH);
     }
 
     /// @notice Addresses no key controls that a typo could still name: the system contracts

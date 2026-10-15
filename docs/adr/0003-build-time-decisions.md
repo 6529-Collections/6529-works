@@ -493,8 +493,10 @@ Accepted by the delivery owner. It extends the deployment guards above.
 - **Holder topology (owner decisions 2 and 3).** Off anvil, every admin and guardian
   Safe needs a threshold of at least 2, and owners that are plain keys (no code, so no
   nested Safe and no EIP-7702 delegation). No two of the admin and guardian Safes may
-  share a signer, guardians included. `Verify.s.sol` repeats these checks against the
-  chain as it is at readback.
+  share a signer, guardians included. Each Safe's proxy must run a canonical Safe
+  singleton (1.3.0 or 1.4.1, L1 or L2, by address and code hash), with no enabled
+  module and no transaction guard, so only its owners' signatures act for it.
+  `Verify.s.sol` repeats these checks against the chain as it is at readback.
 - **Canonical dependencies on mainnet.** The deploy pins the Chainlink VRF v2.5
   coordinator's address and runtime code hash, as it pins the delegation contract and
   Permit2. The readback requires all three to be canonical, with their pinned code.
