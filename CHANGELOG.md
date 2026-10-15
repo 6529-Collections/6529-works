@@ -474,5 +474,6 @@
   a file's locator URIs). Known-limitation and integrator links that cited README sections now
   cite the specification. ADR 0002's addendum and ADR 0004 get amendment notes (a revocation or
   the holder's own `renounceRole` also lifts a suspension; later ceilings are in the table),
-  ADR 0004's commentary cites its table instead of repeating its figures, and AGENTS.md and
-  CONTRIBUTING.md state the one-owner-per-fact rule.
+  ADR 0004's commentary cites its table instead of repeating its figures, AGENTS.md and
+  CONTRIBUTING.md state the one-owner-per-fact rule, and every page that pointed at PR #58 or
+  at the testing page by URL now links `docs/testing/README.md` relatively.

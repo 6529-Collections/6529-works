@@ -36,8 +36,9 @@ in the [specification](../../docs/spec/README.md); the users of each library are
 - **Hot paths.** `Utf8`, `JsonEscape` and `SSTORE2` sit inside `tokenURI`, whose 8M Prague gas
   budget is proven by `test/integration/TokenUriBudget.t.sol`; rerun it after any change here.
 - **Tests:** `forge test --match-path 'test/libraries/**'` (unit and fuzz tests per library).
-  Formal proofs and mutation testing are covered by the testing docs, coming in
-  [PR #58](https://github.com/6529-Collections/6529-works/pull/58).
+  Halmos proofs of `BoundedCall`, `Utf8` and `JsonEscape` are in
+  [`test/symbolic/`](../../test/symbolic/); how to run them, and coverage and mutation
+  testing: [Testing](../../docs/testing/README.md).
 
 ## See also
 

@@ -55,7 +55,8 @@ The create flow, with every check in order, is under
   [audit scope](../../docs/audit/scope.md#products-and-sales).
 - **Tests:** `forge test --match-path 'test/editions/**'` (unit, the edition invariant suite and
   `EditionsGasReport.t.sol`); the end-to-end path is
-  [`MasterEdition.t.sol`](../../test/integration/MasterEdition.t.sol).
+  [`MasterEdition.t.sol`](../../test/integration/MasterEdition.t.sol). Coverage and mutation
+  testing: [Testing](../../docs/testing/README.md).
 
 ## See also
 

@@ -84,6 +84,7 @@ tests check.
 - **Tests:** `forge test --match-path 'test/governance/**'` (cancellation rules against a stock
   manager, hardening, suspension, genesis, wiring, the invariant campaign);
   `GovernanceRecovery.t.sol` and `Genesis.t.sol` in [`test/integration/`](../../test/integration/).
+  Coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
 ## Operating it
 

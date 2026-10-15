@@ -10,9 +10,8 @@
    `src/` folder is a code map of that module: its files, entry points, storage and bytecode
    notes, and the tests to run.
 3. Read [Build, test and budgets](docs/audit/build-and-test.md) for the CI gates and the gas
-   and state-growth rules. Testing guidance (coverage, mutation testing, Halmos proofs) is
-   coming in [PR #58](https://github.com/6529-Collections/6529-works/pull/58) as
-   `docs/testing/`.
+   and state-growth rules, and [Testing](docs/testing/README.md) for the layers of the suite,
+   coverage floors, mutation testing and the Halmos proofs.
 4. Open an issue before large changes. Changes outside the ADR scope need a new
    ADR.
 5. Keep PRs small and focused. Each PR states:

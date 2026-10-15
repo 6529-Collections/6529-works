@@ -593,7 +593,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol);
   [`RecipientValidation.t.sol`](../../test/integration/RecipientValidation.t.sol);
   [`Money1Regression.t.sol`](../../test/adv/Money1Regression.t.sol). How to run them:
-  [testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing docs](../testing/README.md).
 - Related pages: [Stream and auctions](stream-and-auctions.md),
   [Editions and sales](editions-and-sales.md), [Identity and recovery](identity-and-recovery.md),
   [Governance](governance.md); [invariants](../audit/invariants.md);

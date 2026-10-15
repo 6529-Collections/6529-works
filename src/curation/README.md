@@ -55,7 +55,8 @@ are under [Flows](../../docs/spec/curation.md#flows).
   [audit scope](../../docs/audit/scope.md#curation-identity-and-records).
 - **Tests:** `forge test --match-path 'test/curation/**'` (unit, the registry invariant suite and
   `PackageRegistryGas.t.sol`, which measures `consume` cold, directly and as Stream calls it);
-  end to end, [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol).
+  Halmos proofs of the signer-epoch encoding in `test/symbolic/` ([Testing](../../docs/testing/README.md)); end to end,
+  [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol).
 
 ## See also
 

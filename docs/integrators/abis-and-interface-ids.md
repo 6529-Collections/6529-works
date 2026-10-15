@@ -499,7 +499,7 @@ string, domain label or encoding fails them.
 | [`test/content/tooling/UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) | Chunk hashes and file IDs from the Python uploader against the content store |
 
 The testing guide is
-[docs/testing/README.md](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+[docs/testing/README.md](../testing/README.md).
 
 ## References
 

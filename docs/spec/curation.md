@@ -503,7 +503,7 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0003, "Package format and curation"](../adr/0003-build-time-decisions.md#package-format-and-curation-amends-adr-0001-3),
   [ADR 0004, the table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 - Tests: [`test/curation/`](../../test/curation/) and the files in the rules table. How to run them:
-  [testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing docs](../testing/README.md).
 - Related pages: [architecture: identifiers and hashes](../architecture.md#identifiers-and-hashes),
   [stream-and-auctions.md](stream-and-auctions.md), [editions-and-sales.md](editions-and-sales.md),
   [identity-and-recovery.md](identity-and-recovery.md),

@@ -36,7 +36,8 @@ EIP-712 domains integrators need are in
   verifies against the ABIs; rename an event there in the same PR.
 - **Size.** Interfaces and types count toward the nSLOC budget
   ([scope](../../docs/audit/scope.md#interfaces-and-shared-types)).
-- **Tests:** `forge test --match-path 'test/interfaces/**'`.
+- **Tests:** `forge test --match-path 'test/interfaces/**'`; the whole suite is described in
+  [Testing](../../docs/testing/README.md).
 
 ## See also
 

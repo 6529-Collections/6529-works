@@ -69,7 +69,7 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
   cases (`ArtistRegistryReview.t.sol`), contested overrides, the restrained flag, the adapter
   against the real getter shapes, and the invariant suite. End to end:
   `IdentityRecovery.t.sol` and `RecoveryRestraint.t.sol` in
-  [`test/integration/`](../../test/integration/).
+  [`test/integration/`](../../test/integration/). Coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
 ## See also
 

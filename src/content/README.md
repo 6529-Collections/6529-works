@@ -67,7 +67,8 @@ Integrators start at [Reading a work](../../docs/integrators/reading-a-work.md) 
   belong in a later renderer, which works pin per work.
 - **Tests:** `forge test --match-path 'test/content/**'`: the store (unit, attestation,
   invariant), the dependency registry, the renderer (media, hostile inputs, oracles against
-  independent mirrors, gas) and the uploader's golden and CID vectors. End to end:
+  independent mirrors, gas) and the uploader's golden and CID vectors. Halmos proofs of
+  `Base64Validator`, `DataUri` and `HtmlScript` are in `test/symbolic/` ([Testing](../../docs/testing/README.md)). End to end:
   `ContentToTokenURI.t.sol`, `TokenUriBudget.t.sol` and `SyncOnChainResume.t.sol` in
   [`test/integration/`](../../test/integration/).
 

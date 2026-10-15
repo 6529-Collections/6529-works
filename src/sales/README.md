@@ -64,10 +64,10 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   cases (16 phases with a 4 KiB ERC-1271 consent; purchases with a 32-node proof, gas-burning
   wallets or escrowed token payouts); each stays under 1.2M Prague gas, against a mock edition.
   Per-operation gas is in [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
-- **Tests:** `forge test --match-path 'test/sales/**'` (auction, fixed price and Dutch, each with
-  an invariant suite; `EnglishAuctionGas.t.sol` keeps the auction's own gates); end to end,
-  `CuratedSale.t.sol`, `Dispute.t.sol` and `MasterEdition.t.sol` in
-  [`test/integration/`](../../test/integration/).
+- **Tests:** `forge test --match-path 'test/sales/**'` (each adapter with an invariant suite;
+  `EnglishAuctionGas.t.sol` keeps the auction's own gates); end to end, `CuratedSale.t.sol`,
+  `Dispute.t.sol` and `MasterEdition.t.sol` in [`test/integration/`](../../test/integration/);
+  coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
 ## See also
 

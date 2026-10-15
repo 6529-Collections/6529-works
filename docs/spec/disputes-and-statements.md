@@ -551,7 +551,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`Stream.t.sol`](../../test/stream/Stream.t.sol),
   [`ContestedOverrides.t.sol`](../../test/identity/ContestedOverrides.t.sol),
   [`Renderer.t.sol`](../../test/content/renderer/Renderer.t.sol). How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Related pages: [Stream and auctions](stream-and-auctions.md), [Curation](curation.md),
   [Identity and recovery](identity-and-recovery.md),
   [Rendering and tokenURI](rendering-and-tokenuri.md), [Governance](governance.md),

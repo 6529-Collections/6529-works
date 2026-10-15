@@ -83,9 +83,9 @@ Each fact has one owner; every other page links to it instead of repeating it
 - **ADRs are history.** Never rewrite one; record a later correction as a dated amendment
   note, and the current behavior in the specification and its ADR register. The exception is
   ADR 0004's table, which its decision 2 keeps current.
-- Testing guidance (coverage, mutation testing, Halmos proofs) is coming in
-  [PR #58](https://github.com/6529-Collections/6529-works/pull/58) as `docs/testing/`;
-  until then, [Build, test and budgets](docs/audit/build-and-test.md) covers the CI gates.
+- How to run the suite and how strong it is (coverage floors, mutation testing, Halmos proofs)
+  is in [Testing](docs/testing/README.md); the CI gates are in
+  [Build, test and budgets](docs/audit/build-and-test.md).
 
 ## Workflow
 

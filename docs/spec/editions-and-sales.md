@@ -662,7 +662,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`Market6Regression.t.sol`](../../test/adv/Market6Regression.t.sol),
   [`SalesFollowUpRegression.t.sol`](../../test/adv/SalesFollowUpRegression.t.sol),
   [`Gov5Regression.t.sol`](../../test/adv/Gov5Regression.t.sol). How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Deployment evidence: [Sepolia flows, section 3](../../deployments/11155111/flows.md#3-6529-editions).
 - Related pages: [Stream and auctions](stream-and-auctions.md), [Curation](curation.md),
   [Economics and payouts](economics-and-payouts.md),

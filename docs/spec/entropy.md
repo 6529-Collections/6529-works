@@ -349,7 +349,7 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0003, "Security impact"](../adr/0003-build-time-decisions.md#security-impact),
   [ADR 0004, "Security impact"](../adr/0004-gas-budgets-under-glamsterdam.md#security-impact).
 - Tests: [`test/entropy/`](../../test/entropy/) and the files in the rules table. How to run them:
-  [testing docs](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing docs](../testing/README.md).
 - Related pages: [curation.md](curation.md), [stream-and-auctions.md](stream-and-auctions.md),
   [rendering-and-tokenuri.md](rendering-and-tokenuri.md), [governance.md](governance.md),
   [Sepolia flows, section 6](../../deployments/11155111/flows.md#6-vrf).

@@ -62,7 +62,8 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   [audit scope](../../docs/audit/scope.md#products-and-sales).
 - **Tests:** `forge test --match-path 'test/stream/**'`: core and satellite units, preferred
   location, the terms tests (`StreamTerms*.t.sol`, including real and ground collisions), the
-  stateful invariants and `StreamTxCap.t.sol`. End to end: `CuratedSale.t.sol`,
+  stateful invariants and `StreamTxCap.t.sol`; a Halmos proof of `SpdxId` is in
+  `test/symbolic/` ([Testing](../../docs/testing/README.md)). End to end: `CuratedSale.t.sol`,
   `RecordAmendments.t.sol`, `SyncOnChainResume.t.sol`, `RendererCodePin.t.sol` and
   `GasReport.t.sol` in [`test/integration/`](../../test/integration/).
 

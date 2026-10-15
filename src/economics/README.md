@@ -61,7 +61,8 @@ Payment, release and recovery sequences are under
   [audit scope](../../docs/audit/scope.md#economics). Per-operation gas is in
   [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 - **Tests:** `forge test --match-path 'test/economics/**'` (unit, hostile tokens, split maths,
-  the gas-cap cases and the invariant suites in `test/economics/invariant/`); end to end,
+  gas caps, invariants); Halmos proofs of `Splits` in `test/symbolic/`
+  ([Testing](../../docs/testing/README.md)); end to end,
   [`EscrowRecovery.t.sol`](../../test/integration/EscrowRecovery.t.sol).
 
 ## Not in v1

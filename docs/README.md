@@ -42,8 +42,8 @@ storage and bytecode notes, the tests to run) and links to the owners above:
 [entropy](../src/entropy/README.md), [governance](../src/governance/README.md),
 [libraries](../src/libraries/README.md), [interfaces](../src/interfaces/README.md) and
 [federated](../src/federated/README.md) (v1.1, only if needed). Where a README and the
-specification differ, the specification follows the code. Testing guidance is coming in
-[PR #58](https://github.com/6529-Collections/6529-works/pull/58) as `docs/testing/`.
+specification differ, the specification follows the code. How to run and measure the tests is
+in [Testing](testing/README.md).
 
 ## Checks that keep the docs honest
 

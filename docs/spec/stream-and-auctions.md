@@ -668,7 +668,7 @@ See the [register](README.md#differences-from-the-adrs).
   [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md) (the table and security impact).
 - Tests: [`test/stream/`](../../test/stream), [`test/sales/auction/`](../../test/sales/auction),
   and the regression and integration files in the rules table. How to run them:
-  [testing](https://github.com/6529-Collections/6529-works/blob/main/docs/testing/README.md).
+  [testing](../testing/README.md).
 - Measurements: [Sepolia flows, section 2](../../deployments/11155111/flows.md#2-the-curated-stream-sale).
 - Related pages: [Curation](curation.md), [Works and storage](works-and-storage.md),
   [Editions and sales](editions-and-sales.md), [Economics and payouts](economics-and-payouts.md),
