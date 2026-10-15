@@ -358,7 +358,7 @@ library DeployV1 {
                 abi.encode(
                     m,
                     d.revenueEscrow,
-                    d.assetAllowlist,
+                    d.economicsResolver,
                     d.statementLog,
                     auctionPermit2(p),
                     p.auction,

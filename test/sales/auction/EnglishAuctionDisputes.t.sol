@@ -542,7 +542,10 @@ contract EnglishAuctionFederationTest is AuctionBase {
         _bidEth(saleId, alice, 1 ether);
         vm.warp(block.timestamp + DURATION);
         auction.settle(saleId);
-        assertEq(network.balance, 0.1 ether);
+        // MARKET-3: the registry's fee goes to the network's federated recipient, never to the
+        // recipient the token reports.
+        assertEq(federatedNetwork.balance, 0.1 ether);
+        assertEq(network.balance, 0);
         assertEq(seller.balance, 0.9 ether);
 
         registry.setStatus(address(federated), IFederationRegistry.Status.DELISTED, bytes32(0));

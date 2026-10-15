@@ -63,7 +63,10 @@ target while the federation registry reports it active (`isTarget`). Such a
 token:
 - must run the code its registry entry records;
 - pays the network fee share of its entry to the economics resolver's
-  federated fee recipient (`networkFeeRecipient`), ignoring its own fee terms;
+  federated fee recipient (`networkFeeRecipient`), ignoring its own fee terms.
+  The English auction does the same (MARKET-3): it takes the economics resolver
+  at construction, derives its asset allowlist from it, and reads the federated
+  recipient at settlement;
 - stops selling as soon as the registry delists it. Every purchase re-checks
   `isActive`.
 

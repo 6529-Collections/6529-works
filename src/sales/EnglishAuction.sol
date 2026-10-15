@@ -17,6 +17,7 @@ import { IRevenueEscrow } from "../economics/interfaces/IRevenueEscrow.sol";
 import { RevenuePayment } from "../economics/RevenuePayment.sol";
 import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
+import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
@@ -150,6 +151,8 @@ contract EnglishAuction is
     address public immutable statementLog;
     /// @notice The economics lane's asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
+    /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3).
+    IEconomicsResolver public immutable economicsResolver;
     /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
     address public immutable permit2;
 
@@ -185,7 +188,9 @@ contract EnglishAuction is
 
     /// @param authority The AccessManager governing this adapter.
     /// @param escrow_ The revenue escrow for refused payouts.
-    /// @param allowlist_ The asset allowlist read at start and on every bid.
+    /// @param economicsResolver_ The economics resolver (ERC-165, not EIP-7702 delegated): the
+    ///        federated network fee recipient, and its asset allowlist, read at start, on every
+    ///        bid and at settlement.
     /// @param statementLog_ The statement log `cancel` reads.
     /// @param permit2_ The canonical Permit2, or zero to disable PERMIT2 payments.
     /// @param config_ The initial auction parameters.
@@ -193,17 +198,23 @@ contract EnglishAuction is
     constructor(
         address authority,
         address escrow_,
-        IAssetAllowlist allowlist_,
+        IEconomicsResolver economicsResolver_,
         address statementLog_,
         address permit2_,
         AuctionConfig memory config_,
         address[] memory targets
     ) AccessManaged(authority) {
         _requireContract(escrow_);
+        _requireContract(address(economicsResolver_));
+        if (!ERC165Checker.supportsInterface(
+                address(economicsResolver_), type(IEconomicsResolver).interfaceId
+            )) revert InvalidDependency(address(economicsResolver_));
+        IAssetAllowlist allowlist_ = IAssetAllowlist(economicsResolver_.assetAllowlist());
         _requireContract(address(allowlist_));
         _requireContract(statementLog_);
         if (permit2_ != address(0)) _requireContract(permit2_);
         escrow = escrow_;
+        economicsResolver = economicsResolver_;
         allowlist = allowlist_;
         statementLog = statementLog_;
         permit2 = permit2_;
@@ -610,8 +621,7 @@ contract EnglishAuction is
         if (
             tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == escrow
                 || terms.feeRecipient == escrow
-                || (terms.feeRecipient == address(0)
-                    && (t.federated ? t.registryFee : terms.feeShare) != 0)
+                || (!t.federated && terms.feeRecipient == address(0) && terms.feeShare != 0)
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
@@ -686,8 +696,9 @@ contract EnglishAuction is
         }
     }
 
-    /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and the
-    ///      registry fee share for a federated token.
+    /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and for a
+    ///      federated token the registry fee share, locked at start, paid to the resolver's
+    ///      federated network fee recipient, never to a recipient the token reports (MARKET-3).
     function _lockedTerms(Sale storage s)
         private
         view
@@ -701,7 +712,7 @@ contract EnglishAuction is
             t.currency,
             0,
             p.seller,
-            p.feeRecipient,
+            t.federated ? economicsResolver.networkFeeRecipient(PRODUCT_FEDERATED) : p.feeRecipient,
             t.federated ? t.registryFee : p.feeShare
         );
         if (lt.feeShare > Splits.DENOMINATOR) revert InvalidTerms(s.token, s.tokenId);

@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IRevenueEscrow } from "src/economics/interfaces/IRevenueEscrow.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -31,6 +32,7 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Constructor_WiresDependenciesAndGenesisTarget() public view {
         assertEq(auction.escrow(), address(escrow));
         assertEq(address(auction.allowlist()), address(allowlist));
+        assertEq(address(auction.economicsResolver()), address(resolver));
         assertEq(auction.statementLog(), address(statements));
         assertEq(auction.permit2(), address(permit2));
         assertTrue(auction.isTarget(address(stream)));
@@ -51,15 +53,15 @@ contract EnglishAuctionTest is AuctionBase {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), eoa, allowlist, address(statements), address(0), _config(), none
+            address(manager), eoa, resolver, address(statements), address(0), _config(), none
         );
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), allowlist, address(statements), eoa, _config(), none
+            address(manager), address(escrow), resolver, address(statements), eoa, _config(), none
         );
         vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), allowlist, eoa, address(0), _config(), none
+            address(manager), address(escrow), resolver, eoa, address(0), _config(), none
         );
         address[] memory bad = new address[](1);
         bad[0] = address(escrow);
@@ -69,11 +71,51 @@ contract EnglishAuctionTest is AuctionBase {
         new EnglishAuction(
             address(manager),
             address(escrow),
-            allowlist,
+            resolver,
             address(statements),
             address(0),
             _config(),
             bad
+        );
+    }
+
+    /// @dev MARKET-3: the auction takes the economics resolver (ERC-165 checked) and derives the
+    ///      allowlist from it.
+    function test_Constructor_RejectsAnUnfitResolver() public {
+        address[] memory none = new address[](0);
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            IEconomicsResolver(eoa),
+            address(statements),
+            address(0),
+            _config(),
+            none
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, address(escrow))
+        );
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            IEconomicsResolver(address(escrow)),
+            address(statements),
+            address(0),
+            _config(),
+            none
+        );
+        resolver.setAllowlistOverride(eoa);
+        vm.expectRevert(abi.encodeWithSelector(EnglishAuction.InvalidDependency.selector, eoa));
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            address(0),
+            _config(),
+            none
         );
     }
 
@@ -91,7 +133,7 @@ contract EnglishAuctionTest is AuctionBase {
             new EnglishAuction(
                 address(manager),
                 address(escrow),
-                allowlist,
+                resolver,
                 address(statements),
                 address(0),
                 bad[i],

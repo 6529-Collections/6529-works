@@ -7,6 +7,7 @@ import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
 import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_DEFAULT, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
@@ -90,10 +91,11 @@ contract EnglishAuctionGasTest is Test {
         registry.bind(address(stream));
         address[] memory targets = new address[](1);
         targets[0] = address(stream);
+        resolver.setAssetAllowlist(address(allowlist));
         auction = new EnglishAuction(
             address(manager),
             address(new RevenueEscrow(address(manager), factory)),
-            allowlist,
+            IEconomicsResolver(address(resolver)),
             address(new StatementLog(address(manager), address(0), bytes32(0))),
             address(0),
             IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),

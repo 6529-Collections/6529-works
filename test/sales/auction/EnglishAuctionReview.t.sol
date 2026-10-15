@@ -140,7 +140,8 @@ contract EnglishAuctionReviewTest is AuctionBase {
         auction.settle(saleId);
         assertEq(fed.ownerOf(1), alice);
         assertEq(seller.balance, 0.75 ether);
-        assertEq(network.balance, 0.25 ether);
+        // MARKET-3: the federated network fee recipient, not the token's.
+        assertEq(federatedNetwork.balance, 0.25 ether);
     }
 
     /// @dev L-6: a federated token whose code does not match its registry entry, or a registry
