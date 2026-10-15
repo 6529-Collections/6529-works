@@ -295,11 +295,14 @@ default when the sale starts".
      per root, and the cancel tombstones only the burned item.
    - PARAMETER_SETTER then calls `IStream.releaseContent(tokenId, contentHash,
      beneficiary)` (48 hours; schedule it with the cancel, to execute after
-     it), naming the rightful artist's ID from the outcome. Stream passes the
-     burned work's item hash to `IPackageRegistry.releaseContent`: the content
-     hash is reserved for items whose lead artist is the beneficiary, and the
-     burned item is tombstoned. A release happens once per burned work, so the
-     guardians check the beneficiary during the delay.
+     it), naming the rightful artist's ID from the outcome. The beneficiary must
+     be a registered artist (`UnknownArtist` otherwise), so schedule the release
+     once the rightful artist has an identity (its first package acceptance
+     creates it). Stream passes the burned work's item hash to
+     `IPackageRegistry.releaseContent`: the content hash is reserved for items
+     whose lead artist is the beneficiary, and the burned item is tombstoned. A
+     release happens once per burned work, so the guardians check the
+     beneficiary during the delay.
 4. **Rejected.** The UNPAUSER role calls `resume`. With no outcome, the pause
    ends by itself when the allowance runs out.
 5. **After a sale.** A dispute only produces a statement; the renderer shows

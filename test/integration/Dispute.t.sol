@@ -6,6 +6,7 @@ import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import {
@@ -297,12 +298,21 @@ contract DisputeFlowTest is IntegrationBase {
             manager.canCall(hotAdmin, address(stream), stream.releaseContent.selector);
         assertEq(delay, 48 hours, "the upheld-dispute class");
 
-        bytes memory unnamed = abi.encodeCall(stream.releaseContent, (tokenId, contentHash, 0));
-        _schedule(hotAdmin, address(stream), unnamed);
-        vm.warp(block.timestamp + 48 hours);
-        vm.prank(hotAdmin);
-        vm.expectRevert(abi.encodeWithSelector(IPackageRegistry.InvalidBeneficiary.selector, 0));
-        manager.execute(address(stream), unnamed);
+        // A release must name a registered artist: zero, or an ID nobody registered (here one
+        // derived from an address the rightful artist never uses), is refused.
+        uint256[2] memory unregistered =
+            [uint256(0), uint160(makeAddr("an address the artist never registers"))];
+        for (uint256 i; i < unregistered.length; ++i) {
+            bytes memory unnamed =
+                abi.encodeCall(stream.releaseContent, (tokenId, contentHash, unregistered[i]));
+            _schedule(hotAdmin, address(stream), unnamed);
+            vm.warp(block.timestamp + 48 hours);
+            vm.prank(hotAdmin);
+            vm.expectRevert(
+                abi.encodeWithSelector(IArtistRegistry.UnknownArtist.selector, unregistered[i])
+            );
+            manager.execute(address(stream), unnamed);
+        }
 
         bytes memory named =
             abi.encodeCall(stream.releaseContent, (tokenId, contentHash, rightfulId));

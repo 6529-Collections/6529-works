@@ -170,7 +170,8 @@
   stays raise-only.
 - Curation (SIGS-1): `IStream.releaseContent(tokenId, contentHash, beneficiary)` is governed
   (PARAMETER_SETTER, 48 hours, new genesis selector) and names the rightful artist from the
-  dispute outcome. The package registry reserves the released content hash for that artist
+  dispute outcome, who must be a registered artist. The package registry reserves the
+  released content hash for that artist
   (`releasedTo`, `ContentReserved`); `ContentReleased` carries the beneficiary. The dispute
   runbook adds the guardian's revocation of the copier's roots before the cancel executes.
 - Curation (SIGS-2): a curation approval binds the signer's epoch,

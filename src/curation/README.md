@@ -18,8 +18,9 @@ with the linked-pair exception from §6.
   names the rightful artist the dispute outcome identifies: the hash is reserved
   for that artist, so only an item whose lead artist it is may consume it
   (`ContentReserved` otherwise), and the burned item is tombstoned for good.
-  The release happens once per burned item; `releasedTo` reads the
-  beneficiary.
+  The release happens once per burned item and names a registered artist
+  (`UnknownArtist` otherwise), so it is scheduled once the rightful artist has
+  an identity; `releasedTo` reads the beneficiary.
 - **`Eip712CurationVerifier`.** It accepts a `PackageApproval(packageRoot,
   evidenceHash, signerEpoch)` EIP-712 signature by an active curation signer,
   encoded exactly as `abi.encode(signer, signature)`, and reports that signer. A

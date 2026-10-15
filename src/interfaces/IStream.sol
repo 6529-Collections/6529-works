@@ -184,8 +184,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice After an upheld-dispute burn, passes the burned work's stored item hash,
     ///         `contentHash` and the rightful artist `beneficiary` the dispute outcome names to
     ///         `IPackageRegistry.releaseContent`, which checks the pair and reserves the content
-    ///         for that artist. PARAMETER_SETTER role (48 hours); reverts with `NotBurned` for a
-    ///         live or unminted token.
+    ///         for that artist, who must be registered. PARAMETER_SETTER role (48 hours); reverts
+    ///         with `NotBurned` for a live or unminted token.
     function releaseContent(uint256 tokenId, bytes32 contentHash, uint256 beneficiary) external;
     /// @notice The lead artist ID of a live work, packed in its token slot; `isArtist` reads it.
     ///         Reverts with `UnknownWork`.

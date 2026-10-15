@@ -281,9 +281,10 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @inheritdoc IPackageRegistry
     /// @dev Reverts with `ClaimNotAllowed(PRODUCT_STREAM, contentHash)` unless `itemHash` holds
-    ///      the slot, so a release happens once per burned item, and with `InvalidBeneficiary`
-    ///      for a zero artist ID. The beneficiary need not have an identity yet: an artist's ID
-    ///      is fixed by its first account (`uint160(account)`). Editions are created only after a
+    ///      the slot, so a release happens once per burned item. The beneficiary must be a
+    ///      registered artist: the artist registry's `authorityOf` reverts with `UnknownArtist`
+    ///      for zero or an unknown ID, so the release waits until the rightful artist has an
+    ///      identity. Editions are created only after a
     ///      master's sale settles, so a burned work never has an edition claim to release; the
     ///      Editions slot is left untouched.
     function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external {
@@ -292,7 +293,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         if (uint256(itemHash) <= uint256(RELEASED) || _streamItems[contentHash] != itemHash) {
             revert ClaimNotAllowed(PRODUCT_STREAM, contentHash);
         }
-        if (beneficiary == 0) revert InvalidBeneficiary(beneficiary);
+        _artists.authorityOf(beneficiary);
         _streamItems[contentHash] = RELEASED;
         _released[itemHash] = true;
         _releasedTo[contentHash] = beneficiary;

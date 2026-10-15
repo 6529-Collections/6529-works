@@ -84,8 +84,6 @@ interface IPackageRegistry is IERC165 {
     error ClaimNotAllowed(bytes32 product, bytes32 contentHash);
     /// @notice A released content hash is reserved for the item of artist `beneficiary`.
     error ContentReserved(bytes32 contentHash, uint256 beneficiary);
-    /// @notice A release must name a nonzero artist ID.
-    error InvalidBeneficiary(uint256 beneficiary);
     /// @notice A listed party has not accepted the package root.
     error PartyNotAccepted(bytes32 packageRoot, address account);
     /// @notice The parties, payees, kind, seed or edition fields are inconsistent.
@@ -146,8 +144,9 @@ interface IPackageRegistry is IERC165 {
     /// @notice Releases `contentHash` after an upheld-dispute burn to the artist `beneficiary`
     ///         the dispute outcome names: checks that `itemHash` consumed it, clears its
     ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,
-    ///         and tombstones `itemHash` so it can never be consumed again. Once per burned item.
-    ///         Bound 6529 Stream only, through the governed `IStream.releaseContent`.
+    ///         and tombstones `itemHash` so it can never be consumed again. Once per burned item;
+    ///         `beneficiary` must be a registered artist (`IArtistRegistry.UnknownArtist`
+    ///         otherwise). Bound 6529 Stream only, through the governed `IStream.releaseContent`.
     function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external;
     /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
     ///         already record `itemHash` for it. Bound 6529 Editions only.
