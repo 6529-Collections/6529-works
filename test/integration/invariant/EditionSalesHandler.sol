@@ -563,6 +563,40 @@ abstract contract EditionSalesHandler is IntegrationBase {
         ++hits["claim"];
     }
 
+    /// @notice A re-admission scheduled ahead of a deprecation (with the revision the deprecation
+    ///         will give the currency) must not undo it early: governance schedules the
+    ///         re-admission, a guardian deprecates the currency up to 13 days later, and the
+    ///         re-admission, due 14 days after scheduling, must be refused with
+    ///         `ReadmissionTooEarly` (one call in four).
+    function earlyReadmit(uint256 seed) external {
+        address currency = seed % 2 == 0 ? address(usd) : CURRENCY_ETH;
+        if (frozenSince[currency] != 0 || (seed >> 8) % 4 != 0) return;
+        bytes memory call = abi.encodeCall(
+            allowlist.admitAsset, (currency, ghostRevision[currency] + 1, ghostFloor[currency])
+        );
+        uint256 scheduledAt = block.timestamp;
+        vm.prank(hotAdmin);
+        manager.schedule(address(allowlist), call, 0);
+        vm.warp(block.timestamp + _bound(seed >> 16, 1 hours, 13 days));
+        vm.prank(guardian2);
+        allowlist.deprecateAsset(currency);
+        frozenSince[currency] = block.timestamp;
+        ghostSince[currency] = block.timestamp;
+        ++ghostRevision[currency];
+        vm.warp(scheduledAt + 14 days);
+        vm.prank(hotAdmin);
+        try manager.execute(address(allowlist), call) {
+            _violation("a re-admission landed within 14 days of its deprecation");
+        } catch (bytes memory reason) {
+            if (bytes4(reason) != IAssetAllowlist.ReadmissionTooEarly.selector) {
+                _violation("an early re-admission failed for another reason");
+            }
+            ++hits["readmitTooEarly"];
+        }
+        vm.prank(hotAdmin);
+        manager.cancel(hotAdmin, address(allowlist), call);
+    }
+
     /// @notice PARAMETER_SETTER's governed 48-hour change of an active currency's increment floor
     ///         (one call in four), compare-and-set on the revision; one in five carries a stale
     ///         revision and must be refused.
@@ -580,7 +614,7 @@ abstract contract EditionSalesHandler is IntegrationBase {
         );
         if (ok == stale) _violation(ok ? "a stale floor change applied" : "a floor change failed");
         if (!ok) {
-            ++hits["staleRefused"];
+            ++hits["staleFloorRefused"];
             return;
         }
         ghostFloor[currency] = floor;
@@ -606,7 +640,7 @@ abstract contract EditionSalesHandler is IntegrationBase {
         );
         if (ok == stale) _violation(ok ? "stale fee terms applied" : "fee terms failed");
         if (!ok) {
-            ++hits["staleRefused"];
+            ++hits["staleFeeRefused"];
             return;
         }
         (ghostFeeRecipient, ghostFeeShare) = (recipient, share);
@@ -635,7 +669,7 @@ abstract contract EditionSalesHandler is IntegrationBase {
         bool expected = !stale && kind != 2;
         if (ok != expected) _violation(ok ? "a refused license applied" : "a license failed");
         if (!ok) {
-            ++hits["staleRefused"];
+            ++hits[stale ? bytes32("staleLicenseRefused") : bytes32("cc0TextRefused")];
             return;
         }
         ghostLicense = next;
@@ -673,25 +707,6 @@ abstract contract EditionSalesHandler is IntegrationBase {
 
     function _violation(string memory what) internal {
         violations.push(what);
-    }
-
-    /// @dev `_govern` that reports whether the governed call executed instead of reverting; a
-    ///      failed operation is cancelled so the same call can be scheduled again.
-    function _governTry(address caller, address target, bytes memory data)
-        internal
-        returns (bool ok)
-    {
-        (, uint32 delay) = manager.canCall(caller, target, bytes4(data));
-        vm.prank(caller);
-        manager.schedule(target, data, 0);
-        vm.warp(block.timestamp + delay);
-        vm.prank(caller);
-        try manager.execute(target, data) {
-            ok = true;
-        } catch {
-            vm.prank(caller);
-            manager.cancel(caller, target, data);
-        }
     }
 
     function _paused(address adapter) internal view returns (bool) {

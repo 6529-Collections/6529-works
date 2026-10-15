@@ -40,11 +40,11 @@ import { EditionSalesHandler } from "./EditionSalesHandler.sol";
 ///         8. Configuration moves only by governed, revisioned changes: each currency's status
 ///            clock (status, last change, closed deprecation time), increment floor and
 ///            revision, and Editions' fee terms, default license and revision counters, equal
-///            the model; a stale revision is refused; a re-admission lands at least 14 days
-///            after its deprecation.
+///            the model; a stale revision is refused; a re-admission never lands within 14 days
+///            of its deprecation, even when governance scheduled it ahead of the deprecation.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract EditionSalesInvariantTest is EditionSalesHandler {
-    uint256 internal constant ACTIONS = 17;
+    uint256 internal constant ACTIONS = 18;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
     uint256 internal constant RUNS = 32;
 
@@ -72,7 +72,8 @@ contract EditionSalesInvariantTest is EditionSalesHandler {
         s[13] = this.setFeeTerms.selector;
         s[14] = this.setDefaultLicense.selector;
         s[15] = this.toggleRefusal.selector;
-        s[16] = this.warp.selector;
+        s[16] = this.earlyReadmit.selector;
+        s[17] = this.warp.selector;
     }
 
     /// @notice Every invariant above (1 to 8). In CI the state is asserted every fourth call
@@ -88,8 +89,9 @@ contract EditionSalesInvariantTest is EditionSalesHandler {
     ///         actions, depth 128) replayed from fixed seeds reach every action and the paths
     ///         the invariants are about, with every invariant holding along the way.
     function test_EveryActionRuns() public {
-        string[29] memory paths = [
+        string[33] memory paths = [
             "createEdition",
+            "editionExists",
             "openByArtist",
             "openByPlatform",
             "openRefused",
@@ -105,21 +107,24 @@ contract EditionSalesInvariantTest is EditionSalesHandler {
             "unpause",
             "deprecate",
             "readmit",
+            "readmitTooEarly",
             "closeSale",
             "closeRefused",
             "rerate",
             "claim",
-            "warp",
-            "editionExists",
             "setFloor",
+            "staleFloorRefused",
             "setFeeTerms",
+            "staleFeeRefused",
             "setLicense",
-            "staleRefused",
+            "staleLicenseRefused",
+            "cc0TextRefused",
             "refuse",
             "flush",
-            "escrowed"
+            "escrowed",
+            "warp"
         ];
-        uint256[29] memory totals;
+        uint256[33] memory totals;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {
@@ -172,6 +177,7 @@ contract EditionSalesInvariantTest is EditionSalesHandler {
         else if (which == 13) this.setFeeTerms(a);
         else if (which == 14) this.setDefaultLicense(a);
         else if (which == 15) this.toggleRefusal(a);
+        else if (which == 16) this.earlyReadmit(a);
         else this.warp(a);
     }
 }

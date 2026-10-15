@@ -44,7 +44,7 @@ import { IntegrationBase } from "../IntegrationBase.sol";
 ///      there, the others by the `register` and `accept` actions.
 abstract contract StreamLifecycleHandler is IntegrationBase {
     uint256 internal constant ARTISTS = 3;
-    uint256 internal constant WORKS_PER_ARTIST = 5;
+    uint256 internal constant WORKS_PER_ARTIST = 6;
     uint256 internal constant BIDDERS = 3;
     uint256 internal constant SPARE_RECORDS = 3;
     /// @dev Locators each side may add per file (`WorkRecords.LOCATOR_QUOTA`), and both together.
@@ -149,15 +149,19 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 i; i < ARTISTS; ++i) {
             packages[i] = _artistWorks(i);
         }
-        // Work 4 of each artist copies work 0 of the artist before it (cyclically): same media,
-        // same content hash, another record and item.
+        // Work 4 of each artist copies work 0 of the artist before it, and work 5 work 0 of the
+        // artist after it (cyclically): same media, same content hash, another record and item.
+        // Every original therefore has two copies by two other artists.
         for (uint256 i; i < ARTISTS; ++i) {
-            Work memory original = packages[(i + ARTISTS - 1) % ARTISTS][0];
-            Work memory copy = packages[i][4];
-            copy.media = original.media;
-            copy.item.contentHash = original.item.contentHash;
-            copy.item.mediaHash = original.item.mediaHash;
-            rightfulOf[original.item.contentHash] = lcArtists[(i + ARTISTS - 1) % ARTISTS];
+            for (uint256 j = 4; j < 6; ++j) {
+                uint256 from = j == 4 ? (i + ARTISTS - 1) % ARTISTS : (i + 1) % ARTISTS;
+                Work memory original = packages[from][0];
+                Work memory copy = packages[i][j];
+                copy.media = original.media;
+                copy.item.contentHash = original.item.contentHash;
+                copy.item.mediaHash = original.item.mediaHash;
+                rightfulOf[original.item.contentHash] = lcArtists[from];
+            }
         }
         for (uint256 i; i < ARTISTS; ++i) {
             _addPackage(i, packages[i]);
@@ -171,8 +175,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
 
     // ------------------------------------------------------------------ setup helpers
 
-    /// @dev Five works by artist `i`: CC0; CC-BY with the collaborator; an ARTIST seed; CC0 with
-    ///      the collaborator; and a CC0 work whose media `setUp` replaces with a copy.
+    /// @dev Six works by artist `i`: CC0; CC-BY with the collaborator; an ARTIST seed; CC0 with
+    ///      the collaborator; and two CC0 works whose media `setUp` replaces with copies.
     function _artistWorks(uint256 i) internal returns (Work[] memory works) {
         address lead = lcArtists[i];
         works = new Work[](WORKS_PER_ARTIST);
@@ -286,7 +290,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             _violation(ok ? "a start succeeded that the rules refuse" : "a valid start failed");
         }
         if (!ok) {
-            if (c.restrained) ++hits["restrained"];
+            if (c.restrained) ++hits["restrainedStart"];
             else if (c.revoked) ++hits["revokedMove"];
             else if (c.reserved) ++hits["reserved"];
             else ++hits["contentUsed"];
@@ -412,6 +416,29 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             );
             t.released = true;
             ++hits["release"];
+            _raceReservedContent(contentHash, beneficiary);
+            return;
+        }
+    }
+
+    /// @dev Right after a release, another artist's copy of the same content tries to take it:
+    ///      the release reserves it for the beneficiary (`ContentReserved`).
+    function _raceReservedContent(bytes32 contentHash, uint256 beneficiary) internal {
+        for (uint256 p; p < pool.length; ++p) {
+            PoolItem storage it = pool[p];
+            uint256 leadId = uint160(lcArtists[it.lead]);
+            if (it.contentHash != contentHash || leadId == beneficiary || !_ready(p)) continue;
+            if (_restrained(leadId)) continue;
+            bytes memory data =
+                _mintRequest(p, artists.authorityOf(leadId), nextMoveNonce[leadId]++);
+            try auction.start(address(stream), data) {
+                _violation("released content was taken by another artist");
+            } catch (bytes memory reason) {
+                if (bytes4(reason) != IPackageRegistry.ContentReserved.selector) {
+                    _violation("a racing copy failed for another reason");
+                }
+                ++hits["reserved"];
+            }
             return;
         }
     }
@@ -534,7 +561,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             _violation(ok ? "a refused relicense applied" : "a valid relicense failed");
         }
         if (!ok) {
-            ++hits[t.cc0 ? bytes32("cc0Held") : bytes32("restrained")];
+            ++hits[t.cc0 ? bytes32("cc0Held") : bytes32("restrainedRelicense")];
             return;
         }
         if (!same) t.cc0 = WorksHashing.licenseKey(next.spdxId) == WorksHashing.CC0_LICENSE_KEY;
@@ -543,14 +570,14 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
 
     // ------------------------------------------------------------------ actions: identity
 
-    /// @notice Governance stages a CONTESTED recovery override (48 hours) moving an artist's
-    ///         authority to a fresh key: from then until it ends, nobody acts as the artist
-    ///         (IDENTITY-1).
+    /// @notice Governance stages a CONTESTED recovery override (48 hours) moving an artist's or
+    ///         the collaborator's authority to a fresh key: from then until it ends, nobody acts
+    ///         as that party (IDENTITY-1).
     function stageRecovery(uint256 seed) external {
         // Recoveries are rare: at most one is pending at a time.
         if (recoveryPending) return;
-        for (uint256 k; k < ARTISTS; ++k) {
-            address account = lcArtists[(seed % ARTISTS + k) % ARTISTS];
+        for (uint256 k; k <= ARTISTS; ++k) {
+            address account = _party((seed % (ARTISTS + 1) + k) % (ARTISTS + 1));
             uint256 id = uint160(account);
             if (artists.artistIdOf(account) == 0) continue;
             if (artists.pendingChange(id).kind != ChangeKind.NONE) continue;
@@ -581,8 +608,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @notice A pending recovery ends: the guardian vetoes it, or it executes after its
     ///         180-day notice and the new key becomes the artist's authority.
     function endRecovery(uint256 seed, uint256 mode) external {
-        for (uint256 k; k < ARTISTS; ++k) {
-            uint256 id = uint160(lcArtists[(seed % ARTISTS + k) % ARTISTS]);
+        for (uint256 k; k <= ARTISTS; ++k) {
+            uint256 id = uint160(_party((seed % (ARTISTS + 1) + k) % (ARTISTS + 1)));
             if (reservedKey[id] == address(0)) continue;
             if (mode % 2 == 0) {
                 vm.prank(guardian2);
@@ -616,12 +643,17 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             if (_actAsArtist(lead, id, actor, (which >> 1) % 6, seed)) {
                 _violation("a restrained artist acted");
             }
-            ++hits["restrained"];
+            ++hits["restrainedAct"];
             return;
         }
     }
 
     // ------------------------------------------------------------------ internals
+
+    /// @dev The artists, then the collaborator.
+    function _party(uint256 i) internal view returns (address) {
+        return i < ARTISTS ? lcArtists[i] : lcCollaborator;
+    }
 
     function _status(bytes32 root) internal view returns (IPackageRegistry.PackageStatus status) {
         (status,,) = registry.packageOf(root);
@@ -864,25 +896,6 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         call = abi.encodeCall(records.relicense, (tokenId, next, item, state, deadline, sigs));
     }
 
-    /// @dev `_govern` that reports whether the governed call executed instead of reverting; a
-    ///      failed operation is cancelled so the same call can be scheduled again.
-    function _governTry(address caller, address target, bytes memory data)
-        internal
-        returns (bool ok)
-    {
-        (, uint32 delay) = manager.canCall(caller, target, bytes4(data));
-        vm.prank(caller);
-        manager.schedule(target, data, 0);
-        vm.warp(block.timestamp + delay);
-        vm.prank(caller);
-        try manager.execute(target, data) {
-            ok = true;
-        } catch {
-            vm.prank(caller);
-            manager.cancel(caller, target, data);
-        }
-    }
-
     function _restrainedAcceptance(bytes32 root, address account, address signer) internal {
         PartyAcceptance memory a = PartyAcceptance(
             account, _profileId(account), _profileDoc(account), uint64(block.timestamp + 1 days)
@@ -891,7 +904,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         try registry.acceptPackage(root, a, signature) {
             _violation("a restrained artist accepted a package");
         } catch {
-            ++hits["restrained"];
+            ++hits["restrainedAccept"];
         }
     }
 
@@ -1124,8 +1137,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     /// @dev While a recovery override that moves the authority is pending, the artist has no
     ///      active authority.
     function _assertRestraint() internal view {
-        for (uint256 i; i < ARTISTS; ++i) {
-            uint256 id = uint160(lcArtists[i]);
+        for (uint256 i; i <= ARTISTS; ++i) {
+            uint256 id = uint160(_party(i));
             if (reservedKey[id] == address(0)) continue;
             PendingChange memory p = artists.pendingChange(id);
             assertTrue(p.kind == ChangeKind.CONTESTED, "the recovery is pending");

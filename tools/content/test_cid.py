@@ -306,8 +306,10 @@ class KuboAgreementTest(unittest.TestCase):
         document = cid_golden.build()
         with tempfile.TemporaryDirectory() as tmp:
             env = dict(os.environ, IPFS_PATH=str(Path(tmp) / "repo"))
-            subprocess.run(["ipfs", "init", "--profile=test"], env=env, capture_output=True)
-            for spec, vector in zip(cid_golden.SPECS, document["vectors"]):
+            subprocess.run(
+                ["ipfs", "init", "--profile=test"], env=env, capture_output=True, check=True
+            )
+            for spec, vector in zip(cid_golden.SPECS, document["vectors"], strict=True):
                 path = Path(tmp) / spec[0]
                 path.write_bytes(cid_golden.spec_input(spec))
                 command = c.KUBO_COMMAND.split()[:-1] + [str(path)]

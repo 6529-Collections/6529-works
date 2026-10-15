@@ -240,9 +240,9 @@ def cid_of_stream(
 
 
 def cid_of_bytes(data: bytes, chunk_size: int = CHUNK_SIZE, max_links: int = MAX_LINKS) -> CidResult:
-    chunks = (data[i : i + chunk_size] for i in range(0, len(data), chunk_size))
     if chunk_size <= 0 or max_links < 2:
         raise ValueError("the chunk size must be positive and a node must hold two links")
+    chunks = (data[i : i + chunk_size] for i in range(0, len(data), chunk_size))
     root, count, depth = _layout(iter(chunks), max_links)
     return CidResult(text_cid(root.cid), root.filesize, max(count, 1), depth)
 

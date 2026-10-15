@@ -76,16 +76,20 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
     ///         actions, depth 128) replayed from fixed seeds reach every action and the paths
     ///         the invariants are about, with every invariant holding after each step.
     function test_EveryActionRuns() public {
-        string[24] memory paths = [
+        string[30] memory paths = [
             "register",
+            "registerRefused",
             "accept",
             "start",
+            "revokedMove",
             "bid",
             "settle",
+            "restrainedWait",
             "disputePause",
+            "pauseExhausted",
             "cancel",
             "resume",
-            "release",
+            "withdraw",
             "openRecord",
             "setRecord",
             "finalize",
@@ -94,15 +98,21 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             "stageRecovery",
             "veto",
             "recovered",
-            "restrained",
+            "restrainedStart",
+            "restrainedAct",
+            "restrainedAccept",
+            "restrainedRelicense",
             "transfer",
             "warp",
             "contentUsed",
             "locatorRefused",
-            "cc0Held",
-            "reconsume"
+            "cc0Held"
         ];
-        uint256[24] memory totals;
+        uint256[30] memory totals;
+        // The deepest chain (a copy burned by an upheld dispute, its content released, a racing
+        // copy refused, the rightful artist re-minting) is rare in random sequences: it is logged
+        // here and asserted step by step by `test_CopyDisputeReleaseAndRemint`.
+        uint256[3] memory deep;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {
@@ -121,11 +131,15 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             for (uint256 i; i < paths.length; ++i) {
                 totals[i] += hits[bytes32(bytes(paths[i]))];
             }
+            (deep[0], deep[1], deep[2]) =
+            (deep[0] + hits["release"], deep[1] + hits["reserved"], deep[2] + hits["reconsume"]);
             vm.revertToStateAndDelete(snapshot);
         }
         for (uint256 i; i < paths.length; ++i) {
             console2.log(paths[i], totals[i]);
         }
+        console2.log("release, reserved, reconsume (asserted by test_CopyDisputeReleaseAndRemint)");
+        console2.log(deep[0], deep[1], deep[2]);
         for (uint256 i; i < paths.length; ++i) {
             assertGt(totals[i], 0, paths[i]);
         }
@@ -134,7 +148,8 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
     /// @notice The deepest path, driven step by step through the handler: a copy of another
     ///         artist's media is started and bid on, the guardian pauses it, the dispute is upheld
     ///         (the work is burned and the bid credited back), its content is released to the
-    ///         rightful artist, and the rightful artist's own item then mints the content again.
+    ///         rightful artist, another artist's copy racing for it is refused, and the rightful
+    ///         artist's own item then mints the content again.
     ///         Every invariant holds after each step.
     function test_CopyDisputeReleaseAndRemint() public {
         for (uint256 i; i < ARTISTS; ++i) {
@@ -144,7 +159,7 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             this.accept(i / 2, i);
         }
         _assertLifecycle();
-        // Pool item 4 is artist 0's copy of artist 2's first work (item 10).
+        // Pool item 4 is artist 0's copy of artist 2's first work (item 12).
         this.start(4, 2);
         assertEq(pool[4].tokenId, 1, "the copy minted first");
         this.bid(0, 0, 1 ether);
@@ -155,9 +170,10 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         _assertLifecycle();
         this.releaseContent(0, 0);
         assertEq(registry.releasedTo(pool[4].contentHash), uint160(lcArtists[2]));
+        assertEq(hits["reserved"], 1, "artist 1's copy raced for the released content, refused");
         _assertLifecycle();
         this.start(0, 2);
-        assertEq(pool[10].tokenId, 2, "the rightful artist's item minted the content again");
+        assertEq(pool[12].tokenId, 2, "the rightful artist's item minted the content again");
         assertEq(hits["reconsume"], 1);
         _assertLifecycle();
     }

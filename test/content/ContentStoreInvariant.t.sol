@@ -138,7 +138,16 @@ contract ContentStoreInvariantTest is Test {
             bytes32
         ) {
             _violation("a malformed manifest registered");
-        } catch {
+        } catch (bytes memory reason) {
+            bytes4[4] memory want = [
+                IContentStore.ContentLengthInvalid.selector,
+                IContentStore.ContentChunkCountInvalid.selector,
+                IContentStore.ContentDigestMissing.selector,
+                IContentStore.ContentMimeInvalid.selector
+            ];
+            if (bytes4(reason) != want[kind]) {
+                _violation("a malformed manifest was refused for another reason");
+            }
             ++hits["malformedRefused"];
         }
     }

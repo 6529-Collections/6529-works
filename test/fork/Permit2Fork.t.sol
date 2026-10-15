@@ -163,12 +163,15 @@ abstract contract Permit2ForkTests is WorksForkBase {
         vm.expectRevert(bytes4(keccak256("InvalidNonce()")));
         fixedSale.purchase(p, new bytes32[](0), pay);
 
-        // The same signature presented for another recipient: Permit2 recovers another signer.
+        // A fresh intent for the original recipient, presented for another recipient: the
+        // witness binds the recipient, so Permit2 recovers another signer.
+        Payment memory fresh = _intent(
+            address(fixedSale), total, nonce + 1, witness, Typehashes.PURCHASE_WITNESS_TYPE
+        );
         p.recipient = relayer;
-        pay.nonce = nonce + 1;
         vm.prank(relayer);
         vm.expectRevert(bytes4(keccak256("InvalidSigner()")));
-        fixedSale.purchase(p, new bytes32[](0), pay);
+        fixedSale.purchase(p, new bytes32[](0), fresh);
     }
 
     /// @dev A Dutch purchase pulls exactly the current price, below the intent's maximum.

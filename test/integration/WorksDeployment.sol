@@ -291,6 +291,25 @@ abstract contract WorksDeployment is Test {
         manager.execute(target, data);
     }
 
+    /// @dev `_govern` that reports whether the governed call executed instead of reverting; a
+    ///      failed operation is cancelled so the same call can be scheduled again.
+    function _governTry(address caller, address target, bytes memory data)
+        internal
+        returns (bool ok)
+    {
+        (, uint32 delay) = manager.canCall(caller, target, bytes4(data));
+        vm.prank(caller);
+        manager.schedule(target, data, 0);
+        vm.warp(block.timestamp + delay);
+        vm.prank(caller);
+        try manager.execute(target, data) {
+            ok = true;
+        } catch {
+            vm.prank(caller);
+            manager.cancel(caller, target, data);
+        }
+    }
+
     /// @dev Schedules a governed call and returns the operation ID, for cancellation tests.
     function _schedule(address caller, address target, bytes memory data)
         internal

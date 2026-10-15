@@ -146,7 +146,7 @@ def check() -> list[str]:
     expected = build()
     if committed != expected:
         problems.append(f"{VECTORS_PATH.name} differs from what cid.py computes: run `golden --write`")
-    for spec, v in zip(SPECS, expected["vectors"]):
+    for spec, v in zip(SPECS, expected["vectors"], strict=True):
         if spec[2] is not None and v["cid"] != spec[2]:
             problems.append(f"{spec[0]}: cid.py gives {v['cid']}, kubo gives {spec[2]}")
         if not locator_accepted("ipfs://" + v["cid"]):
