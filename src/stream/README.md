@@ -58,7 +58,15 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
 - **Wiring.** `WorkRecords` and 6529 Editions are bound once each, with ERC-165
   checks, EIP-7702 rejection and a check that the target serves this Stream
   (`stream() == address(this)`). Every installed dependency is checked the same
-  way; renderers are also pinned by code hash. `coreOf` is the cheap per-work
+  way; renderers are also pinned by code hash, and the pin is checked again
+  every time `rendererOf` names a renderer (DEPS-6): the default renderer's
+  code against the hash it was installed with, a finalized work's against the
+  hash it was pinned with (`WorkRecords.pinnedRenderer`, which records each
+  renderer's hash at finalize or the errata repin and refuses to pin an address
+  again with another). Changed code makes `tokenURI` revert rather than fall
+  back to another renderer, which would show a finalized work in an output
+  format nobody pinned; a new default renderer, or the errata repin, restores
+  it. `coreOf` is the cheap per-work
   read the satellites use, including the current royalty rate an edition
   inherits.
 

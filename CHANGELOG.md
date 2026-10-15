@@ -212,6 +212,11 @@
 - Records: a relicense to CC0, including the CC0-to-CC0 text correction, must name the
   deployment's CC0 text (`cc0TextFileId`), so a work that reads `CC0-1.0` cannot be pointed at
   other terms.
+- Stream and records (DEPS-6): renderer code-hash pins are checked at use. `rendererOf` (the
+  `tokenURI` and `Editions.uri` path) compares the default renderer's code with the hash it was
+  installed with, and `WorkRecords.pinnedRenderer` a finalized work's renderer with the hash it
+  was pinned with at finalize or the errata repin. Changed code makes the metadata view revert
+  (fail closed) until a renderer is installed again.
 - Renderer (CONTENT-2): a work whose record file the content store does not know (an approved
   manifest that was never registered) renders core-only metadata marked `incomplete` instead of
   reverting `tokenURI`. To make room, the renderer's `image/` prefix test is one comparison.

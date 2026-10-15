@@ -107,6 +107,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     mapping(uint256 tokenId => mapping(bytes32 fileId => LocatorCounts)) private _locatorCounts;
     mapping(uint256 tokenId => mapping(bytes32 fileId => mapping(bytes32 uriHash => bool))) private
         _locatorUris;
+    /// @dev The code hash each renderer was first pinned with (finalize or the errata repin),
+    ///      checked again by `pinnedRenderer`.
+    mapping(address renderer => bytes32 codeHash) private _rendererCodeHashes;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param stream_ The core token, which must bind this contract.
@@ -216,7 +219,9 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         _checkState(tokenId, expectedStateHash);
         _checkRecordFile(r.recordFileId);
         _requireLicenseText(r.customLicense ? _licenses[tokenId].textFileId : cc0TextFileId, true);
-        address renderer = IStream(stream).defaultRenderer();
+        // The default renderer, its code checked against Stream's pin (not finalized: no pin).
+        address renderer = IStream(stream).rendererOf(tokenId);
+        _pinCode(renderer, renderer.codehash);
         r.renderer = renderer;
         r.finalized = true;
         ++r.version;
@@ -319,8 +324,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @inheritdoc IWorkRecords
-    function pinnedRenderer(uint256 tokenId) external view returns (address) {
-        return _open(tokenId).renderer;
+    /// @dev The code must still be the code the renderer was pinned with (DEPS-6): a pin
+    ///      checked once could be outlived by code recreated at the same address.
+    function pinnedRenderer(uint256 tokenId) external view returns (address renderer) {
+        renderer = _open(tokenId).renderer;
+        if (renderer != address(0) && renderer.codehash != _rendererCodeHashes[renderer]) {
+            revert InvalidRenderer(renderer);
+        }
     }
 
     /// @inheritdoc IWorkRecords
@@ -435,6 +445,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         if (!SignatureVerifier.isValid(_artistOf(tokenId), digest, artistSignature)) {
             revert InvalidConsent(tokenId, 0);
         }
+        _pinCode(renderer, rendererCodeHash);
         r.renderer = renderer;
         ++r.version;
         emit RendererRepinned(tokenId, previous, renderer, rendererCodeHash);
@@ -566,6 +577,15 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     // -------------------------------------------------------------------------------- internal
+
+    /// @dev Records the code hash `renderer` is pinned with, the first time it is pinned. A
+    ///      renderer already pinned with another code hash is refused: its code changed since,
+    ///      and the works pinned to it must not run code their artists never signed for.
+    function _pinCode(address renderer, bytes32 codeHash) private {
+        bytes32 pinned = _rendererCodeHashes[renderer];
+        if (pinned == 0) _rendererCodeHashes[renderer] = codeHash;
+        else if (pinned != codeHash) revert InvalidRenderer(renderer);
+    }
 
     /// @dev The canonical key of `next`, or zero when it is the current license (a no-op).
     ///      Reverts when leaving CC0 (CC0 to CC0 with another text file is a correction), when

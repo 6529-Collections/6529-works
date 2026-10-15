@@ -371,6 +371,13 @@ verifier, the VRF coordinator, the statement log's artist resolver and the sale
 adapters' federation registry are also checked against their pinned hash at
 every use, not only at install.
 
+Renderer pins are checked again at use (DEPS-6): `Stream.rendererOf`, which
+`tokenURI` and 6529 Editions' `uri` go through, compares the default renderer's
+code hash with the one it was installed with, and `WorkRecords.pinnedRenderer`
+compares a finalized work's renderer with the hash it was pinned with. Changed code
+fails closed: the metadata view reverts, never falling back to another renderer,
+until a new default renderer or the errata repin is installed.
+
 Each configuration epoch's manifest hash is recorded through the statement log's
 restricted `appendGovernanceManifest`. Governed functions are non-payable, and
 setters for funds, recipients, verifiers and renderers are compare-and-set.

@@ -120,7 +120,8 @@ interface IWorkRecords {
     /// @notice A media file still lacks chunks in the content store.
     error NotOnChainComplete(uint256 tokenId);
     /// @notice The renderer lacks ERC-165 support for `IRenderer` or the code hash, or is an
-    ///         EIP-7702 delegated account.
+    ///         EIP-7702 delegated account; or its code is no longer the code hash it was pinned
+    ///         with.
     error InvalidRenderer(address renderer);
     /// @notice An installed dependency lacks code, ERC-165 support or the expected code hash, or
     ///         is an EIP-7702 delegated account.
@@ -182,7 +183,11 @@ interface IWorkRecords {
     function licenseOf(uint256 tokenId) external view returns (License memory);
     /// @notice The hash every finalize and signature binds to.
     function workStateHash(uint256 tokenId) external view returns (bytes32);
-    /// @notice The pinned renderer of a finalized work, or zero.
+    /// @notice The pinned renderer of a finalized work, or zero. Reverts with `InvalidRenderer`
+    ///         when the renderer's code is no longer the code hash it was first pinned with
+    ///         (finalize pins the default renderer as Stream checked it; the errata repin pins
+    ///         the hash the artist signed), so 6529 Stream's `tokenURI` fails closed until the
+    ///         errata repin installs a renderer again.
     function pinnedRenderer(uint256 tokenId) external view returns (address);
     /// @notice The work's seed: ARTIST seeds stored at `openRecord`, VRF seeds from the entropy
     ///         module by item hash, zero for NONE.

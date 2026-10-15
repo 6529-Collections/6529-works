@@ -108,7 +108,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
     /// @notice The target lacks code or the expected ERC-165 support, is an EIP-7702 delegated
-    ///         account, or (a satellite) serves another Stream.
+    ///         account, or (a satellite) serves another Stream; or the default renderer's code is
+    ///         no longer the code hash it was installed with.
     error InvalidBinding(address target);
     /// @notice The mint request is malformed or breaks a Stream rule (sale kind, collection,
     ///         seed policy, license ID, fee terms).
@@ -206,7 +207,12 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         (`IEditions.notifyAllUpdated`).
     function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash) external;
     /// @notice The renderer serving a work: its pin in `IWorkRecords` once finalized, the default
-    ///         before. `tokenURI` forwards to it.
+    ///         before. `tokenURI` forwards to it (and 6529 Editions' `uri`). Fails closed: reverts
+    ///         with `InvalidBinding` when the default renderer's code is no longer the code hash
+    ///         `setDefaultRenderer` (or the constructor) pinned, and with
+    ///         `IWorkRecords.InvalidRenderer` when a finalized work's pinned renderer changed
+    ///         code; it never falls back to another renderer. A new default renderer, or the
+    ///         errata repin for a finalized work, restores the metadata.
     function rendererOf(uint256 tokenId) external view returns (address);
 
     // ----- hooks for the bound satellites -----
