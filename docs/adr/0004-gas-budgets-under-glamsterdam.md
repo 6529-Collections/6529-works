@@ -127,25 +127,25 @@ no ceiling, or not run on Sepolia.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 270,126 | 350,000 | **5** | 0 | 846,963 |
-| `startWithBid`, steady state | 312,201 | 350,000 | **6** | 0 | 982,312 |
-| `start`, two-party work | 278,402 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 320,486 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 277,832 | 350,000 | **5** | 0 | 852,868 |
+| `start`, steady state | 270,138 | 350,000 | **5** | 0 | 846,963 |
+| `startWithBid`, steady state | 312,213 | 350,000 | **6** | 0 | 982,312 |
+| `start`, two-party work | 278,370 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 320,454 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 277,852 | 350,000 | **5** | 0 | 852,868 |
 | `start`, edition master | 270,809 | 350,000 | **5** | 0 | 847,598 |
-| `start`, an artist's first work | 290,272 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 332,347 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 340,612 | 350,000 | **7** | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 357,347 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 270,164 | 400,000 | 5 | 0 | 846,977 |
-| `start`, first work ever (one-time) | 439,323 | 449,000 (regression) | 13 | 0 | 1,604,862 |
-| `startWithBid`, first bid under new sale terms (one-time) | 382,350 | 390,000 (regression) | 9 | 0 | — |
+| `start`, an artist's first work | 290,252 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 332,327 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 340,580 | 350,000 | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 357,315 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 270,184 | 400,000 | 5 | 0 | 846,977 |
+| `start`, first work ever (one-time) | 439,343 | 449,000 (regression) | 13 | 0 | 1,604,862 |
+| `startWithBid`, first bid under new sale terms (one-time) | 382,362 | 390,000 (regression) | 9 | 0 | — |
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 168,932 |
 | `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 441,363 |
 | `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 |
-| `consume`, as Stream calls it | 94,288 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 268,948 | 275,000 (regression) | 7 | 0 | 1,118,699 |
-| `createEdition`, a Dutch edition | 317,137 | 324,000 (regression) | 9 | 0 | — |
+| `consume`, as Stream calls it | 94,300 | 97,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 268,938 | 275,000 (regression) | 7 | 0 | 1,118,699 |
+| `createEdition`, a Dutch edition | 317,127 | 324,000 (regression) | 9 | 0 | — |
 | `openSale` (one public phase) | 241,730 | 247,000 (regression) | 6 | 0 | 993,668 |
 | `openSale`, the adapter's first sale (one-time) | 284,847 | 291,000 (regression) | 8 | 0 | — |
 | `purchase`, the first copy, new holder | 123,933 | 127,000 (regression) | 1 | 0 | 468,086 |
@@ -155,8 +155,8 @@ no ceiling, or not run on Sepolia.
 | re-rate a work (governed `execute`) | 187,694 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 |
-| `royaltyInfo` (view) | 41,632 | 50,000 of execution | 0 | 0 | 40,667 |
-| `tokenURI` (view, the size matrix) | at most 2,735,372 | 8,000,000 | 0 | 0 | unchanged |
+| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 40,667 |
+| `tokenURI` (view, the size matrix) | at most 2,735,362 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,241,422 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 141,484 | 145,000 (regression) | 3 | 0 | — |
@@ -305,10 +305,11 @@ no ceiling, or not run on Sepolia.
   registered.
 - **Re-measured with the source-quality pass (lane F7a).** The shared install
   check, the split mint-request errors, and the metadata hashes (and so the
-  CREATE2 addresses) they change move the starts by 18 to 94 gas and the other
-  rows by at most a few dozen; the split wallet's deployment is 5,083 gas more
-  (its code-hash check now reverts with the wallet's resolver address). Slot and
-  account counts are unchanged.
+  CREATE2 addresses) they change move the starts by 18 to 82 gas and the other
+  rows by at most 134. The split wallet's code is 25 bytes longer (its
+  code-hash check now reverts with the resolver's address): its deployment costs
+  5,083 more Prague gas, and about 39K more under Glamsterdam (about 1,574 gas a
+  code byte). Slot and account counts are unchanged.
 - **The binding row is an artist's first start of a two-party work with a
   bid:** the table's row with the smallest margin under 350K. The steady-state
   two-party `startWithBid` row has about three times that margin. A forced
