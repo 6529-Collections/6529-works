@@ -12,11 +12,14 @@ import {
 } from "../mocks/identity/IdentityWorksMocks.sol";
 import { IdentityFixture } from "./IdentityFixture.sol";
 
-/// @notice Regression tests from the PR #16 review: the reviewer's proofs of concept, inverted
-///         where the sticky standing snapshot (H1) or the narrower payout freeze (M1) changed the
-///         outcome, plus dormancy accounting (M2), stale-change clearing (L3) and bounds.
-contract ArtistRegistryReviewTest is IdentityFixture {
-    // ----------------------------------------------------------------- H1: sticky standing
+/// @notice The artist registry's standing snapshot (ADR 0001 section 11): which consolidated
+///         wallets of an artist have standing to cancel an override, when they gain it (30 days
+///         after a live two-way consolidation) and lose it (30 days after a refresh records them
+///         missing), how the bounded snapshot fills and ages, and its worst-case gas. Most of these
+///         began as the PR #16 review's proofs of concept, inverted where the sticky snapshot
+///         changed the outcome.
+contract ArtistRegistryStandingTest is IdentityFixture {
+    // ----------------------------------------------------------------- sticky standing
 
     function test_Standing_RecordedAtRegistration() public view {
         Standing[] memory s = registry.standingOf(artistId);
@@ -26,9 +29,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(s[0].missingSince, 0);
     }
 
-    /// @dev PoC-1 inverted: a thief holding the key revokes the artist's consolidation and stages
+    /// Regression: PoC-1 (inverted) in the review of #16
+    /// @dev A thief holding the key revokes the artist's consolidation and stages
     ///      at once; the genuine wallet keeps standing, is captured, and stops the redirect.
-    function test_PoC1_RevokeThenStageStillCapturesTheWallet() public {
+    function test_Standing_RevokeThenStageStillCapturesTheWallet() public {
         PullOnlyPayeeMock payee = new PullOnlyPayeeMock{ value: 1 ether }(registry, artistId);
         _revoke(artist, wallet);
         _stage(artistKey, _identity(thief, thief), thiefKey);
@@ -42,9 +46,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(artist.balance, 1 ether, "the artist's payout, not the thief's");
     }
 
-    /// @dev PoC-2 inverted: swap-and-pop moves a key holder's prepared tail wallet to the front of
-    ///      the live list, but the genuine wallet keeps standing and is captured first.
-    function test_PoC2_SwapAndPopCannotDisplaceStanding() public {
+    /// Regression: PoC-2 (inverted) in the review of #16
+    /// @dev Swap-and-pop moves a key holder's prepared tail wallet to the front of the live list,
+    ///      but the genuine wallet keeps standing and is captured first.
+    function test_Standing_SwapAndPopCannotDisplaceStanding() public {
         address thiefWallet = makeAddr("thiefWallet");
         for (uint256 i; i < 40; ++i) {
             _delegate(artist, address(uint160(0x2000 + i)), FAR);
@@ -151,11 +156,12 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(_cancellers()[0], wallet, "the oldest standing first");
     }
 
-    /// @dev PoC-3, the residual exposure: once a hijack executes, the thief's own prepared
+    /// Regression: PoC-3 in the review of #16
+    /// @dev The residual exposure: once a hijack executes, the thief's own prepared
     ///      wallets gain standing for the new authority, so they are captured and can contest
     ///      each override (a TDH vote then decides; ADR 0003 owner decision 1). The artist's
     ///      genuine wallet keeps standing for the 30-day grace after the hijack.
-    function test_PoC3_ResidualRiskThiefWalletsCancelOverridesAfterAHijack() public {
+    function test_Standing_ResidualRisk_ThiefWalletsCancelOverridesAfterAHijack() public {
         address thiefWallet = makeAddr("thiefWallet");
         _consolidate(thief, thiefWallet);
         vm.warp(block.timestamp + 30 days);
@@ -184,10 +190,11 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(_cancellers()[0], thiefWallet);
     }
 
-    /// @dev PoC-8 (documented): after a rotation A to N while A and N are consolidated, the old key
-    ///      A is an established wallet of N and is captured as an override canceller. The artist
+    /// Regression: PoC-8 in the review of #16
+    /// @dev Documented: after a rotation A to N while A and N are consolidated, the old key A is
+    ///      an established wallet of N and is captured as an override canceller. The artist
     ///      should revoke N to A; A then keeps standing for the 30-day grace.
-    function test_PoC8_OldKeyConsolidatedWithTheNewAuthorityIsCaptured() public {
+    function test_Standing_AnOldKeyConsolidatedWithTheNewAuthorityIsCaptured() public {
         _consolidate(artist, newAuthority);
         vm.warp(block.timestamp + 30 days);
         _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
@@ -210,12 +217,13 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         registry.cancelChange(artistId);
     }
 
-    // ----------------------------------------------------------------- N1, N2: pending, direct
+    // ----------------------------------------------------------------- pending entries, direct checks
 
-    /// @dev N1 inverted: a wallet consolidated after registration is recorded as pending by one
-    ///      refresh (a keeper or the UI), has no standing before its 30 days, and once effective a
-    ///      key holder who revokes it and stages still finds it captured.
-    function test_N1_YoungWalletRecordedPendingIsCapturedAfterRevocation() public {
+    /// Regression: N1 (inverted) in the review of #16
+    /// @dev A wallet consolidated after registration is recorded as pending by one refresh (a
+    ///      keeper or the UI), has no standing before its 30 days, and once effective a key holder
+    ///      who revokes it and stages still finds it captured.
+    function test_Standing_AYoungWalletRecordedPendingIsCapturedAfterRevocation() public {
         address wallet3 = vm.addr(0xB4);
         _consolidate(artist, wallet3);
         uint64 effective = uint64(block.timestamp + 30 days);
@@ -240,12 +248,13 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         registry.cancelChange(artistId);
     }
 
-    /// @dev IDENTITY-3: a consolidation revoked before its 30 days never gives standing (ADR 0001
+    /// Regression: IDENTITY-3 (docs/security/internal-review-2026-10.md)
+    /// @dev A consolidation revoked before its 30 days never gives standing (ADR 0001
     ///      section 11). One transaction from the key plants a wallet and a refresh records it as
     ///      pending. The artist revokes it on day 1 and a refresh observes that: the pending entry
     ///      goes at once, so the wallet is not captured once its recorded `effectiveAt` passes. A
     ///      re-consolidation starts a new 30 days. (A wallet revoked after its 30 days keeps
-    ///      standing for the grace: N1 and the grace tests.)
+    ///      standing for the grace: the young-wallet and grace tests.)
     function test_Standing_PendingWalletRevokedBeforeThirtyDaysNeverGainsStanding() public {
         address planted = makeAddr("plantedWallet");
         uint256 t0 = block.timestamp;
@@ -283,8 +292,9 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(_entry(planted).missingSince, 0);
     }
 
-    /// @dev IDENTITY-3, review of #51 (L1): a pending entry follows its live consolidation's
-    ///      clock, later as well as earlier. Revoked on day 1 with no refresh, re-registered on
+    /// Regression: IDENTITY-3 (docs/security/internal-review-2026-10.md); L1 in the review of #51
+    /// @dev A pending entry follows its live consolidation's clock, later as well as
+    ///      earlier. Revoked on day 1 with no refresh, re-registered on
     ///      day 10 and then refreshed, it is pending until day 40, not day 30, so it is not
     ///      captured on day 30 while its live pair is only 20 days old.
     function test_Standing_PendingEntryFollowsALaterReRegistration() public {
@@ -306,7 +316,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertFalse(_inCancellers(planted), "not captured before its live 30 days");
     }
 
-    /// @dev IDENTITY-3, control: without a refresh observing the revocation before the recorded
+    /// Regression: IDENTITY-3 (docs/security/internal-review-2026-10.md)
+    /// @dev The control: without a refresh observing the revocation before the recorded
     ///      `effectiveAt`, a refresh after it cannot tell when the consolidation ended, and treats
     ///      the entry as an established wallet gone missing. The artist's own refresh after
     ///      revoking (prompted by 6529.io) is what removes a planted wallet in time.
@@ -324,9 +335,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(_entry(planted).missingSince, block.timestamp);
     }
 
-    /// @dev N2 inverted: a recorded wallet beyond the bounded scan is checked directly, so a
-    ///      wallet that is still established is never marked missing or removed.
-    function test_N2_StillEstablishedWalletBeyondTheScanKeepsStanding() public {
+    /// Regression: N2 (inverted) in the review of #16
+    /// @dev A recorded wallet beyond the bounded scan is checked directly, so a wallet that is
+    ///      still established is never marked missing or removed.
+    function test_Standing_AStillEstablishedWalletBeyondTheScanKeepsStanding() public {
         address[16] memory j;
         for (uint256 i; i < 16; ++i) {
             j[i] = address(uint160(0xA000 + i));
@@ -351,10 +363,11 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertTrue(_hasStanding(wallet2), "kept while established");
     }
 
-    /// @dev N2 direct check: after a rotation, a recorded wallet that is consolidated with the new
+    /// Regression: N2 in the review of #16
+    /// @dev After a rotation, a recorded wallet that is consolidated with the new
     ///      authority beyond the new authority's 32-entry scan is checked directly and keeps
     ///      standing instead of being marked missing.
-    function test_N2_DirectCheckBeyondTheNewAuthoritysScan() public {
+    function test_Standing_DirectCheckBeyondTheNewAuthoritysScan() public {
         for (uint256 i; i < 32; ++i) {
             _delegate(newAuthority, address(uint160(0xB000 + i)), FAR);
         }
@@ -371,9 +384,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertEq(s[0].missingSince, 0, "still consolidated with the new authority");
     }
 
-    // ----------------------------------------------------------------- T1: snapshot mechanics
+    // ----------------------------------------------------------------- snapshot mechanics
 
-    /// @dev S09: a full snapshot keeps its missing entries for their grace and records nothing
+    /// Regression: S09 in the review of #16
+    /// @dev A full snapshot keeps its missing entries for their grace and records nothing
     ///      new; slots free up only as missing entries age out.
     function test_Standing_FullSnapshotKeepsMissingEntriesAndSkipsNewOnes() public {
         for (uint256 i; i < 15; ++i) {
@@ -402,7 +416,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertTrue(_hasStanding(address(uint160(0x6100))), "recorded in a freed slot");
     }
 
-    /// @dev S10: removing a non-last entry removes that wallet, not another.
+    /// Regression: S10 in the review of #16
+    /// @dev Removing a non-last entry removes that wallet, not another.
     function test_Standing_RemovesExactlyTheMissingWallet() public {
         _consolidate(artist, wallet2);
         _consolidate(artist, newAuthority);
@@ -441,7 +456,8 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertFalse(_hasStanding(pending), "no slot left for the pending wallet");
     }
 
-    /// @dev S18: a heartbeat refreshes standing.
+    /// Regression: S18 in the review of #16
+    /// @dev A heartbeat refreshes standing.
     function test_Standing_HeartbeatRefreshes() public {
         _consolidate(artist, wallet2);
         vm.warp(block.timestamp + 30 days);
@@ -474,102 +490,14 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertTrue(_hasStanding(wallet2));
     }
 
-    // ----------------------------------------------------------------- M1: payout freeze
-
-    /// @dev PoC-4 inverted: a no-op override does not freeze the payout.
-    function test_PoC4_NoOpOverrideDoesNotFreeze() public {
-        (ArtistIdentity memory current,) = registry.artist(artistId);
-        vm.prank(governor);
-        registry.stageOverride(artistId, ChangeKind.CONTESTED, current, keccak256("x"), 0, "");
-        assertEq(registry.payoutAddress(artistId), artist);
-    }
-
-    /// @dev PoC-7 inverted: a recovery override that keeps a safe payout does not freeze it.
-    function test_PoC7_RecoveryOverrideKeepsASafePayoutLive() public {
-        _stage(artistKey, _identity(artist, payout), 0);
-        vm.warp(block.timestamp + 7 days);
-        registry.executeChange(artistId);
-        PullOnlyPayeeMock payee = new PullOnlyPayeeMock{ value: 1 ether }(registry, artistId);
-        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
-        vm.prank(payout);
-        payee.release();
-        assertEq(payout.balance, 1 ether);
-    }
-
-    /// @dev PoC-5 (observation): a heartbeat during a LOST_KEY notice does not stop it; only a
-    ///      captured wallet or the guardian can (ADR: the old key cannot cancel an override).
-    function test_PoC5_HeartbeatDuringALostKeyNoticeDoesNotStopIt() public {
-        vm.warp(block.timestamp + 366 days);
-        _stageOverride(ChangeKind.LOST_KEY, _identity(newAuthority, newAuthority), newKey);
-        vm.prank(artist);
-        registry.heartbeat(artistId);
-        vm.warp(block.timestamp + 180 days);
-        registry.executeChange(artistId);
-        assertEq(registry.authorityOf(artistId), newAuthority);
-    }
-
-    // ----------------------------------------------------------------- M2: dormancy accounting
-
-    function test_Activity_OverridesAndVetoesDoNotCount() public {
-        (, uint64 last) = registry.artist(artistId);
-        vm.warp(block.timestamp + 1 days);
-        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
-        vm.prank(guardian);
-        registry.vetoChange(artistId);
-        (, uint64 now_) = registry.artist(artistId);
-        assertEq(now_, last);
-    }
-
-    function test_Activity_CancelsAndExecutionsCount() public {
-        vm.warp(block.timestamp + 1 days);
-        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
-        vm.warp(block.timestamp + 1 days);
-        vm.prank(wallet);
-        registry.cancelChange(artistId);
-        _assertActivityNow();
-        vm.prank(guardian);
-        registry.vetoChange(artistId);
-
-        vm.warp(block.timestamp + 1 days);
-        vm.prank(governor);
-        registry.stageOverride(
-            artistId, ChangeKind.CONTESTED, _identity(artist, payout), keccak256("e"), 0, ""
-        );
-        vm.warp(block.timestamp + 180 days);
-        registry.executeChange(artistId);
-        _assertActivityNow();
-
-        _stage(artistKey, _identity(artist, artist), 0);
-        vm.warp(block.timestamp + 1 days);
-        vm.prank(artist);
-        registry.cancelChange(artistId);
-        _assertActivityNow();
-    }
-
-    // ----------------------------------------------------------------- bounds
-
-    function test_FederatedList_BoundedToSixtyFour() public {
-        address federation = address(new FederationRegistryStub());
-        vm.prank(admin);
-        registry.bindFederationRegistry(federation);
-        vm.startPrank(federation);
-        for (uint256 i; i < registry.MAX_FEDERATED(); ++i) {
-            registry.listFederatedContract(artistId, address(uint160(0xF000 + i)));
-        }
-        vm.expectRevert(
-            abi.encodeWithSelector(IArtistRegistry.FederatedListFull.selector, artistId)
-        );
-        registry.listFederatedContract(artistId, stranger);
-        vm.stopPrank();
-    }
-
     // ----------------------------------------------------------------- gas (EIP-7825)
 
-    /// @dev PoC-9: `stageChange` with 16 distinct cold non-established entries (one forward and four
+    /// Regression: PoC-9 in the review of #16
+    /// @dev `stageChange` with 16 distinct cold non-established entries (one forward and four
     ///      expired reverse registrations each) and 16 distinct cold established wallets, all
     ///      added to the standing snapshot and captured. Execution plus intrinsic and calldata
     ///      gas fits far inside the 16,777,216 transaction cap.
-    function test_PoC9_StageChangeAllColdWorstCase() public {
+    function test_StageChange_AllColdWorstCaseFitsTheTransactionCap() public {
         _revoke(artist, wallet);
         for (uint256 i; i < 16; ++i) {
             address w = address(uint160(0x7000 + i));
@@ -602,7 +530,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(total, 5_000_000);
     }
 
-    // ----------------------------------------------------------------- worst-case gas (round 3)
+    // ----------------------------------------------------------------- worst-case gas
 
     uint256 internal constant SCAN_KEY = 0xF100; // 32 scanned wallets
     uint256 internal constant RECORDED_KEY = 0xF200; // recorded wallets moved beyond the scan
@@ -716,9 +644,10 @@ contract ArtistRegistryReviewTest is IdentityFixture {
         assertLt(used, 8 * 50_000);
     }
 
-    // ----------------------------------------------------------------- effectiveAt (round 3)
+    // ----------------------------------------------------------------- effectiveAt
 
-    /// @dev T1: after a rotation, a recorded wallet whose pair with the new authority is older
+    /// Regression: T1 in the review of #16
+    /// @dev After a rotation, a recorded wallet whose pair with the new authority is older
     ///      has its effectiveAt lowered to that pair's, so it is captured at once.
     function test_Standing_RotationLowersEffectiveAtToTheOlderPair() public {
         uint256 old = block.timestamp;
@@ -737,7 +666,7 @@ contract ArtistRegistryReviewTest is IdentityFixture {
     }
 
     /// @dev An established wallet's clock only moves earlier: a key holder's revoke and re-add
-    ///      cannot push it later. (A pending wallet's revocation ends it: IDENTITY-3.)
+    ///      cannot push it later. (A pending wallet's revocation ends it.)
     function test_Standing_ReConsolidationCannotResetTheClock() public {
         uint256 first = block.timestamp;
         _consolidate(artist, wallet2);
@@ -840,11 +769,6 @@ contract ArtistRegistryReviewTest is IdentityFixture {
             if (s[i].wallet == w) return true;
         }
         return false;
-    }
-
-    function _assertActivityNow() internal view {
-        (, uint64 last) = registry.artist(artistId);
-        assertEq(last, block.timestamp);
     }
 
     function _expectNotAuthorized(address account) internal {

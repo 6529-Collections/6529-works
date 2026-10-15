@@ -818,6 +818,62 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.heartbeat(9);
     }
 
+    /// Regression: PoC-5 (an observation) in the review of #16
+    /// @dev A heartbeat during a LOST_KEY notice does not stop it; only a
+    ///      captured wallet or the guardian can (ADR: the old key cannot cancel an override).
+    function test_Heartbeat_DuringALostKeyNoticeDoesNotStopIt() public {
+        vm.warp(block.timestamp + 366 days);
+        _stageOverride(ChangeKind.LOST_KEY, _identity(newAuthority, newAuthority), newKey);
+        vm.prank(artist);
+        registry.heartbeat(artistId);
+        vm.warp(block.timestamp + 180 days);
+        registry.executeChange(artistId);
+        assertEq(registry.authorityOf(artistId), newAuthority);
+    }
+
+    function _assertActivityNow() internal view {
+        (, uint64 last) = registry.artist(artistId);
+        assertEq(last, block.timestamp);
+    }
+
+    /// Regression: M2 (dormancy accounting) in the review of #16
+    function test_Activity_OverridesAndVetoesDoNotCount() public {
+        (, uint64 last) = registry.artist(artistId);
+        vm.warp(block.timestamp + 1 days);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+        (, uint64 now_) = registry.artist(artistId);
+        assertEq(now_, last);
+    }
+
+    /// Regression: M2 (dormancy accounting) in the review of #16
+    function test_Activity_CancelsAndExecutionsCount() public {
+        vm.warp(block.timestamp + 1 days);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, newAuthority), newKey);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(wallet);
+        registry.cancelChange(artistId);
+        _assertActivityNow();
+        vm.prank(guardian);
+        registry.vetoChange(artistId);
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(governor);
+        registry.stageOverride(
+            artistId, ChangeKind.CONTESTED, _identity(artist, payout), keccak256("e"), 0, ""
+        );
+        vm.warp(block.timestamp + 180 days);
+        registry.executeChange(artistId);
+        _assertActivityNow();
+
+        _stage(artistKey, _identity(artist, artist), 0);
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(artist);
+        registry.cancelChange(artistId);
+        _assertActivityNow();
+    }
+
     // ----------------------------------------------------------------- governed wiring
 
     function test_SetConsolidationSource() public {
@@ -1136,6 +1192,22 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.listFederatedContract(5, token);
     }
 
+    /// Regression: the bounds in the review of #16
+    function test_FederatedList_BoundedToSixtyFour() public {
+        address federation = address(new FederationRegistryStub());
+        vm.prank(admin);
+        registry.bindFederationRegistry(federation);
+        vm.startPrank(federation);
+        for (uint256 i; i < registry.MAX_FEDERATED(); ++i) {
+            registry.listFederatedContract(artistId, address(uint160(0xF000 + i)));
+        }
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.FederatedListFull.selector, artistId)
+        );
+        registry.listFederatedContract(artistId, stranger);
+        vm.stopPrank();
+    }
+
     // ----------------------------------------------------------------- artist role resolution
 
     function test_IsArtist_FalseBeforeTheStreamIsSet() public view {
@@ -1297,6 +1369,28 @@ contract ArtistRegistryTest is IdentityFixture {
         payee.release();
         assertEq(newAuthority.balance, 1 ether);
         assertEq(artist.balance, 0);
+    }
+
+    /// Regression: PoC-4 (inverted) in the review of #16
+    /// @dev A no-op override does not freeze the payout.
+    function test_PayoutFreeze_ANoOpOverrideDoesNotFreeze() public {
+        (ArtistIdentity memory current,) = registry.artist(artistId);
+        vm.prank(governor);
+        registry.stageOverride(artistId, ChangeKind.CONTESTED, current, keccak256("x"), 0, "");
+        assertEq(registry.payoutAddress(artistId), artist);
+    }
+
+    /// Regression: PoC-7 (inverted) in the review of #16
+    /// @dev A recovery override that keeps a safe payout does not freeze it.
+    function test_PayoutFreeze_ARecoveryOverrideKeepsASafePayoutLive() public {
+        _stage(artistKey, _identity(artist, payout), 0);
+        vm.warp(block.timestamp + 7 days);
+        registry.executeChange(artistId);
+        PullOnlyPayeeMock payee = new PullOnlyPayeeMock{ value: 1 ether }(registry, artistId);
+        _stageOverride(ChangeKind.CONTESTED, _identity(newAuthority, payout), newKey);
+        vm.prank(payout);
+        payee.release();
+        assertEq(payout.balance, 1 ether);
     }
 
     // ----------------------------------------------------------------- payout validation
