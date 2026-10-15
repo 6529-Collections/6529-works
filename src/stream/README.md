@@ -66,7 +66,12 @@ contracts in [`test/mocks/stream/`](../../test/mocks/stream).
   again with another). Changed code makes `tokenURI` revert rather than fall
   back to another renderer, which would show a finalized work in an output
   format nobody pinned; a new default renderer, or the errata repin, restores
-  it. `coreOf` is the cheap per-work
+  it. The errata repin needs the lead artist's signature (by the artist ID's
+  current authority), so a finalized work whose pinned renderer's code changed
+  stays without metadata while that key is lost: the artist first recovers the
+  authority through the artist registry (a staged change or a governed override,
+  see the [identity module](../identity/README.md)), then signs the repin.
+  `coreOf` is the cheap per-work
   read the satellites use, including the current royalty rate an edition
   inherits.
 

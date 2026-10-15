@@ -632,29 +632,32 @@ wraps a script up to 128 KiB (its limit is the size check of the full form).
 deployed): every cap a work can reach at once, measured cold through
 `Stream.tokenURI` and `Editions.uri`. The dearest records of the matrix below (white
 space in all the room the attributes leave, before each or after every token, with
-top-level members or an array of zeros, and the dearest UTF-8 fill), next to 256 KiB
+top-level members or an array of zeros, and the dearest UTF-8 fill), each attribute
+named with 33 characters (the longest name the renderer compares letter by letter
+with its own), next to 256 KiB
 of attested `Base64` `text/html` (inlined), a `PREVIEW` image at the WorkRecords cap
 (4 KiB of `Identity` or 16 KiB of attested `Base64`, inlined), 32 media files, a
 64-byte `LicenseRef` license whose text file is served by locator, 16 locators on it
 (the longest, 66 bytes, served last), the dearest collection name 6529 Stream accepts,
-an ARTIST seed and a dispute statement. The name is 85 U+2028 and a `%`: JSON
+an ARTIST seed and a dispute statement. The name is 85 U+2028 and a `#`: JSON
 escaping makes each U+2028 six bytes (`\u2028`). `createCollection` refuses the
-names that escape longer, with control characters, `<`, `"` or `\`. With 256 `%` the
-edition row is 7.69M, with 256 `#` 7.70M, with plain ASCII 7.57M.
+names that escape longer, with control characters, `<`, `"` or `\`. 256 `%` or `#`
+cost about 0.08M less, plain ASCII about 0.2M less.
 
 | Row | Gas |
 | --- | --- |
-| white space before each attribute, an array of zeros, rendered as the edition of its master (`Editions.uri`, the dearest) | 7.77M |
-| the same, through `Stream.tokenURI` | 7.76M |
-| the same, the preview as 16 KiB of `Base64` | 7.67M |
-| white space after every token, an array of zeros | 7.74M |
-| white space before each attribute, top-level members | 7.74M |
-| `aa` and a 2-byte sequence, an array of zeros | 7.40M |
+| white space before each attribute, an array of zeros, rendered as the edition of its master (`Editions.uri`, the dearest) | 7.79M |
+| the same, through `Stream.tokenURI` | 7.78M |
+| the same, the preview as 16 KiB of `Base64` | 7.69M |
+| white space after every token, an array of zeros | 7.78M |
+| white space before each attribute, top-level members | 7.76M |
+| `aa` and a 2-byte sequence, an array of zeros | 7.47M |
 
-These are Prague gas, as ADR 0004 defines the budget, and the dearest row leaves
-2.8% (about 226,000 gas) under 8M. Reads are not repriced on Sepolia's Glamsterdam,
-but the margin is small: re-measure it whenever a fork (Glamsterdam on mainnet or a
-later one) reprices compute, memory or cold reads.
+These are Prague gas, as ADR 0004 defines the budget. The highest `tokenURI` found,
+by the review of this proof with the same shape, is 7,796,194 gas: about 2.5% (about
+204,000 gas) under 8M. Reads are not repriced on Sepolia's Glamsterdam, but the
+margin is small: re-measure it whenever a fork (Glamsterdam on mainnet or a later
+one) reprices compute, memory or cold reads.
 
 The WorkRecords caps are what make it hold. Without them the same work cost up to
 9.8M: a locator could be 2 KiB of `%` (each escaped at about 470 gas), and a preview

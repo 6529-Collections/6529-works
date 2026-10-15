@@ -28,7 +28,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         - **The record**: the dearest rows of the renderer's record matrix
 ///           (`RendererGasBudgetTest`): 32 attributes at the member cap with white space before
 ///           each or after every token in all the room there is, 512 `%`, the rest of the 1,024
-///           units as top-level members or an array of zeros, or the costliest UTF-8 fill.
+///           units as top-level members or an array of zeros, or the costliest UTF-8 fill. Each
+///           attribute's name is 33 characters, the longest the renderer compares letter by
+///           letter with its own names (`TRAIT`).
 ///         - **The media**: 256 KiB of attested `Base64` `text/html` as the primary (inlined),
 ///           a PREVIEW image at the WorkRecords cap (`Limits.MAX_PREVIEW_BYTES`), stored as
 ///           `Identity` or as attested `Base64` (inlined), and 32 media files in all
@@ -44,8 +46,11 @@ contract TokenUriBudgetTest is IntegrationBase {
     uint256 internal constant MAX_ATTRIBUTES = 32;
     uint256 internal constant MAX_ESCAPES = 512;
     uint256 internal constant MAX_VALUES = 1_024;
-    bytes internal constant ATTR =
-        '{"trait_type":"k","value":1,"display_type":"number","max_value":9}';
+    /// @dev The dearest trait name: 33 characters is the longest name the renderer lowers and
+    ///      compares with its own (a longer one cannot be one of them without two spaces in a row).
+    bytes internal constant TRAIT = "abcdefghijklmnopqrstuvwxyzabcdefg";
+    bytes internal constant ATTR = '{"trait_type":"abcdefghijklmnopqrstuvwxyzabcdefg","value":1,'
+        '"display_type":"number","max_value":9}';
     uint256 internal constant ATTR_UNITS = 9;
     /// @dev The largest PREVIEW image of each encoding `openRecord` accepts.
     uint256 internal constant PREVIEW_IDENTITY = Limits.MAX_PREVIEW_BYTES / 4;
@@ -119,7 +124,7 @@ contract TokenUriBudgetTest is IntegrationBase {
             bytes("{"),
             '"trait_type"',
             ":",
-            '"k"',
+            bytes.concat('"', TRAIT, '"'),
             ",",
             '"value"',
             ":",
@@ -159,11 +164,11 @@ contract TokenUriBudgetTest is IntegrationBase {
 
     /// @dev The dearest collection name to render, of those `createCollection` accepts (it
     ///      refuses control characters, `<`, `"` and `\`, which JSON escaping makes six bytes):
-    ///      U+2028 three bytes at a time, escaped to six (`\u2028`), and a `%` to fill the 256
-    ///      bytes. Measured on the edition row: 7.77M, against 7.69M for 256 `%`, 7.70M for 256
-    ///      `#` and 7.57M for plain ASCII.
+    ///      U+2028 three bytes at a time, escaped to six (`\u2028`), and a `#` to fill the 256
+    ///      bytes (the delta review's dearest). 256 `%` or `#` cost about 0.08M less, plain ASCII
+    ///      about 0.2M less.
     function _dearestName() internal pure returns (string memory) {
-        return string(bytes.concat(_fill(hex"e280a8", 255), "%"));
+        return string(bytes.concat(_fill(hex"e280a8", 255), "#"));
     }
 
     struct Built {
