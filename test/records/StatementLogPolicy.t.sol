@@ -12,9 +12,12 @@ import { StatementModel } from "./StatementModel.sol";
 import {
     ArtistResolverMock,
     ERC1155BalanceMock,
+    ERC721AndERC1155Mock,
+    ERC721OwnerAnswerMock,
     OZERC1155Mock,
     OZERC721Mock
 } from "../mocks/records/RecordsMocks.sol";
+import { ReturnDataMock } from "../mocks/libraries/AdversarialTargets.sol";
 import { EvilResolverMock, ForwardingResolverMock } from "../mocks/records/RecordsResolvers.sol";
 
 /// @notice The policy the review asked for: the ARTIST trust boundary and resolver binding, no
@@ -262,11 +265,59 @@ contract StatementLogPolicyTest is StatementLogFixture {
         dispute.kind = keccak256("SOME_PLATFORM_NOTE");
         vm.prank(platform);
         stmtLog.appendPlatform(dispute);
+        // So does a kind whose label sorts above the outcome's, about either refused subject
+        // (mutation testing: only labels below the outcome's were tried).
+        dispute.kind = keccak256("PROVENANCE_NOTE");
+        assertGt(uint256(dispute.kind), uint256(StatementKinds.DISPUTE_OUTCOME));
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
+        (dispute.token, dispute.id) = (address(works), 2);
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
         dispute.kind = StatementKinds.DISPUTE_OUTCOME;
         (dispute.token, dispute.id) = (address(0), uint256(keccak256("an item")));
         vm.prank(platform);
         stmtLog.appendPlatform(dispute);
         (dispute.token, dispute.id) = (address(stmtLog), 7); // a contract that is no token
+        vm.prank(platform);
+        stmtLog.appendPlatform(dispute);
+    }
+
+    /// @dev A token that answers both ERC-721 and ERC-1155 is refused like an ERC-1155, even for
+    ///      an ID it says has an owner (found by mutation testing).
+    function test_DisputeOutcome_RefusesATokenThatAnswersBothStandards() public {
+        ERC721AndERC1155Mock hybrid = new ERC721AndERC1155Mock();
+        hybrid.mint(tokenOwner, 1);
+        Statement memory dispute = _statement(address(hybrid), 1);
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStatementLog.UnknownDisputeSubject.selector, address(hybrid), 1)
+        );
+        stmtLog.appendPlatform(dispute);
+    }
+
+    /// @dev An ERC-721's `ownerOf` must answer a whole word naming an owner: the zero address
+    ///      (instead of a revert) and a packed address shorter than a word are both
+    ///      `UnknownDisputeSubject` (found by mutation testing).
+    function test_DisputeOutcome_AnErc721MustAnswerAWordNamingAnOwner() public {
+        ERC721OwnerAnswerMock token = new ERC721OwnerAnswerMock();
+        Statement memory dispute = _statement(address(token), 1);
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        bytes memory unknown =
+            abi.encodeWithSelector(IStatementLog.UnknownDisputeSubject.selector, address(token), 1);
+
+        token.setAnswer(abi.encode(address(0)));
+        vm.prank(platform);
+        vm.expectRevert(unknown);
+        stmtLog.appendPlatform(dispute);
+
+        token.setAnswer(abi.encodePacked(tokenOwner)); // 20 bytes
+        vm.prank(platform);
+        vm.expectRevert(unknown);
+        stmtLog.appendPlatform(dispute);
+
+        token.setAnswer(abi.encode(tokenOwner)); // positive control
         vm.prank(platform);
         stmtLog.appendPlatform(dispute);
     }
@@ -307,6 +358,33 @@ contract StatementLogPolicyTest is StatementLogFixture {
         assertEq(
             stmtLog.latestDisputeOutcome(address(nft), 1), StatementModel.decode(logs[0]).entryHash
         );
+    }
+
+    /// @dev The item fallback follows only a Stream's full `coreOf` answer, 192 bytes: a token
+    ///      whose answer is shorter keeps its own result, zero, even when the answer's first word
+    ///      names an item with an outcome (found by mutation testing).
+    function test_LatestDisputeOutcome_FollowsOnlyAFullCoreOfAnswer() public {
+        bytes32 itemHash = keccak256("an item");
+        Statement memory dispute = _statement(address(0), uint256(itemHash));
+        dispute.kind = StatementKinds.DISPUTE_OUTCOME;
+        vm.prank(platform);
+        bytes32 outcome = stmtLog.appendPlatform(dispute);
+
+        ReturnDataMock token = new ReturnDataMock();
+        token.configure(abi.encode(itemHash, 1, 1, 1, 1, 6_529), false);
+        assertEq(stmtLog.latestDisputeOutcome(address(token), 1), outcome, "a full answer");
+
+        bytes[3] memory shorter = [ // 191, 32 and 0 bytes
+            abi.encodePacked(
+                itemHash, uint256(1), uint256(1), uint256(1), uint256(1), uint248(6_529)
+            ),
+            abi.encode(itemHash),
+            bytes("")
+        ];
+        for (uint256 i; i < shorter.length; ++i) {
+            token.configure(shorter[i], false);
+            assertEq(stmtLog.latestDisputeOutcome(address(token), 1), bytes32(0));
+        }
     }
 
     // ----------------------------------------------------- relayed nonce event

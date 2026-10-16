@@ -434,6 +434,22 @@ contract VrfEntropyModuleTest is EntropyBase {
         module.requestSeed(_item(0), root, proof);
     }
 
+    /// @dev A proof of exactly `MAX_PROOF_LENGTH` nodes that places the item in an approved
+    ///      package is accepted: the cap refuses only longer ones (found by mutation testing).
+    function test_Gate_AcceptsAProofOfExactlyTheMaximumLength() public {
+        bytes32[] memory proof = new bytes32[](module.MAX_PROOF_LENGTH());
+        bytes32 deepRoot = WorksHashing.leaf(items[0]);
+        for (uint256 i; i < proof.length; ++i) {
+            proof[i] = keccak256(abi.encode("sibling", i));
+            deepRoot = _pair(deepRoot, proof[i]);
+        }
+        registry.setStatus(deepRoot, IPackageRegistry.PackageStatus.APPROVED);
+        vm.prank(stranger);
+        assertEq(module.requestSeed(_item(0), deepRoot, proof), 1);
+        (uint256 requestId,) = module.requestOf(items[0]);
+        assertEq(requestId, 1);
+    }
+
     /// @dev The Merkle loop is bounded: a proof past the cap is refused before any hashing, so
     ///      the work of a refused call does not grow with the length of the proof.
     function test_Gate_AnOverlongProofIsRefusedBeforeItIsHashed() public {

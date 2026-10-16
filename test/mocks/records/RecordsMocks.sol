@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { ERC1155 } from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import { IArtistRoleResolver } from "src/interfaces/IArtistRoleResolver.sol";
@@ -76,6 +78,34 @@ contract OZERC721Mock is ERC721 {
 
     function mint(address to, uint256 id) external {
         _mint(to, id);
+    }
+}
+
+/// @dev An ERC-721 that also claims ERC-1155 by ERC-165, as a hybrid token may.
+contract ERC721AndERC1155Mock is OZERC721Mock {
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IERC1155).interfaceId || super.supportsInterface(interfaceId);
+    }
+}
+
+/// @dev An ERC-721 by ERC-165 whose `ownerOf` answers the bytes a test sets, as an arbitrary token
+///      may: the zero address instead of a revert, or a packed address shorter than a word.
+contract ERC721OwnerAnswerMock {
+    bytes internal answer;
+
+    function setAnswer(bytes calldata answer_) external {
+        answer = answer_;
+    }
+
+    function ownerOf(uint256) external view returns (address) {
+        bytes memory data = answer;
+        assembly ("memory-safe") {
+            return(add(data, 0x20), mload(data))
+        }
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId;
     }
 }
 
