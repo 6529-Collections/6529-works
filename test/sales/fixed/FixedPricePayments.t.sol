@@ -22,7 +22,8 @@ import {
     RebasingToken,
     RejectingRecipient,
     ReentrantRecipient,
-    ReturnsFalseToken
+    ReturnsFalseToken,
+    RevertOnZeroToken
 } from "../../mocks/economics/EconomicsMocks.sol";
 import { GasBurnerWallet, HostileReceiver, MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { FixedPriceBase } from "./FixedPriceBase.sol";
@@ -183,6 +184,27 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         assertEq(usd.nonces(alice), 0, "the permit was never submitted");
     }
 
+    /// @dev A permit signature longer than 65 bytes is refused, not read for its first 65 (found
+    ///      by mutation testing).
+    function test_Permit_RefusesASignatureLongerThan65Bytes() public {
+        Payment memory pay = _permitPayment(
+            aliceKey, alice, address(fixedSale), USD_PRICE, block.timestamp + 1 hours
+        );
+        pay.signature = bytes.concat(pay.signature, hex"00");
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        _purchase(alice, _usdPurchase(alice, 1), new bytes32[](0), pay);
+        assertEq(usd.nonces(alice), 0, "the permit was never submitted");
+    }
+
+    /// @dev A permit is good through its deadline second (found by mutation testing).
+    function test_Permit_PaysAtItsDeadlineSecond() public {
+        Payment memory pay =
+            _permitPayment(aliceKey, alice, address(fixedSale), USD_PRICE, block.timestamp);
+        _purchase(alice, _usdPurchase(alice, 1), new bytes32[](0), pay);
+        assertEq(editions.balanceOf(alice, USD_ED), 1);
+        _assertPaid(USD_PRICE);
+    }
+
     // ------------------------------------------------------------------ Permit2
 
     function test_Permit2_RelayerSubmitsTheSignedIntent() public {
@@ -297,6 +319,22 @@ contract FixedPricePaymentsTest is FixedPriceBase {
         _purchase(relayer, p, new bytes32[](0), pay);
         assertEq(editions.balanceOf(bob, USD_ED), 1);
         assertEq(usd.balanceOf(address(safe)), 100e18 - USD_PRICE);
+    }
+
+    /// @dev Both Permit2 deltas count from the balances before the pull, so tokens the adapter
+    ///      already holds (anyone can send some) do not fail a purchase (found by mutation
+    ///      testing).
+    function test_Permit2_PaysWhileTheAdapterHoldsTheToken() public {
+        usd.mint(address(fixedSale), 1e18);
+        vm.prank(alice);
+        usd.approve(address(permit2), type(uint256).max);
+        IFixedPriceSale.Purchase memory p = _usdPurchase(alice, 1);
+        Payment memory pay = _intent(aliceKey, alice, p, USD_PRICE, 0, block.timestamp + 1 hours);
+        _purchase(relayer, p, new bytes32[](0), pay);
+        assertEq(editions.balanceOf(alice, USD_ED), 1);
+        assertEq(usd.balanceOf(alice), 1000e18 - USD_PRICE);
+        assertEq(usd.balanceOf(seller), USD_PRICE - _fee(USD_PRICE));
+        assertEq(usd.balanceOf(address(fixedSale)), 1e18, "the held tokens stay");
     }
 
     function test_Permit2_PayerKeyedLeafNeedsThePayersSignature() public {
@@ -432,6 +470,18 @@ contract FixedPricePaymentsTest is FixedPriceBase {
             abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token))
         );
         _purchase(relayer, p, new bytes32[](0), pay);
+    }
+
+    /// @dev A zero charge moves no tokens, so a free sale in a token that refuses zero-value
+    ///      transfers still sells (found by mutation testing).
+    function test_HostileToken_ZeroChargeMovesNothing() public {
+        RevertOnZeroToken token = new RevertOnZeroToken();
+        uint256 id = uint256(uint160(address(token)));
+        allowlist.set(address(token), true);
+        editions.setTerms(id, _terms(SaleKind.FIXED_PRICE, address(token), 0, ""), SIZE);
+        uint256 sale = _openPublic(id, 0);
+        _purchase(alice, _p(sale, 0, alice, 1, 0, 0), new bytes32[](0), _direct(alice, 0));
+        assertEq(editions.balanceOf(alice, id), 1);
     }
 
     function test_HostileToken_BlockedSellerIsPaidThroughEscrow() public {

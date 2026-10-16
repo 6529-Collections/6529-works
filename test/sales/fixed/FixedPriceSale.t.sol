@@ -31,8 +31,10 @@ import { MintSaleBase } from "src/sales/MintSaleBase.sol";
 import { Mock1271Account } from "../../mocks/economics/EconomicsMocks.sol";
 import {
     CreatorReentrant,
+    InboundExcessToken,
     InboundShortToken,
-    OverDebitToken
+    OverDebitToken,
+    UnderDebitToken
 } from "../../mocks/sales/HostileSaleMocks.sol";
 import {
     MockAssetAllowlist,
@@ -272,6 +274,20 @@ contract FixedPriceSaleTest is FixedPriceBase {
             abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(editions), 42)
         );
         _openPublic(42, 0);
+    }
+
+    /// @dev Terms without a fee recipient register none: the zero address takes no index, so the
+    ///      fee-recipient count in slot 0 does not move (found by mutation testing).
+    function test_OpenSale_NoFeeRecipientTakesNoIndex() public {
+        _openPublic(ETH_ED, 0); // registers `network` as index 1
+        PrimaryTerms memory t = _terms(SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, "");
+        (t.feeRecipient, t.feeShare) = (address(0), 0);
+        editions.setTerms(40, t, SIZE);
+        uint256 saleId = _openPublic(40, 0);
+        assertEq(_locked(saleId).feeRecipient, address(0));
+        uint256 word = uint256(vm.load(address(fixedSale), bytes32(0)));
+        assertEq(uint64(word >> 168), fixedSale.nextSaleId(), "slot 0 holds nextSaleId");
+        assertEq(uint16(word >> 232), 1, "still one fee recipient");
     }
 
     /// @dev QUALITY-4: a phase is stored in one word, plus its root for an allowlist phase; the
@@ -1252,10 +1268,22 @@ contract FixedPriceSaleTest is FixedPriceBase {
         );
     }
 
+    /// @dev A token that mints an ID above or below the sale's fails the purchase (the ID below
+    ///      found by mutation testing).
     function test_Purchase_RevertsWhenTheTokenMintsAnotherId() public {
         uint256 saleId = _openPublic(ETH_ED, 0);
         editions.setIdOffset(1);
         vm.deal(alice, PRICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(editions), ETH_ED
+            )
+        );
+        vm.prank(alice);
+        fixedSale.purchase{ value: PRICE }(
+            _p(saleId, 0, alice, 1, 0, 0), new bytes32[](0), _eth(alice, PRICE)
+        );
+        editions.setIdOffset(type(uint256).max); // the ID below
         vm.expectRevert(
             abi.encodeWithSelector(
                 ISaleAdapter.InvalidSaleTerms.selector, address(editions), ETH_ED
@@ -1462,6 +1490,38 @@ contract FixedPriceSaleTest is FixedPriceBase {
     /// @dev The payer-side Permit2 delta is checked.
     function test_Purchase_APermit2PayerOverDebitReverts() public {
         OverDebitToken token = new OverDebitToken();
+        uint256 saleId = _tokenSale(address(token));
+        token.mint(alice, 100e18);
+        vm.prank(alice);
+        token.approve(address(permit2), type(uint256).max);
+        IFixedPriceSale.Purchase memory p = _p(saleId, 0, alice, 1, 0, 0);
+        Payment memory pay = _intent(aliceKey, alice, address(token), p, 10e18, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token))
+        );
+        _purchase(relayer, p, new bytes32[](0), pay);
+    }
+
+    /// @dev The adapter-side Permit2 delta is exact: receiving more than the charge fails too
+    ///      (found by mutation testing).
+    function test_Purchase_APermit2InboundExcessReverts() public {
+        InboundExcessToken token = new InboundExcessToken();
+        uint256 saleId = _tokenSale(address(token));
+        token.mint(alice, 100e18);
+        vm.prank(alice);
+        token.approve(address(permit2), type(uint256).max);
+        IFixedPriceSale.Purchase memory p = _p(saleId, 0, alice, 1, 0, 0);
+        Payment memory pay = _intent(aliceKey, alice, address(token), p, 10e18, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token))
+        );
+        _purchase(relayer, p, new bytes32[](0), pay);
+    }
+
+    /// @dev The payer-side Permit2 delta is exact: a payer debited less than the charge fails
+    ///      too (found by mutation testing).
+    function test_Purchase_APermit2PayerUnderDebitReverts() public {
+        UnderDebitToken token = new UnderDebitToken();
         uint256 saleId = _tokenSale(address(token));
         token.mint(alice, 100e18);
         vm.prank(alice);

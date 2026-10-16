@@ -502,6 +502,23 @@ contract DutchSaleTest is DutchBase {
         dutch.purchase(saleId, bob, 2, USD_START, fresh);
     }
 
+    /// @dev A Permit2 intent is good through its deadline second (found by mutation testing).
+    function test_Erc20_Permit2PaysAtItsDeadlineSecond() public {
+        uint256 saleId = _openNow(USD_LINEAR);
+        vm.warp(block.timestamp + DURATION);
+        usd.mint(alice, USD_REST);
+        vm.prank(alice);
+        usd.approve(address(permit2), type(uint256).max);
+        uint256 deadline = block.timestamp;
+        Payment memory pay = _intent(
+            aliceKey, alice, _witness(saleId, alice, 1, USD_REST, deadline), USD_REST, 0, deadline
+        );
+        vm.prank(relayer);
+        dutch.purchase(saleId, alice, 1, USD_REST, pay);
+        assertEq(editions.balanceOf(alice, USD_LINEAR), 1);
+        assertEq(usd.balanceOf(alice), 0);
+    }
+
     function test_Erc20_RejectsEthAndShortAmounts() public {
         uint256 saleId = _openNow(USD_LINEAR);
         usd.mint(alice, 1000e18);
