@@ -54,6 +54,17 @@ contract FederationRegistryTest is FixedPriceBase {
         assertEq(fixedSale.federationRegistryCodeHash(), bytes32(0));
     }
 
+    /// @dev Removal records a zero code hash, not the zero address's, which is the empty-code
+    ///      hash once that account holds ETH, as on mainnet (found by mutation testing).
+    function test_SetFederationRegistry_RemovalRecordsAZeroHash() public {
+        _install();
+        vm.deal(address(0), 1);
+        assertEq(address(0).codehash, keccak256(""));
+        vm.prank(admin);
+        fixedSale.setFederationRegistry(address(registry), address(0));
+        assertEq(fixedSale.federationRegistryCodeHash(), bytes32(0));
+    }
+
     function test_SetFederationRegistry_IsGovernedAndCompareAndSet() public {
         vm.expectRevert(
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
@@ -100,6 +111,34 @@ contract FederationRegistryTest is FixedPriceBase {
         vm.etch(address(registry), bytes.concat(address(registry).code, hex"00"));
         assertTrue(registry.isActive(address(fed)));
         assertFalse(fixedSale.isTarget(address(fed)));
+    }
+
+    /// @dev The pin is an equality: new code whose hash sorts below the pin is ignored as well
+    ///      as code whose hash sorts above it (found by mutation testing).
+    function test_IsTarget_IgnoresARegistryWhoseCodeHashMovedEitherWay() public {
+        registry.setEntry(address(fed), FED_FEE, true);
+        _install();
+        bytes32 pin = fixedSale.federationRegistryCodeHash();
+        bytes memory code = address(registry).code;
+        bool[2] memory below = [true, false];
+        for (uint256 i; i < below.length; ++i) {
+            vm.etch(address(registry), _movedCode(code, pin, below[i]));
+            assertEq(address(registry).codehash < pin, below[i]);
+            assertTrue(registry.isActive(address(fed)));
+            assertFalse(fixedSale.isTarget(address(fed)));
+        }
+    }
+
+    /// @dev `code` with one byte appended, chosen so that its hash sorts below `pin` (or above).
+    function _movedCode(bytes memory code, bytes32 pin, bool below)
+        internal
+        pure
+        returns (bytes memory moved)
+    {
+        for (uint256 b;; ++b) {
+            moved = bytes.concat(code, bytes1(uint8(b)));
+            if ((keccak256(moved) < pin) == below) return moved;
+        }
     }
 
     /// Regression: MARKET-6 (docs/security/internal-review-2026-10.md)
@@ -236,5 +275,22 @@ contract FederationRegistryTest is FixedPriceBase {
         );
         vm.prank(creator);
         fixedSale.openSale(address(fedToken), 3, _one(_phase(0, 0, false, false)), _noConsent());
+    }
+
+    /// @dev The registered code hash must equal the token's: one just below or just above it is
+    ///      refused (found by mutation testing).
+    function test_FederatedSale_RefusesARegisteredHashOnEitherSide() public {
+        (MockFederationRegistry fedRegistry, MockEditionTarget fedToken) = _fedSetup(address(0));
+        uint256 actual = uint256(address(fedToken).codehash);
+        uint256[2] memory registered = [actual - 1, actual + 1];
+        IFixedPriceSale.Phase[] memory phases = _one(_phase(0, 0, false, false));
+        for (uint256 i; i < registered.length; ++i) {
+            fedRegistry.setCodeHash(address(fedToken), bytes32(registered[i]));
+            vm.expectRevert(
+                abi.encodeWithSelector(ISaleAdapter.InvalidSaleTerms.selector, address(fedToken), 3)
+            );
+            vm.prank(creator);
+            fixedSale.openSale(address(fedToken), 3, phases, _noConsent());
+        }
     }
 }

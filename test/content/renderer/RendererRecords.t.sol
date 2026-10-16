@@ -771,6 +771,24 @@ contract RendererRecordsTest is RendererBase {
         assertEq(_str(_out(), ".attributes[0].value"), unicode"Caf\u00e9");
     }
 
+    /// @dev A trait name is checked on its own bytes only, not on the memory after it in its last
+    ///      word, which here holds a copy of the record's long non-ASCII value: the attribute stays
+    ///      (found by mutation testing).
+    function test_TraitNames_TheMemoryAfterANameDoesNotCount() public {
+        bytes memory value = _fill(unicode"\u00e9", 10_000);
+        _raw(
+            bytes.concat(
+                '{"attributes":[{"trait_type":"Palette","value":"', value, '"}],"name":"N"}'
+            )
+        );
+
+        string memory j = _out();
+
+        assertFalse(_has(j, ".record_status"));
+        assertEq(_str(j, ".attributes[0].trait_type"), "Palette");
+        assertEq(bytes(_str(j, ".attributes[0].value")), value);
+    }
+
     /// Regression: L2 and H2 in the review of #20
     /// @dev A name with a backslash, as a key, is refused, so an escape cannot spell a reserved
     ///      name (the review's decision on H2). The refusal is for any backslash, of any name length; only names of

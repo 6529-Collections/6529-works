@@ -198,6 +198,65 @@ contract WorkRecordsTest is RecordsFixture {
         // (`Stream.t.sol`, `test_mint_revertsForStreamRuleBreaks`).
     }
 
+    /// @dev An item other than the minted one is refused whichever way its hash sorts against
+    ///      the minted item's (found by mutation testing).
+    function test_openRecord_refusesAnotherItemEitherWay() public {
+        (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, false);
+        bytes32 minted = WorksHashing.itemHash(item);
+        bool below;
+        bool above;
+        for (uint256 i = 1; !(below && above); ++i) {
+            item.recordFileId = keccak256(abi.encode("another record", i));
+            bool lower = WorksHashing.itemHash(item) < minted;
+            if (lower ? below : above) continue;
+            if (lower) below = true;
+            else above = true;
+            _expectBadOpen(tokenId, item, media);
+        }
+    }
+
+    /// @dev A valid media list other than the committed one is refused whichever way its
+    ///      commitment sorts against the item's media hash (found by mutation testing).
+    function test_openRecord_refusesOtherMediaEitherWay() public {
+        (uint256 tokenId, PackageItem memory item, MediaFile[] memory media) = _minted(1, false);
+        MediaFile[] memory other = new MediaFile[](2);
+        other[0] = media[0];
+        bool below;
+        bool above;
+        for (uint256 i = 1; !(below && above); ++i) {
+            other[1] = _mediaFile(100 + i, FileRole.AUXILIARY, false);
+            bool lower = WorksHashing.mediaHash(other) < item.mediaHash;
+            if (lower ? below : above) continue;
+            if (lower) below = true;
+            else above = true;
+            _expectBadOpen(tokenId, item, other);
+        }
+    }
+
+    /// @dev An item whose content hash is not its primary file's SHA-256 never opens, whichever
+    ///      way the two sort (found by mutation testing).
+    function test_openRecord_refusesAContentHashOtherThanThePrimarysEitherWay() public {
+        bytes32[2] memory wrong = [bytes32(uint256(1)), bytes32(type(uint256).max)];
+        for (uint256 i; i < wrong.length; ++i) {
+            MediaFile[] memory media = _single(1 + i, false);
+            PackageItem memory item = _recordsItem(1 + i, media);
+            item.contentHash = wrong[i];
+            _expectBadOpen(_mint(item), item, media);
+        }
+    }
+
+    /// @dev A file's declared SHA-256 must be the content store's, whichever way a wrong one
+    ///      sorts against it (found by mutation testing).
+    function test_openRecord_refusesADeclaredHashOtherThanTheStoresEitherWay() public {
+        bytes32[2] memory wrong = [bytes32(uint256(1)), bytes32(type(uint256).max)];
+        for (uint256 i; i < wrong.length; ++i) {
+            MediaFile[] memory media = _single(1 + i, false);
+            media[0].sha256Hash = wrong[i];
+            PackageItem memory item = _recordsItem(1 + i, media);
+            _expectBadOpen(_mint(item), item, media);
+        }
+    }
+
     /// @dev `openRecord` stores the approved license as it is, so an unregistered text cannot
     ///      freeze the work; `finalize` is where the text must be stored.
     function test_openRecord_storesUnregisteredLicenseText() public {
@@ -1198,6 +1257,59 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
     }
 
+    /// @dev A party named by an account its artist rotated to consents under the artist's ID
+    ///      (the first authority's address, which `artistIdOf` maps it to), not as an
+    ///      unregistered account under its own address (found by mutation testing).
+    function test_relicense_consentOfAPartyNamedByALaterAuthority() public {
+        uint256 newKey = 0xC0FFEE;
+        address rotated = vm.addr(newKey);
+        artists.setAuthority(uint256(uint160(collaborator)), rotated);
+        MediaFile[] memory media = _single(1, true);
+        PackageItem memory item = _recordsItem(1, media);
+        item.license = _license("cc-by-4.0");
+        item.parties[1].account = rotated;
+        uint256 tokenId = _mint(item);
+        records.openRecord(tokenId, item, media);
+
+        License memory next = _license("cc0-1.0");
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes32 structHash = _relicenseHash(tokenId, next, state, deadline);
+        bytes[] memory sigs = new bytes[](2);
+        sigs[0] = _sign(artistKey, structHash);
+        sigs[1] = _sign(newKey, structHash);
+        vm.prank(governor);
+        records.relicense(tokenId, next, item, state, deadline, sigs);
+        assertEq(records.licenseOf(tokenId).spdxId, "cc0-1.0");
+    }
+
+    /// @dev Consents are checked against the work's own item: another item is refused whichever
+    ///      way its hash sorts against the minted one's, even with every party's consent (found
+    ///      by mutation testing).
+    function test_relicense_refusesAnotherItemEitherWay() public {
+        (uint256 tokenId, PackageItem memory item) = _byWork();
+        bytes32 minted = WorksHashing.itemHash(item);
+        License memory next = _license("cc0-1.0");
+        bytes32 state = records.workStateHash(tokenId);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes[] memory sigs = _both(_relicenseHash(tokenId, next, state, deadline));
+        bool below;
+        bool above;
+        vm.startPrank(governor);
+        for (uint256 i = 1; !(below && above); ++i) {
+            item.recordFileId = keccak256(abi.encode("another record", i));
+            bool lower = WorksHashing.itemHash(item) < minted;
+            if (lower ? below : above) continue;
+            if (lower) below = true;
+            else above = true;
+            vm.expectRevert(
+                abi.encodeWithSelector(IWorkRecords.InvalidRecordData.selector, tokenId)
+            );
+            records.relicense(tokenId, next, item, state, deadline, sigs);
+        }
+        vm.stopPrank();
+    }
+
     function test_relicense_acceptsCompactSignatures() public {
         (uint256 tokenId, PackageItem memory item) = _byWork();
         License memory next = _license("cc0-1.0");
@@ -1545,6 +1657,40 @@ contract WorkRecordsTest is RecordsFixture {
         vm.prank(governor);
         records.repinRenderer(tokenId, address(next), address(next).codehash, state, deadline, sig);
         assertEq(stream.rendererOf(tokenId), address(next));
+    }
+
+    /// @dev A renderer keeps the code hash it was first pinned with: once its code moved, a
+    ///      repin to it is refused whichever way the new hash sorts against that first pin
+    ///      (found by mutation testing).
+    function test_repinRenderer_refusesARendererWhoseCodeMovedSinceItsPinEitherWay() public {
+        uint256 first = _finalized(1);
+        MockRenderer next = new MockRenderer("errata");
+        bytes32 state = records.workStateHash(first);
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _sign(artistKey, _repinHash(first, address(next), state, deadline));
+        vm.prank(governor);
+        records.repinRenderer(first, address(next), address(next).codehash, state, deadline, sig);
+
+        uint256 tokenId = _finalized(2);
+        state = records.workStateHash(tokenId);
+        bytes memory code = address(next).code;
+        bytes32 pin = address(next).codehash;
+        bool below;
+        bool above;
+        for (uint8 i = 1; !(below && above); ++i) {
+            bytes memory moved = abi.encodePacked(code, i);
+            bool lower = keccak256(moved) < pin;
+            if (lower ? below : above) continue;
+            if (lower) below = true;
+            else above = true;
+            vm.etch(address(next), moved);
+            sig = _sign(artistKey, _repinHash(tokenId, address(next), state, deadline));
+            vm.prank(governor);
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(next))
+            );
+            records.repinRenderer(tokenId, address(next), keccak256(moved), state, deadline, sig);
+        }
     }
 
     // -------------------------------------------------------------------- edition masters

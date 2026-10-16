@@ -32,28 +32,35 @@ mutants; this file is the reviewed reference, and
   against each test file added or changed since its shard ran, and each test written for a
   survivor was also run against that mutant directly. That kills a survivor a later test
   catches. Survivors triaged as equivalent were not run again: no test can kill them.
+- **The gap lane.** The 78 survivors the baseline left as open gaps were taken up afterwards,
+  on `main` at d50bb61 (after #72): 69 are killed by 51 new and 4 extended tests, 3 were
+  re-triaged (2 equivalent, 1 defensive), and 6 are moved. Each of those tests was run against
+  its mutant applied to d50bb61's code, where every mutated expression it kills is unchanged
+  since 054442d: it fails on the mutant and passes on the real code. The 6 moved survivors are
+  code #66 replaced with the `Dependency` library, so their mutants no longer exist; each note
+  names the tests that kill the replacing code's mutants. None of the 78 was a bug.
 - **Timeouts.** A mutant whose tests ran past 20 minutes counts as killed, as slither-mutate
   counts it (a mutation that makes a loop endless). There were none.
 
 ## Kill rate per contract
 
 "Killed" is the campaign's count; "killed by the final suite" adds the survivors a later test
-kills, most of them the tests written for the baseline. The last column leaves out the
-survivors triaged as equivalent, which no test can kill.
+kills, most of them the tests written for the baseline and in the gap lane. The last column
+leaves out the survivors triaged as equivalent, which no test can kill.
 
 | Contract | Mutants | Killed | Kill rate | Killed by the final suite | Kill rate, final | Equivalent | Rate without them |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `src/content/Base64Validator.sol` | 17 | 13 | 76.5% | 13 | 76.5% | 4 | 100.0% |
-| `src/content/ContentStore.sol` | 505 | 451 | 89.3% | 453 | 89.7% | 48 | 99.1% |
+| `src/content/ContentStore.sol` | 505 | 451 | 89.3% | 456 | 90.3% | 48 | 99.8% |
 | `src/content/DataUri.sol` | 43 | 41 | 95.3% | 41 | 95.3% | 1 | 97.6% |
 | `src/content/DependencyRegistry.sol` | 90 | 79 | 87.8% | 79 | 87.8% | 11 | 100.0% |
 | `src/content/HtmlScript.sol` | 48 | 42 | 87.5% | 42 | 87.5% | 5 | 97.7% |
-| `src/content/JsonScan.sol` | 425 | 336 | 79.1% | 346 | 81.4% | 57 | 94.0% |
-| `src/content/Renderer.sol` | 846 | 719 | 85.0% | 724 | 85.6% | 101 | 97.2% |
+| `src/content/JsonScan.sol` | 425 | 336 | 79.1% | 347 | 81.6% | 57 | 94.3% |
+| `src/content/Renderer.sol` | 846 | 719 | 85.0% | 731 | 86.4% | 101 | 98.1% |
 | `src/curation/Eip712CurationVerifier.sol` | 95 | 92 | 96.8% | 92 | 96.8% | 3 | 100.0% |
 | `src/curation/PackageRegistry.sol` | 444 | 382 | 86.0% | 399 | 89.9% | 42 | 99.3% |
 | `src/economics/AssetAllowlist.sol` | 187 | 173 | 92.5% | 175 | 93.6% | 12 | 100.0% |
-| `src/economics/ClaimRouter.sol` | 171 | 148 | 86.5% | 149 | 87.1% | 17 | 96.8% |
+| `src/economics/ClaimRouter.sol` | 171 | 148 | 86.5% | 151 | 88.3% | 17 | 98.1% |
 | `src/economics/EconomicsResolver.sol` | 196 | 175 | 89.3% | 181 | 92.3% | 15 | 100.0% |
 | `src/economics/ReleaseVerifier.sol` | 82 | 79 | 96.3% | 79 | 96.3% | 3 | 100.0% |
 | `src/economics/RevenueEscrow.sol` | 171 | 165 | 96.5% | 165 | 96.5% | 5 | 99.4% |
@@ -63,14 +70,14 @@ survivors triaged as equivalent, which no test can kill.
 | `src/economics/Splits.sol` | 122 | 110 | 90.2% | 111 | 91.0% | 11 | 100.0% |
 | `src/economics/TokenTransfer.sol` | 140 | 127 | 90.7% | 133 | 95.0% | 7 | 100.0% |
 | `src/editions/EditionRules.sol` | 53 | 48 | 90.6% | 50 | 94.3% | 3 | 100.0% |
-| `src/editions/Editions.sol` | 536 | 501 | 93.5% | 508 | 94.8% | 25 | 99.4% |
-| `src/entropy/VrfEntropyModule.sol` | 332 | 291 | 87.7% | 305 | 91.9% | 26 | 99.7% |
+| `src/editions/Editions.sol` | 536 | 501 | 93.5% | 510 | 95.1% | 25 | 99.8% |
+| `src/entropy/VrfEntropyModule.sol` | 332 | 291 | 87.7% | 306 | 92.2% | 26 | 100.0% |
 | `src/governance/BoundedParameter.sol` | 59 | 57 | 96.6% | 57 | 96.6% | 2 | 100.0% |
-| `src/governance/GovernanceConfig.sol` | 660 | 513 | 77.7% | 523 | 79.2% | 133 | 99.2% |
+| `src/governance/GovernanceConfig.sol` | 660 | 513 | 77.7% | 527 | 79.8% | 133 | 100.0% |
 | `src/governance/GovernanceConfigurator.sol` | 22 | 22 | 100.0% | 22 | 100.0% | 0 | 100.0% |
 | `src/governance/Roles.sol` | 300 | 278 | 92.7% | 278 | 92.7% | 22 | 100.0% |
 | `src/governance/WorksAccessManager.sol` | 79 | 74 | 93.7% | 76 | 96.2% | 1 | 97.4% |
-| `src/identity/ArtistRegistry.sol` | 709 | 631 | 89.0% | 640 | 90.3% | 47 | 96.7% |
+| `src/identity/ArtistRegistry.sol` | 709 | 631 | 89.0% | 651 | 91.8% | 48 | 98.5% |
 | `src/identity/ConsolidationAdapter.sol` | 225 | 187 | 83.1% | 193 | 85.8% | 30 | 99.0% |
 | `src/interfaces/types/HashRef.sol` | 6 | 4 | 66.7% | 6 | 100.0% | 0 | 100.0% |
 | `src/interfaces/types/Limits.sol` | 44 | 31 | 70.5% | 33 | 75.0% | 11 | 100.0% |
@@ -84,23 +91,23 @@ survivors triaged as equivalent, which no test can kill.
 | `src/libraries/SSTORE2.sol` | 91 | 85 | 93.4% | 85 | 93.4% | 6 | 100.0% |
 | `src/libraries/SignatureVerifier.sol` | 61 | 52 | 85.2% | 53 | 86.9% | 4 | 93.0% |
 | `src/libraries/Utf8.sol` | 105 | 86 | 81.9% | 91 | 86.7% | 14 | 100.0% |
-| `src/records/StatementLog.sol` | 431 | 389 | 90.3% | 396 | 91.9% | 26 | 97.8% |
+| `src/records/StatementLog.sol` | 431 | 389 | 90.3% | 403 | 93.5% | 26 | 99.5% |
 | `src/sales/DutchPricing.sol` | 87 | 82 | 94.3% | 82 | 94.3% | 5 | 100.0% |
 | `src/sales/DutchSale.sol` | 151 | 145 | 96.0% | 146 | 96.7% | 5 | 100.0% |
-| `src/sales/EnglishAuction.sol` | 983 | 880 | 89.5% | 902 | 91.8% | 56 | 97.3% |
+| `src/sales/EnglishAuction.sol` | 983 | 880 | 89.5% | 913 | 92.9% | 57 | 98.6% |
 | `src/sales/FixedPriceSale.sol` | 394 | 343 | 87.1% | 349 | 88.6% | 45 | 100.0% |
-| `src/sales/MintSaleBase.sol` | 539 | 490 | 90.9% | 493 | 91.5% | 32 | 97.2% |
+| `src/sales/MintSaleBase.sol` | 539 | 490 | 90.9% | 504 | 93.5% | 32 | 99.4% |
 | `src/stream/SpdxId.sol` | 41 | 38 | 92.7% | 38 | 92.7% | 3 | 100.0% |
 | `src/stream/Stream.sol` | 588 | 529 | 90.0% | 546 | 92.9% | 32 | 98.2% |
-| `src/stream/WorkRecords.sol` | 788 | 677 | 85.9% | 713 | 90.5% | 57 | 97.5% |
-| **Total** | **11735** | **10350** | **88.2%** | **10561** | **90.0%** | **990** | **98.3%** |
+| `src/stream/WorkRecords.sol` | 788 | 677 | 85.9% | 722 | 91.6% | 57 | 98.8% |
+| **Total** | **11735** | **10350** | **88.2%** | **10630** | **90.6%** | **992** | **98.9%** |
 
 ## What survives, and why
 
-After the final suite, 1,174 of the 11,735 mutants survive: 990 equivalent, 32 gas margins, 73
-defensive, 1 caught only by a Halmos proof, and 78 open gaps. The campaign and the tests
-written for it moved the kill rate from 88.2% to 90.0%; leaving out the equivalent mutants,
-which no test can kill, it is 98.3%.
+After the final suite, 1,105 of the 11,735 mutants survive: 992 equivalent, 32 gas margins, 74
+defensive, 1 caught only by a Halmos proof, and 6 moved by #66; no open gap remains. The
+campaign, the tests written for it and the gap lane moved the kill rate from 88.2% to 90.6%;
+leaving out the equivalent mutants, which no test can kill, it is 98.9%.
 
 - **Equivalent** mutants are mostly mechanical: an unsigned `== 0` against `<= 0` (and `!= 0`
   against `> 0`), an enum compared at its first or last value, a loop counter's `<` against
@@ -116,6 +123,13 @@ which no test can kill, it is 98.3%.
   store's chunk layout, the package registry's `consume` answer, the economics resolver's fee
   bounds as Stream reads them, a records satellite passing a reversed range) or against states
   out of reach (a 65,536th fee recipient, 2**23 overflow terms, an artist ID of 2**160 - 1).
+- **Moved** mutants are of code #66 replaced: four calls (`_requireContract` beside an ERC-165
+  check, or `_checkBinding`) became one `Dependency.check`, and two code-hash comparisons moved
+  into `Dependency.checkUnchanged` and `Dependency.checkPinned`. Commenting out any of the four
+  new calls is killed in its contract's own suite, and either side of the two library
+  comparisons by the library's own suite, `test/libraries/Dependency.t.sol`, written in the gap
+  lane. `src/libraries/Dependency.sol` was not part of the 054442d campaign; the weekly run
+  measures it.
 
 The gaps followed a few patterns. The baseline added 72 tests and extended 44 more (#69 and its
 follow-up); with them, and the tests other changes added while the campaign ran, the final
@@ -134,12 +148,35 @@ suite kills 211 of the campaign's survivors:
 - **Amounts and indexes.** Mints and burns of zero, chunk and preference indexes more than one
   past the end, more signatures than parties, a file ID of zero.
 
-The 78 open gaps are listed below and grouped in the next lane's [work
-list](README.md#gaps-the-next-testing-lane). Most follow the same patterns where a test costs
-more to build: an EIP-7702 delegated dependency whose delegate answers ERC-165, a 49-chunk
-base64 file whose padding straddles two chunks, a work with every trait slot filled, and
-answers an arbitrary contract may give (a dispute subject whose `ownerOf` returns zero or a
-short word, a revert reason longer than its decoder reads).
+The 78 survivors the baseline left open followed the same patterns where a test costs more to
+build. The gap lane killed 69 of them with 51 new and 4 extended tests:
+
+- **One-sided comparisons:** the item, media, content and declared hashes `WorkRecords` checks,
+  a renderer's repin, outcome references and reservations in the artist registry, code-hash
+  pins of federation registries and federated tokens, a sale kind, a minted ID below the
+  sale's, Editions' master item, the renderer's edition hash, and a target's admin delay in
+  the governance readback.
+- **Boundaries:** a standing refresh at a wallet's recorded second, a VRF proof of exactly
+  `MAX_PROOF_LENGTH` nodes, permits at their deadline second, a currency back exactly one window
+  before the auction's end, and an open edition first minted after 2**32 seconds.
+- **Arbitrary answers:** dispute subjects whose `ownerOf` answers zero or a short word, that
+  answer both ERC-721 and ERC-1155, or hold 2**128 of an ERC-1155; a `coreOf` shorter than 192
+  bytes; a resolver answer shorter than a word; revert reasons of other lengths and selectors;
+  permit signatures a byte short or long; tokens that move balances by other than the amount,
+  refuse zero-value transfers, or mint another ID.
+- **Costly inputs:** a base64 file one chunk longer than a call attests, a work with every
+  trait slot filled, a JSON document at its exact budget, a release of 2**128 through the claim
+  router, an atomic claim given more gas than its share, and a Permit2 purchase while the
+  adapter holds the token.
+- **Reachable but untested:** `start` over a sale that already exists, a withdrawal from an
+  unknown sale, an edition Editions does not know, consent from a party whose artist rotated
+  its authority, the governance readback of a manager closed as a target or left with too few
+  guardians, terms without a fee recipient, the federation registry's recorded hash after it
+  is unset, a one-byte `dependencies` value, a license text outside the media, and the memory
+  after a trait name.
+
+Of the other 9, 2 are equivalent and 1 defensive (their notes say why), and 6 are moved: the
+EIP-7702 and code-hash checks they mutated now live in `Dependency`.
 
 ## Survivors, triaged
 
@@ -156,9 +193,11 @@ Each survivor is one of:
   it needs a lying mock or input v1 never produces.
 - **Proved:** a Halmos proof in `test/symbolic` kills it, checked by running the proof against
   the mutant; the Foundry suite does not.
-- **Gap:** a missing test. When the note names a test, the baseline added it and the
-  mutant is killed in the final suite; such mutants are not listed below, only counted in the
-  table. The open ones are in the [work list](README.md#gaps-the-next-testing-lane).
+- **Moved:** the mutated code no longer exists: #66 replaced it with a call to the `Dependency`
+  library. The note names the tests that kill the replacing code's mutants. A moved mutant is
+  not counted as killed.
+- **Gap:** a missing test. A gap the final suite kills, through a test written for the baseline
+  or in the gap lane, is not listed below, only counted in the table. None is open.
 
 ### `src/content/Base64Validator.sol`
 
@@ -177,7 +216,7 @@ Each survivor is one of:
 
 ### `src/content/ContentStore.sol`
 
-52 survivors: 3 open gaps, 1 gas margin, 48 equivalent.
+49 survivors: 1 gas margin, 48 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -216,9 +255,6 @@ Each survivor is one of:
 | 226 | MIA | `if (take > remaining) take = remaining;` to `if (false) take = remaining;` | Equivalent | without the clamp the last copy takes the rest of its chunk, past the end of `out` into released memory; the bytes returned are the same |
 | 226 | ROR | `if (take > remaining) take = remaining;` to `if (take >= remaining) take = remaining;` | Equivalent | `>=` also assigns an equal value, and `==` never clamps, which (as for the clamp removed) only runs the last copy past the end of `out`; the bytes returned are the same |
 | 226 | ROR | `if (take > remaining) take = remaining;` to `if (take == remaining) take = remaining;` | Equivalent | `>=` also assigns an equal value, and `==` never clamps, which (as for the clamp removed) only runs the last copy past the end of `out`; the bytes returned are the same |
-| 243 | AOR | `if (to + 1 >= f.chunks.length) strictEnd` to `if (to / 1 >= f.chunks.length) strictEnd` | Gap | a file whose `==` padding straddles its last two chunks, attested in a call that stops at the second-to-last chunk (49 chunks, 48 per call): no test builds one |
-| 243 | AOR | `if (to + 1 >= f.chunks.length) strictEnd` to `if (to * 1 >= f.chunks.length) strictEnd` | Gap | a file whose `==` padding straddles its last two chunks, attested in a call that stops at the second-to-last chunk (49 chunks, 48 per call): no test builds one |
-| 243 | ROR | `if (to + 1 >= f.chunks.length) strictEnd -=` to `if (to + 1 > f.chunks.length) strictEnd -=` | Gap | a file whose `==` padding straddles its last two chunks, attested in a call that stops at the second-to-last chunk (49 chunks, 48 per call): no test builds one |
 | 244 | ROR | `for (uint256 i = from; i < to; ++i) {` to `for (uint256 i = from; i != to; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 244 | UOR | `for (uint256 i = from; i < to; ++i) {` to `for (uint256 i = from; i < to; i++) {` | Equivalent | pre- or post-increment of a loop counter |
 | 245 | SBR | `uint256 mark;` to `uint128 mark;` | Equivalent | a memory address never reaches 2**128 |
@@ -292,7 +328,7 @@ Each survivor is one of:
 
 ### `src/content/JsonScan.sol`
 
-79 survivors: 1 open gap, 21 defensive, 57 equivalent.
+78 survivors: 21 defensive, 57 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -338,7 +374,6 @@ Each survivor is one of:
 | 337 | CR | `leave` to `//leave` | Equivalent | the document is already rejected (`ok` is zero); callers pass distinct keys, so no later key resets it |
 | 364 | CR | `if iszero(lt(p, e)) { leave }` to `//if iszero(lt(p, e)) { leave }` | Equivalent | a pointer at or past the end only reads the byte after the text, and the caller's end check still rejects the document |
 | 364 | MIA | `if iszero(lt(p, e)) { leave }` to `if false { leave }` | Equivalent | a pointer at or past the end only reads the byte after the text, and the caller's end check still rejects the document |
-| 367 | CR | `leave` to `//leave` | Gap | an empty array then costs one more unit of the 1,024-unit budget; observable only in a document at the exact budget |
 | 371 | CR | `if iszero(p) { leave }` to `//if iszero(p) { leave }` | Defensive | after a failed value the pointer is zero and the next read is of scratch memory, which would have to hold `]` or `,` to change the result |
 | 371 | MIA | `if iszero(p) { leave }` to `if false { leave }` | Defensive | after a failed value the pointer is zero and the next read is of scratch memory, which would have to hold `]` or `,` to change the result |
 | 373 | CR | `if iszero(lt(p, e)) { leave }` to `//if iszero(lt(p, e)) { leave }` | Equivalent | a pointer at or past the end only reads the byte after the text, and the caller's end check (the walk must end exactly at the end) still rejects the document |
@@ -382,7 +417,7 @@ Each survivor is one of:
 
 ### `src/content/Renderer.sol`
 
-122 survivors: 7 open gaps, 6 defensive, 8 gas margin, 101 equivalent.
+115 survivors: 6 defensive, 8 gas margin, 101 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -412,7 +447,6 @@ Each survivor is one of:
 | 301 | ROR | `if (c.core.collectionId != 0) {` to `if (c.core.collectionId > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 334 | ROR | `c.media.length == 0 \|\| c.media[0].role != FileRole.PRIMARY` to `c.media.length <= 0 \|\| c.media[0].role != FileRole.PRIMARY` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 334 | ROR | `c.media.length == 0 \|\| c.media[0].role != FileRole.PRIMARY` to `c.media.length == 0 \|\| c.media[0].role > FileRole.PRIMARY` | Equivalent | `PRIMARY` is the first file role, so `> PRIMARY` is `!= PRIMARY` |
-| 334 | ROR | `c.edition && c.media[0].sha256Hash != c.hash)` to `c.edition && c.media[0].sha256Hash > c.hash)` | Gap | an edition whose primary file hash sorts below its content hash renders instead of being refused (only the other direction is tested) |
 | 357 | ROR | `if (fi.encoding != IContentStore.Encoding.Identity` to `if (fi.encoding > IContentStore.Encoding.Identity` | Equivalent | `Identity` is the first encoding, so `> Identity` is `!= Identity` |
 | 394 | ROR | `name.length < 3 \|\| description.length == 0) return _bad();` to `name.length < 3 \|\| description.length <= 0) return _bad();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 395 | ROR | `if (medium.length == 0 \|\| dimensions.length == 0)` to `if (medium.length <= 0 \|\| dimensions.length == 0)` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -425,16 +459,13 @@ Each survivor is one of:
 | 413 | ROR | `if (dimensions.length > 2) t[n++] = _trait("Dimensions",` to `if (dimensions.length != 2) t[n++] = _trait("Dimensions",` | Equivalent | the text is a quoted string (empty text was refused just above), so its length is at least 2 and `!= 2` is `> 2` |
 | 414 | ROR | `if (s[6] != 0) {` to `if (s[6] > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 419 | ROR | `c.deps = s[7] != 0 && JsonScan.slice(j, s[7]).length` to `c.deps = s[7] > 0 && JsonScan.slice(j, s[7]).length` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 419 | ROR | `JsonScan.slice(j, s[7]).length > 2;` to `JsonScan.slice(j, s[7]).length != 2;` | Gap | a one-character `dependencies` value (such as `0`) counts as no dependencies; nothing tests it |
 | 420 | CR | `ok = true;` to `//ok = true;` | Equivalent | every path that reaches it already has `ok` true (it would have returned `_bad()` otherwise) |
 | 424 | CR | `return (false, "", 0, "");` to `//return (false, "", 0, "");` | Equivalent | the function returns the same defaults when its only statement is gone |
 | 446 | ROR | `for (uint256 i; ok && i < a.length; i += 5) {` to `for (uint256 i; ok && i != a.length; i += 5) {` | Equivalent | the records array holds five words per element, so a counter stepping by five meets its length exactly |
 | 448 | ROR | `a[i + 1] == 0 \|\| a[i + 2] == 0 \|\| _reserved(JsonScan.slice(j,` to `a[i + 1] <= 0 \|\| a[i + 2] == 0 \|\| _reserved(JsonScan.slice(j,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 448 | ROR | `a[i + 1] == 0 \|\| a[i + 2] == 0 \|\| _reserved(JsonScan.slice(j,` to `a[i + 1] == 0 \|\| a[i + 2] <= 0 \|\| _reserved(JsonScan.slice(j,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 455 | ROR | `return (ok, a.length == 0 ? bytes("") : JsonScan.slice(j,` to `return (ok, a.length <= 0 ? bytes("") : JsonScan.slice(j,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 498 | CR | `if lt(sub(e, q), 32) { z := and(z,` to `//if lt(sub(e, q), 32) { z := and(z,` | Gap | the mask for the bytes after a trait name in its last word: reaching it needs the memory after the name to hold a byte of 0x80 or more, a backslash or DEL, which no test arranges |
 | 498 | MIA | `if lt(sub(e, q), 32) { z := and(z, not(shr(shl(3, sub(e,` to `if true { z := and(z, not(shr(shl(3, sub(e,` | Equivalent | `true`: when the name reaches the word's end the shift is 256 or more, which masks nothing |
-| 498 | MIA | `if lt(sub(e, q), 32) { z := and(z, not(shr(shl(3, sub(e,` to `if false { z := and(z, not(shr(shl(3, sub(e,` | Gap | `true` is equivalent (a shift of 256 or more masks nothing); `false` drops the mask for the bytes after a trait name, which needs memory after the name to hold a byte of 0x80 or more, a backslash or DEL |
 | 511 | MIA | `if lt(k, 17) {` to `if true {` | Equivalent | longer names are hashed too, but no reserved name is longer than 16 letters, short of a 32-bit hash collision |
 | 537 | ROR | `return first == '"' \|\| first == "-" \|\| (first` to `return first <= '"' \|\| first == "-" \|\| (first` | Equivalent | no JSON value starts with a byte below `"` |
 | 537 | ROR | `return first == '"' \|\| first == "-" \|\| (first >= "0" && first` to `return first == '"' \|\| first <= "-" \|\| (first >= "0" && first` | Equivalent | between `"` and `-` no byte starts a JSON value |
@@ -498,15 +529,12 @@ Each survivor is one of:
 | 887 | ROR | `< 128 && (SPDX_CHARS >> b) & 1 == 1;` to `< 128 && (SPDX_CHARS >> b) & 1 >= 1;` | Equivalent | the character set has no bit at or above 128, so `<= 128` and `!= 128` admit nothing more; `& 1 >= 1` is `== 1` |
 | 902 | ROR | `for (uint256 i; lic.textFileId != 0 && i < c.media.length; ++i)` to `for (uint256 i; lic.textFileId > 0 && i < c.media.length; ++i)` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 902 | ROR | `uint256 i; lic.textFileId != 0 && i < c.media.length; ++i) {` to `uint256 i; lic.textFileId != 0 && i != c.media.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
-| 903 | ROR | `if (c.media[i].fileId == lic.textFileId) return _locator(c,` to `if (c.media[i].fileId >= lic.textFileId) return _locator(c,` | Gap | a license text that is not among the media while a media file's ID sorts above it: the mutant serves the text's locator anyway |
 | 905 | CR | `return "";` to `//return "";` | Equivalent | the function returns the empty string by default when the last statement is gone |
 | 912 | ROR | `if (c.core.seedPolicy == SeedPolicy.NONE) return 0;` to `if (c.core.seedPolicy <= SeedPolicy.NONE) return 0;` | Equivalent | `NONE` is the first seed policy, so `<= NONE` is `== NONE` |
 | 918 | ROR | `} else if (c.core.seedPolicy == SeedPolicy.VRF) {` to `} else if (c.core.seedPolicy >= SeedPolicy.VRF) {` | Equivalent | `VRF` is the last seed policy, so `>= VRF` is `== VRF` |
 | 938 | ROR | `uint256 total = n == 0 ? 0 : n - 1;` to `uint256 total = n <= 0 ? 0 : n - 1;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 939 | ROR | `for (uint256 i; i < n; ++i) {` to `for (uint256 i; i <= n; ++i) {` | Gap | no test fills every trait slot (the most artists, year, medium, dimensions, collection, serial, edition, seed and a dispute statement), so reading one past the count goes unnoticed |
 | 939 | ROR | `for (uint256 i; i < n; ++i) {` to `for (uint256 i; i != n; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 939 | UOR | `for (uint256 i; i < n; ++i) {` to `for (uint256 i; i < n; i++) {` | Equivalent | pre- or post-increment of a loop counter |
-| 944 | ROR | `for (uint256 i; i < n; ++i) {` to `for (uint256 i; i <= n; ++i) {` | Gap | no test fills every trait slot (the most artists, year, medium, dimensions, collection, serial, edition, seed and a dispute statement), so reading one past the count goes unnoticed |
 | 944 | ROR | `for (uint256 i; i < n; ++i) {` to `for (uint256 i; i != n; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 945 | ROR | `if (i != 0) p = _put(p, ",");` to `if (i > 0) p = _put(p, ",");` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 1026 | ROR | `return fi.encoding == IContentStore.Encoding.Identity` to `return fi.encoding <= IContentStore.Encoding.Identity` | Equivalent | `Identity` is the first encoding, so `<= Identity` is `== Identity` |
@@ -608,7 +636,7 @@ Each survivor is one of:
 
 ### `src/economics/ClaimRouter.sol`
 
-22 survivors: 2 open gaps, 3 gas margin, 17 equivalent.
+20 survivors: 3 gas margin, 17 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -629,10 +657,8 @@ Each survivor is one of:
 | 93 | SBR | `for (uint256 i; i < count; ++i) {` to `for (uint128 i; i < count; ++i) {` | Equivalent | the value never reaches 2**128 |
 | 93 | SBR | `for (uint256 i; i < count; ++i) {` to `for (uint128 i; i < count; ++i) {` | Equivalent | the value never reaches 2**128 |
 | 93 | UOR | `for (uint256 i; i < count; ++i) {` to `for (uint256 i; i < count; i++) {` | Equivalent | pre- or post-increment of a loop counter |
-| 111 | SBR | `memory input) private returns (uint256 amount) {` to `memory input) private returns (uint128 amount) {` | Gap | a release of 2**128 or more through the router (an allowlisted token would need that supply) |
 | 113 | SBR | `uint256 size;` to `uint128 size;` | Equivalent | return data never reaches 2**128 bytes |
 | 115 | ROR | `if (wallet.code.length == 0) {` to `if (wallet.code.length <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 121 | MIA | `uint256 callGas = item.keepGoing ? available / (item.remaining` to `uint256 callGas = true ? available / (item.remaining` | Gap | stop mode forwards all the gas left; no test gives a stop-mode item more gas than its continue-mode share would be |
 | 122 | ROR | `if (item.keepGoing && callGas < item.minGas) {` to `if (item.keepGoing && item.keepGoing && callGas <= item.minGas) {` | Gas margin | `callGas` exactly equal to the item's minimum is not observable without an exact-gas harness |
 | 147 | ROR | `item.keepGoing && callGas < SHORTFALL_REVERT_CEILING` to `item.keepGoing && item.keepGoing && callGas <= SHORTFALL_REVERT_CEI...` | Gas margin | `<=` at the ceiling and `>=` on the spent gas are exact-gas boundaries (the third mutant here, an error selector above the shortfall's, is killed by `test_ContinueModeSkipsAnItemFailingWithAHighSelector`) |
 | 147 | ROR | `&& (spent > callGas - callGas / 64` to `&& (item.keepGoing && callGas < SHORTFALL_REVERT_CEILING && (spent ...` | Gas margin | `<=` at the ceiling and `>=` on the spent gas are exact-gas boundaries (the third mutant here, an error selector above the shortfall's, is killed by `test_ContinueModeSkipsAnItemFailingWithAHighSelector`) |
@@ -813,7 +839,7 @@ Each survivor is one of:
 
 ### `src/editions/Editions.sol`
 
-28 survivors: 2 open gaps, 1 defensive, 25 equivalent.
+26 survivors: 1 defensive, 25 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -833,14 +859,12 @@ Each survivor is one of:
 | 357 | SBR | `uint256 cap = r.size == 0 ? type(uint64` to `uint128 cap = r.size == 0 ? type(uint64` | Equivalent | the cap is at most 2**64 - 1, which fits |
 | 359 | ROR | `if (r.format == EditionFormat.OPEN) {` to `if (r.format >= EditionFormat.OPEN) {` | Equivalent | `OPEN` is the last edition format, so `>= OPEN` is `== OPEN` |
 | 361 | ROR | `if (start == 0) {` to `if (start <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 362 | SBR | `start = uint64(block.timestamp);` to `start = uint32(block.timestamp);` | Gap | an open edition first minted after 2**32 seconds (the year 2106): the window's start would wrap |
 | 373 | SBR | `if (block.timestamp >= uint256(start) + r.window) revert EditionUna...` to `if (block.timestamp >= uint128(start) + r.window) revert EditionUna...` | Equivalent | a timestamp plus a window fits 128 bits |
 | 395 | ROR | `if (_minterStatus[msg.sender] == MINTER_NONE) revert NotAdmittedMin...` to `if (_minterStatus[msg.sender] <= MINTER_NONE) revert NotAdmittedMin...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 396 | ROR | `if (amount == 0) revert InvalidMintRequest(` to `if (amount <= 0) revert InvalidMintRequest(` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 406 | ROR | `if (_minterStatus[msg.sender] == MINTER_NONE) revert NotAdmittedMin...` to `if (_minterStatus[msg.sender] <= MINTER_NONE) revert NotAdmittedMin...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 419 | SBR | `Record storage r = _edition(tokenId);` to `Record memory r = _edition(tokenId);` | Equivalent | the record is only read, so a memory copy reads the same values |
 | 497 | ROR | `stream).primarySaleSettled(workId) \|\| item.kind != ItemKind.EDITION...` to `stream).primarySaleSettled(workId) \|\| item.kind < ItemKind.EDITION_...` | Equivalent | `EDITION_MASTER` is the last item kind, so `< EDITION_MASTER` is `!= EDITION_MASTER` |
-| 497 | ROR | `\|\| itemHash != master.itemHash \|\| item.contentHash` to `\|\| itemHash > master.itemHash \|\| item.contentHash` | Gap | `< EDITION_MASTER` is equivalent (the last item kind) and `<= 0` the unsigned test; `itemHash > master.itemHash` accepted an item whose hash sorts below the master's (only the other direction is tested) |
 | 497 | ROR | `master.itemHash \|\| item.contentHash == 0` to `master.itemHash \|\| item.contentHash <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 503 | ROR | `if (evidenceHash == 0) revert NotEditionMaster(workId` to `if (evidenceHash <= 0) revert NotEditionMaster(workId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 508 | ROR | `return target.code.length != 0 && !DelegatedEOA.isDelegated(target` to `return target.code.length > 0 && !DelegatedEOA.isDelegated(target` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -852,7 +876,7 @@ Each survivor is one of:
 
 ### `src/entropy/VrfEntropyModule.sol`
 
-27 survivors: 1 open gap, 26 equivalent.
+26 survivors: 26 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -883,7 +907,6 @@ Each survivor is one of:
 | 385 | SBR | `Seed storage seed = _seeds[_contentOf[itemHash]]` to `Seed memory seed = _seeds[_contentOf[itemHash]]` | Equivalent | a read-only storage pointer read as a memory copy (gas only) |
 | 411 | ROR | `item.seedPolicy != SeedPolicy.VRF \|\| item.contentHash == 0` to `item.seedPolicy < SeedPolicy.VRF \|\| item.contentHash == 0 \|\| proof....` | Equivalent | `VRF` is the last seed policy, so `< VRF` is `!= VRF` |
 | 411 | ROR | `item.seedPolicy != SeedPolicy.VRF \|\| item.contentHash == 0` to `item.seedPolicy != SeedPolicy.VRF \|\| item.seedPolicy != SeedPolicy....` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 411 | ROR | `\|\| proof.length > MAX_PROOF_LENGTH` to `\|\| item.seedPolicy != SeedPolicy.VRF \|\| item.contentHash == 0 \|\| pr...` | Gap | a proof of exactly `MAX_PROOF_LENGTH` nodes |
 | 421 | ROR | `if (account.code.length == 0 \|\| DelegatedEOA.isDelegated(account)) {` to `if (account.code.length <= 0 \|\| DelegatedEOA.isDelegated(account) \|...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 
 </details>
@@ -903,7 +926,7 @@ Each survivor is one of:
 
 ### `src/governance/GovernanceConfig.sol`
 
-137 survivors: 4 open gaps, 133 equivalent.
+133 survivors: 133 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -962,14 +985,12 @@ Each survivor is one of:
 | 207 | ROR | `for (uint256 i = 0; i < cfg.grants.length; ++i) {` to `for (uint256 i = 0; i != cfg.grants.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 207 | SBR | `for (uint256 i = 0; i < cfg.grants.length;` to `for (uint128 i = 0; i < cfg.grants.length;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
 | 207 | SBR | `for (uint256 i = 0; i < cfg.grants.length;` to `for (uint128 i = 0; i < cfg.grants.length;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
-| 219 | CR | `validate(manager, cfg);` to `//validate(manager, cfg);` | Gap | `verify` without its own `validate`: a manager configured outside `install` with an invalid configuration (too few guardians, say) that reads back the same; no test builds one |
 | 220 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
 | 220 | MVIV | `for (uint64 role = 0; role < Roles.COUNT; ++role)` to `for (uint64 role ; role < Roles.COUNT; ++role)` | Equivalent | a local is zero without its initializer |
 | 220 | ROR | `for (uint64 role = 0; role < Roles.COUNT; ++role) {` to `for (uint64 role = 0; role != Roles.COUNT; ++role) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 220 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
 | 220 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
 | 220 | UOR | `role = 0; role < Roles.COUNT; ++role) {` to `role = 0; role < Roles.COUNT; role++) {` | Equivalent | pre- or post-increment of a loop counter |
-| 228 | CR | `_verifyTarget(manager, address(manager` to `//_verifyTarget(manager, address(manager` | Gap | the manager's own target check in `verify`: no test closes the manager or changes its own admin delay before a readback |
 | 229 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
 | 229 | MVIV | `for (uint256 i = 0; i < cfg.targets.length; ++i)` to `for (uint256 i ; i < cfg.targets.length; ++i)` | Equivalent | a local is zero without its initializer |
 | 229 | ROR | `for (uint256 i = 0; i < cfg.targets.length; ++i) {` to `for (uint256 i = 0; i != cfg.targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
@@ -1042,8 +1063,6 @@ Each survivor is one of:
 | 315 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
 | 315 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
 | 315 | UOR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j < i; j++) {` | Equivalent | pre- or post-increment of a loop counter |
-| 325 | ROR | `\|\| manager.getTargetAdminDelay(target) != TARGET_ADMIN_DELAY` to `\|\| manager.isTargetClosed(target) \|\| manager.getTargetAdminDelay(ta...` | Gap | a target whose admin delay moved either way since installation: no readback test changes one |
-| 325 | ROR | `\|\| manager.getTargetAdminDelay(target) != TARGET_ADMIN_DELAY` to `\|\| manager.isTargetClosed(target) \|\| manager.getTargetAdminDelay(ta...` | Gap | a target whose admin delay moved either way since installation: no readback test changes one |
 | 336 | ROR | `!active \|\| since == 0 \|\| delay != expected \|\| current` to `!active \|\| !active \|\| since < 0 \|\| delay != expected \|\| current != ...` | Equivalent | a holder with no record is not active, so `!active` already refuses it; `<= 0` is the unsigned zero test |
 | 336 | ROR | `!active \|\| since == 0 \|\| delay != expected \|\| current != expected \|...` to `!active \|\| !active \|\| since <= 0 \|\| delay != expected \|\| current !=...` | Equivalent | a holder with no record is not active, so `!active` already refuses it; `<= 0` is the unsigned zero test |
 
@@ -1098,7 +1117,7 @@ Each survivor is one of:
 
 ### `src/identity/ArtistRegistry.sol`
 
-69 survivors: 16 open gaps, 4 defensive, 2 gas margin, 47 equivalent.
+58 survivors: 5 defensive, 2 gas margin, 3 moved, 48 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -1106,9 +1125,8 @@ Each survivor is one of:
 | ---: | --- | --- | --- | --- |
 | 117 | CONST | `private constant BIND_READ_GAS = 50_000;` to `private constant BIND_READ_GAS = 50001;` | Gas margin | the bounded read needs far less than 50,000 gas, so one unit either way changes nothing |
 | 117 | CONST | `private constant BIND_READ_GAS = 50_000;` to `private constant BIND_READ_GAS = 49999;` | Gas margin | the bounded read needs far less than 50,000 gas, so one unit either way changes nothing |
-| 201 | CR | `_checkBinding(target, bytes4(0` to `//_checkBinding(target, bytes4(0` | Gap | a delegated (EIP-7702) statement-log account whose delegate names this registry: only the binding check refuses it, and no test builds one |
+| 201 | CR | `_checkBinding(target, bytes4(0` to `//_checkBinding(target, bytes4(0` | Moved | #66 replaced the call with `Dependency.check(target)` (code, and no EIP-7702 delegation); commenting that out is killed by `test_BindStatementLog_OneShotAndChecksTheResolver` |
 | 205 | ROR | `if (!ok \|\| resolver.length != 32 \|\| abi.decode(resolver, (address` to `if (!ok \|\| resolver.length < 32 \|\| abi.decode(resolver, (address` | Equivalent | the read is capped at 32 bytes, so `< 32` is `!= 32` |
-| 205 | ROR | `if (!ok \|\| resolver.length != 32 \|\| abi.decode(resolver, (address` to `if (!ok \|\| resolver.length > 32 \|\| abi.decode(resolver, (address` | Gap | `< 32` is equivalent (the read is capped at 32 bytes); `> 32` lets a shorter answer through to a decode that reverts with another error |
 | 235 | ROR | `if (artistIdOf[account] != 0 \|\| reservedFor[account] != 0` to `if (artistIdOf[account] > 0 \|\| reservedFor[account] != 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 235 | ROR | `artistIdOf[account] != 0 \|\| reservedFor[account] != 0) revert Accou...` to `artistIdOf[account] != 0 \|\| reservedFor[account] > 0) revert Accoun...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 258 | ROR | `if (_pending[artistId].kind != ChangeKind.NONE) revert ChangePendin...` to `if (_pending[artistId].kind > ChangeKind.NONE) revert ChangePending...` | Equivalent | `NONE` is the enum's first value, so the order test is the equality test |
@@ -1122,25 +1140,21 @@ Each survivor is one of:
 | 324 | ROR | `if (p.kind == ChangeKind.STANDARD) {` to `if (p.kind <= ChangeKind.STANDARD) {` | Equivalent | a pending change is never `NONE` here, so `<= STANDARD` is `== STANDARD` |
 | 346 | ROR | `if (p.contestedAt == 0 \|\| _lapsed(p)) revert NotContested(artistId` to `if (p.contestedAt <= 0 \|\| _lapsed(p)) revert NotContested(artistId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 347 | ROR | `if (outcomeRef == bytes32(0) \|\| outcomeRef != _latestOutcome(artistId` to `if (outcomeRef <= bytes32(0) \|\| outcomeRef != _latestOutcome(artistId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 347 | ROR | `outcomeRef == bytes32(0) \|\| outcomeRef != _latestOutcome(artistId)) {` to `outcomeRef == bytes32(0) \|\| outcomeRef > _latestOutcome(artistId)) {` | Gap | `<= 0` is equivalent; `>` accepts an outcome reference that sorts below the latest one |
-| 350 | ROR | `if (outcomeRef == p.priorOutcome) revert OutcomePredatesContest(art...` to `if (outcomeRef <= p.priorOutcome) revert OutcomePredatesContest(art...` | Gap | an outcome reference that sorts below the one recorded before the contest is refused as if it were that one |
 | 363 | ROR | `if (p.contestedAt == 0) revert NotContested(artistId` to `if (p.contestedAt <= 0) revert NotContested(artistId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 384 | ROR | `if (p.contestedAt != 0) revert OverrideContested(artistId` to `if (p.contestedAt > 0) revert OverrideContested(artistId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 441 | ROR | `if (_federated[artistId].length >= MAX_FEDERATED) revert FederatedL...` to `if (_federated[artistId].length == MAX_FEDERATED) revert FederatedL...` | Equivalent | the list never grows past its maximum, so `==` is `>=` |
-| 461 | CR | `\|\| contentHash == bytes32(0)) return false;` to `\|\| contentHash == bytes32(0)) //return false;` | Gap | an Editions answer naming another master contract or a zero content hash: the mutant goes on to the work with the edition's ID instead of answering false |
+| 461 | CR | `\|\| contentHash == bytes32(0)) return false;` to `\|\| contentHash == bytes32(0)) //return false;` | Defensive | as the same line's LOR and MIA rows: the Stream's own Editions contract (Stream checks its `stream()` when it binds it) answers every master with this Stream and a nonzero content hash; only a lying Editions mock reaches it |
 | 461 | LOR | `if (master != s \|\| contentHash == bytes32(0)) return` to `if (master != s && contentHash == bytes32(0)) return` | Defensive | the Stream's own Editions contract answers every master with this Stream and a nonzero content hash; only a lying Editions mock reaches it |
 | 461 | MIA | `if (master != s \|\| contentHash == bytes32(0)) return false;` to `if (false) return false;` | Defensive | the Stream's own Editions contract answers every master with this Stream and a nonzero content hash; only a lying Editions mock reaches it |
 | 461 | ROR | `if (master != s \|\| contentHash == bytes32(0)) return false;` to `if (master != s \|\| contentHash <= bytes32(0)) return false;` | Equivalent | `bytes32` compares as unsigned: `== 0` and `<= 0` are the same test |
 | 462 | CR | `id = workId;` to `//id = workId;` | Equivalent | an edition's ID is its master's token ID (Stream links them only so), so `id` already is `workId` |
-| 464 | CR | `return false;` to `//return false;` | Gap | an edition Editions does not know whose number is a minted Stream work: the mutant answers for that work instead of false |
 | 470 | CR | `return false;` to `//return false;` | Equivalent | the function returns false by default when the catch block falls through |
 | 479 | ROR | `bool moves = p.kind != ChangeKind.NONE && p.next.payout` to `bool moves = p.kind > ChangeKind.NONE && p.next.payout` | Equivalent | `NONE` is the enum's first value, so the order test is the equality test |
 | 589 | ROR | `if (p.kind == ChangeKind.NONE) revert NoPendingChange(artistId` to `if (p.kind <= ChangeKind.NONE) revert NoPendingChange(artistId` | Equivalent | `NONE` is the enum's first value, so the order test is the equality test |
 | 613 | ROR | `return artistIdOf[account] != 0 \|\| (reserved != 0 && reserved` to `return artistIdOf[account] > 0 \|\| (reserved != 0 && reserved` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 613 | ROR | `artistIdOf[account] != 0 \|\| (reserved != 0 && reserved != artistId);` to `artistIdOf[account] != 0 \|\| (reserved > 0 && reserved != artistId);` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 613 | ROR | `\|\| (reserved != 0 && reserved != artistId);` to `\|\| (reserved != 0 && reserved > artistId);` | Gap | the `> 0` mutants are equivalent; `reserved > artistId` lets an account reserved for a lower artist ID count as free |
-| 632 | ROR | `if (address(source).codehash != consolidationSourceCodeHash)` to `if (address(source).codehash < consolidationSourceCodeHash)` | Gap | a dependency whose code hash moved in the other direction (the consolidation source) |
-| 640 | ROR | `target.codehash != codeHash \|\| DelegatedEOA.isDelegated(target` to `target.codehash > codeHash \|\| DelegatedEOA.isDelegated(target` | Gap | a dependency whose code hash moved in the other direction (an installed dependency) |
+| 632 | ROR | `if (address(source).codehash != consolidationSourceCodeHash)` to `if (address(source).codehash < consolidationSourceCodeHash)` | Moved | #66 moved the comparison into `Dependency.checkUnchanged`, shared by every pinned dependency; there both directions are killed by `test_CheckUnchanged_RefusesCodeOnEitherSideOfThePin` and, in the whole suite, `test_pinnedRenderer_refusesMovedCodeEitherWay` |
+| 640 | ROR | `target.codehash != codeHash \|\| DelegatedEOA.isDelegated(target` to `target.codehash > codeHash \|\| DelegatedEOA.isDelegated(target` | Moved | #66 moved the comparison into `Dependency.checkPinned`; there both directions are killed by `test_CheckPinned_RefusesAPinOnEitherSideOfTheCodeHash` and, in the whole suite, `test_setDefaultRenderer_refusesAWrongHashEitherWay` |
 | 648 | ROR | `target.code.length == 0 \|\| DelegatedEOA.isDelegated(target` to `target.code.length <= 0 \|\| DelegatedEOA.isDelegated(target` | Equivalent | `!= 0` and `> 0` (and `== 0` and `<= 0`) are the same unsigned tests |
 | 648 | ROR | `\|\| (interfaceId != 0 && !ERC165Checker.supportsInterface(target,` to `\|\| (interfaceId > 0 && !ERC165Checker.supportsInterface(target,` | Equivalent | `!= 0` and `> 0` (and `== 0` and `<= 0`) are the same unsigned tests |
 | 675 | ROR | `for (uint256 i; i < snapshot.length; ++i) {` to `for (uint256 i; i != snapshot.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
@@ -1152,20 +1166,14 @@ Each survivor is one of:
 | 735 | UOR | `(uint256 i = s.length; i > 0; --i) {` to `(uint256 i = s.length; i > 0; i--) {` | Equivalent | pre- or post-increment of a loop counter |
 | 739 | ROR | `if (since == 0) {` to `if (since <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 746 | ROR | `if (since != 0) {` to `if (since > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 750 | ROR | `if (since < e.effectiveAt \|\| e.effectiveAt` to `if (since <= e.effectiveAt \|\| e.effectiveAt` | Gap | the boundaries of a standing refresh: a wallet effective exactly now, or established at exactly its recorded time |
-| 750 | ROR | `e.effectiveAt \|\| e.effectiveAt > block.timestamp) {` to `e.effectiveAt \|\| e.effectiveAt >= block.timestamp) {` | Gap | the boundaries of a standing refresh: a wallet effective exactly now, or established at exactly its recorded time |
+| 750 | ROR | `if (since < e.effectiveAt \|\| e.effectiveAt` to `if (since <= e.effectiveAt \|\| e.effectiveAt` | Equivalent | when `since` equals the recorded `effectiveAt`, the assignment writes back the value already stored, with no event, so `<=` is `<` |
 | 754 | ROR | `if (e.missingSince != 0) {` to `if (e.missingSince > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 759 | ROR | `} else if (e.missingSince == 0 && e.effectiveAt <= block.timestamp` to `} else if (e.missingSince <= 0 && e.effectiveAt <= block.timestamp` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 773 | ROR | `for (uint256 pass; pass < 2; ++pass) {` to `for (uint256 pass; pass != 2; ++pass) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 773 | UOR | `for (uint256 pass; pass < 2; ++pass) {` to `for (uint256 pass; pass < 2; pass++) {` | Equivalent | pre- or post-increment of a loop counter |
 | 774 | ROR | `for (uint256 i; i < live.length && s.length < Limits.MAX_CANCELLERS` to `for (uint256 i; i != live.length && s.length < Limits.MAX_CANCELLERS` | Equivalent | `!=` stops at the same point as `<`: the counter steps by one and the list never passes its maximum |
 | 774 | ROR | `i; i < live.length && s.length < Limits.MAX_CANCELLERS; ++i) {` to `i; i < live.length && s.length != Limits.MAX_CANCELLERS; ++i) {` | Equivalent | `!=` stops at the same point as `<`: the counter steps by one and the list never passes its maximum |
-| 777 | ROR | `if ((times[i] <= block.timestamp) != (pass ==` to `if ((times[i] == block.timestamp) != (pass ==` | Gap | `pass <= 0` is equivalent; `times[i] == now` treats a wallet established earlier as not yet established |
 | 777 | ROR | `times[i] <= block.timestamp) != (pass == 0) \|\| _recorded(s, live[i]))` to `times[i] <= block.timestamp) != (pass <= 0) \|\| _recorded(s, live[i]))` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 791 | ROR | `!bestEffort \|\| reason.length != 36` to `!bestEffort \|\| reason.length < 36` | Gap | a revert reason longer than 36 bytes read as the 36-byte form |
-| 791 | ROR | `!bestEffort \|\| reason.length != 36` to `!bestEffort \|\| reason.length > 36` | Gap | a revert reason longer than 36 bytes read as the 36-byte form |
-| 791 | ROR | `\|\| bytes4(reason) != IConsolidationSource.DelegationReadFailed.sele...` to `\|\| bytes4(reason) < IConsolidationSource.DelegationReadFailed.selector` | Gap | a revert reason longer than 36 bytes read as the 36-byte form |
-| 791 | ROR | `\|\| bytes4(reason) != IConsolidationSource.DelegationReadFailed.sele...` to `\|\| bytes4(reason) > IConsolidationSource.DelegationReadFailed.selector` | Gap | a revert reason longer than 36 bytes read as the 36-byte form |
 | 807 | ROR | `for (uint256 i; i < list.length; ++i) {` to `for (uint256 i; i != list.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 807 | UOR | `for (uint256 i; i < list.length; ++i) {` to `for (uint256 i; i < list.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
 | 810 | CR | `return 0;` to `//return 0;` | Equivalent | the function's default return value is already zero |
@@ -1395,7 +1403,7 @@ Each survivor is one of:
 
 ### `src/records/StatementLog.sol`
 
-35 survivors: 7 open gaps, 2 gas margin, 26 equivalent.
+28 survivors: 2 gas margin, 26 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -1411,10 +1419,8 @@ Each survivor is one of:
 | 72 | SBR | `bytes32 private constant HEAD_DOMAIN = keccak256("6529.works.Statem...` to `bytes32 private immutable HEAD_DOMAIN = keccak256("6529.works.State...` | Equivalent | `constant` to `immutable` with the same value |
 | 201 | SBR | `Chain storage chain = _chains[subjectKey(token,` to `Chain memory chain = _chains[subjectKey(token,` | Equivalent | a read-only storage pointer read as a memory copy (gas only) |
 | 224 | ROR | `if (entryHash != 0 \|\| token == address(0)) return` to `if (entryHash > 0 \|\| token == address(0) \|\| token == address(0)) re...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 228 | LOR | `if (ok && core.length == 192) {` to `if (ok \|\| core.length == 192) {` | Gap | a subject whose `coreOf` answers with another length than 192 bytes (an arbitrary contract may) |
 | 228 | ROR | `if (ok && core.length == 192) {` to `if (ok && ok && core.length <= 192) {` | Equivalent | the read caps the answer at 192 bytes, so `>= 192` is `== 192` |
 | 228 | ROR | `if (ok && core.length == 192) {` to `if (ok && ok && core.length >= 192) {` | Equivalent | the read caps the answer at 192 bytes, so `>= 192` is `== 192` |
-| 282 | ROR | `if (statement.kind == StatementKinds.DISPUTE_OUTCOME` to `if (statement.kind >= StatementKinds.DISPUTE_OUTCOME` | Gap | a kind whose label sorts above the dispute outcome's, about a token that answers ERC-165 and has no owner: the test mocks answer no ERC-165, so the dispute check passes them |
 | 294 | SBR | `e.head = keccak256(abi.encode(HEAD_DOMAIN, chain.head, e.entryHash` to `e.head = keccak256(abi.encodePacked(HEAD_DOMAIN, chain.head, e.entr...` | Equivalent | three 32-byte words encode the same packed or padded |
 | 318 | ROR | `if (s.kind == 0) revert InvalidKind();` to `if (s.kind <= 0) revert InvalidKind();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 323 | ROR | `if (s.schema == 0) revert InvalidSchema();` to `if (s.schema <= 0) revert InvalidSchema();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1422,16 +1428,11 @@ Each survivor is one of:
 | 329 | ROR | `if (hasUri && s.fileId != 0) revert ConflictingLocators(` to `if (hasUri && hasUri && s.fileId > 0) revert ConflictingLocators(` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 330 | ROR | `if (!hasUri && s.fileId == 0) revert MissingLocator();` to `if (!hasUri && !hasUri && s.fileId <= 0) revert MissingLocator();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 339 | MIA | `if (token == address(0)) return;` to `if (false) return;` | Equivalent | address zero answers no ERC-165 query, so the next check returns as well |
-| 345 | MIA | `if (!supported[1]) {` to `if (true) {` | Gap | a token that answers both ERC-721 and ERC-1155 (a dispute may not name an edition) |
-| 349 | LOR | `if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) ...` to `if (ok \|\| owner.length == 32 ) return;` | Gap | a dispute about an ERC-721 token with no owner, from a token that answers ERC-165 (the test mocks do not) |
-| 349 | ROR | `if (ok && owner.length == 32 && abi.decode(owner, (uint256` to `if (ok && ok && owner.length <= 32 && abi.decode(owner, (uint256)) ...` | Gap | an `ownerOf` answer shorter than a word is still refused, but by a failed decode instead of `UnknownDisputeSubject`; nothing tests it |
 | 349 | ROR | `if (ok && owner.length == 32 && abi.decode(owner, (uint256` to `if (ok && ok && owner.length >= 32 && abi.decode(owner, (uint256)) ...` | Equivalent | the bounded read copies at most 32 bytes, so `>= 32` is `== 32` |
 | 349 | ROR | `if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) ...` to `if (ok && owner.length == 32 && ok && owner.length == 32 && abi.dec...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 349 | ROR | `if (ok && owner.length == 32 && abi.decode(owner, (uint256)) != 0) ...` to `if (ok && owner.length == 32 && ok && owner.length == 32 && abi.dec...` | Gap | an ERC-721 that answers `ownerOf` with the zero address instead of reverting |
 | 380 | LOR | `if (token == address(0) \|\| who == address(0)) return false` to `if (token == address(0) && who == address(0)) return false` | Equivalent | a zero token has no code, so every read fails and nothing is owned; a zero signer never reaches this |
 | 380 | MIA | `if (token == address(0) \|\| who == address(0)) return false;` to `if (false) return false;` | Equivalent | a zero token has no code, so every read fails and nothing is owned; a zero signer never reaches this |
 | 386 | ROR | `if (ok && result.length == 32) {` to `if (ok && ok && result.length >= 32) {` | Equivalent | the read caps the answer at 32 bytes, so `>= 32` is `== 32` |
-| 392 | SBR | `32 && abi.decode(result, (uint256)) != 0;` to `32 && abi.decode(result, (uint128)) != 0;` | Gap | an ERC-1155 balance of 2**128 or more in the owner check reverts instead of counting as owned |
 | 398 | ROR | `if (bits & bit != 0) revert NonceAlreadyUsed(signer,` to `if (bits & bit > 0) revert NonceAlreadyUsed(signer,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 399 | BOR | `_nonceBitmap[signer][nonce >> 8] = bits \| bit;` to `_nonceBitmap[signer][nonce >> 8] = bits ^ bit;` | Equivalent | the line before reverts when the bit is already set, so `|` and `^` set the same bit |
 | 409 | ROR | `next.code.length == 0 \|\| DelegatedEOA.isDelegated(next)` to `next.code.length < 0 \|\| DelegatedEOA.isDelegated(next) \|\| !ERC165Ch...` | Equivalent | `length < 0` never holds, and an account without code fails the ERC-165 check that follows |
@@ -1473,7 +1474,7 @@ Each survivor is one of:
 
 ### `src/sales/EnglishAuction.sol`
 
-81 survivors: 14 open gaps, 3 defensive, 8 gas margin, 56 equivalent.
+70 survivors: 3 defensive, 8 gas margin, 2 moved, 57 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -1487,7 +1488,7 @@ Each survivor is one of:
 | 95 | CONST | `internal constant DELIVERY_RESERVE = 50_000;` to `internal constant DELIVERY_RESERVE = 49999;` | Gas margin | the delivery reserve keeps tens of thousands of gas back for the transfer; one unit either way changes nothing |
 | 99 | CONST | `constant _ERC20_PAYOUT_GAS = 1_000_000;` to `constant _ERC20_PAYOUT_GAS = 1000001;` | Gas margin | a token payout needs far less than 1,000,000 gas; one unit either way changes nothing |
 | 99 | CONST | `private constant _ERC20_PAYOUT_GAS = 1_000_000;` to `private constant _ERC20_PAYOUT_GAS = 999999;` | Gas margin | a token payout needs far less than 1,000,000 gas; one unit either way changes nothing |
-| 216 | CR | `_requireContract(address(economicsResolver_` to `//_requireContract(address(economicsResolver_` | Gap | an economics resolver that is an EIP-7702 delegated account whose delegate answers ERC-165 (the interface check alone refuses any other non-contract) |
+| 216 | CR | `_requireContract(address(economicsResolver_` to `//_requireContract(address(economicsResolver_` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(resolver, IEconomicsResolver)`; commenting that out is killed by `test_Constructor_RejectsAnUnfitResolver`, and the delegation refusal inside `Dependency` by `test_Constructor_ChecksStreamInstall` |
 | 230 | ROR | `for (uint256 i; i < targets.length; ++i) {` to `for (uint256 i; i != targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 230 | UOR | `uint256 i; i < targets.length; ++i) {` to `uint256 i; i < targets.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
 | 258 | MIA | `bytes32 witness = payment.method != PaymentMethod.PERMIT2` to `bytes32 witness = false` | Equivalent | the witness is read only on the Permit2 path, so computing it for other payments changes nothing |
@@ -1496,7 +1497,6 @@ Each survivor is one of:
 | 284 | MIA | `bytes32 witness = payment.method != PaymentMethod.PERMIT2` to `bytes32 witness = false` | Equivalent | the witness is read only on the Permit2 path, so computing it for other payments changes nothing |
 | 284 | ROR | `bytes32 witness = payment.method != PaymentMethod.PERMIT2` to `bytes32 witness = payment.method < PaymentMethod.PERMIT2` | Equivalent | `PERMIT2` is the last method, so `<` is `!=`; `>` never holds, and the witness is read only on the Permit2 path |
 | 284 | ROR | `bytes32 witness = payment.method != PaymentMethod.PERMIT2` to `bytes32 witness = payment.method > PaymentMethod.PERMIT2` | Equivalent | `PERMIT2` is the last method, so `<` is `!=`; `>` never holds, and the witness is read only on the Permit2 path |
-| 301 | ROR | `if (s.status != AuctionState.ACTIVE \|\| active` to `if (s.status > AuctionState.ACTIVE \|\| active` | Gap | a withdrawal from an unknown sale reverts with another error (the state is `NONE`, the only state below `ACTIVE`) |
 | 362 | ROR | `if (s.flags & _DELIVERY_PENDING == 0) revert NoPendingDelivery(saleId` to `if (s.flags & _DELIVERY_PENDING <= 0) revert NoPendingDelivery(saleId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 377 | ROR | `return s.flags & _DELIVERY_PENDING != 0 ? _recipientOf(s) : address(0` to `return s.flags & _DELIVERY_PENDING > 0 ? _recipientOf(s) : address(0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 385 | ROR | `if (s.flags & _PAUSE_USED != 0) revert PauseExhausted(saleId` to `if (s.flags & _PAUSE_USED > 0) revert PauseExhausted(saleId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1505,21 +1505,16 @@ Each survivor is one of:
 | 467 | ROR | `if (_settings.pausedAt != 0) revert SalePaused();` to `if (_settings.pausedAt > 0) revert SalePaused();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 476 | ROR | `if (pausedAt == 0) revert NotPaused();` to `if (pausedAt <= 0) revert NotPaused();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 484 | ROR | `return _settings.pausedAt != 0;` to `return _settings.pausedAt > 0;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 498 | CR | `_requireContract(next);` to `//_requireContract(next);` | Gap | a federation registry that is an EIP-7702 delegated account whose delegate answers ERC-165 |
+| 498 | CR | `_requireContract(next);` to `//_requireContract(next);` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(next, IFederationRegistry)`; commenting that out is killed by `test_Federation_SetterIsRestrictedAndChecksCode`, and the delegation refusal inside `Dependency` by `test_Constructor_ChecksStreamInstall` |
 | 504 | MIA | `federationRegistryCodeHash = next == address(0) ? bytes32(0) : next...` to `federationRegistryCodeHash = false ? bytes32(0) : next.codehash;` | Equivalent | the stored hash is checked only while a registry is set |
 | 548 | ROR | `if (a.state == AuctionState.NONE) revert UnknownSale(saleId` to `if (a.state <= AuctionState.NONE) revert UnknownSale(saleId` | Equivalent | `NONE` is the enum's first value, so `<=` is `==` |
 | 562 | ROR | `if (a.pausedAt != 0 && block.timestamp > a.pausedAt` to `if (a.pausedAt > 0 && block.timestamp > a.pausedAt` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 595 | ROR | `address(0) && registry.codehash == federationRegistryCodeHash` to `address(0) && registry.codehash <= federationRegistryCodeHash` | Gap | a federation registry whose code hash sorts below the pin |
 | 628 | ROR | `if (c.pausedAt != 0) revert SalePaused();` to `if (c.pausedAt > 0) revert SalePaused();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 633 | ROR | `if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {` to `if (terms.saleKind > SaleKind.ENGLISH_AUCTION) {` | Gap | a mint target reporting a sale kind whose label sorts below the English auction's |
 | 641 | ROR | `tokenId >> 32 != 0 \|\| terms.seller == address(0` to `tokenId >> 32 > 0 \|\| terms.seller == address(0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 641 | ROR | `== address(0) && terms.feeShare != 0)))` to `== address(0) && terms.feeShare > 0)))` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 641 | ROR | `\|\| terms.price != 0 \|\| terms.params.length != 0` to `\|\| terms.price > 0 \|\| terms.params.length != 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 641 | ROR | `terms.price != 0 \|\| terms.params.length != 0` to `terms.price != 0 \|\| terms.params.length > 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 651 | MIA | `if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId,` to `if (false) revert InvalidAuctionState(saleId,` | Gap | `start` on a sale that already exists (a settled token sent back to the auction): reachable, untested (coverage lists it too) |
-| 651 | ROR | `if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId,` to `if (s.status < AuctionState.NONE) revert InvalidAuctionState(saleId,` | Gap | `<` never holds: `start` on a sale that already exists (coverage lists it too); `>` is `!=` (`NONE` is zero) |
-| 651 | ROR | `if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId,` to `if (s.status > AuctionState.NONE) revert InvalidAuctionState(saleId,` | Gap | `<` never holds: `start` on a sale that already exists (coverage lists it too); `>` is `!=` (`NONE` is zero) |
-| 704 | ROR | `e.codeHash != token.codehash \|\| e.feeShare >` to `e.codeHash > token.codehash \|\| e.feeShare >` | Gap | a federated token whose code moved so that its hash sorts above the registry entry's (only the other direction is tested) |
+| 651 | ROR | `if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId,` to `if (s.status > AuctionState.NONE) revert InvalidAuctionState(saleId,` | Equivalent | `NONE` is the enum's first value, so `> NONE` is `!= NONE` |
 | 704 | ROR | `token.codehash \|\| e.feeShare > Splits.DENOMINATOR` to `token.codehash \|\| e.feeShare >= Splits.DENOMINATOR` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 704 | ROR | `recipient == address(0) && e.feeShare != 0)` to `recipient == address(0) && e.feeShare > 0)` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 716 | ROR | `if (id == 0) {` to `if (id <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1537,18 +1532,13 @@ Each survivor is one of:
 | 820 | ROR | `if (msg.value != 0) revert InvalidPayment();` to `if (msg.value > 0) revert InvalidPayment();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 824 | ROR | `if (p.method != PaymentMethod.DIRECT && block.timestamp` to `if (p.method > PaymentMethod.DIRECT && block.timestamp` | Equivalent | `DIRECT` is the first payment method, so `> DIRECT` is `!= DIRECT` |
 | 827 | ROR | `if (p.method == PaymentMethod.PERMIT2) {` to `if (p.method >= PaymentMethod.PERMIT2) {` | Equivalent | `PERMIT2` is the last method, so `>=` is `==` |
-| 843 | ROR | `TokenTransfer.balanceOf(currency, address(this)) != held + p.amount` to `TokenTransfer.balanceOf(currency, address(this)) < held + p.amount` | Gap | a Permit2 pull whose balances move other than by exactly the amount, either way |
-| 843 | ROR | `TokenTransfer.balanceOf(currency, p.payer) != payerHeld - p.amount` to `TokenTransfer.balanceOf(currency, p.payer) < payerHeld - p.amount` | Gap | a Permit2 pull whose balances move other than by exactly the amount, either way |
-| 843 | ROR | `TokenTransfer.balanceOf(currency, p.payer) != payerHeld - p.amount` to `TokenTransfer.balanceOf(currency, p.payer) > payerHeld - p.amount` | Gap | a Permit2 pull whose balances move other than by exactly the amount, either way |
 | 850 | ROR | `if (p.method == PaymentMethod.PERMIT) {` to `if (p.method >= PaymentMethod.PERMIT) {` | Equivalent | Permit2 payments return above, so only `PERMIT` reaches this test |
-| 851 | ROR | `if (p.signature.length != 65) revert InvalidPayment();` to `if (p.signature.length > 65) revert InvalidPayment();` | Gap | a permit signature shorter than 65 bytes fails with a panic instead of `InvalidPayment` |
 | 887 | ROR | `if (amount == 0) return;` to `if (amount <= 0) return;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 909 | ROR | `if (amount == 0) revert NothingToClaim(account,` to `if (amount <= 0) revert NothingToClaim(account,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 969 | MIA | `if (s.flags & _RECIPIENT_SET != 0) {` to `if (true) {` | Equivalent | it clears a flag and recipient that are already clear |
 | 969 | ROR | `if (s.flags & _RECIPIENT_SET != 0) {` to `if (s.flags & _RECIPIENT_SET > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 970 | CR | `s.flags &= ~_RECIPIENT_SET;` to `//s.flags &= ~_RECIPIENT_SET;` | Equivalent | with no bidder left, the flag is cleared or overwritten by the next bid before anything reads it |
 | 971 | CR | `s.recipient = address(0);` to `//s.recipient = address(0);` | Equivalent | the recipient is read only while its flag is set, and the flag is cleared |
-| 999 | ROR | `_terms[s.termsId].extensionWindow <= s.endTime) return false;` to `_terms[s.termsId].extensionWindow < s.endTime) return false;` | Gap | a currency coming back exactly at the end of the reopening window (boundary) |
 | 1016 | ROR | `active = status == IAssetAllowlist.Status.Active` to `active = status <= IAssetAllowlist.Status.Active` | Defensive | an auction's currency was admitted when it was locked, so its status is never `None` |
 | 1033 | ROR | `if (s.status == AuctionState.NONE) revert UnknownSale(saleId` to `if (s.status <= AuctionState.NONE) revert UnknownSale(saleId` | Equivalent | `NONE` is the enum's first value, so `<=` is `==` |
 | 1050 | ROR | `if (s.flags & _PAUSE_USED != 0) {` to `if (s.flags & _PAUSE_USED > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1621,7 +1611,7 @@ Each survivor is one of:
 
 ### `src/sales/MintSaleBase.sol`
 
-46 survivors: 11 open gaps, 3 defensive, 32 equivalent.
+35 survivors: 3 defensive, 32 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -1630,14 +1620,12 @@ Each survivor is one of:
 | 89 | SBR | `uint256 public constant PAYOUT_GAS = 100_000;` to `uint256 public immutable PAYOUT_GAS = 100_000;` | Equivalent | the same value as `immutable` or a narrower type that still holds it |
 | 89 | SBR | `uint256 public constant PAYOUT_GAS = 100_000` to `uint128 public constant PAYOUT_GAS = 100_000` | Equivalent | the same value as `immutable` or a narrower type that still holds it |
 | 182 | ROR | `allowlist.code.length == 0 \|\| DelegatedEOA.isDelegated(allowlist` to `allowlist.code.length <= 0 \|\| DelegatedEOA.isDelegated(allowlist` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 210 | MIA | `federationRegistryCodeHash = next == address(0) ? bytes32(0) : next...` to `federationRegistryCodeHash = false ? bytes32(0) : next.codehash;` | Gap | unsetting the federation registry records the code hash of the zero address, which is nonzero once that account holds ETH (as on mainnet); only the getter would show it |
 | 228 | SBR | `uint256 allowedAt = uint256(pausedAt) + Roles.STANDARD;` to `uint128 allowedAt = uint128(pausedAt) + Roles.STANDARD;` | Equivalent | a pause time plus 48 hours fits 128 bits |
 | 242 | ROR | `if (amount == 0) revert NothingToClaim(msg.sender,` to `if (amount <= 0) revert NothingToClaim(msg.sender,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 245 | MIA | `if (currency != CURRENCY_ETH) {` to `if (false) {` | Defensive | nothing credits an ERC-20 today (the only credits are Dutch refunds, in ETH), so the ERC-20 branch of `claim` is unreachable (coverage lists it too) |
 | 246 | RR | `TokenTransfer.transferExact(currency, to, amount);` to `revert();` | Defensive | nothing credits an ERC-20 today (the only credits are Dutch refunds, in ETH), so the ERC-20 branch of `claim` is unreachable (coverage lists it too) |
 | 263 | SBR | `Listing storage l = _listing(saleId);` to `Listing memory l = _listing(saleId);` | Equivalent | the listing is only read, so a memory copy reads the same values |
 | 288 | ROR | `== CURRENCY_DEFAULT && t.price != 0) {` to `== CURRENCY_DEFAULT && t.price > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 300 | ROR | `if (e.codeHash != token.codehash) revert InvalidSaleTerms(token,` to `if (e.codeHash > token.codehash) revert InvalidSaleTerms(token,` | Gap | a federated token whose code moved so that its hash sorts below the registry entry's (only one direction is tested) |
 | 307 | ROR | `t.seller == address(0) \|\| (t.feeShare != 0 && t.feeRecipient == add...` to `t.seller == address(0) \|\| (t.feeShare > 0 && t.feeRecipient == addr...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 307 | ROR | `\|\| t.feeShare > Splits.DENOMINATOR \|\| t.seller` to `\|\| t.feeShare >= Splits.DENOMINATOR \|\| t.seller` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 322 | SBR | `) internal returns (uint256 saleId) {` to `) internal returns (uint128 saleId) {` | Equivalent | sale IDs never reach 2**128 |
@@ -1652,24 +1640,15 @@ Each survivor is one of:
 | 419 | ROR | `pay.method != PaymentMethod.DIRECT \|\| pay.payer` to `pay.method > PaymentMethod.DIRECT \|\| pay.payer` | Equivalent | `DIRECT` is the first payment method, so `> DIRECT` is `!= DIRECT` |
 | 423 | ROR | `if (value != 0) revert InvalidPayment();` to `if (value > 0) revert InvalidPayment();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 425 | ROR | `if (pay.method != PaymentMethod.DIRECT && block.timestamp` to `if (pay.method > PaymentMethod.DIRECT && block.timestamp` | Equivalent | `DIRECT` is the first payment method, so `> DIRECT` is `!= DIRECT` |
-| 425 | ROR | `PaymentMethod.DIRECT && block.timestamp > pay.deadline) {` to `PaymentMethod.DIRECT && block.timestamp >= pay.deadline) {` | Gap | a permit used at its deadline second in the fixed-price and Dutch adapters (`> DIRECT` is equivalent) |
 | 428 | ROR | `if (pay.method == PaymentMethod.PERMIT2) {` to `if (pay.method >= PaymentMethod.PERMIT2) {` | Equivalent | `PERMIT2` is the last payment method, so `>= PERMIT2` is `== PERMIT2` |
 | 433 | ROR | `if (pay.method == PaymentMethod.PERMIT) {` to `if (pay.method >= PaymentMethod.PERMIT) {` | Equivalent | `PERMIT2` returned on the line before, so past it `>= PERMIT` is `== PERMIT` |
-| 435 | ROR | `if (pay.signature.length != 65) revert InvalidPayment();` to `if (pay.signature.length < 65) revert InvalidPayment();` | Gap | a permit signature longer than 65 bytes |
-| 450 | MIA | `if (charge != 0) TokenTransfer.pullExact(currency,` to `if (true) TokenTransfer.pullExact(currency,` | Gap | a zero-charge ERC-20 purchase through a token that refuses zero-value transfers |
 | 450 | ROR | `if (charge != 0) TokenTransfer.pullExact(currency,` to `if (charge > 0) TokenTransfer.pullExact(currency,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 450 | ROR | `if (charge != 0) TokenTransfer.pullExact(currency,` to `if (charge >= 0) TokenTransfer.pullExact(currency,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 463 | ROR | `if (minted != l.id) revert InvalidSaleTerms(l.token,` to `if (minted > l.id) revert InvalidSaleTerms(l.token,` | Gap | a token that mints an ID below the sale's (only one minting a higher ID is tested) |
 | 501 | MIA | `return index == 0 ? address(0) : _feeRecipients[index]` to `return false ? address(0) : _feeRecipients[index]` | Equivalent | index zero is never written, so `_feeRecipients[0]` is the zero address anyway |
 | 501 | ROR | `return index == 0 ? address(0) : _feeRecipients[index]` to `return index < 0 ? address(0) : _feeRecipients[index]` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 501 | ROR | `return index == 0 ? address(0) : _feeRecipients[index]` to `return index <= 0 ? address(0) : _feeRecipients[index]` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 511 | MIA | `if (recipient == address(0)) return 0;` to `if (false) return 0;` | Gap | terms without a fee recipient would register the zero address as one (a wasted index); nothing checks the count |
 | 513 | ROR | `if (index == 0) {` to `if (index <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 514 | ROR | `if (_feeRecipientCount == type(uint16).max) revert InvalidSaleTerms...` to `if (_feeRecipientCount >= type(uint16).max) revert InvalidSaleTerms...` | Equivalent | the counter stops at its maximum, so `>=` is `==` |
-| 525 | ROR | `address(0) && registry.codehash == federationRegistryCodeHash` to `address(0) && registry.codehash <= federationRegistryCodeHash` | Gap | a federation registry whose code moved so that its hash sorts below the pin |
-| 537 | MVIE | `uint256 ours = TokenTransfer.balanceOf(currency, address(this));` to `uint256 ours ;` | Gap | a Permit2 purchase while the adapter already holds some of the token |
-| 550 | ROR | `TokenTransfer.balanceOf(currency, address(this)) != ours + charge \|...` to `TokenTransfer.balanceOf(currency, address(this)) < ours + charge \|\|...` | Gap | a Permit2 pull whose balances move by more than the charge (only less is tested) |
-| 550 | ROR | `TokenTransfer.balanceOf(currency, pay.payer) != theirs - charge` to `TokenTransfer.balanceOf(currency, pay.payer) < theirs - charge` | Gap | a Permit2 pull whose balances move by more than the charge (only less is tested) |
 | 557 | ROR | `return dependency.code.length != 0 && !DelegatedEOA.isDelegated(dep...` to `return dependency.code.length > 0 && !DelegatedEOA.isDelegated(depe...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 557 | ROR | `return dependency.code.length != 0 && !DelegatedEOA.isDelegated(dep...` to `return dependency.code.length >= 0 && !DelegatedEOA.isDelegated(dep...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 564 | ROR | `if (amount != 0) {` to `if (amount > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
@@ -1745,24 +1724,18 @@ Each survivor is one of:
 
 ### `src/stream/WorkRecords.sol`
 
-75 survivors: 10 open gaps, 8 defensive, 57 equivalent.
+66 survivors: 8 defensive, 1 moved, 57 equivalent.
 
 <details><summary>The survivors</summary>
 
 | Line | Rule | Mutation | Verdict | Why |
 | ---: | --- | --- | --- | --- |
-| 125 | CR | `_requireContract(stream_);` to `//_requireContract(stream_);` | Gap | a stream address that is an EIP-7702 delegated account whose delegate answers ERC-165 for `IStream` (the interface check alone refuses any other non-contract) |
+| 125 | CR | `_requireContract(stream_);` to `//_requireContract(stream_);` | Moved | #66 merged this and the ERC-165 check into `Dependency.check(stream_, IStream)`; commenting that out is killed by `test_constructor_rejects`, and the delegation refusal inside `Dependency` by `test_Constructor_ChecksStreamInstall` |
 | 131 | ROR | `contentStore_).sha256Of(cc0.textFileId) == 0` to `contentStore_).sha256Of(cc0.textFileId) <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 142 | CR | `_cc0SpdxId = cc0.spdxId;` to `//_cc0SpdxId = cc0.spdxId;` | Equivalent | every CC0 license is then stored as a custom one with the same values, so every read is unchanged |
-| 166 | ROR | `WorksHashing.itemHashCalldata(item) != _itemHashOf(tokenId) \|\| files` to `WorksHashing.itemHashCalldata(item) < _itemHashOf(tokenId) \|\| files` | Gap | an item whose hash sorts below the minted one (only one direction is tested) |
-| 166 | ROR | `WorksHashing.itemHashCalldata(item) != _itemHashOf(tokenId) \|\| files` to `WorksHashing.itemHashCalldata(item) > _itemHashOf(tokenId) \|\| files` | Gap | an item whose hash sorts above the minted one (only one direction is tested) |
 | 166 | ROR | `_itemHashOf(tokenId) \|\| files == 0` to `_itemHashOf(tokenId) \|\| files <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 166 | ROR | `WorksHashing.mediaHash(media) != item.mediaHash` to `WorksHashing.mediaHash(media) < item.mediaHash` | Gap | media whose commitment sorts below the item's media hash (only one direction is tested) |
-| 166 | ROR | `WorksHashing.mediaHash(media) != item.mediaHash` to `WorksHashing.mediaHash(media) > item.mediaHash` | Gap | media whose commitment sorts above the item's media hash (only one direction is tested) |
-| 166 | ROR | `\|\| media[0].sha256Hash != item.contentHash` to `\|\| media[0].sha256Hash > item.contentHash` | Gap | a primary file whose hash sorts below the item's content hash (only one direction is tested) |
 | 173 | ROR | `for (uint256 i; i < files; ++i) {` to `for (uint256 i; i != files; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 173 | UOR | `for (uint256 i; i < files; ++i) {` to `for (uint256 i; i < files; i++) {` | Equivalent | pre- or post-increment of a loop counter |
-| 179 | ROR | `if (declared != file.sha256Hash \|\| (file.role` to `if (declared > file.sha256Hash \|\| (file.role` | Gap | a media file whose declared hash sorts below the store's (only one direction is tested) |
 | 179 | ROR | `file.sha256Hash \|\| (file.role == FileRole.PRIMARY) != (i == 0` to `file.sha256Hash \|\| (file.role <= FileRole.PRIMARY) != (i == 0` | Equivalent | `PRIMARY` is the first file role, so `<= PRIMARY` is `== PRIMARY` |
 | 179 | ROR | `file.role == FileRole.PRIMARY) != (i == 0)) {` to `file.role == FileRole.PRIMARY) != (i <= 0)) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 192 | MIA | `if (!_isDefaultLicense(item.license)) {` to `if (true) {` | Equivalent | the default license stored as a custom one reads back the same: the CC0 pin is set once, in the constructor |
@@ -1791,15 +1764,12 @@ Each survivor is one of:
 | 563 | ROR | `_filePrefs[tokenId][fileId] = index == NONE ? 0 : index + 1;` to `_filePrefs[tokenId][fileId] = index >= NONE ? 0 : index + 1;` | Equivalent | `NONE` is the largest uint256, so `>= NONE` is `== NONE` |
 | 576 | ROR | `return stored == 0 ? NONE : stored - 1;` to `return stored <= 0 ? NONE : stored - 1;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 591 | ROR | `if (pinned == 0) _rendererCodeHashes[renderer]` to `if (pinned <= 0) _rendererCodeHashes[renderer]` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 592 | ROR | `else if (pinned != codeHash) revert InvalidRenderer(renderer` to `else if (pinned < codeHash) revert InvalidRenderer(renderer` | Gap | a renderer pinned again with a code hash that sorts above its first pin (only one direction is tested) |
-| 661 | ROR | `WorksHashing.itemHashCalldata(item) != _itemHashOf(tokenId)) {` to `WorksHashing.itemHashCalldata(item) > _itemHashOf(tokenId)) {` | Gap | consents over an item whose hash sorts above the minted one (only one direction is tested) |
 | 671 | ROR | `for (uint256 i; i < parties; ++i) {` to `for (uint256 i; i != parties; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
 | 671 | UOR | `for (uint256 i; i < parties; ++i) {` to `for (uint256 i; i < parties; i++) {` | Equivalent | pre- or post-increment of a loop counter |
 | 674 | MIA | `if (artistId == 0) artistId = uint256(uint160(account` to `if (true) artistId = uint256(uint160(account` | Defensive | a party with no artist ID: the registry reverts `UnknownArtist` first (coverage lists this branch too) |
 | 674 | MIA | `if (artistId == 0) artistId = uint256(uint160(account` to `if (false) artistId = uint256(uint160(account` | Defensive | a party with no artist ID: the registry reverts `UnknownArtist` first (coverage lists this branch too) |
 | 674 | MIA | `if (artistId == 0) artistId = uint256(uint160(account` to `if (!(artistId == 0)) artistId = uint256(uint160(account` | Defensive | a party with no artist ID: the registry reverts `UnknownArtist` first (coverage lists this branch too) |
 | 674 | ROR | `if (artistId == 0) artistId = uint256(uint160(account` to `if (artistId <= 0) artistId = uint256(uint160(account` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 674 | ROR | `if (artistId == 0) artistId = uint256(uint160(account` to `if (artistId >= 0) artistId = uint256(uint160(account` | Gap | consent from a registered artist whose authority is not the party account (the mutant looks every party up as unregistered) |
 | 674 | RR | `if (artistId == 0) artistId = uint256(uint160(account));` to `if (artistId == 0) revert();` | Defensive | a party with no artist ID: the registry reverts `UnknownArtist` first (coverage lists this branch too) |
 | 723 | ROR | `textFileId) : store.sha256Of(textFileId) == 0) {` to `textFileId) : store.sha256Of(textFileId) <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 749 | ROR | `if (info.length >= 4 && bytes4(info) == IContentStore.ContentFileUn...` to `if (info.length > 4 && bytes4(info) == IContentStore.ContentFileUnk...` | Equivalent | the store's `ContentFileUnknown` carries the file ID, so its revert data is 36 bytes and `> 4` is `>= 4` |

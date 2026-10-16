@@ -439,17 +439,30 @@ contract ArtistRegistryStandingTest is IdentityFixture {
     /// @dev With one free slot, an established wallet takes it before a pending one, even one that
     ///      comes earlier in the delegate list.
     function test_Standing_EstablishedWalletsTakeFreeSlotsBeforePendingOnes() public {
+        _offerOneFreeSlot(30 days);
+    }
+
+    /// @dev The same for a wallet established before the refresh's second, not at it (found by
+    ///      mutation testing).
+    function test_Standing_AnEarlierEstablishedWalletTakesTheFreeSlotFirst() public {
+        _offerOneFreeSlot(31 days);
+    }
+
+    /// @dev Fills all but one slot, then offers it to a pending wallet first in the delegate list
+    ///      and to a wallet consolidated `age` before the refresh, so established `age - 30 days`
+    ///      before it.
+    function _offerOneFreeSlot(uint256 age) private {
         for (uint256 i; i < 14; ++i) {
             _consolidate(artist, address(uint160(0x6000 + i)));
         }
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + age);
         registry.refreshStanding(artistId);
         assertEq(registry.standingOf(artistId).length, 15);
         address pending = makeAddr("pending");
         address established = makeAddr("established");
         _delegate(artist, pending, FAR); // first in the list, one-sided for now
         _consolidate(artist, established);
-        vm.warp(block.timestamp + 30 days);
+        vm.warp(block.timestamp + age);
         _delegate(pending, artist, FAR); // now consolidated, but young
         registry.refreshStanding(artistId);
         assertTrue(_hasStanding(established), "established first");
@@ -682,6 +695,24 @@ contract ArtistRegistryStandingTest is IdentityFixture {
         registry.refreshStanding(artistId);
         assertEq(_entry(wallet2).effectiveAt, first + 30 days, "pinned");
         assertEq(_entry(wallet2).missingSince, 0);
+    }
+
+    /// @dev A recorded wallet is established from its `effectiveAt` second on: a re-registration no
+    ///      refresh saw, first observed at exactly that second, does not push its clock later, and
+    ///      a staging at that second captures it (found by mutation testing).
+    function test_Standing_EstablishedAtItsRecordedSecondItsClockOnlyMovesEarlier() public {
+        uint256 t0 = block.timestamp;
+        _consolidate(artist, wallet2);
+        registry.refreshStanding(artistId);
+        assertEq(_entry(wallet2).effectiveAt, t0 + 30 days, "recorded as pending");
+        vm.warp(t0 + 1 days);
+        _revoke(artist, wallet2);
+        _delegate(artist, wallet2, FAR); // re-registered, and nobody refreshes
+        assertEq(adapter.effectiveAt(artist, wallet2), t0 + 31 days);
+        vm.warp(t0 + 30 days);
+        _stage(artistKey, _identity(newAuthority, newAuthority), newKey);
+        assertEq(_entry(wallet2).effectiveAt, t0 + 30 days, "only moves earlier");
+        assertTrue(_inCancellers(wallet2), "captured at its recorded second");
     }
 
     /// @dev Expired back-dated and duplicate registrations do not make a wallet effective sooner

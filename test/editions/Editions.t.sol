@@ -209,9 +209,13 @@ contract EditionsTest is EditionsBase {
         PackageItem memory item = _fixedItem(10);
         uint256 id = _master(item);
         PackageItem memory other = _fixedItem(10); // another master's item
-        _master(other);
+        uint256 otherId = _master(other);
         vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
         _createEdition(id, other);
+        // And the other way round, so one of the two item hashes sorts below its master's
+        // (mutation testing).
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, otherId));
+        _createEdition(otherId, item);
     }
 
     /// @dev Any change to the approved item (here: price, size, content hash, payees, license)
@@ -770,6 +774,19 @@ contract EditionsTest is EditionsBase {
         dutchAdapter.buy(editions, id, buyer, 1);
         assertEq(editions.edition(id).windowStart, start, "the window never restarts");
         assertEq(editions.edition(id).minted, 1_000_001);
+    }
+
+    /// @dev The window's start is kept in full: an open edition first minted past 2**32 seconds
+    ///      (the year 2106) opens then, not at a wrapped time (found by mutation testing).
+    function test_Mint_OpenWindowStartsPastTheYear2106() public {
+        uint64 window = 2 days;
+        uint256 id = _create(_openItem(window, 0));
+        uint64 start = uint64(1 << 32) + 7;
+        vm.warp(start);
+        vm.expectEmit(true, false, false, true, address(editions));
+        emit IEditions.EditionWindowOpened(id, start + window);
+        dutchAdapter.buy(editions, id, buyer, 1);
+        assertEq(editions.edition(id).windowStart, start);
     }
 
     /// @dev A window too long for `uint64` reports `closesAt` saturated instead of wrapping.

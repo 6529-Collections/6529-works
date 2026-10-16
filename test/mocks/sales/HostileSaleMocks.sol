@@ -11,10 +11,10 @@ import { Payment } from "src/interfaces/types/SaleTypes.sol";
 import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 
 /// @notice Adversarial mocks for the fixed-price adapter: ERC-20s whose `transferFrom` moves less
-///         to the receiver, or more from the sender, than asked (the balance-delta checks on each
-///         side of a Permit2 payment), and a creator wallet that closes and reopens its sale from
-///         its own ERC-1155 receiver hook. First written for the PR #18 review's proofs of
-///         concept and mutation killers.
+///         or more to the receiver, or more or less from the sender, than asked (the
+///         balance-delta checks on each side of a Permit2 payment), and a creator wallet that
+///         closes and reopens its sale from its own ERC-1155 receiver hook. First written for the
+///         PR #18 review's proofs of concept and mutation killers.
 
 /// @dev `transferFrom` delivers one unit less than asked (receiver short); `transfer` is exact.
 contract InboundShortToken is ERC20 {
@@ -44,6 +44,40 @@ contract OverDebitToken is ERC20 {
         _spendAllowance(from, msg.sender, amount);
         _transfer(from, to, amount);
         _burn(from, 1);
+        return true;
+    }
+}
+
+/// @dev `transferFrom` delivers one unit more than asked (a reward to the receiver) and debits
+///      the sender exactly; `transfer` is exact.
+contract InboundExcessToken is ERC20 {
+    constructor() ERC20("Excess", "EXC") { }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _spendAllowance(from, msg.sender, amount);
+        _transfer(from, to, amount);
+        _mint(to, 1);
+        return true;
+    }
+}
+
+/// @dev `transferFrom` debits the sender one unit less than it delivers (a rebate to the
+///      sender); `transfer` is exact.
+contract UnderDebitToken is ERC20 {
+    constructor() ERC20("UnderDebit", "UDB") { }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _spendAllowance(from, msg.sender, amount);
+        _transfer(from, to, amount);
+        _mint(from, 1);
         return true;
     }
 }

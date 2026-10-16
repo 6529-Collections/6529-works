@@ -845,6 +845,16 @@ contract RendererMediaTest is RendererBase {
         _installRaw('{"name":"N"}', _media(file, 0));
         assertTrue(_ends(_page(), TAIL));
     }
+
+    /// @dev A record declares dependencies with a value longer than two bytes, so a one-byte
+    ///      value such as `0` declares none and the script is wrapped, not served by its locator
+    ///      (found by mutation testing).
+    function test_Script_AOneByteDependenciesValueDeclaresNone() public {
+        bytes32 file = _file("go();", IDENTITY, "text/javascript");
+        _installRaw('{"dependencies":0,"name":"N"}', _media(file, 0));
+        records.addLocator(ID, file, Locator(LocatorKind.IPFS, IPFS));
+        assertTrue(_ends(_page(), TAIL));
+    }
 }
 
 /// @dev A content store that answers everything but the attestation.

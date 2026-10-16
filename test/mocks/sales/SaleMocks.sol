@@ -36,7 +36,8 @@ contract MockEditionTarget is ERC1155, IMintTarget {
     mapping(uint256 id => uint256) public size;
     mapping(uint256 id => uint256) public minted;
     mapping(address adapter => bool) public isAdmittedMinter;
-    /// @dev Added to the returned token ID, to simulate a token that mints something else.
+    /// @dev Added to the returned token ID, wrapping, to simulate a token that mints something
+    ///      else (`type(uint256).max` returns the ID below).
     uint256 public idOffset;
 
     constructor() ERC1155("") { }
@@ -87,7 +88,9 @@ contract MockEditionTarget is ERC1155, IMintTarget {
         if (minted[id] + amount > size[id]) revert EditionUnavailable(id);
         minted[id] += amount;
         _mint(to, id, amount, "");
-        return (id + idOffset, t);
+        unchecked {
+            return (id + idOffset, t);
+        }
     }
 
     function primaryTerms(uint256 id, bytes calldata)

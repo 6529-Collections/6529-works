@@ -101,8 +101,10 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
 - Etherscan verification, which needs an API key (Sourcify is done);
 - the marketplace and metadata rendering matrix
   ([launch checklist](https://github.com/6529-Collections/6529-works/issues/1));
-- the mutation baseline's four contracts still to record (Editions, FixedPriceSale,
-  MintSaleBase, GovernanceConfig).
+- the first weekly mutation measurement of `src/libraries/Dependency.sol`, which #66 added
+  after the campaign: it has no baseline row or floor yet. The rest of the
+  [mutation baseline](../docs/testing/mutation-baseline.md) is complete (#69, #72), with every
+  open gap closed (#73).
 
 **Next (phase 8, audit and mainnet):**
 1. **External audit** of RC1, with the [auditor pack](../docs/audit/README.md) and the review's
@@ -129,4 +131,5 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
 - 15 October: invariant suites and fork tests (#62), the gas diet (#63), test infrastructure
   (#58, #59, #65), docs (#61, #64), the quality pass (#66), Sepolia r3 (#67), the test
   organisation (#68) and the mutation baseline (#69).
-- 16 October: v1.0.0-rc.1.
+- 16 October: v1.0.0-rc.1; the mutation baseline completed (#72) and its 78 open gaps closed
+  (#73).

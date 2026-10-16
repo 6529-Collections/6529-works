@@ -128,6 +128,15 @@ contract StatementLogTest is StatementLogFixture {
         _append(Role.OWNER, stranger, s); // zero balance
     }
 
+    /// @dev Any ERC-1155 balance counts, including one of 2**128 or more (found by mutation
+    ///      testing).
+    function test_Owner_ERC1155HolderOfAWideBalanceMayWrite() public {
+        editions.setBalance(7, tokenOwner, uint256(1) << 128);
+        Statement memory s = _statement(address(editions), 7);
+        _expectAppend(Role.OWNER, tokenOwner, s);
+        _append(Role.OWNER, tokenOwner, s);
+    }
+
     function test_Owner_RejectsWorkIdAndCodelessToken() public {
         Statement memory workId = _statement(address(0), 5);
         vm.expectRevert(

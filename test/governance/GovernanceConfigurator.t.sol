@@ -607,6 +607,51 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         configurator.verify(_config());
     }
 
+    /// @dev Readback checks the manager itself as a target: a manager closed as a target is
+    ///      refused (found by mutation testing).
+    function test_ReadbackDetectsTheManagerClosedAsATarget() public {
+        _configured();
+        _adminExecute(abi.encodeCall(IAccessManager.setTargetClosed, (address(manager), true)));
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.TargetMismatch.selector, address(manager))
+        );
+        configurator.verify(_config());
+    }
+
+    /// @dev A target whose admin delay moved since installation is refused, whether it was
+    ///      raised or lowered (found by mutation testing).
+    function test_ReadbackDetectsATargetAdminDelayMovedEitherWay() public {
+        _configured();
+        uint32[2] memory moved = [
+            GovernanceConfig.TARGET_ADMIN_DELAY + 1 days,
+            GovernanceConfig.TARGET_ADMIN_DELAY - 1 days
+        ];
+        for (uint256 i; i < moved.length; ++i) {
+            _adminExecute(
+                abi.encodeCall(IAccessManager.setTargetAdminDelay, (address(target), moved[i]))
+            );
+            _settle();
+            assertEq(manager.getTargetAdminDelay(address(target)), moved[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(GovernanceConfig.TargetMismatch.selector, address(target))
+            );
+            configurator.verify(_config());
+        }
+    }
+
+    /// @dev Readback validates the configuration it is given: a manager left with one guardian
+    ///      is refused even against a configuration naming only that guardian, which reads back
+    ///      the same (found by mutation testing).
+    function test_ReadbackRejectsAnInvalidConfigurationTheManagerMatches() public {
+        GovernanceConfig.Config memory cfg = _without(_config(), Roles.GUARDIAN, guardianC);
+        configurator.configure(cfg, MANIFEST, _noWiring());
+        _settle();
+        _adminExecute(abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardianB)));
+        cfg = _without(cfg, Roles.GUARDIAN, guardianB);
+        vm.expectRevert(abi.encodeWithSelector(GovernanceConfig.TooFewGuardians.selector, 1));
+        configurator.verify(cfg);
+    }
+
     function test_ReadbackDetectsMissingHolder() public {
         _configured();
         vm.expectRevert(

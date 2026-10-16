@@ -247,6 +247,42 @@ contract EnglishAuctionTest is AuctionBase {
         _start();
     }
 
+    /// @dev A sale kind sorting below the auction's is refused like one sorting above it
+    ///      (`FIXED_PRICE` and `DUTCH` both sort above) (found by mutation testing).
+    function test_Start_RevertsOnASaleKindSortingBelowTheAuctions() public {
+        bytes32 low = bytes32(uint256(1));
+        assertLt(uint256(low), uint256(SaleKind.ENGLISH_AUCTION));
+        stream.setCheckKind(false);
+        PrimaryTerms memory t = _terms(ETH);
+        t.saleKind = low;
+        stream.setTerms(t);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.ENGLISH_AUCTION, low
+            )
+        );
+        _start();
+    }
+
+    /// @dev A token that reports a token ID whose sale already exists (here one still in
+    ///      custody, live) cannot start a second sale over it (found by mutation testing).
+    function test_Start_RevertsWhenTheSaleAlreadyExists() public {
+        HugeIdTarget t = new HugeIdTarget();
+        vm.prank(successor);
+        auction.setTarget(address(t), true);
+        t.setId(7);
+        uint256 saleId = auction.start(address(t), "");
+        assertEq(t.ownerOf(7), address(auction));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                saleId,
+                IEnglishAuction.AuctionState.ACTIVE
+            )
+        );
+        auction.start(address(t), "");
+    }
+
     function test_Start_RevertsOnInactiveCurrency() public {
         address unknown = address(new PermitTokenStub());
         stream.setTerms(_terms(unknown));
@@ -415,6 +451,25 @@ contract EnglishAuctionTest is AuctionBase {
         auction.settle(saleId);
         assertEq(usd.balanceOf(seller), 22.5e18);
         assertEq(stream.ownerOf(1), carol);
+    }
+
+    /// @dev MARKET-2 reopens an auction only for a currency back inside its last window: one
+    ///      back exactly a window before the end (re-admitted in the start's block, with a window
+    ///      as long as the auction) settles at the end (found by mutation testing).
+    function test_Settle_ACurrencyBackExactlyAWindowBeforeTheEndDoesNotReopen() public {
+        vm.prank(setter);
+        auction.setConfig(_config(), IEnglishAuction.AuctionConfig(DURATION, DURATION, SHARE));
+        allowlist.deprecateAsset(address(usd));
+        vm.warp(block.timestamp + Roles.FUNDS);
+        (,, uint64 revision) = allowlist.assetConfig(address(usd));
+        allowlist.admitAsset(address(usd), revision, USD_FLOOR);
+        uint256 saleId = _startUsd();
+        (, uint256 since,) = allowlist.statusClock(address(usd));
+        assertEq(since + DURATION, auction.auction(saleId).endTime);
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(uint8(_state(saleId)), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(stream.ownerOf(1), artist);
     }
 
     /// @dev Terms naming `CURRENCY_DEFAULT` lock the product's default once, at start.
@@ -664,10 +719,17 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.auction(saleId).bid, 10e18);
     }
 
+    /// @dev A permit signature one byte longer or shorter is refused with `InvalidPayment`; a
+    ///      short one never reaches the signature's last byte (found by mutation testing).
     function test_Bid_Erc20PermitNeedsA65ByteSignature() public {
         uint256 saleId = _startUsd();
         Payment memory p = _permitPayment(alicePk, 10e18, block.timestamp + 1 hours);
+        (, bytes32 r, bytes32 s) = _split(p.signature);
         p.signature = bytes.concat(p.signature, hex"00");
+        vm.prank(alice);
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        auction.bid(saleId, address(0), p);
+        p.signature = abi.encodePacked(r, s);
         vm.prank(alice);
         vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
         auction.bid(saleId, address(0), p);

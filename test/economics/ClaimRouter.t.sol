@@ -144,6 +144,16 @@ contract ClaimRouterTest is EconomicsBase {
         assertEq(token.balanceOf(address(router)), 0);
     }
 
+    /// @dev A release of 2**128 or more is reported in full (found by mutation testing).
+    function test_Claim_ReportsAReleaseOf2To128OrMore() public {
+        SplitWallet w = _solo(alice);
+        uint256 amount = (uint256(1) << 128) + 5;
+        token.mint(address(w), amount);
+        uint256[] memory amounts = router.claim(_one(address(w), address(token), 0), false);
+        assertEq(amounts[0], amount);
+        assertEq(token.balanceOf(alice), amount);
+    }
+
     function test_BatchesUpToMaxClaimsAndRejectsMore() public {
         ClaimWalletAdversary wallet = new ClaimWalletAdversary();
         uint256 max = router.MAX_CLAIMS();
@@ -380,6 +390,28 @@ contract ClaimRouterTest is EconomicsBase {
         );
         assertFalse(ok);
         assertEq(address(first).balance, 1 ether);
+    }
+
+    /// @dev An atomic batch forwards all the gas left to its item, not the continue-mode share:
+    ///      at a limit where that share (about half the gas) is short of the item's need and
+    ///      continue mode reverts, the atomic batch pays (found by mutation testing).
+    function test_Claim_AtomicModeGivesAnItemAllTheGasLeft() public {
+        GasHungryWallet hungry = new GasHungryWallet();
+        hungry.setBurn(400_000);
+        IClaimRouter.Claim[] memory claims = _one(address(hungry), ETH, 0);
+
+        (bool ok, bytes memory data) = address(router).call{ gas: 600_000 }(
+            abi.encodeCall(IClaimRouter.claim, (claims, true))
+        );
+        assertFalse(ok, "continue mode: the share is short");
+        assertEq(_selector(data), IClaimRouter.ClaimInsufficientGas.selector);
+
+        (ok, data) = address(router).call{ gas: 600_000 }(
+            abi.encodeCall(IClaimRouter.claim, (claims, false))
+        );
+        assertTrue(ok, "atomic mode: all the gas left is enough");
+        assertEq(abi.decode(data, (uint256[]))[0], 1);
+        assertEq(hungry.releases(), 1);
     }
 
     // ------------------------------------------------------------------ gas estimation (MONEY-3)
