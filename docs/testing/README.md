@@ -166,19 +166,19 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   one wrote the whole statement's text into the comparison's place, so many of its mutants
   did not compile) and skips Yul comparisons; LIR gives `bool` the values `false` and `true`.
 
-**Status.** The first full baseline is in [mutation-baseline.md](mutation-baseline.md): 9,606
-mutants of 054442d's code in 46 contracts, 88.5% killed by the campaign and 90.4% by the final
-suite, 98.1% once the 755 equivalent mutants are left out. Every survivor is triaged there, and
-`tools/mutation-floors.json` holds a floor for each contract the baseline measured (the four
-contracts whose shards were still running have none yet). 245 of the campaign's survivors were
-gaps in the suite; the final suite kills 184 of them, most through tests this lane added, and
-the rest are in the work list below. Running the tool on the libraries, the content readers and
-the economics module while it was built already found checks the suite was missing, now pinned
-by tests: ill-formed UTF-8 lead bytes cut at a chunk end; an escape letter other than `u`
-before four hex digits; JSON and script escaping reading past the input's end; an exact Dutch
-payment crediting zero; a token that refuses `approve` by reverting, returns more than one
-word, or sets the upper bits of its `true`, and balances above 2**128; the resolver's bounds on
-each side; and CC0 license texts either side of the pinned one.
+**Status.** The first full baseline is in [mutation-baseline.md](mutation-baseline.md): 11,735
+mutants of 054442d's code in 50 contracts, 88.2% killed by the campaign and 90.0% by the final
+suite, 98.3% once the 990 equivalent mutants are left out. Every survivor is triaged there, and
+`tools/mutation-floors.json` holds a floor for each contract the baseline measured. 289 of the
+campaign's survivors were gaps in the suite; the final suite kills 211 of them, most through
+tests written for the baseline, and the rest are in the work list below. Running the tool on
+the libraries, the content readers and the economics module while it was built already found
+checks the suite was missing, now pinned by tests: ill-formed UTF-8 lead bytes cut at a chunk
+end; an escape letter other than `u` before four hex digits; JSON and script escaping reading
+past the input's end; an exact Dutch payment crediting zero; a token that refuses `approve` by
+reverting, returns more than one word, or sets the upper bits of its `true`, and balances above
+2**128; the resolver's bounds on each side; and CC0 license texts either side of the pinned
+one.
 
 ## Symbolic proofs (Halmos)
 
@@ -256,18 +256,21 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 **From mutation testing:**
 
-The baseline's [open gaps](mutation-baseline.md#survivors-triaged), 61 survivors in all,
+The baseline's [open gaps](mutation-baseline.md#survivors-triaged), 78 survivors in all,
 grouped. Each is a missing test, not a known bug.
 
 1. One-sided comparisons still tested from one side: the item, media and content hashes
    `WorkRecords.openRecord` and the consent check compare, a renderer pinned again with another
    code hash, the artist registry's dependency code hashes, outcome references and accounts
-   reserved for a lower artist ID, the auction's federation-registry pin, federated token code
-   and a mint target's sale kind, and an edition whose primary hash sorts below its content
-   hash in the renderer.
+   reserved for a lower artist ID, the federation-registry pins and federated token code in the
+   auction and the sale adapters, a mint target's sale kind, a token that mints an ID below the
+   sale's, Editions' master item hash, a target's admin delay in the governance readback, and
+   an edition whose primary hash sorts below its content hash in the renderer.
 2. Boundaries: the auction's reopening window when the currency comes back exactly at its end,
    a standing refresh at exactly its recorded times, a VRF proof of exactly `MAX_PROOF_LENGTH`
-   nodes, and a Permit2 pull whose balances move by other than the amount.
+   nodes, a permit at its deadline second in the fixed-price and Dutch adapters, an open
+   edition first minted after 2**32 seconds, and a Permit2 pull whose balances move by other
+   than the charge.
 3. EIP-7702 delegated dependencies whose delegate answers ERC-165 (the auction's economics
    resolver and federation registry, the records' Stream, the registry's statement log): the
    interface check alone refuses any other account without code, so only such a delegate
@@ -276,15 +279,19 @@ grouped. Each is a missing test, not a known bug.
    fewer than 32 bytes, that answers both ERC-721 and ERC-1155, or whose ERC-1155 balance is
    2**128 or more; a `coreOf` of another length; an Editions answer naming another master or an
    edition it does not know; a statement log's resolver answer shorter than a word; a revert
-   reason longer than the registry decodes; a permit signature shorter than 65 bytes.
+   reason longer than the registry decodes; a permit signature shorter or longer than 65 bytes;
+   a token that refuses zero-value transfers.
 5. Inputs that cost more to build: a 49-chunk base64 file whose padding straddles its last two
    chunks, a work with every trait slot filled, a license text outside the media, a
    one-character `dependencies` value, a document at the exact JSON budget, a release of 2**128
-   or more through the claim router, and a stop-mode claim given more gas than its
-   continue-mode share.
+   or more through the claim router, a stop-mode claim given more gas than its continue-mode
+   share, and a Permit2 purchase while the adapter already holds the token.
 6. Reachable but untested: `EnglishAuction.start` on a sale that already exists (a settled
-   token sent back to the auction; coverage lists it too), a withdrawal from an unknown sale,
-   and a relicense consent from a registered artist whose authority is not the party's account.
+   token sent back to the auction; coverage lists it too), a withdrawal from an unknown sale, a
+   relicense consent from a registered artist whose authority is not the party's account, the
+   governance readback of a manager configured outside `install` (an invalid configuration, or
+   the manager's own target settings changed), terms without a fee recipient (the zero address
+   must not take an index), and the federation registry's recorded code hash after it is unset.
 
 **From coverage:**
 

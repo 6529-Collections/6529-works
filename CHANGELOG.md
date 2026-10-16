@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Tests: the mutation baseline's last four contracts, Editions, FixedPriceSale, MintSaleBase
+  and GovernanceConfig
+  ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). The baseline now
+  covers 11,735 mutants in 50 contracts: 88.2% killed by the campaign, 90.0% by the final
+  suite, 98.3% leaving out the equivalent mutants. 10 new and 6 extended tests close the gaps
+  the four shards found (interface IDs below the supported ones, a consent's deadline second, a
+  phase that starts after it ends, a sale window over phases in any order, ETH payments above
+  their amount or by a permit method, the governance configuration's first grant and selector
+  and grant pairs in either order, readback of a lower role, a 100% edition royalty), and
+  `tools/mutation-floors.json` gains their floors.
+
 ## 1.0.0-rc.1 (2026-10-16)
 
 - Release candidate 1, pre-audit and not production-ready: the code deployed as Sepolia

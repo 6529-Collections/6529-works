@@ -127,6 +127,14 @@ contract EditionsTest is EditionsBase {
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(stream))
         );
         new Editions(address(manager), address(stream), wrong, marketOwner);
+        // A wrong pin is refused whichever way it sorts against the code's hash.
+        bytes32[2] memory extremes = [bytes32(0), bytes32(type(uint256).max)];
+        for (uint256 i; i < extremes.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(stream))
+            );
+            new Editions(address(manager), address(stream), extremes[i], marketOwner);
+        }
     }
 
     function _expectInvalidStream(address s) internal {
@@ -1032,11 +1040,16 @@ contract EditionsTest is EditionsBase {
         workRecordsMock.setRate(editions, id, 10_000);
         assertEq(vm.getRecordedLogs().length, 0, "unchanged rate");
 
-        // A master without an edition is a silent no-op.
+        // A master without an edition is a silent no-op, whatever the rate.
         uint256 bare = _master(_fixedItem(5));
         vm.recordLogs();
         workRecordsMock.setRate(editions, bare, 0);
+        workRecordsMock.setRate(editions, bare, 10_000);
         assertEq(vm.getRecordedLogs().length, 0);
+
+        // The bound is inclusive: a rate of exactly 100% is accepted.
+        workRecordsMock.setRate(editions, id, 100_000);
+        assertEq(editions.edition(id).royaltyRate, 100_000);
     }
 
     function test_RoyaltyInfo_UnknownEdition() public {
@@ -1308,6 +1321,16 @@ contract EditionsTest is EditionsBase {
         assertTrue(editions.supportsInterface(type(IEditions).interfaceId));
         assertTrue(editions.supportsInterface(0x49064906), "ERC-4906");
         assertFalse(editions.supportsInterface(0xffffffff));
+        // IDs just below each of the contract's own.
+        bytes4[4] memory own = [
+            type(IERC2981).interfaceId,
+            type(IMintTarget).interfaceId,
+            type(IEditions).interfaceId,
+            bytes4(0x49064906)
+        ];
+        for (uint256 i; i < own.length; ++i) {
+            assertFalse(editions.supportsInterface(bytes4(uint32(own[i]) - 1)));
+        }
     }
 
     function test_Exists_FalseForUnknown() public {

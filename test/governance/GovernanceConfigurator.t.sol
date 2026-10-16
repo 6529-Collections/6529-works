@@ -463,6 +463,114 @@ contract GovernanceConfiguratorTest is GovernanceFixture {
         configurator.verify(_config());
     }
 
+    /// @dev The pairing rule reads a grant pair in either order and checks every role ID: an
+    ///      admin later made a guardian is refused for its first role, ADMIN (found by mutation
+    ///      testing).
+    function test_RejectsAnAdminLaterMadeAGuardian() public {
+        _expectConfigureRevert(
+            _withGrant(Roles.GUARDIAN, adminSafe),
+            abi.encodeWithSelector(
+                GovernanceConfig.GuardianHoldsRole.selector, adminSafe, Roles.ADMIN
+            )
+        );
+    }
+
+    /// @dev A duplicate of the very first grant is caught like any other (found by mutation
+    ///      testing).
+    function test_RejectsADuplicateOfTheFirstGrant() public {
+        _expectConfigureRevert(
+            _withGrant(Roles.ADMIN, adminSafe),
+            abi.encodeWithSelector(GovernanceConfig.DuplicateGrant.selector, Roles.ADMIN, adminSafe)
+        );
+    }
+
+    /// @dev A pauser later made a guardian is the guardian pairing, in the other order (found by
+    ///      mutation testing).
+    function test_AcceptsAPauserLaterMadeAGuardian() public {
+        address next = makeAddr("next guardian");
+        configurator.configure(
+            _append(_withGrant(Roles.PAUSER, next), Roles.GUARDIAN, next), MANIFEST, _noWiring()
+        );
+        assertTrue(GovernanceConfig.hasRecord(manager, Roles.GUARDIAN, next));
+    }
+
+    /// @dev An operational key may also hold ADMIN: only GUARDIAN restricts what it pairs with
+    ///      (found by mutation testing).
+    function test_AcceptsAnOperationalKeyLaterMadeAnAdmin() public {
+        configurator.configure(_withGrant(Roles.ADMIN, keeper), MANIFEST, _noWiring());
+        assertTrue(GovernanceConfig.hasRecord(manager, Roles.ADMIN, keeper));
+    }
+
+    /// @dev The first selector of a target is checked like the others: an ADMIN mapping is
+    ///      refused, and so is a later duplicate of it (found by mutation testing).
+    function test_RejectsBadFirstSelectors() public {
+        GovernanceConfig.Config memory cfg = _config();
+        cfg.targets[0].functions[0].role = Roles.ADMIN;
+        _expectConfigureRevert(
+            cfg,
+            abi.encodeWithSelector(
+                GovernanceConfig.InvalidFunctionRole.selector,
+                address(target),
+                GovernedTargetMock.pause.selector,
+                Roles.ADMIN
+            )
+        );
+        cfg = _config();
+        cfg.targets[0].functions[8].selector = GovernedTargetMock.pause.selector;
+        _expectConfigureRevert(
+            cfg,
+            abi.encodeWithSelector(
+                GovernanceConfig.DuplicateSelector.selector,
+                address(target),
+                GovernedTargetMock.pause.selector
+            )
+        );
+    }
+
+    /// @dev Readback checks the first selector too, and a role below the configured one as well as
+    ///      above it (found by mutation testing).
+    function test_ReadbackDetectsTheFirstSelectorMovedToALowerRole() public {
+        _configured();
+        _adminExecute(
+            abi.encodeCall(
+                IAccessManager.setTargetFunctionRole,
+                (address(target), _one(GovernedTargetMock.pause.selector), Roles.GUARDIAN)
+            )
+        );
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.FunctionRoleMismatch.selector,
+                address(target),
+                GovernedTargetMock.pause.selector,
+                Roles.GUARDIAN
+            )
+        );
+        configurator.verify(_config());
+    }
+
+    /// @dev Readback checks the first grant's holder too (found by mutation testing).
+    function test_ReadbackDetectsTheFirstHoldersDelayReduction() public {
+        _configured();
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, adminSafe, 0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(GovernanceConfig.HolderMismatch.selector, Roles.ADMIN, adminSafe)
+        );
+        configurator.verify(_config());
+    }
+
+    /// @dev A guardian gaining ADMIN, role 0, is caught like any other role (found by mutation
+    ///      testing).
+    function test_ReadbackDetectsAGuardianGainingAdmin() public {
+        _configured();
+        _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.ADMIN, guardianA, 30 days)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GovernanceConfig.GuardianHoldsRole.selector, guardianA, Roles.ADMIN
+            )
+        );
+        configurator.verify(_config());
+    }
+
     function test_ReadbackDetectsGuardianGainingAnyOtherRole() public {
         _configured();
         _adminExecute(abi.encodeCall(IAccessManager.grantRole, (Roles.MINTER, guardianA, 0)));

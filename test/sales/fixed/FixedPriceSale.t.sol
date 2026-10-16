@@ -122,6 +122,10 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertTrue(fixedSale.supportsInterface(type(ISaleAdapter).interfaceId));
         assertTrue(fixedSale.supportsInterface(type(IFixedPriceSale).interfaceId));
         assertFalse(fixedSale.supportsInterface(0xffffffff));
+        assertFalse(fixedSale.supportsInterface(bytes4(uint32(type(ISaleAdapter).interfaceId) - 1)));
+        assertFalse(
+            fixedSale.supportsInterface(bytes4(uint32(type(IFixedPriceSale).interfaceId) - 1))
+        );
     }
 
     function test_SetTarget_GovernedAndEmits() public {
@@ -390,6 +394,20 @@ contract FixedPriceSaleTest is FixedPriceBase {
         assertEq(editions.balanceOf(alice, ETH_ED), 1);
     }
 
+    /// @dev The sale's window spans its phases in any order: the earliest start and the latest
+    ///      end, here with the later-ending phase first and starts past 2**32 seconds.
+    function test_OpenSale_WindowSpansThePhasesInAnyOrder() public {
+        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](2);
+        uint64 t = uint64(1) << 32;
+        phases[0] = IFixedPriceSale.Phase(t + 10, t + 500, 0, 0, false, false);
+        phases[1] = IFixedPriceSale.Phase(t + 50, t + 100, 0, 0, false, false);
+        vm.expectEmit(address(fixedSale));
+        emit ISaleAdapter.SaleStarted(
+            1, address(editions), ETH_ED, SaleKind.FIXED_PRICE, CURRENCY_ETH, PRICE, t + 10, t + 500
+        );
+        _open(creator, ETH_ED, phases);
+    }
+
     function test_OpenSale_RevertsOnInvalidPhases() public {
         IFixedPriceSale.Phase[] memory tooMany = new IFixedPriceSale.Phase[](17);
         IFixedPriceSale.Phase[] memory sixteen = new IFixedPriceSale.Phase[](16);
@@ -399,8 +417,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
         }
         IFixedPriceSale.Phase memory empty = _phase(0, 0, false, false);
         empty.end = empty.start;
-        IFixedPriceSale.Phase[4] memory bad = [
-            empty, _phase(0, 0, true, false), _phase(0, 0, false, true), _phase(0, 0, true, true)
+        IFixedPriceSale.Phase memory backwards = _phase(0, 0, false, false);
+        backwards.start = backwards.end + 1;
+        IFixedPriceSale.Phase[5] memory bad = [
+            empty,
+            backwards,
+            _phase(0, 0, true, false),
+            _phase(0, 0, false, true),
+            _phase(0, 0, true, true)
         ];
         vm.expectRevert(IFixedPriceSale.InvalidPhases.selector);
         _open(creator, ETH_ED, new IFixedPriceSale.Phase[](0));
@@ -521,6 +545,19 @@ contract FixedPriceSaleTest is FixedPriceBase {
         vm.expectRevert(SignatureReverts.expired(deadline));
         vm.prank(platform);
         fixedSale.openSale(address(editions), ETH_ED, phases, valid);
+    }
+
+    /// @dev A consent is good through its deadline second.
+    function test_Approval_ConsentAtItsDeadlineSecond() public {
+        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
+        phases[0] = _phase(_root(_pricedLeaves()), 0, false, true);
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+        IFixedPriceSale.ArtistConsent memory consent =
+            _consent(creatorKey, ETH_ED, phases, 1, deadline);
+        vm.warp(deadline);
+        vm.prank(platform);
+        uint256 saleId = fixedSale.openSale(address(editions), ETH_ED, phases, consent);
+        assertTrue(_approved(saleId));
     }
 
     function test_Approval_NonceIsSingleUseAndRevocable() public {
@@ -1192,6 +1229,14 @@ contract FixedPriceSaleTest is FixedPriceBase {
         // The payer must be the sender for ETH.
         vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
         fixedSale.purchase{ value: 2 * PRICE }(p, proof, _eth(bob, 2 * PRICE));
+        // msg.value above the amount, not only below it.
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        fixedSale.purchase{ value: 2 * PRICE + 1 }(p, proof, _eth(alice, 2 * PRICE));
+        // ETH is paid directly, never by a permit method.
+        Payment memory byPermit = _eth(alice, 2 * PRICE);
+        byPermit.method = PaymentMethod.PERMIT;
+        vm.expectRevert(ISaleAdapter.InvalidPayment.selector);
+        fixedSale.purchase{ value: 2 * PRICE }(p, proof, byPermit);
         vm.stopPrank();
     }
 

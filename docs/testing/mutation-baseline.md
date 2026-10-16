@@ -14,8 +14,8 @@ mutants; this file is the reviewed reference, and
   a mutant of 054442d. Line numbers and error names below are that commit's. #66 changed
   `src/` after the campaign without changing behaviour beyond its errors: one install check
   (`Dependency`), `InvalidMintRequest` split into an error per Stream rule, errors declared in
-  the interfaces, and `JsonEscape.scriptText` removed. The tests this pull request adds were
-  written against 054442d and carried onto the current code; the weekly run measures the
+  the interfaces, and `JsonEscape.scriptText` removed. The tests written for the baseline were
+  checked against 054442d's mutants and carried onto the current code; the weekly run measures the
   current code against the floors.
 - **Tools.** `slither-mutate` from slither-analyzer 0.11.6 through `tools/mutation.py` (its
   fixed ROR and LIR, and the CONST rule), Foundry 1.7.1 and solc 0.8.37. Tests ran under the
@@ -24,11 +24,11 @@ mutants; this file is the reviewed reference, and
   four groups each (statements, operators, relations, conditions), plus six reruns of the
   relational and literal rules for the files where stock slither-mutate had aborted them
   (fixed since; see the guide). Each mutant ran its module's tests with `--fail-fast`; each
-  survivor then ran the whole suite of the shard's checkout. The campaign took about 18
+  survivor then ran the whole suite of the shard's checkout. The campaign took about 19
   hours on a 48-core machine running up to 40 shards at once; on a GitHub runner one small
   shard takes 10 to 15 minutes.
 - **The final suite.** The campaign ran while tests were still being added, so every survivor
-  was then run again in the final tree (054442d's code with this pull request's tests),
+  was then run again in the final tree (054442d's code with the tests written for the baseline),
   against each test file added or changed since its shard ran, and each test written for a
   survivor was also run against that mutant directly. That kills a survivor a later test
   catches. Survivors triaged as equivalent were not run again: no test can kill them.
@@ -38,7 +38,7 @@ mutants; this file is the reviewed reference, and
 ## Kill rate per contract
 
 "Killed" is the campaign's count; "killed by the final suite" adds the survivors a later test
-kills, most of them the tests this pull request adds. The last column leaves out the
+kills, most of them the tests written for the baseline. The last column leaves out the
 survivors triaged as equivalent, which no test can kill.
 
 | Contract | Mutants | Killed | Kill rate | Killed by the final suite | Kill rate, final | Equivalent | Rate without them |
@@ -63,8 +63,10 @@ survivors triaged as equivalent, which no test can kill.
 | `src/economics/Splits.sol` | 122 | 110 | 90.2% | 111 | 91.0% | 11 | 100.0% |
 | `src/economics/TokenTransfer.sol` | 140 | 127 | 90.7% | 133 | 95.0% | 7 | 100.0% |
 | `src/editions/EditionRules.sol` | 53 | 48 | 90.6% | 50 | 94.3% | 3 | 100.0% |
+| `src/editions/Editions.sol` | 536 | 501 | 93.5% | 508 | 94.8% | 25 | 99.4% |
 | `src/entropy/VrfEntropyModule.sol` | 332 | 291 | 87.7% | 305 | 91.9% | 26 | 99.7% |
 | `src/governance/BoundedParameter.sol` | 59 | 57 | 96.6% | 57 | 96.6% | 2 | 100.0% |
+| `src/governance/GovernanceConfig.sol` | 660 | 513 | 77.7% | 523 | 79.2% | 133 | 99.2% |
 | `src/governance/GovernanceConfigurator.sol` | 22 | 22 | 100.0% | 22 | 100.0% | 0 | 100.0% |
 | `src/governance/Roles.sol` | 300 | 278 | 92.7% | 278 | 92.7% | 22 | 100.0% |
 | `src/governance/WorksAccessManager.sol` | 79 | 74 | 93.7% | 76 | 96.2% | 1 | 97.4% |
@@ -85,23 +87,20 @@ survivors triaged as equivalent, which no test can kill.
 | `src/records/StatementLog.sol` | 431 | 389 | 90.3% | 396 | 91.9% | 26 | 97.8% |
 | `src/sales/DutchPricing.sol` | 87 | 82 | 94.3% | 82 | 94.3% | 5 | 100.0% |
 | `src/sales/DutchSale.sol` | 151 | 145 | 96.0% | 146 | 96.7% | 5 | 100.0% |
-| `src/sales/EnglishAuction.sol` | 983 | 880 | 89.5% | 901 | 91.7% | 56 | 97.2% |
+| `src/sales/EnglishAuction.sol` | 983 | 880 | 89.5% | 902 | 91.8% | 56 | 97.3% |
+| `src/sales/FixedPriceSale.sol` | 394 | 343 | 87.1% | 349 | 88.6% | 45 | 100.0% |
+| `src/sales/MintSaleBase.sol` | 539 | 490 | 90.9% | 493 | 91.5% | 32 | 97.2% |
 | `src/stream/SpdxId.sol` | 41 | 38 | 92.7% | 38 | 92.7% | 3 | 100.0% |
 | `src/stream/Stream.sol` | 588 | 529 | 90.0% | 546 | 92.9% | 32 | 98.2% |
 | `src/stream/WorkRecords.sol` | 788 | 677 | 85.9% | 713 | 90.5% | 57 | 97.5% |
-| **Total** | **9606** | **8503** | **88.5%** | **8687** | **90.4%** | **755** | **98.1%** |
-
-**Still running.** The shards of `editions-Editions`, `sales-MintSaleBase`,
-`governance-GovernanceConfig`, `sales-FixedPriceSale` were still running when this was written;
-their rows, survivors and floors are added when they finish. Until then those contracts have no
-floor, so the weekly run does not gate them.
+| **Total** | **11735** | **10350** | **88.2%** | **10561** | **90.0%** | **990** | **98.3%** |
 
 ## What survives, and why
 
-After the final suite, 919 of the 9,606 mutants survive: 755 equivalent, 32 gas margins, 70
-defensive, 1 caught only by a Halmos proof, and 61 open gaps. The campaign and the tests
-written for it moved the kill rate from 88.5% to 90.4%; leaving out the equivalent mutants,
-which no test can kill, it is 98.1%.
+After the final suite, 1,174 of the 11,735 mutants survive: 990 equivalent, 32 gas margins, 73
+defensive, 1 caught only by a Halmos proof, and 78 open gaps. The campaign and the tests
+written for it moved the kill rate from 88.2% to 90.0%; leaving out the equivalent mutants,
+which no test can kill, it is 98.3%.
 
 - **Equivalent** mutants are mostly mechanical: an unsigned `== 0` against `<= 0` (and `!= 0`
   against `> 0`), an enum compared at its first or last value, a loop counter's `<` against
@@ -118,9 +117,9 @@ which no test can kill, it is 98.1%.
   bounds as Stream reads them, a records satellite passing a reversed range) or against states
   out of reach (a 65,536th fee recipient, 2**23 overflow terms, an artist ID of 2**160 - 1).
 
-The gaps followed a few patterns. This pull request adds 62 tests and extends 38 more; with
-them, and the tests other changes added while the campaign ran, the final suite kills 184 of
-the campaign's survivors:
+The gaps followed a few patterns. The baseline added 72 tests and extended 44 more (#69 and its
+follow-up); with them, and the tests other changes added while the campaign ran, the final
+suite kills 211 of the campaign's survivors:
 
 - **One-sided comparisons.** A check written `!=` was tested from one side only, so `<` or `>`
   survived it: pinned code hashes (renderers, resolvers, curation verifiers, the split
@@ -135,7 +134,7 @@ the campaign's survivors:
 - **Amounts and indexes.** Mints and burns of zero, chunk and preference indexes more than one
   past the end, more signatures than parties, a file ID of zero.
 
-The 61 open gaps are listed below and grouped in the next lane's [work
+The 78 open gaps are listed below and grouped in the next lane's [work
 list](README.md#gaps-the-next-testing-lane). Most follow the same patterns where a test costs
 more to build: an EIP-7702 delegated dependency whose delegate answers ERC-165, a 49-chunk
 base64 file whose padding straddles two chunks, a work with every trait slot filled, and
@@ -157,7 +156,7 @@ Each survivor is one of:
   it needs a lying mock or input v1 never produces.
 - **Proved:** a Halmos proof in `test/symbolic` kills it, checked by running the proof against
   the mutant; the Foundry suite does not.
-- **Gap:** a missing test. When the note names a test, this pull request adds it and the
+- **Gap:** a missing test. When the note names a test, the baseline added it and the
   mutant is killed in the final suite; such mutants are not listed below, only counted in the
   table. The open ones are in the [work list](README.md#gaps-the-next-testing-lane).
 
@@ -812,6 +811,45 @@ Each survivor is one of:
 
 </details>
 
+### `src/editions/Editions.sol`
+
+28 survivors: 2 open gaps, 1 defensive, 25 equivalent.
+
+<details><summary>The survivors</summary>
+
+| Line | Rule | Mutation | Verdict | Why |
+| ---: | --- | --- | --- | --- |
+| 81 | SBR | `bytes32 private constant WORK_RECORDS = "WORK_RECORDS"` to `bytes32 private immutable WORK_RECORDS = "WORK_RECORDS"` | Equivalent | the same value as `immutable` |
+| 83 | SBR | `uint8 private constant MINTER_NONE = 0;` to `uint8 private immutable MINTER_NONE = 0;` | Equivalent | the same value as `immutable` |
+| 84 | SBR | `uint8 private constant MINTER_ADMITTED = 1;` to `uint8 private immutable MINTER_ADMITTED = 1;` | Equivalent | the same value as `immutable` |
+| 85 | CONST | `private constant MINTER_REMOVED = 2;` to `private constant MINTER_REMOVED = 3;` | Equivalent | any value other than 0 and 1 marks a removed minter |
+| 85 | SBR | `uint8 private constant MINTER_REMOVED = 2;` to `uint8 private immutable MINTER_REMOVED = 2;` | Equivalent | the same value as `immutable` |
+| 223 | ROR | `if (terms.saleKind == SaleKind.DUTCH) {` to `if (terms.saleKind <= SaleKind.DUTCH) {` | Equivalent | terms reach this line only as FIXED_PRICE or DUTCH (`EditionRules.isValid`), and FIXED_PRICE's label sorts above DUTCH's |
+| 238 | ROR | `linked != address(this) \|\| linkedId != workId) revert LinkFailed(wo...` to `linked != address(this) \|\| linkedId > workId) revert LinkFailed(workId` | Defensive | 6529 Stream, the bound core, links an edition only under its master's token ID |
+| 335 | ROR | `_records[editionId].contentHash != 0;` to `_records[editionId].contentHash > 0;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 352 | ROR | `if (amount == 0 \|\| data.length != 0) revert` to `if (amount <= 0 \|\| data.length != 0) revert` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 352 | ROR | `if (amount == 0 \|\| data.length != 0) revert InvalidMintRequest(` to `if (amount == 0 \|\| data.length > 0) revert InvalidMintRequest(` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 357 | ROR | `uint256 cap = r.size == 0 ? type(uint64).max : r.size` to `uint256 cap = r.size <= 0 ? type(uint64).max : r.size` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 357 | SBR | `uint256 cap = r.size == 0 ? type(uint64` to `uint128 cap = r.size == 0 ? type(uint64` | Equivalent | the cap is at most 2**64 - 1, which fits |
+| 359 | ROR | `if (r.format == EditionFormat.OPEN) {` to `if (r.format >= EditionFormat.OPEN) {` | Equivalent | `OPEN` is the last edition format, so `>= OPEN` is `== OPEN` |
+| 361 | ROR | `if (start == 0) {` to `if (start <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 362 | SBR | `start = uint64(block.timestamp);` to `start = uint32(block.timestamp);` | Gap | an open edition first minted after 2**32 seconds (the year 2106): the window's start would wrap |
+| 373 | SBR | `if (block.timestamp >= uint256(start) + r.window) revert EditionUna...` to `if (block.timestamp >= uint128(start) + r.window) revert EditionUna...` | Equivalent | a timestamp plus a window fits 128 bits |
+| 395 | ROR | `if (_minterStatus[msg.sender] == MINTER_NONE) revert NotAdmittedMin...` to `if (_minterStatus[msg.sender] <= MINTER_NONE) revert NotAdmittedMin...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 396 | ROR | `if (amount == 0) revert InvalidMintRequest(` to `if (amount <= 0) revert InvalidMintRequest(` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 406 | ROR | `if (_minterStatus[msg.sender] == MINTER_NONE) revert NotAdmittedMin...` to `if (_minterStatus[msg.sender] <= MINTER_NONE) revert NotAdmittedMin...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 419 | SBR | `Record storage r = _edition(tokenId);` to `Record memory r = _edition(tokenId);` | Equivalent | the record is only read, so a memory copy reads the same values |
+| 497 | ROR | `stream).primarySaleSettled(workId) \|\| item.kind != ItemKind.EDITION...` to `stream).primarySaleSettled(workId) \|\| item.kind < ItemKind.EDITION_...` | Equivalent | `EDITION_MASTER` is the last item kind, so `< EDITION_MASTER` is `!= EDITION_MASTER` |
+| 497 | ROR | `\|\| itemHash != master.itemHash \|\| item.contentHash` to `\|\| itemHash > master.itemHash \|\| item.contentHash` | Gap | `< EDITION_MASTER` is equivalent (the last item kind) and `<= 0` the unsigned test; `itemHash > master.itemHash` accepted an item whose hash sorts below the master's (only the other direction is tested) |
+| 497 | ROR | `master.itemHash \|\| item.contentHash == 0` to `master.itemHash \|\| item.contentHash <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 503 | ROR | `if (evidenceHash == 0) revert NotEditionMaster(workId` to `if (evidenceHash <= 0) revert NotEditionMaster(workId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 508 | ROR | `return target.code.length != 0 && !DelegatedEOA.isDelegated(target` to `return target.code.length > 0 && !DelegatedEOA.isDelegated(target` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 508 | ROR | `return target.code.length != 0 && !DelegatedEOA.isDelegated(target` to `return target.code.length >= 0 && !DelegatedEOA.isDelegated(target` | Equivalent | `length >= 0` always holds, and an account without code fails the ERC-165 check that follows |
+| 514 | ROR | `if (r.contentHash == 0) revert UnknownEdition(editionId` to `if (r.contentHash <= 0) revert UnknownEdition(editionId` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 520 | ROR | `== CURRENCY_DEFAULT && t.price != 0) revert PricedDefaultCurrency(w...` to `== CURRENCY_DEFAULT && t.price > 0) revert PricedDefaultCurrency(wo...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+
+</details>
+
 ### `src/entropy/VrfEntropyModule.sol`
 
 27 survivors: 1 open gap, 26 equivalent.
@@ -860,6 +898,154 @@ Each survivor is one of:
 | ---: | --- | --- | --- | --- |
 | 22 | ROR | `if (value == 0 \|\| ceiling == 0) revert ParameterZero(` to `if (value <= 0 \|\| ceiling == 0) revert ParameterZero(` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 22 | ROR | `if (value == 0 \|\| ceiling == 0) revert ParameterZero();` to `if (value == 0 \|\| ceiling <= 0) revert ParameterZero();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+
+</details>
+
+### `src/governance/GovernanceConfig.sol`
+
+137 survivors: 4 open gaps, 133 equivalent.
+
+<details><summary>The survivors</summary>
+
+| Line | Rule | Mutation | Verdict | Why |
+| ---: | --- | --- | --- | --- |
+| 65 | SBR | `uint256 internal constant MIN_GUARDIANS` to `uint128 internal constant MIN_GUARDIANS` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 72 | SBR | `uint256 internal constant MAX_WIRING_CALLS` to `uint128 internal constant MAX_WIRING_CALLS` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 116 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 116 | MVIV | `for (uint256 i = 0; i < targets.length; ++i) {` to `for (uint256 i ; i < targets.length; ++i) {` | Equivalent | a local is zero without its initializer |
+| 116 | ROR | `for (uint256 i = 0; i < targets.length; ++i) {` to `for (uint256 i = 0; i != targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 116 | SBR | `for (uint256 i = 0; i < targets.length; ++i) { address target = tar...` to `for (uint128 i = 0; i < targets.length; ++i) { address target = tar...` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 116 | SBR | `for (uint256 i = 0; i < targets.length; ++i` to `for (uint128 i = 0; i < targets.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 116 | UOR | `uint256 i = 0; i < targets.length; ++i) {` to `uint256 i = 0; i < targets.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 121 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 121 | MVIV | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j ; j < i; ++j) {` | Equivalent | a local is zero without its initializer |
+| 121 | ROR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j != i; ++j) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 121 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 121 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 121 | UOR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j < i; j++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 155 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 155 | MVIV | `for (uint256 i = 0; i < wiring.length; ++i) {` to `for (uint256 i ; i < wiring.length; ++i) {` | Equivalent | a local is zero without its initializer |
+| 155 | ROR | `for (uint256 i = 0; i < wiring.length; ++i) {` to `for (uint256 i = 0; i != wiring.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 155 | SBR | `for (uint256 i = 0; i < wiring.length; ++i` to `for (uint128 i = 0; i < wiring.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 155 | SBR | `for (uint256 i = 0; i < wiring.length; ++i` to `for (uint128 i = 0; i < wiring.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 155 | UOR | `uint256 i = 0; i < wiring.length; ++i) {` to `uint256 i = 0; i < wiring.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 161 | ROR | `if (data.length < 4 \|\| !_isTarget(cfg, target)) {` to `if (data.length <= 4 \|\| !_isTarget(cfg, target) \|\| !_isTarget(cfg, ...` | Equivalent | every genesis selector takes arguments, so a four-byte wiring call fails either way, at validation or when it runs |
+| 175 | ROR | `for (uint64 role = 1; role < Roles.COUNT; ++role) {` to `for (uint64 role = 1; role != Roles.COUNT; ++role) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 175 | SBR | `for (uint64 role = 1; role < Roles.COUNT;` to `for (uint32 role = 1; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 175 | SBR | `for (uint64 role = 1; role < Roles.COUNT;` to `for (uint32 role = 1; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 175 | UOR | `role = 1; role < Roles.COUNT; ++role) {` to `role = 1; role < Roles.COUNT; role++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 183 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 183 | MVIV | `for (uint256 i = 0; i < cfg.targets.length; ++i)` to `for (uint256 i ; i < cfg.targets.length; ++i)` | Equivalent | a local is zero without its initializer |
+| 183 | ROR | `for (uint256 i = 0; i < cfg.targets.length; ++i) {` to `for (uint256 i = 0; i != cfg.targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 183 | SBR | `for (uint256 i = 0; i < cfg.targets.length` to `for (uint128 i = 0; i < cfg.targets.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 183 | SBR | `for (uint256 i = 0; i < cfg.targets.length` to `for (uint128 i = 0; i < cfg.targets.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 183 | UOR | `i = 0; i < cfg.targets.length; ++i) {` to `i = 0; i < cfg.targets.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 188 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 188 | MVIV | `for (uint256 i = 0; i < wiring.length; ++i) {` to `for (uint256 i ; i < wiring.length; ++i) {` | Equivalent | a local is zero without its initializer |
+| 188 | ROR | `for (uint256 i = 0; i < wiring.length; ++i) {` to `for (uint256 i = 0; i != wiring.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 188 | SBR | `for (uint256 i = 0; i < wiring.length; ++i` to `for (uint128 i = 0; i < wiring.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 188 | SBR | `for (uint256 i = 0; i < wiring.length; ++i` to `for (uint128 i = 0; i < wiring.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 191 | ROR | `if (reason.length == 0) revert WiringCallFailed(i` to `if (reason.length <= 0) revert WiringCallFailed(i` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 198 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 198 | MVIV | `for (uint256 i = 0; i < cfg.targets.length; ++i)` to `for (uint256 i ; i < cfg.targets.length; ++i)` | Equivalent | a local is zero without its initializer |
+| 198 | ROR | `for (uint256 i = 0; i < cfg.targets.length; ++i) {` to `for (uint256 i = 0; i != cfg.targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 198 | SBR | `for (uint256 i = 0; i < cfg.targets.length; ++i) { Target memory ta...` to `for (uint128 i = 0; i < cfg.targets.length; ++i) { Target memory ta...` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 198 | SBR | `for (uint256 i = 0; i < cfg.targets.length` to `for (uint128 i = 0; i < cfg.targets.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 201 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 201 | MVIV | `for (uint256 j = 0; j < target.functions.length;` to `for (uint256 j ; j < target.functions.length;` | Equivalent | a local is zero without its initializer |
+| 201 | ROR | `for (uint256 j = 0; j < target.functions.length; ++j)` to `for (uint256 j = 0; j != target.functions.length; ++j)` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 201 | SBR | `for (uint256 j = 0; j < target.functions.length` to `for (uint128 j = 0; j < target.functions.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 201 | SBR | `for (uint256 j = 0; j < target.functions.length` to `for (uint128 j = 0; j < target.functions.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 201 | UOR | `0; j < target.functions.length; ++j) {` to `0; j < target.functions.length; j++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 207 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 207 | MVIV | `for (uint256 i = 0; i < cfg.grants.length; ++i)` to `for (uint256 i ; i < cfg.grants.length; ++i)` | Equivalent | a local is zero without its initializer |
+| 207 | ROR | `for (uint256 i = 0; i < cfg.grants.length; ++i) {` to `for (uint256 i = 0; i != cfg.grants.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 207 | SBR | `for (uint256 i = 0; i < cfg.grants.length;` to `for (uint128 i = 0; i < cfg.grants.length;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 207 | SBR | `for (uint256 i = 0; i < cfg.grants.length;` to `for (uint128 i = 0; i < cfg.grants.length;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 219 | CR | `validate(manager, cfg);` to `//validate(manager, cfg);` | Gap | `verify` without its own `validate`: a manager configured outside `install` with an invalid configuration (too few guardians, say) that reads back the same; no test builds one |
+| 220 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 220 | MVIV | `for (uint64 role = 0; role < Roles.COUNT; ++role)` to `for (uint64 role ; role < Roles.COUNT; ++role)` | Equivalent | a local is zero without its initializer |
+| 220 | ROR | `for (uint64 role = 0; role < Roles.COUNT; ++role) {` to `for (uint64 role = 0; role != Roles.COUNT; ++role) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 220 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 220 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 220 | UOR | `role = 0; role < Roles.COUNT; ++role) {` to `role = 0; role < Roles.COUNT; role++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 228 | CR | `_verifyTarget(manager, address(manager` to `//_verifyTarget(manager, address(manager` | Gap | the manager's own target check in `verify`: no test closes the manager or changes its own admin delay before a readback |
+| 229 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 229 | MVIV | `for (uint256 i = 0; i < cfg.targets.length; ++i)` to `for (uint256 i ; i < cfg.targets.length; ++i)` | Equivalent | a local is zero without its initializer |
+| 229 | ROR | `for (uint256 i = 0; i < cfg.targets.length; ++i) {` to `for (uint256 i = 0; i != cfg.targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 229 | SBR | `for (uint256 i = 0; i < cfg.targets.length; ++i) { Target memory ta...` to `for (uint128 i = 0; i < cfg.targets.length; ++i) { Target memory ta...` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 229 | SBR | `for (uint256 i = 0; i < cfg.targets.length` to `for (uint128 i = 0; i < cfg.targets.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 229 | UOR | `i = 0; i < cfg.targets.length; ++i) {` to `i = 0; i < cfg.targets.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 232 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 232 | MVIV | `for (uint256 j = 0; j < target.functions.length;` to `for (uint256 j ; j < target.functions.length;` | Equivalent | a local is zero without its initializer |
+| 232 | ROR | `for (uint256 j = 0; j < target.functions.length; ++j)` to `for (uint256 j = 0; j != target.functions.length; ++j)` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 232 | SBR | `for (uint256 j = 0; j < target.functions.length` to `for (uint128 j = 0; j < target.functions.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 232 | SBR | `for (uint256 j = 0; j < target.functions.length` to `for (uint128 j = 0; j < target.functions.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 232 | UOR | `0; j < target.functions.length; ++j) {` to `0; j < target.functions.length; j++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 240 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 240 | MVIV | `for (uint256 i = 0; i < cfg.grants.length; ++i)` to `for (uint256 i ; i < cfg.grants.length; ++i)` | Equivalent | a local is zero without its initializer |
+| 240 | ROR | `for (uint256 i = 0; i < cfg.grants.length; ++i) {` to `for (uint256 i = 0; i != cfg.grants.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 240 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 240 | SBR | `for (uint256 i = 0; i < cfg.grants.length;` to `for (uint128 i = 0; i < cfg.grants.length;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 240 | SBR | `for (uint256 i = 0; i < cfg.grants.length;` to `for (uint128 i = 0; i < cfg.grants.length;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 244 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 244 | MVIV | `for (uint64 role = 0; role < Roles.COUNT; ++role)` to `for (uint64 role ; role < Roles.COUNT; ++role)` | Equivalent | a local is zero without its initializer |
+| 244 | ROR | `for (uint64 role = 0; role < Roles.COUNT; ++role) {` to `for (uint64 role = 0; role <= Roles.COUNT; ++role) {` | Equivalent | `!=` stops where `<` does, and `<=` adds role 13, which no account can hold a record for |
+| 244 | ROR | `for (uint64 role = 0; role < Roles.COUNT; ++role) {` to `for (uint64 role = 0; role != Roles.COUNT; ++role) {` | Equivalent | `!=` stops where `<` does, and `<=` adds role 13, which no account can hold a record for |
+| 244 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 244 | SBR | `for (uint64 role = 0; role < Roles.COUNT;` to `for (uint32 role = 0; role < Roles.COUNT;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 270 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 270 | MVIV | `for (uint256 i = 0; i < cfg.targets.length; ++i)` to `for (uint256 i ; i < cfg.targets.length; ++i)` | Equivalent | a local is zero without its initializer |
+| 270 | ROR | `for (uint256 i = 0; i < cfg.targets.length; ++i) {` to `for (uint256 i = 0; i != cfg.targets.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 270 | SBR | `for (uint256 i = 0; i < cfg.targets.length` to `for (uint128 i = 0; i < cfg.targets.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 270 | SBR | `for (uint256 i = 0; i < cfg.targets.length` to `for (uint128 i = 0; i < cfg.targets.length` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 270 | UOR | `i = 0; i < cfg.targets.length; ++i) {` to `i = 0; i < cfg.targets.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 273 | CR | `return false;` to `//return false;` | Equivalent | the function's default return value is already false |
+| 277 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 277 | MVIV | `uint256 guardians = 0;` to `uint256 guardians ;` | Equivalent | a local is zero without its initializer |
+| 277 | SBR | `uint256 guardians = 0;` to `uint128 guardians = 0;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 278 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 278 | MVIV | `uint256 seen = 0; // one bit per role with at least` to `uint256 seen ; // one bit per role with at least` | Equivalent | a local is zero without its initializer |
+| 279 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 279 | MVIV | `for (uint256 i = 0; i < grants.length; ++i) {` to `for (uint256 i ; i < grants.length; ++i) {` | Equivalent | a local is zero without its initializer |
+| 279 | ROR | `for (uint256 i = 0; i < grants.length; ++i) {` to `for (uint256 i = 0; i != grants.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 279 | SBR | `for (uint256 i = 0; i < grants.length; ++i) { Grant memory grant = ...` to `for (uint128 i = 0; i < grants.length; ++i) { Grant memory grant = ...` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 279 | SBR | `for (uint256 i = 0; i < grants.length; ++i` to `for (uint128 i = 0; i < grants.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 279 | UOR | `uint256 i = 0; i < grants.length; ++i) {` to `uint256 i = 0; i < grants.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 281 | CR | `Roles.requireKnown(grant.role)` to `//Roles.requireKnown(grant.role)` | Equivalent | `install` and `verify` both reach `Roles.executionDelay` for every grant, which refuses an unknown role with the same `UnknownRole` |
+| 283 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 283 | MVIV | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j ; j < i; ++j) {` | Equivalent | a local is zero without its initializer |
+| 283 | ROR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j != i; ++j) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 283 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 283 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 283 | UOR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j < i; j++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 288 | UOR | `grant.role == Roles.GUARDIAN) ++guardians;` to `grant.role == Roles.GUARDIAN) guardians++;` | Equivalent | pre- or post-increment of a loop counter |
+| 289 | SBR | `seen \|= uint256(1) << grant.role;` to `seen \|= uint128(1) << grant.role;` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 292 | BOR | `if (seen & (uint256(1) << Roles.ADMIN) == 0) revert MissingHolder(R...` to `if (seen & (uint256(1) \| Roles.ADMIN) == 0) revert MissingHolder(Ro...` | Equivalent | `ADMIN` is 0, so `1 | 0`, `1 >> 0` and `1 ^ 0` are all `1 << 0` |
+| 292 | BOR | `if (seen & (uint256(1) << Roles.ADMIN) == 0) revert MissingHolder(R...` to `if (seen & (uint256(1) >> Roles.ADMIN) == 0) revert MissingHolder(R...` | Equivalent | `ADMIN` is 0, so `1 | 0`, `1 >> 0` and `1 ^ 0` are all `1 << 0` |
+| 292 | BOR | `if (seen & (uint256(1) << Roles.ADMIN) == 0) revert MissingHolder(R...` to `if (seen & (uint256(1) ^ Roles.ADMIN) == 0) revert MissingHolder(Ro...` | Equivalent | `ADMIN` is 0, so `1 | 0`, `1 >> 0` and `1 ^ 0` are all `1 << 0` |
+| 292 | ROR | `& (uint256(1) << Roles.ADMIN) == 0) revert MissingHolder(Roles.ADMIN` to `& (uint256(1) << Roles.ADMIN) <= 0) revert MissingHolder(Roles.ADMIN` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 292 | SBR | `if (seen & (uint256(1) << Roles.ADMIN) == 0) revert` to `if (seen & (uint128(1) << Roles.ADMIN) == 0) revert` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 293 | ROR | `& (uint256(1) << Roles.PAUSER) == 0) revert MissingHolder(Roles.PAUSER` to `& (uint256(1) << Roles.PAUSER) <= 0) revert MissingHolder(Roles.PAUSER` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 293 | SBR | `if (seen & (uint256(1) << Roles.PAUSER) == 0) revert` to `if (seen & (uint128(1) << Roles.PAUSER) == 0) revert` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 294 | ROR | `uint256(1) << Roles.UNPAUSER) == 0) revert MissingHolder(Roles.UNPA...` to `uint256(1) << Roles.UNPAUSER) <= 0) revert MissingHolder(Roles.UNPA...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 294 | SBR | `if (seen & (uint256(1) << Roles.UNPAUSER) == 0) revert` to `if (seen & (uint128(1) << Roles.UNPAUSER) == 0) revert` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 309 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 309 | MVIV | `for (uint256 i = 0; i < functions.length; ++i) {` to `for (uint256 i ; i < functions.length; ++i) {` | Equivalent | a local is zero without its initializer |
+| 309 | ROR | `for (uint256 i = 0; i < functions.length; ++i) {` to `for (uint256 i = 0; i != functions.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 309 | SBR | `for (uint256 i = 0; i < functions.length; ++i) { FunctionRole memor...` to `for (uint128 i = 0; i < functions.length; ++i) { FunctionRole memor...` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 309 | SBR | `for (uint256 i = 0; i < functions.length; ++i` to `for (uint128 i = 0; i < functions.length; ++i` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 309 | UOR | `uint256 i = 0; i < functions.length; ++i) {` to `uint256 i = 0; i < functions.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 315 | LIR | `` to `` | Equivalent | the literal replaced by itself (the mutant is the source unchanged) |
+| 315 | MVIV | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j ; j < i; ++j) {` | Equivalent | a local is zero without its initializer |
+| 315 | ROR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j != i; ++j) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 315 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 315 | SBR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint128 j = 0; j < i; ++j) {` | Equivalent | a narrower type that still holds every value: at most a few dozen targets, grants and selectors, and role IDs below 13 |
+| 315 | UOR | `for (uint256 j = 0; j < i; ++j) {` to `for (uint256 j = 0; j < i; j++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 325 | ROR | `\|\| manager.getTargetAdminDelay(target) != TARGET_ADMIN_DELAY` to `\|\| manager.isTargetClosed(target) \|\| manager.getTargetAdminDelay(ta...` | Gap | a target whose admin delay moved either way since installation: no readback test changes one |
+| 325 | ROR | `\|\| manager.getTargetAdminDelay(target) != TARGET_ADMIN_DELAY` to `\|\| manager.isTargetClosed(target) \|\| manager.getTargetAdminDelay(ta...` | Gap | a target whose admin delay moved either way since installation: no readback test changes one |
+| 336 | ROR | `!active \|\| since == 0 \|\| delay != expected \|\| current` to `!active \|\| !active \|\| since < 0 \|\| delay != expected \|\| current != ...` | Equivalent | a holder with no record is not active, so `!active` already refuses it; `<= 0` is the unsigned zero test |
+| 336 | ROR | `!active \|\| since == 0 \|\| delay != expected \|\| current != expected \|...` to `!active \|\| !active \|\| since <= 0 \|\| delay != expected \|\| current !=...` | Equivalent | a holder with no record is not active, so `!active` already refuses it; `<= 0` is the unsigned zero test |
 
 </details>
 
@@ -1287,7 +1473,7 @@ Each survivor is one of:
 
 ### `src/sales/EnglishAuction.sol`
 
-82 survivors: 14 open gaps, 4 defensive, 8 gas margin, 56 equivalent.
+81 survivors: 14 open gaps, 3 defensive, 8 gas margin, 56 equivalent.
 
 <details><summary>The survivors</summary>
 
@@ -1328,7 +1514,6 @@ Each survivor is one of:
 | 633 | ROR | `if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {` to `if (terms.saleKind > SaleKind.ENGLISH_AUCTION) {` | Gap | a mint target reporting a sale kind whose label sorts below the English auction's |
 | 641 | ROR | `tokenId >> 32 != 0 \|\| terms.seller == address(0` to `tokenId >> 32 > 0 \|\| terms.seller == address(0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 641 | ROR | `== address(0) && terms.feeShare != 0)))` to `== address(0) && terms.feeShare > 0)))` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 641 | ROR | `address(0) \|\| terms.feeShare > Splits.DENOMINATOR` to `address(0) \|\| terms.feeShare >= Splits.DENOMINATOR` | Defensive | the mutant only refuses a fee share of exactly 100,000, which Stream never quotes (it refuses 100,000 or more) |
 | 641 | ROR | `\|\| terms.price != 0 \|\| terms.params.length != 0` to `\|\| terms.price > 0 \|\| terms.params.length != 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 641 | ROR | `terms.price != 0 \|\| terms.params.length != 0` to `terms.price != 0 \|\| terms.params.length > 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 651 | MIA | `if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId,` to `if (false) revert InvalidAuctionState(saleId,` | Gap | `start` on a sale that already exists (a settled token sent back to the auction): reachable, untested (coverage lists it too) |
@@ -1375,6 +1560,119 @@ Each survivor is one of:
 | 1113 | ROR | `return s.flags & _RECIPIENT_SET != 0 ? s.recipient : s.bidder;` to `return s.flags & _RECIPIENT_SET > 0 ? s.recipient : s.bidder;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 1118 | ROR | `&& (token.code.length == 0` to `&& (token.code.length <= 0` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 1147 | ROR | `if (dependency.code.length == 0 \|\| DelegatedEOA.isDelegated(dependency` to `if (dependency.code.length <= 0 \|\| DelegatedEOA.isDelegated(dependency` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+
+</details>
+
+### `src/sales/FixedPriceSale.sol`
+
+45 survivors: 45 equivalent.
+
+<details><summary>The survivors</summary>
+
+| Line | Rule | Mutation | Verdict | Why |
+| ---: | --- | --- | --- | --- |
+| 65 | SBR | `bytes32 public constant ALLOWLIST_LEAF_DOMAIN = keccak256("6529WORK...` to `bytes32 public immutable ALLOWLIST_LEAF_DOMAIN = keccak256("6529WOR...` | Equivalent | the same value as `immutable` |
+| 107 | ROR | `if (_openSales[token][id] != 0) revert SaleAlreadyOpen(token,` to `if (_openSales[token][id] > 0) revert SaleAlreadyOpen(token,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 109 | ROR | `if (consent.signature.length != 0) {` to `if (consent.signature.length > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 122 | ROR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint256 i; i != phases_.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 122 | SBR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint128 i; i < phases_.length; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 122 | SBR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint128 i; i < phases_.length; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 122 | UOR | `uint256 i; i < phases_.length; ++i) {` to `uint256 i; i < phases_.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 124 | ROR | `bool allowlisted = phase.root != 0;` to `bool allowlisted = phase.root > 0;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 133 | MIA | `if (allowlisted) _roots[saleId][i] = phase.root` to `if (true) _roots[saleId][i] = phase.root` | Equivalent | a phase without an allowlist has root zero, so storing it writes zero over zero |
+| 162 | ROR | `if (payment.amount != total) revert InvalidPayment(` to `if (payment.amount > total) revert InvalidPayment(` | Equivalent | `MintSaleBase._collect` refuses an amount below the charge with the same `InvalidPayment`, so only an overpayment needed this check |
+| 218 | ROR | `for (uint256 i; i < list.length; ++i) {` to `for (uint256 i; i != list.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 218 | SBR | `StoredPhase memory s = _phases[saleId][i];` to `StoredPhase storage s = _phases[saleId][i];` | Equivalent | a read-only storage reference reads the same values as a copy, and the counter never reaches 2**128 |
+| 218 | SBR | `for (uint256 i; i < list.length; ++i) {` to `for (uint128 i; i < list.length; ++i) {` | Equivalent | a read-only storage reference reads the same values as a copy, and the counter never reaches 2**128 |
+| 218 | SBR | `for (uint256 i; i < list.length; ++i) {` to `for (uint128 i; i < list.length; ++i) {` | Equivalent | a read-only storage reference reads the same values as a copy, and the counter never reaches 2**128 |
+| 218 | UOR | `for (uint256 i; i < list.length; ++i) {` to `for (uint256 i; i < list.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 219 | SBR | `StoredPhase memory s = _phases[saleId][i];` to `StoredPhase storage s = _phases[saleId][i];` | Equivalent | a read-only storage reference reads the same values as a copy |
+| 220 | MIA | `s.allowlisted ? _roots[saleId][i] : bytes32(0` to `true ? _roots[saleId][i] : bytes32(0` | Equivalent | a phase without an allowlist never stored a root, so its slot reads zero either way |
+| 319 | ROR | `if (p.phase >= l.phaseCount \|\| l.closed) revert` to `if (p.phase > l.phaseCount \|\| l.closed) revert` | Equivalent | the slot past the last phase is empty (start and end zero), so the window check refuses it with the same `PhaseNotOpen` |
+| 319 | ROR | `if (p.phase >= l.phaseCount \|\| l.closed) revert` to `if (p.phase == l.phaseCount \|\| l.closed) revert` | Equivalent | the slot past the last phase is empty (start and end zero), so the window check refuses it with the same `PhaseNotOpen` |
+| 320 | SBR | `StoredPhase memory phase = _phases[p.saleId][p.phase]` to `StoredPhase storage phase = _phases[p.saleId][p.phase]` | Equivalent | a read-only storage reference reads the same values as a copy |
+| 328 | ROR | `if (p.quantity == 0) revert InvalidQuantity();` to `if (p.quantity <= 0) revert InvalidQuantity();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 338 | ROR | `!phase.allowlisted && phase.walletCap == 0) return unit;` to `!phase.allowlisted && phase.walletCap <= 0) return unit;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 343 | ROR | `\|\| (phase.walletCap != 0 && bought > phase.walletCap` to `\|\| (phase.walletCap > 0 && bought > phase.walletCap` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 366 | SBR | `Listing storage l = _listings[saleId];` to `Listing memory l = _listings[saleId];` | Equivalent | the listing is only read, so a memory copy reads the same values |
+| 367 | SBR | `uint256 count = l.phaseCount;` to `uint128 count = l.phaseCount;` | Equivalent | a phase count of at most 16 fits any width |
+| 368 | MIA | `if (count == 0) return true;` to `if (false) return true;` | Equivalent | with no phases the loop does not run and the function returns true anyway |
+| 368 | ROR | `if (count == 0) return true;` to `if (count < 0) return true;` | Equivalent | `count < 0` never holds; with no phases the loop does not run and the function returns true anyway |
+| 368 | ROR | `if (count == 0) return true;` to `if (count <= 0) return true;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 370 | ROR | `for (uint256 i; i < count; ++i) {` to `for (uint256 i; i <= count; ++i) {` | Equivalent | the slot past the last phase is empty (an end of zero), which never keeps the sale open |
+| 370 | ROR | `for (uint256 i; i < count; ++i) {` to `for (uint256 i; i != count; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 370 | SBR | `for (uint256 i; i < count; ++i) {` to `for (uint128 i; i < count; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 370 | SBR | `for (uint256 i; i < count; ++i) {` to `for (uint128 i; i < count; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 370 | UOR | `for (uint256 i; i < count; ++i) {` to `for (uint256 i; i < count; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 379 | ROR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint256 i; i != phases_.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 379 | SBR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint128 i; i < phases_.length; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 379 | SBR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint128 i; i < phases_.length; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 379 | UOR | `uint256 i; i < phases_.length; ++i) {` to `uint256 i; i < phases_.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 390 | ROR | `if (phases_.length == 0 \|\| phases_.length > Limits.MAX_PHASES` to `if (phases_.length <= 0 \|\| phases_.length > Limits.MAX_PHASES` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 392 | ROR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint256 i; i != phases_.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |
+| 392 | SBR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint128 i; i < phases_.length; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 392 | SBR | `for (uint256 i; i < phases_.length; ++i) {` to `for (uint128 i; i < phases_.length; ++i) {` | Equivalent | the counter never reaches 2**128 |
+| 392 | UOR | `uint256 i; i < phases_.length; ++i) {` to `uint256 i; i < phases_.length; i++) {` | Equivalent | pre- or post-increment of a loop counter |
+| 395 | ROR | `\|\| (phase.root == 0 && (phase.payerKeyed \|\| phase.leafPriced` to `\|\| (phase.root <= 0 && (phase.payerKeyed \|\| phase.leafPriced` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 398 | ROR | `if (phase.start < start) start = phase.start;` to `if (phase.start <= start) start = phase.start;` | Equivalent | `<=` also assigns an equal value |
+| 399 | ROR | `if (phase.end > end) end = phase.end;` to `if (phase.end >= end) end = phase.end;` | Equivalent | `>=` also assigns an equal value |
+
+</details>
+
+### `src/sales/MintSaleBase.sol`
+
+46 survivors: 11 open gaps, 3 defensive, 32 equivalent.
+
+<details><summary>The survivors</summary>
+
+| Line | Rule | Mutation | Verdict | Why |
+| ---: | --- | --- | --- | --- |
+| 89 | SBR | `uint256 public constant PAYOUT_GAS = 100_000;` to `uint256 public immutable PAYOUT_GAS = 100_000;` | Equivalent | the same value as `immutable` or a narrower type that still holds it |
+| 89 | SBR | `uint256 public constant PAYOUT_GAS = 100_000` to `uint128 public constant PAYOUT_GAS = 100_000` | Equivalent | the same value as `immutable` or a narrower type that still holds it |
+| 182 | ROR | `allowlist.code.length == 0 \|\| DelegatedEOA.isDelegated(allowlist` to `allowlist.code.length <= 0 \|\| DelegatedEOA.isDelegated(allowlist` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 210 | MIA | `federationRegistryCodeHash = next == address(0) ? bytes32(0) : next...` to `federationRegistryCodeHash = false ? bytes32(0) : next.codehash;` | Gap | unsetting the federation registry records the code hash of the zero address, which is nonzero once that account holds ETH (as on mainnet); only the getter would show it |
+| 228 | SBR | `uint256 allowedAt = uint256(pausedAt) + Roles.STANDARD;` to `uint128 allowedAt = uint128(pausedAt) + Roles.STANDARD;` | Equivalent | a pause time plus 48 hours fits 128 bits |
+| 242 | ROR | `if (amount == 0) revert NothingToClaim(msg.sender,` to `if (amount <= 0) revert NothingToClaim(msg.sender,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 245 | MIA | `if (currency != CURRENCY_ETH) {` to `if (false) {` | Defensive | nothing credits an ERC-20 today (the only credits are Dutch refunds, in ETH), so the ERC-20 branch of `claim` is unreachable (coverage lists it too) |
+| 246 | RR | `TokenTransfer.transferExact(currency, to, amount);` to `revert();` | Defensive | nothing credits an ERC-20 today (the only credits are Dutch refunds, in ETH), so the ERC-20 branch of `claim` is unreachable (coverage lists it too) |
+| 263 | SBR | `Listing storage l = _listing(saleId);` to `Listing memory l = _listing(saleId);` | Equivalent | the listing is only read, so a memory copy reads the same values |
+| 288 | ROR | `== CURRENCY_DEFAULT && t.price != 0) {` to `== CURRENCY_DEFAULT && t.price > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 300 | ROR | `if (e.codeHash != token.codehash) revert InvalidSaleTerms(token,` to `if (e.codeHash > token.codehash) revert InvalidSaleTerms(token,` | Gap | a federated token whose code moved so that its hash sorts below the registry entry's (only one direction is tested) |
+| 307 | ROR | `t.seller == address(0) \|\| (t.feeShare != 0 && t.feeRecipient == add...` to `t.seller == address(0) \|\| (t.feeShare > 0 && t.feeRecipient == addr...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 307 | ROR | `\|\| t.feeShare > Splits.DENOMINATOR \|\| t.seller` to `\|\| t.feeShare >= Splits.DENOMINATOR \|\| t.seller` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 322 | SBR | `) internal returns (uint256 saleId) {` to `) internal returns (uint128 saleId) {` | Equivalent | sale IDs never reach 2**128 |
+| 325 | SBR | `// Safe: seconds of halt, far below 2^40.` to `// Safe: minutes of halt, far below 2^40.` | Equivalent | the mutation only changed a comment |
+| 325 | SBR | `// Safe: seconds of halt, far below 2^40.` to `// Safe: days of halt, far below 2^40.` | Equivalent | the mutation only changed a comment |
+| 325 | SBR | `// Safe: seconds of halt, far below 2^40.` to `// Safe: hours of halt, far below 2^40.` | Equivalent | the mutation only changed a comment |
+| 325 | SBR | `// Safe: seconds of halt, far below 2^40.` to `// Safe: weeks of halt, far below 2^40.` | Equivalent | the mutation only changed a comment |
+| 349 | ROR | `IEditions(token).formatOf(id) != EditionFormat.FIXED) {` to `IEditions(token).formatOf(id) > EditionFormat.FIXED) {` | Equivalent | `FIXED` is the first edition format, so `> FIXED` is `!= FIXED` |
+| 358 | ROR | `return immediate && delay == 0;` to `return immediate && delay <= 0;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 358 | ROR | `return immediate && delay == 0;` to `return immediate && delay >= 0;` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 385 | ROR | `if (status != IAssetAllowlist.Status.Active` to `if (status > IAssetAllowlist.Status.Active` | Defensive | a locked currency was active when the sale opened, and the allowlist never returns an asset to `None` |
+| 419 | ROR | `pay.method != PaymentMethod.DIRECT \|\| pay.payer` to `pay.method > PaymentMethod.DIRECT \|\| pay.payer` | Equivalent | `DIRECT` is the first payment method, so `> DIRECT` is `!= DIRECT` |
+| 423 | ROR | `if (value != 0) revert InvalidPayment();` to `if (value > 0) revert InvalidPayment();` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 425 | ROR | `if (pay.method != PaymentMethod.DIRECT && block.timestamp` to `if (pay.method > PaymentMethod.DIRECT && block.timestamp` | Equivalent | `DIRECT` is the first payment method, so `> DIRECT` is `!= DIRECT` |
+| 425 | ROR | `PaymentMethod.DIRECT && block.timestamp > pay.deadline) {` to `PaymentMethod.DIRECT && block.timestamp >= pay.deadline) {` | Gap | a permit used at its deadline second in the fixed-price and Dutch adapters (`> DIRECT` is equivalent) |
+| 428 | ROR | `if (pay.method == PaymentMethod.PERMIT2) {` to `if (pay.method >= PaymentMethod.PERMIT2) {` | Equivalent | `PERMIT2` is the last payment method, so `>= PERMIT2` is `== PERMIT2` |
+| 433 | ROR | `if (pay.method == PaymentMethod.PERMIT) {` to `if (pay.method >= PaymentMethod.PERMIT) {` | Equivalent | `PERMIT2` returned on the line before, so past it `>= PERMIT` is `== PERMIT` |
+| 435 | ROR | `if (pay.signature.length != 65) revert InvalidPayment();` to `if (pay.signature.length < 65) revert InvalidPayment();` | Gap | a permit signature longer than 65 bytes |
+| 450 | MIA | `if (charge != 0) TokenTransfer.pullExact(currency,` to `if (true) TokenTransfer.pullExact(currency,` | Gap | a zero-charge ERC-20 purchase through a token that refuses zero-value transfers |
+| 450 | ROR | `if (charge != 0) TokenTransfer.pullExact(currency,` to `if (charge > 0) TokenTransfer.pullExact(currency,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 450 | ROR | `if (charge != 0) TokenTransfer.pullExact(currency,` to `if (charge >= 0) TokenTransfer.pullExact(currency,` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 463 | ROR | `if (minted != l.id) revert InvalidSaleTerms(l.token,` to `if (minted > l.id) revert InvalidSaleTerms(l.token,` | Gap | a token that mints an ID below the sale's (only one minting a higher ID is tested) |
+| 501 | MIA | `return index == 0 ? address(0) : _feeRecipients[index]` to `return false ? address(0) : _feeRecipients[index]` | Equivalent | index zero is never written, so `_feeRecipients[0]` is the zero address anyway |
+| 501 | ROR | `return index == 0 ? address(0) : _feeRecipients[index]` to `return index < 0 ? address(0) : _feeRecipients[index]` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 501 | ROR | `return index == 0 ? address(0) : _feeRecipients[index]` to `return index <= 0 ? address(0) : _feeRecipients[index]` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 511 | MIA | `if (recipient == address(0)) return 0;` to `if (false) return 0;` | Gap | terms without a fee recipient would register the zero address as one (a wasted index); nothing checks the count |
+| 513 | ROR | `if (index == 0) {` to `if (index <= 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 514 | ROR | `if (_feeRecipientCount == type(uint16).max) revert InvalidSaleTerms...` to `if (_feeRecipientCount >= type(uint16).max) revert InvalidSaleTerms...` | Equivalent | the counter stops at its maximum, so `>=` is `==` |
+| 525 | ROR | `address(0) && registry.codehash == federationRegistryCodeHash` to `address(0) && registry.codehash <= federationRegistryCodeHash` | Gap | a federation registry whose code moved so that its hash sorts below the pin |
+| 537 | MVIE | `uint256 ours = TokenTransfer.balanceOf(currency, address(this));` to `uint256 ours ;` | Gap | a Permit2 purchase while the adapter already holds some of the token |
+| 550 | ROR | `TokenTransfer.balanceOf(currency, address(this)) != ours + charge \|...` to `TokenTransfer.balanceOf(currency, address(this)) < ours + charge \|\|...` | Gap | a Permit2 pull whose balances move by more than the charge (only less is tested) |
+| 550 | ROR | `TokenTransfer.balanceOf(currency, pay.payer) != theirs - charge` to `TokenTransfer.balanceOf(currency, pay.payer) < theirs - charge` | Gap | a Permit2 pull whose balances move by more than the charge (only less is tested) |
+| 557 | ROR | `return dependency.code.length != 0 && !DelegatedEOA.isDelegated(dep...` to `return dependency.code.length > 0 && !DelegatedEOA.isDelegated(depe...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 557 | ROR | `return dependency.code.length != 0 && !DelegatedEOA.isDelegated(dep...` to `return dependency.code.length >= 0 && !DelegatedEOA.isDelegated(dep...` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
+| 564 | ROR | `if (amount != 0) {` to `if (amount > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 
 </details>
 
