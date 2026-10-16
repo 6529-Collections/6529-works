@@ -111,6 +111,10 @@ lite profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, bran
 | `stream/WorkRecords.sol` | 100% (366/366) | 97.53% (79/81) | consent from a party that never registered as an artist, and a content store that returns a short `FileInfo` |
 | **src/ total** | **99.91% (4,624/4,628)** | **98.96% (1,043/1,054)** | functions 100% (661/661) |
 
+Since then the mutation gap lane's `test_Start_RevertsWhenTheSaleAlreadyExists` reaches `start`
+on a sale that already exists: on d50bb61's code with the lane's tests, `EnglishAuction.sol`
+leaves only the locked fee share above the denominator, at 98.96% of branches (95/96).
+
 ## Mutation testing
 
 ```bash
@@ -167,11 +171,13 @@ python tools/mutation.py report mutation --markdown mutation/report.md
   did not compile) and skips Yul comparisons; LIR gives `bool` the values `false` and `true`.
 
 **Status.** The first full baseline is in [mutation-baseline.md](mutation-baseline.md): 11,735
-mutants of 054442d's code in 50 contracts, 88.2% killed by the campaign and 90.0% by the final
-suite, 98.3% once the 990 equivalent mutants are left out. Every survivor is triaged there, and
+mutants of 054442d's code in 50 contracts, 88.2% killed by the campaign and 90.6% by the final
+suite, 98.9% once the 992 equivalent mutants are left out. Every survivor is triaged there, and
 `tools/mutation-floors.json` holds a floor for each contract the baseline measured. 289 of the
-campaign's survivors were gaps in the suite; the final suite kills 211 of them, most through
-tests written for the baseline, and the rest are in the work list below. Running the tool on
+campaign's survivors were gaps in the suite. The final suite kills 280 of them: 211 through
+tests written for the baseline, and 69 through the gap lane that followed it, which also
+re-triaged 3 (2 equivalent, 1 defensive) and found 6 moved by #66 into the `Dependency`
+library, where the replacing code's mutants are killed. No gap is open. Running the tool on
 the libraries, the content readers and the economics module while it was built already found
 checks the suite was missing, now pinned by tests: ill-formed UTF-8 lead bytes cut at a chunk
 end; an escape letter other than `u` before four hex digits; JSON and script escaping reading
@@ -256,42 +262,17 @@ that need a change under `src/` are for the module owners; the rest are tests.
 
 **From mutation testing:**
 
-The baseline's [open gaps](mutation-baseline.md#survivors-triaged), 78 survivors in all,
-grouped. Each is a missing test, not a known bug.
+The baseline's 78 open gaps are closed: the gap lane killed 69 with focused tests, re-triaged 3,
+and found 6 moved by #66 ([how each was decided](mutation-baseline.md#what-survives-and-why)).
+None was a bug. What mutation testing still leaves:
 
-1. One-sided comparisons still tested from one side: the item, media and content hashes
-   `WorkRecords.openRecord` and the consent check compare, a renderer pinned again with another
-   code hash, the artist registry's dependency code hashes, outcome references and accounts
-   reserved for a lower artist ID, the federation-registry pins and federated token code in the
-   auction and the sale adapters, a mint target's sale kind, a token that mints an ID below the
-   sale's, Editions' master item hash, a target's admin delay in the governance readback, and
-   an edition whose primary hash sorts below its content hash in the renderer.
-2. Boundaries: the auction's reopening window when the currency comes back exactly at its end,
-   a standing refresh at exactly its recorded times, a VRF proof of exactly `MAX_PROOF_LENGTH`
-   nodes, a permit at its deadline second in the fixed-price and Dutch adapters, an open
-   edition first minted after 2**32 seconds, and a Permit2 pull whose balances move by other
-   than the charge.
-3. EIP-7702 delegated dependencies whose delegate answers ERC-165 (the auction's economics
-   resolver and federation registry, the records' Stream, the registry's statement log): the
-   interface check alone refuses any other account without code, so only such a delegate
-   reaches the delegation check.
-4. Answers an arbitrary contract may give: a dispute subject whose `ownerOf` returns zero or
-   fewer than 32 bytes, that answers both ERC-721 and ERC-1155, or whose ERC-1155 balance is
-   2**128 or more; a `coreOf` of another length; an Editions answer naming another master or an
-   edition it does not know; a statement log's resolver answer shorter than a word; a revert
-   reason longer than the registry decodes; a permit signature shorter or longer than 65 bytes;
-   a token that refuses zero-value transfers.
-5. Inputs that cost more to build: a 49-chunk base64 file whose padding straddles its last two
-   chunks, a work with every trait slot filled, a license text outside the media, a
-   one-character `dependencies` value, a document at the exact JSON budget, a release of 2**128
-   or more through the claim router, a stop-mode claim given more gas than its continue-mode
-   share, and a Permit2 purchase while the adapter already holds the token.
-6. Reachable but untested: `EnglishAuction.start` on a sale that already exists (a settled
-   token sent back to the auction; coverage lists it too), a withdrawal from an unknown sale, a
-   relicense consent from a registered artist whose authority is not the party's account, the
-   governance readback of a manager configured outside `install` (an invalid configuration, or
-   the manager's own target settings changed), terms without a fee recipient (the zero address
-   must not take an index), and the federation registry's recorded code hash after it is unset.
+1. `src/libraries/Dependency.sol`, which #66 added after the campaign, has no baseline row and
+   no floor; record both from the weekly run's report. Its code-hash comparisons are killed
+   only when survivors run against the whole suite (the Stream, `WorkRecords`, split and
+   statement-log suites pin a hash on either side); a small `test/libraries/Dependency.t.sol`
+   would kill them in the fast first pass.
+2. Only an exact-gas harness would see the 32 gas-margin survivors, and only a lying mock of a
+   trusted contract the 74 defensive ones.
 
 **From coverage:**
 
@@ -303,9 +284,7 @@ grouped. Each is a missing test, not a known bug.
 3. A relicense consent from a party that never registered as an artist takes
    `WorkRecords`' `artistIdOf == 0` fallback, which today ends in the registry's
    `UnknownArtist`. Decide the intended outcome and test it.
-4. `EnglishAuction.start` on a token whose sale already exists (a settled token sent back to
-   the auction): reachable, untested.
-5. Defensive guards that need a lying mock to reach: a registry that assigns another artist
+4. Defensive guards that need a lying mock to reach: a registry that assigns another artist
    ID, or reports a zero authority (`PackageRegistry`); a malformed `consume` answer and the
    65,536th fee recipient and the 2**23rd overflow terms word, reachable with `vm.store`
    (`Stream`); a short `FileInfo`
