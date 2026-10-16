@@ -127,8 +127,9 @@ leaving out the equivalent mutants, which no test can kill, it is 98.9%.
   check, or `_checkBinding`) became one `Dependency.check`, and two code-hash comparisons moved
   into `Dependency.checkUnchanged` and `Dependency.checkPinned`. Commenting out any of the four
   new calls is killed in its contract's own suite, and either side of the two library
-  comparisons by the whole suite. `src/libraries/Dependency.sol` was not part of the 054442d
-  campaign; the weekly run measures it.
+  comparisons by the library's own suite, `test/libraries/Dependency.t.sol`, written in the gap
+  lane. `src/libraries/Dependency.sol` was not part of the 054442d campaign; the weekly run
+  measures it.
 
 The gaps followed a few patterns. The baseline added 72 tests and extended 44 more (#69 and its
 follow-up); with them, and the tests other changes added while the campaign ran, the final
@@ -1152,8 +1153,8 @@ Each survivor is one of:
 | 589 | ROR | `if (p.kind == ChangeKind.NONE) revert NoPendingChange(artistId` to `if (p.kind <= ChangeKind.NONE) revert NoPendingChange(artistId` | Equivalent | `NONE` is the enum's first value, so the order test is the equality test |
 | 613 | ROR | `return artistIdOf[account] != 0 \|\| (reserved != 0 && reserved` to `return artistIdOf[account] > 0 \|\| (reserved != 0 && reserved` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 613 | ROR | `artistIdOf[account] != 0 \|\| (reserved != 0 && reserved != artistId);` to `artistIdOf[account] != 0 \|\| (reserved > 0 && reserved != artistId);` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
-| 632 | ROR | `if (address(source).codehash != consolidationSourceCodeHash)` to `if (address(source).codehash < consolidationSourceCodeHash)` | Moved | #66 moved the comparison into `Dependency.checkUnchanged`, shared by every pinned dependency; there both directions are killed by the whole suite (`test_pinnedRenderer_refusesMovedCodeEitherWay`, `test_ResolverCodeChangeFailsClosedEitherWay`) |
-| 640 | ROR | `target.codehash != codeHash \|\| DelegatedEOA.isDelegated(target` to `target.codehash > codeHash \|\| DelegatedEOA.isDelegated(target` | Moved | #66 moved the comparison into `Dependency.checkPinned`; there both directions are killed by the whole suite (`test_setDefaultRenderer_refusesAWrongHashEitherWay`, `test_repinRenderer_refusesAWrongHashEitherWayAndKeepsTheDeadlineSecond`) |
+| 632 | ROR | `if (address(source).codehash != consolidationSourceCodeHash)` to `if (address(source).codehash < consolidationSourceCodeHash)` | Moved | #66 moved the comparison into `Dependency.checkUnchanged`, shared by every pinned dependency; there both directions are killed by `test_CheckUnchanged_RefusesCodeOnEitherSideOfThePin` and, in the whole suite, `test_pinnedRenderer_refusesMovedCodeEitherWay` |
+| 640 | ROR | `target.codehash != codeHash \|\| DelegatedEOA.isDelegated(target` to `target.codehash > codeHash \|\| DelegatedEOA.isDelegated(target` | Moved | #66 moved the comparison into `Dependency.checkPinned`; there both directions are killed by `test_CheckPinned_RefusesAPinOnEitherSideOfTheCodeHash` and, in the whole suite, `test_setDefaultRenderer_refusesAWrongHashEitherWay` |
 | 648 | ROR | `target.code.length == 0 \|\| DelegatedEOA.isDelegated(target` to `target.code.length <= 0 \|\| DelegatedEOA.isDelegated(target` | Equivalent | `!= 0` and `> 0` (and `== 0` and `<= 0`) are the same unsigned tests |
 | 648 | ROR | `\|\| (interfaceId != 0 && !ERC165Checker.supportsInterface(target,` to `\|\| (interfaceId > 0 && !ERC165Checker.supportsInterface(target,` | Equivalent | `!= 0` and `> 0` (and `== 0` and `<= 0`) are the same unsigned tests |
 | 675 | ROR | `for (uint256 i; i < snapshot.length; ++i) {` to `for (uint256 i; i != snapshot.length; ++i) {` | Equivalent | a loop counter that steps by one: `<` and `!=` stop at the same point |

@@ -267,10 +267,9 @@ and found 6 moved by #66 ([how each was decided](mutation-baseline.md#what-survi
 None was a bug. What mutation testing still leaves:
 
 1. `src/libraries/Dependency.sol`, which #66 added after the campaign, has no baseline row and
-   no floor; record both from the weekly run's report. Its code-hash comparisons are killed
-   only when survivors run against the whole suite (the Stream, `WorkRecords`, split and
-   statement-log suites pin a hash on either side); a small `test/libraries/Dependency.t.sol`
-   would kill them in the fast first pass.
+   no floor; record both from the weekly run's report. Its own suite,
+   `test/libraries/Dependency.t.sol`, pins each check (code, the EIP-7702 refusal, ERC-165, and
+   both sides of each code-hash comparison), so its mutants die in the fast first pass.
 2. Only an exact-gas harness would see the 32 gas-margin survivors, and only a lying mock of a
    trusted contract the 74 defensive ones.
 

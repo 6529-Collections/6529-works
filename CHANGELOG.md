@@ -7,9 +7,13 @@
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,
   answers an arbitrary token or resolver may give, costly inputs such as a work with every
   trait slot filled); 2 are re-triaged as equivalent and 1 as defensive, and 6 mutated code #66
-  moved into the `Dependency` library, whose mutants the suite kills. None was a bug. The final
-  suite now kills 90.6% of the 11,735 mutants, 98.9% leaving out the equivalent ones, and
-  `tools/mutation-floors.json` raises the floors of the ten contracts whose rate rose.
+  moved into the `Dependency` library, which gains its own suite,
+  `test/libraries/Dependency.t.sol` (code, the EIP-7702 refusal, ERC-165, and both sides of
+  each code-hash pin). None was a bug. The final suite now kills 90.6% of the 11,735 mutants,
+  98.9% leaving out the equivalent ones, and `tools/mutation-floors.json` raises the floors of
+  the ten contracts whose rate rose. One limitation found on the way is recorded as LIM-SAL-11
+  ([docs/audit/known-limitations.md](docs/audit/known-limitations.md)): a free ERC-20 purchase
+  paid by Permit2 still asks Permit2 to move 0 tokens.
 - Tests: the mutation baseline's last four contracts, Editions, FixedPriceSale, MintSaleBase
   and GovernanceConfig
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). The baseline now
