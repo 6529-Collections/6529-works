@@ -312,6 +312,36 @@ contract ContestedOverridesTest is IdentityFixture {
         _resolve(true, VOTE);
     }
 
+    /// @dev An outcome reference that is not the latest is refused when it sorts below it too
+    ///      (found by mutation testing).
+    function test_Resolve_RevertsForAnOutcomeSortingBelowTheLatest() public {
+        PendingChange memory p = _contestedByTheThief();
+        vm.warp(p.executableAt);
+        outcomes.setOutcome(address(registry), artistId, VOTE);
+        bytes32 below = bytes32(uint256(VOTE) - 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.OutcomeNotRecorded.selector, artistId, below)
+        );
+        _resolve(true, below);
+        assertEq(registry.authorityOf(artistId), artist, "not upheld");
+    }
+
+    /// @dev A vote recorded after the contest resolves it even when its reference sorts below the
+    ///      outcome recorded before the contest; only that outcome itself predates it (found by
+    ///      mutation testing).
+    function test_Resolve_AcceptsAFreshOutcomeSortingBelowThePriorOne() public {
+        outcomes.setOutcome(address(registry), artistId, EARLIER_VOTE);
+        PendingChange memory p = _contestedByTheThief();
+        assertEq(p.priorOutcome, EARLIER_VOTE);
+        bytes32 fresh = bytes32(uint256(EARLIER_VOTE) - 1);
+        outcomes.setOutcome(address(registry), artistId, fresh);
+        vm.warp(p.executableAt);
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.ContestResolved(artistId, true, true, fresh);
+        _resolve(true, fresh);
+        assertEq(registry.authorityOf(artistId), newAuthority);
+    }
+
     function test_Resolve_RevertsWithoutABoundStatementLog() public {
         ArtistIdentity memory next = _identity(newAuthority, newAuthority);
         IdentityFixture.setUp(); // a fresh registry with no statement log bound
@@ -454,5 +484,17 @@ contract ContestedOverridesTest is IdentityFixture {
         registry.bindStatementLog(address(fair));
         vm.stopPrank();
         assertEq(registry.statementLog(), address(fair));
+    }
+
+    /// @dev A resolver answer shorter than one word is refused with `InvalidBinding`, never
+    ///      decoded (found by mutation testing).
+    function test_BindStatementLog_RefusesAnAnswerShorterThanAWord() public {
+        IdentityFixture.setUp();
+        HostileResolverMock narrow = new HostileResolverMock(address(registry), 0, 31);
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.InvalidBinding.selector, address(narrow))
+        );
+        vm.prank(admin);
+        registry.bindStatementLog(address(narrow));
     }
 }

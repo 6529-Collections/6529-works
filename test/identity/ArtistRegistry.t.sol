@@ -403,6 +403,25 @@ contract ArtistRegistryTest is IdentityFixture {
         assertEq(_register(newAuthority), uint160(newAuthority));
     }
 
+    /// @dev An account another artist's change reserves is taken whichever artist ID is lower,
+    ///      here the reserving artist's (found by mutation testing).
+    function test_Reservation_HoldsAgainstAnArtistWithAHigherId() public {
+        uint256 lowId = _register(address(0x5000));
+        assertLt(lowId, artistId);
+        ArtistIdentity memory next = _identity(newAuthority, payout);
+        bytes32 evidence = keccak256("evidence");
+        uint64 deadline = uint64(block.timestamp + 3 days);
+        bytes memory acceptance = _sign(
+            newKey, registry.overrideDigest(lowId, ChangeKind.CONTESTED, next, evidence, deadline)
+        );
+        vm.prank(governor);
+        registry.stageOverride(lowId, ChangeKind.CONTESTED, next, evidence, deadline, acceptance);
+        assertEq(registry.reservedFor(newAuthority), lowId);
+
+        _armRevert(abi.encodeWithSelector(IArtistRegistry.AccountTaken.selector, newAuthority));
+        _stage(artistKey, next, newKey);
+    }
+
     function testFuzz_ExecuteChange_RespectsTheDelay(uint256 wait) public {
         wait = bound(wait, 0, 30 days);
         _stage(artistKey, _identity(artist, payout), 0);
@@ -1124,6 +1143,35 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.refreshStanding(uint160(stranger));
     }
 
+    /// @dev A best-effort refresh skips only the exact 36-byte `DelegationReadFailed`: a reason
+    ///      that starts with its selector but is longer or shorter, or a 36-byte reason whose
+    ///      selector sorts either side of it, reverts a registration (found by mutation testing).
+    function test_SourceReadFailure_OnlyTheExactOutageFormIsSkipped() public {
+        FailingConsolidationSource failing = new FailingConsolidationSource();
+        vm.prank(successorSetter);
+        registry.setConsolidationSource(
+            adapter, IConsolidationSource(address(failing)), address(failing).codehash
+        );
+        failing.set(true, false, false);
+        bytes4 outage = IConsolidationSource.DelegationReadFailed.selector;
+        bytes[4] memory reasons = [
+            abi.encodeWithSelector(outage, address(failing), uint256(1)),
+            abi.encodePacked(outage, bytes31(0)),
+            abi.encodeWithSelector(bytes4(uint32(outage) - 1), address(failing)),
+            abi.encodeWithSelector(bytes4(uint32(outage) + 1), address(failing))
+        ];
+        for (uint256 i; i < reasons.length; ++i) {
+            failing.setReason(reasons[i]);
+            vm.expectRevert(reasons[i]);
+            _register(stranger);
+        }
+
+        failing.setReason(abi.encodeWithSelector(outage, address(failing)));
+        vm.expectEmit(address(registry));
+        emit IArtistRegistry.StandingRefreshSkipped(uint160(stranger));
+        _register(stranger);
+    }
+
     function test_Bindings_AreOneShot() public {
         StreamMock stream = new StreamMock();
         address federation = _federationStub();
@@ -1260,6 +1308,15 @@ contract ArtistRegistryTest is IdentityFixture {
         registry.executeChange(artistId);
         assertTrue(registry.isArtist(address(stream), 1, newAuthority));
         assertFalse(registry.isArtist(address(stream), 1, artist));
+    }
+
+    /// @dev An edition Editions does not know is nobody's, even when its number is a minted
+    ///      Stream work (found by mutation testing).
+    function test_IsArtist_FalseForAnUnknownEditionOfAMintedWork() public {
+        (StreamMock stream, EditionsMastersMock editions) = _wireStream();
+        stream.setWork(2, artistId); // a work with no edition
+        assertTrue(registry.isArtist(address(stream), 2, artist));
+        assertFalse(registry.isArtist(address(editions), 2, artist));
     }
 
     // ----------------------------------------------------------------- active authority

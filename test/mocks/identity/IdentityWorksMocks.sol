@@ -76,19 +76,26 @@ contract OversizedConsolidationSource is InterfaceStub {
 
 /// @notice A governed consolidation source whose reads fail on demand: its scan
 ///         (`consolidations`, `establishedWallets`), its direct checks (`effectiveAt`,
-///         `isEstablished`), or both, with `DelegationReadFailed` (an outage) or with another
-///         error. When nothing fails it reports no consolidation.
+///         `isEstablished`), or both, with `DelegationReadFailed` (an outage), with another
+///         error, or with revert data set by the test. When nothing fails it reports no
+///         consolidation.
 contract FailingConsolidationSource is InterfaceStub {
     error Broken();
 
     bool public failScan;
     bool public failDirect;
     bool public otherError;
+    bytes internal _reason;
 
     constructor() InterfaceStub(type(IConsolidationSource).interfaceId) { }
 
     function set(bool scan, bool direct, bool other) external {
         (failScan, failDirect, otherError) = (scan, direct, other);
+    }
+
+    /// @dev A failing read reverts with exactly `reason` while it is not empty.
+    function setReason(bytes calldata reason) external {
+        _reason = reason;
     }
 
     function establishedWallets(address) external view returns (address[] memory wallets) {
@@ -114,6 +121,12 @@ contract FailingConsolidationSource is InterfaceStub {
     }
 
     function _fail() private view {
+        bytes memory reason = _reason;
+        if (reason.length != 0) {
+            assembly ("memory-safe") {
+                revert(add(reason, 0x20), mload(reason))
+            }
+        }
         if (otherError) revert Broken();
         revert IConsolidationSource.DelegationReadFailed(address(this));
     }
@@ -166,7 +179,7 @@ contract DisputeOutcomeLogMock {
 }
 
 /// @notice Answers any call with `resolver` as its first word, after burning `burn` gas, in a
-///         return of `size` bytes (at least 32).
+///         return of `size` bytes (below 32, that word's first `size` bytes).
 contract HostileResolverMock {
     address private immutable resolver;
     uint256 private immutable burn;
