@@ -797,6 +797,32 @@ contract Base64AttestTest is Base64Base {
         assertTrue(_attest(fileId));
     }
 
+    /// @dev `n + 1` chunks: the first call stops at the second-to-last chunk, one of the two that
+    ///      can hold padding, so it reads the last chunk for the padding and cannot run while that
+    ///      chunk is missing (found by mutation testing).
+    function test_Attest_TheCallThatChecksTheSecondToLastChunkReadsThePadding() public {
+        uint256 n = store.ATTEST_CHUNKS_PER_CALL();
+        bytes memory chunk = _text(CHUNK, 0, 150);
+        bytes memory last = _text(_lastLength(n), 1, 151);
+        bytes32[] memory hashes = new bytes32[](n + 1);
+        for (uint256 i; i < n; ++i) {
+            hashes[i] = keccak256(chunk);
+        }
+        hashes[n] = keccak256(last);
+        bytes32 fileId =
+            store.registerManifest(hashes, n * CHUNK + last.length, B64, "image/png", DIGEST);
+        store.writeChunk(chunk); // the last chunk is not uploaded
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IContentStore.ContentChunkMissing.selector, fileId, n, hashes[n])
+        );
+        _attest(fileId); // chunks 0 to n - 1
+
+        store.writeChunk(last);
+        assertFalse(_attest(fileId), "chunks 0 to n - 1");
+        assertTrue(_attest(fileId), "the last chunk");
+    }
+
     /// @dev The largest file the store accepts takes 11 calls, and every call fits the EIP-7825
     ///      gas cap. One chunk is listed 512 times, which makes the chunk reads warm after the
     ///      first; the cold, all-distinct worst case is `Base64WorstCaseGasTest`.

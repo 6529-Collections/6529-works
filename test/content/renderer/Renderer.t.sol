@@ -89,6 +89,52 @@ contract RendererTest is RendererBase {
         assertFalse(_hasAttr(j, "Edition of"));
     }
 
+    /// @dev A work that fills every trait slot (the most artists, the year, medium and
+    ///      dimensions, a collection and serial, an edition, a seed and a dispute statement) gets
+    ///      every trait, in order, and nothing more (found by mutation testing).
+    function test_Metadata_AWorkThatFillsEveryTraitSlotGetsEveryTrait() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        Rec memory r = _rec();
+        r.dimensions = "30 x 40 cm";
+        r.artists = new string[](Limits.MAX_ARTISTS);
+        for (uint256 i; i < r.artists.length; ++i) {
+            r.artists[i] = vm.toString(i);
+        }
+        _install(file, r);
+        IStream.WorkCore memory core = _core();
+        core.collectionId = 3;
+        core.serial = 12;
+        core.seedPolicy = SeedPolicy.ARTIST;
+        stream.setWork(ID, core);
+        stream.setCollection(3, IStream.Collection("Spring", bytes32(0), 12));
+        records.setSeed(ID, SeedPolicy.ARTIST, bytes32(uint256(0xabc)));
+        disputeLog.set(address(stream), ID, bytes32(uint256(0xd15b)));
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
+        editions.setMaster(5, ID, _sha(file));
+
+        string memory j = _decode(renderer.tokenURI(address(editions), 5));
+
+        uint256 artists = Limits.MAX_ARTISTS;
+        for (uint256 i; i < artists; ++i) {
+            assertEq(_str(j, _at(i, ".trait_type")), "Artist");
+            assertEq(_str(j, _at(i, ".value")), vm.toString(i));
+        }
+        string[8] memory rest = [
+            "Year",
+            "Medium",
+            "Dimensions",
+            "Collection",
+            "Serial",
+            "Edition of",
+            "Seed",
+            "Dispute statement"
+        ];
+        for (uint256 i; i < rest.length; ++i) {
+            assertEq(_str(j, _at(artists + i, ".trait_type")), rest[i]);
+        }
+        assertFalse(_has(j, _at(artists + rest.length, "")), "no trait after the last slot");
+    }
+
     function test_Metadata_OmitsEmptyOptionalTraits() public {
         bytes32 file = _file(png, IDENTITY, "image/png");
         Rec memory r = _rec();
@@ -454,6 +500,22 @@ contract RendererTest is RendererBase {
         assertFalse(_has(j, ".license_url"));
     }
 
+    /// @dev A license text outside the media gets no URL whichever way the IDs sort: here the
+    ///      primary's ID is above the text's (found by mutation testing).
+    function test_License_ATextFileOutsideTheMediaHasNoUrlWhateverItsId() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _install(file);
+        bytes32 text = _file("Studio terms.", IDENTITY, "text/plain");
+        assertGt(uint256(file), uint256(text), "the primary's ID sorts above the text's");
+        records.setLicense(ID, License("LicenseRef-Studio-1", text));
+        records.addLocator(ID, text, Locator(LocatorKind.ARWEAVE, "ar://not-media"));
+
+        string memory j = _out();
+
+        assertEq(_str(j, ".license_text_file"), vm.toString(text));
+        assertFalse(_has(j, ".license_url"));
+    }
+
     /// Regression: L4 in the review of #20
     function test_License_AnSpdxLicenseWithATextFileKeepsTheSpdxPage() public {
         bytes32 text = _file("The terms.", IDENTITY, "text/plain");
@@ -545,6 +607,26 @@ contract RendererTest is RendererBase {
             abi.encodeWithSelector(IRenderer.RendererRecordInvalid.selector, address(editions), 5)
         );
         renderer.tokenURI(address(editions), 5);
+    }
+
+    /// @dev The edition's content hash must equal the primary's: one just above it and one just
+    ///      below are both refused (found by mutation testing).
+    function test_Edition_AContentHashEitherSideOfThePrimarysIsRefused() public {
+        bytes32 file = _file(png, IDENTITY, "image/png");
+        _install(file);
+        RendererEditionsMock editions = new RendererEditionsMock(address(stream));
+        uint256 primary = uint256(_sha(file));
+        editions.setMaster(5, ID, bytes32(primary + 1));
+        editions.setMaster(6, ID, bytes32(primary - 1));
+
+        for (uint256 id = 5; id <= 6; ++id) {
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    IRenderer.RendererRecordInvalid.selector, address(editions), id
+                )
+            );
+            renderer.tokenURI(address(editions), id);
+        }
     }
 
     function test_Edition_UnknownEditionFailsClosed() public {

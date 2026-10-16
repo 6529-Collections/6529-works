@@ -521,6 +521,18 @@ contract JsonScanTest is Test {
         json = bytes.concat(json, "}");
     }
 
+    /// @dev An empty array is one unit, as any other value: a document of exactly the budget
+    ///      made of empty arrays is accepted (found by mutation testing).
+    function test_Accepts_AnEmptyArrayIsOneUnit() public view {
+        // `{"a":[[],[],...]}`: the key is two units, the outer array one and each `[]` one.
+        assertTrue(h.accepts(_emptyArrays(JsonScan.MAX_VALUES - 3)));
+        assertFalse(h.accepts(_emptyArrays(JsonScan.MAX_VALUES - 2)));
+    }
+
+    function _emptyArrays(uint256 n) internal pure returns (bytes memory json) {
+        json = bytes.concat('{"a":[', _fill("[],", 3 * n - 1), "]}");
+    }
+
     function test_Object_DuplicateRequestedKeyIsRejected() public view {
         bytes memory json = '{"a":1,"b":2,"a":3}';
         (bool ok,) = h.object(json, _keys1("a"));
