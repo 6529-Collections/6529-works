@@ -20,7 +20,8 @@ import {
     MockERC20,
     NoReturnToken,
     RebasingToken,
-    ReturnsFalseToken
+    ReturnsFalseToken,
+    SenderFeeToken
 } from "../../mocks/economics/EconomicsMocks.sol";
 import { GasBurnerToken, HostileActor } from "../../mocks/sales/AuctionMocks.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
@@ -315,6 +316,55 @@ contract EnglishAuctionHostileTest is AuctionBase {
         );
         vm.prank(relayer);
         auction.bid(saleId, address(0), p);
+    }
+
+    /// @dev A Permit2 bid whose pull moves either balance by other than exactly the amount fails
+    ///      closed: the auction credited a unit more, or the payer debited a unit less or a unit
+    ///      more (found by mutation testing).
+    function test_Bid_APermit2PullMustMoveBothBalancesByExactlyTheAmount() public {
+        // Inside the pull, one token mints a unit to the auction, another a unit back to alice.
+        CallbackToken bonus = new CallbackToken();
+        bonus.setHook(address(bonus), abi.encodeCall(MockERC20.mint, (address(auction), 1)));
+        CallbackToken rebate = new CallbackToken();
+        rebate.setHook(address(rebate), abi.encodeCall(MockERC20.mint, (alice, 1)));
+        MockERC20[3] memory tokens =
+            [MockERC20(bonus), MockERC20(rebate), MockERC20(new SenderFeeToken())];
+        for (uint256 i; i < tokens.length; ++i) {
+            MockERC20 token = tokens[i];
+            allowlist.admitAsset(address(token), 0, 1);
+            uint256 saleId = _startIn(address(token));
+            token.mint(alice, 200);
+            vm.prank(alice);
+            token.approve(address(permit2), type(uint256).max);
+            Payment memory p = _permit2Bid(token, saleId, 100);
+            vm.expectRevert(
+                abi.encodeWithSelector(TokenTransfer.TokenBalanceMismatch.selector, address(token))
+            );
+            vm.prank(relayer);
+            auction.bid(saleId, address(0), p);
+        }
+    }
+
+    /// @dev Alice's Permit2 bid of `amount` of `token` on `saleId`, signed for the auction.
+    function _permit2Bid(MockERC20 token, uint256 saleId, uint256 amount)
+        internal
+        view
+        returns (Payment memory)
+    {
+        ISignatureTransfer.PermitTransferFrom memory permit =
+            ISignatureTransfer.PermitTransferFrom(
+                ISignatureTransfer.TokenPermissions(address(token), amount),
+                0,
+                block.timestamp + 1 hours
+            );
+        bytes32 witness =
+            keccak256(abi.encode(Typehashes.BID_WITNESS, saleId, alice, amount, permit.deadline));
+        bytes32 digest =
+            permit2.witnessDigest(address(auction), permit, witness, Typehashes.BID_WITNESS_TYPE);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(alicePk, digest);
+        return Payment(
+            PaymentMethod.PERMIT2, alice, amount, permit.deadline, 0, abi.encodePacked(r, s, v)
+        );
     }
 
     // --------------------------------------------------------------------- hostile actors

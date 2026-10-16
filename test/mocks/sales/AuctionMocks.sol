@@ -275,7 +275,8 @@ contract PlainMintTarget is ERC721, IMintTarget {
     function markPrimarySettled(uint256) external { }
 }
 
-/// @dev Mints a chosen token ID.
+/// @dev Mints a chosen token ID. An ID that already exists is reported again without a mint, as
+///      a template that re-issues a token ID would.
 contract HugeIdTarget is ERC721, IMintTarget {
     mapping(address => bool) public isAdmittedMinter;
     uint256 public id;
@@ -305,7 +306,7 @@ contract HugeIdTarget is ERC721, IMintTarget {
             25_000,
             address(0xA)
         );
-        _mint(to, tokenId);
+        if (_ownerOf(tokenId) == address(0)) _mint(to, tokenId);
     }
 
     function primaryTerms(uint256, bytes calldata) external pure returns (PrimaryTerms memory t) {

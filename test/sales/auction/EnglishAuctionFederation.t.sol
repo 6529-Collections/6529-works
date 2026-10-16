@@ -176,6 +176,41 @@ contract EnglishAuctionFederationTest is AuctionBase {
         assertFalse(auction.isTarget(address(fed)), "registry code changed");
     }
 
+    /// @dev A federated token's code that moved either way from its registry entry's code hash
+    ///      serves no sale, whichever way the two hashes sort (found by mutation testing).
+    function test_Federation_ATokenCodeHashEitherSideOfItsEntryIsRefused() public {
+        MockMintTarget federated = _federated(_terms(ETH));
+        MockFederationRegistry registry = MockFederationRegistry(auction.federationRegistry());
+        uint256 actual = uint256(address(federated).codehash);
+        bytes32[2] memory moved = [bytes32(actual - 1), bytes32(actual + 1)];
+        for (uint256 i; i < moved.length; ++i) {
+            registry.setCodeHash(address(federated), moved[i]);
+            vm.expectRevert(
+                abi.encodeWithSelector(
+                    ISaleAdapter.InvalidSaleTerms.selector, address(federated), 1
+                )
+            );
+            auction.start(address(federated), "");
+        }
+    }
+
+    /// @dev A registry whose code changed serves no token, whichever way its new code hash
+    ///      sorts against the pinned one (found by mutation testing).
+    function test_Federation_ARegistryWhoseCodeHashSortsBelowThePinServesNoToken() public {
+        MockFederationRegistry a = new MockFederationRegistry();
+        MockFederationRegistry b = new MockFederationRegistryV2();
+        (MockFederationRegistry registry, MockFederationRegistry lower) =
+            address(a).codehash > address(b).codehash ? (a, b) : (b, a);
+        vm.prank(successor);
+        auction.setFederationRegistry(address(0), address(registry));
+        address token = makeAddr("federated");
+        registry.setEntry(token, 0, true);
+        assertTrue(auction.isTarget(token));
+        vm.etch(address(registry), address(lower).code);
+        assertLt(uint256(address(registry).codehash), uint256(auction.federationRegistryCodeHash()));
+        assertFalse(auction.isTarget(token), "registry code changed");
+    }
+
     function _federated(PrimaryTerms memory terms) internal returns (MockMintTarget federated) {
         MockFederationRegistry registry = new MockFederationRegistry();
         federated = new MockMintTarget();

@@ -196,6 +196,18 @@ contract EnglishAuctionDisputesTest is AuctionBase {
         assertEq(auction.auction(saleId).bidder, carol);
     }
 
+    /// @dev A withdrawal from an unknown sale reverts with `UnknownSale`, also while ETH (the
+    ///      currency an unknown sale reads as its own) is deprecated (found by mutation testing).
+    function test_WithdrawBid_AnUnknownSaleRevertsAsUnknown() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 7));
+        auction.withdrawBid(7);
+        allowlist.deprecateAsset(ETH);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, 7));
+        auction.withdrawBid(7);
+    }
+
     // ----------------------------------------------------------------------------- resume
 
     /// @dev After any dispute pause the auction runs at least the governed duration again (the
