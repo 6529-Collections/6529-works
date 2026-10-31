@@ -47,7 +47,7 @@ share is the network's part of both the primary sale and the royalty; the artist
 | Product | ID (`EconomicsTypes.sol`) | Fee share at launch | Split | Royalty rate | Default currency at genesis |
 | --- | --- | --- | --- | --- | --- |
 | 6529 Stream | `PRODUCT_STREAM = keccak256("PRODUCT_STREAM")` | 25,000 (`DEFAULT_FEE_SHARE`) | 75/25 | 6,529 (`DEFAULT_ROYALTY_RATE`) | ETH |
-| 6529 Editions | `PRODUCT_EDITIONS = keccak256("PRODUCT_EDITIONS")` | 25,000 | 75/25 | 6,529 | ETH |
+| 6529 Stream Editions | `PRODUCT_EDITIONS = keccak256("PRODUCT_EDITIONS")` | 25,000 | 75/25 | 6,529 | ETH |
 | 6529 Stream Federated (v1.1) | `PRODUCT_FEDERATED = keccak256("PRODUCT_FEDERATED")` | 10,000 (`FEDERATED_FEE_SHARE`) | 90/10 | 6,529 | ETH |
 
 The `EconomicsResolver` constructor writes these values and the `CC0-1.0` default license at
@@ -64,9 +64,9 @@ Nothing in the resolver reaches back into an existing work or a running sale (EC
 - **6529 Stream.** `Stream._quote` reads `economics(PRODUCT_STREAM)` and the seller wallet
   `walletFor(item.payees, 0)` at mint, and stores the seller, fee share, fee recipient and royalty
   rate. With a non-zero fee share it refuses a fee recipient equal to the seller wallet.
-- **6529 Editions.** `createEdition` stores `newWorkTerms(PRODUCT_EDITIONS, item.payees)`, the
-  royalty receiver included, at the master's current royalty rate. Its fee terms may differ from
-  the master's.
+- **6529 Stream Editions.** `createEdition` stores
+  `newWorkTerms(PRODUCT_EDITIONS, item.payees)`, the royalty receiver included, at the master's
+  current royalty rate. Its fee terms may differ from the master's.
 - **Sales** lock their currency at start ([Stream and auctions](stream-and-auctions.md),
   [Editions and sales](editions-and-sales.md)).
 - **The one exception** is the royalty rate: `IWorkRecords.setRoyaltyRate` (FUNDS_SETTER, funds
@@ -168,9 +168,9 @@ Sale adapters pay a wallet through `RevenuePayment`: directly, and on a clean re
 wallet or the token, as a credit in `RevenueEscrow` under that wallet, never anywhere else
 (ECO-26). The routes and their gas are under [a primary sale payout](#a-primary-sale-payout).
 
-**Zero amounts.** The adapters' `_pay` (`EnglishAuction`, `MintSaleBase`) returns before paying a
-zero amount, so a zero fee needs no fee recipient. `RevenuePayment` itself refuses a zero wallet
-or the escrow as the wallet (`InvalidWallet`) before it looks at the amount, then treats a zero
+**Zero amounts.** The auction's `_pay` (`EnglishAuction`) returns before paying a zero amount,
+so a zero fee needs no fee recipient. `RevenuePayment` itself refuses a zero wallet or the
+escrow as the wallet (`InvalidWallet`) before it looks at the amount, then treats a zero
 amount as a no-op. The withdrawal and escrow paths revert on a zero amount instead: a release
 with nothing releasable, or a signed release of amount 0 (`NothingToRelease`); an escrow deposit
 (`ZeroAmount`); a `flush` or `recover` of a zero credit (`NothingOwed`); an adapter claim with
@@ -179,11 +179,11 @@ nothing credited (`NothingToClaim`).
 **Token strictness.** `TokenTransfer` moves every ERC-20 that a payout, escrow deposit, flush,
 release, direct or EIP-2612 pull, or adapter claim handles. It counts a token call only if it
 returns exactly one 32-byte word holding `true`, and requires both balances to move by exactly the
-amount (`TokenCallFailed`, `TokenBalanceMismatch`). The Permit2 pulls (`EnglishAuction._collect`,
-`MintSaleBase._permit2`) are the exception: Permit2 makes the token call, and the adapter checks
-only the two balance deltas. Canonical Permit2 accepts a token that returns nothing. Exact balance
-deltas therefore hold on every path, but return-value checks do not, and admitting only standard
-ERC-20s is the guard (ECO-23, LIM-SAL-7).
+amount (`TokenCallFailed`, `TokenBalanceMismatch`). The auction's Permit2 pull
+(`EnglishAuction._collect`) is the exception: Permit2 makes the token call, and the auction
+checks only the two balance deltas. Canonical Permit2 accepts a token that returns nothing.
+Exact balance deltas therefore hold on every path, but return-value checks do not, and
+admitting only standard ERC-20s is the guard (ECO-23, LIM-SAL-7).
 
 **The escrow** keeps credits by `(wallet, asset)`. Deposits are permissionless; anyone flushes a
 credit, only to its wallet, and a failed flush keeps it (ECO-27). Governed `recover` moves a
@@ -305,9 +305,6 @@ sequenceDiagram
   In the auction each ERC-20 payout runs in its own 1,000,000-gas frame: if it fails even through
   the escrow, the auction credits the wallet itself and still delivers the work, and anyone later
   pays the credit with `claimFor(wallet, token)` (MONEY-1, ECO-36).
-- **Fixed price and Dutch.** `MintSaleBase._settle` computes the fee with `mulDiv` and pays the
-  fee recipient first, then the seller, through the same routes but with no frame: a payment that
-  fails both routes reverts the purchase.
 - **Gas.** The first payout to a new seller wallet creates its account, once per payee
   configuration, and costs more, especially under Glamsterdam
   ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table);
@@ -495,7 +492,7 @@ sequenceDiagram
 | ECO-20 | A signed release works once per `(account, nonce)`, only in the wallet and on the chain it names, before its deadline, and only while its signer is the payee's payout address. | `ReleaseVerifier.consume`; `SplitWallet.releaseWithAuthorization` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayAndRevokedNoncesRevert`, `test_OnlyTheNamedWalletConsumesAnAuthorization`, `test_SignatureDoesNotReplayOnAnotherChainOrVerifier`, `test_ExpiredAuthorizationReverts`; [`IdentityRecovery.t.sol`](../../test/integration/IdentityRecovery.t.sol) `test_SignedReleaseIsVoidedByRecovery` |
 | ECO-21 | Replay protection is keyed on the nonce, not the signature bytes; nonces in one bitmap word stay independent; one revocation covers every wallet. | `ReleaseVerifier._useNonce`, `revokeNonce` | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_ReplayIsKeyedOnTheNonceNotTheSignatureBytes`, `test_NonceBitmapNoAliasingWithinAWord`, `test_OneRevocationCoversEveryWallet` |
 | ECO-22 | A signed release that fails does not consume its nonce. | `SplitWallet.releaseWithAuthorization` (atomic revert) | [`ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_AmountAboveReleasableRevertsWithoutConsumingNonce`, `test_FailedPaymentRollsBackNonce`, `test_PushCanPreemptAFixedPayeesSignedRelease` |
-| ECO-23 | Every ERC-20 move, the Permit2 pulls included, changes both balances by exactly the amount. Moves through `TokenTransfer` also require exactly one `true` word; the Permit2 pulls check balances only. Fee-on-transfer and rounding tokens therefore revert on every path, but a token that returns nothing can pass a Permit2 pull: admitting only standard ERC-20s is the guard. | `TokenTransfer._moveExact`, `_call`; `EnglishAuction._collect`; `MintSaleBase._permit2`; governance at `AssetAllowlist.admitAsset` | [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_FeeOnTransfer_PaymentRevertsAtomically`, `test_NoReturn_PaymentRevertsAtomically`, `test_ReturnsFalse_PaymentTriesEscrowThenRevertsAtomically`, `test_NonCanonicalTrue_FailsClosedOnEveryPath`, `test_Rebasing_RoundingPaymentRevertsAtomically` |
+| ECO-23 | Every ERC-20 move, the Permit2 pulls included, changes both balances by exactly the amount. Moves through `TokenTransfer` also require exactly one `true` word; the Permit2 pulls check balances only. Fee-on-transfer and rounding tokens therefore revert on every path, but a token that returns nothing can pass a Permit2 pull: admitting only standard ERC-20s is the guard. | `TokenTransfer._moveExact`, `_call`; `EnglishAuction._collect`; governance at `AssetAllowlist.admitAsset` | [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_FeeOnTransfer_PaymentRevertsAtomically`, `test_NoReturn_PaymentRevertsAtomically`, `test_ReturnsFalse_PaymentTriesEscrowThenRevertsAtomically`, `test_NonCanonicalTrue_FailsClosedOnEveryPath`, `test_Rebasing_RoundingPaymentRevertsAtomically` |
 | ECO-24 | An ERC-20 whose receipts fall below the recorded mark freezes that asset's releases without loss. | `SplitWallet._due` | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_ShrinkingBalanceFailsClosedUntilRecovered`; [`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_Rebasing_NegativeRebaseFreezesReleasesWithoutLoss`; [`EconomicsInvariant.t.sol`](../../test/economics/invariant/EconomicsInvariant.t.sol) `invariant_ObservedNeverDecreases` |
 | ECO-25 | Withdrawals never read the allowlist: deprecated and never-admitted assets stay withdrawable from wallets and the escrow. | `SplitWallet`, `RevenueEscrow` (no allowlist reference) | [`SplitWallet.t.sol`](../../test/economics/SplitWallet.t.sol) `test_DeprecatedAndNeverAdmittedAssetsStayWithdrawable`; [`RevenueEscrow.t.sol`](../../test/economics/RevenueEscrow.t.sol) `test_DeprecatedAssetCreditsStillFlush` |
 | ECO-26 | A wallet payment reaches the wallet or a credit under that wallet, never anywhere else, and a caller cannot starve it into the escrow. | `RevenuePayment.payETH`, `payERC20` | [`RevenuePayment.t.sol`](../../test/economics/RevenuePayment.t.sol) `testFuzz_PaymentsAlwaysReachTheWalletOrItsCredit`, `test_CallerCannotStarveETHPaymentIntoEscrow`, `test_CallerCannotStarveTokenPaymentIntoEscrow`, `test_EscrowRouteRevertsIfAnAllowanceSurvives` |
@@ -531,7 +528,7 @@ Accepted risks are listed once, with their IDs, in
 | A token blocks the network fee Safe | Fees in that token are escrowed under the Safe; pushing its royalty share reverts. | See [the flow](#escrow-recovery-for-a-blocked-fee-recipient-safe). |
 | A token blocks a fixed payee | `release` to its account reverts. | The payee calls `releaseTo` ([`HostileTokens.t.sol`](../../test/economics/HostileTokens.t.sol) `test_Blocklist_BlockedPayeeReleaseRevertsAndRedirectWorks`). |
 | A wallet's `receive` needs more than 100,000 gas | The ETH payout is credited to the escrow. | Anyone calls `flush`, which forwards all remaining gas. Split wallets have an empty `receive`. |
-| An ERC-20 payout fails even through the escrow | Auction: the work is delivered and the auction credits the wallet. Fixed price and Dutch: the purchase reverts. | Auction: anyone calls `claimFor(wallet, token)` once the token works again. |
+| An ERC-20 payout fails even through the escrow | Auction: the work is delivered and the auction credits the wallet. | Auction: anyone calls `claimFor(wallet, token)` once the token works again. |
 | A non-standard token is admitted by mistake (LIM-SAL-7) | Fee-on-transfer and rounding tokens revert on every path. A token that returns nothing or returns `false` fails on every `TokenTransfer` path, but one that returns nothing passes a Permit2 pull; in the auction its payouts and refunds then fail and stay as credits. | Deprecate it (GUARDIAN, immediate). Prevention is governance vetting before `admitAsset`. |
 | An ERC-20's balance in a wallet falls (negative rebase) | That asset's releases revert with `ObservedDecreased`; nothing is lost. | Releases resume when receipts reach the recorded mark again. |
 | An artist's key is lost or stolen | A thief holding it can pull until an override that moves the payout is staged; nobody can push to it. | Identity recovery redirects the payout, accrued balances included ([Identity and recovery](identity-and-recovery.md)). |
@@ -557,7 +554,7 @@ Accepted risks are listed once, with their IDs, in
 | ETH increment floor at launch | 0.001 ETH (deploy default) | `ETH_INCREMENT_FLOOR` in [`script/Deploy.s.sol`](../../script/Deploy.s.sol) |
 | Default currency at genesis | ETH for all three products | [`config/genesis.example.json`](../../config/genesis.example.json) |
 | Re-admission wait | 14 days after the deprecation | `Roles.FUNDS` in `AssetAllowlist.admitAsset` |
-| ETH payout gas; reserve on top | 100,000; 40,000 | `EnglishAuction.PAYOUT_GAS`, `MintSaleBase.PAYOUT_GAS`; `RevenuePayment.ETH_CALL_RESERVE` |
+| ETH payout gas; reserve on top | 100,000; 40,000 | `EnglishAuction.PAYOUT_GAS`; `RevenuePayment.ETH_CALL_RESERVE` |
 | Token gas on the direct ERC-20 route | 300,000 | `RevenuePayment.ERC20_TRANSFER_GAS` |
 | Auction ERC-20 payout frame | 1,000,000 | `EnglishAuction._ERC20_PAYOUT_GAS` (private) |
 | Claims per batch: plain; signed | 50; 20 | `ClaimRouter.MAX_CLAIMS`, `MAX_SIGNED_CLAIMS` |
@@ -583,8 +580,7 @@ See the [register](README.md#differences-from-the-adrs).
   [`ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol);
   [`SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol);
   [`Stream.sol`](../../src/stream/Stream.sol); [`Editions.sol`](../../src/editions/Editions.sol);
-  [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol);
-  [`MintSaleBase.sol`](../../src/sales/MintSaleBase.sol).
+  [`EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 - ADRs: [ADR 0001 §5](../adr/0001-v1-scope.md#5-sales-and-auctions) and
   [§7](../adr/0001-v1-scope.md#7-economics);
   [ADR 0003, Economics](../adr/0003-build-time-decisions.md#economics-amends-adr-0001-7);

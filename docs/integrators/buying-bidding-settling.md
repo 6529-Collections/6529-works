@@ -1,16 +1,19 @@
 # Buying, bidding, settling and claiming
 
 For marketplace and wallet engineers, relayers and keepers: how to start, bid on and settle a
-6529 Stream auction, buy 6529 Editions copies, claim what is owed, and read royalties. Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
+6529 Stream auction, buy 6529 Stream Editions copies, claim what is owed, and read royalties.
+Rules are in [Stream and auctions](../spec/stream-and-auctions.md#rules-and-invariants) (`AUC-n`),
 [Editions and sales](../spec/editions-and-sales.md#rules-and-invariants) (`ED-n`) and
 [Economics and payouts](../spec/economics-and-payouts.md#rules-and-invariants) (`ECO-n`); event
 signatures in [Events and indexing](events-and-indexing.md); addresses in [Addresses](addresses.md).
 
 > Pre-audit. See the [project status](../../README.md#status).
 
-Sepolia r3 ([Addresses](addresses.md#sepolia-r3)) runs the code this page describes. The
-superseded r2 predates the October 2026 review fixes: it has no `claimFor`, ERC-20 payout
-frame, `scheduleDelay`, currency freeze, `SHORTFALL_REVERT_CEILING` or identity restraint
+Sepolia r3 ([Addresses](addresses.md#sepolia-r3)) runs `v1.0.0-rc.1`: the auction and claims
+as this page describes them, with the edition terms and the fixed-price and Dutch edition
+adapters that ADR 0005 replaced. The superseded r2 predates the October 2026 review fixes: it
+has no `claimFor`, ERC-20 payout frame, `scheduleDelay`, currency freeze,
+`SHORTFALL_REVERT_CEILING` or identity restraint
 ([Addresses](addresses.md#sepolia-r2-superseded)). Sepolia gas figures here are r2's; r3's
 are in [the flows file](../../deployments/11155111/flows.md#r3-the-release-candidate-15-october-2026).
 
@@ -21,8 +24,6 @@ are in [the flows file](../../deployments/11155111/flows.md#r3-the-release-candi
 | Contract | Interface | You call it to |
 | --- | --- | --- |
 | `EnglishAuction` | [IEnglishAuction](../../src/interfaces/IEnglishAuction.sol) | start, bid, withdraw, settle, claim |
-| `FixedPriceSale` | [IFixedPriceSale](../../src/interfaces/IFixedPriceSale.sol) | buy copies at a fixed price, with allowlist phases |
-| `DutchSale` | [IDutchSale](../../src/interfaces/IDutchSale.sol) | buy copies at a descending price |
 | `Stream` | [IStream](../../src/interfaces/IStream.sol), [IMintTarget](../../src/interfaces/IMintTarget.sol) | preview a start, read works, `royaltyInfo` |
 | `Editions` | [IEditions](../../src/interfaces/IEditions.sol) | read editions, `royaltyInfo` |
 | `PackageRegistry` | [IPackageRegistry](../../src/interfaces/IPackageRegistry.sol) | check approvals, acceptances and move nonces; relay acceptances; get the move digest |
@@ -41,7 +42,7 @@ The sale adapters share [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol):
 - **Currencies.** `CURRENCY_ETH` is `address(0)`. `CURRENCY_DEFAULT` is
   `address(type(uint160).max)`; in a package it means "the product's default currency when the sale
   starts" ([EconomicsTypes.sol](../../src/interfaces/types/EconomicsTypes.sol)). Every sale locks
-  its resolved currency when it starts or opens (AUC-15, ED-10).
+  its resolved currency when it starts (AUC-15).
 - **Shares and rates** are out of 100,000 (`Splits.DENOMINATOR`, ECO-1): 6.529% is 6,529.
 - **Errors** are custom errors. A nested contract's error (Stream, the package registry, the
   allowlist, Permit2, a token) bubbles up unchanged: decode against every ABI on the path
@@ -51,21 +52,20 @@ The sale adapters share [`ISaleAdapter`](../../src/interfaces/ISaleAdapter.sol):
 
 ### The `Payment` struct
 
-Every bid and purchase carries one `Payment`
+Every bid carries one `Payment`
 ([SaleTypes.sol](../../src/interfaces/types/SaleTypes.sol)):
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `method` | `PaymentMethod` | `DIRECT` (0), `PERMIT` (1) or `PERMIT2` (2) |
 | `payer` | `address` | The bidder or buyer of record. Refunds and credits go to it. For `DIRECT` and `PERMIT` it must be `msg.sender`; for `PERMIT2` it is the signer, and anyone may submit. |
-| `amount` | `uint256` | The exact bid; the exact fixed-price total; the most the payer will pay in a Dutch sale |
+| `amount` | `uint256` | The exact bid |
 | `deadline` | `uint256` | The permit's deadline (`PERMIT`, `PERMIT2`); ignored for `DIRECT` |
 | `nonce` | `uint256` | The Permit2 nonce; zero otherwise |
 | `signature` | `bytes` | `PERMIT`: exactly 65 bytes, `r \|\| s \|\| v`. `PERMIT2`: the Permit2 signature. `DIRECT`: empty |
 
-Every adapter collects the same way (`_collect` in
-[EnglishAuction.sol](../../src/sales/EnglishAuction.sol) and
-[MintSaleBase.sol](../../src/sales/MintSaleBase.sol)):
+The auction collects it in `_collect`
+([EnglishAuction.sol](../../src/sales/EnglishAuction.sol)):
 
 - **ETH** takes `DIRECT` only, with `payer == msg.sender` and `msg.value == amount`; anything else
   reverts with `InvalidPayment()`.
@@ -85,8 +85,8 @@ Every adapter collects the same way (`_collect` in
   `test_NoReturnAndFalseReturningTokensFailClosed` in
   [EnglishAuctionHostile.t.sol](../../test/sales/auction/EnglishAuctionHostile.t.sol)). Around a
   `PERMIT2` pull the adapter checks only balances, and Permit2 accepts a token that returns
-  nothing (`test_HostileToken_Permit2CannotSkipTheDeltaCheck` in
-  [FixedPricePayments.t.sol](../../test/sales/fixed/FixedPricePayments.t.sol)).
+  nothing (`test_Bid_APermit2PullMustMoveBothBalancesByExactlyTheAmount` in
+  [EnglishAuctionHostile.t.sol](../../test/sales/auction/EnglishAuctionHostile.t.sol)).
 - **Governance is the guard.** A currency is usable only once `AssetAllowlist.admitAsset`
   (FUNDS_SETTER, 14 days) admits it, and governance admits standard ERC-20s only; the admission
   probe is not a behavior check (ECO-32).
@@ -94,8 +94,8 @@ Every adapter collects the same way (`_collect` in
 ### Signing a Permit2 payment
 
 A `PERMIT2` payment is a Permit2 `permitWitnessTransferFrom`, signed in Permit2's own EIP-712
-domain. The witness binds the action, so a relayer can submit it and cannot change it (AUC-19,
-ED-18).
+domain. The witness binds the action, so a relayer can submit it and cannot change it
+(AUC-19).
 
 - The signed type is `PermitWitnessTransferFrom(TokenPermissions permitted,address spender,uint256 nonce,uint256 deadline,`
   followed by the action's witness type string.
@@ -109,8 +109,6 @@ ED-18).
 | --- | --- | --- |
 | `bid` | `BID_WITNESS` | `saleId`, the recipient **resolved** (the payer when zero), `payment.amount`, `payment.deadline` |
 | `startWithBid` | `START_BID_WITNESS` | `token`, `keccak256(mintData)`, the recipient **resolved**, `payment.amount`, `payment.deadline` |
-| Fixed-price `purchase` | `PURCHASE_WITNESS` | `p.saleId`, `p.phase`, `p.recipient` **as passed** (zero stays zero), `p.quantity`, the total (equal to `payment.amount`), `payment.deadline` |
-| Dutch `purchase` | `DUTCH_PURCHASE_WITNESS` | `saleId`, `recipient` **as passed**, `quantity`, `maxUnitPrice`, `payment.deadline` |
 
 When the auction's `permit2()` is zero, a `PERMIT2` payment reverts with `InvalidPayment()`.
 
@@ -501,184 +499,21 @@ Besides the reverts in the two tables above:
 
 ## Buying an edition
 
-Copies are sold only through the shared fixed-price and Dutch adapters. An edition's ID is its
-master's Stream token ID; price, currency, size and window come from the edition (the approved
-package), never from the sale.
+Copies are sold by the edition's sale adapter: an adapter governance admitted on 6529 Stream
+Editions whose sale kind the edition's terms name
+([Editions and sales](../spec/editions-and-sales.md#mint-copies), ED-5). rc.2's is the
+uniform-price edition auction ([ADR 0005](../adr/0005-stream-editions-auction.md#2-design-summary));
+how to bid in it is added here with its adapter, and genesis admits no edition sale adapter
+until then. The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
 
-**Finding the sale.**
-- `openSaleOf(editions, editionId)` on each adapter returns the open sale, or zero (at most one per
-  edition per adapter, ED-11).
-- `sale(saleId)` returns the `LockedTerms` (currency, unit or starting price, seller, fee terms) and
-  whether it is closed; on `FixedPriceSale` also whether the artist approved the phases.
-- `Editions.edition(editionId)` gives the size and the copies minted so far.
-
-### Fixed price
-
-```solidity
-function purchase(
-    IFixedPriceSale.Purchase calldata p,
-    bytes32[] calldata proof,
-    Payment calldata payment
-) external payable;
-```
-
-| `Purchase` field | Type | Meaning |
-| --- | --- | --- |
-| `saleId` | `uint256` | The sale |
-| `phase` | `uint256` | The index into `phases(saleId)` |
-| `recipient` | `address` | Who receives the copies; zero means the payer |
-| `quantity` | `uint256` | Copies, at least 1 (`InvalidQuantity()` otherwise) |
-| `leafCap` | `uint256` | The `cap` of the caller's allowlist leaf; ignored in a public phase |
-| `leafPrice` | `uint256` | The `price` of the caller's leaf; the unit price only in a `leafPriced` phase, but part of the leaf in every allowlist phase |
-
-What to get right ([FixedPriceSale.sol](../../src/sales/FixedPriceSale.sol)):
-
-- **The window.** Phase `i` is open during `[start + d, end + d)`, where `d` is
-  `scheduleDelay(saleId)`, the [schedule delay](../glossary.md#schedule-delay) that halts have
-  added (ED-21).
-- **The amount is exact.** `payment.amount` must equal `unit × quantity`, where the unit is the
-  locked package price, or `leafPrice` in a `leafPriced` phase; for ETH `msg.value` equals it too
-  (ED-17). A zero price is a gift: the amount is zero.
-- **The keyed account** for the allowlist is the recipient, or the payer in a `payerKeyed` phase
-  (ED-15). Anyone may pay for an allowlisted recipient, against its cap.
-- **Caps** count per `(token, editionId, phase index, account)` across sales, in capped phases
-  only (ED-16): an uncapped public phase records nothing. Read the count with
-  `purchased(token, id, phase, account)`.
-- **The recipient must accept ERC-1155.** The edition mints inside `purchase`, so a recipient that
-  rejects `onERC1155Received` reverts the whole purchase.
-
-```mermaid
-sequenceDiagram
-    participant Buyer
-    participant Sale as FixedPriceSale
-    participant Editions
-    participant Fee as Fee recipient
-    participant Seller as Seller wallet
-    Buyer->>Sale: purchase(p, proof, payment)
-    Note over Sale: window, leaf, caps, exact amount
-    Sale->>Sale: collect the payment, DIRECT or PERMIT or PERMIT2
-    Sale->>Editions: mint(recipient, editionId, quantity, empty)
-    Note over Editions: TransferSingle to the recipient
-    Sale->>Fee: fee, escrow on refusal
-    Sale->>Seller: total minus fee, escrow on refusal
-    Sale-->>Buyer: SaleSettled
-```
-
-### Allowlist leaves and proofs
-
-An [allowlist leaf](../glossary.md#allowlist-leaf) binds the chain, the adapter, the edition, the
-phase, the account, its cap and its price
-([IFixedPriceSale.sol](../../src/interfaces/IFixedPriceSale.sol)):
-
-```solidity
-keccak256(bytes.concat(keccak256(abi.encode(
-    ALLOWLIST_LEAF_DOMAIN, block.chainid, address(this), token, id, phase, account, cap, price
-))))
-// ALLOWLIST_LEAF_DOMAIN = keccak256("6529WORKS_ALLOWLIST_LEAF_V1")
-```
-
-Trees are OpenZeppelin sorted-pair trees, so OpenZeppelin's `StandardMerkleTree` builds them with
-the same nine values as the leaf encoding:
-
-```js
-import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
-import { id } from "ethers";
-
-const DOMAIN = id("6529WORKS_ALLOWLIST_LEAF_V1"); // ALLOWLIST_LEAF_DOMAIN
-const ENCODING = ["bytes32", "uint256", "address", "address", "uint256", "uint256", "address", "uint256", "uint256"];
-
-// One row per account and phase. chainId and fixedPriceSale name the deployment that sells.
-const rows = entries.map((e) =>
-  [DOMAIN, chainId, fixedPriceSale, editions, editionId, phase, e.account, e.cap, e.price]);
-const tree = StandardMerkleTree.of(rows, ENCODING);
-
-const root = tree.root;              // Phase.root, fixed when the sale opens
-const proof = tree.getProof(index);  // bytes32[] passed to purchase()
-```
-
-- `FixedPriceSale.allowlistLeaf(token, id, phase, account, cap, price)` returns the leaf on-chain;
-  compare it with `tree.leafHash(row)` before you publish a root
-  (`test_AllowlistLeaf_MatchesTheDefinition` in
-  [FixedPriceSale.t.sol](../../test/sales/fixed/FixedPriceSale.t.sol)).
-- Emit at most one leaf per account and phase.
-- In an allowlist phase that is not leaf-priced, pick any `price` for the leaf (zero is usual) and
-  pass the same value as `leafPrice`.
-- A proof has at most 32 nodes (`Limits.MAX_PROOF_DEPTH`); a sale at most 16 phases
-  (`Limits.MAX_PHASES`).
-
-### Dutch
-
-```solidity
-function purchase(
-    uint256 saleId,
-    address recipient,
-    uint256 quantity,
-    uint256 maxUnitPrice,
-    Payment calldata payment
-) external payable;
-
-function currentPrice(uint256 saleId) external view returns (uint256);
-```
-
-- **The price** is `currentPrice(saleId)` in the block the purchase lands in, on a curve moved
-  later by `scheduleDelay(saleId)`; it is never rebated (ED-20). `maxUnitPrice` bounds it
-  (`PriceAboveLimit(price, maxUnitPrice)`) for a transaction that lands earlier than expected.
-- **`payment.amount` is the most the payer will pay**, not the charge. The charge is
-  `currentPrice × quantity` (`InvalidPayment()` if `amount` is below it).
-  - ETH: send `msg.value == amount`. The excess is credited to the payer
-    (`Credited(payer, address(0), saleId, excess)`) and claimed with `claim(address(0), to)`.
-  - ERC-20: exactly the charge is pulled. A Permit2 signature permits `amount` and transfers only
-    the charge. An EIP-2612 permit of `amount` leaves the unspent allowance with the adapter,
-    usable only by the payer (`test_Erc20_PermitAllowsAMaximum` in
-    [DutchSale.t.sol](../../test/sales/dutch/DutchSale.t.sol)).
-- `recipient` zero means the payer.
-
-### Halts
-
-| Halt | Purchases revert with | Rule |
-| --- | --- | --- |
-| The adapter is paused (PAUSER, immediate; unpause no earlier than 48 hours after) | `SalePaused()` | ED-22 |
-| The sale's currency is deprecated | `CurrencyNotActive(currency)` | ED-10 |
-| Either halt | The schedule stops: `scheduleDelay(saleId)` grows by the halt, and overlapping halts count twice | ED-21 |
-
-`closeSale` and `claim` keep working through both (ED-22, ED-23). Anyone may close a fixed-price
-sale once all its moved phases have ended (ED-14).
-
-### Events
-
-One `SaleSettled` per purchase (`price` is the total, `tokenId` the edition ID), the mint's
-`TransferSingle`, and `EditionWindowOpened` on an OPEN edition's first mint
-([FixedPriceSale](events-and-indexing.md#fixedpricesale), [DutchSale](events-and-indexing.md#dutchsale),
-[Editions](events-and-indexing.md#editions)); the escrow's `Credited` for a refused payout
-([RevenueEscrow](events-and-indexing.md#revenueescrow)). A recipient's hook may close a sale inside
-a purchase, so `SaleSettled` can follow `SaleClosed`
-([event ordering](events-and-indexing.md#event-ordering-within-a-transaction)).
-
-### Errors
-
-| Error | Sale | Cause |
-| --- | --- | --- |
-| `SalePaused()` | both | The adapter is paused. |
-| `PhaseNotOpen(saleId, phase)` | fixed | Unknown phase or sale, closed, or outside the moved window. |
-| `SaleNotOpen(saleId)` | Dutch | Unknown, closed, or before the moved start. |
-| `CurrencyNotActive(currency)` | both | The locked currency is deprecated. |
-| `TargetNotAllowed(token)` | both | A federated token was delisted (v1.1). |
-| `InvalidQuantity()` | both | `quantity` is zero. |
-| `NotAllowlisted(saleId, phase, account)` | fixed | The proof does not verify for the keyed account, cap and price. |
-| `WalletCapExceeded(saleId, phase, account)` | fixed | The purchase passes the leaf cap or `walletCap`. |
-| `PriceAboveLimit(price, maxUnitPrice)` | Dutch | The current price is above the buyer's limit. |
-| `InvalidPayment()` | both | Wrong amount, `msg.value`, method or payer; a `PERMIT` signature that is not 65 bytes. |
-| `PaymentExpired(deadline)` | both | The permit deadline passed. |
-| `EditionUnavailable(editionId)` | both | Sold out, or an OPEN edition's window is over. |
-| `TokenBalanceMismatch(asset)`, `TokenCallFailed(asset, selector)` | both | A non-standard token, a balance below the charge, or a missing allowance. |
-| `PaymentInsufficientGas(gasLimit)`, `TokenInsufficientGas(gasLimit)` | both | The gas limit cannot forward a payout's allowance in full: 100,000 for ETH (`PAYOUT_GAS`), 300,000 for a token transfer (`ERC20_TRANSFER_GAS`). Raise the limit. |
-
-### Gas
-
-A purchase's Prague gas and new slots, first copy and later copies, fixed price and Dutch, are
-in the [ADR 0004 table](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Worst cases with a
-32-node proof and escrowed payouts are measured against the transaction cap by the adapters' gas-cap tests
-([sales module notes](../../src/sales/README.md#developer-notes)).
+Whatever the adapter:
+- An edition's ID is its master's Stream token ID. `Editions.edition(editionId)` gives the terms
+  (the creator's cap `maxCount`, the currency, sale kind and params), the copies minted so far
+  and the bound adapter (`minter`).
+- The first adapter to mint an edition is the only one that may mint it again (ED-5);
+  `EditionMinterBound` names it ([Editions](events-and-indexing.md#editions)).
+- A mint to a recipient that rejects `onERC1155Received` reverts.
+- `EditionUnavailable(editionId)` means the creator's cap is reached (ED-6).
 
 ## Claiming
 
@@ -687,7 +522,6 @@ Refunds are never pushed; every amount owed has a pull function:
 | What is owed | Where | Who calls | Function |
 | --- | --- | --- | --- |
 | An outbid, withdrawn or refunded bid | `EnglishAuction` | The bidder (payer) | `claim(currency, to)` |
-| ETH paid above a Dutch charge | `DutchSale` | The payer | `claim(address(0), to)` |
 | An ERC-20 auction payout that failed (MONEY-1) | `EnglishAuction` | Anyone, for the wallet | `claimFor(wallet, token)` |
 | A token whose delivery failed | `EnglishAuction` | The recipient or the winning bidder; with no bids the artist | `claimDelivery(saleId, to)` |
 | A payout a wallet or token refused | `RevenueEscrow` | Anyone | `flush(wallet, asset)` |
@@ -808,7 +642,7 @@ function royaltyInfo(uint256 tokenId, uint256 salePrice)
     external view returns (address receiver, uint256 royaltyAmount);
 ```
 
-| | 6529 Stream | 6529 Editions |
+| | 6529 Stream | 6529 Stream Editions |
 | --- | --- | --- |
 | Receiver | Derived on each call: the seller wallet at a zero fee share, otherwise the royalty split wallet (AUC-7, ECO-7) | Stored when the edition was created (ED-7) |
 | Amount | `floor(salePrice × rate / 100,000)`, without overflow for any price | `Math.mulDiv(salePrice, rate, 100,000)`, rounded down |

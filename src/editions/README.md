@@ -1,15 +1,18 @@
 # editions
 
-6529 Editions: the one shared ERC-1155 of editions. Each edition is anchored by a settled 6529
-Stream work of kind `EDITION_MASTER`, shares its ID, renders its media and license, and is sold
-by the shared fixed-price and Dutch adapters in [`sales/`](../sales/README.md). The rules are
-in [Editions and sales](../../docs/spec/editions-and-sales.md) (`ED-*`).
+6529 Stream Editions (named 6529 Editions before ADR 0005): the one shared ERC-1155 of
+editions. Each edition is anchored by a settled 6529 Stream work of kind `EDITION_MASTER`,
+shares its ID, and renders its media and license. Copies are minted by any sale adapter
+governance admits whose sale kind the edition's terms name, rc.2's being the uniform-price
+edition auction ([ADR 0005](../../docs/adr/0005-stream-editions-auction.md)); a new sale method
+is a new adapter, never a new Editions. The rules are in
+[Editions and sales](../../docs/spec/editions-and-sales.md) (`ED-*`).
 
 ## Files
 
 | File | What it is |
 | --- | --- |
-| `Editions.sol` | The token: `createEdition`, minting and burning for admitted adapters, supply and window, royalties, license and `uri` from the master, ERC-4906 refreshes. Implements [`IEditions`](../interfaces/IEditions.sol) and [`IMintTarget`](../interfaces/IMintTarget.sol). |
+| `Editions.sol` | The token: `createEdition`, minting and burning for admitted adapters, the creator's cap and the first-minter binding, royalties, license and `uri` from the master, ERC-4906 refreshes. Implements [`IEditions`](../interfaces/IEditions.sol) and [`IMintTarget`](../interfaces/IMintTarget.sol). |
 | `EditionRules.sol` | Internal library: the one validity rule for edition terms, applied by the package registry at `consume` and by `Editions` at `createEdition`. |
 
 ## Entry points
@@ -20,7 +23,7 @@ in [Editions and sales](../../docs/spec/editions-and-sales.md) (`ED-*`).
 | Admitted sale adapters | `mint`, `burn`, `markPrimarySettled`; `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
 | The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
 | Governance | `setAdmittedMinter`, `setContractURI`, `setOwner`; the genesis bind `bindWorkRecords` | [Role matrix: Editions](../../docs/audit/roles.md#editions) |
-| Anyone (views) | `edition`, `masterOf`, `formatOf`, `contentHashOf`, `exists`, `royaltyInfo`, `licenseOf`, `uri` | [Reading a work](../../docs/integrators/reading-a-work.md) |
+| Anyone (views) | `edition`, `masterOf`, `contentHashOf`, `exists`, `royaltyInfo`, `licenseOf`, `uri`, `name`, `symbol` | [Reading a work](../../docs/integrators/reading-a-work.md) |
 
 The create flow, with every check in order, is under
 [Create an edition](../../docs/spec/editions-and-sales.md#create-an-edition); events are under
@@ -28,25 +31,28 @@ The create flow, with every check in order, is under
 
 ## Developer notes
 
-- **Storage layout (QUALITY-5).** An edition is a packed `Record` of nine words behind the
-  unchanged `Edition` view: the content hash; seller with size, format and kind; royalty
-  receiver with window and rate; artist ID with the minted count and fee share; fee recipient
-  with the window start; currency (zero for ETH); price; and a Dutch curve kept decoded in two
-  words. Creating a priced ETH edition with a fee writes six of them, a Dutch one two more, and
-  the first mint writes none because `minted` shares the artist ID's word. An OPEN edition on
-  terms without a fee recipient writes the fee-recipient word at its first mint. Changing the
-  struct changes `createEdition` and `purchase` slot counts, which
-  [`GasReport.t.sol`](../../test/integration/GasReport.t.sol) asserts exactly
-  ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
-- **`mint` returns only the sale kind (QUALITY-2).** The adapters apply the terms they locked
-  from `primaryTerms` at `openSale`; building full terms in `mint` would add the record reads and
-  an artist-registry call to every purchase. Keep it that way, or the purchase rows of the gas
-  report move.
+- **Storage layout (QUALITY-5).** An edition is a packed `Record` behind the `Edition` view:
+  the content hash; the seller with the creator's cap, the `uint48` minted count and the bound
+  adapter's 16-bit ID; the royalty receiver with the rate; the artist ID with the fee share; the
+  fee recipient; and the sale kind, currency and params. The edition auction's kind, ETH and
+  empty params are stored as zero, so its edition writes five words when its terms name a fee
+  recipient, and another sale method pays for its own. The first mint writes no new slot: the
+  count and the binding share the seller's word. Changing the struct changes the
+  `createEdition` and mint slot counts, which
+  [`GasReport.t.sol`](../../test/integration/GasReport.t.sol) and `EditionsGasReport.t.sol`
+  assert exactly ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- **Generic minting (ADR 0005, owner decision 14).** `EditionTerms` carries no size, format or
+  price; `EditionRules` checks only a nonzero sale kind and at most 1,024 bytes of params, and
+  the kind's adapter validates its currency and params when it opens a sale.
+- **`mint` returns only the sale kind (QUALITY-2).** An adapter applies the terms it locked
+  from `primaryTerms` when its sale opened; building full terms in `mint` would add the record
+  reads and an artist-registry call to every mint.
 - **Minting reads nothing from Stream.** A master with an edition has settled and Stream never
-  burns a settled token, so supply and window checks are local. Burned copies still count
-  toward `size`.
+  burns a settled token, so the cap and binding checks are local. Burned copies still count
+  toward the cap.
 - **Minter status is three-valued** (never, admitted, removed), so a removed adapter can still
-  burn what it holds and call the no-op `markPrimarySettled`.
+  burn what it holds and call the no-op `markPrimarySettled`. Its binding ID survives removal,
+  so a re-admitted adapter mints its editions again; at most 65,535 adapters are ever admitted.
 - **Wiring is immutable.** The constructor checks Stream (code, no EIP-7702 delegation, ERC-165
   `IStream`, the reviewed code hash) and reads the package registry, economics resolver and
   artist registry from it. No edition exists before genesis binds `WorkRecords`
@@ -61,6 +67,7 @@ The create flow, with every check in order, is under
 ## See also
 
 [ADR 0001 §6](../../docs/adr/0001-v1-scope.md#6-6529-editions) (with §3 exclusivity and §8
-license), [ADR 0003](../../docs/adr/0003-build-time-decisions.md); the
+license), [ADR 0003](../../docs/adr/0003-build-time-decisions.md),
+[ADR 0005](../../docs/adr/0005-stream-editions-auction.md); the
 [differences from the ADRs](../../docs/spec/README.md#differences-from-the-adrs) (`ED-*` rows),
 [invariants](../../docs/audit/invariants.md), [known limitations](../../docs/audit/known-limitations.md#sales-and-auctions).

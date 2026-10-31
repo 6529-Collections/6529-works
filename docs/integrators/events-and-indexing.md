@@ -18,9 +18,9 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
 ## How to read this page
 
 - **Key every log by emitter address and topic0.** Several contracts share a signature, and so
-  a topic0: the three sale adapters share `SaleStarted`, `SaleSettled`,
+  a topic0: every sale adapter has `ISaleAdapter`'s `SaleStarted`, `SaleSettled`,
   `Credited(address,address,uint256,uint256)`, `Claimed`, `TargetSet`,
-  `FederationRegistrySet`, `Paused` and `Unpaused`; 6529 Stream and 6529 Editions share
+  `FederationRegistrySet`, `Paused` and `Unpaused`; 6529 Stream and 6529 Stream Editions share
   `RoyaltyRateChanged`, `MetadataUpdate`, `BatchMetadataUpdate`, `OwnershipTransferred`,
   `ContractURISet`, `ContractURIUpdated`, `AdmittedMinterSet` and `ApprovalForAll`; `Bound`
   comes from both tokens and both registries, `AuthorityUpdated` from every governed contract.
@@ -57,7 +57,6 @@ events do not tell you. The rules are in the [specification](../spec/README.md),
 | --- | --- | --- |
 | `ItemKind` | 0 `ORIGINAL`, 1 `EDITION_MASTER` | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
 | `SeedPolicy` | 0 `NONE`, 1 `ARTIST`, 2 `VRF` | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
-| `EditionFormat` | 0 `FIXED`, 1 `OPEN` | [`PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) |
 | `LocatorKind` | 0 `NONE`, 1 `ARWEAVE`, 2 `IPFS`, 3 `ONCHAIN` | [`ContentTypes.sol`](../../src/interfaces/types/ContentTypes.sol) |
 | `IContentStore.Encoding` | 0 `Identity`, 1 `Gzip`, 2 `Base64`, 3 `GzipBase64` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) |
 | `Role` (statement log) | 0 `NONE`, 1 `ARTIST`, 2 `OWNER`, 3 `CURATOR`, 4 `PLATFORM` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) |
@@ -92,7 +91,7 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 | `CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash)` | `0x8966ba95…` | `createCollection` (PLATFORM, immediate) | Collection IDs run from 1. A collection's count, and its last serial, is the number of `WorkMinted` naming it. |
 | `RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate`, callable only by the bound work-records satellite, from `WorkRecords.setRoyaltyRate` | The ERC-2981 rate (out of 100,000) changed; the receiver never does ([AUC-6][auc]). Followed by the satellite's `RoyaltyRateSet`. |
 | `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero) and `setDefaultRenderer` (SUCCESSOR_SETTER, 30 days) | The renderer for every unfinalized work; `codeHash` is pinned. Followed by both tokens' `BatchMetadataUpdate`. Changes every unfinalized work's state hash, with no per-token event. |
-| `EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId)` | `0xbab490db…` | `linkEdition`, callable only by bound 6529 Editions, from `createEdition` | The master's edition exists; `editionId` always equals `tokenId`. Followed by `MetadataUpdate(tokenId)`. |
+| `EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId)` | `0xbab490db…` | `linkEdition`, callable only by bound 6529 Stream Editions, from `createEdition` | The master's edition exists; `editionId` always equals `tokenId`. Followed by `MetadataUpdate(tokenId)`. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindWorkRecords` (`"WORK_RECORDS"`), `bindEditions` (`"EDITIONS"`), run by the genesis wiring | Once per name, never changed. |
 | `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c…` | The constructor (from zero) and `setOwner` (FUNDS_SETTER, 14 days) | The marketplace owner (`owner()`); no on-chain powers. |
 | `ContractURISet(string previous, string next)` | `0xd144c591…` | `setContractURI` (PARAMETER_SETTER, 48 hours) | Followed by `ContractURIUpdated`. |
@@ -115,7 +114,7 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | `OnChainSyncProgress(uint256 indexed tokenId, uint256 files)` | `0x2ac9493b…` | `syncOnChain` (permissionless), when its budget of 512 chunks (`SYNC_CHUNKS`) stops it | The first `files` media files are complete in the content store; the next call resumes there. No metadata or state-hash change. |
 | `WorkOnChainComplete(uint256 indexed tokenId)` | `0x15405c6b…` | The `syncOnChain` call that finds the last media file complete | Every media file is on-chain. One-way; the state hash does not change. Enables the implicit ONCHAIN locator ([WS-21][ws]) and inlining of the primary ([RND-17][rnd]). |
 | `LicenseChanged(uint256 indexed tokenId, License previous, License next)` | `0x8f67810f…` | `relicense` (PARAMETER_SETTER, 48 hours, plus every party's `Relicense` signature) | `License` is `(string spdxId, bytes32 textFileId)`. The record version bumps; the event carries no state hash (read `workStateHash`). |
-| `RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash)` | `0xe8cb8922…` | `setRoyaltyRate` (FUNDS_SETTER, 14 days, plus every party's `RoyaltyRateChange` signature) | The authoritative record of a rate change, with the new state hash. Follows 6529 Stream's and, for a linked master, 6529 Editions' `RoyaltyRateChanged`. An unchanged rate emits nothing. |
+| `RoyaltyRateSet(uint256 indexed tokenId, uint32 previous, uint32 next, bytes32 stateHash)` | `0xe8cb8922…` | `setRoyaltyRate` (FUNDS_SETTER, 14 days, plus every party's `RoyaltyRateChange` signature) | The authoritative record of a rate change, with the new state hash. Follows 6529 Stream's and, for a linked master, 6529 Stream Editions' `RoyaltyRateChanged`. An unchanged rate emits nothing. |
 | `RendererRepinned(uint256 indexed tokenId, address previous, address next, bytes32 codeHash)` | `0x382b0879…` | `repinRenderer` (SUCCESSOR_SETTER, 30 days, plus the artist's `RendererRepin` signature) | The errata path replaced a finalized work's renderer pin. No state hash in the event. |
 | `LocatorAdded(uint256 indexed tokenId, bytes32 indexed fileId, uint256 index, Locator locator)` | `0x728460e4…` | `addLocator` (the artist before finalize, or PLATFORM) | `Locator` is `(uint8 kind, string uri)`. `index` is its position in the file's list, which is append-only. No state-hash change. |
 | `PreferredKindSet(LocatorKind previous, LocatorKind next)` | `0x0c7addff…` | `setPreferredKind` (STORAGE_OPERATOR, immediate) | The global preferred locator kind. Emitted even when unchanged; refreshes every token and edition. |
@@ -130,9 +129,9 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `EditionCreated(uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms)` | `0xda49138a…` | `createEdition` (permissionless, once the master's primary sale settled) | `EditionTerms` is `(uint8 format, uint64 size, uint64 window, uint256 price, address currency, bytes32 saleKind, bytes params)`. The economics locked at creation are not emitted: read `edition(id)`. |
-| `EditionWindowOpened(uint256 indexed editionId, uint64 closesAt)` | `0x8aeb4e6b…` | The first `mint` of an OPEN edition | The one-time window runs from this block to `closesAt` ([ED-6][ed]); nothing is emitted when it closes. Precedes that mint's `TransferSingle`. |
-| `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)` | `0xc3d58168…` | Each purchase's mint (`operator` is the sale adapter, `from` zero), holder transfers, and an adapter's `burn` (to zero) | Copies minted is the sum of `value` with `from` zero. No v1 adapter calls `burn`. |
+| `EditionCreated(uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms)` | `0x3a4f273b…` | `createEdition` (permissionless, once the master's primary sale settled) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`. The economics locked at creation are not emitted: read `edition(id)`. |
+| `EditionMinterBound(uint256 indexed editionId, address indexed minter)` | `0x35bb9c80…` | The first `mint` of an edition, by an admitted adapter | The edition is bound to `minter`, the only adapter that may mint it from now on ([ED-5][ed]). Precedes that mint's `TransferSingle`. |
+| `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)` | `0xc3d58168…` | Each mint (`operator` is the sale adapter, `from` zero), holder transfers, and an adapter's `burn` (to zero) | Copies minted is the sum of `value` with `from` zero. No v1 adapter calls `burn`. |
 | `TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)` | `0x4a39dc06…` | Holder batch transfers | Never from a mint: adapters mint one ID per call. |
 | `ApprovalForAll(address indexed account, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-1155. |
 | `URI(string value, uint256 indexed id)` | `0x6bb7ff70…` | Never emitted | Metadata is `uri(id)`; use ERC-4906 events instead. |
@@ -156,7 +155,7 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | `PackageRevoked(bytes32 indexed packageRoot, bytes32 reasonHash)` | `0x6d695ea2…` | `revokePackage` (GUARDIAN, immediate) | The root is REVOKED for good: unconsumed items can no longer mint. It can come before, or without, a `PackageRegistered` ([CUR-2][cur]). |
 | `PackageAccepted(bytes32 indexed packageRoot, uint256 indexed artistId, address indexed account)` | `0x49639e31…` | `acceptPackage` (permissionless relay of the party's signature) | `acceptedAs[root][account] = artistId`. Only the first acceptance per root and account emits; a repeat is a silent no-op. For an account with no artist ID yet, followed by the artist registry's `ArtistRegistered`. |
 | `ItemConsumed(bytes32 indexed packageRoot, bytes32 indexed itemHash, uint256 indexed artistId, bytes32 contentHash)` | `0x1acc8cae…` | `consume`, callable only by bound 6529 Stream, inside `mint` during an auction start | The item is used and its content hash is claimed under `PRODUCT_STREAM`. The lead artist's move nonce is spent here with no event of its own. |
-| `ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash)` | `0x7ee6542c…` | `claimContent`, callable only by bound 6529 Editions, inside `createEdition` | The master's content hash is claimed under `PRODUCT_EDITIONS`. |
+| `ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash)` | `0x7ee6542c…` | `claimContent`, callable only by bound 6529 Stream Editions, inside `createEdition` | The master's content hash is claimed under `PRODUCT_EDITIONS`. |
 | `ContentReleased(bytes32 indexed contentHash, bytes32 indexed itemHash, uint256 indexed beneficiary)` | `0x0f5bb07b…` | `releaseContent`, callable only by 6529 Stream, from `Stream.releaseContent` (PARAMETER_SETTER, 48 hours) after an upheld-dispute burn | `itemHash` is tombstoned; the content hash is reserved for items led by `beneficiary` ([CUR-14][cur]). 6529 Stream emits nothing for this call. |
 | `MoveRevoked(uint256 indexed artistId, uint256 indexed nonce)` | `0x7cfb5149…` | `revokeMove` (the artist's active authority) | An unused move nonce is void. |
 | `VerifierSet(address previous, address next, bytes32 codeHash)` | `0xa3fb3ba5…` | The constructor (`previous` zero) and `setVerifier` (SUCCESSOR_SETTER, 30 days) | The previous verifier is retired for good. Registered approvals are unaffected. |
@@ -204,41 +203,10 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | `Paused(address account)` | `0x62e78cea…` | `pause()` (PAUSER, immediate) | Adapter-wide pause; on the auction it stops only new starts ([AUC-13][auc]). `account` is the immediate caller: the role holder, or the AccessManager through `execute`. |
 | `Unpaused(address account)` | `0x5db9ee0a…` | `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | |
 
-### FixedPriceSale
-
-[`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol), interfaces
-[`IFixedPriceSale`](../../src/interfaces/IFixedPriceSale.sol) and `ISaleAdapter`; shared code in
-[`MintSaleBase.sol`](../../src/sales/MintSaleBase.sol). Sale IDs run from 1 per adapter
-(`nextSaleId`), so key them by adapter address and sale ID.
-
-| Event | topic0 | Emitted by | Meaning and indexing notes |
-| --- | --- | --- | --- |
-| `SaleStarted(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, bytes32 saleKind, address currency, uint256 price, uint64 startTime, uint64 endTime)` | `0x36e87edc…` | `openSale` (the creator, or PLATFORM) | `saleKind` is `FIXED_PRICE`; `tokenId` is the edition ID; `price` is the package unit price; `startTime` and `endTime` are the earliest phase start and latest phase end as configured. Halts later move them by `scheduleDelay(saleId)`, with no event ([ED-21][ed]). |
-| `PhasesSet(uint256 indexed saleId, Phase[] phases, bool artistApproved)` | `0xcdf5b9f5…` | `openSale`, right after `SaleStarted` | `Phase` is `(uint64 start, uint64 end, bytes32 root, uint32 walletCap, bool payerKeyed, bool leafPriced)`. `artistApproved` is true when the creator opened the sale or signed the configuration. |
-| `SaleSettled(…)` | `0x16010625…` | Each `purchase` | One purchase: `quantity` copies to `recipient`, `price` is the total, `buyer` the payer. |
-| `SaleClosed(uint256 indexed saleId)` | `0xcb67f20f…` | `closeSale`: the creator, PLATFORM or anyone, as [ED-14][ed] allows | No new purchases. It can come before the `SaleSettled` of the purchase during which it happened ([event ordering](#event-ordering-within-a-transaction)). |
-| `ConsentNonceRevoked(address indexed creator, uint256 indexed nonce)` | `0x45c9f7d3…` | `revokeConsentNonce` (the creator) | A phase-configuration nonce is void. A nonce spent by `openSale` emits no event of its own. |
-| `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | `setTarget` (SUCCESSOR_SETTER; at genesis through the wiring) | |
-| `FederationRegistrySet(address previous, address next)` | `0xb6b3a87c…` | `setFederationRegistry` (SUCCESSOR_SETTER) | None in v1. |
-| `Paused(address account)` | `0x62e78cea…` | `pause()` (PAUSER, immediate) | Stops `openSale` and `purchase`, not `closeSale` or `claim`; moves every open sale's schedule ([ED-22][ed]). |
-| `Unpaused(address account)` | `0x5db9ee0a…` | `unpause()` (UNPAUSER, no earlier than 48 hours after the pause) | |
-| `Credited(…)` | `0xdd0ef63b…` | Never emitted | In the ABI through `ISaleAdapter`; the fixed-price adapter never credits. |
-| `Claimed(…)` | `0x913c9923…` | Never emitted | As `Credited`. |
-
-### DutchSale
-
-[`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol), interfaces
-[`IDutchSale`](../../src/interfaces/IDutchSale.sol) and `ISaleAdapter`. Sale IDs run from 1 per
+The fixed-price and Dutch adapters left with ADR 0005, and with them `PhasesSet`,
+`SaleClosed` and `ConsentNonceRevoked`. The Sepolia r1 to r3 instances still emit them; the
+`v1.0.0-rc.1` version of this page lists them. The edition auction's events come with its
 adapter.
-
-| Event | topic0 | Emitted by | Meaning and indexing notes |
-| --- | --- | --- | --- |
-| `SaleStarted(…)` | `0x36e87edc…` | `openSale` (the creator, or PLATFORM for a FIXED edition) | `saleKind` is `DUTCH`; `price` is the starting price; `endTime` is `startTime` plus the curve's duration: when the price reaches its resting price, not when the sale ends. |
-| `SaleSettled(…)` | `0x16010625…` | Each `purchase` | `price` is the total charged: the current unit price times the quantity. |
-| `Credited(address indexed account, address indexed currency, uint256 indexed saleId, uint256 amount)` | `0xdd0ef63b…` | `purchase` with ETH above the charge | The ETH overpayment is credited to the payer (`currency` zero). Emitted before `SaleSettled`. |
-| `Claimed(…)` | `0x913c9923…` | `claim` | |
-| `SaleClosed(uint256 indexed saleId)` | `0xcb67f20f…` | `closeSale`: the creator; PLATFORM for a sale it opened, or any sale while the creator resolves to zero | No "anyone" path on the Dutch adapter. |
-| `TargetSet`, `FederationRegistrySet`, `Paused`, `Unpaused` | as on FixedPriceSale | as on FixedPriceSale | Same meaning. A pause or currency deprecation moves the price curve later. |
 
 ### StatementLog
 
@@ -355,7 +323,7 @@ contract at a CREATE2 address.
 
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
-| `AssetStatusChanged(address indexed asset, Status previous, Status current, uint64 revision)` | `0xd5701084…` | The allowlist's constructor (ETH admitted), `admitAsset` (FUNDS_SETTER, 14 days; [ECO-33][eco]) and `deprecateAsset` (GUARDIAN, immediate) | A deprecation halts running sales in that currency and moves their schedules ([ED-21][ed]); it freezes running auctions ([AUC-25][auc]). |
+| `AssetStatusChanged(address indexed asset, Status previous, Status current, uint64 revision)` | `0xd5701084…` | The allowlist's constructor (ETH admitted), `admitAsset` (FUNDS_SETTER, 14 days; [ECO-33][eco]) and `deprecateAsset` (GUARDIAN, immediate) | A deprecation freezes running auctions in that currency ([AUC-25][auc]). |
 | `IncrementFloorChanged(address indexed asset, uint256 previous, uint256 current, uint64 revision)` | `0x866085d8…` | Every admission (with the same revision as its `AssetStatusChanged`) and `setIncrementFloor` (PARAMETER_SETTER, 48 hours) | The absolute minimum bid increment; an auction locks it at its first bid. |
 | `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a6334…` | `setDefaultCurrency` (FUNDS_SETTER, 14 days; each product's first at genesis through the wiring) | The currency a sale of `product` locks when its terms say `CURRENCY_DEFAULT`. |
 | `EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next, uint64 revision)` | `0x7b619472…` | The resolver's constructor (once per product, from zeros, revision 1), `setFeeTerms` (FUNDS_SETTER, 14 days) and `setRoyaltyRate` (PARAMETER_SETTER, 48 hours) | `ProductEconomics` is `(address feeRecipient, uint32 feeShare, uint32 royaltyRate)`. Applies to new works and editions only ([ECO-6][eco]). `revision` is the changed setting's own counter: compare `previous` and `next` to tell fee terms from royalty rate. |
@@ -488,23 +456,17 @@ Per `saleId`:
 - **Credits.** Per account and currency on one adapter, `claimable` is the sum of `Credited`
   minus the sum of `Claimed`.
 
-### An edition and its sales
+### An edition
 
 - **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`,
   and 6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction. Read
   `edition(editionId)` for the locked economics.
-- **Sale opened.** Fixed price: `SaleStarted`, then `PhasesSet`. Dutch: `SaleStarted`. One open
-  sale per `(token, id)` per adapter ([ED-11][ed]; `openSaleOf`).
-- **Purchases.** In order: the ERC-20 pull's `Transfer`, if any; a Dutch ETH overpayment's
-  `Credited`; `EditionWindowOpened` on an OPEN edition's first mint; `TransferSingle` from zero;
-  the payouts (an escrow `Credited` when refused); `SaleSettled`.
-- **Supply.** The sum of `TransferSingle.value` from zero equals `edition(id).minted`. Selling
-  out, or an OPEN window passing, emits nothing.
-- **Closed.** `SaleClosed`. A fixed-price sale whose phases have all ended stays open until
-  someone calls `closeSale`.
-- **Halts.** A pause or a currency deprecation moves every open sale's schedule with no
-  per-sale event ([ED-21][ed]): read `scheduleDelay(saleId)`, and `currentPrice(saleId)` for a
-  Dutch sale.
+- **Bound.** `EditionMinterBound` on the first mint names the adapter that sells the edition;
+  `edition(id).minter` reads it.
+- **Mints.** `TransferSingle` from zero, with the sale adapter as `operator`; the adapter's own
+  events tell the sale.
+- **Supply.** The sum of `TransferSingle.value` from zero equals `edition(id).minted`.
+  Reaching the creator's cap emits nothing.
 
 ### Money
 
@@ -521,8 +483,7 @@ Per `saleId`:
   `wallet`, sets it to zero. A non-factory account's recovery consent is its latest
   `RecoveryConsentSet`, cleared by its next `Recovered`. `WalletCreated` tells factory wallets
   apart.
-- **Sale credits.** See [an auction](#an-auction); the Dutch adapter credits only ETH
-  overpayments.
+- **Sale credits.** See [an auction](#an-auction).
 
 ### Identity
 
@@ -600,11 +561,6 @@ and a head. Also:
 
 ### Event ordering within a transaction
 
-- **A purchase's `SaleSettled` can follow `SaleClosed`.** A recipient's ERC-1155 hook runs
-  inside `purchase`, and a creator's hook may close the sale there, and even open a new one.
-  Treat `SaleClosed` as "no new purchases", not as a sale's last event
-  (`test_Purchase_AReceiverHookThatClosesAndReopensIsHarmless` in
-  [`FixedPriceSale.t.sol`](../../test/sales/fixed/FixedPriceSale.t.sol)).
 - **Effects come before the summary event.** `ItemConsumed` precedes `WorkMinted`;
   `PrimarySaleSettled` and the delivery precede `SaleSettled`; `Credited` precedes
   `BidPlaced` and `BidWithdrawn`; `RoyaltyRateChanged` precedes `RoyaltyRateSet`;
@@ -630,8 +586,8 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
   `(address(0), uint256(packageRoot))`.
 - **Burned tokens leave ID gaps** ([AUC-5][auc]). `totalMinted()` is the highest ID;
   `totalSupply()` counts live tokens. A burned ID's views revert with `UnknownWork`.
-- **Edition ID equals master token ID.** `EditionCreated`, `EditionLinked`,
-  `TransferSingle.id` and an edition sale's `SaleStarted.tokenId` all carry the same number.
+- **Edition ID equals master token ID.** `EditionCreated`, `EditionLinked` and
+  `TransferSingle.id` all carry the same number.
 
 ### Derived state with no event
 
@@ -650,17 +606,17 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
 | A work's state hash after `openRecord`, `LicenseChanged`, `RendererRepinned` or a new default renderer | `workStateHash(tokenId)` |
 | A manifest's chunk hashes | `chunkHash(fileId, index)`, or the `registerManifest` calldata |
 | The full package item | The published package, or the calldata of `start`, `openRecord`, `createEdition` or `requestSeed` |
-| A move nonce spent by `consume`; a phase-configuration nonce spent by `openSale` | `isMoveNonceUsed`; `isConsentNonceUsed` |
+| A move nonce spent by `consume` | `isMoveNonceUsed` |
 | A contest's `priorOutcome` | `pendingChange(artistId)` |
 | Money arriving in a split wallet | The wallet's balance, or the token's `Transfer` events |
 | An auction's minimum next bid | `minimumBid(saleId)` |
 
 ### ERC-4906 refresh triggers
 
-6529 Stream and 6529 Editions emit ERC-4906 events for these changes ([RND-27][rnd]). The mint
-itself emits none: a new token has no cached metadata.
+6529 Stream and 6529 Stream Editions emit ERC-4906 events for these changes ([RND-27][rnd]).
+The mint itself emits none: a new token has no cached metadata.
 
-| Change | 6529 Stream emits | 6529 Editions emits |
+| Change | 6529 Stream emits | 6529 Stream Editions emits |
 | --- | --- | --- |
 | `openRecord`, `setRecord`, `finalize`, the `syncOnChain` that completes, `relicense`, `setRoyaltyRate`, `repinRenderer`, `addLocator`, `setFilePreference` | `MetadataUpdate(tokenId)` | `MetadataUpdate(tokenId)` when the master has an edition |
 | `setRoyaltyRate` on a master with an edition | (as above) | also `MetadataUpdate(editionId)` from the rate change itself |
@@ -679,7 +635,7 @@ and its `Transfer` to zero is the signal.
 ## Appendix: full topic0 values
 
 Every distinct event signature in the compiled ABIs of the deployed contracts on `main`, with
-structs expanded to tuples: 123 signatures.
+structs expanded to tuples: 121 signatures.
 
 <details>
 <summary>All topic0 values</summary>
@@ -696,7 +652,7 @@ structs expanded to tuples: 123 signatures.
 | `AuctionCancelled(uint256,bytes32)` | `0x49d6765465d68d3195fe23b8994c157a73a07cf3732ab9d094d1d5fe2f896880` | EnglishAuction |
 | `AuctionPaused(uint256,bytes32)` | `0xc5ebe7699a677eb954ea6988e36b511bab70d7e1ade4318cdafac5206db27f79` | EnglishAuction |
 | `AuctionResumed(uint256,uint64)` | `0xd6998361646975076830fd22deba76d0ebb862929692ac6a7c878737e9ab430d` | EnglishAuction |
-| `AuthorityUpdated(address)` | `0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad` | DependencyRegistry, ArtistRegistry, AssetAllowlist, EconomicsResolver, RevenueEscrow, Eip712CurationVerifier, PackageRegistry, StatementLog, VrfEntropyModule, Stream, WorkRecords, Editions, EnglishAuction, FixedPriceSale, DutchSale |
+| `AuthorityUpdated(address)` | `0x2f658b440c35314f52658ea8a740e05b284cdc84dc9ae01e891f21b8933e7cad` | DependencyRegistry, ArtistRegistry, AssetAllowlist, EconomicsResolver, RevenueEscrow, Eip712CurationVerifier, PackageRegistry, StatementLog, VrfEntropyModule, Stream, WorkRecords, Editions, EnglishAuction |
 | `Base64Attested(bytes32)` | `0xde611757905ea5f13eedb7ea4f8e87ddcbc29ce9429073a6a8b0cf12101e563e` | ContentStore |
 | `Base64Progress(bytes32,uint256)` | `0x02b839e82d6e5c2ec40d13754cce314a887150d421bd3eeb478b03567c686971` | ContentStore |
 | `BatchMetadataUpdate(uint256,uint256)` | `0x6bd5c950a8d8df17f772f5af37cb3655737899cbf903264b9795592da439661c` | Stream, Editions |
@@ -708,13 +664,12 @@ structs expanded to tuples: 123 signatures.
 | `ChangeExecuted(uint256,(address,address,bytes32,bytes32),(address,address,bytes32,bytes32))` | `0x8e7ef8fd2a03e7165c8094e3607108b18469eeed2ed508186ffefd3fa6e0488c` | ArtistRegistry |
 | `ChangeStaged(uint256,(uint8,(address,address,bytes32,bytes32),address,uint64,uint64,uint64,bytes32,bytes32,address[]))` | `0x132aeaf28d0224ddcdd5cd42f1f2019354ba9d972372922378473c32c4a15e94` | ArtistRegistry |
 | `ChunkWritten(bytes32,address,uint256)` | `0xa720bfe8fb78f1436f460c61e8c1a02410fc148201c63e8e07a8f54a82e5627a` | ContentStore |
-| `Claimed(address,address,address,uint256)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` | EnglishAuction, FixedPriceSale, DutchSale |
+| `Claimed(address,address,address,uint256)` | `0x913c992353dc81b7a8ba31496c484e9b6306bd2f6c509a649a38fdf5e1c953b2` | EnglishAuction |
 | `ClaimFailed(address,address,uint256,uint256,uint256,bytes)` | `0xdaabf7a59b4eba4a2596b828b3ea851d5c37ae2de75087cf6d2c2bdd159d7070` | ClaimRouter |
 | `CollectionCreated(uint256,string,bytes32)` | `0x8966ba956c90c682e7629fa1eff72812e2a5d54259d1e684285c761439588057` | Stream |
 | `CollectionPreferredKindSet(uint256,uint8,uint8)` | `0x57ab57edc511e68ceac9b1e49b80959a2aa7279eb6fa0a548dabba84f3f42d33` | WorkRecords |
 | `ConfigSet((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` | `0xc5843e7141f604b3110f98ce25e5557fe89b0f64cff0657e5cefc993f00511a9` | VrfEntropyModule |
 | `ConfigSet((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0xb208862316333bb2d7b1d4c78c1fe2307cb8fcc7de4ef87712dcbe581689fe52` | EnglishAuction |
-| `ConsentNonceRevoked(address,uint256)` | `0x45c9f7d3c7b12f421f76e0e922d55466eb2a46ac02d9c75fff9f4dce8ad2863c` | FixedPriceSale |
 | `ConsolidationSourceSet(address,address)` | `0x5b375cc73af25458e0e96a18adb844a77f4f149bbacebcad4489a1c1926a83fa` | ArtistRegistry |
 | `ContentClaimed(bytes32,bytes32)` | `0x7ee6542c3bb14fbd1d5f2469b3fe9a3bc0f12f90717d2df3d785ca1c5e34ca51` | PackageRegistry |
 | `ContentReleased(bytes32,bytes32,uint256)` | `0x0f5bb07b99770b114d938317e5ef610ece9a8fd796e204b663203cfcc17ac974` | PackageRegistry |
@@ -724,7 +679,7 @@ structs expanded to tuples: 123 signatures.
 | `ContractURIUpdated()` | `0xa5d4097edda6d87cb9329af83fb3712ef77eeb13738ffe43cc35a4ce305ad962` | Stream, Editions |
 | `CoordinatorSet(address,address,bytes32)` | `0x04092dc0da2aa8151ef027969128a1ab74240da2198b35dd3a2118b6043617ff` | VrfEntropyModule |
 | `Credited(address,address,address,uint256,uint256)` | `0x2a56c0b8b56559d2047c27729efa9ad0bba3ad9f14cbab37251e3008934dbdb0` | RevenueEscrow |
-| `Credited(address,address,uint256,uint256)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` | EnglishAuction, FixedPriceSale, DutchSale |
+| `Credited(address,address,uint256,uint256)` | `0xdd0ef63b44a932361273bab95d6e9bfcea5c7850c43844f540314e89899b970c` | EnglishAuction |
 | `DefaultCurrencyChanged(bytes32,address,address,uint64)` | `0x067a63345dbae6001939bc0d94813caee97a817779e5a2f7b1f80f88a1d12b98` | AssetAllowlist |
 | `DefaultLicenseSet(bytes32,(string,bytes32),(string,bytes32),uint64)` | `0x45967214951395edfaed913e180d66f46dc20f884611341e05657335090698b1` | EconomicsResolver |
 | `DefaultRendererSet(address,address,bytes32)` | `0xe2fab5e93f4326fb3c630fb4727e23f53f515c7850a15793f49130e5c0bcd320` | Stream |
@@ -733,12 +688,12 @@ structs expanded to tuples: 123 signatures.
 | `DependencyDeprecated(bytes32,bytes32)` | `0x1ec1691a0ca2ee98d4fbcf4e43b0bb0e0a14423b3295cb62e5b0e3ab1f57cae5` | DependencyRegistry |
 | `DependencyRegistered(bytes32,bytes32,bytes32)` | `0x5e1b96d09ad31255e23f0b0144c328663f9dcfd03600de24ba76bed97f415716` | DependencyRegistry |
 | `EconomicsSet(bytes32,(address,uint32,uint32),(address,uint32,uint32),uint64)` | `0x7b619472492d3cc46abfe0e47b5d8d9cda2fc6d6d600c6419416f2216b2ae7d3` | EconomicsResolver |
-| `EditionCreated(uint256,bytes32,(uint8,uint64,uint64,uint256,address,bytes32,bytes))` | `0xda49138a3be7741412623fed6cd5aae9b1427a9ce57bf6e86ab6f4f19956278a` | Editions |
+| `EditionCreated(uint256,bytes32,(uint32,address,bytes32,bytes))` | `0x3a4f273bace47a11e8e5de24d0acbc869a740c271e97cfecf75bd80c2cb740da` | Editions |
+| `EditionMinterBound(uint256,address)` | `0x35bb9c806dab754b3f2ba332514b28be18c8c25f824111ab5ca68be3d8fbbc93` | Editions |
 | `EditionLinked(uint256,address,uint256)` | `0xbab490db1fd479b73eef98c43ceeab4d158fbc6ac6a8dd914df5849d80a60b99` | Stream |
-| `EditionWindowOpened(uint256,uint64)` | `0x8aeb4e6b3d45cea1864fb80f49ac628381e5922f361ec3b6c443a43e2e816a51` | Editions |
-| `EIP712DomainChanged()` | `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31` | ArtistRegistry, ReleaseVerifier, Eip712CurationVerifier, PackageRegistry, StatementLog, WorkRecords, FixedPriceSale |
+| `EIP712DomainChanged()` | `0x0a6387c9ea3628b88a633bb4f3b151770f70085117a15f9bf3787cda53f13d31` | ArtistRegistry, ReleaseVerifier, Eip712CurationVerifier, PackageRegistry, StatementLog, WorkRecords |
 | `FederatedContractListed(uint256,address)` | `0x4004e60cf220a5ca24e2a0c0c4cb54e0759d8673a29f64b5c7afe580b01a51fc` | ArtistRegistry |
-| `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | EnglishAuction, FixedPriceSale, DutchSale |
+| `FederationRegistrySet(address,address)` | `0xb6b3a87c0596650c0cf0eb6eca374c8ddc3de178190eabdc7b67d09f2f3a431e` | EnglishAuction |
 | `FilePreferenceSet(uint256,bytes32,uint256,uint256)` | `0x700a41d4664d4e095541038a6ae434f80ea7c64a803f26a15c0731a550f59855` | WorkRecords |
 | `Flushed(address,address,address,uint256)` | `0xf5c342afbc0fd5497d66d2246a8208902c06a969755b7f7c415041a67d222caf` | RevenueEscrow |
 | `GovernanceConfigured(address,bytes32,bytes32,bytes32)` | `0xeb9f30f841bfc2bc2f6aebff0405fc98dd6e152e030304669b0dcb91e6668529` | GovernanceConfigurator |
@@ -749,6 +704,7 @@ structs expanded to tuples: 123 signatures.
 | `ManifestRegistered(bytes32,uint256,uint256,uint8,bytes32,string)` | `0x1642eab57d0dfde0dbc96816fadfb0ff51124ba555f539163ab21409a54c2d6f` | ContentStore |
 | `MetadataUpdate(uint256)` | `0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7` | Stream, Editions |
 | `MoveRevoked(uint256,uint256)` | `0x7cfb514923d27af9b82a4a821fe5a0bcd7ec408a9eb63cb78d0938a49b32e66e` | PackageRegistry |
+| `MuseumSet(address,address,uint64)` | `0x2a1c096078cbb1875dbcbf421f3c0f318e9bed496c866d5b4c3b234470ce684f` | EconomicsResolver |
 | `NonceRevoked(address,uint256)` | `0x22cd1acb7e7a306800a1b2c0ca9b0280187bbc00b7fbf55d38ad6cbf73082aec` | StatementLog |
 | `NonceRevoked(uint256,uint256)` | `0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7` | ArtistRegistry |
 | `NonceUsed(address,uint256,bool)` | `0x4efdf80e1ee210a464536b94135bd8ee19bc4cfe4f456dee6baa71426721a82b` | ReleaseVerifier |
@@ -761,8 +717,7 @@ structs expanded to tuples: 123 signatures.
 | `PackageAccepted(bytes32,uint256,address)` | `0x49639e3178859abe27d1fabf424f120e3144b903fbc59fb7a6d5666da877907d` | PackageRegistry |
 | `PackageRegistered(bytes32,bytes32,address,address)` | `0x0c1aff273f69c590d79d6ec4500fbec709412c9d6f5aca50140d6f1e72d8b821` | PackageRegistry |
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
-| `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction, FixedPriceSale, DutchSale |
-| `PhasesSet(uint256,(uint64,uint64,bytes32,uint32,bool,bool)[],bool)` | `0xcdf5b9f543b0511764e98f76b2ca8257b3977677cb045d0b1ae2dce37989c270` | FixedPriceSale |
+| `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction |
 | `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |
 | `PrimarySaleSettled(uint256)` | `0xbdf40a602018a6fb327f9f11eb8f24f164a3439dc6bb06c5cf2317ff92121cea` | Stream |
 | `RecordOpened(uint256,bytes32,bytes32)` | `0xaa2a63e255d7826a28755f26ec86b6a056cf997cc736f42a4b0af2b13dcb48b8` | WorkRecords |
@@ -781,9 +736,8 @@ structs expanded to tuples: 123 signatures.
 | `RoleSuspensionLifted(uint64,address)` | `0x4c939cf9582b90782641e9eb9bbd308c3522c902eb4f53ced7ed3fecede67020` | WorksAccessManager |
 | `RoyaltyRateChanged(uint256,uint32,uint32)` | `0x2114cdf53fc75abac90fa604432eefa896d1dd5272aa96c82c01f9b543f8cd53` | Stream, Editions |
 | `RoyaltyRateSet(uint256,uint32,uint32,bytes32)` | `0xe8cb89229984389ed515ad4468d11354162343e1f8a6428bec4ffc6c1f6b04a5` | WorkRecords |
-| `SaleClosed(uint256)` | `0xcb67f20f64495b30f15524c55f90201dd6571d6b5c19dac183d2aeb25315b2dc` | FixedPriceSale, DutchSale |
-| `SaleSettled(uint256,address,uint256,address,address,uint256,address,uint256,address,uint256,address,uint256)` | `0x16010625338e58299cd56c138533827e742865fde105b0c14272c707dd971b20` | EnglishAuction, FixedPriceSale, DutchSale |
-| `SaleStarted(uint256,address,uint256,bytes32,address,uint256,uint64,uint64)` | `0x36e87edc6a9768b0cbf62a7a844b6d147adee3701d9778029ef463c3cf2df954` | EnglishAuction, FixedPriceSale, DutchSale |
+| `SaleSettled(uint256,address,uint256,address,address,uint256,address,uint256,address,uint256,address,uint256)` | `0x16010625338e58299cd56c138533827e742865fde105b0c14272c707dd971b20` | EnglishAuction |
+| `SaleStarted(uint256,address,uint256,bytes32,address,uint256,uint64,uint64)` | `0x36e87edc6a9768b0cbf62a7a844b6d147adee3701d9778029ef463c3cf2df954` | EnglishAuction |
 | `SeedDelivered(bytes32,uint256,bytes32)` | `0x2a1a98d789f6210c2fb6c327204a52242c65b0c98a164f3fc8bc1c6b0479eb0d` | VrfEntropyModule |
 | `SeedLinked(bytes32,bytes32)` | `0xf4e9ac388df032c7aa58c87fffa65eea30eafa553518699548720ef2f6f64f42` | VrfEntropyModule |
 | `SeedRequested(bytes32,uint256)` | `0x13ccebb8a291fc5c387c182a5403c0aa3e322623fa2b250e1820cf8be4c55b2e` | VrfEntropyModule |
@@ -798,11 +752,11 @@ structs expanded to tuples: 123 signatures.
 | `TargetAdminDelayUpdated(address,uint32,uint48)` | `0xa56b76017453f399ec2327ba00375dbfb1fd070ff854341ad6191e6a2e2de19c` | WorksAccessManager |
 | `TargetClosed(address,bool)` | `0x90d4e7bb7e5d933792b3562e1741306f8be94837e1348dacef9b6f1df56eb138` | WorksAccessManager |
 | `TargetFunctionRoleUpdated(address,bytes4,uint64)` | `0x9ea6790c7dadfd01c9f8b9762b3682607af2c7e79e05a9f9fdf5580dde949151` | WorksAccessManager |
-| `TargetSet(address,bool)` | `0xd79dab7c1ad9be25388690df227462ca1accba2033dbdbd3011ff0eb30c25088` | EnglishAuction, FixedPriceSale, DutchSale |
+| `TargetSet(address,bool)` | `0xd79dab7c1ad9be25388690df227462ca1accba2033dbdbd3011ff0eb30c25088` | EnglishAuction |
 | `Transfer(address,address,uint256)` | `0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef` | Stream |
 | `TransferBatch(address,address,address,uint256[],uint256[])` | `0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb` | Editions |
 | `TransferSingle(address,address,address,uint256,uint256)` | `0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62` | Editions |
-| `Unpaused(address)` | `0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa` | EnglishAuction, FixedPriceSale, DutchSale |
+| `Unpaused(address)` | `0x5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa` | EnglishAuction |
 | `URI(string,uint256)` | `0x6bb7ff708619ba0610cba295a58592e0451dee2622938c8755667688daf3529b` | Editions |
 | `VerifierSet(address,address,bytes32)` | `0xa3fb3ba52a3f33a4d15ad313aff346c928cc1b2b39194ec69d2b7785d362a0ea` | PackageRegistry |
 | `WalletCreated(address,bytes32,bytes32,(uint256,address,uint32)[])` | `0x140f5f9969cb7742e82b483caead38e16ee71968d0c0147939e24b8cc251372f` | SplitFactory |
@@ -823,8 +777,7 @@ Not deployed in v1 ([`IFederationRegistry`](../../src/interfaces/IFederationRegi
 ## References
 
 - Code: the contracts linked in each section; the shared adapter surface in
-  [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) and
-  [`MintSaleBase.sol`](../../src/sales/MintSaleBase.sol);
+  [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol);
   [OpenZeppelin `AccessManager` v5.7.0](https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v5.7.0/contracts/access/manager/AccessManager.sol).
 - Module READMEs: [stream](../../src/stream/README.md), [sales](../../src/sales/README.md),
   [editions](../../src/editions/README.md), [records](../../src/records/README.md),

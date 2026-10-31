@@ -57,8 +57,8 @@ struct Payment {
 
 /// @notice What a token contract tells a sale adapter about a primary sale.
 /// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
-///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Editions' `mint`
-///      sets only the sale kind). `currency` is the item's
+///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Stream Editions'
+///      `mint` sets only the sale kind). `currency` is the item's
 ///      or edition's currency: `CURRENCY_ETH` or an allowlisted ERC-20; `CURRENCY_DEFAULT` only
 ///      with a zero `price` (a non-zero price must name its currency). The adapter resolves
 ///      `CURRENCY_DEFAULT` (`IEconomicsResolver.resolveCurrency`) and locks the currency when the
@@ -84,8 +84,8 @@ struct PrimaryTerms {
 }
 
 /// @notice The terms a sale adapter locks for one sale, in the same shape in every adapter.
-/// @dev `id` is the token ID (an edition ID for 6529 Editions). `price` is the package unit price
-///      (fixed price), the starting price (Dutch) or zero (English auction).
+/// @dev `id` is the token ID (an edition ID for 6529 Stream Editions). `price` is the package unit
+///      price (fixed price), the starting price (Dutch) or zero (English auction).
 struct LockedTerms {
     address token;
     uint256 id;

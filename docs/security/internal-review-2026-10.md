@@ -389,7 +389,8 @@ owner: a network that abused the recovery path would also freeze the real artist
 guardian veto, a contest decided by the TDH vote, or the lapse.
 
 **Regression tests.** `test/integration/RecoveryRestraint.t.sol` (14 tests on the real
-deployment, including `test_RestrainedKeyCannotManageTheEditionSale`,
+deployment, including test_RestrainedKeyCannotManageTheEditionSale, removed with the
+fixed-price and Dutch adapters by ADR 0005 and kept at `v1.0.0-rc.1`,
 `test_NobodyStartsAnUnmintedWorkDuringTheNotice`, `test_RestrainedKeyCannotAmendTheRecord`,
 `test_NoBidAuctionRunningAtStagingWaitsForTheOutcome`,
 `test_PreSignedAcceptanceRefusedWhileRestrained`,
@@ -515,12 +516,13 @@ runbook rule not to overlap halts): an adapter pause during a deprecation counts
 schedule moves back by the overlap.
 
 **Regression tests.** `test/sales/SaleSchedulesUnderHalts.t.sol` (10 tests, including
-`test_Pause_StopsTheDutchCurve`,
-`test_Pause_KeepsAnAllowlistPhaseOpenForItsRemainingLength`,
-`test_DeprecateAsset_StopsTheDutchCurve`,
-`test_ScheduleDelay_OverlappingHaltsCountTwice_DutchCurveRewinds`,
-`test_ScheduleDelay_ARunningDeprecationMovesViewsAndTheCloseRule`,
-`test_ScheduleDelay_AHaltBeforeTheStartMovesTheDutchStart`).
+test_Pause_StopsTheDutchCurve,
+test_Pause_KeepsAnAllowlistPhaseOpenForItsRemainingLength,
+test_DeprecateAsset_StopsTheDutchCurve,
+test_ScheduleDelay_OverlappingHaltsCountTwice_DutchCurveRewinds,
+test_ScheduleDelay_ARunningDeprecationMovesViewsAndTheCloseRule,
+test_ScheduleDelay_AHaltBeforeTheStartMovesTheDutchStart). The suite was removed with the
+adapters by ADR 0005 and is at `v1.0.0-rc.1`.
 
 **Fix review: approve with nits.** The Dutch price resumes where it stopped and the allowlist phase
 stays open. The reviewer found the overlapping-halt double count; no exact fix exists with
@@ -846,7 +848,7 @@ are not part of the repository.
 | MONEY-2 | `test/integration/EscrowRecovery.t.sol`, `test/economics/RevenueEscrow.t.sol` |
 | MONEY-3 = CALLS-4 | `test/economics/ClaimRouter.t.sol` (`test_ContinueMode*`, `test_ShortfallRevertsOnlyBelowTheCeiling`) |
 | MONEY-4 | `test/integration/RecipientValidation.t.sol` |
-| CALLS-1 | `test/integration/RecipientValidation.t.sol`, `test/economics/EconomicsResolver.t.sol`, `test_Start_RefusesTheEscrowAsSellerOrFeeRecipient` in the auction suite and `test_OpenSale_RefusesTheEscrowAsSellerOrFeeRecipient` in the fixed-price and Dutch suites |
+| CALLS-1 | `test/integration/RecipientValidation.t.sol`, `test/economics/EconomicsResolver.t.sol`, `test_Start_RefusesTheEscrowAsSellerOrFeeRecipient` in the auction suite and test_OpenSale_RefusesTheEscrowAsSellerOrFeeRecipient in the fixed-price and Dutch suites (removed by ADR 0005; at `v1.0.0-rc.1`) |
 | CALLS-2 = DEPS-2 | `test/entropy/VrfEntropyModule.t.sol` (`test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`) |
 | CALLS-5 | `test/sales/auction/AuctionCustody.t.sol` |
 | CONTENT-1 | `test/integration/TokenUriBudget.t.sol` |
@@ -856,7 +858,7 @@ are not part of the repository.
 | DEPS-1 | `test/entropy/VrfEntropyModule.t.sol` (`test_Content_*`), `test/integration/VrfWork.t.sol`, `test/entropy/VrfEntropyInvariant.t.sol` |
 | DEPS-5 | `test/entropy/VrfEntropyManaged.t.sol` |
 | DEPS-6 | `test/curation/PackageRegistry.t.sol`, `test/entropy/VrfEntropyModule.t.sol`, `test/records/StatementLog.t.sol`, `test/identity/ArtistRegistry.t.sol`, `test/integration/RecoveryRestraint.t.sol`, `test/integration/RendererCodePin.t.sol` (the DEPS-6 cases use `vm.etch`) |
-| QUALITY-7 | `test/sales/fixed/FixedPricePayments.t.sol`, `test/sales/fixed/FixedPriceSale.t.sol` (`test_Pause_RepeatedPauseOrUnpauseReverts`) |
+| QUALITY-7 | `test/sales/fixed/FixedPricePayments.t.sol`, `test/sales/fixed/FixedPriceSale.t.sol` (test_Pause_RepeatedPauseOrUnpauseReverts); both removed by ADR 0005, at `v1.0.0-rc.1` |
 
 ### Fix reviews
 

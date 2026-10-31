@@ -22,7 +22,7 @@ Fuzz tests run 256 times (`[profile.default.fuzz] runs`). No `/// forge-config:`
   every call of every run) unless its Test cell says **handler check** (an assertion inside a
   handler action, failing the campaign through `fail_on_revert`) or **after-campaign** (an
   `afterInvariant` hook, checked at the end of every run).
-- **Non-vacuity.** `test_HandlerReachesEveryPath` (economics, Dutch, fixed price),
+- **Non-vacuity.** `test_HandlerReachesEveryPath` (economics),
   `AuctionHandlerCoverage.test_EveryPathRuns`, `AuctionHaltsCoverage.test_HaltPathsRun` and
   `ArtistRegistryInvariantTest.test_HandlerReachesContestResolveAndLapse` replay
   campaign-shaped sequences and assert that every path the invariants rely on executes.
@@ -47,20 +47,21 @@ three collections.
 | INV-STR-7 | The minting adapter cannot burn a token whose primary sale is marked settled. | handler check: `burn` (`violations`) | as named |
 | INV-STR-8 | A finalized work keeps its record file ID and renderer pin (returned by `rendererOf`), and `setRecord` and `finalize` on it revert. | `invariant_finalizedRecordsImmutable`; handler check: `attackFinalized` | `finalize`, `setRecord`, `attackFinalized`, `swapRenderer`, `addLocator` |
 
-## 6529 Editions
+## 6529 Stream Editions
 
 [`Editions.invariant.t.sol`](../../test/editions/Editions.invariant.t.sol), handler
 [`EditionsHandler`](../../test/editions/EditionsHandler.sol). Real `Editions`; Stream, the package
-registry, economics, the artist registry, work records, the renderer and both sale adapters
-(`EditionsAdapterMock`) are mocks. Editions: FIXED of 20 at fixed
-price; uncapped OPEN with a one-day Dutch window; OPEN of 30 with a 12-hour fixed-price window.
+registry, economics, the artist registry, work records, the renderer and the sale adapters
+(`EditionsAdapterMock`) are mocks. Three editions, capped at 20, uncapped and capped at 30, are
+minted through two admitted adapters of the edition's sale kind and probed by an admitted
+adapter of another kind. INV-ED-3, the OPEN window, left with the edition formats (ADR 0005).
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-ED-1 | A mint succeeds only within the size, before the end of an OPEN window that starts at the first mint, from an admitted minter (else `NotAdmittedMinter`) of the matching sale kind (else `SaleKindMismatch`). | `invariant_MintsFollowEditionTerms` | `buy`, `buyWithWrongAdapter`, `mintAsOutsider`, `warp` |
-| INV-ED-2 | `edition(id).minted` counts every copy ever minted and never exceeds a nonzero size, and balances sum to minted minus burned. | `invariant_SupplyAccounting` | `buy`, `burnFromCustody`, `transfer` |
-| INV-ED-3 | An OPEN edition's `windowStart` is its first mint's time and never moves; a FIXED edition's is zero. | `invariant_WindowStartsOnce` | `buy`, `warp` |
+| INV-ED-1 | A mint succeeds only within the creator's cap, from an admitted minter (else `NotAdmittedMinter`) of the edition's sale kind (else `SaleKindMismatch`) that is the edition's bound adapter or the first to mint it (else `MinterMismatch`). | `invariant_MintsFollowEditionTerms` | `buy`, `buyWithWrongKind`, `mintAsOutsider`, `warp` |
+| INV-ED-2 | `edition(id).minted` counts every copy ever minted and never exceeds a nonzero cap, and balances sum to minted minus burned. | `invariant_SupplyAccounting` | `buy`, `burnFromCustody`, `transfer` |
 | INV-ED-4 | Through repeated `createEdition` calls and resales of the master, neither the link (`masterOf`: Stream, master ID, content hash; `Stream.editionOf`: Editions, edition ID) nor `royaltyInfo`'s receiver and amount change. | `invariant_LinkAndRoyaltyFixed` | `recreate`, `moveMaster` |
+| INV-ED-5 | An edition is bound to the first adapter that minted it and never rebinds; an edition never minted has no bound adapter. | `invariant_BoundToTheFirstMinter` | `buy` |
 
 ## Curation
 
@@ -139,40 +140,13 @@ suite's `afterInvariant` drives every sale to an end after each run.
 | INV-AUC-8 | A bid extends the end to at least `now + the locked window`; settlement delivers the token (or leaves it pending) to the high bid's recipient, or the artist if none; a second dispute pause reverts (`PauseExhausted`); a withdrawal leaves the sale paused; `resume` or `unpause` within 48 hours (`Roles.STANDARD`) of the pause reverts (`UnpauseTooEarly`, review finding GOV-5). | handler check: `bid`, `settle`, `pause`, `pauseAndWithdraw`, `resume`, `toggleStartPause` | as named |
 | INV-AUC-9 | An unended sale refuses `settle`; a deprecated currency blocks settlement for 30 days, then `settle` credits the standing bid back to its bidder and gives the work to its artist; re-admission in the last window or after the end reopens the sale for the longer of the governed duration and the locked window, keeping the bid. | handler check: `AuctionHaltsHandler.settle`, `_freezeExit` | `settle`, `toggleCurrency` |
 
-## Fixed-price and Dutch sales
+## Edition sales
 
-Real `FixedPriceSale` and `DutchSale`; mocks from [`SaleFixture`](../../test/helpers/SaleFixture.sol)
-for the edition (`MockEditionTarget`), escrow (`MockRevenueEscrow`), allowlist
-(`MockAssetAllowlist`), economics resolver and Permit2. The handlers make only valid purchases
-(plus two attacks for fixed price) while the seller wallet randomly refuses ETH or is blocked
-by the token, so payouts reach the escrow. The fee share is 25,000 of 100,000.
+The fixed-price and Dutch campaigns (INV-SAL-1 to INV-SAL-11) left with their adapters
+([ADR 0005](../adr/0005-stream-editions-auction.md)); they are at the `v1.0.0-rc.1` tag. The
+edition auction's campaigns come with its adapter.
 
-**Dutch:** [`DutchInvariant.t.sol`](../../test/sales/dutch/DutchInvariant.t.sol), handler
-`DutchHandler` in the same file (edition size 40; ETH buyers overpay at random).
-
-| ID | Invariant | Test | Handler actions |
-| --- | --- | --- | --- |
-| INV-SAL-1 | The adapter's ETH balance equals the buyers' claimable ETH credits. | `invariant_CreditsAreFullyBacked` | `buyEth`, `claim` |
-| INV-SAL-2 | Seller and network ETH plus escrow credits equal the total charged, all ETH sent equals that plus the adapter's balance and claims, and the network's part equals the summed fees. | `invariant_EthIsConserved` | `buyEth`, `claim`, `setWallet` |
-| INV-SAL-3 | The adapter holds and credits no ERC-20, seller and network tokens plus escrow credits equal the total charged, and the network's part equals the summed fees. | `invariant_TokenChargesAreExactAndNeverKept` | `buyToken`, `setWallet` |
-| INV-SAL-4 | Copies minted equal the model and never exceed the size. | `invariant_MintedWithinSupply` | `buyEth`, `buyToken` |
-| INV-SAL-5 | The current price never rises between observations. | `invariant_PriceNeverRises` | `warp` and purchases |
-
-**Fixed price:** [`FixedPriceInvariant.t.sol`](../../test/sales/fixed/FixedPriceInvariant.t.sol),
-handler `FixedPriceHandler` in the same file (edition size 16; a recipient-keyed priced
-allowlist phase, a payer-keyed phase, a public phase capped at 3, and an ERC-20 sale capped at
-5, paid directly or by relayed Permit2).
-
-| ID | Invariant | Test | Handler actions |
-| --- | --- | --- | --- |
-| INV-SAL-6 | No purchase beyond a leaf's remaining cap succeeds, and no wallet mints to itself with another wallet's leaf. | `invariant_NoOverCapOrForeignLeafPurchaseSucceeds` | `attackOverCap`, `attackForeignLeaf` |
-| INV-SAL-7 | The adapter holds no ETH, ETH paid equals seller and network balances plus escrow credits, and the escrow's ETH equals its `totalOwed`. | `invariant_EthIsPaidOrEscrowedNeverKept` | ETH purchases, `setWallet` |
-| INV-SAL-8 | INV-SAL-7 holds for the ERC-20. | `invariant_TokenIsPaidOrEscrowedNeverKept` | `buyToken`, `setWallet` |
-| INV-SAL-9 | The network's ETH and token receipts, paid or escrowed, equal the sum of each purchase's `floor(total × 25,000 / 100,000)`. | `invariant_FeesAreExact` | purchases |
-| INV-SAL-10 | Copies minted equal the model and the holders' balances and never exceed the size. | `invariant_MintedWithinSupplyAndAccounted` | purchases |
-| INV-SAL-11 | `purchased(token, id, phase, wallet)` stays within the leaf cap (phases 0 and 1), the public cap (3) or the ERC-20 sale's cap (5). | `invariant_PerWalletCapsHold` | purchases |
-
-### Stream's interned terms
+## Stream's interned terms
 
 [`StreamTermsInvariant.t.sol`](../../test/stream/StreamTermsInvariant.t.sol), handler
 `TermsHandler` in the same file. Real `Stream` and `SplitFactory`; mocks as above, two admitted
@@ -278,8 +252,6 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-ECO-8 | The royalty wallet's shares add up to 100,000. | [`EconomicsResolver.t.sol`](../../test/economics/EconomicsResolver.t.sol) `testFuzz_RoyaltySplitSharesAddUp` |
 | PROP-ECO-9 | A predicted wallet address equals the deployed one. | [`SplitFactory.t.sol`](../../test/economics/SplitFactory.t.sol) `testFuzz_PredictionMatchesDeployment` |
 | PROP-AUC-1 | A settlement splits the price exactly between seller and network, with the fee the `mulDiv` floor, the bid step the `mulDiv` ceiling, and the increment the larger of the share and the floor. | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol) `testFuzz_Settle_SplitsExactly`, `testFuzz_Bid_IncrementIsMaxOfShareAndFloor`, `testFuzz_FeeMatchesMulDivFloor`, `testFuzz_StepMatchesMulDivCeil` |
-| PROP-SAL-1 | The Dutch price never rises over time, stays within its bounds and rounds toward the seller. | [`DutchPricing.t.sol`](../../test/sales/dutch/DutchPricing.t.sol) `testFuzz_PriceNeverRisesOverTime`, `testFuzz_PriceStaysWithinItsBounds`, `testFuzz_LinearRoundsTowardTheSeller` |
-| PROP-SAL-2 | A public phase's wallet cap is never exceeded. | [`FixedPriceSale.t.sol`](../../test/sales/fixed/FixedPriceSale.t.sol) `testFuzz_PublicWalletCapIsNeverExceeded` |
 | PROP-STR-1 | The royalty receiver is the factory's wallet, the amount matches `mulDiv`, and `royaltyInfo` never returns zero for lack of gas. | [`Stream.t.sol`](../../test/stream/Stream.t.sol) `testFuzz_royaltyInfo_isTheFactoryWallet`, `testFuzz_royaltyInfo_matchesMulDiv`, `testFuzz_royaltyInfo_neverZeroForLackOfGas` |
 
 ### Single use, uniqueness and authorization
@@ -289,7 +261,7 @@ Properties with no campaign of their own, or tested more directly outside one: b
 | PROP-CUR-1 | An item consumes once, even across packages that list it, uniqueness keys on the declared content hash, and an item outside the package is refused. | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol) `test_consume_revertsDoubleConsume`, `test_consume_itemIsSingleUseAcrossPackages`, `test_consume_contentUniquenessKeysOnContentHash`, `test_consume_revertsItemNotInPackage` |
 | PROP-CUR-2 | Merkle proofs verify, a foreign item is rejected, and revoking one move nonce leaves the others untouched. | `PackageRegistry.t.sol` `testFuzz_merkle_proofs`, `testFuzz_merkle_foreignItemRejected`, `testFuzz_revokeMove_bitmapIsolation` |
 | PROP-CUR-3 | Only active signers' attestations count, and arbitrary signature bytes are never approved. | [`Eip712CurationVerifier.t.sol`](../../test/curation/Eip712CurationVerifier.t.sol) `testFuzz_isApproved_onlyActiveSignersCount`, `testFuzz_isApproved_neverRevertsOnGarbage` |
-| PROP-ED-1 | An edition never mints beyond its size, and `createEdition` refuses a tampered item. | [`Editions.t.sol`](../../test/editions/Editions.t.sol) `testFuzz_Mint_NeverExceedsSize`, `testFuzz_CreateEdition_RefusesTamperedItem` |
+| PROP-ED-1 | An edition never mints beyond its creator's cap, and `createEdition` refuses a tampered item. | [`Editions.t.sol`](../../test/editions/Editions.t.sol) `testFuzz_Mint_NeverExceedsTheCap`, `testFuzz_CreateEdition_RefusesTamperedItem` |
 | PROP-ENT-1 | The first of many deliveries wins, only the coordinator delivers, an unissued request ID never delivers, and non-VRF items and items outside an approved package are always refused. | [`VrfEntropyFuzz.t.sol`](../../test/entropy/VrfEntropyFuzz.t.sol) `testFuzz_TheFirstDeliveryOfManyRequestsWins`, `testFuzz_OnlyTheCoordinatorMayFulfill`, `testFuzz_UnissuedRequestIdsNeverDeliver`, `testFuzz_NonVrfItemsAreAlwaysRefused`, `testFuzz_OnlyItemsOfAnApprovedPackageCanBeRequested` |
 | PROP-GV-1 | Nobody cancels the operation that revokes their own role. | [`GuardianCancel.t.sol`](../../test/governance/GuardianCancel.t.sol) `testFuzz_NobodyCancelsTheirOwnRevocation` |
 | PROP-GV-2 | A raise-only parameter moves by at most 2× per step and never above its ceiling, for any sequence of raises. | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol) `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded` |
@@ -323,7 +295,7 @@ Figures: [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table). Rul
 | PROP-GAS-4 | The harness's cold-account correction is exact (a `start` from a fully cold state equals the corrected figure after warming every account), adds nothing for accounts already cold, and refuses storage it does not cool. | [`GasHarness.t.sol`](../../test/integration/GasHarness.t.sol) `test_TheColdAccountCorrectionIsExact`, `test_NothingIsAddedForAccountsAlreadyCold`, `test_RequireCooledRefusesStorageItDoesNotCool` |
 | PROP-GAS-5 | The state-growth counter counts a slot once, ignores overwrites, zero-to-zero, reverted writes, out-of-gas and `INVALID` frames and transient storage, and counts `CREATE` and ETH sent to a fresh account or an empty precompile as new accounts. | [`StateGrowth.t.sol`](../../test/helpers/StateGrowth.t.sol) (24 tests) |
 | PROP-GAS-6 | With every record, media and locator cap filled on the real stack, Stream's `tokenURI` and Editions' `uri` cost at most 8M Prague gas (`TOKEN_URI_BUDGET`) and create no state. | [`TokenUriBudget.t.sol`](../../test/integration/TokenUriBudget.t.sol) `test_Budget_*`; `GasReport.t.sol` `test_Gas_TokenURIBySize`; [`RendererGas.t.sol`](../../test/content/renderer/RendererGas.t.sol) `RendererGasTest`, `RendererGasBudgetTest` |
-| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest split wallet; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; `openSale` and purchases; settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`FixedPriceGasCap.t.sol`](../../test/sales/fixed/FixedPriceGasCap.t.sol), [`DutchGasCap.t.sol`](../../test/sales/dutch/DutchGasCap.t.sol), [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
+| PROP-GAS-7 | Worst-case bounded inputs fit the EIP-7825 cap of 16,777,216 gas in Prague gas, intrinsic and calldata included: claim batches and the largest split wallet; mint, `openRecord`, relicense with 16 consents, the longest locator, the preferred-locator scan and `syncOnChain`; `consume` and `registerPackage`; `createEdition`; settlement with every fallback; `stageChange`, `stageOverride` and `refreshStanding` (under half the cap); manifest registration and attestation at `MAX_CHUNKS`; genesis `configure`. | [`GasCap.t.sol`](../../test/economics/GasCap.t.sol), [`StreamTxCap.t.sol`](../../test/stream/StreamTxCap.t.sol), [`PackageRegistryGas.t.sol`](../../test/curation/PackageRegistryGas.t.sol), `Editions.t.sol` `test_Gas_CreateEditionWorstCaseFitsTxCap`, [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol) `test_SettleGas_FitsTheTransactionCap`, [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol) `test_SettleWorstCaseFitsTheFusakaCap`, [`ArtistRegistryStanding.t.sol`](../../test/identity/ArtistRegistryStanding.t.sol) `test_WorstCase_*`, `ContentStore.t.sol` `test_RegisterManifest_AtMaxChunksFitsTheTransactionGasCap`, `Base64Attest.t.sol` `test_Attest_AtMaxChunksEveryCallFitsTheTransactionGasCap`, [`Genesis.t.sol`](../../test/integration/Genesis.t.sol) `test_GenesisConfigureFitsTheTransactionCap`, [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap` |
 | PROP-GAS-8 | The VRF callback creates no storage slot and, repriced as ADR 0004 models Glamsterdam, uses at most half of `MIN_CALLBACK_GAS` (100,000). | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol) `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam` |
 
 ## Gaps
@@ -332,14 +304,8 @@ What no stateful campaign covers yet. Suites on the real, wired stack are being 
 [PR #62](https://github.com/6529-Collections/6529-works/pull/62); coverage, mutation testing
 and Halmos proofs are in [Testing](../testing/README.md).
 
-- **The real escrow under fixed-price and Dutch sales.** Those campaigns use
-  `MockRevenueEscrow`, so INV-SAL-2, INV-SAL-3, INV-SAL-7 and INV-SAL-8 check the mock's side
-  (the real `ClaimRouter` and `RevenueEscrow` run in the economics and auction campaigns).
 - **`AssetAllowlist`** runs for real only in the auction halts campaign; **`EconomicsResolver`**
   is always mocked.
-- **Sale halts.** The fixed-price and Dutch campaigns never pause, deprecate a currency or
-  reopen a sale; the halt clock (`scheduleDelay`) and overlapping halts have unit tests only
-  ([`SaleSchedulesUnderHalts.t.sol`](../../test/sales/SaleSchedulesUnderHalts.t.sol)).
 - **`WorkRecords`** runs only inside the Stream campaign, which never drives `relicense`,
   `repinRenderer`, `syncOnChain` or the preferred-location settings.
 - **`ContentStore`, `DependencyRegistry` and `Renderer`**: fuzz and unit tests only

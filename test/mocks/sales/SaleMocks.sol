@@ -25,8 +25,8 @@ import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.s
 ///         Permit2 that reproduces the canonical hashing, nonces and checks, an EIP-2612 token,
 ///         and hostile wallets and receivers.
 
-/// @dev An `IMintTarget` shaped like 6529 Editions: per-ID terms and size, a minter allowlist,
-///      the adapter's `saleKind()` check, and real ERC-1155 receiver checks on mint.
+/// @dev An `IMintTarget` shaped like 6529 Stream Editions: per-ID terms and size, a minter
+///      allowlist, the adapter's `saleKind()` check, and real ERC-1155 receiver checks on mint.
 contract MockEditionTarget is ERC1155, IMintTarget {
     error KindMismatch(bytes32 adapterKind, bytes32 termsKind);
     error EditionUnavailable(uint256 id);

@@ -16,7 +16,9 @@ mutants; this file is the reviewed reference, and
   (`Dependency`), `InvalidMintRequest` split into an error per Stream rule, errors declared in
   the interfaces, and `JsonEscape.scriptText` removed. The tests written for the baseline were
   checked against 054442d's mutants and carried onto the current code; the weekly run measures the
-  current code against the floors.
+  current code against the floors. ADR 0005 later removed `DutchPricing`, `DutchSale`,
+  `FixedPriceSale` and `MintSaleBase`; their rows below are kept as measured, and their floors
+  left [`tools/mutation-floors.json`](../../tools/mutation-floors.json) with them.
 - **Tools.** `slither-mutate` from slither-analyzer 0.11.6 through `tools/mutation.py` (its
   fixed ROR and LIR, and the CONST rule), Foundry 1.7.1 and solc 0.8.37. Tests ran under the
   `lite` profile.
@@ -440,9 +442,9 @@ Each survivor is one of:
 | 257 | AOR | `memory t = new bytes[](MAX_ARTISTS + 8);` to `memory t = new bytes[](MAX_ARTISTS * 8);` | Equivalent | a larger array of traits; only the first `n` are used (gas only) |
 | 261 | ROR | `if (state == RecordState.Ready) {` to `if (state >= RecordState.Ready) {` | Equivalent | `Ready` is the last record state, so `>= Ready` is `== Ready` |
 | 266 | ROR | `if (state != RecordState.Ready) {` to `if (state < RecordState.Ready) {` | Equivalent | `Ready` is the last record state, so `< Ready` is `!= Ready` |
-| 285 | ROR | `if (ok && ret.length == 32 && abi.decode(ret, (uint256` to `if (ok && ret.length <= 32 && abi.decode(ret, (uint256` | Defensive | only 6529 Stream and 6529 Editions call the renderer with themselves as the token, and both answer `supportsInterface` with one word of 0 or 1 (the read copies at most 32 bytes, so `>= 32` is also `== 32`) |
+| 285 | ROR | `if (ok && ret.length == 32 && abi.decode(ret, (uint256` to `if (ok && ret.length <= 32 && abi.decode(ret, (uint256` | Defensive | only 6529 Stream and 6529 Stream Editions call the renderer with themselves as the token, and both answer `supportsInterface` with one word of 0 or 1 (the read copies at most 32 bytes, so `>= 32` is also `== 32`) |
 | 285 | ROR | `if (ok && ret.length == 32 && abi.decode(ret, (uint256` to `if (ok && ret.length >= 32 && abi.decode(ret, (uint256` | Equivalent | the read copies at most 32 bytes, so `>= 32` is `== 32` |
-| 285 | ROR | `&& abi.decode(ret, (uint256)) == 1) {` to `&& abi.decode(ret, (uint256)) >= 1) {` | Defensive | only 6529 Stream and 6529 Editions call the renderer with themselves as the token, and both answer `supportsInterface` with one word of 0 or 1 (the read copies at most 32 bytes, so `>= 32` is also `== 32`) |
+| 285 | ROR | `&& abi.decode(ret, (uint256)) == 1) {` to `&& abi.decode(ret, (uint256)) >= 1) {` | Defensive | only 6529 Stream and 6529 Stream Editions call the renderer with themselves as the token, and both answer `supportsInterface` with one word of 0 or 1 (the read copies at most 32 bytes, so `>= 32` is also `== 32`) |
 | 301 | MIA | `if (c.core.collectionId != 0) {` to `if (true) {` | Equivalent | the collection is read but used only when the work has one |
 | 301 | ROR | `if (c.core.collectionId != 0) {` to `if (c.core.collectionId > 0) {` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |
 | 334 | ROR | `c.media.length == 0 \|\| c.media[0].role != FileRole.PRIMARY` to `c.media.length <= 0 \|\| c.media[0].role != FileRole.PRIMARY` | Equivalent | unsigned: `== 0` and `<= 0` (or `!= 0` and `> 0`) are the same test |

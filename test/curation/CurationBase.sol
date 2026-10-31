@@ -190,7 +190,7 @@ abstract contract CurationBase is CurationHelpers {
         verifier = new Eip712CurationVerifier(address(manager));
         registry = _newRegistry();
         artists.bindPackageRegistry(address(registry));
-        // Stand-ins for the bound 6529 Stream and 6529 Editions, with their ERC-165 answers.
+        // Stand-ins for the bound 6529 Stream and 6529 Stream Editions, with their ERC-165 answers.
         stream = address(new MockBoundCaller(type(IStream).interfaceId));
         editions = address(new MockBoundCaller(type(IEditions).interfaceId));
 

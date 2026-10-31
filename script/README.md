@@ -14,8 +14,10 @@ code hashes with the record, but it does not rebuild the bytecode.
 launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deployments/11155111/README.md).
 The library deploys every v1 contract: identity, curation, economics, content and the
 renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
-Editions, and the three sale adapters. No stand-in remains. A Sepolia run needs the owner's
-accounts and keys (steps 1 and 2), and the inputs below.
+Stream Editions, and the English auction. The edition auction of ADR 0005 is deployed and
+admitted once it lands; until then genesis admits no edition sale adapter. No stand-in
+remains. A Sepolia run needs the owner's accounts and keys (steps 1 and 2), and the inputs
+below.
 
 | File | Purpose |
 | --- | --- |
@@ -49,7 +51,7 @@ VerifyV1.check(d, cfg, calls);
 Worked examples:
 - [`test/deploy/DeployV1.t.sol`](../test/deploy/DeployV1.t.sol): the library;
 - [`test/deploy/GenesisFlows.t.sol`](../test/deploy/GenesisFlows.t.sol): a curated 6529 Stream
-  work auctioned, and a 6529 Editions gift opened, on the deployed system;
+  work priced in `CURRENCY_DEFAULT` auctioned from the genesis block, on the deployed system;
 - [`test/deploy/DeployScript.t.sol`](../test/deploy/DeployScript.t.sol): the scripts.
 
 ## Local dry run (anvil)
@@ -134,14 +136,9 @@ independent of the admins they check:
   [Operating procedures](#operating-procedures).
 - **Separate pause and unpause.** The guardians hold PAUSER and the hot admin holds UNPAUSER;
   the configuration refuses one account holding both. A pause by a guardian is undone only by
-  the admins, and no earlier than 48 hours after it (the adapters, `resume` and `cancel` count
+  the admins, and no earlier than 48 hours after it (`unpause`, `resume` and `cancel` count
   the delay from the pause; re-admitting a deprecated currency waits 14 days from the
   deprecation).
-- **Do not overlap halts.** Do not pause the fixed-price or Dutch adapter while a currency is
-  deprecated. The sale clocks add both halts, so the overlap counts twice and the affected
-  schedules rewind (a Dutch curve climbs back, an ended phase reopens). If an adapter must be
-  paused during a deprecation, ask the creators (or PLATFORM, for a sale it opened alone) to
-  close and reopen the affected sales once both halts end.
 - **Deprecating an auction's currency.** A deprecation freezes the live auctions in that
   currency: nothing settles, and their high bidders may withdraw. To keep them alive,
   re-admit the currency between day 14 and day 30 after the deprecation (`admitAsset` is in
@@ -387,8 +384,6 @@ Genesis sets them. The wiring makes ETH (`address(0)`) the revision-0 default fo
 therefore start in the genesis block:
 
 - `EnglishAuction.start` reads the `PRODUCT_STREAM` default.
-- The fixed-price and Dutch sales resolve the default through
-  `EconomicsResolver.resolveCurrency`.
 
 Verify reads every default back at the revision genesis produced.
 
@@ -519,7 +514,7 @@ The record is only an index; each check is made against the chain or the committ
 - the configurator's own `verify` (roles, delays and selector map), no role left with the
   configurator, and every target's authority;
 - every wired getter and default currency, the epoch-0 manifest, and PLATFORM's immediate
-  path into the sale adapters;
+  path into `WorkRecords.addLocator`;
 - off anvil, the entropy module is its VRF subscription's only consumer, read from its
   current coordinator; on mainnet the subscription's owner is the hot admin Safe. A read
   that fails (for example `InvalidSubscription`) fails the run; only off mainnet, a

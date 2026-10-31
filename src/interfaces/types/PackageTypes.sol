@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import { ISplitWallet } from "../../economics/interfaces/ISplitWallet.sol";
 
 /// @notice What a package item mints on 6529 Stream (ADR 0001 sections 3 and 6).
-/// @dev ORIGINAL is a 1/1. EDITION_MASTER is a 1/1 that also anchors exactly one 6529 Editions
-///      edition, created from the same item once the master's sale has settled.
+/// @dev ORIGINAL is a 1/1. EDITION_MASTER is a 1/1 that also anchors exactly one 6529 Stream
+///      Editions edition, created from the same item once the master's sale has settled.
 enum ItemKind {
     ORIGINAL,
     EDITION_MASTER

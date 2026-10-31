@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- 6529 Editions is renamed 6529 Stream Editions (ADR 0005, D139) in every current document and
+  NatSpec comment; `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS`. The
+  identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label do
+  not change, and the records of Sepolia r1 to r3 keep the former name.
+- Editions: `EditionTerms` is `{maxCount, currency, saleKind, params}` and edition minting is
+  generic (ADR 0005, owner decision 14). `EditionRules` checks only a nonzero sale kind and at
+  most 1,024 bytes of params; the sale adapter validates the currency and params when it opens.
+  `mint` takes any admitted adapter whose `saleKind()` is the edition's, within the creator's
+  optional cap (`maxCount`, 0 for none), and binds each edition to the first adapter that mints
+  it (`EditionMinterBound`; any other gets `MinterMismatch`). `formatOf`, `EditionWindowOpened`
+  and `PricedDefaultCurrency` are gone, and `Edition.windowStart` is now `minter`. Every
+  selector and event that carries a `PackageItem` changed (`createEdition` is `0x26c8844c`), and
+  with them the interface IDs of `IWorkRecords`, `IEditions`, `IPackageRegistry` and
+  `IEntropyModule`
+  ([docs/integrators/abis-and-interface-ids.md](docs/integrators/abis-and-interface-ids.md#changes-since-the-sepolia-r3-build)).
+- Sales: the fixed-price and Dutch adapters are deleted (ADR 0005, decision 8): `FixedPriceSale`,
+  `DutchSale`, `MintSaleBase`, `DutchPricing`, their interfaces and typehashes,
+  `Limits.MAX_PHASES`, and their tests, mocks and invariant suites. The specification retires
+  ED-9 to ED-24, and the known limitations LIM-SAL-2, LIM-SAL-5, LIM-SAL-6 and LIM-SAL-11.
+  Genesis admits no edition sale adapter until the uniform-price edition auction lands (15
+  wiring calls, was 19). `FixedPriceSale` can be restored from `v1.0.0-rc.1` as a newly
+  admitted adapter without redeploying Editions (ADR 0005 §3); `SaleKind.FIXED_PRICE` and
+  `DUTCH` stay reserved.
 - ADR 0005, the edition auction and 6529 Stream Editions
   ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the
   owner's D138 to D141 and decisions 1 to 14 of 31 October 2026, the design, the governed

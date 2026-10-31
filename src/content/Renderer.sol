@@ -24,14 +24,14 @@ import { HtmlScript } from "./HtmlScript.sol";
 import { JsonScan } from "./JsonScan.sol";
 
 /// @title Renderer
-/// @notice Builds the metadata of 6529 Stream works and 6529 Editions editions (ADR 0001
-///         section 8 "`tokenURI` size"). Immutable and stateless: it only reads.
-/// @dev `tokenURI(token, id)` reads the token it is asked about (6529 Stream, or 6529 Editions,
-///      which it recognises by ERC-165 and follows to the master), that Stream's `IWorkRecords`
-///      satellite, the shared content store and optionally the statement log. A hostile `token`
-///      can only change what its own call returns, so there is no list of tokens; every read is
-///      a `BoundedCall` with its own gas and return-size cap and reverts if it fails (fail
-///      closed).
+/// @notice Builds the metadata of 6529 Stream works and the editions of 6529 Stream Editions
+///         (ADR 0001 section 8 "`tokenURI` size"). Immutable and stateless: it only reads.
+/// @dev `tokenURI(token, id)` reads the token it is asked about (6529 Stream, or 6529 Stream
+///      Editions, which it recognises by ERC-165 and follows to the master), that Stream's
+///      `IWorkRecords` satellite, the shared content store and optionally the statement log. A
+///      hostile `token` can only change what its own call returns, so there is no list of tokens;
+///      every read is a `BoundedCall` with its own gas and return-size cap and reverts if it
+///      fails (fail closed).
 ///
 ///      The record. A work's descriptive record is a JSON file in the content store (stored as
 ///      `Identity`, at most `MAX_RECORD_BYTES`). The renderer reads it, checks it as UTF-8 and with

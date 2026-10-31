@@ -30,9 +30,9 @@ testing shows what the tests reach but do not check.
 | Live | [`script/Verify.s.sol`](../../script/Verify.s.sol) and the records in [`deployments/11155111/`](../../deployments/11155111) | The Sepolia rehearsals: every address, code hash, configuration value and event read back from the chain, and the v1 flows run for real | [`script/README.md`](../../script/README.md) |
 
 Invariant suites exist for the split wallets, escrow and claim router; the English auction
-(in ETH and in an ERC-20, and its halts); the fixed-price and Dutch sales; Editions; Stream; the
-content store; the package registry; the artist registry; the statement log; the VRF entropy
-module; governance; and, on the wired stack, a work's lifecycle and edition sales.
+(in ETH and in an ERC-20, and its halts); Editions; Stream; the content store; the package
+registry; the artist registry; the statement log; the VRF entropy module; governance; and, on
+the wired stack, a work's lifecycle.
 
 Conventions: forge-std assertions; `vm.expectRevert` with the exact selector and arguments;
 mocks in [`test/mocks/<module>/`](../../test/mocks), one behaviour per name, with the
@@ -113,7 +113,9 @@ lite profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, bran
 
 Since then the mutation gap lane's `test_Start_RevertsWhenTheSaleAlreadyExists` reaches `start`
 on a sale that already exists: on d50bb61's code with the lane's tests, `EnglishAuction.sol`
-leaves only the locked fee share above the denominator, at 98.96% of branches (95/96).
+leaves only the locked fee share above the denominator, at 98.96% of branches (95/96). ADR 0005
+has since removed `MintSaleBase` with the fixed-price and Dutch adapters; its row is kept as
+measured.
 
 ## Mutation testing
 
@@ -181,7 +183,7 @@ library, where the replacing code's mutants are killed. No gap is open. Running 
 the libraries, the content readers and the economics module while it was built already found
 checks the suite was missing, now pinned by tests: ill-formed UTF-8 lead bytes cut at a chunk
 end; an escape letter other than `u` before four hex digits; JSON and script escaping reading
-past the input's end; an exact Dutch payment crediting zero; a token that refuses `approve` by
+past the input's end; a token that refuses `approve` by
 reverting, returns more than one word, or sets the upper bits of its `true`, and balances above
 2**128; the resolver's bounds on each side; and CC0 license texts either side of the pinned
 one.
@@ -278,12 +280,10 @@ None was a bug. What mutation testing still leaves:
 1. `TokenTransfer.transferExact` checks `_transfer`'s result and reverts, but the strict path
    never returns false (`_moveExact` reverts on any failure when it does not tolerate one), so
    the branch is dead. Remove it or say why it stays (src/ owners).
-2. `MintSaleBase.claim`'s ERC-20 branch is unreachable while only ETH is credited (Dutch
-   refunds). Test it once anything credits an ERC-20, or remove it.
-3. A relicense consent from a party that never registered as an artist takes
+2. A relicense consent from a party that never registered as an artist takes
    `WorkRecords`' `artistIdOf == 0` fallback, which today ends in the registry's
    `UnknownArtist`. Decide the intended outcome and test it.
-4. Defensive guards that need a lying mock to reach: a registry that assigns another artist
+3. Defensive guards that need a lying mock to reach: a registry that assigns another artist
    ID, or reports a zero authority (`PackageRegistry`); a malformed `consume` answer and the
    65,536th fee recipient and the 2**23rd overflow terms word, reachable with `vm.store`
    (`Stream`); a short `FileInfo`

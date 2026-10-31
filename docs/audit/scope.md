@@ -17,8 +17,8 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 10,614 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
-| Deployed contracts | 23 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
+| Source lines | 9,573 non-blank, non-comment lines in 80 files under `src/` (budget: 12,000) |
+| Deployed contracts | 21 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), checked by `tools/check_budgets.py` in CI |
@@ -34,23 +34,20 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 555 | 20,762 | 22,627 | 3,814 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,958 | 25,936 | 1,618 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 334 | 18,649 | 20,363 | 5,927 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,883 | 25,861 | 1,693 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 311 | 17,348 | 19,062 | 7,228 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 763 | 24,361 | 26,631 | **215** |
-| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | 306 | 22,975 | 24,622 | 1,601 |
-| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | 144 | 17,150 | 18,313 | 7,426 |
-| `MintSaleBase` (abstract; in both adapters above) | [`src/sales/MintSaleBase.sol`](../../src/sales/MintSaleBase.sol) | 377 |  |  |  |
 
 ### Curation, identity and records
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 360 | 14,782 | 16,198 | 9,794 |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 358 | 13,951 | 15,367 | 10,625 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
 | `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 561 | 20,329 | 21,597 | 4,247 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 314 | 11,742 | 13,038 | 12,834 |
-| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 218 | 8,282 | 10,220 | 16,294 |
+| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 218 | 8,184 | 10,122 | 16,392 |
 
 ### Economics
 
@@ -98,24 +95,23 @@ Compiled into the contracts that use them; none is deployed or linked.
 | `DataUri` | [`src/content/DataUri.sol`](../../src/content/DataUri.sol) | 82 | Renderer |
 | `Base64Validator` | [`src/content/Base64Validator.sol`](../../src/content/Base64Validator.sol) | 78 | ContentStore |
 | `SSTORE2` | [`src/libraries/SSTORE2.sol`](../../src/libraries/SSTORE2.sol) | 76 | `ContentStore`, `Renderer` |
-| `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 60 | Governance, `Eip712CurationVerifier`, `AssetAllowlist`, the sale adapters |
-| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 55 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `FixedPriceSale`, `ReleaseVerifier` |
-| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 44 | Economics, `Stream`, `Editions`, `PackageRegistry`, the sale adapters |
-| `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 43 | `EnglishAuction`, `MintSaleBase` |
+| `Roles` | [`src/governance/Roles.sol`](../../src/governance/Roles.sol) | 60 | Governance, `Eip712CurationVerifier`, `AssetAllowlist`, `EnglishAuction` |
+| `SignatureVerifier` | [`src/libraries/SignatureVerifier.sol`](../../src/libraries/SignatureVerifier.sol) | 55 | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `WorkRecords`, `StatementLog`, `ReleaseVerifier` |
+| `Splits` | [`src/economics/Splits.sol`](../../src/economics/Splits.sol) | 44 | Economics, `Stream`, `Editions`, `PackageRegistry`, `EnglishAuction` |
+| `RevenuePayment` | [`src/economics/RevenuePayment.sol`](../../src/economics/RevenuePayment.sol) | 43 | `EnglishAuction` |
 | `WorksHashing` | [`src/interfaces/types/WorksHashing.sol`](../../src/interfaces/types/WorksHashing.sol) | 37 | `PackageRegistry`, `WorkRecords`, `Editions`, `EconomicsResolver`, `VrfEntropyModule` |
 | `Dependency` | [`src/libraries/Dependency.sol`](../../src/libraries/Dependency.sol) | 32 | Every install, bind and listing check, and every use-time code-hash pin |
 | `SpdxId` | [`src/stream/SpdxId.sol`](../../src/stream/SpdxId.sol) | 29 | Stream, WorkRecords |
 | `ProtocolContracts` | [`src/libraries/ProtocolContracts.sol`](../../src/libraries/ProtocolContracts.sol) | 27 | ArtistRegistry, EconomicsResolver |
-| `DutchPricing` | [`src/sales/DutchPricing.sol`](../../src/sales/DutchPricing.sol) | 27 | `DutchSale`, `EditionRules` |
 | `BoundedParameter` | [`src/governance/BoundedParameter.sol`](../../src/governance/BoundedParameter.sol) | 22 | VrfEntropyModule |
 | `DelegatedEOA` | [`src/libraries/DelegatedEOA.sol`](../../src/libraries/DelegatedEOA.sol) | 21 | `Dependency` and `SignatureVerifier` |
-| `EditionRules` | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | 21 | Editions, PackageRegistry |
+| `EditionRules` | [`src/editions/EditionRules.sol`](../../src/editions/EditionRules.sol) | 8 | Editions, PackageRegistry |
 
 The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,918 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,769 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -135,8 +131,8 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 | `AccessManaged` | Every governed contract |
 | `ERC721` | `Stream` |
 | `ERC1155` | `Editions` |
-| `EIP712` | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `StatementLog`, `WorkRecords`, `FixedPriceSale`, `ReleaseVerifier` |
-| `ReentrancyGuardTransient` | `EnglishAuction`, `MintSaleBase`, `SplitWallet`, `RevenueEscrow` |
+| `EIP712` | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `StatementLog`, `WorkRecords`, `ReleaseVerifier` |
+| `ReentrancyGuardTransient` | `EnglishAuction`, `SplitWallet`, `RevenueEscrow` |
 | `ERC165`, `ERC165Checker`, `MerkleProof`, `ECDSA`, `Math`, `SafeCast`, `Base64`, `Strings`, `Create2` | Utilities across modules |
 
 ## Out of scope
@@ -153,7 +149,7 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
   vulnerability reports against them.
 - **`tools/`:** off-chain Python: CI gates and the uploader.
 - **6529 Stream Federated:** v1.1, only if needed. v1 contains only the interfaces it needs
-  (`IFederationRegistry`) and the sale adapters' registry hooks; no registry is installed.
+  (`IFederationRegistry`) and the auction's registry hooks; no registry is installed.
 - **External contracts:** the 6529 delegation contract, the Chainlink VRF coordinator,
   Permit2, Safe wallets and admitted ERC-20 tokens. The protocol's assumptions about each are
   in [Trust assumptions](trust-assumptions.md).

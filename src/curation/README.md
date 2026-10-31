@@ -2,7 +2,7 @@
 
 The package registry and the v1 curation verifier: how a network-approved package of works is
 registered, accepted by every party, moved to 6529 Stream by its lead artist and consumed once
-at the auction start, and how 6529 Editions claims a master's content. The rules are in
+at the auction start, and how 6529 Stream Editions claims a master's content. The rules are in
 [Curation](../../docs/spec/curation.md) (`CUR-*`); the signer's off-chain obligations are under
 [Trust obligations of the curation signer](../../docs/spec/curation.md#trust-obligations-of-the-curation-signer).
 

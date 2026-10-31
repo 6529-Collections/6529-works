@@ -109,7 +109,7 @@ interface IConsolidationSource is IERC165 {
 ///
 ///      `isArtist(token, id, account)` is true when `account` is the active authority
 ///      (`activeAuthorityOf`) of the lead artist of 6529 Stream work `id`, or of the master of
-///      6529 Editions edition `id`; it is false for the pre-mint subject
+///      6529 Stream Editions edition `id`; it is false for the pre-mint subject
 ///      `(address(0), uint256(itemHash))`. It meets the resolver trust requirement for granting:
 ///      no governed action makes it true for a new account faster than the 30-day class
 ///      (changes take 7 days, overrides 180 days, and the consolidation source swaps on the

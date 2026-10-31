@@ -634,7 +634,7 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 1, 0);
     }
 
-    // ------------------------------------------------------------------ 6529 Editions
+    // ------------------------------------------------------------------ 6529 Stream Editions
 
     /// @dev The master package, published, with item 0 started at steady state, bid on and
     ///      settled.

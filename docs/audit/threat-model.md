@@ -47,7 +47,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 
 | Actor | What it can do on-chain | Trusted for |
 | --- | --- | --- |
-| Artist (the lead party's active authority) | Accept packages, sign and revoke moves, open and close its edition sales, edit and finalize its records, co-sign amendments, release its share | Its own works and share |
+| Artist (the lead party's active authority) | Accept packages, sign and revoke moves, edit and finalize its records, co-sign amendments, release its share | Its own works and share |
 | Collaborator | Accept the package, co-sign amendments, release its own share | Its own consent and share |
 | Collector or bidder | Bid, withdraw while paused or frozen, claim credits, buy copies, upload chunks, write OWNER statements | Nothing |
 | Winning bidder with a hostile receiver | Name any recipient, which may reject the token, burn gas, re-enter or hand it back | Nothing |
@@ -87,14 +87,17 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 
 | Entry point | Threat | Mitigation |
 | --- | --- | --- |
-| ERC-20 bids and purchases | Fee-on-transfer, rebasing, no-return or false-returning tokens underpay | Exact balance deltas on both sides on every path ([ECO-23][eco], [AUC-19][auc], [ED-17][ed]). Return values are checked on the direct paths, not on Permit2 pulls, which check only balances. The guard against non-standard tokens is governance vetting at `AssetAllowlist.admitAsset` ([LIM-SAL-7][lim-sal]) |
-| Payouts | A blocklisting token blocks a seller or fee wallet | [ECO-26][eco]: the payment reaches the wallet or a credit under it; with the escrow blocked too, a purchase reverts atomically and an auction credits the payout ([AUC-23][auc], MONEY-1) |
-| ETH payouts | A wallet that refuses ETH or burns gas blocks a sale | [ECO-26][eco], [ED-19][ed]: 100,000 gas per payout (`PAYOUT_GAS`), escrow on refusal |
-| `PERMIT2` payments | Replay, or a relayer redirecting the payment | [AUC-19][auc], [ED-18][ed]: Permit2's nonce is the replay key, and the witness binds the sale or start, the recipient, the amount and the deadline |
-| `PERMIT` (EIP-2612) | A front-run permit makes the payment fail | A failing permit is ignored and the pull uses the allowance it set; only the 65-byte form is accepted (QUALITY-7): `test_Bid_Erc20FrontRunPermitStillBids` in [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol), `test_Permit_FrontRunPermitStillBuys` in [`FixedPricePayments.t.sol`](../../test/sales/fixed/FixedPricePayments.t.sol) |
-| Allowlist purchases | A wallet mints to itself on another wallet's leaf | [ED-15, ED-16][ed]: the leaf binds the receiving wallet (or the authenticated payer), and caps persist across reopened sales |
-| `openSale` | PLATFORM prices a sale away from the package, or spends an OPEN edition's window, without the artist | [ED-12, ED-13][ed]: such sales need the creator or its signed phase configuration (MARKET-6) |
-| Halts on fixed-price and Dutch sales | A pause or deprecation uses up a phase or lets the Dutch price fall | [ED-21][ed]: halts move the schedule by their length (MARKET-1); overlaps count twice ([LIM-SAL-2][lim-sal]) |
+| ERC-20 bids | Fee-on-transfer, rebasing, no-return or false-returning tokens underpay | Exact balance deltas on both sides on every path ([ECO-23][eco], [AUC-19][auc]). Return values are checked on the direct paths, not on Permit2 pulls, which check only balances. The guard against non-standard tokens is governance vetting at `AssetAllowlist.admitAsset` ([LIM-SAL-7][lim-sal]) |
+| Payouts | A blocklisting token blocks a seller or fee wallet | [ECO-26][eco]: the payment reaches the wallet or a credit under it; with the escrow blocked too, the auction credits the payout ([AUC-23][auc], MONEY-1) |
+| ETH payouts | A wallet that refuses ETH or burns gas blocks a sale | [ECO-26][eco]: 100,000 gas per payout (`PAYOUT_GAS`), escrow on refusal |
+| `PERMIT2` payments | Replay, or a relayer redirecting the payment | [AUC-19][auc]: Permit2's nonce is the replay key, and the witness binds the sale or start, the recipient, the amount and the deadline |
+| `PERMIT` (EIP-2612) | A front-run permit makes the payment fail | A failing permit is ignored and the pull uses the allowance it set; only the 65-byte form is accepted (QUALITY-7): `test_Bid_Erc20FrontRunPermitStillBids` in [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol) |
+
+### Editions
+
+| Entry point | Threat | Mitigation |
+| --- | --- | --- |
+| `Editions.mint` | A second admitted adapter adds copies to a sale another one ran, or copies pass the creator's cap | [ED-5, ED-6][ed]: an edition is bound to its first minter, and the cap holds for every minter |
 
 ### Split wallets and releases
 
@@ -149,7 +152,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 | Entry point | Threat | Mitigation |
 | --- | --- | --- |
 | `pause(saleId, ref)` (GUARDIAN) | Repeated pauses hold an auction hostage | [DSP-13, DSP-14, DSP-15][dsp]: once per auction, at most 7 days, and bidders may withdraw |
-| `resume`, `unpause` (UNPAUSER, 48 hours) | An operation scheduled before the pause undoes it in the same block | [DSP-16][dsp], [ED-22][ed], [GV-23][gv]: nothing lands before 48 hours after the pause (GOV-5) |
+| `resume`, `unpause` (UNPAUSER, 48 hours) | An operation scheduled before the pause undoes it in the same block | [DSP-16][dsp], [GV-23][gv]: nothing lands before 48 hours after the pause (GOV-5) |
 | `resume` | Bidders refunded during the pause have no time to return | [DSP-17][dsp]: the resumed auction runs at least the governed duration, with the withdrawn bid as a reserve (LIFECYCLE-1) |
 | `cancel` (PARAMETER_SETTER, 48 hours) | A stale outcome, or one about the item, cancels an auction | [DSP-18][dsp]: the token's own latest outcome, recorded after the pause (LIFECYCLE-4) |
 | `cancel` window | A cancel lands after the pause lapsed, or too early | [DSP-16, DSP-19][dsp]: from 48 hours after the pause while it is live |
@@ -233,7 +236,7 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 - **Marketplace behavior:** ERC-2981 royalties are advisory ([LIM-SAL-8][lim-sal]).
 - **Availability of off-chain copies** before a work is on-chain complete ([LIM-CNT-1][lim-cnt]).
 - **Legal effect** of CC0 or any license text.
-- **Low prices** and **gifts by third parties** ([LIM-SAL-1, LIM-SAL-6][lim-sal]).
+- **Low prices** ([LIM-SAL-1][lim-sal]).
 - **Chain-level behavior:** censorship, reorganizations, and mainnet's final Glamsterdam and
   EIP-7825 parameters ([LIM-GAS-1, LIM-GAS-2][lim-gas]).
 - **6529 Stream Federated (v1.1)** and **deployed-bytecode verification**
@@ -252,8 +255,7 @@ The accepted residual risks this model relies on most, each stated once in
 - VRF delivery ordering and the hot admin's subscription ([LIM-ENT-1, LIM-ENT-5][lim-ent]).
 - Raise-only parameters per operation, not per window ([LIM-GV-7][lim-gv]).
 - Signed releases reviving on a return to an old payout address ([LIM-ECO-2][lim-eco]).
-- Overlapping halts, front-run starts and tokens sent with a plain transfer
-  ([LIM-SAL-2, LIM-SAL-9, LIM-SAL-10][lim-sal]).
+- Front-run starts and tokens sent with a plain transfer ([LIM-SAL-9, LIM-SAL-10][lim-sal]).
 - Fixed gas allowances, state gas and the EIP-8037 reservoir under Glamsterdam
   ([LIM-GAS-2, LIM-GAS-5][lim-gas]).
 

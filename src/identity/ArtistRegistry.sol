@@ -437,9 +437,9 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     // ----- reads -----
 
     /// @inheritdoc IArtistRoleResolver
-    /// @dev Resolves a 6529 Stream work (`IStream.artistOf`), or a 6529 Editions edition through
-    ///      its master, to the lead artist's active authority ({activeAuthorityOf}). Any other
-    ///      subject returns false.
+    /// @dev Resolves a 6529 Stream work (`IStream.artistOf`), or a 6529 Stream Editions edition
+    ///      through its master, to the lead artist's active authority ({activeAuthorityOf}). Any
+    ///      other subject returns false.
     function isArtist(address token, uint256 id, address account) external view returns (bool) {
         address s = stream;
         if (s == address(0) || token == address(0) || account == address(0)) return false;
