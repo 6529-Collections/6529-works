@@ -59,12 +59,10 @@ NOTES: dict[tuple[str, str], str] = {
         "`canCall` check in the contract and needs a zero-delay grant.",
     ("WorkRecords", "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,"
      "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
-     "(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes)),bytes32,"
-     "uint64,bytes[])"): "Also needs every party's signed consent. CC0 is irrevocable.",
+     "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent. CC0 is irrevocable.",
     ("WorkRecords", "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,"
      "(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,"
-     "(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes)),bytes32,"
-     "uint64,bytes[])"): "Also needs every party's signed consent; re-rates the linked edition.",
+     "(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])"): "Also needs every party's signed consent; re-rates the linked edition.",
     ("WorkRecords", "repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)"):
         "The errata repin: also needs the lead artist's signature.",
     ("PackageRegistry", "revokePackage(bytes32,bytes32)"):
@@ -108,18 +106,6 @@ NOTES: dict[tuple[str, str], str] = {
         "Duration, anti-snipe window and increment share; compare-and-set.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
     ("*", "setFederationRegistry(address,address)"): "v1.1: no registry is installed in v1.",
-    ("FixedPriceSale", "openSale(address,uint256,(uint64,uint64,bytes32,uint32,bool,bool)[],"
-     "(uint256,uint64,bytes))"): "The sale's creator may also call it directly. PLATFORM alone "
-     "opens only a listed FIXED edition with no leaf-priced phase; with the creator's signed "
-     "phase configuration it may open any.",
-    ("FixedPriceSale", "closeSale(uint256)"): "The sale's creator may also call it directly; "
-     "anyone once every phase has ended. PLATFORM closes only sales it opened without the "
-     "artist's approval, or any sale while the creator resolves to zero.",
-    ("DutchSale", "openSale(address,uint256,uint64)"): "The sale's creator may also call it "
-     "directly. PLATFORM alone opens only a listed FIXED edition.",
-    ("DutchSale", "closeSale(uint256)"): "The sale's creator may also call it directly. PLATFORM "
-     "closes only sales it opened without the artist's approval, or any sale while the creator "
-     "resolves to zero.",
     ("EconomicsResolver", "setFeeTerms(bytes32,uint64,address,uint32)"):
         "New works only; compare-and-set on the product's revision; refuses a fee recipient "
         "that could never be paid.",

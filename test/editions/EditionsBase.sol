@@ -9,7 +9,6 @@ import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -19,7 +18,7 @@ import {
     SaleTerms,
     SeedPolicy
 } from "src/interfaces/types/PackageTypes.sol";
-import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import {
     EditionsAdapterMock,
     EditionsArtistsMock,
@@ -31,19 +30,18 @@ import {
     EditionsWorkRecordsMock
 } from "../mocks/editions/EditionsMocks.sol";
 
-/// @dev Deploys 6529 Editions against mocks of Stream, the package registry, the economics
+/// @dev Deploys 6529 Stream Editions against mocks of Stream, the package registry, the economics
 ///      resolver, the artist registry, the work-records satellite and the renderer, under a plain
 ///      OpenZeppelin AccessManager with the role IDs of `src/governance/Roles.sol` and zero
-///      delays, plus a fixed-price and a Dutch adapter admitted as minters (decision E4) through
-///      the governed setter, mapped here to the 30-day SUCCESSOR_SETTER role. Genesis wiring is
-///      complete:
+///      delays, plus two uniform-auction adapters admitted as minters (decision E4) through the
+///      governed setter, mapped here to the 30-day SUCCESSOR_SETTER role: the second shows that
+///      an edition stays bound to the first that mints it. Genesis wiring is complete:
 ///      Stream and the registry bind Editions, and Editions binds the work-records satellite
 ///      (ADMIN, the default role of unmapped selectors).
 abstract contract EditionsBase is Test {
     uint64 internal constant SUCCESSOR_SETTER = 11;
     uint64 internal constant PARAMETER_SETTER = 9;
     uint64 internal constant FUNDS_SETTER = 10;
-    uint256 internal constant PRICE = 0.01 ether;
     /// @dev Stream's auction custody, which holds a master until its auction settles.
     address internal constant CUSTODY = address(0xA0C7);
     /// @dev The master's auction winner.
@@ -56,8 +54,8 @@ abstract contract EditionsBase is Test {
     EditionsRendererMock internal renderer;
     EditionsStreamMock internal stream;
     Editions internal editions;
-    EditionsAdapterMock internal fixedAdapter;
-    EditionsAdapterMock internal dutchAdapter;
+    EditionsAdapterMock internal adapter;
+    EditionsAdapterMock internal secondAdapter;
     EditionsWorkRecordsMock internal workRecordsMock;
 
     address internal admin = makeAddr("admin");
@@ -86,8 +84,8 @@ abstract contract EditionsBase is Test {
         workRecordsMock = new EditionsWorkRecordsMock();
         stream.bind(address(workRecordsMock), address(editions));
         registry.bindCallers(address(stream), address(editions));
-        fixedAdapter = new EditionsAdapterMock(SaleKind.FIXED_PRICE);
-        dutchAdapter = new EditionsAdapterMock(SaleKind.DUTCH);
+        adapter = new EditionsAdapterMock(SaleKind.UNIFORM_AUCTION);
+        secondAdapter = new EditionsAdapterMock(SaleKind.UNIFORM_AUCTION);
 
         vm.startPrank(admin);
         manager.setTargetFunctionRole(
@@ -105,19 +103,17 @@ abstract contract EditionsBase is Test {
         editions.bindWorkRecords(address(workRecordsMock));
         vm.stopPrank();
         vm.startPrank(governor);
-        editions.setAdmittedMinter(address(fixedAdapter), true);
-        editions.setAdmittedMinter(address(dutchAdapter), true);
+        editions.setAdmittedMinter(address(adapter), true);
+        editions.setAdmittedMinter(address(secondAdapter), true);
         vm.stopPrank();
     }
 
     // ----------------------------------------------------------------- package items
 
     /// @dev An EDITION_MASTER item with fresh content: the lead artist and a collaborator, a
-    ///      canonical payee list (fixed payee first, then the artist ID), CC0.
-    function _item(EditionFormat format, uint64 size, uint64 window, bytes32 saleKind)
-        internal
-        returns (PackageItem memory item)
-    {
+    ///      canonical payee list (fixed payee first, then the artist ID), CC0, and edition terms
+    ///      for the uniform-price edition auction in ETH with creator cap `maxCount` (zero: none).
+    function _item(uint32 maxCount) internal returns (PackageItem memory item) {
         item.kind = ItemKind.EDITION_MASTER;
         item.collectionId = 1;
         item.contentHash = sha256(abi.encode("content", ++_contentNonce));
@@ -132,17 +128,7 @@ abstract contract EditionsBase is Test {
         item.license = License("CC0-1.0", keccak256("CC0 1.0 legal code"));
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
-        bytes memory params =
-            saleKind == SaleKind.DUTCH ? abi.encode(DutchParams(PRICE / 10, 1 days, 0)) : bytes("");
-        item.edition = EditionTerms(format, size, window, PRICE, CURRENCY_ETH, saleKind, params);
-    }
-
-    function _fixedItem(uint64 size) internal returns (PackageItem memory) {
-        return _item(EditionFormat.FIXED, size, 0, SaleKind.FIXED_PRICE);
-    }
-
-    function _openItem(uint64 window, uint64 size) internal returns (PackageItem memory) {
-        return _item(EditionFormat.OPEN, size, window, SaleKind.DUTCH);
+        item.edition = EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
     /// @dev Mints a master into auction custody (consuming its item) and settles the auction to

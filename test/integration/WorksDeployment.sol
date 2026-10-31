@@ -23,9 +23,7 @@ import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
-import { DutchSale } from "src/sales/DutchSale.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
-import { FixedPriceSale } from "src/sales/FixedPriceSale.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { DeployV1 } from "script/DeployV1.sol";
@@ -89,8 +87,6 @@ abstract contract WorksDeployment is Test {
     WorkRecords internal records;
     Editions internal editions;
     EnglishAuction internal auction;
-    FixedPriceSale internal fixedSale;
-    DutchSale internal dutchSale;
 
     // ------------------------------------------------------------------ genesis holders
     address internal hotAdmin = makeAddr("hotAdminSafe");
@@ -180,8 +176,6 @@ abstract contract WorksDeployment is Test {
         records = d.workRecords;
         editions = Editions(address(d.editions));
         auction = d.englishAuction;
-        fixedSale = d.fixedPriceSale;
-        dutchSale = d.dutchSale;
     }
 
     /// @dev The committed genesis JSON with each placeholder holder (`0x...b0xx`) replaced by

@@ -37,7 +37,7 @@ acts directly; any other role is scheduled, waited out and executed.
 | File | Flow (integration brief) |
 | --- | --- |
 | [`CuratedSale.t.sol`](CuratedSale.t.sol) | 1. Package, attestation, registration, acceptance and move signature; `start` and `startWithBid`; bids and anti-snipe; `settle`; split-wallet release (the artist pulls, a keeper pushes the collaborator); `royaltyInfo` against the resolver. Also an ERC-20 auction started with a relayed Permit2 bid, the escrow fallback, a pending delivery, and the guardian's curation controls. |
-| [`MasterEdition.t.sol`](MasterEdition.t.sol) | 2. Master settles, then `createEdition`. A fixed-price sale with allowlist phases, artist consent and a relayed Permit2 payment. A Dutch sale. Linked metadata. The edition royalty follows a master re-rate. |
+| [`MasterEdition.t.sol`](MasterEdition.t.sol) | 2. Master settles, then `createEdition` (a revoked root still counts, an unregistered one does not); both directions of the link. A new sale method admitted by governance mints copies. Linked metadata. The edition royalty follows a master re-rate, and a zero-fee edition locks no fee. |
 | [`ContentToTokenURI.t.sol`](ContentToTokenURI.t.sol) | 3. The uploader's golden calldata, then `attestBase64`, `openRecord`, `finalize` and `syncOnChain`; `tokenURI` in locator and inline modes; and the gas matrix. |
 | [`RecordAmendments.t.sol`](RecordAmendments.t.sol) | 3, continued. Relicense with consent and governance, a new default renderer, the errata repin, and artist and owner statements. |
 | [`IdentityRecovery.t.sol`](IdentityRecovery.t.sol) | 4. Registration and consolidation standing; stage, cancel, veto and execute; the payout freeze during a change and an override; sticky standing against a key thief; the split-wallet pull and signed release after recovery. |
@@ -47,22 +47,21 @@ acts directly; any other role is scheduled, waited out and executed.
 | [`Genesis.t.sol`](Genesis.t.sol) | 7. Deploy, configure and wire. The readback passes and the configurator keeps no ADMIN. Guardians cancel hostile admin operations, the cold admin removes the hot admin, and `configure` fits the transaction cap. |
 | [`Helpers.t.sol`](Helpers.t.sol) | The helpers themselves: the package Merkle trees agree with OpenZeppelin's `MerkleProof` for 1 to 17 leaves. |
 | [`GasHarness.t.sol`](GasHarness.t.sol) | The gas report's harness against the truth: a start measured from a fully cold state equals the corrected figure after every account it reaches was warmed, and storage the harness does not cool is refused. |
-| [`GasReport.t.sol`](GasReport.t.sol) | The budgets ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)): Prague gas, and the exact new slots and accounts, of `start` and `startWithBid` (one and two parties, VRF, edition master, ERC-20 by Permit2, first ever, new collection, new terms), `bid`, `settle` (with and without a bid), `consume`, `createEdition`, `openSale`, `purchase`, `refreshStanding` and `royaltyInfo`, and `tokenURI` by size. |
+| [`GasReport.t.sol`](GasReport.t.sol) | The budgets ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md)): Prague gas, and the exact new slots and accounts, of `start` and `startWithBid` (one and two parties, VRF, edition master, ERC-20 by Permit2, first ever, new collection, new terms), `bid`, `settle` (with and without a bid), `consume`, `createEdition`, `refreshStanding` and `royaltyInfo`, and `tokenURI` by size. |
 
 ## Invariant suites
 
-Two stateful invariant suites run on the same real stack, in
-[`invariant/`](invariant/). Each test contract inherits its handler and targets itself, so the
-handler has every helper above and no handler contract meets the EIP-170 limit. Each action is
+A stateful invariant suite runs on the same real stack, in [`invariant/`](invariant/). The test
+contract inherits its handler and targets itself, so the handler has every helper above and no
+handler contract meets the EIP-170 limit. Each action is
 bounded, never reverts (`fail_on_revert`), predicts its outcome from the protocol's rules and
 records any disagreement; the invariant function asserts there is none, then checks the state.
 
 | Suite | Actions | Invariants |
 | --- | --- | --- |
 | [`StreamLifecycleInvariant.t.sol`](invariant/StreamLifecycleInvariant.t.sol) (handler [`StreamLifecycleHandler.sol`](invariant/StreamLifecycleHandler.sol)) | register and accept packages; move items to Stream and start auctions (with or without a first bid, a revoked move); bid; settle; dispute pause; cancel (upheld) or resume (rejected, with a withdrawal); `releaseContent`; `openRecord`, `setRecord`, `finalize`, `addLocator`; governed relicense; transfer; stage a recovery override and end it (veto or execution); the restrained keys trying every artist power; time | every token has exactly one known owner, or auction custody while its sale is unsettled; token IDs assigned once, in order, never reused; a content hash held by at most one live item unless released to its beneficiary; a finalized record keeps its content hashes, and media never changes; a CC0 work stays CC0 with the pinned text; locators are append-only; a restrained artist never acts; the auction holds exactly the live bids and credits; an unbid work ends with the museum, at once even while its artist is restrained, and the museum holds nothing else |
-| [`EditionSalesInvariant.t.sol`](invariant/EditionSalesInvariant.t.sol) (handler [`EditionSalesHandler.sol`](invariant/EditionSalesHandler.sol)) | create editions; open fixed-price sales (artist, PLATFORM with consent, PLATFORM alone) and Dutch sales; buy through allowlist and public phases in ETH and an ERC-20 (direct, EIP-2612, relayed Permit2); pause and unpause the adapters; deprecate and re-admit currencies; governed increment floors, fee terms and default license (with stale revisions); fee recipients refusing ETH (the real revenue escrow); close sales; re-rate masters; claim credits; time | supply within the edition size, every copy held; every wallet within its cap in every capped phase; each adapter's and the escrow's balances cover what they owe, exactly; every purchase pays the schedule price, the schedule delay equals an independent model of the halts (MARKET-1); no purchase or opening while halted; an edition's royalty follows its master; a sale's locked terms and an edition's economics never change; the allowlist's status clocks, floors and revisions and the resolver's terms, license and revisions equal the model |
 
-A third, smaller suite covers the content store on its own:
+A second, smaller suite covers the content store on its own:
 [`ContentStoreInvariant.t.sol`](../content/ContentStoreInvariant.t.sol) writes and rewrites chunks,
 registers and re-registers manifests (one over the same chunks with another MIME type, one that
 breaks the layout rule), refuses malformed manifests and reads ranges back: chunks are written
@@ -74,9 +73,10 @@ In CI each suite asserts its state every fourth call and after the last call of 
 (`forge-config: default.invariant.check_interval = 4`); every action still checks its own
 outcome at once, and the `deep` profile asserts the state after every call.
 
-`test_EveryActionRuns` in each suite replays sequences of the campaign's shape from fixed seeds
-and asserts that every action, and the paths the invariants are about (cancel, release and
-re-consumption, recovery, refusals), really ran, so a campaign cannot pass vacuously.
+`test_EveryActionRuns` in the lifecycle suite replays sequences of the campaign's shape from
+fixed seeds and asserts that every action, and the paths the invariants are about (cancel,
+release and re-consumption, recovery, refusals), really ran, so a campaign cannot pass
+vacuously.
 
 ```bash
 forge test --match-path "test/integration/invariant/*"            # CI: 256 runs x depth 128
@@ -96,7 +96,7 @@ regular test.
 | G-1: no default currency at genesis | #31 wires ETH as each product's default | `Genesis.t.sol` `test_DefaultCurrencyIsEthFromGenesis` |
 | G-2: two-party `startWithBid` over 350K | #34 and #33 | `GasReport.t.sol` `test_Gas_StartWithBid_TwoPartyWork` |
 | E-1: an edition did not take its master's rate | #14 | `MasterEdition.t.sol` `test_EditionTakesTheMastersCurrentRate` |
-| L-1: zero-fee terms blocked edition sales | #35 | `MasterEdition.t.sol` `test_ZeroFeeEditionSaleOpensAndSettles` |
+| L-1: zero-fee terms blocked edition sales | #35 | `MasterEdition.t.sol` `test_ZeroFeeEditionLocksNoFee` |
 
 While a finding is open, its test is named `test_Finding_*`. That test passes while
 the finding stands, and fails with "finding fixed" once it is resolved.

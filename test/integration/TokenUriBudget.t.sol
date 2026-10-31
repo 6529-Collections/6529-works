@@ -9,14 +9,8 @@ import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { FileRole, Locator, LocatorKind, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
-import {
-    EditionFormat,
-    EditionTerms,
-    ItemKind,
-    License,
-    SeedPolicy
-} from "src/interfaces/types/PackageTypes.sol";
-import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { EditionTerms, ItemKind, License, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { ContentAddresses as CA } from "../helpers/ContentAddresses.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
@@ -230,15 +224,7 @@ contract TokenUriBudgetTest is IntegrationBase {
         w.item.seed = keccak256(abi.encode("seed", salt));
         if (master) {
             w.item.kind = ItemKind.EDITION_MASTER;
-            w.item.edition = EditionTerms(
-                EditionFormat.FIXED,
-                20,
-                0,
-                0.1 ether,
-                CURRENCY_ETH,
-                SaleKind.DUTCH,
-                abi.encode(DutchParams(0.01 ether, 1 hours, 0))
-            );
+            w.item.edition = EditionTerms(20, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         }
         b.tokenId = _mintAndOpen(w, master);
         _addLocators(b);

@@ -17,20 +17,18 @@ import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol
 ///      federation registry reports it active, in which case the network fee comes from its
 ///      registry entry, not from the token.
 interface ISaleAdapter is IERC165 {
-    /// @notice A sale started (an auction opened, or a fixed-price or Dutch sale opened).
+    /// @notice A sale started: an English auction started, or an edition sale opened.
     /// @param saleId The new sale's ID.
     /// @param token The token contract the sale mints from.
-    /// @param tokenId The token ID: the minted token for an auction, the edition ID for fixed
-    ///        price and Dutch.
+    /// @param tokenId The token ID: the minted token for an English auction, the edition ID for
+    ///        an edition sale.
     /// @param saleKind The adapter's `SaleKind` label.
     /// @param currency The locked currency, zero for ETH.
-    /// @param price The opening price: the opening bid for an auction, the unit price for fixed
-    ///        price, the starting price for Dutch.
-    /// @param startTime When the sale starts, in Unix seconds: the block time for an auction, the
-    ///        earliest phase start for fixed price, the scheduled start for Dutch.
-    /// @param endTime The end as configured, in Unix seconds: the auction's first end (bids may
-    ///        extend it), the latest phase end for fixed price, and for Dutch the time the price
-    ///        reaches its resting price.
+    /// @param price The opening price: the opening bid for an English auction; each sale
+    ///        method defines its own (the edition auction's is its base step price).
+    /// @param startTime When the sale starts, in Unix seconds.
+    /// @param endTime The end as configured, in Unix seconds: for an auction its first end
+    ///        (bids may extend it); each sale method defines its own.
     event SaleStarted(
         uint256 indexed saleId,
         address indexed token,
@@ -42,10 +40,10 @@ interface ISaleAdapter is IERC165 {
         uint64 endTime
     );
 
-    /// @notice A sale settled: an auction ended, or one purchase completed.
+    /// @notice A sale settled: an English auction ended, or an edition sale settled.
     /// @param saleId The sale's ID.
     /// @param token The token contract.
-    /// @param tokenId The token ID (the edition ID for fixed price and Dutch).
+    /// @param tokenId The token ID (the edition ID for an edition sale).
     /// @param buyer The paying bidder or buyer; zero when no bid won an auction, and zero for an
     ///        edition auction, whose winners claim later (`IUniformEditionAuction.BidClaimed`).
     /// @param recipient Who receives the tokens: when no bid won an English auction, the 6529
@@ -140,8 +138,8 @@ interface ISaleAdapter is IERC165 {
     ///         mint that returned another token ID. The auction also: a token ID of 2^32 or more,
     ///         no creator (a pending recovery override), a nonzero price or sale parameters, the
     ///         token not in its custody after the mint, or, for a federated token, an escrow or
-    ///         zero network fee recipient for a nonzero registry fee. The fixed-price and Dutch
-    ///         adapters also: a new fee recipient past their 65,535.
+    ///         zero network fee recipient for a nonzero registry fee. Other adapters add
+    ///         their own cases.
     error InvalidSaleTerms(address token, uint256 id);
 
     /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
@@ -170,9 +168,8 @@ interface ISaleAdapter is IERC165 {
     ///         sales finish. Listing checks the token like any dependency
     ///         (`Dependency.InvalidDependency`): code, not an EIP-7702 delegated account, and
     ///         ERC-165 support for the surface the adapter calls.
-    /// @param token The token contract: one that reports `IMintTarget` through ERC-165 for the
-    ///        fixed-price and Dutch adapters (which also refuse zero, even to unlist), ERC-721
-    ///        for the auction.
+    /// @param token The token contract: ERC-721 for the English auction; each edition adapter
+    ///        names the tokens it serves (the edition auction, 6529 Stream Editions only).
     /// @param listed True to list the token, false to unlist it.
     function setTarget(address token, bool listed) external;
     /// @notice The federation registry, or zero before v1.1.

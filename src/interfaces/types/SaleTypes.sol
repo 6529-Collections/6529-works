@@ -18,9 +18,10 @@ pragma solidity ^0.8.24;
 library SaleKind {
     /// @notice The English auction: 6529 Stream's only primary sale.
     bytes32 internal constant ENGLISH_AUCTION = keccak256("ENGLISH_AUCTION");
-    /// @notice Fixed price with optional allowlist phases (6529 Editions).
+    /// @notice rc.1's fixed-price sale, removed by ADR 0005; reserved for a restored
+    ///         fixed-price adapter.
     bytes32 internal constant FIXED_PRICE = keccak256("FIXED_PRICE");
-    /// @notice Descending price (6529 Editions).
+    /// @notice rc.1's descending-price sale, removed by ADR 0005.
     bytes32 internal constant DUTCH = keccak256("DUTCH");
     /// @notice The uniform-price edition auction (`IUniformEditionAuction`, ADR 0005): one
     ///         auction per edition decides how many copies exist and their one price.
@@ -39,9 +40,9 @@ enum PaymentMethod {
 }
 
 /// @notice One payment, pulled with an exact balance-delta check.
-/// @dev `amount` is the exact amount for a bid or a fixed-price purchase, and the most the payer
-///      will pay for a Dutch purchase, which charges exactly the current price (ETH overpayment
-///      is credited back). For DIRECT and PERMIT, `payer` must be `msg.sender`; for PERMIT2 it is
+/// @dev `amount` is the exact amount of a bid; a sale method that charges a price only known
+///      at execution defines it as the most the payer will pay. For DIRECT and PERMIT, `payer`
+///      must be `msg.sender`; for PERMIT2 it is
 ///      the signer and may differ from `msg.sender`. ETH uses DIRECT with `msg.value == amount`.
 ///      `deadline` and `signature` are the permit's; `nonce` is the Permit2 nonce (zero
 ///      otherwise). The payer is the bidder or buyer of record: refunds and credits go to it.
@@ -56,21 +57,20 @@ struct Payment {
 
 /// @notice What a token contract tells a sale adapter about a primary sale.
 /// @dev Returned by `IMintTarget.mint` and `IMintTarget.primaryTerms` (which, for a minted 6529
-///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Editions' `mint`
-///      sets only the sale kind). `currency` is the item's
-///      or edition's currency: `CURRENCY_ETH` or an allowlisted ERC-20; `CURRENCY_DEFAULT` only
-///      with a zero `price` (a non-zero price must name its currency). The adapter resolves
-///      `CURRENCY_DEFAULT` (`IEconomicsResolver.resolveCurrency`) and locks the currency when the
-///      sale starts.
-///      `price` is the unit price for FIXED_PRICE, the starting price for DUTCH and zero for
-///      ENGLISH_AUCTION. `seller` receives the artist portion (a split wallet's predicted CREATE2
-///      address, which may not be deployed), `feeRecipient` the network portion, `feeShare` out of
-///      `Splits.DENOMINATOR` (100,000). `creator` is the lead artist's active authority, resolved
-///      through the artist registry when the terms are read: it receives an auction token that drew
-///      no bids, and may open edition sales. It is zero while a recovery override is pending
-///      (`IArtistRegistry.activeAuthorityOf`). Under ADR 0005 an unbid 6529 Stream work goes to
-///      the 6529 Network Museum instead (`IEconomicsResolver.museum`); only a federated work's
-///      creator receives it.
+///      Stream token, sets only the sale kind, seller, fee and creator; 6529 Stream Editions'
+///      `mint` sets only the sale kind). `currency` is the item's or edition's currency as
+///      approved: for a 6529 Stream item `CURRENCY_ETH`, an allowlisted ERC-20 or
+///      `CURRENCY_DEFAULT`, which the auction resolves (`IEconomicsResolver.resolveCurrency`) and
+///      locks when the sale starts; for an edition, the sale method's own, opaque to the token
+///      (the edition auction accepts only ETH). `price` is zero: an English auction has none,
+///      and `EditionTerms` carries none (a priced sale method keeps its price in `params`).
+///      `params` are the sale method's, as approved. `seller` receives the artist portion (a
+///      split wallet's predicted CREATE2 address, which may not be deployed), `feeRecipient` the
+///      network portion, `feeShare` out of `Splits.DENOMINATOR` (100,000). `creator` is the lead
+///      artist's active authority, resolved through the artist registry when the terms are read.
+///      It is zero while a recovery override is pending (`IArtistRegistry.activeAuthorityOf`).
+///      Under ADR 0005 an unbid 6529 Stream work goes to the 6529 Network Museum
+///      (`IEconomicsResolver.museum`); only a federated work's creator receives an unbid token.
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;
@@ -83,8 +83,8 @@ struct PrimaryTerms {
 }
 
 /// @notice The terms a sale adapter locks for one sale, in the same shape in every adapter.
-/// @dev `id` is the token ID (an edition ID for 6529 Editions). `price` is the package unit price
-///      (fixed price), the starting price (Dutch) or zero (English auction).
+/// @dev `id` is the token ID (an edition ID for 6529 Stream Editions). `price` is zero for the
+///      English auction; another sale method defines its own.
 struct LockedTerms {
     address token;
     uint256 id;
@@ -93,14 +93,4 @@ struct LockedTerms {
     address seller;
     address feeRecipient;
     uint32 feeShare;
-}
-
-/// @notice The `params` of a DUTCH sale: `abi.encode(DutchParams)` (ADR 0001 section 5).
-/// @dev The price starts at the edition `price` and falls to `restingPrice` over `duration`
-///      seconds, linearly when `stepSeconds` is zero, otherwise in equal drops every
-///      `stepSeconds`; it then rests. `restingPrice` is at most the starting price.
-struct DutchParams {
-    uint256 restingPrice;
-    uint64 duration;
-    uint64 stepSeconds;
 }

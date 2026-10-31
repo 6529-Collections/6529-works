@@ -10,7 +10,6 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -191,7 +190,7 @@ abstract contract CurationBase is CurationHelpers {
         verifier = new Eip712CurationVerifier(address(manager));
         registry = _newRegistry();
         artists.bindPackageRegistry(address(registry));
-        // Stand-ins for the bound 6529 Stream and 6529 Editions, with their ERC-165 answers.
+        // Stand-ins for the bound 6529 Stream and 6529 Stream Editions, with their ERC-165 answers.
         stream = address(new MockBoundCaller(type(IStream).interfaceId));
         editions = address(new MockBoundCaller(type(IEditions).interfaceId));
 
@@ -237,9 +236,7 @@ abstract contract CurationBase is CurationHelpers {
         i.payees = new ISplitWallet.Payee[](2);
         i.payees[0] = ISplitWallet.Payee(0, collab, 20_000);
         i.payees[1] = ISplitWallet.Payee(_id(lead), address(0), 80_000);
-        i.edition = EditionTerms(
-            EditionFormat.FIXED, 100, 0, 0.01 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
-        );
+        i.edition = EditionTerms(100, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
     function _attestation(uint256 key, bytes32 root, bytes32 evidence)

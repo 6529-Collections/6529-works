@@ -12,7 +12,6 @@ import { Roles } from "src/governance/Roles.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -188,7 +187,7 @@ abstract contract StreamFixture is Test {
         item.license = _license("cc0-1.0");
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, address(0), "");
-        item.edition = EditionTerms(EditionFormat.FIXED, 0, 0, 0, address(0), bytes32(0), "");
+        item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }
 
     function _request(PackageItem memory item) internal pure returns (bytes memory) {

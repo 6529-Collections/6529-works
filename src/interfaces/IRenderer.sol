@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 /// @title IRenderer
-/// @notice Builds token metadata for 6529 Stream works and 6529 Editions editions (ADR 0001
-///         section 8 "`tokenURI` size").
+/// @notice Builds token metadata for 6529 Stream works and the editions of 6529 Stream Editions
+///         (ADR 0001 section 8 "`tokenURI` size").
 /// @dev A renderer is immutable: a change of rendering is a new renderer contract, which works
 ///      adopt as the default before finalize or by the errata path after. It reads the core and
 ///      seed from 6529 Stream, the record file ID, media, license and preferred locators from
@@ -41,8 +41,8 @@ interface IRenderer is IERC165 {
     error RendererNotInlineable(address token, uint256 tokenId);
 
     /// @notice The compact metadata URI (`data:application/json;...`) for `tokenId` of
-    ///         `token`, which is 6529 Stream or 6529 Editions.
-    /// @param token The token contract: 6529 Stream, or 6529 Editions for an edition.
+    ///         `token`, which is 6529 Stream or 6529 Stream Editions.
+    /// @param token The token contract: 6529 Stream, or 6529 Stream Editions for an edition.
     /// @param tokenId The token ID on `token`; an edition's ID is its master's token ID.
     /// @return `data:application/json;utf8,` followed by the compact JSON metadata.
     function tokenURI(address token, uint256 tokenId) external view returns (string memory);
@@ -50,7 +50,7 @@ interface IRenderer is IERC165 {
     /// @notice The full metadata URI with the media inlined, for a work with a usable record that
     ///         is on-chain complete and whose primary file is at most 1 MiB (cost-weighted).
     ///         Reverts otherwise, including for a work that `tokenURI` shows as core-only.
-    /// @param token The token contract: 6529 Stream, or 6529 Editions for an edition.
+    /// @param token The token contract: 6529 Stream, or 6529 Stream Editions for an edition.
     /// @param tokenId The token ID on `token`; an edition's ID is its master's token ID.
     /// @return `data:application/json;utf8,` followed by the JSON metadata, the primary media
     ///        inlined.

@@ -26,7 +26,7 @@ address derivation, the payee-list rules and both escrow-recovery flows.
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Stream at mint; Editions at `createEdition` | Stream reads `economics` and derives the seller with `walletFor(payees, 0)`; Editions calls `newWorkTerms(PRODUCT_EDITIONS, payees)`. Either way the terms are locked into the work. | ECO-6, ECO-7 |
-| Sale adapters | `resolveCurrency` (fixed price and Dutch, at `openSale`); `defaultCurrency`, `isActive`, `statusClock` and `incrementFloor` on the allowlist (the auction locks the currency at start and the increment floor at the first bid); `RevenuePayment` to the seller and fee recipient from the token's `primaryTerms` | ECO-26, ECO-34, ED-9, ED-10, AUC-15 |
+| Sale adapters | `defaultCurrency`, `isActive`, `statusClock` and `incrementFloor` on the allowlist (the auction locks the currency at start and the increment floor at the first bid); `RevenuePayment` to the seller and fee recipient from the token's `primaryTerms` | ECO-26, ECO-34, AUC-15 |
 | Anyone | `createWallet`, `release` for a fixed payee, `flush`, `claim` | ECO-9 to ECO-15, ECO-27, ECO-29, ECO-30 |
 | An artist's current payout address | `release`, `releaseTo`, or a signature submitted with `releaseWithAuthorization` / `claimSigned`; `revokeNonce` | ECO-16, ECO-17, ECO-20 to ECO-22 |
 | A non-wallet account with escrow credits (the fee-recipient Safe) | `consentToRecovery(replacement)` | ECO-28 |

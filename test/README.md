@@ -18,7 +18,7 @@ description of the contract.
   suite and on the real stack:
 
   ```bash
-  forge test --match-test "test_OpenSale_"          # every openSale test
+  forge test --match-test "test_Settle_"            # every settle test
   grep -rn "function test_openRecord_" test/        # every openRecord test, with its file
   ```
 
@@ -45,10 +45,8 @@ description of the contract.
 | `stream/WorkRecords.sol` | [`stream/WorkRecords.t.sol`](stream/WorkRecords.t.sol), [`PreferredLocation.t.sol`](stream/PreferredLocation.t.sol); on the real stack [`integration/WorkRecordsStack.t.sol`](integration/WorkRecordsStack.t.sol), `RecordAmendments`, `SyncOnChainResume` |
 | `stream/SpdxId.sol` | [`stream/SpdxId.t.sol`](stream/SpdxId.t.sol); the proof in `symbolic/` |
 | `sales/EnglishAuction.sol` | [`sales/auction/EnglishAuction.t.sol`](sales/auction/EnglishAuction.t.sol) (start, bids, settlement, credits, 96-bit arithmetic), `EnglishAuctionDisputes` (pause, withdrawals, resume, cancel, governed setters), `EnglishAuctionFederation`, `EnglishAuctionHostile`, `EnglishAuctionGas`, `invariant/`; on the real stack the `Auction*.t.sol` suites beside them |
-| `sales/FixedPriceSale.sol`, `sales/MintSaleBase.sol` | [`sales/fixed/FixedPriceSale.t.sol`](sales/fixed/FixedPriceSale.t.sol) (configuration, opening, artist approval, pause, closing, purchases, allowlists), `FixedPricePayments`, `FederationRegistry`, `ZeroFee`, `FixedPriceGasCap`, `FixedPriceInvariant` |
-| `sales/DutchSale.sol`, `sales/DutchPricing.sol` | [`sales/dutch/`](sales/dutch/): `DutchSale`, `DutchPricing`, `DutchZeroFee`, `DutchGasCap`, `DutchInvariant` |
+| `sales/EnglishAuction.sol`, its pause windows | on the real stack: [`sales/PauseWindow.t.sol`](sales/PauseWindow.t.sol) |
 | `sales/UniformClearing.sol` | [`sales/uniform/UniformClearing.t.sol`](sales/uniform/UniformClearing.t.sol) (the ladder domain, the clearing against a brute force over units and against the reference model's golden vectors in `fixtures/edition-auction/`, the quote, the cut step), `UniformClearingGas`; the proofs in `symbolic/` |
-| all three sale adapters | on the real stack: [`sales/SaleSchedulesUnderHalts.t.sol`](sales/SaleSchedulesUnderHalts.t.sol), [`PauseWindow.t.sol`](sales/PauseWindow.t.sol), [`EditionSaleAuthority.t.sol`](sales/EditionSaleAuthority.t.sol) |
 | `editions/Editions.sol`, `EditionRules.sol` | [`editions/`](editions/): `Editions`, `EditionRules`, `EditionsGasReport`, `Editions.invariant` |
 | `curation/PackageRegistry.sol`, `Eip712CurationVerifier.sol` | [`curation/`](curation/): `PackageRegistry`, `PackageRegistryGas`, `PackageRegistryInvariant`, `Eip712CurationVerifier` |
 | `identity/ArtistRegistry.sol` | [`identity/ArtistRegistry.t.sol`](identity/ArtistRegistry.t.sol), [`ArtistRegistryStanding.t.sol`](identity/ArtistRegistryStanding.t.sol) (the standing snapshot and its worst-case gas), `ContestedOverrides`, `RestrainedFlag`, `ArtistRegistry.invariant` |
@@ -68,15 +66,15 @@ description of the contract.
 | Directory | What lives there | Layers |
 | --- | --- | --- |
 | `content/`, `curation/`, `economics/`, `editions/`, `entropy/`, `governance/`, `identity/`, `interfaces/`, `libraries/`, `records/`, `stream/` | The suites of one `src/` module each, with the module's base or fixture (`*Base.sol`, `*Fixture.sol`) and its invariant handlers (`*Handler.sol`) | unit, fuzz, invariant, gas |
-| `sales/` | The three sale adapters: `auction/`, `fixed/` and `dutch/` for each adapter; at the top, suites that span the adapters, on the real stack through [`SalesStackBase.sol`](sales/SalesStackBase.sol) | unit, fuzz, invariant, gas, integration |
+| `sales/` | The sale adapters: `auction/` for the English auction; at the top, suites on the real stack through [`SalesStackBase.sol`](sales/SalesStackBase.sol) | unit, fuzz, invariant, gas, integration |
 | `sales/auction/Auction*.t.sol` | The auction's regression suites on the real stack: currency freeze, dispute pause and cancel, payout failures, custody, federated tokens | integration |
 | `*/invariant/` | Larger stateful campaigns, each test contract with its handler | invariant |
 | `content/tooling/` | The Python uploader's and the CID helper's golden vectors against the real `ContentStore` | differential |
-| `integration/` | The real, wired v1 stack, deployed by the deploy library with the committed genesis ([its README](integration/README.md)); the gas report and its harness; `invariant/` runs two campaigns on the same stack | integration, gas, invariant |
+| `integration/` | The real, wired v1 stack, deployed by the deploy library with the committed genesis ([its README](integration/README.md)); the gas report and its harness; `invariant/` runs a campaign on the same stack | integration, gas, invariant |
 | `deploy/` | The deploy library, the deploy and Verify scripts, genesis | integration |
 | `fork/` | The stack against the real delegation contract, Permit2 and the VRF coordinator; skipped without an RPC URL ([its README](fork/README.md)) | fork |
 | `symbolic/` | Halmos proofs (`check_*`), compiled only under the `symbolic` profile | symbolic |
-| `helpers/` | Shared fixtures (`SaleFixture`, `GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`), the state-growth meter (`StateGrowth`, with its own test), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
+| `helpers/` | Shared fixtures (`GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`), the state-growth meter (`StateGrowth`, with its own test), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
 | `mocks/` | Stand-ins and adversaries, by module ([below](#mocks)) | support |
 | `fixtures/` | Byte-exact data: the CC0 legal code, Permit2's mainnet runtime code, and the oracle vectors from `tools/content/oracles.py` | support |
 
@@ -87,9 +85,9 @@ A file may hold more than one test contract when tests of one subject need diffe
 ## Naming
 
 **Files.** `<Contract>.t.sol` is a contract's main suite and `<Contract><Area>.t.sol` one area
-of it (`EnglishAuctionDisputes`, `FixedPricePayments`, `RendererRecords`,
+of it (`EnglishAuctionDisputes`, `EnglishAuctionHostile`, `RendererRecords`,
 `ArtistRegistryStanding`). Real-stack suites are named for the behaviour they pin
-(`AuctionCurrencyFreeze`, `SaleSchedulesUnderHalts`). Invariant suites are `*Invariant.t.sol` or
+(`AuctionCurrencyFreeze`, `PauseWindow`). Invariant suites are `*Invariant.t.sol` or
 `*.invariant.t.sol`, beside their `*Handler.sol`. Gas suites are `*Gas.t.sol`, `*GasCap.t.sol`
 and `*GasReport.t.sol`.
 
@@ -106,7 +104,7 @@ and `*GasReport.t.sol`.
 | Open finding | `test_Finding_*`, passing while the finding stands ([integration README](integration/README.md#findings)) | |
 
 The function part matches the contract's function as the suite writes it: most suites capitalise
-it (`test_OpenSale_`, `test_Bid_`), the Stream, WorkRecords and curation suites keep its case
+it (`test_Settle_`, `test_Bid_`), the Stream, WorkRecords and curation suites keep its case
 (`test_mint_`, `test_openRecord_`, `test_isApproved_`). Some suites name an area instead of one
 function (`test_Standing_`, `test_Relay_`, `test_HostileToken_`). A name never carries a review
 ID; the ID goes on the NatSpec line above it:
@@ -130,7 +128,7 @@ two consumers need different stand-ins for the same contract, the name says whos
 | Directory | Contents |
 | --- | --- |
 | [`mocks/stream/`](mocks/stream/) | `StreamMocks.sol`: Stream's dependencies (package and artist registries, economics, entropy, renderer, sale adapter, records, editions); `StreamMock.sol`: the minimal Stream stand-in |
-| [`mocks/sales/`](mocks/sales/) | `SaleMocks.sol`: an edition-like mint target, escrow and allowlist stand-ins, the federation registry, a faithful Permit2 and an EIP-2612 token, shared by every sale suite and the integration stack; `AuctionMocks.sol`: an ERC-721 mint target and hostile bidders for the auction; `HostileSaleMocks.sol`; `LeanStartStack.sol`: the lean start-path model the auction's gas tests measure |
+| [`mocks/sales/`](mocks/sales/) | `SaleMocks.sol`: an edition-like mint target, escrow, allowlist and economics stand-ins, the federation registry, a faithful Permit2 and an EIP-2612 token, shared by the sale suites and the integration stack; `AuctionMocks.sol`: an ERC-721 mint target and hostile bidders for the auction; `LeanStartStack.sol`: the lean start-path model the auction's gas tests measure |
 | [`mocks/economics/`](mocks/economics/) | `MockERC20` and the hostile tokens (fee on transfer, rebasing, no return, blocklists, gas burners), wallets and payees |
 | [`mocks/content/`](mocks/content/) | What the renderer reads (`Renderer*Mock`) and hostile stores and satellites |
 | [`mocks/editions/`](mocks/editions/) | Editions' dependencies, among them `EditionsStreamMock` (masters, settlement and the edition link, with faults), and hostile ERC-1155 receivers |

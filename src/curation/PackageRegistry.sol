@@ -16,7 +16,6 @@ import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "../interfaces/types/EconomicsT
 import { ArtistIdentity } from "../interfaces/types/IdentityTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     MoveAuthorization,
@@ -424,17 +423,16 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @dev Content, seed and edition fields: a nonzero content hash; an artist seed exactly
     ///      under `SeedPolicy.ARTIST`; an ORIGINAL with empty edition terms; an EDITION_MASTER
-    ///      with edition terms `EditionRules.isValid` accepts, the same rule 6529 Editions applies
-    ///      at `createEdition`, so a master that mints can always get its edition (a later
-    ///      revocation of its root does not stop that either).
+    ///      with edition terms `EditionRules.isValid` accepts, the same rule 6529 Stream Editions
+    ///      applies at `createEdition`, so a master that mints can always get its edition (a
+    ///      later revocation of its root does not stop that either).
     function _checkTerms(PackageItem calldata item, bytes32 itemHash) private pure {
         EditionTerms calldata e = item.edition;
-        bool fixedSize = e.format == EditionFormat.FIXED;
         bool bad =
             item.contentHash == 0 || (item.seedPolicy == SeedPolicy.ARTIST) == (item.seed == 0);
         if (item.kind == ItemKind.ORIGINAL) {
-            bad = bad || !fixedSize || e.size != 0 || e.window != 0 || e.price != 0
-                || e.currency != address(0) || e.saleKind != 0 || e.params.length != 0;
+            bad = bad || e.maxCount != 0 || e.currency != address(0) || e.saleKind != 0
+                || e.params.length != 0;
         } else {
             bad = bad || !EditionRules.isValid(e);
         }

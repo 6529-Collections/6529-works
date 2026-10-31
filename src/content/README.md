@@ -2,9 +2,9 @@
 
 On-chain content and metadata: the permissionless content store that keeps any file as
 content-addressed SSTORE2 chunks, the governed registry of pinned script libraries, and the
-renderer that builds `tokenURI` for 6529 Stream works and their 6529 Editions editions. The
-storage rules are in [Works and storage](../../docs/spec/works-and-storage.md) (`WS-24` to
-`WS-35`); the metadata format, media selection, record validation and the 8M gas budget in
+renderer that builds `tokenURI` for 6529 Stream works and their editions in 6529 Stream
+Editions. The storage rules are in [Works and storage](../../docs/spec/works-and-storage.md)
+(`WS-24` to `WS-35`); the metadata format, media selection, record validation and the 8M gas budget in
 [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md) (`RND-*`). Off-chain
 tooling to plan, upload, attest and verify files, with gas quotes under Prague and Glamsterdam,
 is the [uploader](../../tools/content/README.md).

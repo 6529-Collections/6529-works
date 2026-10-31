@@ -43,8 +43,9 @@ restraint withholds are in the [stolen-key flow](../../docs/spec/identity-and-re
   failed re-check at execution) clears it, and `activeAuthorityOf` reads the pending change only
   while it is set. Every new way a change can end must clear the flag;
   [`RestrainedFlag.t.sol`](../../test/identity/RestrainedFlag.t.sol) and the identity invariants
-  check it against the pending change. `activeAuthorityOf` sits on the auction start, settle and
-  `openSale` paths, so its cost shows up in the [ADR 0004 table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+  check it against the pending change. `activeAuthorityOf` sits on the auction start and settle
+  paths, so its cost shows up in the
+  [ADR 0004 table](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
 - **Storage.** `_artists` (the identity fields, last activity and nonce), `_pending` (one change
   with its captured cancellers), `_standing` (at most 16 entries), `artistIdOf` for every past
   and present authority, `reservedFor` for a staged new authority, and `_acceptanceUsed` for

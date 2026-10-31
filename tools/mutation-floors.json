@@ -43,11 +43,7 @@
     "src/libraries/SignatureVerifier.sol": 84,
     "src/libraries/Utf8.sol": 84,
     "src/records/StatementLog.sol": 91,
-    "src/sales/DutchPricing.sol": 92,
-    "src/sales/DutchSale.sol": 94,
     "src/sales/EnglishAuction.sol": 90,
-    "src/sales/FixedPriceSale.sol": 86,
-    "src/sales/MintSaleBase.sol": 91,
     "src/stream/SpdxId.sol": 90,
     "src/stream/Stream.sol": 90,
     "src/stream/WorkRecords.sol": 89

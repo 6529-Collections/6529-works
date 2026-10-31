@@ -18,7 +18,6 @@ contract TypehashesTest is Test {
         assertEq(Typehashes.CURATION_VERIFIER_NAME, "6529 Works Curation Verifier");
         assertEq(Typehashes.WORK_RECORDS_NAME, "6529 Works Records");
         assertEq(Typehashes.ARTIST_REGISTRY_NAME, "6529 Works Artist Registry");
-        assertEq(Typehashes.FIXED_PRICE_SALE_NAME, "6529 Works Fixed Price Sale");
     }
 
     function test_signedPayloadTypehashes() public pure {
@@ -53,13 +52,6 @@ contract TypehashesTest is Test {
             Typehashes.OVERRIDE_ACCEPTANCE,
             0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3
         );
-        assertEq(
-            Typehashes.PHASE, 0x921a1eebb9b36af81620ff4a1a8cefecb30f1bef4e32aa373c694354dc051290
-        );
-        assertEq(
-            Typehashes.PHASE_CONFIGURATION,
-            0xc0bdf7233be7e163d786ce38b78bb30cd3a1712cdf5e947f32db0af1ed32d534
-        );
     }
 
     function test_witnessTypehashes() public pure {
@@ -70,14 +62,6 @@ contract TypehashesTest is Test {
         assertEq(
             Typehashes.START_BID_WITNESS,
             0xb8513f1f66acd0543fe8542e5c408fd4a7b59dfcf47fc1e4c2c164c66cd5bd0e
-        );
-        assertEq(
-            Typehashes.PURCHASE_WITNESS,
-            0x119cc3e88e6f6279440597a9aeb3fe920bc464408b6f4e8f14fb0ff4e04a4a55
-        );
-        assertEq(
-            Typehashes.DUTCH_PURCHASE_WITNESS,
-            0x6369ab0c00b76d262a77c0c13be372b9131ef0eb9a2d5d8409618957095ceddb
         );
     }
 
@@ -91,16 +75,6 @@ contract TypehashesTest is Test {
         assertEq(
             keccak256(bytes.concat(bytes(PERMIT2_STUB), bytes(Typehashes.START_BID_WITNESS_TYPE))),
             0xb44f39960bfdaf0c5fedccb2b3159844117a56c2d506bcf2c35776fe2c346acf
-        );
-        assertEq(
-            keccak256(bytes.concat(bytes(PERMIT2_STUB), bytes(Typehashes.PURCHASE_WITNESS_TYPE))),
-            0xe6059a1eb191e9e77fa847628aa401e15410cf3c4c2a3529af56e79cabe9a592
-        );
-        assertEq(
-            keccak256(
-                bytes.concat(bytes(PERMIT2_STUB), bytes(Typehashes.DUTCH_PURCHASE_WITNESS_TYPE))
-            ),
-            0x8abb1791eb031c454185432a3a1d72b3752bc997984d707a53b5c57ec6da58d3
         );
     }
 }

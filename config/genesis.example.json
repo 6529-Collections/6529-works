@@ -346,15 +346,15 @@
           "delay": 0
         },
         {
-          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes)),bytes32,uint64,bytes[])",
-          "selector": "0x291e2c27",
+          "signature": "relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xd60ad0db",
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800
         },
         {
-          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes)),bytes32,uint64,bytes[])",
-          "selector": "0xe27fed56",
+          "signature": "setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])",
+          "selector": "0xc13560ef",
           "role": "FUNDS_SETTER",
           "class": "funds",
           "delay": 1209600
@@ -642,112 +642,6 @@
       "deferred": []
     },
     {
-      "name": "FixedPriceSale",
-      "artifact": "src/sales/FixedPriceSale.sol:FixedPriceSale",
-      "implementation": "src/sales/FixedPriceSale.sol:FixedPriceSale",
-      "address": "0x000000000000000000000000000000000000a009",
-      "status": "implemented on main",
-      "functions": [
-        {
-          "signature": "pause()",
-          "selector": "0x8456cb59",
-          "role": "PAUSER",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "unpause()",
-          "selector": "0x3f4ba83a",
-          "role": "UNPAUSER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
-          "signature": "openSale(address,uint256,(uint64,uint64,bytes32,uint32,bool,bool)[],(uint256,uint64,bytes))",
-          "selector": "0xc243cebe",
-          "role": "PLATFORM",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "closeSale(uint256)",
-          "selector": "0xa4223d53",
-          "role": "PLATFORM",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "setTarget(address,bool)",
-          "selector": "0x80ffe77f",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
-        },
-        {
-          "signature": "setFederationRegistry(address,address)",
-          "selector": "0x747e3199",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
-        }
-      ],
-      "genesisOnly": [],
-      "deferred": []
-    },
-    {
-      "name": "DutchSale",
-      "artifact": "src/sales/DutchSale.sol:DutchSale",
-      "implementation": "src/sales/DutchSale.sol:DutchSale",
-      "address": "0x000000000000000000000000000000000000a00a",
-      "status": "implemented on main",
-      "functions": [
-        {
-          "signature": "pause()",
-          "selector": "0x8456cb59",
-          "role": "PAUSER",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "unpause()",
-          "selector": "0x3f4ba83a",
-          "role": "UNPAUSER",
-          "class": "standard",
-          "delay": 172800
-        },
-        {
-          "signature": "openSale(address,uint256,uint64)",
-          "selector": "0x7068827a",
-          "role": "PLATFORM",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "closeSale(uint256)",
-          "selector": "0xa4223d53",
-          "role": "PLATFORM",
-          "class": "immediate",
-          "delay": 0
-        },
-        {
-          "signature": "setTarget(address,bool)",
-          "selector": "0x80ffe77f",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
-        },
-        {
-          "signature": "setFederationRegistry(address,address)",
-          "selector": "0x747e3199",
-          "role": "SUCCESSOR_SETTER",
-          "class": "successor",
-          "delay": 2592000
-        }
-      ],
-      "genesisOnly": [],
-      "deferred": []
-    },
-    {
       "name": "EconomicsResolver",
       "artifact": "src/economics/EconomicsResolver.sol:EconomicsResolver",
       "implementation": "src/economics/EconomicsResolver.sol:EconomicsResolver",
@@ -984,24 +878,6 @@
       "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0080000000000000000000000000000000000000000000000000000000000000001"
     },
     {
-      "contract": "Editions",
-      "signature": "setAdmittedMinter(address,bool)",
-      "args": [
-        "FixedPriceSale",
-        true
-      ],
-      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0090000000000000000000000000000000000000000000000000000000000000001"
-    },
-    {
-      "contract": "Editions",
-      "signature": "setAdmittedMinter(address,bool)",
-      "args": [
-        "DutchSale",
-        true
-      ],
-      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a00a0000000000000000000000000000000000000000000000000000000000000001"
-    },
-    {
       "contract": "EnglishAuction",
       "signature": "setTarget(address,bool)",
       "args": [
@@ -1009,24 +885,6 @@
         true
       ],
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
-    },
-    {
-      "contract": "FixedPriceSale",
-      "signature": "setTarget(address,bool)",
-      "args": [
-        "Editions",
-        true
-      ],
-      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
-    },
-    {
-      "contract": "DutchSale",
-      "signature": "setTarget(address,bool)",
-      "args": [
-        "Editions",
-        true
-      ],
-      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
     },
     {
       "contract": "AssetAllowlist",

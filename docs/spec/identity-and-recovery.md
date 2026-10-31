@@ -334,7 +334,6 @@ reserved new key gains none of them until execution:
 | Power | Contract and function | While restrained |
 | --- | --- | --- |
 | The sale `creator` | `Stream.primaryTerms`, `Editions.primaryTerms` | Zero |
-| Open, consent to or close an edition sale as the artist | `FixedPriceSale`, `DutchSale` (closing in `MintSaleBase`) | `NotSaleManager`; a signed consent fails with `InvalidSignature`. PLATFORM still opens listed FIXED editions at the package terms and may close any sale (MARKET-6). |
 | Start an approved, unminted work; revoke a move nonce | `PackageRegistry` (`consume`, `revokeMove`) | `InvalidSignature`; `NotAuthority` |
 | Accept a package for an existing artist ID | `PackageRegistry.acceptPackage` | `InvalidSignature` |
 | Receive a no-bid auction's work | `EnglishAuction.settle` | Reverts with `InvalidRecipient(0)`; the work stays in custody until the outcome |
@@ -347,8 +346,8 @@ reserved new key gains none of them until execution:
   ([`IArtistRoleResolver`](../../src/interfaces/IArtistRoleResolver.sol)).
 - **The restraint never reaches back.** An auction with a bid settles as usual, with the artist's
   share frozen in the seller wallet. A no-bid auction's work goes to the new authority after
-  execution, or to the old one after a veto, void or lapse. An open edition sale keeps selling.
-  A delivery recorded for the old authority before the staging can still be claimed by it.
+  execution, or to the old one after a veto, void or lapse. A delivery recorded for the old
+  authority before the staging can still be claimed by it.
 - Tested by `test_Attack_ThiefCannotPullDuringARecoveryOverride`
   ([`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol)),
   `test_PendingNextAuthorityIsReservedUntilTheRecoveryExecutes`

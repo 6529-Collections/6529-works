@@ -65,13 +65,13 @@ addresses, not the structure. Delays come from `Roles.executionDelay` and `Roles
 | --- | --- | --- | --- | --- | --- |
 | `ADMIN` | 0 | Hot admin Safe; cold recovery admin Safe | 30 days | 30 days | Every unmapped selector: the one-shot `bind*` calls, each target's `setAuthority`, the manager's own functions |
 | `GUARDIAN` | 1 | Three guardian Safes | Immediate | 30 days | The auction's dispute pause, `vetoChange`, `revokePackage`, `disableSigner`, `deprecateAsset`, `DependencyRegistry.deprecate`; the manager itself checks it for cancelling and `suspend` |
-| `PAUSER` | 2 | The same three guardian Safes | Immediate | 48 hours | `pause()` on the three sale adapters |
-| `UNPAUSER` | 3 | Hot admin Safe | 48 hours | 48 hours | `unpause()` on the three sale adapters, the auction's `resume(saleId)` |
+| `PAUSER` | 2 | The same three guardian Safes | Immediate | 48 hours | `pause()` on the English auction |
+| `UNPAUSER` | 3 | Hot admin Safe | 48 hours | 48 hours | The English auction's `unpause()` and `resume(saleId)` |
 | `CURATION_SIGNER` | 4 | Two curation signer keys (EOAs) | Immediate | 30 days | Nothing is mapped: the curation verifier reads membership |
 | `STORAGE_OPERATOR` | 5 | Storage operator key | Immediate | 48 hours | WorkRecords' preferred-location setters |
 | `MINTER` | 6 | None | Immediate | 30 days | Unused in v1 |
 | `KEEPER` | 7 | None | Immediate | 48 hours | Unused in v1 |
-| `PLATFORM` | 8 | Platform key | Immediate | 48 hours | `Stream.createCollection`, `StatementLog.appendPlatform`; read by hand for `openSale`, `closeSale` and `addLocator` |
+| `PLATFORM` | 8 | Platform key | Immediate | 48 hours | `Stream.createCollection`, `StatementLog.appendPlatform`; read by hand for `addLocator` |
 | `PARAMETER_SETTER` | 9 | Hot admin Safe | 48 hours | 48 hours | Auction settings and opening bids, defaults for new works, contract URIs, dispute outcomes, `relicense`, `stageOverride`, the entropy module's `setConfig` |
 | `FUNDS_SETTER` | 10 | Hot admin Safe | 14 days | 14 days | Network fee terms, `setOwner`, `WorkRecords.setRoyaltyRate`, asset admission, default currencies, `RevenueEscrow.recover` |
 | `SUCCESSOR_SETTER` | 11 | Hot admin Safe | 30 days | 30 days | Verifier, renderer, consolidation source, artist resolver, VRF and federation registry swaps; `lowerCallbackGasLimit`; re-enabling a signer; admitted minters and sale targets; `resolveContested`; `appendGovernanceManifest` |
@@ -105,12 +105,9 @@ contract (code, no EIP-7702 delegation, ERC-165 where implemented; Stream's bind
 
 Some contracts read a role from the manager by hand instead of using `restricted`:
 
-- **`openSale`, `closeSale` and `addLocator`.** The token's creator (fixed-price and Dutch
-  adapters) or the work's artist (`addLocator`, before finalize) acts directly; anyone else
-  needs an immediate answer for the `PLATFORM` mapping (`MintSaleBase._isPlatform`,
-  `WorkRecords._checkCanCall`), which `VerifyV1.checkPlatformPath` confirms for all five
-  selectors. Scope: [editions and sales](editions-and-sales.md),
-  [works and storage](works-and-storage.md).
+- **`addLocator`.** The work's artist acts directly before finalize; anyone else needs an
+  immediate answer for the `PLATFORM` mapping (`WorkRecords._checkCanCall`), which
+  `VerifyV1.checkPlatformPath` confirms. Scope: [works and storage](works-and-storage.md).
 - **Relayed statements.** `StatementLog.appendSigned` accepts a `CURATOR` or `PLATFORM`
   signer only when `canCallWithDelay` on `appendCurator` or `appendPlatform` answers
   immediately.
@@ -379,7 +376,7 @@ sequenceDiagram
 Anything else, such as a verifier swap or a recipient change, reverts with
 `WiringSelectorNotAllowed`. A wiring call must target a configured target, never the manager
 (`InvalidWiringCall`). There are at most `GovernanceConfig.MAX_WIRING_CALLS` (64) calls; the
-committed example's 19 are listed in order in the [matrix](../audit/roles.md#genesis-wiring).
+committed example's 15 are listed in order in the [matrix](../audit/roles.md#genesis-wiring).
 
 | Selector | Why it is wired |
 | --- | --- |
@@ -495,8 +492,7 @@ sequenceDiagram
 ```
 
 - **Effects.** In the same block `P` fails every `PLATFORM` path: `createCollection`,
-  `appendPlatform`, `addLocator`, the adapters' `openSale` and `closeSale` (`NotSaleManager`),
-  and relayed `PLATFORM` statements. Creators keep their own sale paths. The same flow stops a
+  `appendPlatform`, `addLocator` and relayed `PLATFORM` statements. The same flow stops a
   `CURATOR` or `STORAGE_OPERATOR` key.
 - **Lift** as under [suspension](#suspension-of-operational-keys); in an admin recovery the
   cold admin lifts once the hot admin is removed. If the stolen key is also the marketplace
@@ -610,8 +606,8 @@ GOV-n".
 | GV-19 | Setters for funds, recipients, verifiers, renderers and sale parameters are compare-and-set: they take the expected current value (or revision), so a stale operation reverts. | Each setter (`ExpectedValueMismatch`, revision checks) | `Hardening.t.sol`: `test_StaleCompareAndSetOperationReverts`; `AssetAllowlist.t.sol`: `test_QueuedAdmissionCannotReviveAfterEmergencyDeprecation`, `test_DefaultCurrencyIsCompareAndSet` |
 | GV-20 | Every governed setter emits an event: value setters the old and the new value, per-key toggles (`setTarget`, `setAdmittedMinter`) the key and its new state. | Each setter's event | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_UpdatesAndEmits`, `test_SetCoordinator_SwapsAndEmits`; [`StatementLog.t.sol`](../../test/records/StatementLog.t.sol): `test_SetArtistResolver_SwapsAndEmits`; `Hardening.t.sol`: `test_DirectionRulesLiveInTheTarget` |
 | GV-21 | Raise-only parameters use `BoundedParameter`: a nonzero initial value within the ceiling, and each raise above the current value, at most double it, and never above the ceiling. The one v1 user is the entropy callback gas limit (`setConfig`, ceiling `MAX_CALLBACK_GAS`); its separate 30-day `lowerCallbackGasLimit` sets a value below the current limit and at least `MIN_CALLBACK_GAS`. | `BoundedParameter.initial`, `raise`; `VrfEntropyModule` | [`BoundedParameter.t.sol`](../../test/governance/BoundedParameter.t.sol): `testFuzz_RaiseMatchesSpecification`, `testFuzz_RaiseSequenceStaysBounded`, `test_RaiseRejectsMoreThanDouble`; `VrfEntropyGovernance.t.sol`: `test_SetConfig_GasLimitCanOnlyBeRaised`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit` |
-| GV-22 | Dependencies installed by governed setters are checked for code, no EIP-7702 delegation and ERC-165 where implemented. Sale targets are listed with the same check (ERC-721 on the auction, `IMintTarget` on the fixed-price and Dutch adapters). All but admitted minters and sale targets are also pinned to a code hash re-checked at every use (DEPS-6). | `Dependency` (the one shared check), used by `PackageRegistry.setVerifier` and `registerPackage`, `VrfEntropyModule`, `StatementLog`, `MintSaleBase` and `EnglishAuction` (`isTarget`), `Stream.rendererOf`, `WorkRecords.pinnedRenderer`, `ArtistRegistry` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_refusesAVerifierWhoseCodeChanged`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; `StatementLog.t.sol`: `test_Artist_AResolverWhoseCodeChangedIsRefused`; [`FederationRegistry.t.sol`](../../test/sales/fixed/FederationRegistry.t.sol): `test_IsTarget_IgnoresARegistryWhoseCodeChanged`; [`FixedPriceSale.t.sol`](../../test/sales/fixed/FixedPriceSale.t.sol): `test_SetTarget_ChecksTheTokenLikeADependency`; [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol): `test_PinnedRendererWithChangedCodeIsRefused`, `test_FinalizeRefusesADefaultRendererWhoseCodeChanged`; [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol): `test_ConsolidationSource_CodeHashRecheckedAtUse` |
-| GV-23 | A delay that reverses a tightening action counts from that action, not from scheduling: `unpause`, `resume` and the dispute `cancel` run no earlier than 48 hours after the pause (review finding GOV-5), a re-admission no earlier than 14 days after the deprecation (MARKET-2). | `MintSaleBase.unpause`, `EnglishAuction._requireUnpausable`, `AssetAllowlist.admitAsset` | [`PauseWindow.t.sol`](../../test/sales/PauseWindow.t.sol): `test_Unpause_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`, `test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`; `AssetAllowlist.t.sol`: `test_DeprecateThenReadmit` |
+| GV-22 | Dependencies installed by governed setters are checked for code, no EIP-7702 delegation and ERC-165 where implemented. Sale targets are listed with the same check (ERC-721 on the auction). All but admitted minters and sale targets are also pinned to a code hash re-checked at every use (DEPS-6). | `Dependency` (the one shared check), used by `PackageRegistry.setVerifier` and `registerPackage`, `VrfEntropyModule`, `StatementLog`, `EnglishAuction` (`isTarget`), `Stream.rendererOf`, `WorkRecords.pinnedRenderer`, `ArtistRegistry` | [`PackageRegistry.t.sol`](../../test/curation/PackageRegistry.t.sol): `test_registerPackage_refusesAVerifierWhoseCodeChanged`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Pin_ACoordinatorWhoseCodeChangedIsRefused`; `StatementLog.t.sol`: `test_Artist_AResolverWhoseCodeChangedIsRefused`; [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol): `test_Federation_CodeHashesArePinned`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetTarget_RejectsNonTokens`; [`RendererCodePin.t.sol`](../../test/integration/RendererCodePin.t.sol): `test_PinnedRendererWithChangedCodeIsRefused`, `test_FinalizeRefusesADefaultRendererWhoseCodeChanged`; [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol): `test_ConsolidationSource_CodeHashRecheckedAtUse` |
+| GV-23 | A delay that reverses a tightening action counts from that action, not from scheduling: `unpause`, `resume` and the dispute `cancel` run no earlier than 48 hours after the pause (review finding GOV-5), a re-admission no earlier than 14 days after the deprecation (MARKET-2). | `EnglishAuction._requireUnpausable`, `AssetAllowlist.admitAsset` | [`PauseWindow.t.sol`](../../test/sales/PauseWindow.t.sol): `test_Unpause_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`, `test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`; `AssetAllowlist.t.sol`: `test_DeprecateThenReadmit` |
 | GV-24 | Contract-to-contract calls use one-shot bindings, not roles: each bind resolves to `ADMIN`, runs once, and genesis wires all of v1's. | Each `bind*` (`AlreadyBound`), `GovernanceConfig.isGenesisSelector` | `GenesisWiring.t.sol`: `test_RepeatedOneShotBindAbortsTheWholeConfiguration`, `test_WiringExecutesGenesisCallsInTheConfiguringTransaction`; [`Genesis.t.sol`](../../test/integration/Genesis.t.sol): `test_WiringIsInPlaceAndTheReadbackPasses` |
 
 **Rule 3, suspension and the deployment checks** (review findings GOV-1 to GOV-4, DEPS-3 and
@@ -670,7 +666,7 @@ expires with no event, yet a later `cancel` still emits `OperationCanceled`.
 | Allowed Safe singletons (off anvil) | Safe 1.3.0 L1 and L2 (each at two addresses) and Safe 1.4.1 L1 and L2, each with its pinned runtime code hash | `DeployGuards.canonicalSafeSingletons`; [runbook, step 2](../../script/README.md#2-safe-pre-flight) |
 | Mainnet VRF coordinator | `0xD7f86b4b8Cae7D942340FF628F82735b7a20893a` (Chainlink VRF v2.5), with its pinned runtime code hash | `DeployGuards.CANONICAL_VRF_COORDINATOR`, `CANONICAL_VRF_COORDINATOR_CODEHASH` |
 | Placeholder holder range refused off anvil | Addresses up to `0xFFFF` | `DeployGuards.MAX_PLACEHOLDER` |
-| Genesis wiring calls | At most 64; 19 in the committed example | `GovernanceConfig.MAX_WIRING_CALLS`; `wiring` in [`config/genesis.example.json`](../../config/genesis.example.json) |
+| Genesis wiring calls | At most 64; 15 in the committed example | `GovernanceConfig.MAX_WIRING_CALLS`; `wiring` in [`config/genesis.example.json`](../../config/genesis.example.json) |
 | Genesis `configure` gas | 6,792,419 with 64 wiring calls on cold accounts (Prague pricing), 40.5% of the EIP-7825 cap of 16,777,216, gated below 60%; Sepolia's in [`deployments/11155111/README.md`](../../deployments/11155111/README.md), other budgets in [ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table) | [`GenesisConfig.t.sol`](../../test/governance/GenesisConfig.t.sol) `test_MaximumWiringFitsTheTransactionGasCap`; `Genesis.t.sol` `test_GenesisConfigureFitsTheTransactionCap` |
 | Raise step and ceiling | At most double per step; ceiling fixed per target | `BoundedParameter.raise` |
 | Entropy callback gas limit | Raised to at most 2,500,000; lowered to at least 100,000 | `VrfEntropyModule.MAX_CALLBACK_GAS`, `MIN_CALLBACK_GAS` |

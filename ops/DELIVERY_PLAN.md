@@ -35,11 +35,11 @@
 ```
 src/libraries/   signatures, escaping and UTF-8, SSTORE2, bounded calls, EIP-7702 detection
 src/stream/      6529 Stream ERC-721
-src/editions/    6529 Editions ERC-1155
+src/editions/    6529 Stream Editions ERC-1155
 src/federated/   templates, factory and registry (v1.1, if needed; v1 keeps the interfaces)
 src/curation/    package registry and curation verifier
 src/content/     content store, dependency registry and renderer
-src/sales/       shared sale adapters: English auction, fixed price (allowlist phases, permits), Dutch
+src/sales/       shared sale adapters: the English auction; the edition auction (ADR 0005)
 src/economics/   split factory and wallet, royalty and revenue resolvers, escrow, currency allowlist
 src/identity/    artist registry and consolidation adapter
 src/records/     statement log
@@ -96,7 +96,7 @@ them: the review fixes, the state-growth gas diet and the source-quality pass.
 - the live Verify: r1 and r2 from 16 October, r3 from 20 October 2026;
 - the flows not yet run on Sepolia: the dispute pause and other guardian operations, and a
   recovery or identity change (each needs a Safe or waits a governed delay); finalize and
-  preferred-location failover; the Dutch sale and ERC-20 payments by Permit2
+  preferred-location failover; ERC-20 payments by Permit2
   ([flows](../deployments/11155111/flows.md#pending));
 - Etherscan verification, which needs an API key (Sourcify is done);
 - the marketplace and metadata rendering matrix

@@ -3,37 +3,47 @@ pragma solidity ^0.8.24;
 
 import { console2 } from "forge-std/console2.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
+import { EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { IntegrationBase } from "../integration/IntegrationBase.sol";
+import { EditionsAdapterMock } from "../mocks/editions/EditionsMocks.sol";
 
-/// @notice 6529 Editions gas on the real, wired stack (the integration lane's `IntegrationBase`):
-///         `createEdition` for a settled master, and a first and a later copy minted by the
-///         admitted fixed-price adapter. Run with `forge test --match-contract EditionsGasReport
-///         -vv` to print the table.
+/// @notice 6529 Stream Editions gas on the real, wired stack (the integration lane's
+///         `IntegrationBase`): `createEdition` for a settled master, and a first and a later copy
+///         minted by an admitted uniform-auction adapter (a test adapter governance admits). Run with `forge test --match-contract
+///         EditionsGasReport -vv` to print the table.
 /// @dev Every figure is cold (every contract cooled first) and a whole transaction: 21,000
 ///      intrinsic, the calldata and the called frame's execution (`IntegrationBase._measure`).
 ///      The mints call `Editions.mint` as the adapter does, so they are the token's share of a
-///      purchase. Each copy goes to a new holder, the expensive case.
+///      claim. Each copy goes to a new holder, the expensive case; the first also binds the
+///      edition to the auction, in the word it already writes.
 contract EditionsGasReport is IntegrationBase {
-    /// @dev Regression ceilings, with headroom over the measured values.
+    /// @dev Regression ceilings, with headroom over the measured values. The mint's includes
+    ///      the test adapter's `saleKind()`, a storage read where a real adapter returns a
+    ///      constant, and the first mint's binding of the edition to its adapter.
     uint256 internal constant CREATE_CEILING = 273_000;
-    uint256 internal constant MINT_CEILING = 67_000;
+    uint256 internal constant MINT_CEILING = 71_000;
 
     address internal artist;
     bytes32 internal root;
     uint256 internal workId;
+    EditionsAdapterMock internal minter;
 
     function setUp() public override {
         super.setUp();
         artist = _actor("gasEditionArtist");
+        // A uniform-auction adapter, admitted through governance (30-day SUCCESSOR_SETTER).
+        minter = new EditionsAdapterMock(SaleKind.UNIFORM_AUCTION);
+        _govern(
+            hotAdmin,
+            address(editions),
+            abi.encodeCall(editions.setAdmittedMinter, (address(minter), true))
+        );
         Work[] memory works = new Work[](2);
         for (uint256 i; i < works.length; ++i) {
             works[i] = _work(artist, collectionId);
             works[i].item.kind = ItemKind.EDITION_MASTER;
-            works[i].item.edition = EditionTerms(
-                EditionFormat.FIXED, 50, 0, 0.01 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
-            );
+            works[i].item.edition = EditionTerms(50, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         }
         root = _publish(works);
         _keep(root, works);
@@ -72,11 +82,11 @@ contract EditionsGasReport is IntegrationBase {
         Work[] memory works = _package(root);
         editions.createEdition(workId, works[1].item, root, _proofOf(works, 1));
         (uint256 total, uint256 execution) =
-            _measure(address(fixedSale), address(editions), _mintData(makeAddr("buyer1")), 0);
+            _measure(address(minter), address(editions), _mintData(makeAddr("buyer1")), 0);
         _row("mint, first copy of the edition (new holder)", total, execution);
         assertLe(total, MINT_CEILING, "first mint");
         (total, execution) =
-            _measure(address(fixedSale), address(editions), _mintData(makeAddr("buyer2")), 0);
+            _measure(address(minter), address(editions), _mintData(makeAddr("buyer2")), 0);
         _row("mint, later copy (new holder)", total, execution);
         assertLe(total, MINT_CEILING, "later mint");
         assertEq(editions.edition(workId).minted, 2);

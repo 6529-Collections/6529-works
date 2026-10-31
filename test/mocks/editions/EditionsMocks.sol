@@ -24,7 +24,7 @@ import { ItemKind, License, PackageItem, SeedPolicy } from "src/interfaces/types
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
-/// @notice Mocks of other lanes' contracts for the 6529 Editions tests. Each implements only
+/// @notice Mocks of other lanes' contracts for the 6529 Stream Editions tests. Each implements only
 ///         the slice of its interface that Editions calls, with the same ABI, plus test knobs.
 
 /// @dev A deterministic package for an item: a two-leaf tree of the item's leaf and a sibling

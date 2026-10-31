@@ -24,9 +24,10 @@ import { Splits } from "./Splits.sol";
 
 /// @title EconomicsResolver
 /// @notice The network's governed economics for new works (ADR 0001 sections 2, 5, 7 and 8).
-///         Launch defaults: 6529 Stream and 6529 Editions pay 75% to the artist portion and 25%
-///         to the network; 6529 Stream Federated pays 90/10; the royalty rate is 6.529% (6,529
-///         out of 100,000); the default license is CC0. Currencies come from the asset allowlist.
+///         Launch defaults: 6529 Stream and 6529 Stream Editions pay 75% to the artist portion
+///         and 25% to the network; 6529 Stream Federated pays 90/10; the royalty rate is 6.529%
+///         (6,529 out of 100,000); the default license is CC0. Currencies come from the asset
+///         allowlist.
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
 ///      royalty receiver and rate) at mint and a sale locks its currency at start, and nothing
 ///      here reaches back into either. The museum is the exception: the English auction reads
@@ -39,7 +40,8 @@ import { Splits } from "./Splits.sol";
 ///      resolver refuses itself, its allowlist and factory, the factory's release verifier, and
 ///      every protocol contract that declares an interface it cannot be paid through
 ///      (`ProtocolContracts`: the revenue escrow, the claim router, the sale adapters, 6529
-///      Stream and 6529 Editions, the artist and package registries and the work records).
+///      Stream and 6529 Stream Editions, the artist and package registries and the work
+///      records).
 ///      Residual: system contracts that declare none of those interfaces and that the resolver
 ///      does not know (the content store, the statement log, the AccessManager, the renderer,
 ///      the curation verifier, the entropy module) are not refused here; the runbook's check

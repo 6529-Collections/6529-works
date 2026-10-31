@@ -107,9 +107,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param name The collection's display name.
     /// @param metadataHash The hash of the collection's metadata document, or zero.
     event CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash);
-    /// @notice An edition master was linked to its 6529 Editions edition.
+    /// @notice An edition master was linked to its 6529 Stream Editions edition.
     /// @param tokenId The master's token ID.
-    /// @param editions The 6529 Editions contract.
+    /// @param editions The 6529 Stream Editions contract.
     /// @param editionId The edition ID, equal to `tokenId`.
     event EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId);
     /// @notice A satellite was bound under `name` (WORK_RECORDS or EDITIONS), once.
@@ -183,15 +183,15 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `IWorkRecords(target).stream()` must be this contract). ADMIN role.
     /// @param target The work-records contract to bind.
     function bindWorkRecords(address target) external;
-    /// @notice Binds 6529 Editions, once (ERC-165 for `IEditions`, and `IEditions(target).stream()`
-    ///         must be this contract). ADMIN role.
-    /// @param target The 6529 Editions contract to bind.
+    /// @notice Binds 6529 Stream Editions, once (ERC-165 for `IEditions`, and
+    ///         `IEditions(target).stream()` must be this contract). ADMIN role.
+    /// @param target The 6529 Stream Editions contract to bind.
     function bindEditions(address target) external;
     /// @notice The bound `IWorkRecords` satellite.
     /// @return The satellite, or zero before it is bound.
     function workRecords() external view returns (address);
-    /// @notice The bound 6529 Editions contract.
-    /// @return The 6529 Editions contract, or zero before it is bound.
+    /// @notice The bound 6529 Stream Editions contract.
+    /// @return The 6529 Stream Editions contract, or zero before it is bound.
     function editions() external view returns (address);
     /// @notice The package registry consulted by `mint` (immutable).
     /// @return The package registry.
@@ -286,16 +286,16 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     function defaultRenderer() external view returns (address);
     /// @notice Sets the default renderer: ERC-165 checked for `IRenderer`, code hash
     ///         `nextCodeHash`, not an EIP-7702 delegated account. SUCCESSOR_SETTER role,
-    ///         compare-and-set. Finalized works keep their pin; 6529 Editions is notified
+    ///         compare-and-set. Finalized works keep their pin; 6529 Stream Editions is notified
     ///         (`IEditions.notifyAllUpdated`).
     /// @param expected The current default renderer (`ExpectedValueMismatch` otherwise).
     /// @param next The new default renderer.
     /// @param nextCodeHash The code hash `next` must have, which it is pinned with.
     function setDefaultRenderer(address expected, address next, bytes32 nextCodeHash) external;
     /// @notice The renderer serving a work: its pin in `IWorkRecords` once finalized, the default
-    ///         before. `tokenURI` forwards to it (and 6529 Editions' `uri`). Fails closed: reverts
-    ///         with `Dependency.DependencyCodeChanged` when the default renderer's code is no
-    ///         longer the code hash `setDefaultRenderer` (or the constructor) pinned, or when a
+    ///         before. `tokenURI` forwards to it (and 6529 Stream Editions' `uri`). Fails closed:
+    ///         reverts with `Dependency.DependencyCodeChanged` when the default renderer's code is
+    ///         no longer the code hash `setDefaultRenderer` (or the constructor) pinned, or when a
     ///         finalized work's pinned renderer changed code; it never falls back to another
     ///         renderer. A new default renderer, or the errata repin for a finalized work,
     ///         restores the metadata.
@@ -315,9 +315,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param fromTokenId The first token ID of the range.
     /// @param toTokenId The last token ID of the range, inclusive.
     function emitMetadataUpdate(uint256 fromTokenId, uint256 toTokenId) external;
-    /// @notice The 6529 Editions edition an EDITION_MASTER work anchors, or zeros if none.
+    /// @notice The 6529 Stream Editions edition an EDITION_MASTER work anchors, or zeros if none.
     /// @param tokenId Any token ID.
-    /// @return editionsContract The 6529 Editions contract, or zero.
+    /// @return editionsContract The 6529 Stream Editions contract, or zero.
     /// @return editionId The edition ID, equal to `tokenId`, or zero.
     function editionOf(uint256 tokenId)
         external
@@ -325,8 +325,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
         returns (address editionsContract, uint256 editionId);
     /// @notice Records the edition of an EDITION_MASTER work, once, after the master's primary
     ///         sale settled (D14, checked here as well as in Editions); the edition ID equals the
-    ///         token ID. Bound 6529 Editions only, from `IEditions.createEdition`, which records
-    ///         the other direction in the same transaction.
+    ///         token ID. Bound 6529 Stream Editions only, from `IEditions.createEdition`, which
+    ///         records the other direction in the same transaction.
     /// @param tokenId The master's token ID.
     /// @param editionId The edition ID, which must equal `tokenId`.
     function linkEdition(uint256 tokenId, uint256 editionId) external;

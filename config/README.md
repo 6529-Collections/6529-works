@@ -38,9 +38,8 @@ The selector classes follow:
 - the governance map in [docs/architecture.md](../docs/architecture.md);
 - the interfaces and implementations on `main`.
 
-**Two paths for creators and artists.** `openSale` and `closeSale` on the sale
-adapters, and `addLocator` on WorkRecords, let the creator or the artist act directly.
-`PLATFORM`'s path to the same functions goes through a manual `canCall` check in the
+**Two paths for artists.** `addLocator` on WorkRecords lets the artist act directly.
+`PLATFORM`'s path to the same function goes through a manual `canCall` check in the
 implementation, not through `restricted`, so the mapping here grants PLATFORM only.
 The integration lane verifies both paths on the real contracts.
 
@@ -97,8 +96,8 @@ auction's two `pause` functions. It also requires every `restricted` function of
 concrete contract under `src/` to be mapped, genesis-only or deferred, so nothing silently
 falls back to `ADMIN`. With `--config`, it also checks that copy against this committed file
 (the policy above).
-- **Inherited functions:** a `restricted` function declared in an abstract base, such as
-  `MintSaleBase`, counts for each concrete contract that inherits it. The abstract base is
+- **Inherited functions:** a `restricted` function declared in an abstract base counts for
+  each concrete contract that inherits it. The abstract base is
   never required in the configuration itself.
 - **Pending contracts:** a configured contract whose artifact source is not in the
   repository yet is reported as pending and passes. It is mapped ahead from its lane's

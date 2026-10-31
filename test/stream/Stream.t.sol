@@ -392,13 +392,13 @@ contract StreamTest is StreamFixture {
     }
 
     function test_mint_revertsForWrongAdapterKind() public {
-        auction.setSaleKind(SaleKind.FIXED_PRICE);
+        auction.setSaleKind(SaleKind.UNIFORM_AUCTION);
         bytes memory data = _request(_item(1));
         vm.expectRevert(
             abi.encodeWithSelector(
                 IMintTarget.SaleKindMismatch.selector,
                 SaleKind.ENGLISH_AUCTION,
-                SaleKind.FIXED_PRICE
+                SaleKind.UNIFORM_AUCTION
             )
         );
         auction.start(stream, data);
@@ -455,7 +455,7 @@ contract StreamTest is StreamFixture {
 
     function test_mint_revertsForStreamRuleBreaks() public {
         PackageItem memory item = _item(1);
-        item.sale.saleKind = SaleKind.FIXED_PRICE;
+        item.sale.saleKind = SaleKind.UNIFORM_AUCTION;
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
 
         item = _item(1);
@@ -709,7 +709,7 @@ contract StreamTest is StreamFixture {
     /// @dev A preview applies the Stream rules a mint does.
     function test_primaryTerms_previewChecksTheStreamRules() public {
         PackageItem memory item = _item(1);
-        item.sale.saleKind = SaleKind.FIXED_PRICE;
+        item.sale.saleKind = SaleKind.UNIFORM_AUCTION;
         vm.expectRevert(IStream.InvalidItemSale.selector);
         stream.primaryTerms(0, _request(item));
     }

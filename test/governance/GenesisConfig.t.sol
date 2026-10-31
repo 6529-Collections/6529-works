@@ -14,10 +14,8 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { IDutchSale } from "src/interfaces/IDutchSale.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -270,34 +268,6 @@ contract GenesisConfigTest is Test {
             (all[7], all[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
             return all;
         }
-        if (_eq(name, "FixedPriceSale")) {
-            return _s(
-                [
-                    ISaleAdapter.pause.selector,
-                    ISaleAdapter.unpause.selector,
-                    IFixedPriceSale.openSale.selector,
-                    IFixedPriceSale.closeSale.selector,
-                    ISaleAdapter.setTarget.selector,
-                    ISaleAdapter.setFederationRegistry.selector,
-                    z
-                ],
-                6
-            );
-        }
-        if (_eq(name, "DutchSale")) {
-            return _s(
-                [
-                    ISaleAdapter.pause.selector,
-                    ISaleAdapter.unpause.selector,
-                    IDutchSale.openSale.selector,
-                    IDutchSale.closeSale.selector,
-                    ISaleAdapter.setTarget.selector,
-                    ISaleAdapter.setFederationRegistry.selector,
-                    z
-                ],
-                6
-            );
-        }
         if (_eq(name, "EconomicsResolver")) {
             return _s(
                 [
@@ -435,7 +405,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 73, "63 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 61, "51 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

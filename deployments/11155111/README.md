@@ -10,6 +10,10 @@ here is a mainnet deployment.
 
 Flow gas under Glamsterdam: [flows.md](flows.md).
 
+r1 to r3 deploy the edition token under its former name, 6529 Editions, with the fixed-price
+and Dutch sale adapters; r4, the rc.2 rehearsal, will be the first deployment under the new
+name, 6529 Stream Editions (ADR 0005, D139), and without those adapters (decision 8).
+
 ## sepolia-r3: 15 October 2026 (current)
 
 r3 is the release-candidate code: `main` after every adversarial-review fix

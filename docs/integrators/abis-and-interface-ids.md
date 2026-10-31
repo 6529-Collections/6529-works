@@ -3,8 +3,10 @@
 For integration engineers who call, decode or verify the 6529 Works contracts: where the ABIs
 come from and which build matches which deployment, the ERC-165 interface IDs and who answers
 them, every EIP-712 domain and type string, and the formulas of the protocol hashes you
-recompute off-chain. The current Sepolia instance, r3, runs `main` at `e5fe78c`, and every
-r3 contract is verified on Sourcify; the superseded r2 runs an earlier build, see
+recompute off-chain. The current Sepolia instance, r3, runs `v1.0.0-rc.1` (`e5fe78c`), and
+every r3 contract is verified on Sourcify; `main` has changed since, see
+[Changes since the Sepolia r3 build](#changes-since-the-sepolia-r3-build). The superseded r2
+runs an earlier build, see
 [Changes since the Sepolia r2 build](#changes-since-the-sepolia-r2-build). Addresses are in
 [Addresses](addresses.md), events in [Events and indexing](events-and-indexing.md).
 
@@ -67,8 +69,7 @@ Deployment records name contracts by their contract name, except `CurationVerifi
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) |
-| `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) |
-| `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) |
+| `FixedPriceSale`, `DutchSale` | Sepolia r1 to r3 only: removed by [ADR 0005](../adr/0005-stream-editions-auction.md); the source is at the `v1.0.0-rc.1` tag |
 
 ### Compiler settings
 
@@ -89,6 +90,35 @@ The metadata hash covers every source file byte for byte, NatSpec included, so o
 from the deployment's commit matches the deployed bytecode exactly. The deployment records
 hold each contract's code hash, which [`Verify.s.sol`](../../script/Verify.s.sol) compares.
 
+## Changes since the Sepolia r3 build
+
+r3 runs `v1.0.0-rc.1`. [ADR 0005](../adr/0005-stream-editions-auction.md) changes the edition
+surface on `main`; more lands with the edition auction and the museum.
+
+| File | Change on `main` |
+| --- | --- |
+| [`types/PackageTypes.sol`](../../src/interfaces/types/PackageTypes.sol) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`, was `(uint8 format, uint64 size, uint64 window, uint256 price, address currency, bytes32 saleKind, bytes params)`; `EditionFormat` is removed. Every function and event that carries a `PackageItem` or `EditionTerms` changed its selector or topic0 (below). |
+| [`IEditions.sol`](../../src/interfaces/IEditions.sol) | New `name()`, `symbol()`, event `EditionMinterBound(uint256,address)` and error `MinterMismatch(uint256,address)`; `Edition.windowStart` became `address minter`; `formatOf`, `EditionWindowOpened` and `PricedDefaultCurrency` are removed. |
+| `IFixedPriceSale.sol`, `IDutchSale.sol`, `IMintSale.sol` | Removed, with the fixed-price and Dutch adapters. |
+| [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | New `SaleKind.UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` stay as reserved labels; `DutchParams` is removed. |
+| [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | `FIXED_PRICE_SALE_NAME`, `PHASE`, `PHASE_CONFIGURATION`, `PURCHASE_WITNESS`, `DUTCH_PURCHASE_WITNESS` and their type strings are removed. |
+| [`types/Limits.sol`](../../src/interfaces/types/Limits.sol) | `MAX_PHASES` is removed. |
+| [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, not yet implemented. |
+
+| Function or event | r3 | `main` |
+| --- | --- | --- |
+| `PackageRegistry.consume` | `0xbe93e628` | `0xbf69b193` |
+| `Editions.createEdition` | `0xb44dd3d8` | `0x26c8844c` |
+| `WorkRecords.openRecord` | `0x22029b68` | `0x0068e575` |
+| `WorkRecords.relicense` | `0x291e2c27` | `0xd60ad0db` |
+| `WorkRecords.setRoyaltyRate` | `0xe27fed56` | `0xc13560ef` |
+| `VrfEntropyModule.requestSeed` | `0x5c9c3014` | `0x68d50901` |
+| `EditionCreated` topic0 | `0xda49138a…` | `0x3a4f273b…` |
+
+The interface IDs of `IWorkRecords`, `IEditions`, `IPackageRegistry` and `IEntropyModule`
+changed with them, and `IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
+the role matrix maps the new selectors.
+
 ## Changes since the Sepolia r2 build
 
 r2 runs `400f96d` ([Sepolia README](../../deployments/11155111/README.md)).
@@ -107,9 +137,8 @@ the [next section](#error-changes-in-the-source-quality-pass) lists:
 | [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | `PACKAGE_APPROVAL` now binds the signer's epoch: `PackageApproval(bytes32 packageRoot,bytes32 evidenceHash,uint256 signerEpoch)`. On r2 it is `PackageApproval(bytes32 packageRoot,bytes32 evidenceHash)`, typehash `0x042a3f421b5117b21363cb14bb213061c468e91b1af5d8d925a04a5d0a6648c9`. |
 | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) | New `disputeOutcomeOf(address,uint256)`; new error `UnknownDisputeSubject`. |
 | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | New `claimFor(address,address)`. |
-| [`IFixedPriceSale.sol`](../../src/interfaces/IFixedPriceSale.sol) | New `scheduleDelay(uint256)`; error `PriceBelowPackage` removed. |
-| [`IDutchSale.sol`](../../src/interfaces/IDutchSale.sol) | New `scheduleDelay(uint256)`. |
-| [`IEditions.sol`](../../src/interfaces/IEditions.sol) | New `formatOf(uint256)`. |
+| `IFixedPriceSale.sol`, `IDutchSale.sol` | On r3: new `scheduleDelay(uint256)`, and `IFixedPriceSale` lost error `PriceBelowPackage`. Both are removed on `main` ([since r3](#changes-since-the-sepolia-r3-build)). |
+| [`IEditions.sol`](../../src/interfaces/IEditions.sol) | On r3: new `formatOf(uint256)`, removed again on `main` ([since r3](#changes-since-the-sepolia-r3-build)). |
 | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | New shared errors `ClaimFailed`, `InvalidRecipient`, `NotPaused`, `PaymentExpired`, `UnpauseTooEarly`. |
 | [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | New error `InvalidFeeRecipient`. For rc.2 (D140): new `museum()`, `museumRevision()`, `setMuseum(uint64,address)`, event `MuseumSet` and error `InvalidMuseum`. |
 | [`IAssetAllowlist.sol`](../../src/economics/interfaces/IAssetAllowlist.sol) | New `statusClock(address)`; new error `ReadmissionTooEarly`. |
@@ -120,7 +149,7 @@ the [next section](#error-changes-in-the-source-quality-pass) lists:
 
 The other changed files (`IArtistPayoutResolver`, `IArtistRoleResolver`, `IReleaseVerifier`,
 `ISplitWallet`, `IRenderer`, and the `ContentTypes`, `IdentityTypes`, `PackageTypes` and
-`SaleTypes` types) changed only in NatSpec and errors.
+`SaleTypes` types) changed only in NatSpec and errors from r2 to r3.
 
 ### Error changes in the source-quality pass
 
@@ -140,7 +169,7 @@ They replace these r2 errors:
 | --- | --- | --- |
 | `InvalidSignature()` (package and artist registries) | `0x8baa579f` | `SignatureExpired` or `InvalidSignature(address)` |
 | `DeadlineExpired(uint64)` (statement log), `AuthorizationExpired(uint256)` (release verifier) | `0x44d7a6f0`, `0x3d91b05f` | `SignatureExpired` |
-| `InvalidArtistConsent()` (fixed-price sale) | `0x4a4af2fd` | `SignatureExpired`, `IFixedPriceSale.ConsentNonceUsed(address,uint256)` (`0xd2603ab8`) or `InvalidSignature(address)` |
+| `InvalidArtistConsent()` (fixed-price sale) | `0x4a4af2fd` | On r3, `SignatureExpired`, `IFixedPriceSale.ConsentNonceUsed(address,uint256)` (`0xd2603ab8`) or `InvalidSignature(address)`; removed on `main` with the adapter |
 | `InvalidBinding(address)` for an install check, `InvalidSource(address)`, `InvalidResolver(address)`, `InvalidRenderer(address)`, `InvalidCoordinator(address)`, `InvalidRegistry(address)`, `InvalidFactory(address)`, `DependencyStoreInvalid(address)`, `NoDelegationCode(address)`, the auction's `InvalidTarget(address)` from `setTarget`, both `CodeHashMismatch` and `ResolverCodeHashMismatch` | various | `InvalidDependency` at install, `DependencyCodeChanged` at use |
 | `ResolverCodeChanged()` (split wallet) | `0xc61de18d` | `DependencyCodeChanged` |
 | `ResolverMismatch(address)` (statement log) | `0xbd85d10c` | `IStatementLog.ExpectedValueMismatch()` (`0x281aa7f8`) |
@@ -155,7 +184,7 @@ only the implementations declared (Editions, the adapters, the entropy module, t
 are now declared in their interfaces, with unchanged selectors. The errors only the fixed-price
 and Dutch adapters raise (`InvalidAddress`, `SaleAlreadyOpen`, `NotSaleManager`, and the
 currency, quantity, close and approval errors) are on `IMintSale`, which `IFixedPriceSale` and
-`IDutchSale` extend, so the auction's ABI does not list them.
+`IDutchSale` extend, so the auction's ABI does not list them; `main` removes all three.
 
 `WorksAccessManager`, which has no interface file, gained the guardians' suspension of
 operational keys (review finding GOV-2), plus the events `RoleSuspended` and
@@ -191,17 +220,15 @@ selectors.
 | --- | --- | --- | --- | --- |
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0x4f4f5133` | `0x4f4f5133` | Stream, Editions |
 | `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x6d0d5203` | `0x4b62279d` | Stream |
-| `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0x3f3d6835` | `0x3f3d6835` | WorkRecords |
-| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0x0f4dd474` | `0xa5bd946e` | Editions |
-| `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction, FixedPriceSale, DutchSale |
+| `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
+| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xa41d86b8` | `0xa5bd946e` | Editions |
+| `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
 | `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | None yet: the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md), not implemented on `main` |
-| `IFixedPriceSale` | [`IFixedPriceSale.sol`](../../src/interfaces/IFixedPriceSale.sol) | `0x773a4920` | `0xfedd2754` | FixedPriceSale |
-| `IDutchSale` | [`IDutchSale.sol`](../../src/interfaces/IDutchSale.sol) | `0x382667e1` | `0xb1c10995` | DutchSale |
-| `IMintSale` | [`IMintSale.sol`](../../src/interfaces/IMintSale.sol) | `0x00000000` | none | None: it declares errors only (the fixed-price and Dutch adapters' own) |
+| `IFixedPriceSale`, `IDutchSale`, `IMintSale` | Removed by ADR 0005 | none | `0xfedd2754`, `0xb1c10995`, none | FixedPriceSale and DutchSale on r1 to r3 (r3: `0x773a4920`, `0x382667e1`) |
 | `ICurationVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | `0x492733ca` | Eip712CurationVerifier |
 | `ICurationSignerVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | `0xb7ab1d96` | Eip712CurationVerifier |
-| `IPackageRegistry` | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `0xe69cc8c7` | `0xc0f6f835` | PackageRegistry |
+| `IPackageRegistry` | [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `0xe7669f7c` | `0xc0f6f835` | PackageRegistry |
 | `IContentStore` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | `0x3f437f81` | `0x3f437f81` | None: ContentStore does not implement ERC-165 |
 | `IDependencyRegistry` | [`IDependencyRegistry.sol`](../../src/interfaces/IDependencyRegistry.sol) | `0xe5338d57` | `0xe5338d57` | None: DependencyRegistry does not implement ERC-165 |
 | `IRenderer` | [`IRenderer.sol`](../../src/interfaces/IRenderer.sol) | `0xa772216d` | `0xa772216d` | Renderer |
@@ -211,7 +238,7 @@ selectors.
 | `IArtistPayoutResolver` | [`IArtistPayoutResolver.sol`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | `0x9b2c1793` | ArtistRegistry |
 | `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0xee6ba0a4` | `0x3e70f8a1` | ArtistRegistry |
 | `IConsolidationSource` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x88836e34` | `0x88836e34` | ConsolidationAdapter |
-| `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x3a410101` | `0x3a410101` | VrfEntropyModule |
+| `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x0e083814` | `0x3a410101` | VrfEntropyModule |
 | `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xeefee933` | `0xeefee933` | None: no implementation in v1 |
 | `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x31a9798a` (computed) | not answered on r2 | ClaimRouter (on `main` only) |
 | `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0x50267de3` (computed) | not answered on r2 | RevenueEscrow (on `main` only) |
@@ -237,9 +264,8 @@ the tokens and the auction answer these standard interfaces:
 allowlist, release verifier, split factory, split wallets, configurator and AccessManager have
 no `supportsInterface`. The IDs of `IContentStore`, `IDependencyRegistry` and `IStatementLog`
 are pinned to catch a surface change, not because anything answers them. Installs check code
-and no EIP-7702 delegation instead ([GV-22](../spec/governance.md#rules-and-invariants)); the
-fixed-price and Dutch adapters also check `IAssetAllowlist` when the allowlist answers ERC-165
-([Editions and sales, wiring](../spec/editions-and-sales.md#contracts)), and `bindStatementLog` checks that the log's
+and no EIP-7702 delegation instead ([GV-22](../spec/governance.md#rules-and-invariants)), and
+`bindStatementLog` checks that the log's
 `artistResolver()` is the registry ([`ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol)).
 Code alone is checked for the work records' dependency registry, the dependency registry's
 content store, the consolidation adapter's delegation contract and the configurator's targets;
@@ -277,7 +303,6 @@ for one contract on one chain. Each contract reports its domain through EIP-5267
 | Eip712CurationVerifier | `6529 Works Curation Verifier` | `1` | `Typehashes.CURATION_VERIFIER_NAME` |
 | WorkRecords | `6529 Works Records` | `1` | `Typehashes.WORK_RECORDS_NAME` |
 | ArtistRegistry | `6529 Works Artist Registry` | `1` | `Typehashes.ARTIST_REGISTRY_NAME` |
-| FixedPriceSale | `6529 Works Fixed Price Sale` | `1` | `Typehashes.FIXED_PRICE_SALE_NAME` |
 | StatementLog | `6529 Works Statement Log` | `1` | the constructor of [`StatementLog.sol`](../../src/records/StatementLog.sol) |
 | ReleaseVerifier | `6529 Works Release Verifier` | `1` | the constructor of [`ReleaseVerifier.sol`](../../src/economics/ReleaseVerifier.sol) |
 
@@ -305,8 +330,6 @@ Type strings exactly as in code; typehashes pinned by `test_signedPayloadTypehas
 | `Typehashes.RENDERER_REPIN` | `RendererRepin(uint256 tokenId,address renderer,bytes32 rendererCodeHash,bytes32 stateHash,uint64 deadline)` | `0xe02c73b10a1645fcc06fd6d114765861f5bcd1cd03d788c53c6bdf196c748bd4` | Work records; the lead artist's active authority |
 | `Typehashes.IDENTITY_CHANGE` | `IdentityChange(uint256 artistId,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,uint256 nonce,uint64 deadline)` | `0xa474bd174aa5ecb19efe75995251c1fb8289b62bca04bc6c19e869f254e190f0` | Artist registry; the authority or an established consolidated wallet, and a new authority over the same digest |
 | `Typehashes.OVERRIDE_ACCEPTANCE` | `OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)` | `0xe94c9e2e1a4e3c2652a414f70c177a61fc880d94ede3aaaf03a976666431f9a3` | Artist registry; the override's new authority |
-| `Typehashes.PHASE` | `Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)` | `0x921a1eebb9b36af81620ff4a1a8cefecb30f1bef4e32aa373c694354dc051290` | (a member type of `PhaseConfiguration`) |
-| `Typehashes.PHASE_CONFIGURATION` | `PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,bool leafPriced)` | `0xc0bdf7233be7e163d786ce38b78bb30cd3a1712cdf5e947f32db0af1ed32d534` | Fixed-price sale; the edition's creator |
 | `StatementLog` `HASHREF_TYPEHASH` | `HashRef(uint16 algorithm,bytes32 digest)` | `0x121a61476ab0828add4a5b9b9f2bb805adcfa15d81ff19494f98b0fd3e0bd6ed` | (a member type) |
 | `StatementLog` `STATEMENT_TYPEHASH` | `Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)HashRef(uint16 algorithm,bytes32 digest)` | `0xc5917de59a1e9cd194c71a1bfa5d2b7a821403b15a6c26ba9ed4aaa207f324f6` | (a member type, and the statement's identity in the entry hash) |
 | `StatementLog` `AUTHORIZATION_TYPEHASH` | `Authorization(uint8 role,address signer,uint256 nonce,uint64 deadline,Statement statement)HashRef(uint16 algorithm,bytes32 digest)Statement(address token,uint256 id,bytes32 kind,bytes32 schema,HashRef content,string uri,bytes32 fileId,bytes32 supersedes)` | `0x31b41af4c88eb6a6042a07475f214b72f1819151382b4f7c6600f092bf061f89` | Statement log; the relayed signer |
@@ -333,16 +356,13 @@ ABI-encoded as a 32-byte word:
 | RendererRepin | `keccak256(abi.encode(RENDERER_REPIN, tokenId, renderer, rendererCodeHash, stateHash, deadline))` | none |
 | IdentityChange | `keccak256(abi.encode(IDENTITY_CHANGE, artistId, authority, payout, profileId, profileDocHash, nonce, deadline))` | `ArtistRegistry.changeDigest` |
 | OverrideAcceptance | `keccak256(abi.encode(OVERRIDE_ACCEPTANCE, artistId, uint8(kind), authority, payout, profileId, profileDocHash, evidenceHash, deadline))` | `ArtistRegistry.overrideDigest` |
-| PhaseConfiguration | `keccak256(abi.encode(PHASE_CONFIGURATION, token, id, currency, packagePrice, phasesHash, nonce, deadline))`, where `phasesHash = keccak256(abi.encodePacked(keccak256(abi.encode(PHASE, phase_0)), …))`, the EIP-712 array encoding | `FixedPriceSale.phaseConfigurationDigest` |
 | Authorization (statement relay) | `keccak256(abi.encode(AUTHORIZATION_TYPEHASH, uint8(role), signer, nonce, deadline, statementHash))`, with `statementHash` [below](#statement-entry-hash-and-chain-head) | `StatementLog.authorizationDigest` |
 | ReleaseAuthorization | `keccak256(abi.encode(RELEASE_TYPEHASH, wallet, asset, payee, account, recipient, amount, nonce, deadline))` | `ReleaseVerifier.releaseDigest` |
 
 `stateHash` is the work's current [state hash](#work-state-hash), so a relicense, rate change
 or repin signature applies only to the state its signers saw. Every party signs the same
 Relicense or RoyaltyRateChange digest with its artist ID's active authority, and the signatures
-go in party order ([WS-13, WS-14](../spec/works-and-storage.md#rules-and-invariants)). In
-`PhaseConfiguration`, `currency` is the resolved currency (never `CURRENCY_DEFAULT`) and
-`packagePrice` the edition's unit price ([ED-13](../spec/editions-and-sales.md#rules-and-invariants)).
+go in party order ([WS-13, WS-14](../spec/works-and-storage.md#rules-and-invariants)).
 
 ### Permit2 witnesses
 
@@ -354,8 +374,6 @@ with the witness type string below.
 | --- | --- | --- | --- |
 | `BID_WITNESS` | `Bid(uint256 saleId,address recipient,uint256 amount,uint256 deadline)` | `0x36fe48f963a8333b63c773927bbdc20f266277d65935733a27e6264edda25ea8` | `0x0bfd3d1d308e98f9f0a38b17a9eaaad1118b7813eead91902f6714537c0eb034` |
 | `START_BID_WITNESS` | `StartBid(address token,bytes32 mintDataHash,address recipient,uint256 amount,uint256 deadline)` | `0xb8513f1f66acd0543fe8542e5c408fd4a7b59dfcf47fc1e4c2c164c66cd5bd0e` | `0xb44f39960bfdaf0c5fedccb2b3159844117a56c2d506bcf2c35776fe2c346acf` |
-| `PURCHASE_WITNESS` | `Purchase(uint256 saleId,uint256 phase,address recipient,uint256 quantity,uint256 amount,uint256 deadline)` | `0x119cc3e88e6f6279440597a9aeb3fe920bc464408b6f4e8f14fb0ff4e04a4a55` | `0xe6059a1eb191e9e77fa847628aa401e15410cf3c4c2a3529af56e79cabe9a592` |
-| `DUTCH_PURCHASE_WITNESS` | `DutchPurchase(uint256 saleId,address recipient,uint256 quantity,uint256 maxUnitPrice,uint256 deadline)` | `0x6369ab0c00b76d262a77c0c13be372b9131ef0eb9a2d5d8409618957095ceddb` | `0x8abb1791eb031c454185432a3a1d72b3752bc997984d707a53b5c57ec6da58d3` |
 
 Each `witnessTypeString` (`BID_WITNESS_TYPE` and so on) is the witness name, `" witness)"`, the
 witness type and `TokenPermissions(address token,uint256 amount)`, for example
@@ -366,12 +384,10 @@ witness type and `TokenPermissions(address token,uint256 amount)`, for example
 | --- | --- | --- |
 | EnglishAuction `bid` | `keccak256(abi.encode(BID_WITNESS, saleId, recipient, amount, deadline))` | resolved: the payer when the argument is zero |
 | EnglishAuction `startWithBid` | `keccak256(abi.encode(START_BID_WITNESS, token, keccak256(mintData), recipient, amount, deadline))` | resolved: the payer when the argument is zero |
-| FixedPriceSale `purchase` | `keccak256(abi.encode(PURCHASE_WITNESS, saleId, phase, recipient, quantity, total, deadline))` | as passed in `Purchase.recipient` (zero means the payer) |
-| DutchSale `purchase` | `keccak256(abi.encode(DUTCH_PURCHASE_WITNESS, saleId, recipient, quantity, maxUnitPrice, deadline))` | as passed (zero means the payer) |
 
-`amount` is the payment amount, `total` the exact fixed-price charge and `deadline` the
-payment's deadline. The Permit2 `TokenPermissions` carry the currency and `payment.amount`;
-the adapter takes the exact charge ([ED-18](../spec/editions-and-sales.md#rules-and-invariants)).
+`amount` is the payment amount and `deadline` the payment's deadline. The Permit2
+`TokenPermissions` carry the currency and `payment.amount`, which the auction pulls exactly
+([AUC-19](../spec/stream-and-auctions.md#rules-and-invariants)).
 
 ## Protocol hashes recomputed off-chain
 
@@ -394,13 +410,13 @@ root     = OpenZeppelin MerkleProof root over the leaves (sorted-pair keccak256)
 With an off-chain ABI encoder, encode the two values `["bytes32", <tuple>]` with the tuple
 
 ```text
-(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes))
+(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes))
 ```
 
 in field order: `kind`, `collectionId`, `contentHash`, `mediaHash`, `recordFileId`, `parties`
 `(account, role)`, `payees` `(artistId, account, share)`, `license` `(spdxId, textFileId)`,
 `seedPolicy`, `seed`, `sale` `(saleKind, currency, params)` and `edition`
-`(format, size, window, price, currency, saleKind, params)`. The tuple is dynamic, so the
+`(maxCount, currency, saleKind, params)`. The tuple is dynamic, so the
 encoding is the domain word, an offset word and then the tuple. This is OpenZeppelin's
 `StandardMerkleTree` with leaf encoding `["bytes32", <PackageItem tuple>]` and leaf values
 `[PACKAGE_ITEM_DOMAIN, item]`, whose leaf is `keccak256(keccak256(abi.encode(values)))`; the
@@ -437,25 +453,6 @@ fileId      = keccak256(abi.encode(chunkHashes, length, uint8(encoding), mimeTyp
 the fully decoded media. A file ID names one encoded stream, not the content: the same media
 stored with another encoding or MIME type has another file ID. The Python uploader
 ([`tools/content/`](../../tools/content/README.md)) computes both values.
-
-### Allowlist leaf
-
-From [`FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) (`allowlistLeaf`):
-
-```text
-ALLOWLIST_LEAF_DOMAIN = keccak256("6529WORKS_ALLOWLIST_LEAF_V1")
-                      = 0x8398de4cead6637b4933aa0345cc0263e1e508078a7789008854a7fde922acd2
-leaf = keccak256(bytes.concat(keccak256(abi.encode(
-           ALLOWLIST_LEAF_DOMAIN, block.chainid, address(fixedPriceSale),
-           token, id, phase, account, cap, price))))
-       // types: (bytes32, uint256, address, address, uint256, uint256, address, uint256, uint256)
-```
-
-`account` is the recipient, or the payer in a `payerKeyed` phase; `cap` is the wallet's limit
-in the phase; `price` is used only in a `leafPriced` phase
-([ED-15](../spec/editions-and-sales.md#rules-and-invariants)). Trees are OpenZeppelin
-sorted-pair trees, proofs at most 32 nodes; emit at most one leaf per account and phase
-([LIM-SAL-6](../audit/known-limitations.md#sales-and-auctions)).
 
 ### Statement entry hash and chain head
 
@@ -509,7 +506,7 @@ renderer changes every unfinalized work's state hash
 | Split wallet address | `CREATE2(factory, keccak256(abi.encode(configHash, salt)), walletInitCodeHash)` with `configHash = keccak256(abi.encode(payees))`, `payees` a `(uint256 artistId, address account, uint32 share)[]` in canonical order | [`ISplitFactory.sol`](../../src/economics/interfaces/ISplitFactory.sol); read `walletInitCodeHash()` from the factory |
 | Seller wallet | The salt-zero wallet for the item's payees | `IEconomicsResolver.newWorkTerms` |
 | Royalty receiver | The seller when the fee share is zero; otherwise the salt-zero wallet for the two fixed payees `(0, seller, 100,000 - feeShare)` and `(0, feeRecipient, feeShare)`, sorted ascending by address | `Splits.royaltyPayees` in [`Splits.sol`](../../src/economics/Splits.sol) |
-| Sale kind | `keccak256("ENGLISH_AUCTION")` `0x42bdbbaa…`, `keccak256("FIXED_PRICE")` `0xce977739…`, `keccak256("DUTCH")` `0x57099dca…` | [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) |
+| Sale kind | `keccak256("ENGLISH_AUCTION")` `0x42bdbbaa…`, `keccak256("UNIFORM_AUCTION")` `0x81234ccc…`; reserved: `keccak256("FIXED_PRICE")` `0xce977739…`, `keccak256("DUTCH")` `0x57099dca…` | [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) |
 | Product ID | `keccak256("PRODUCT_STREAM")` `0x8d6f9a23…`, `keccak256("PRODUCT_EDITIONS")` `0xdda24e9b…`, `keccak256("PRODUCT_FEDERATED")` `0x12f6fbd5…` | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |
 | Reserved statement kinds | `keccak256("DISPUTE_OUTCOME")` `0xd529e549…`, `keccak256("CURATION_EVIDENCE")` `0x10d8533b…`, `keccak256("GOVERNANCE_MANIFEST")` `0xda3e4cfe…` | [`StatementKinds.sol`](../../src/interfaces/types/StatementKinds.sol) |
 | Currencies | ETH is `address(0)`; `CURRENCY_DEFAULT` is `0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF` | [`EconomicsTypes.sol`](../../src/interfaces/types/EconomicsTypes.sol) |
@@ -533,7 +530,6 @@ string, domain label or encoding fails them.
 | [`test/identity/ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) `test_Golden_TypehashesAndSelectors`, `test_Golden_DigestsAreStandardEip712` | Identity typehashes, the domain, and standard EIP-712 digests |
 | [`test/economics/ReleaseVerifier.t.sol`](../../test/economics/ReleaseVerifier.t.sol) `test_GoldenTypehashDomainAndDigest` | The release typehash, domain and digest |
 | [`test/stream/WorkRecords.t.sol`](../../test/stream/WorkRecords.t.sol) `test_stateHash_golden` | The state-hash preimage |
-| [`test/sales/fixed/FixedPriceSale.t.sol`](../../test/sales/fixed/FixedPriceSale.t.sol) `test_ConstantsAndTypehashes`, `test_AllowlistLeaf_MatchesTheDefinition` | The allowlist domain, phase typehashes and the leaf formula |
 | [`test/sales/auction/EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol) `test_Permit2Witness_Golden` | The auction's full Permit2 typehashes |
 | [`test/content/tooling/UploaderGolden.t.sol`](../../test/content/tooling/UploaderGolden.t.sol) | Chunk hashes and file IDs from the Python uploader against the content store |
 

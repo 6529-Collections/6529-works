@@ -262,20 +262,20 @@ contract EnglishAuctionTest is AuctionBase {
     function test_Start_RevertsOnSaleKindMismatch() public {
         stream.setCheckKind(false);
         PrimaryTerms memory t = _terms(ETH);
-        t.saleKind = SaleKind.FIXED_PRICE;
+        t.saleKind = SaleKind.UNIFORM_AUCTION;
         stream.setTerms(t);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IMintTarget.SaleKindMismatch.selector,
                 SaleKind.ENGLISH_AUCTION,
-                SaleKind.FIXED_PRICE
+                SaleKind.UNIFORM_AUCTION
             )
         );
         _start();
     }
 
     /// @dev A sale kind sorting below the auction's is refused like one sorting above it
-    ///      (`FIXED_PRICE` and `DUTCH` both sort above) (found by mutation testing).
+    ///      (`UNIFORM_AUCTION` sorts above) (found by mutation testing).
     function test_Start_RevertsOnASaleKindSortingBelowTheAuctions() public {
         bytes32 low = bytes32(uint256(1));
         assertLt(uint256(low), uint256(SaleKind.ENGLISH_AUCTION));

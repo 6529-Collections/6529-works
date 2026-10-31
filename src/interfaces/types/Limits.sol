@@ -13,7 +13,7 @@ pragma solidity ^0.8.24;
 ///      - `openRecord`: per media file, one content-store read and one stored file ID, under
 ///        1.5M gas at 32 (the descriptive record is a content-store file, so only its ID is
 ///        stored);
-///      - captured cancellers, sale phases and locators: under 1M gas each at these bounds,
+///      - captured cancellers and locators: under 1M gas each at these bounds,
 ///        and `preferredLocator` scans at most 16 locators inside `tokenURI`'s 8M budget.
 library Limits {
     /// @notice Parties (artists and collaborators) per package item, and so payees per item.
@@ -27,8 +27,6 @@ library Limits {
     /// @notice Bytes per URI, the statement log's bound. A locator URI is a content address of
     ///         at most 66 bytes (`Locator`), well inside it.
     uint256 internal constant MAX_URI_BYTES = 2_048;
-    /// @notice Phases per fixed-price sale.
-    uint256 internal constant MAX_PHASES = 16;
     /// @notice Consolidated wallets captured as cancellers of one identity change.
     uint256 internal constant MAX_CANCELLERS = 16;
     /// @notice Bytes of a descriptive record file (12 KiB, half of a content-store chunk, so one
