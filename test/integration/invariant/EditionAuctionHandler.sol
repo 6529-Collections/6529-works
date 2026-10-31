@@ -524,40 +524,13 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     function _settle(uint256 i, uint256 mode) internal {
         Piece storage p = pieces[i];
         IUniformEditionAuction.Clearing memory live = ea.clearing(p.editionSaleId);
-        uint256[] memory suggested = ea.settlementOrder(p.editionSaleId);
-        (uint256 refK, uint256 refPrice, uint256 best) = _reference(i);
-        uint256[] memory order = _hint(i);
-        if (keccak256(abi.encode(order)) != keccak256(abi.encode(suggested))) {
-            _violation("settlementOrder differs from the departures sorted by position");
-        }
         uint256 feeBefore = networkFee.balance;
-        bool done;
-        if (order.length > 1 && mode % 2 == 0) {
-            // In two chunks: the first half of the sweep, then the rest.
-            uint256 half = order.length / 2;
-            uint256[] memory first = new uint256[](half);
-            uint256[] memory rest = new uint256[](order.length - half);
-            for (uint256 j; j < order.length; ++j) {
-                if (j < half) first[j] = order[j];
-                else rest[j - half] = order[j];
-            }
-            if (ea.settle(p.editionSaleId, first)) _violation("half a sweep settled");
-            done = ea.settle(p.editionSaleId, rest);
-            ++hits["settleChunked"];
-        } else {
-            done = ea.settle(p.editionSaleId, order);
-        }
-        if (!done) _violation("a complete sweep did not settle");
+        _sweep(i, mode);
         IUniformEditionAuction.Clearing memory c = ea.clearing(p.editionSaleId);
         if (c.count != live.count || c.step != live.step || c.price != live.price) {
             _violation("the live view differs from the settled result");
         }
-        if (c.count != refK) _violation("the count differs from the per-unit reference");
-        if (c.count != 0 && c.price != refPrice) _violation("the price differs from the reference");
-        if (p.cap != 0 && c.count > p.cap) _violation("the count exceeds the cap");
-        if (c.count * c.price * DENOMINATOR < best * (DENOMINATOR - _terms(i).marginShare)) {
-            _violation("revenue below the breadth threshold");
-        }
+        _checkAgainstReference(i, c.count, c.price);
         p.settled = true;
         p.k = c.count;
         p.clearStep = c.step;
@@ -573,6 +546,40 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         ++hits["settle"];
         if (c.rationed) ++hits["rationed"];
         if (c.rationed && departures[i][c.step].length != 0) ++hits["holeSwept"];
+    }
+
+    /// @dev Settles with the departure order, which must equal `settlementOrder`. Half the time
+    ///      the first call gets only the first half of the sweep; every later call continues
+    ///      from the departures already swept, as a keeper would, until the sale settles.
+    function _sweep(uint256 i, uint256 mode) internal {
+        uint256 sale = pieces[i].editionSaleId;
+        uint256[] memory order = _hint(i);
+        if (keccak256(abi.encode(order)) != keccak256(abi.encode(ea.settlementOrder(sale)))) {
+            _violation("settlementOrder differs from the departures sorted by position");
+        }
+        uint256 chunk = order.length > 1 && mode % 2 == 0 ? order.length / 2 : order.length;
+        bool done = ea.settle(sale, _slice(order, 0, chunk));
+        if (chunk < order.length) {
+            if (done) _violation("half a sweep settled");
+            ++hits["settleChunked"];
+        }
+        for (uint256 calls; !done && calls < 8; ++calls) {
+            uint256 swept = ea.settlement(sale).departuresSwept;
+            done = ea.settle(sale, _slice(order, swept, order.length));
+        }
+        if (!done) _violation("a complete sweep did not settle");
+    }
+
+    /// @dev The settled count and price equal the per-unit reference's, within the cap and the
+    ///      breadth margin.
+    function _checkAgainstReference(uint256 i, uint256 k, uint256 price) internal {
+        (uint256 refK, uint256 refPrice, uint256 best) = _reference(i);
+        if (k != refK) _violation("the count differs from the per-unit reference");
+        if (k != 0 && price != refPrice) _violation("the price differs from the reference");
+        if (pieces[i].cap != 0 && k > pieces[i].cap) _violation("the count exceeds the cap");
+        if (k * price * DENOMINATOR < best * (DENOMINATOR - _terms(i).marginShare)) {
+            _violation("revenue below the breadth threshold");
+        }
     }
 
     /// @dev A cancelled 1/1 takes no more edition bids, and settling voids its edition auction.
@@ -651,6 +658,17 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             prices[s] = _price(i, p.lo + s);
         }
         return Ref.clear(units, prices, p.cap, _terms(i).marginShare);
+    }
+
+    function _slice(uint256[] memory list, uint256 from, uint256 to)
+        internal
+        pure
+        returns (uint256[] memory out)
+    {
+        out = new uint256[](to - from);
+        for (uint256 j = from; j < to; ++j) {
+            out[j - from] = list[j];
+        }
     }
 
     /// @dev The settler's hint: the indexes of the clearing step's departures, in position
