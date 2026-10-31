@@ -36,12 +36,20 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **Bytecode: `EnglishAuction` is the tightest contract in the repository**, barely under
   EIP-170 (current margin in the [audit scope](../../docs/audit/scope.md#products-and-sales)).
   Any addition needs a matching cut; the governed rescue for tokens sent with a plain
-  `transferFrom` was declined for its size (LIM-SAL-10).
+  `transferFrom` was declined for its size (LIM-SAL-10). The museum rule (D140) took about 200
+  bytes, partly paid back by two equivalent rewrites (`claimDelivery`'s single revert site,
+  `withdrawBid`'s redundant zero check).
 - **Auction storage.** A steady-state start writes one `Sale` word: the token, a 32-bit token
   ID, a 32-bit end time, a 16-bit reference to a shared terms record, the status and flags.
   A terms record (currency, opening bid, increment share, anti-snipe window, a federated
   token's registry fee) is written once per distinct combination; its increment floor is
   written by the first bid. Seller and fee terms are read back from the token at settlement.
+- **The no-bid recipient (D140).** `settle` sends an unbid work of 6529 Stream (the immutable
+  `_stream`, a constructor argument) to the resolver's `museum()`, read only on that branch, and
+  records `_MUSEUM` beside `_RECIPIENT_SET`. Any other token's unbid work, listed or federated,
+  goes to the creator `_lockedTerms` reads from the token. `claimDelivery`'s no-bid claimant
+  (`_unbidClaimant`, L-5) is that creator unless `_MUSEUM` is set: a delivery pending for the
+  museum is the recorded museum's alone (AUC-33).
 - **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours
   from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
 - **ERC-20 transfers.** `TokenTransfer` requires exact balance deltas and exactly one `true`

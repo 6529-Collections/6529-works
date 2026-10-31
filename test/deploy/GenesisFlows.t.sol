@@ -69,6 +69,7 @@ contract GenesisFlowsTest is Test {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/genesis-flows");
         p.feeRecipient = makeAddr("feeRecipient");
+        p.museum = makeAddr("museum");
         p.marketOwner = makeAddr("marketOwner");
         p.delegation = address(new DelegationManagementMock());
         p.cc0Text = vm.readFileBinary("test/fixtures/cc0-legalcode.txt");

@@ -10,7 +10,7 @@ address derivation, the payee-list rules and both escrow-recovery flows.
 
 | File | What it is |
 | --- | --- |
-| `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`. |
+| `EconomicsResolver.sol` | Governed per-product economics for new works (fee share and recipient, royalty rate, default license), `newWorkTerms` and `resolveCurrency`; and the 6529 Network Museum (`museum`, `setMuseum`), where an unbid canonical work goes (ECO-37). |
 | `AssetAllowlist.sol` | Governed currencies: status, increment floor and `statusClock` per asset, and a default currency per product, each compare-and-set on its own revision. |
 | `SplitFactory.sol` | Permissionless, unowned factory: `walletFor` predicts and `createWallet` deploys a `SplitWallet` at its CREATE2 address; pins the resolver and release verifier by code hash. |
 | `SplitWallet.sol` | Immutable pull-payment wallet for ETH and any ERC-20: fixed payees by account, artist-resolved payees by artist ID through the artist registry's `payoutAddress`. |

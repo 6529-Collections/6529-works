@@ -98,7 +98,8 @@ contract EnglishAuctionGasTest is Test {
             address(new StatementLog(address(manager), address(0), bytes32(0))),
             address(0),
             IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
-            targets
+            targets,
+            address(stream)
         );
         stream.setAdmittedMinter(address(auction), true);
         allowlist.setDefaultCurrency(PRODUCT_STREAM, 0, address(0));

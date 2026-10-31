@@ -96,6 +96,8 @@ contract DeployScriptTest is Test {
         vm.deal(makeAddr("fee"), 1); // an existing account
         deployer.setEnv("NETWORK_FEE_RECIPIENT", vm.toString(makeAddr("fee")));
         deployer.setEnv("MARKETPLACE_OWNER", vm.toString(makeAddr("owner")));
+        vm.deal(makeAddr("museum"), 1); // an existing account
+        deployer.setEnv("MUSEUM", vm.toString(makeAddr("museum")));
         delegation = new DelegationManagementMock();
         deployer.setEnv("DELEGATION_CONTRACT", vm.toString(address(delegation)));
         vm.etch(DeployV1.CANONICAL_PERMIT2, address(delegation).code); // code at Permit2
@@ -166,6 +168,7 @@ contract DeployScriptTest is Test {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/script-test");
         p.feeRecipient = makeAddr("fee");
+        p.museum = makeAddr("museum");
         p.marketOwner = makeAddr("owner");
         p.delegation = address(new DelegationManagementMock());
         p.cc0Text = cc0;
@@ -191,6 +194,9 @@ contract DeployScriptTest is Test {
         assertEq(vm.parseJsonAddress(record, ".params.factory"), DeployGuards.CREATE2_FACTORY);
         assertEq(vm.parseJsonAddress(record, ".params.deployer"), address(this));
         assertEq(vm.parseJsonBytes32(record, ".cc0TextFileId"), d.cc0TextFileId);
+        // D140: the museum is a constructor value, recorded and read back.
+        assertEq(vm.parseJsonAddress(record, ".params.museum"), address(0xC003), "placeholder");
+        assertEq(d.economicsResolver.museum(), address(0xC003));
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 12);
         assertEq(calls, 15);
@@ -288,17 +294,19 @@ contract DeployScriptTest is Test {
 
     function test_OffAnvilEveryRequiredInputIsRequired() public {
         _sepolia();
-        string[5] memory names = [
+        string[6] memory names = [
             "GENESIS_CONFIG",
             "NETWORK_FEE_RECIPIENT",
             "MARKETPLACE_OWNER",
+            "MUSEUM",
             "MANIFEST_PATH",
             "MANIFEST_URI"
         ];
-        string[5] memory values = [
+        string[6] memory values = [
             GENESIS,
             vm.toString(makeAddr("fee")),
             vm.toString(makeAddr("owner")),
+            vm.toString(makeAddr("museum")),
             "config/manifest.json",
             "ar://epoch-0"
         ];
@@ -338,6 +346,34 @@ contract DeployScriptTest is Test {
         deployer.setEnv("NETWORK_FEE_RECIPIENT", "");
         address placeholder = deployer.params(true).feeRecipient;
         assertEq(placeholder, address(0xC001));
+        assertEq(placeholder.balance + placeholder.code.length + vm.getNonce(placeholder), 0);
+    }
+
+    /// @dev D140: off anvil the museum, like the fee recipient, must be an existing account (a
+    ///      typo would send every unbid work where nobody can act). Code, a balance or a nonce
+    ///      each count; on anvil the placeholder `0xC003` stays.
+    function test_OffAnvilTheMuseumMustExist() public {
+        _sepolia();
+        address empty = makeAddr("emptyMuseum");
+        deployer.setEnv("MUSEUM", vm.toString(empty));
+        vm.expectRevert(
+            abi.encodeWithSelector(Deploy.AccountDoesNotExist.selector, "MUSEUM", empty)
+        );
+        deployer.prepare();
+
+        address[3] memory existing =
+            [makeAddr("museumWithNonce"), makeAddr("museumWithBalance"), makeAddr("museumSafe")];
+        vm.setNonce(existing[0], 1);
+        vm.deal(existing[1], 1);
+        vm.etch(existing[2], address(new MockSafe()).code);
+        for (uint256 i; i < existing.length; ++i) {
+            deployer.setEnv("MUSEUM", vm.toString(existing[i]));
+            assertEq(deployer.prepare().p.museum, existing[i]);
+        }
+
+        deployer.setEnv("MUSEUM", "");
+        address placeholder = deployer.params(true).museum;
+        assertEq(placeholder, address(0xC003));
         assertEq(placeholder.balance + placeholder.code.length + vm.getNonce(placeholder), 0);
     }
 
@@ -1386,6 +1422,15 @@ contract DeployScriptTest is Test {
             record,
             string.concat('"marketOwner":"', vm.toLowercase(owner), '"'),
             '"marketOwner":"0x000000000000000000000000000000000000c003"'
+        );
+        vm.expectPartialRevert(VerifyV1.AddressMismatch.selector);
+        verifier.verify(tampered);
+        // So would a different museum have put the economics resolver (D140).
+        string memory museum = vm.toString(address(0xC003));
+        tampered = _tamper(
+            record,
+            string.concat('"museum":"', museum, '"'),
+            '"museum":"0x000000000000000000000000000000000000c004"'
         );
         vm.expectPartialRevert(VerifyV1.AddressMismatch.selector);
         verifier.verify(tampered);

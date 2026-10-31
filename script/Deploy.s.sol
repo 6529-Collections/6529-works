@@ -27,7 +27,7 @@ import { ScriptIO } from "./ScriptIO.sol";
 ///      - `DEPLOY_NAMESPACE` must be given, and no contract's address under it may be taken
 ///        (`AddressTaken`);
 ///      - every placeholder is refused, and every required input must be given;
-///      - the network fee recipient must already exist (`AccountDoesNotExist`);
+///      - the network fee recipient and the museum must already exist (`AccountDoesNotExist`);
 ///      - the genesis file must name reachable holders and the committed policy
 ///        (`DeployGuards`);
 ///      - the CC0 text must hash to `DeployV1.CC0_LEGALCODE_SHA256`;
@@ -48,6 +48,7 @@ contract Deploy is ScriptIO {
     string internal constant PLACEHOLDER_MANIFEST_URI = "ar://placeholder-epoch-0";
     address internal constant PLACEHOLDER_FEE_RECIPIENT = address(0xC001);
     address internal constant PLACEHOLDER_MARKET_OWNER = address(0xC002);
+    address internal constant PLACEHOLDER_MUSEUM = address(0xC003);
     /// @notice The committed example genesis: the policy every genesis file must match.
     string internal constant EXAMPLE_GENESIS = "config/genesis.example.json";
 
@@ -201,6 +202,11 @@ contract Deploy is ScriptIO {
         if (!local && !_exists(p.feeRecipient)) {
             revert AccountDoesNotExist("NETWORK_FEE_RECIPIENT", p.feeRecipient);
         }
+        // D140: the 6529 Network Museum receives every unbid canonical 6529 Stream work. An
+        // existing Safe or EOA, so a typo cannot send the works to an account nobody controls.
+        p.museum = _envAddress("MUSEUM", local ? PLACEHOLDER_MUSEUM : address(0));
+        if (p.museum == address(0)) revert MissingParameter("MUSEUM");
+        if (!local && !_exists(p.museum)) revert AccountDoesNotExist("MUSEUM", p.museum);
         p.marketOwner =
             _envAddress("MARKETPLACE_OWNER", local ? PLACEHOLDER_MARKET_OWNER : address(0));
         if (p.marketOwner == address(0)) revert MissingParameter("MARKETPLACE_OWNER");
@@ -371,6 +377,7 @@ contract Deploy is ScriptIO {
         vm.serializeAddress(o, "deployer", p.deployer);
         vm.serializeBytes32(o, "namespace", p.namespace);
         vm.serializeAddress(o, "networkFeeRecipient", p.feeRecipient);
+        vm.serializeAddress(o, "museum", p.museum);
         vm.serializeAddress(o, "marketOwner", p.marketOwner);
         vm.serializeAddress(o, "delegation", p.delegation);
         vm.serializeString(o, "ethIncrementFloor", vm.toString(p.ethIncrementFloor));

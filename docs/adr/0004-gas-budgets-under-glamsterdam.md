@@ -159,6 +159,7 @@ it. The Sepolia column stays r3's receipts.
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 169,060 |
 | `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 (r2) |
+| `settle`, no bid (to the museum, D140) | 131,836 | 400,000 | 1 | 0 | — |
 | `consume`, as Stream calls it | 93,057 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 240,708 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | re-rate a work (governed `execute`) | 186,931 | 192,000 (regression) | 1 | 0 | — |

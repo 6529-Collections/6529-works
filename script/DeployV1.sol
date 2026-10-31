@@ -78,6 +78,9 @@ library DeployV1 {
         bytes32 namespace;
         /// Network share recipient of every product (EconomicsResolver defaults).
         address feeRecipient;
+        /// The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. An
+        /// existing Safe or EOA; FUNDS_SETTER can change it.
+        address museum;
         /// The marketplace `owner()` of 6529 Stream (and 6529 Stream Editions): collection admin
         /// on marketplaces, no protocol power. FUNDS_SETTER can change it.
         address marketOwner;
@@ -255,7 +258,9 @@ library DeployV1 {
         if (n == keccak256("EconomicsResolver")) {
             return _code(
                 type(EconomicsResolver).creationCode,
-                abi.encode(m, d.assetAllowlist, d.splitFactory, p.feeRecipient, d.cc0TextFileId)
+                abi.encode(
+                    m, d.assetAllowlist, d.splitFactory, p.feeRecipient, p.museum, d.cc0TextFileId
+                )
             );
         }
         if (n == keccak256("RevenueEscrow")) {
@@ -346,7 +351,8 @@ library DeployV1 {
             );
         }
         if (n == keccak256("EnglishAuction")) {
-            // Targets are genesis wiring, not constructor arguments (config/README.md).
+            // Targets are genesis wiring, not constructor arguments (config/README.md); 6529
+            // Stream is also named here as the only token whose unbid works go to the museum.
             return _code(
                 type(EnglishAuction).creationCode,
                 abi.encode(
@@ -356,7 +362,8 @@ library DeployV1 {
                     d.statementLog,
                     auctionPermit2(p),
                     p.auction,
-                    new address[](0)
+                    new address[](0),
+                    d.stream
                 )
             );
         }

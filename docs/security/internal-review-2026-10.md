@@ -392,7 +392,8 @@ guardian veto, a contest decided by the TDH vote, or the lapse.
 deployment, including test_RestrainedKeyCannotManageTheEditionSale, removed with the
 fixed-price and Dutch adapters by ADR 0005 and kept at `v1.0.0-rc.1`,
 `test_NobodyStartsAnUnmintedWorkDuringTheNotice`, `test_RestrainedKeyCannotAmendTheRecord`,
-`test_NoBidAuctionRunningAtStagingWaitsForTheOutcome`,
+`test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce` (it tested this wait until ADR 0005
+sent an unbid canonical work to the museum),
 `test_PreSignedAcceptanceRefusedWhileRestrained`,
 `test_PowersReturnWhenAVoteVoidsTheOverride`); `test/identity/ArtistRegistry.t.sol`
 (`test_ActiveAuthority_RestrainedUntilTheOverrideExecutes`);

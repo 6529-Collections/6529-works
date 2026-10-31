@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
+import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
@@ -33,10 +34,12 @@ contract EconomicsResolverTest is EconomicsBase {
     EconomicsResolver internal econ;
     address internal network = makeAddr("network");
     address internal stranger = makeAddr("stranger");
+    address internal museum = makeAddr("museum");
 
     function setUp() public override {
         super.setUp();
-        econ = new EconomicsResolver(address(manager), allowlist, factory, network, CC0_TEXT);
+        econ =
+            new EconomicsResolver(address(manager), allowlist, factory, network, museum, CC0_TEXT);
     }
 
     function _artistPayees() internal view returns (ISplitWallet.Payee[] memory) {
@@ -80,19 +83,21 @@ contract EconomicsResolverTest is EconomicsBase {
         emit IEconomicsResolver.DefaultLicenseSet(
             PRODUCT_STREAM, License("", bytes32(0)), License("CC0-1.0", CC0_TEXT), 1
         );
-        new EconomicsResolver(address(manager), allowlist, factory, network, CC0_TEXT);
+        new EconomicsResolver(address(manager), allowlist, factory, network, museum, CC0_TEXT);
 
         vm.expectRevert(IEconomicsResolver.InvalidEconomics.selector);
-        new EconomicsResolver(address(manager), allowlist, factory, address(0), CC0_TEXT);
+        new EconomicsResolver(address(manager), allowlist, factory, address(0), museum, CC0_TEXT);
         vm.expectRevert(IEconomicsResolver.InvalidLicense.selector);
-        new EconomicsResolver(address(manager), allowlist, factory, network, bytes32(0));
+        new EconomicsResolver(address(manager), allowlist, factory, network, museum, bytes32(0));
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, alice));
-        new EconomicsResolver(address(manager), IAssetAllowlist(alice), factory, network, CC0_TEXT);
+        new EconomicsResolver(
+            address(manager), IAssetAllowlist(alice), factory, network, museum, CC0_TEXT
+        );
         address delegated = makeAddr("delegated");
         vm.etch(delegated, abi.encodePacked(hex"ef0100", address(factory)));
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, delegated));
         new EconomicsResolver(
-            address(manager), allowlist, ISplitFactory(delegated), network, CC0_TEXT
+            address(manager), allowlist, ISplitFactory(delegated), network, museum, CC0_TEXT
         );
     }
 
@@ -177,7 +182,9 @@ contract EconomicsResolverTest is EconomicsBase {
         vm.expectRevert(
             abi.encodeWithSelector(IEconomicsResolver.InvalidFeeRecipient.selector, address(escrow))
         );
-        new EconomicsResolver(address(manager), allowlist, factory, address(escrow), CC0_TEXT);
+        new EconomicsResolver(
+            address(manager), allowlist, factory, address(escrow), museum, CC0_TEXT
+        );
         _assertEconomics(_econ(PRODUCT_STREAM), network, 25_000, 6_529);
 
         // Accounts that accept payments stay allowed: a split wallet (its `receive` is empty) and
@@ -301,6 +308,8 @@ contract EconomicsResolverTest is EconomicsBase {
         econ.setRoyaltyRate(PRODUCT_STREAM, 1, 1);
         vm.expectRevert(denied);
         econ.setDefaultLicense(PRODUCT_STREAM, 1, License("MIT", CC0_TEXT));
+        vm.expectRevert(denied);
+        econ.setMuseum(1, stranger);
         vm.stopPrank();
         vm.deal(address(this), 1 ether);
         (bool ok,) = address(econ).call{ value: 1 }(
@@ -347,6 +356,116 @@ contract EconomicsResolverTest is EconomicsBase {
         manager.execute(address(econ), staleA);
         vm.stopPrank();
         _assertEconomics(_econ(PRODUCT_STREAM), network, 25_000, 5_000);
+    }
+
+    // ------------------------------------------------------------------ the museum (D140)
+
+    /// @dev The 6529 Network Museum is set at deployment, at revision 1, and announced from
+    ///      zero. The constructor refuses zero and a contract the fee-recipient rule refuses.
+    function test_Museum_SetAtDeployment() public {
+        assertEq(econ.museum(), museum);
+        assertEq(econ.museumRevision(), 1);
+        vm.expectEmit(false, false, false, true);
+        emit IEconomicsResolver.MuseumSet(address(0), museum, 1);
+        new EconomicsResolver(address(manager), allowlist, factory, network, museum, CC0_TEXT);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IEconomicsResolver.InvalidMuseum.selector, address(0))
+        );
+        new EconomicsResolver(address(manager), allowlist, factory, network, address(0), CC0_TEXT);
+        vm.expectRevert(
+            abi.encodeWithSelector(IEconomicsResolver.InvalidMuseum.selector, address(escrow))
+        );
+        new EconomicsResolver(
+            address(manager), allowlist, factory, network, address(escrow), CC0_TEXT
+        );
+    }
+
+    /// @dev `setMuseum` is compare-and-set on the museum's own revision, which every change
+    ///      bumps, and its event carries the old and the new museum and the new revision. A
+    ///      stale revision, on either side of the current one, is refused and changes nothing.
+    ///      Changing back to an earlier museum is a new revision, so a change queued against the
+    ///      earlier state cannot apply (ABA).
+    function test_SetMuseum_IsCompareAndSet() public {
+        address next = makeAddr("nextMuseum");
+        vm.expectEmit(address(econ));
+        emit IEconomicsResolver.MuseumSet(museum, next, 2);
+        econ.setMuseum(1, next);
+        assertEq(econ.museum(), next);
+        assertEq(econ.museumRevision(), 2);
+
+        vm.expectRevert(abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, 1, 2));
+        econ.setMuseum(1, stranger);
+        vm.expectRevert(abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, 3, 2));
+        econ.setMuseum(3, stranger);
+        assertEq(econ.museum(), next);
+
+        vm.expectEmit(address(econ));
+        emit IEconomicsResolver.MuseumSet(next, museum, 3);
+        econ.setMuseum(2, museum);
+        assertEq(econ.museum(), museum);
+        // The museum is back to its first address, but at revision 3: revision 1 is stale.
+        vm.expectRevert(abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, 1, 3));
+        econ.setMuseum(1, stranger);
+        // The museum and its revision touch no product's revisions.
+        (uint64 fee, uint64 royalty, uint64 license) = econ.revisions(PRODUCT_STREAM);
+        assertEq(fee + royalty + license, 3);
+    }
+
+    /// @dev The museum must be able to hold the unbid works it receives: zero, and every
+    ///      contract the fee-recipient rule refuses (CALLS-1), are refused, without bumping the
+    ///      revision. An existing account is accepted.
+    function test_SetMuseum_RefusesZeroAndTheFeeRecipientRule() public {
+        address[7] memory refused = [
+            address(0),
+            address(escrow),
+            address(router),
+            address(econ),
+            address(allowlist),
+            address(factory),
+            address(verifier)
+        ];
+        for (uint256 i; i < refused.length; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(IEconomicsResolver.InvalidMuseum.selector, refused[i])
+            );
+            econ.setMuseum(1, refused[i]);
+        }
+        assertEq(econ.museum(), museum);
+        assertEq(econ.museumRevision(), 1);
+        econ.setMuseum(1, stranger);
+        assertEq(econ.museum(), stranger);
+    }
+
+    /// @dev Owner decision 11: `setMuseum` is in the 14-day FUNDS_SETTER ("recipients") class.
+    ///      Two changes queued against the same revision cannot both apply.
+    function test_SetMuseum_IsInTheFundsClass() public {
+        bytes4[] memory funds = new bytes4[](1);
+        funds[0] = IEconomicsResolver.setMuseum.selector;
+        manager.setTargetFunctionRole(address(econ), funds, Roles.FUNDS_SETTER);
+        address gov = makeAddr("gov");
+        manager.grantRole(Roles.FUNDS_SETTER, gov, Roles.FUNDS);
+        (bool immediate, uint32 delay) =
+            manager.canCall(gov, address(econ), IEconomicsResolver.setMuseum.selector);
+        assertFalse(immediate);
+        assertEq(delay, 14 days);
+
+        address next = makeAddr("nextMuseum");
+        bytes memory change = abi.encodeCall(IEconomicsResolver.setMuseum, (1, next));
+        bytes memory rival = abi.encodeCall(IEconomicsResolver.setMuseum, (1, stranger));
+        vm.startPrank(gov);
+        manager.schedule(address(econ), change, 0);
+        manager.schedule(address(econ), rival, 0);
+        vm.warp(block.timestamp + Roles.FUNDS - 1);
+        bytes32 id = manager.hashOperation(gov, address(econ), change);
+        vm.expectRevert(abi.encodeWithSelector(IAccessManager.AccessManagerNotReady.selector, id));
+        manager.execute(address(econ), change);
+        vm.warp(block.timestamp + 1);
+        manager.execute(address(econ), change);
+        vm.expectRevert(abi.encodeWithSelector(IEconomicsResolver.RevisionMismatch.selector, 1, 2));
+        manager.execute(address(econ), rival);
+        vm.stopPrank();
+        assertEq(econ.museum(), next);
     }
 
     // ------------------------------------------------------------------ currency

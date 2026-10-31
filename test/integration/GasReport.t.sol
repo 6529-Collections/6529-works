@@ -616,6 +616,23 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 1, 0);
     }
 
+    /// @dev A settlement with no bid (D140, ADR 0005): the economics resolver's museum receives
+    ///      the work and nothing is paid. Steady state: the museum already holds an earlier
+    ///      unbid work, so its token balance exists; the one new slot is the sale's recipient.
+    function _rowSettleNoBid() internal returns (Row memory r) {
+        _steadyState();
+        uint256 earlier = auction.saleIdOf(address(stream), stream.totalMinted()); // unbid
+        (uint256 saleId,) = _start(root, _package(root), 2);
+        vm.warp(auction.auction(saleId).endTime);
+        auction.settle(earlier);
+        assertEq(stream.balanceOf(museum), 1, "the museum holds the earlier unbid work");
+        bytes memory data = abi.encodeCall(auction.settle, (saleId));
+        r = _row("settle, no bid (to the museum)", starter, address(auction), data, 0);
+        _gasAtMost(r, SETTLE_CEILING, "400K test ceiling");
+        assertEq(stream.ownerOf(auction.auction(saleId).tokenId), museum);
+        _growthIs(r, 1, 0);
+    }
+
     /// @dev `IPackageRegistry.consume` alone, as Stream calls it at steady state.
     function _rowConsume() internal returns (Row memory r) {
         _steadyState();
@@ -944,6 +961,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowSettle();
     }
 
+    function test_Gas_Settle_NoBid() public {
+        _rowSettleNoBid();
+    }
+
     function test_Gas_Consume() public {
         _rowConsume();
     }
@@ -995,7 +1016,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[26] memory rows = [
+        function() internal returns (Row memory)[27] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1012,6 +1033,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowBid,
             _rowSettleFirstPayout,
             _rowSettle,
+            _rowSettleNoBid,
             _rowConsume,
             _rowCreateEdition,
             _rowReRate,
@@ -1023,7 +1045,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[26] memory measured;
+        Row[27] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

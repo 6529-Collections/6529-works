@@ -23,7 +23,7 @@ import {
     ReturnsFalseToken,
     SenderFeeToken
 } from "../../mocks/economics/EconomicsMocks.sol";
-import { GasBurnerToken, HostileActor } from "../../mocks/sales/AuctionMocks.sol";
+import { GasBurnerToken, HostileActor, MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
@@ -369,13 +369,29 @@ contract EnglishAuctionHostileTest is AuctionBase {
 
     // --------------------------------------------------------------------- hostile actors
 
+    /// @dev D140: an unbid canonical work goes to the museum, so a gas-burning museum account
+    ///      leaves a pending delivery and cannot block the settlement.
+    function test_NoBidSettlementCannotBeBlockedByTheMuseum() public {
+        HostileActor museumSafe = new HostileActor();
+        museumSafe.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.BURN_GAS);
+        resolver.setMuseumAccount(address(museumSafe));
+        uint256 saleId = _start();
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(auction.pendingDelivery(saleId), address(museumSafe));
+    }
+
+    /// @dev Owner decision 9: an unbid federated work goes to its artist, whose gas-burning
+    ///      wallet cannot block the settlement either.
     function test_NoBidSettlementCannotBeBlockedByTheArtist() public {
         HostileActor artistWallet = new HostileActor();
         artistWallet.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.BURN_GAS);
+        MockMintTarget fed = _federated();
         PrimaryTerms memory t = _terms(ETH);
         t.creator = address(artistWallet);
-        stream.setTerms(t);
-        uint256 saleId = _start();
+        fed.setTerms(t);
+        uint256 saleId = auction.start(address(fed), "");
         _end(saleId);
         auction.settle(saleId);
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));

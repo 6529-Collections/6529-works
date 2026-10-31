@@ -160,11 +160,15 @@ contract MockAssetAllowlist {
 }
 
 /// @dev The economics resolver's reads the adapters use: `resolveCurrency` over the mock
-///      allowlist, `networkFeeRecipient`, `economics` and `assetAllowlist`; the rest is unused.
+///      allowlist, `networkFeeRecipient`, `economics`, `assetAllowlist` and `museum`; the rest is
+///      unused.
 contract MockEconomicsResolver is IEconomicsResolver {
     MockAssetAllowlist public immutable allowlist;
     /// @dev When set, `assetAllowlist()` reports this address instead (install-check tests).
     address public allowlistOverride;
+    /// @dev What `museum()` reports (D140): set directly, without the real setter's checks, so a
+    ///      test can make it zero.
+    address internal _museum;
     mapping(bytes32 product => ProductEconomics) internal _economics;
     mapping(bytes32 product => bool) internal _known;
 
@@ -198,6 +202,22 @@ contract MockEconomicsResolver is IEconomicsResolver {
 
     function networkFeeRecipient(bytes32 product) external view returns (address) {
         return economics(product).feeRecipient;
+    }
+
+    function setMuseumAccount(address museum_) external {
+        _museum = museum_;
+    }
+
+    function museum() external view returns (address) {
+        return _museum;
+    }
+
+    function museumRevision() external pure returns (uint64) {
+        return 1;
+    }
+
+    function setMuseum(uint64, address) external pure {
+        revert("unused");
     }
 
     function setAllowlistOverride(address allowlist_) external {
@@ -237,18 +257,6 @@ contract MockEconomicsResolver is IEconomicsResolver {
     }
 
     function setDefaultLicense(bytes32, uint64, License calldata) external pure {
-        revert("unused");
-    }
-
-    function museum() external pure returns (address) {
-        revert("unused");
-    }
-
-    function museumRevision() external pure returns (uint64) {
-        revert("unused");
-    }
-
-    function setMuseum(uint64, address) external pure {
         revert("unused");
     }
 

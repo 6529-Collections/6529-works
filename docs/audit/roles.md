@@ -46,7 +46,7 @@ Docs).
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 13 | No |
-| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 7 | No |
+| `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
 | `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 14 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
@@ -62,9 +62,9 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | --- | --- | ---: |
 | Immediate | immediate | 14 |
 | Standard | 48 hours | 15 |
-| Funds and recipients | 14 days | 7 |
+| Funds and recipients | 14 days | 8 |
 | Verifier and successor | 30 days | 14 |
-| **Total** | | **50** |
+| **Total** | | **51** |
 
 ## Matrix by contract
 
@@ -170,6 +170,7 @@ Source: [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsRes
 | `setFeeTerms(bytes32,uint64,address,uint32)` | `0x9a8fce26` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | New works only; compare-and-set on the product's revision; refuses a fee recipient that could never be paid. |
 | `setRoyaltyRate(bytes32,uint64,uint32)` | `0x6e58f7af` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | New works only; compare-and-set on the product's revision. |
 | `setDefaultLicense(bytes32,uint64,(string,bytes32))` | `0x387226d6` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | New works only; compare-and-set on the product's revision. |
+| `setMuseum(uint64,address)` | `0x10d71d79` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | The 6529 Network Museum (D140): every settlement afterwards, running sales included; compare-and-set on the museum's revision; refuses zero and a contract that could never hold a work. |
 
 ### AssetAllowlist
 

@@ -102,6 +102,8 @@ abstract contract WorksDeployment is Test {
     address internal platform = makeAddr("platform");
     address internal curator = makeAddr("curator");
     address internal networkFee = makeAddr("networkFeeSafe");
+    /// @dev The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes.
+    address internal museum = makeAddr("networkMuseumSafe");
     address internal marketOwner = makeAddr("marketOwner");
 
     bytes32 internal cc0TextFileId;
@@ -137,6 +139,7 @@ abstract contract WorksDeployment is Test {
         p.deployer = address(this);
         p.namespace = keccak256("6529-works/integration-lane-b");
         p.feeRecipient = networkFee;
+        p.museum = museum;
         p.marketOwner = marketOwner;
         p.delegation = address(delegation);
         p.cc0Text = CC0_TEXT;

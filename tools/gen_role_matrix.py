@@ -113,6 +113,10 @@ NOTES: dict[tuple[str, str], str] = {
         "New works only; compare-and-set on the product's revision.",
     ("EconomicsResolver", "setDefaultLicense(bytes32,uint64,(string,bytes32))"):
         "New works only; compare-and-set on the product's revision.",
+    ("EconomicsResolver", "setMuseum(uint64,address)"):
+        "The 6529 Network Museum (D140): every settlement afterwards, running sales included; "
+        "compare-and-set on the museum's revision; refuses zero and a contract that could never "
+        "hold a work.",
     ("AssetAllowlist", "admitAsset(address,uint64,uint256)"):
         "Compare-and-set; a re-admission waits 14 days from the deprecation.",
     ("AssetAllowlist", "setDefaultCurrency(bytes32,uint64,address)"):

@@ -5,8 +5,8 @@ import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
-import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
@@ -27,7 +27,8 @@ import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
 ///         executes, is vetoed, voided or lapses), nobody acts as the artist. The key it recovers
 ///         from loses every creator power, and the reserved new key gains none until execution:
 ///         - moves: an approved, unminted work cannot start;
-///         - auctions: a no-bid `settle` waits (reverts, moving nothing) until the outcome;
+///         - auctions: none any more for a canonical work: since ADR 0005 (D140) a no-bid
+///           `settle` sends it to the museum at once (a federated work's still waits);
 ///         - records: `setRecord`, `finalize` and the artist's `addLocator`;
 ///         - statements: ARTIST statements.
 ///         A STANDARD change and a payout-only override restrain nothing. Auctions already
@@ -122,8 +123,9 @@ contract RecoveryRestraintTest is IntegrationBase {
 
     /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
     /// @dev IDENTITY-1 (b): neither the restrained key nor the reserved new key can start an
-    ///      approved, unminted work. After execution the new key's move starts it, and a no-bid
-    ///      settlement delivers to the new key.
+    ///      approved, unminted work. After execution the new key's move starts it, and the work
+    ///      names the new key as its artist (its no-bid settlement then goes to the museum,
+    ///      D140; under rc.1 to the new key).
     function test_NobodyStartsAnUnmintedWorkDuringTheNotice() public {
         PendingChange memory p = _stageRecovery();
         Work[] memory works = _package(root);
@@ -147,42 +149,45 @@ contract RecoveryRestraintTest is IntegrationBase {
         uint256 saleId =
             auction.start(address(stream), _mintDataSignedBy(root, works, 1, newKey, nonce));
         uint256 tokenId = stream.totalMinted();
+        assertEq(stream.primaryTerms(tokenId, "").creator, newKey, "the recovered key's work");
         _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(tokenId), newKey, "delivered to the recovered key");
+        assertEq(stream.ownerOf(tokenId), museum, "unbid: the museum");
     }
 
-    /// @dev A no-bid auction that was already running when the override was staged: its settle
-    ///      waits (reverts, moving nothing, the token stays in custody) while the artist is
-    ///      restrained, and delivers to the new key once the override executes.
-    function test_NoBidAuctionRunningAtStagingWaitsForTheOutcome() public {
+    /// @dev D140 (ADR 0005): a no-bid auction that was already running when the override was
+    ///      staged settles at once while the artist is restrained, to the museum, since the
+    ///      artist is not the recipient. Under rc.1 its settle waited (reverted, moving nothing)
+    ///      for the override's outcome (IDENTITY-1); that wait now applies to federated works
+    ///      only. Neither the restrained key nor the reserved new key can take the work.
+    function test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce() public {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         PendingChange memory p = _stageRecovery();
         _toEnd(saleId);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
+        assertEq(artists.activeAuthorityOf(artistId), address(0), "still restrained");
         auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), address(auction), "held in custody");
+        assertEq(stream.ownerOf(tokenId), museum, "the museum, without waiting");
+        assertEq(stream.balanceOf(artist) + stream.balanceOf(newKey), 0, "neither key");
 
+        // The override's outcome changes nothing for the settled work.
         vm.warp(p.executableAt);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
-        auction.settle(saleId);
         artists.executeChange(artistId);
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), newKey);
+        assertEq(stream.ownerOf(tokenId), museum);
     }
 
-    /// @dev The same waiting auction settles to the old authority once the guardian vetoes the
-    ///      override: its powers return.
-    function test_NoBidAuctionSettlesToTheOldAuthorityAfterAVeto() public {
+    /// @dev The same auction after a veto: the work is already the museum's, and the veto
+    ///      restores the artist's other powers only.
+    function test_NoBidAuctionSettledToTheMuseumIsUnmovedByAVeto() public {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 1);
         _stageRecovery();
         _toEnd(saleId);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
         auction.settle(saleId);
         vm.prank(guardian2);
         artists.vetoChange(artistId);
         assertEq(artists.activeAuthorityOf(artistId), artist, "restored");
-        auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), artist);
+        assertEq(stream.ownerOf(tokenId), museum);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, artist);
     }
 
     /// @dev An auction with a bid, running when the override is staged, settles as usual: the
