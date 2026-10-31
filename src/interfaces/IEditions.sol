@@ -115,9 +115,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice 6529 Stream returned a zero package registry, economics resolver or artist
     ///         registry at deployment.
     error ZeroAddress();
-    /// @notice The item's edition terms are invalid (`EditionRules.isValid`): the uniform-price
-    ///         edition auction other than in ETH with empty params, no sale kind or the 1/1's,
-    ///         or params past `EditionRules.MAX_PARAMS_BYTES`.
+    /// @notice The item's edition terms are invalid (`EditionRules.isValid`): no sale kind, or
+    ///         params past `EditionRules.MAX_PARAMS_BYTES`.
     error InvalidEditionTerms(uint256 workId);
     /// @notice 6529 Stream did not record the link back to this edition.
     error LinkFailed(uint256 workId);

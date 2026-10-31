@@ -75,8 +75,7 @@ contract RecipientValidationTest is IntegrationBase {
     ///      cannot call `release`, so none may become an artist's payout address.
     function test_PayoutRefusesProtocolContractsThatCannotPull() public {
         _soldInUsd();
-        address[4] memory refused =
-            [address(claimRouter), address(escrow), address(auction), address(editionAuction)];
+        address[3] memory refused = [address(claimRouter), address(escrow), address(auction)];
         for (uint256 i; i < refused.length; ++i) {
             vm.expectRevert(IArtistRegistry.InvalidIdentity.selector);
             this.stagePayout(refused[i]);
@@ -165,11 +164,10 @@ contract RecipientValidationTest is IntegrationBase {
     ///      payment. The governed execution reverts after its delay, and the product keeps its
     ///      recipient.
     function test_FeeRecipientRefusesSystemContracts() public {
-        address[13] memory refused = [
+        address[12] memory refused = [
             address(escrow),
             address(claimRouter),
             address(auction),
-            address(editionAuction),
             address(stream),
             address(editions),
             address(economics),

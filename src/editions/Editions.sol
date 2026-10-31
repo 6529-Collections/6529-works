@@ -44,10 +44,11 @@ import { EditionRules } from "./EditionRules.sol";
 ///
 ///      Copies are minted only by admitted adapters (`isAdmittedMinter`, written by a governed
 ///      setter in the 30-day class) whose sale kind (`ISaleAdapter.saleKind`) is the edition's
-///      own, from its approved terms. Minting is generic (owner decision 14): v1 admits the
-///      uniform-price edition auction (`SaleKind.UNIFORM_AUCTION`) at genesis, and a later sale
-///      method (a fixed-price adapter, say) is a new adapter governance admits, selling editions
-///      whose terms name its kind, with no redeployment of this contract. The sale decides how
+///      own, from its approved terms. Minting is generic (ADR 0005, owner decision 14): rc.2
+///      sells editions by the uniform-price edition auction (`SaleKind.UNIFORM_AUCTION`), and a
+///      later sale method (a fixed-price adapter, say) is a new adapter governance admits,
+///      selling editions whose terms name its kind, with no redeployment of this contract. The
+///      terms' currency and params are opaque here (`EditionRules`). The sale decides how
 ///      many copies exist, so the terms fix no size: this contract enforces only the creator's
 ///      optional cap (`maxCount`; burns do not free it) and binds each edition to the first
 ///      admitted adapter that mints it, so no other adapter, admitted then or later, can add

@@ -550,7 +550,7 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      delegation contract, Permit2 and the test ERC-20. A report that measures calls into
     ///      other accounts (split wallets) adds them.
     function _cooled() internal view virtual returns (address[] memory all) {
-        address[23] memory list = [
+        address[22] memory list = [
             address(store),
             address(dependencies),
             address(consolidation),
@@ -569,7 +569,6 @@ abstract contract IntegrationBase is WorksDeployment {
             address(records),
             address(editions),
             address(auction),
-            address(editionAuction),
             address(manager),
             address(delegation),
             PERMIT2,

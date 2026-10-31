@@ -16,7 +16,6 @@ import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -269,20 +268,6 @@ contract GenesisConfigTest is Test {
             (all[7], all[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
             return all;
         }
-        if (_eq(name, "UniformEditionAuction")) {
-            return _s(
-                [
-                    ISaleAdapter.pause.selector,
-                    ISaleAdapter.unpause.selector,
-                    IUniformEditionAuction.setConfig.selector,
-                    ISaleAdapter.setTarget.selector,
-                    ISaleAdapter.setFederationRegistry.selector,
-                    z,
-                    z
-                ],
-                5
-            );
-        }
         if (_eq(name, "EconomicsResolver")) {
             return _s(
                 [
@@ -420,7 +405,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 65, "55 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 60, "50 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

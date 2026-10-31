@@ -10,7 +10,7 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
-import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
     ItemKind,
@@ -1019,36 +1019,19 @@ contract PackageRegistryTest is CurationBase {
         _expectValid(item, _keys(leadKey, collabKey));
     }
 
-    /// @dev The uniform-price edition auction is ETH-only (ADR 0005): an ERC-20 or the product
-    ///      default is refused.
-    function test_invalidItem_editionAuctionNotInEth() public {
-        PackageItem memory item = _masterItem(SHA_A);
-        item.edition.currency = CURRENCY_DEFAULT;
-        _expectInvalid(item, _keys(leadKey, collabKey));
-        item.edition.currency = address(0xE20);
-        _expectInvalid(item, _keys(leadKey, collabKey));
-        item.edition.currency = CURRENCY_ETH;
-        _expectValid(item, _keys(leadKey, collabKey));
-    }
-
     /// @dev The registry applies the same edition-terms rule as 6529 Stream Editions
     ///      (`EditionRules.isValid`), so a master whose edition could never be created is refused
-    ///      at `consume`, before it can mint. Another sale method's terms pass (owner decision 14):
-    ///      a later adapter sells them.
+    ///      at `consume`, before it can mint. The rule is generic (ADR 0005, owner decision 14):
+    ///      any nonzero kind, any currency and params within the bound pass, and the kind's
+    ///      adapter checks them when it opens.
     function test_invalidItem_masterEditionTermsSharedRule() public {
         uint256[] memory keys = _keys(leadKey, collabKey);
         PackageItem memory item = _masterItem(SHA_A);
-        item.edition.saleKind = SaleKind.ENGLISH_AUCTION; // the 1/1's sale
-        _expectInvalid(item, keys);
-        item = _masterItem(SHA_A);
-        item.edition.params = hex"01"; // the auction takes no params
-        _expectInvalid(item, keys);
-        item = _masterItem(SHA_A);
         item.edition.saleKind = keccak256("RAFFLE");
         item.edition.params = new bytes(EditionRules.MAX_PARAMS_BYTES + 1);
         _expectInvalid(item, keys);
         item.edition.params = abi.encode(uint256(1 ether));
-        item.edition.currency = address(0xE20);
+        item.edition.currency = CURRENCY_DEFAULT;
         _expectValid(item, keys);
     }
 

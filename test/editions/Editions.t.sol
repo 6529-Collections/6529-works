@@ -410,28 +410,21 @@ contract EditionsTest is EditionsBase {
         assertTrue(editions.exists(id));
     }
 
-    /// @dev `EditionRules`: the uniform-price edition auction in ETH with empty params, or
-    ///      another sale kind with bounded params; never no kind or the 1/1's.
+    /// @dev `EditionRules` (ADR 0005, owner decision 14): a nonzero sale kind and bounded
+    ///      params; the currency and params are the sale method's, checked by its adapter.
     function test_CreateEdition_RefusesMalformedTerms() public {
         PackageItem memory item = _item(5);
-        item.edition.saleKind = SaleKind.ENGLISH_AUCTION;
-        _expectBadTerms(item);
-        item = _item(5);
         item.edition.saleKind = 0;
-        _expectBadTerms(item);
-        item = _item(5);
-        item.edition.params = hex"01"; // the auction takes no params
-        _expectBadTerms(item);
-        item = _item(0);
-        item.edition.currency = address(type(uint160).max); // the auction is ETH-only
-        _expectBadTerms(item);
-        item = _item(0);
-        item.edition.currency = makeAddr("erc20");
         _expectBadTerms(item);
         item = _item(0);
         item.edition.saleKind = FIXED_PRICE;
         item.edition.params = new bytes(EditionRules.MAX_PARAMS_BYTES + 1);
         _expectBadTerms(item);
+        // Opaque to the token: any currency and params within the bound.
+        item = _item(0);
+        item.edition.currency = address(type(uint160).max);
+        item.edition.params = new bytes(EditionRules.MAX_PARAMS_BYTES);
+        assertTrue(editions.exists(_create(item)));
     }
 
     /// @dev A master whose edition another sale method sells: a fixed price in an ERC-20,
@@ -773,9 +766,7 @@ contract EditionsTest is EditionsBase {
         secondAdapter.buy(editions, other, buyer, 1);
         assertEq(editions.edition(other).minter, address(secondAdapter));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IEditions.MinterMismatch.selector, other, address(secondAdapter)
-            )
+            abi.encodeWithSelector(IEditions.MinterMismatch.selector, other, address(secondAdapter))
         );
         adapter.buy(editions, other, buyer, 1);
     }

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { CURRENCY_ETH } from "../interfaces/types/EconomicsTypes.sol";
 import { EditionTerms } from "../interfaces/types/PackageTypes.sol";
-import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 
 /// @title EditionRules
 /// @notice The one definition of valid edition terms (ADR 0001 section 6, as amended by ADR
@@ -12,26 +10,20 @@ import { SaleKind } from "../interfaces/types/SaleTypes.sol";
 ///         `createEdition`. One rule in both places means a master that can mint can always get
 ///         its edition.
 /// @dev Internal functions only, so nothing here is linked. Never reverts on malformed input.
-///      Sale methods stay extensible (owner decision 14): a sale kind is a label a sale adapter
-///      claims (`ISaleAdapter.saleKind`), so terms may name a kind no adapter serves yet, and a
-///      later adapter, admitted by governance, sells them without a redeployment. The rule
-///      checks only what this contract knows: the uniform-price edition auction's own shape,
-///      and for any other kind a label and bounded params; that kind's adapter validates its
-///      currency and params when it opens a sale.
+///      Sale methods stay extensible (ADR 0005, owner decision 14): a sale kind is a label a sale
+///      adapter claims (`ISaleAdapter.saleKind`), and its `currency` and `params` are opaque
+///      here. The rule checks only the generic shape; the kind's adapter validates the rest when
+///      it opens a sale (the edition auction requires `SaleKind.UNIFORM_AUCTION`, ETH and empty
+///      params) and refuses terms it cannot sell. Terms naming a kind no admitted adapter serves
+///      are valid, so their edition waits for such an adapter (LIM-EA-8).
 library EditionRules {
     /// @notice The most bytes of `params` an edition may carry, so that `createEdition`, which
     ///         stores them, fits the EIP-7825 transaction cap for any valid terms.
     uint256 internal constant MAX_PARAMS_BYTES = 1_024;
 
-    /// @notice Whether edition terms are valid. Any `maxCount` is valid; zero means no cap.
-    ///         - `SaleKind.UNIFORM_AUCTION`, v1's edition sale: ETH only, and no params;
-    ///         - any other kind: a nonzero label other than `SaleKind.ENGLISH_AUCTION` (the 1/1
-    ///           sale), with at most `MAX_PARAMS_BYTES` of params.
+    /// @notice Whether edition terms are valid: a nonzero sale kind and at most
+    ///         `MAX_PARAMS_BYTES` of params. Any `maxCount` (zero means no cap) and any currency.
     function isValid(EditionTerms calldata t) internal pure returns (bool) {
-        if (t.saleKind == SaleKind.UNIFORM_AUCTION) {
-            return t.currency == CURRENCY_ETH && t.params.length == 0;
-        }
-        return t.saleKind != 0 && t.saleKind != SaleKind.ENGLISH_AUCTION
-            && t.params.length <= MAX_PARAMS_BYTES;
+        return t.saleKind != 0 && t.params.length <= MAX_PARAMS_BYTES;
     }
 }
