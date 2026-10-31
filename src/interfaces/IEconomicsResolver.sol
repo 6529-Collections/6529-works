@@ -69,8 +69,8 @@ interface IEconomicsResolver is IERC165 {
     ///         its package item. Both wallets are predicted CREATE2 addresses; nothing is
     ///         deployed, so the auction start stays within its gas budget; a zero fee share omits
     ///         the fee payee. Reverts for a payee list the split factory would not accept.
-    /// @dev The one derivation 6529 Stream, 6529 Editions and this resolver share, with `factory`
-    ///      the `ISplitFactory` and `D` = 100,000:
+    /// @dev The one derivation 6529 Stream, 6529 Stream Editions and this resolver share, with
+    ///      `factory` the `ISplitFactory` and `D` = 100,000:
     ///      - `seller = factory.walletFor(payees, bytes32(0))`;
     ///      - if `feeShare == 0`, `royaltyReceiver = seller` (no wallet);
     ///      - otherwise `royaltyReceiver = factory.walletFor(list, bytes32(0))`, where `list` is

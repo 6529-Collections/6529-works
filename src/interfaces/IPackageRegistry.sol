@@ -68,7 +68,7 @@ interface IPackageRegistry is IERC165 {
         uint256 indexed artistId,
         bytes32 contentHash
     );
-    /// @notice 6529 Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
+    /// @notice 6529 Stream Editions claimed a master's content hash under `PRODUCT_EDITIONS`.
     /// @param contentHash The master's content hash.
     /// @param itemHash The master item, which consumed `contentHash` on 6529 Stream.
     event ContentClaimed(bytes32 indexed contentHash, bytes32 indexed itemHash);
@@ -130,9 +130,9 @@ interface IPackageRegistry is IERC165 {
     ///         EIP-7702 delegated account). ADMIN role.
     /// @param target The 6529 Stream contract.
     function bindStream(address target) external;
-    /// @notice Binds 6529 Editions, the only `claimContent` caller, once (ERC-165 for
+    /// @notice Binds 6529 Stream Editions, the only `claimContent` caller, once (ERC-165 for
     ///         `IEditions`, not an EIP-7702 delegated account). ADMIN role.
-    /// @param target The 6529 Editions contract.
+    /// @param target The 6529 Stream Editions contract.
     function bindEditions(address target) external;
     /// @notice Registers an approved package root. Permissionless; the verifier decides.
     /// @param packageRoot The package root: the Merkle root over its items'
@@ -188,7 +188,7 @@ interface IPackageRegistry is IERC165 {
     /// @param beneficiary The artist ID the content hash is reserved for.
     function releaseContent(bytes32 contentHash, bytes32 itemHash, uint256 beneficiary) external;
     /// @notice Claims a master's content hash under `PRODUCT_EDITIONS`; `consumedItemOf` must
-    ///         already record `itemHash` for it. Bound 6529 Editions only.
+    ///         already record `itemHash` for it. Bound 6529 Stream Editions only.
     /// @param contentHash The master's content hash.
     /// @param itemHash The master item.
     function claimContent(bytes32 contentHash, bytes32 itemHash) external;
@@ -217,8 +217,8 @@ interface IPackageRegistry is IERC165 {
     /// @notice The bound 6529 Stream.
     /// @return The 6529 Stream contract, or zero before it is bound.
     function stream() external view returns (address);
-    /// @notice The bound 6529 Editions.
-    /// @return The 6529 Editions contract, or zero before it is bound.
+    /// @notice The bound 6529 Stream Editions.
+    /// @return The 6529 Stream Editions contract, or zero before it is bound.
     function editions() external view returns (address);
     /// @notice A package root's status, evidence hash and attesting signer.
     /// @param packageRoot The package root.
@@ -245,7 +245,7 @@ interface IPackageRegistry is IERC165 {
     /// @param contentHash The content hash.
     /// @return artistId The beneficiary's artist ID, or zero.
     function releasedTo(bytes32 contentHash) external view returns (uint256 artistId);
-    /// @notice The master item whose content hash 6529 Editions claimed, or zero.
+    /// @notice The master item whose content hash 6529 Stream Editions claimed, or zero.
     /// @param contentHash The content hash.
     /// @return itemHash The master item's hash, or zero.
     function editionClaimOf(bytes32 contentHash) external view returns (bytes32 itemHash);

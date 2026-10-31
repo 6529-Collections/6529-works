@@ -160,25 +160,9 @@
       "lines": 99.0,
       "branches": 98.0
     },
-    "src/sales/DutchPricing.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
-    "src/sales/DutchSale.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
     "src/sales/EnglishAuction.sol": {
       "lines": 99.0,
       "branches": 95.9
-    },
-    "src/sales/FixedPriceSale.sol": {
-      "lines": 99.0,
-      "branches": 98.0
-    },
-    "src/sales/MintSaleBase.sol": {
-      "lines": 98.4,
-      "branches": 96.0
     },
     "src/stream/SpdxId.sol": {
       "lines": 99.0,

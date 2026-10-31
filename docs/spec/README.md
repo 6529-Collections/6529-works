@@ -18,7 +18,7 @@ ADR, a module README and the code differ, the pages follow the code, and the
 | [Stream and auctions](stream-and-auctions.md) | `AUC` | The shared ERC-721: minting, collections and serials, locked terms, royalties, burns; the English auction from start to settlement |
 | [Works and storage](works-and-storage.md) | `WS` | Each work's record, license, amendments, finalize and pins, locators and preferred location; the content store and dependency registry |
 | [Rendering and tokenURI](rendering-and-tokenuri.md) | `RND` | Which renderer serves a token, record status, the metadata format, inline media and the 8M gas budget |
-| [Editions and sales](editions-and-sales.md) | `ED` | The linked ERC-1155, edition formats, and the fixed-price and Dutch adapters with allowlists, payments and halts |
+| [Editions and sales](editions-and-sales.md) | `ED` | 6529 Stream Editions, the linked ERC-1155: edition terms, the creator's cap, minting by admitted sale adapters and the first-minter binding |
 | [Economics and payouts](economics-and-payouts.md) | `ECO` | Products and terms, split wallets, currencies, the escrow, signed releases and batch claims |
 | [Identity and recovery](identity-and-recovery.md) | `ID` | The artist registry, consolidations and standing, changes, overrides, contests and restraint |
 | [Disputes and statements](disputes-and-statements.md) | `DSP` | The dispute pause, upheld and rejected outcomes, content release, and the statement log |
@@ -145,10 +145,7 @@ the current behavior in full.
 | [Rendering and tokenURI](rendering-and-tokenuri.md) | RND-26 | ADR 0004's table: `tokenURI` at most 2,733,567 gas | That is the size matrix; the worst case, every cap at once, is 7.80M, under 8M | ADR 0004, decision 1 |
 | [Editions and sales](editions-and-sales.md) | ED-2 | ADR 0001 §6: the link is permanent once both sides finalize | Permanent from `createEdition`, finalized or not | None recorded |
 | [Editions and sales](editions-and-sales.md) | ED-1 | ADR 0001 §6: the link comes only from the approved package | The root must be registered, revoked or not | Review finding SIGS-4 |
-| [Editions and sales](editions-and-sales.md) | ED-12 | ADR 0001 §6: the artist picks size, format and price; ADR 0003: `openSale` is PLATFORM | Terms fixed at approval; PLATFORM alone opens only listed FIXED editions | Review finding MARKET-6; ADR 0003, curation |
-| [Editions and sales](editions-and-sales.md) | ED-14 | ADR 0003 owner decision 6: in a restraint PLATFORM runs sales; the artist cannot close them | PLATFORM alone opens only FIXED editions with unpriced phases; it closes any sale while the creator is zero | Review findings IDENTITY-1, MARKET-6 |
-| [Editions and sales](editions-and-sales.md) | ED-21, ED-14 | ADR 0003: deprecations halt sales; anyone closes a sale whose phases ended | Halts shift phase windows and the Dutch curve; only fixed-price sales end | Review finding MARKET-1 |
-| [Editions and sales](editions-and-sales.md) | ED-9 | No ADR barred the escrow as a payee | A sale paying the escrow is refused at open | Review finding CALLS-1 |
+| [Editions and sales](editions-and-sales.md) | ED-5 | ADR 0005 §2: `UniformEditionAuction` is admitted on 6529 Stream Editions | Not yet: genesis admits no edition sale adapter until the auction lands, so no copy can be minted | ADR 0005, delivery plan |
 | [Economics and payouts](economics-and-payouts.md) | ECO-8 | ADR 0001 §7: split wallets take any number of recipients | At most 64 payees per wallet, 16 parties per item | ADR 0003, economics |
 | [Economics and payouts](economics-and-payouts.md) | – | ADR 0001 §7: RC1's scoped resolvers stay | One `EconomicsResolver` with per-product settings | None recorded |
 | [Economics and payouts](economics-and-payouts.md) | – | ADR 0001 §7: the settlement recorder stays | No recorder; `TokenTransfer` checks exact deltas | None recorded (LIM-ECO-5) |
@@ -185,13 +182,13 @@ the current behavior in full.
 | [Governance](governance.md) | – | ADR 0001 §13: freezes are one-way, in the 30-day class | No freeze function exists | None recorded |
 | [Governance](governance.md) | GV-12 | ADR 0003: genesis performs every binding and minter admission | Also sale targets, default currencies and the epoch-0 manifest; federation binding waits for v1.1 | ADR 0003, integration |
 | [Governance](governance.md) | GV-15 | ADR 0002 decision 3: the readback rejects any unexpected admin | `verify` misses admins granted later; `Verify.s.sol`'s `RoleGranted` scan catches them | None recorded |
-| [Governance](governance.md) | GV-23, AUC-13, DSP-16, ED-22 | ADR 0002 decision 7, ADR 0003: unpause, resume and cancel wait 48 hours from scheduling | None lands before 48 hours after the pause | Review finding GOV-5 (PR #57) |
+| [Governance](governance.md) | GV-23, AUC-13, DSP-16 | ADR 0002 decision 7, ADR 0003: unpause, resume and cancel wait 48 hours from scheduling | None lands before 48 hours after the pause | Review finding GOV-5 (PR #57) |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: EIP-170 holds in every Foundry profile | Measured for the one defined profile, `default` | None recorded |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: 8–12K non-comment lines | Only the 12,000 maximum is enforced | None recorded |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: build and test in under 15 minutes | Per-job timeouts: 15 minutes for Contracts and Static analysis, 5 for Docs | None recorded |
 | [Build, test and budgets](../audit/build-and-test.md) | – | ADR 0001: reproducible from a committed standard-JSON input | None committed; `Verify.s.sol` does not rebuild bytecode | Known gap LIM-REL-1 |
 | [Invariants](../audit/invariants.md) | INV-CUR-1, INV-CUR-3, INV-CUR-4, INV-CUR-6 | ADR 0001 test plan: single-use packages and items as an invariant | Items and content hashes are tested directly; a package's single use only through the model's exactness | None recorded |
-| [Invariants](../audit/invariants.md) | – | ADR 0001, AGENTS.md: stateful invariants for every contract moving money | None for `EconomicsResolver` or `AssetAllowlist`; sale campaigns use a mock escrow | None recorded (PR #62 adds suites) |
+| [Invariants](../audit/invariants.md) | – | ADR 0001, AGENTS.md: stateful invariants for every contract moving money | None for `EconomicsResolver` or `AssetAllowlist` | None recorded (PR #62 adds suites) |
 | [Known limitations](../audit/known-limitations.md) | AUC-7 | ADR 0001 §16: royalties are advisory for federated contracts | Also for Stream and Editions, which implement only ERC-2981 (LIM-SAL-8) | None (a clarification) |
 | [Known limitations](../audit/known-limitations.md) | WS-32 | ADR 0003, content README: every transaction fits 16,777,216 gas | Regular gas only; state gas sits outside it on Sepolia (LIM-GAS-2) | ADR 0004, decision 4 |
 

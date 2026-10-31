@@ -33,8 +33,8 @@ contract FederationRegistryStub is InterfaceStub {
     constructor() InterfaceStub(type(IFederationRegistry).interfaceId) { }
 }
 
-/// @notice The 6529 Editions read the artist registry makes: `masterOf(id)`, which reverts with
-///         `UnknownEdition` for an unknown edition. `master` may be set to a foreign Stream.
+/// @notice The 6529 Stream Editions read the artist registry makes: `masterOf(id)`, which reverts
+///         with `UnknownEdition` for an unknown edition. `master` may be set to a foreign Stream.
 contract EditionsMastersMock {
     mapping(uint256 => address) internal _masterStream;
 

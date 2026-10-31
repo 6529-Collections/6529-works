@@ -1,9 +1,9 @@
 # Reading a work
 
 This page is for marketplaces, wallets, indexers and front ends that show 6529 Stream works
-and 6529 Editions editions. It shows how to fetch a token's metadata, how to decode it, what
-every field means, where the media is, how to read dispute status, royalties and licenses, and
-when to refresh a cache. The rules behind each answer are in the spec page
+and the editions of 6529 Stream Editions. It shows how to fetch a token's metadata, how to
+decode it, what every field means, where the media is, how to read dispute status, royalties
+and licenses, and when to refresh a cache. The rules behind each answer are in the spec page
 [Rendering and tokenURI](../spec/rendering-and-tokenuri.md), cited here by rule ID; this page is
 the practical view. Contract addresses are in [Addresses](addresses.md); ABIs and ERC-165
 interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
@@ -15,13 +15,13 @@ interface IDs are in [ABIs and interface IDs](abis-and-interface-ids.md).
 | You want | Call | Contract |
 | --- | --- | --- |
 | A work's metadata | `tokenURI(tokenId)` | 6529 Stream (ERC-721) |
-| An edition's metadata | `uri(id)` | 6529 Editions (ERC-1155) |
+| An edition's metadata | `uri(id)` | 6529 Stream Editions (ERC-1155) |
 | The metadata with all media inlined (up to 1 MiB) | `fullTokenURI(tokenContract, id)` | the renderer that `Stream.rendererOf(id)` names |
 | Which renderer serves a token | `rendererOf(tokenId)` | 6529 Stream |
-| Royalties | `royaltyInfo(id, salePrice)` | 6529 Stream or 6529 Editions (ERC-2981) |
-| The license | `licenseOf(id)` | WorkRecords (works) or 6529 Editions (editions) |
+| Royalties | `royaltyInfo(id, salePrice)` | 6529 Stream or 6529 Stream Editions (ERC-2981) |
+| The license | `licenseOf(id)` | WorkRecords (works) or 6529 Stream Editions (editions) |
 | The dispute status | `latestDisputeOutcome(stream, tokenId)` | StatementLog (`Renderer.statementLog()` gives its address) |
-| The edition of a master, and back | `editionOf(tokenId)`; `masterOf(editionId)` | 6529 Stream; 6529 Editions |
+| The edition of a master, and back | `editionOf(tokenId)`; `masterOf(editionId)` | 6529 Stream; 6529 Stream Editions |
 | When to refresh | `MetadataUpdate`, `BatchMetadataUpdate` (ERC-4906) | both tokens |
 
 ## Fetching the metadata
@@ -45,7 +45,7 @@ const uri = await client.readContract({
 A burned or unminted token reverts with `UnknownWork(tokenId)`. Token IDs are one global
 sequence from 1; a burn leaves a gap.
 
-### 6529 Editions: `uri`
+### 6529 Stream Editions: `uri`
 
 ```sh
 cast call "$EDITIONS" "uri(uint256)(string)" 42 --rpc-url "$RPC_URL"
@@ -392,7 +392,7 @@ ever recorded against the edition itself ([DSP-11][dsp]).
 | `primarySaleSettled(tokenId)` | Stream | bool | True once the auction settled; false before, and for burned IDs. |
 | `editionOf(tokenId)` | Stream | Editions address and edition ID, or zeros | Only for a master with an edition. |
 | `masterOf(editionId)` | Editions | Stream address, master token ID, content hash | Reverts with `UnknownEdition`. |
-| `edition(editionId)`, `exists(editionId)`, `formatOf(editionId)` | Editions | edition state, terms, minted count; FIXED or OPEN | |
+| `edition(editionId)`, `exists(editionId)` | Editions | edition state, terms, minted count, bound sale adapter | |
 | `isOpen(tokenId)` | WorkRecords | bool | Never reverts. Every other per-token WorkRecords view reverts with `RecordNotOpen` until the record opens. |
 | `record(tokenId)` | WorkRecords | record file ID, media hash, license key, version, `finalized`, `onChainComplete`, pinned renderer | |
 | `mediaOf(tokenId)`, `locators(tokenId, fileId)`, `preferredLocator(tokenId, fileId)` | WorkRecords | the media list (primary first), every registered copy, the served copy | See [Storage](storage.md). |

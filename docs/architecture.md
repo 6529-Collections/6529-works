@@ -25,8 +25,8 @@ decisions win. The precise contract surfaces are the interfaces in
         v                         v                           v
   +-----------------+    +------------------+       +--------------------+
   | IPackageRegistry|--->| ICurationVerifier|       |  IEnglishAuction   |  shared sale
-  | approve, accept |    | (v1: ICuration-  |       |  IFixedPriceSale   |  adapters
-  | consume, unique |    |  SignerVerifier) |       |  IDutchSale        |  (ISaleAdapter)
+  | approve, accept |    | (v1: ICuration-  |       |  edition sale      |  adapters
+  | consume, unique |    |  SignerVerifier) |       |  (ADR 0005)        |  (ISaleAdapter)
   +-----------------+    +------------------+       +--------------------+
      |  ^   bound: Stream, Editions                    | IMintTarget  |
      |  |                                              v              v
@@ -62,10 +62,10 @@ decisions win. The precise contract surfaces are the interfaces in
 | --- | --- | --- |
 | `IStream` (+ `IMintTarget`) | 6529 Stream core ERC-721 (`src/stream/`) | §1, §4, §7, §12 |
 | `IWorkRecords` | work records satellite (`src/stream/`) | §8, §10 |
-| `IEditions` (+ `IMintTarget`) | 6529 Editions ERC-1155 (`src/editions/`) | §6 |
+| `IEditions` (+ `IMintTarget`) | 6529 Stream Editions ERC-1155 (`src/editions/`) | §6 |
 | `IPackageRegistry`, `ICurationVerifier` (v1: `ICurationSignerVerifier`) | package registry, v1 verifier (`src/curation/`) | §3 |
 | `IContentStore`, `IDependencyRegistry`, `IRenderer` | content store, dependency registry, renderer (`src/content/`) | §8 |
-| `ISaleAdapter`, `IEnglishAuction`, `IFixedPriceSale`, `IDutchSale` | shared sale adapters (`src/sales/`) | §5, §6, §12 |
+| `ISaleAdapter`, `IEnglishAuction`, `IUniformEditionAuction` (frozen, ADR 0005) | shared sale adapters (`src/sales/`) | §5, §6, §12 |
 | `IEconomicsResolver` and the economics lane's interfaces | money routing (`src/economics/`) | §5, §7 |
 | `IArtistRegistry` (+ `IArtistRoleResolver`), `IConsolidationSource` | artist registry, consolidation adapter (`src/identity/`) | §11 |
 | `IStatementLog` | statement log (`src/records/`) | §12, §15 |
@@ -91,7 +91,7 @@ label, with no chain ID or contract address, so they are identical on Sepolia
 and mainnet. `WorksHashing` and `Typehashes` are the reference; their golden
 vectors in `test/interfaces/` were computed with `cast`, as off-chain tools do.
 Two kinds of hash are deliberately bound to one chain and contract: EIP-712
-signatures (each in its contract's domain) and fixed-price allowlist leaves.
+signatures, each in its contract's domain.
 
 | Identifier | Definition |
 | --- | --- |
@@ -107,7 +107,7 @@ signatures (each in its contract's domain) and fixed-price allowlist leaves.
 | product ID | `PRODUCT_STREAM`, `PRODUCT_EDITIONS`, `PRODUCT_FEDERATED` (`keccak256` of the name) |
 | token ID | one global sequence on 6529 Stream, from 1, assigned at sale start, never reused |
 | edition ID | equal to the master's Stream token ID |
-| sale ID | auctions: `uint256(keccak256(abi.encode(token, tokenId)))`; fixed price and Dutch: sequential, one open sale per `(token, id)` |
+| sale ID | auctions: `uint256(keccak256(abi.encode(token, tokenId)))` |
 | kinds | `bytes32` labels: `SaleKind.*` and `StatementKinds.*` |
 
 Shares and rates use a denominator of 100,000 (6.529% is 6,529). The currency
@@ -225,18 +225,12 @@ default when the sale starts".
    - It locks economics, records `(stream, workId, contentHash)` and calls
      `IStream.linkEdition`.
    - A burned or disputed master never gets an edition.
-3. The creator or the PLATFORM role opens one sale per `(token, id)` on the
-   fixed-price or Dutch adapter.
-   - Allowlist leaves bind `(chainid, adapter, token, id, phase, account, cap,
-     price)`, with the account being the receiving wallet (or the payer, for
-     payer-keyed phases).
-   - A per-wallet price (below or above the package price) needs the artist's
-     approval of the phases, and so does any sale of an OPEN edition, whose
-     one-time window starts at its first mint. Alone, PLATFORM opens a FIXED
-     edition at the package price.
-4. Each purchase mints through `IEditions.mint`. Dutch purchases charge exactly
-   the current price, and `Payment.amount` is the maximum the buyer will pay.
-   The edition renders its master's media and record. `WorkRecords` calls
+3. Copies are minted through `IEditions.mint` by an admitted sale adapter whose
+   sale kind the edition's terms name, within the creator's optional cap. The
+   first adapter to mint an edition is bound to it. rc.2 sells editions by the
+   uniform-price edition auction (ADR 0005), admitted once it lands; a new sale
+   method is a new adapter, never a new Editions.
+4. The edition renders its master's media and record. `WorkRecords` calls
    `notifyMasterUpdated` when the master changes, and `notifyAllUpdated` after a
    global or collection preferred-location change (as does Stream after a new
    default renderer), so Editions re-emits ERC-4906.
@@ -372,12 +366,12 @@ default when the sale starts".
 | Actor | Can | Cannot |
 | --- | --- | --- |
 | Curation signer | Attest that a package root was approved, after checking every declared SHA-256 against the decoded bytes. The v1 verifier trusts the key, not the vote. | Call any contract (it only signs); mint without party consent and the move signature; alter an item; reuse an item or a content hash. The guardian can disable a key at once; re-enabling takes 30 days and starts a new signer epoch, so no earlier approval revives. |
-| Guardian Safes | Pause a live auction for a dispute (once, at most 7 days); pause the sale adapters' new sales; deprecate a currency, which halts sales in it and freezes live auctions in it; veto identity changes; revoke unconsumed approvals; disable a curation signer; deprecate a dependency version; cancel scheduled governance operations; suspend a platform, curator or storage operator key at once (lifted only by a 30-day ADMIN grant or revocation) | Redirect funds or identities; cancel or resume an auction; lift a suspension or grant any role |
+| Guardian Safes | Pause a live auction for a dispute (once, at most 7 days); pause the sale adapters' new sales; deprecate a currency, which freezes live auctions in it; veto identity changes; revoke unconsumed approvals; disable a curation signer; deprecate a dependency version; cancel scheduled governance operations; suspend a platform, curator or storage operator key at once (lifted only by a 30-day ADMIN grant or revocation) | Redirect funds or identities; cancel or resume an auction; lift a suspension or grant any role |
 | Storage operator | Set preferred locations among the copies registered for each file (the contract stores no locator hash; the off-chain monitor verifies copies) | Add, remove or change locators; change content hashes |
-| Platform | Create collections; add locators; open edition sales and phases at the package price for FIXED editions | Change an approved package's prices, currencies, sizes or media; set allowlist prices (below or above the package price), or open an OPEN edition's one-time window, without the artist's signed approval |
+| Platform | Create collections; add locators | Change an approved package's terms or media |
 | CURATOR role | Append CURATION_EVIDENCE statements | Approve packages |
 | Admin Safe and setter roles | Governed setters behind the delay classes (48 hours, 14 days, 30 days), compare-and-set; genesis bindings, once | Change a work's royalty rate or license without every party, or its renderer pin without the artist; move an escrow credit anywhere but an identical replacement wallet, or the replacement its holder named (`consentToRecovery`) |
-| Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments; open edition sales | Change the approved media, parties, payees or sale terms |
+| Lead artist (active authority) | Move to Stream; edit the record until finalize; finalize; co-sign amendments | Change the approved media, parties, payees or sale terms |
 | Sale adapters (admitted) | Mint through `IMintTarget` on the token's own terms | Mint outside an approved item or an edition's terms |
 | Bound contracts | Stream consumes items; Editions claims content hashes; the package registry registers artists; the federation registry lists federated contracts under artists; WorkRecords sets royalty rates and asks Stream and Editions for ERC-4906 | Act for anyone else: each binding is one caller, set once at genesis |
 | VRF coordinator | Deliver a seed once per requested content | Choose which items are VRF, or change a delivered seed |
@@ -402,11 +396,11 @@ authoritative list, generated from `config/genesis.example.json`, is the
 | PAUSER | the sale adapters' emergency `pause()` |
 | UNPAUSER (48 hours) | `IEnglishAuction.resume`; the sale adapters' `unpause()` |
 | STORAGE_OPERATOR | `IWorkRecords.setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` |
-| PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); sale `openSale` and `closeSale` (also the creator); statement log `appendPlatform` (DISPUTE_OUTCOME) |
+| PLATFORM | `IStream.createCollection`; `IWorkRecords.addLocator` (also the artist); statement log `appendPlatform` (DISPUTE_OUTCOME) |
 | CURATOR | statement log `appendCurator` (CURATION_EVIDENCE) |
 | PARAMETER_SETTER (48 hours) | `IStream.setContractURI`, `releaseContent`, `IEditions.setContractURI`, `IWorkRecords.relicense`, `IEnglishAuction.cancel`, `setConfig`, `setOpeningBid`, `IEconomicsResolver.setRoyaltyRate`, `setDefaultLicense`, `IArtistRegistry.stageOverride`, `IDependencyRegistry.register`, `IEntropyModule.setConfig`, `IFederationRegistry.setStatus`, `setArtistDelisted` (v1.1); economics `IAssetAllowlist.setIncrementFloor` (economics setters are guarded by an expected revision) |
 | FUNDS_SETTER (14 days) | `IWorkRecords.setRoyaltyRate`, `IStream.setOwner`, `IEditions.setOwner`, `IEconomicsResolver.setFeeTerms`; economics `IAssetAllowlist.admitAsset`, `setDefaultCurrency`, `IRevenueEscrow.recover` (ADR 0002, ADR 0003) |
-| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
+| SUCCESSOR_SETTER (30 days) | `IMintTarget.setAdmittedMinter` (6529 Stream and 6529 Stream Editions), `IStream.setDefaultRenderer`, `IWorkRecords.repinRenderer`, `IPackageRegistry.setVerifier`, `ICurationSignerVerifier.enableSigner`, `IArtistRegistry.setConsolidationSource`, `resolveContested`, `IEntropyModule.setCoordinator`, entropy `lowerCallbackGasLimit`, `ISaleAdapter.setTarget`, `setFederationRegistry`; statement log `setArtistResolver`, `appendGovernanceManifest` |
 
 There is no SYSTEM role: contract-to-contract calls use the one-shot bindings in
 the first row, so they skip the AccessManager hop. Sale adapters are admitted
@@ -426,7 +420,7 @@ with no code-hash pin. The auditor pack lists every pin and its test
 ([trust assumptions](audit/trust-assumptions.md#pinned-code-hashes)).
 
 Renderer pins are checked again at use (DEPS-6): `Stream.rendererOf`, which
-`tokenURI` and 6529 Editions' `uri` go through, compares the default renderer's
+`tokenURI` and 6529 Stream Editions' `uri` go through, compares the default renderer's
 code hash with the one it was installed with, and `WorkRecords.pinnedRenderer`
 compares a finalized work's renderer with the hash it was pinned with. Changed code
 fails closed: the metadata view reverts, never falling back to another renderer,

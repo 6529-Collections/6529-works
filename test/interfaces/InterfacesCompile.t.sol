@@ -12,14 +12,11 @@ import {
     ICurationVerifier
 } from "../../src/interfaces/ICurationVerifier.sol";
 import { IDependencyRegistry } from "../../src/interfaces/IDependencyRegistry.sol";
-import { IDutchSale } from "../../src/interfaces/IDutchSale.sol";
 import { IEconomicsResolver } from "../../src/interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../../src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "../../src/interfaces/IEnglishAuction.sol";
 import { IEntropyModule } from "../../src/interfaces/IEntropyModule.sol";
 import { IFederationRegistry } from "../../src/interfaces/IFederationRegistry.sol";
-import { IFixedPriceSale } from "../../src/interfaces/IFixedPriceSale.sol";
-import { IMintSale } from "../../src/interfaces/IMintSale.sol";
 import { IMintTarget } from "../../src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../../src/interfaces/IPackageRegistry.sol";
 import { IRenderer } from "../../src/interfaces/IRenderer.sol";
@@ -39,22 +36,19 @@ contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0x6d0d5203), "IStream");
-        assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
-        assertEq(type(IEditions).interfaceId, bytes4(0x0f4dd474), "IEditions");
+        assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
+        assertEq(type(IEditions).interfaceId, bytes4(0xa41d86b8), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
         assertEq(
             type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b), "IUniformEditionAuction"
         );
-        assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x773a4920), "IFixedPriceSale");
-        assertEq(type(IDutchSale).interfaceId, bytes4(0x382667e1), "IDutchSale");
         // Errors only: no function, so the ID is zero and nothing reports it.
-        assertEq(type(IMintSale).interfaceId, bytes4(0x00000000), "IMintSale");
         assertEq(type(ICurationVerifier).interfaceId, bytes4(0x492733ca), "ICurationVerifier");
         assertEq(
             type(ICurationSignerVerifier).interfaceId, bytes4(0x9f12d97a), "ICurationSignerVerifier"
         );
-        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe69cc8c7), "IPackageRegistry");
+        assertEq(type(IPackageRegistry).interfaceId, bytes4(0xe7669f7c), "IPackageRegistry");
         assertEq(type(IContentStore).interfaceId, bytes4(0x3f437f81), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
@@ -66,7 +60,7 @@ contract InterfacesCompileTest is Test {
         );
         assertEq(type(IArtistRegistry).interfaceId, bytes4(0xee6ba0a4), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x88836e34), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0x3a410101), "IEntropyModule");
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0x0e083814), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");
     }
 

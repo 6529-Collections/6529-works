@@ -6,7 +6,6 @@ import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { ConsolidationAdapter, IDelegationManagement } from "src/identity/ConsolidationAdapter.sol";
 import { IArtistRegistry, IConsolidationSource } from "src/interfaces/IArtistRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
@@ -14,33 +13,27 @@ import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import { ArtistIdentity, ChangeKind, PendingChange } from "src/interfaces/types/IdentityTypes.sol";
-import {
-    EditionFormat,
-    EditionTerms,
-    ItemKind,
-    PartyAcceptance
-} from "src/interfaces/types/PackageTypes.sol";
-import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { EditionTerms, ItemKind, PartyAcceptance } from "src/interfaces/types/PackageTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { FailingConsolidationSource } from "../mocks/identity/IdentityWorksMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { SignatureReverts } from "test/helpers/SignatureReverts.sol";
-import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice IDENTITY-1 (owner decision A, 14 October 2026) on the real contracts: while a recovery
 ///         override that would move the authority is pending (staged or contested, until it
 ///         executes, is vetoed, voided or lapses), nobody acts as the artist. The key it recovers
 ///         from loses every creator power, and the reserved new key gains none until execution:
-///         - sales: the creator's `openSale`, its consent and `closeSale` (FixedPriceSale);
 ///         - moves: an approved, unminted work cannot start;
 ///         - auctions: none any more for a canonical work: since ADR 0005 (D140) a no-bid
 ///           `settle` sends it to the museum at once (a federated work's still waits);
 ///         - records: `setRecord`, `finalize` and the artist's `addLocator`;
 ///         - statements: ARTIST statements.
-///         A STANDARD change and a payout-only override restrain nothing. Sales and auctions
-///         already running keep running; the payout freeze holds their artist share.
+///         A STANDARD change and a payout-only override restrain nothing. Auctions already
+///         running keep running; the payout freeze holds their artist share. The edition
+///         auction has no creator power to restrain: anyone opens it (ADR 0005).
 contract RecoveryRestraintTest is IntegrationBase {
     address internal constant ALL = 0x8888888888888888888888888888888888888888;
     uint256 internal constant CONSOLIDATION = 999;
@@ -69,9 +62,7 @@ contract RecoveryRestraintTest is IntegrationBase {
         Work[] memory works = new Work[](3);
         works[0] = _work(artist, collectionId);
         works[0].item.kind = ItemKind.EDITION_MASTER;
-        works[0].item.edition = EditionTerms(
-            EditionFormat.FIXED, 50, 0, 0.1 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
-        );
+        works[0].item.edition = EditionTerms(50, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         works[1] = _work(artist, collectionId); // approved, accepted, not yet minted
         works[2] = _work(artist, collectionId); // minted and sold, record not finalized
         root = _publish(works);
@@ -122,114 +113,10 @@ contract RecoveryRestraintTest is IntegrationBase {
         );
     }
 
-    function _publicPhase() internal view returns (IFixedPriceSale.Phase[] memory pub) {
-        pub = new IFixedPriceSale.Phase[](1);
-        pub[0] = IFixedPriceSale.Phase(
-            uint64(block.timestamp), uint64(block.timestamp + 365 days), bytes32(0), 0, false, false
-        );
-    }
-
-    /// @dev One zero-price allowlist phase for `to`, 50 copies.
-    function _freePhase(address to) internal view returns (IFixedPriceSale.Phase[] memory phases) {
-        phases = new IFixedPriceSale.Phase[](1);
-        phases[0] = IFixedPriceSale.Phase(
-            uint64(block.timestamp),
-            uint64(block.timestamp + 1 hours),
-            fixedSale.allowlistLeaf(address(editions), masterId, 0, to, 50, 0),
-            0,
-            false,
-            true
-        );
-    }
-
     /// @dev Moves to the auction's end, never back in time.
     function _toEnd(uint256 saleId) internal {
         uint256 end = auction.auction(saleId).endTime;
         if (block.timestamp < end) vm.warp(end);
-    }
-
-    function _notManager(address caller) internal pure returns (bytes memory) {
-        return abi.encodeWithSelector(IMintSale.NotSaleManager.selector, caller);
-    }
-
-    // ------------------------------------------------------------------ the edition sale
-
-    /// Regression: IDENTITY-1 (docs/security/internal-review-2026-10.md)
-    /// @dev IDENTITY-1 (a): the restrained key can neither close the platform's sale nor open
-    ///      its own, and its signed consent does not approve a sale either. The platform's sale
-    ///      at the package price keeps selling, its artist share frozen. After execution the new
-    ///      key manages the sale.
-    function test_RestrainedKeyCannotManageTheEditionSale() public {
-        IFixedPriceSale.ArtistConsent memory none;
-        vm.prank(platform);
-        uint256 publicSale = fixedSale.openSale(address(editions), masterId, _publicPhase(), none);
-        PendingChange memory p = _stageRecovery();
-        vm.warp(block.timestamp + 10 days);
-
-        vm.prank(artist);
-        vm.expectRevert(_notManager(artist));
-        fixedSale.closeSale(publicSale);
-        vm.prank(newKey);
-        vm.expectRevert(_notManager(newKey));
-        fixedSale.closeSale(publicSale);
-        IFixedPriceSale.Phase[] memory free = _freePhase(thiefWallet);
-        vm.prank(artist);
-        vm.expectRevert(_notManager(artist));
-        fixedSale.openSale(address(editions), masterId, free, none);
-
-        // The platform closes its sale and tries the restrained key's consent: refused.
-        vm.prank(platform);
-        fixedSale.closeSale(publicSale);
-        uint64 deadline = uint64(block.timestamp + 1 days);
-        bytes32 digest = fixedSale.phaseConfigurationDigest(
-            address(editions), masterId, CURRENCY_ETH, 0.1 ether, free, 7, deadline
-        );
-        IFixedPriceSale.ArtistConsent memory consent =
-            IFixedPriceSale.ArtistConsent(7, deadline, _sign(artist, digest));
-        vm.prank(platform);
-        vm.expectRevert(SignatureReverts.invalid(address(0)));
-        fixedSale.openSale(address(editions), masterId, free, consent);
-
-        // The platform's own sale at the package price still sells.
-        vm.prank(platform);
-        uint256 again = fixedSale.openSale(address(editions), masterId, _publicPhase(), none);
-        vm.deal(collector, 1 ether);
-        vm.prank(collector);
-        fixedSale.purchase{ value: 0.1 ether }(
-            IFixedPriceSale.Purchase(again, 0, collector, 1, 0, 0),
-            new bytes32[](0),
-            Payment(PaymentMethod.DIRECT, collector, 0.1 ether, 0, 0, "")
-        );
-        assertEq(editions.balanceOf(collector, masterId), 1);
-        assertEq(editions.balanceOf(thiefWallet, masterId), 0);
-
-        vm.warp(p.executableAt);
-        artists.executeChange(artistId);
-        vm.prank(newKey);
-        fixedSale.closeSale(again);
-        vm.prank(newKey);
-        fixedSale.openSale(address(editions), masterId, _publicPhase(), none);
-    }
-
-    /// Regression: IDENTITY-1, MARKET-6 (docs/security/internal-review-2026-10.md)
-    /// @dev MARKET-6 with IDENTITY-1: PLATFORM cannot close a sale the artist opened, but while
-    ///      a recovery override restrains the artist (the creator resolves to zero) it can, so a
-    ///      sale opened with a compromised key is stopped without pausing the adapter.
-    function test_PlatformClosesTheArtistsSaleDuringTheNotice() public {
-        IFixedPriceSale.ArtistConsent memory none;
-        IFixedPriceSale.Phase[] memory phases = _freePhase(thiefWallet);
-        vm.prank(artist);
-        uint256 artistSale = fixedSale.openSale(address(editions), masterId, phases, none);
-        vm.prank(platform);
-        vm.expectRevert(_notManager(platform));
-        fixedSale.closeSale(artistSale);
-
-        _stageRecovery();
-        vm.expectEmit(address(fixedSale));
-        emit IFixedPriceSale.SaleClosed(artistSale);
-        vm.prank(platform);
-        fixedSale.closeSale(artistSale);
-        assertEq(fixedSale.openSaleOf(address(editions), masterId), 0);
     }
 
     // ------------------------------------------------------------------ moves and auctions

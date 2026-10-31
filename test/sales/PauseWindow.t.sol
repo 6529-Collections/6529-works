@@ -81,7 +81,7 @@ contract PauseWindowTest is IntegrationBase {
 
     /// Regression: GOV-5 (docs/security/internal-review-2026-10.md)
     function test_Unpause_ScheduledBeforeThePauseWaitsTwoDaysAfterIt() public {
-        address[3] memory adapters = [address(fixedSale), address(dutchSale), address(auction)];
+        address[1] memory adapters = [address(auction)];
         for (uint256 i; i < adapters.length; ++i) {
             ISaleAdapter adapter = ISaleAdapter(adapters[i]);
             bytes memory unpause = abi.encodeCall(adapter.unpause, ());
@@ -109,12 +109,12 @@ contract PauseWindowTest is IntegrationBase {
 
     /// Regression: GOV-5 (docs/security/internal-review-2026-10.md)
     function test_Unpause_WithoutAPauseStillReverts() public {
-        bytes memory unpause = abi.encodeCall(fixedSale.unpause, ());
-        _schedule(hotAdmin, address(fixedSale), unpause);
+        bytes memory unpause = abi.encodeCall(ISaleAdapter.unpause, ());
+        _schedule(hotAdmin, address(auction), unpause);
         vm.warp(block.timestamp + Roles.STANDARD);
         vm.prank(hotAdmin);
         vm.expectRevert(ISaleAdapter.NotPaused.selector);
-        manager.execute(address(fixedSale), unpause);
+        manager.execute(address(auction), unpause);
     }
 }
 
@@ -169,19 +169,19 @@ contract PauseWindowSalesStackTest is SalesStackBase {
     /// Regression: GOV-5 (docs/security/internal-review-2026-10.md)
     /// @dev Re-pausing after an unpause restarts the 48 hours.
     function test_Unpause_PauseUnpausePauseRestartsTheClock() public {
-        _govern(guardian1, address(fixedSale), abi.encodeCall(fixedSale.pause, ()));
-        bytes memory unpause = abi.encodeCall(fixedSale.unpause, ());
-        _govern(hotAdmin, address(fixedSale), unpause);
-        _schedule(hotAdmin, address(fixedSale), unpause);
+        _govern(guardian1, address(auction), abi.encodeCall(ISaleAdapter.pause, ()));
+        bytes memory unpause = abi.encodeCall(ISaleAdapter.unpause, ());
+        _govern(hotAdmin, address(auction), unpause);
+        _schedule(hotAdmin, address(auction), unpause);
         vm.warp(block.timestamp + Roles.STANDARD);
-        _govern(guardian1, address(fixedSale), abi.encodeCall(fixedSale.pause, ()));
+        _govern(guardian1, address(auction), abi.encodeCall(ISaleAdapter.pause, ()));
         vm.prank(hotAdmin);
         vm.expectRevert(
             abi.encodeWithSelector(
                 ISaleAdapter.UnpauseTooEarly.selector, block.timestamp + Roles.STANDARD
             )
         );
-        manager.execute(address(fixedSale), unpause);
-        assertTrue(fixedSale.paused());
+        manager.execute(address(auction), unpause);
+        assertTrue(auction.paused());
     }
 }

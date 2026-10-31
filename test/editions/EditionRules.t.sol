@@ -4,9 +4,8 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { EditionRules } from "src/editions/EditionRules.sol";
 import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { EditionFormat, EditionTerms } from "src/interfaces/types/PackageTypes.sol";
-import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { DutchPricing } from "src/sales/DutchPricing.sol";
+import { EditionTerms } from "src/interfaces/types/PackageTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 
 /// @dev Exposes the calldata-only rule.
 contract EditionRulesHarness {
@@ -15,122 +14,70 @@ contract EditionRulesHarness {
     }
 }
 
-/// @notice The one edition-terms rule shared by the package registry and 6529 Editions.
+/// @notice The one edition-terms rule shared by the package registry and 6529 Stream Editions
+///         (ADR 0005, owner decision 14): a nonzero sale kind and bounded params, nothing else.
+///         The kind's adapter checks its own currency and params when it opens a sale.
 contract EditionRulesTest is Test {
-    uint256 internal constant PRICE = 0.1 ether;
     EditionRulesHarness internal rules = new EditionRulesHarness();
 
-    function _fixed() internal pure returns (EditionTerms memory) {
-        return
-            EditionTerms(EditionFormat.FIXED, 10, 0, PRICE, CURRENCY_ETH, SaleKind.FIXED_PRICE, "");
+    function _terms(uint32 maxCount) internal pure returns (EditionTerms memory) {
+        return EditionTerms(maxCount, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
-    function _dutch(uint256 resting, uint64 duration, uint64 step)
-        internal
-        pure
-        returns (EditionTerms memory)
-    {
-        return EditionTerms(
-            EditionFormat.OPEN,
-            0,
-            1 days,
-            PRICE,
-            CURRENCY_ETH,
-            SaleKind.DUTCH,
-            abi.encode(DutchParams(resting, duration, step))
-        );
+    /// @dev Any cap is valid, zero (no cap) included.
+    function testFuzz_AnyCap(uint32 maxCount) public view {
+        assertTrue(rules.isValid(_terms(maxCount)));
     }
 
-    function test_FixedPriceShapes() public view {
-        EditionTerms memory t = _fixed();
-        assertTrue(rules.isValid(t));
-        t.size = 0; // a fixed edition of nothing
-        assertFalse(rules.isValid(t));
-        t = _fixed();
-        t.window = 1; // a fixed edition has no window
-        assertFalse(rules.isValid(t));
-        t = _fixed();
-        t.format = EditionFormat.OPEN; // an open edition needs a window
-        assertFalse(rules.isValid(t));
-        t.window = 1 days;
-        assertTrue(rules.isValid(t));
-        t.size = 0; // an uncapped open edition
-        assertTrue(rules.isValid(t));
-        t = _fixed();
-        t.params = hex"01"; // fixed price takes no params
-        assertFalse(rules.isValid(t));
-    }
-
-    function test_SaleKinds() public view {
-        EditionTerms memory t = _fixed();
-        t.saleKind = SaleKind.ENGLISH_AUCTION;
-        assertFalse(rules.isValid(t));
+    /// @dev No sale kind is refused; every label an adapter may claim is accepted, the
+    ///      edition auction's, rc.1's and one no adapter serves yet (LIM-EA-8).
+    function test_AnyNonzeroKind() public view {
+        EditionTerms memory t = _terms(10);
         t.saleKind = 0;
-        assertFalse(rules.isValid(t));
-        t.saleKind = keccak256("RAFFLE");
-        assertFalse(rules.isValid(t));
-        // Every label above is below FIXED_PRICE's as a number; so is DUTCH's. One above it.
-        t.saleKind = bytes32(type(uint256).max);
-        assertFalse(rules.isValid(t));
+        assertFalse(rules.isValid(t), "no sale kind");
+        bytes32[5] memory kinds = [
+            SaleKind.UNIFORM_AUCTION,
+            SaleKind.FIXED_PRICE,
+            SaleKind.DUTCH,
+            keccak256("RAFFLE"),
+            bytes32(uint256(1))
+        ];
+        for (uint256 i; i < kinds.length; ++i) {
+            t.saleKind = kinds[i];
+            assertTrue(rules.isValid(t));
+        }
     }
 
-    function test_DefaultCurrencyOnlyWhenFree() public view {
-        EditionTerms memory t = _fixed();
-        t.currency = CURRENCY_DEFAULT;
-        assertFalse(rules.isValid(t));
-        t.price = 0;
+    /// @dev The currency is the sale method's: the rule never reads it (the edition auction
+    ///      refuses anything but ETH when it opens).
+    function test_AnyCurrency() public view {
+        EditionTerms memory t = _terms(10);
+        address[3] memory currencies = [CURRENCY_DEFAULT, address(0xE20), address(1)];
+        for (uint256 i; i < currencies.length; ++i) {
+            t.currency = currencies[i];
+            assertTrue(rules.isValid(t));
+        }
+    }
+
+    /// @dev Params are opaque but bounded, so `createEdition` always fits the transaction cap.
+    function test_ParamsAreBounded() public view {
+        EditionTerms memory t = _terms(0);
+        t.params = abi.encode(uint256(1 ether));
         assertTrue(rules.isValid(t));
-        EditionTerms memory d = _dutch(0, 0, 0);
-        d.currency = CURRENCY_DEFAULT;
-        assertFalse(rules.isValid(d));
+        t.params = new bytes(EditionRules.MAX_PARAMS_BYTES);
+        assertTrue(rules.isValid(t), "at the bound");
+        t.params = new bytes(EditionRules.MAX_PARAMS_BYTES + 1);
+        assertFalse(rules.isValid(t), "past the bound");
     }
 
-    /// @dev The Dutch schedule must be one `DutchSale.openSale` accepts (`DutchPricing.isValid`).
-    function test_DutchSchedules() public view {
-        assertTrue(rules.isValid(_dutch(PRICE / 10, 1 hours, 0)));
-        assertTrue(rules.isValid(_dutch(PRICE / 10, 100, 10)));
-        assertTrue(rules.isValid(_dutch(PRICE, 0, 0)), "a flat price needs no duration");
-        assertFalse(rules.isValid(_dutch(PRICE + 1, 1 hours, 0)), "rests above the start");
-        assertFalse(rules.isValid(_dutch(PRICE / 10, 0, 0)), "falls with no duration");
-        assertFalse(rules.isValid(_dutch(PRICE / 10, 100, 7)), "steps do not divide");
-        // Durations are uint64: none is cut to 32 bits on the way to DutchPricing.
-        assertTrue(rules.isValid(_dutch(PRICE / 10, uint64(1) << 32, 0)), "2**32 seconds");
-        assertTrue(rules.isValid(_dutch(PRICE / 10, type(uint64).max, 0)), "the longest");
-    }
-
-    /// @dev Malformed params never revert the rule: wrong length or words that are not uint64.
-    function test_DutchMalformedParams() public view {
-        EditionTerms memory t = _dutch(0, 1, 0);
-        t.params = abi.encode(DutchParams(0, 1, 0), uint256(1)); // too long
-        assertFalse(rules.isValid(t));
-        t.params = hex"00"; // too short
-        assertFalse(rules.isValid(t));
-        t.params = "";
-        assertFalse(rules.isValid(t));
-        t.params = abi.encode(uint256(0), uint256(1) << 64, uint256(0)); // duration > uint64
-        assertFalse(rules.isValid(t));
-        t.params = abi.encode(uint256(0), uint256(64), uint256(1) << 64); // step > uint64
-        assertFalse(rules.isValid(t));
-    }
-
-    /// @dev For well-formed params the Dutch verdict is exactly `DutchPricing.isValid`.
-    function testFuzz_DutchMatchesPricing(
-        uint256 price,
-        uint256 resting,
-        uint64 duration,
-        uint64 step
+    /// @dev Arbitrary terms never make the rule revert, and the verdict is exactly the rule.
+    function testFuzz_MatchesTheRule(
+        uint32 maxCount,
+        address currency,
+        bytes32 saleKind,
+        bytes calldata params
     ) public view {
-        EditionTerms memory t = _dutch(resting, duration, step);
-        t.price = price;
-        assertEq(rules.isValid(t), DutchPricing.isValid(price, resting, duration, step));
-    }
-
-    /// @dev Arbitrary params bytes never make the rule revert.
-    function testFuzz_NeverReverts(bytes calldata params, bool dutch, uint8 format) public view {
-        EditionTerms memory t = _dutch(0, 1, 0);
-        t.params = params;
-        t.saleKind = dutch ? SaleKind.DUTCH : SaleKind.FIXED_PRICE;
-        t.format = EditionFormat(format % 2);
-        rules.isValid(t);
+        EditionTerms memory t = EditionTerms(maxCount, currency, saleKind, params);
+        assertEq(rules.isValid(t), saleKind != 0 && params.length <= EditionRules.MAX_PARAMS_BYTES);
     }
 }

@@ -126,7 +126,7 @@ contract RendererWorkRecordsMock {
     }
 }
 
-/// @dev A 6529 Editions stand-in: ERC-1155 by ERC-165, with `masterOf` set by the test.
+/// @dev A 6529 Stream Editions stand-in: ERC-1155 by ERC-165, with `masterOf` set by the test.
 contract RendererEditionsMock {
     address public stream;
     mapping(uint256 => uint256) internal masters;

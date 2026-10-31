@@ -33,8 +33,8 @@ param(
     [Parameter(Mandatory)] [string] $SignerModule,
     [Parameter(Mandatory)] [string] $State,
     [Parameter(Mandatory)] [ValidateSet('content', 'collections', 'package', 'start', 'startWithBid',
-        'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'openSale',
-        'purchase', 'send', 'record', 'prague', 'report')] [string] $Step,
+        'bid', 'openRecord', 'sync', 'requestSeed', 'settle', 'createEdition', 'send', 'record',
+        'prague', 'report')] [string] $Step,
     [string] $Rpc = 'https://ethereum-sepolia-rpc.publicnode.com',
     # The deployment record, relative to the repository root (r3 by default).
     [string] $Record = 'deployments/11155111/1792095396.json',
@@ -45,8 +45,6 @@ param(
     [int] $TokenId = 0,
     [string] $Bidder = 'bidder1',
     [string] $Amount = '0',
-    [int] $Quantity = 1,
-    [string] $SaleId = '0',
     [string] $Label = '',
     [string] $From = 'any',
     [string] $To = '',
@@ -329,13 +327,6 @@ switch ($Step) {
     }
     'createEdition' {
         Send-Items (Invoke-Plan 'createEditionTx(uint256)' @("$TokenId"))
-    }
-    'openSale' {
-        $now = Get-Timestamp
-        Send-Items (Invoke-Plan 'openSaleTx(uint256,uint64,uint64)' @("$TokenId", "$now", "$($now + 7 * 86400)"))
-    }
-    'purchase' {
-        Send-Items (Invoke-Plan 'purchaseTx(uint256,address,uint256)' @($SaleId, (Get-Address $Bidder), "$Quantity"))
     }
     'record' {
         # Records a transaction sent outside this driver (for example by the Chainlink node).

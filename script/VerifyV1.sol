@@ -7,8 +7,6 @@ import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
-import { IDutchSale } from "src/interfaces/IDutchSale.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -176,10 +174,10 @@ library VerifyV1 {
         if (!ok) revert WiringNotApplied(target, selector);
     }
 
-    /// @notice PLATFORM reaches `openSale`, `closeSale` and `addLocator` through each
-    ///         implementation's own `canCall` check (the creator or artist path needs no role):
-    ///         the configured PLATFORM holder must get an immediate answer, as the
-    ///         implementation asks it.
+    /// @notice PLATFORM reaches `addLocator` through the work-records satellite's own `canCall`
+    ///         check (the artist path needs no role): the configured PLATFORM holder must get an
+    ///         immediate answer, as the implementation asks it. No sale selector is on this path:
+    ///         the edition auction opens permissionlessly (ADR 0005).
     function checkPlatformPath(DeployV1.Deployment memory d, GovernanceConfig.Config memory cfg)
         internal
         view
@@ -189,10 +187,6 @@ library VerifyV1 {
             if (cfg.grants[i].role == Roles.PLATFORM) platform = cfg.grants[i].account;
         }
         if (platform == address(0)) revert PlatformHolderMissing();
-        _platformCan(d, platform, address(d.fixedPriceSale), IFixedPriceSale.openSale.selector);
-        _platformCan(d, platform, address(d.fixedPriceSale), IFixedPriceSale.closeSale.selector);
-        _platformCan(d, platform, address(d.dutchSale), IDutchSale.openSale.selector);
-        _platformCan(d, platform, address(d.dutchSale), IDutchSale.closeSale.selector);
         _platformCan(d, platform, address(d.workRecords), IWorkRecords.addLocator.selector);
     }
 

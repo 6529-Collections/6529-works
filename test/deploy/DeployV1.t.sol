@@ -13,6 +13,7 @@ import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import {
@@ -25,7 +26,6 @@ import {
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
@@ -155,11 +155,11 @@ contract DeployV1Test is Test {
         ) = _genesis(_params());
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
-        assertEq(cfg.targets.length, 14, "governed targets");
+        assertEq(cfg.targets.length, 12, "governed targets");
         assertEq(cfg.grants.length, 17, "holders");
-        // Every wiring call in the genesis JSON: the binds, the admitted minters, the sale
-        // targets, three default currencies and the manifest.
-        assertEq(calls.length, 19, "wiring calls");
+        // Every wiring call in the genesis JSON: nine binds, the 1/1 auction's admission on
+        // Stream and its sale target, three default currencies and the manifest.
+        assertEq(calls.length, 15, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
@@ -180,16 +180,15 @@ contract DeployV1Test is Test {
         assertEq(address(d.renderer.contentStore()), address(d.contentStore));
         assertEq(address(d.renderer.statementLog()), address(d.statementLog));
         assertEq(d.renderer.inlineThreshold(), d.renderer.DEFAULT_INLINE_THRESHOLD());
-        // 6529 Editions, linked to Stream and its records, with the fixed-price and Dutch sales
-        // as its minters and targets.
+        // 6529 Stream Editions, linked to Stream and its records.
         assertEq(d.editions.stream(), address(d.stream));
         assertEq(d.stream.editions(), address(d.editions));
         assertEq(IPackageRegistry(address(d.packageRegistry)).editions(), address(d.editions));
         assertEq(d.editions.workRecords(), address(d.workRecords));
-        assertTrue(d.editions.isAdmittedMinter(address(d.fixedPriceSale)));
-        assertTrue(d.editions.isAdmittedMinter(address(d.dutchSale)));
-        assertTrue(d.fixedPriceSale.isTarget(address(d.editions)));
-        assertTrue(d.dutchSale.isTarget(address(d.editions)));
+        // No edition sale is admitted until the edition auction lands (ADR 0005 delivery).
+        assertFalse(d.editions.isAdmittedMinter(address(d.englishAuction)));
+        assertEq(d.editions.name(), "6529 Stream Editions");
+        assertEq(d.editions.symbol(), "STREAMEDITIONS");
         assertEq(d.editions.owner(), makeAddr("marketOwner"));
         (uint64 count,) = IStatementLog(address(d.statementLog)).chainOf(address(d.manager), 0);
         assertEq(count, 1, "epoch-0 manifest recorded at genesis");
@@ -232,7 +231,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 15);
+        assertEq(cfg.targets.length, 13);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);
@@ -378,7 +377,7 @@ contract DeployV1Test is Test {
         // Without Editions, its target and every wiring call on or naming it would be.
         d.editions = Editions(address(0));
         gone = DeployV1.dropped(d, json);
-        assertEq(gone.length, 9);
+        assertEq(gone.length, 5);
         assertEq(gone[0], "Editions");
         assertEq(gone[1], "EntropyModule");
         assertEq(gone[2], "Stream.bindEditions(address)");
@@ -394,13 +393,13 @@ contract DeployV1Test is Test {
     function test_ReadbackCatchesAnUnappliedWire() public {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
         GovernanceConfig.Call memory fake = GovernanceConfig.Call(
-            address(d.fixedPriceSale),
+            address(d.englishAuction),
             abi.encodeCall(ISaleAdapter.setTarget, (makeAddr("never listed"), true))
         );
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyV1.WiringNotApplied.selector,
-                address(d.fixedPriceSale),
+                address(d.englishAuction),
                 ISaleAdapter.setTarget.selector
             )
         );
@@ -482,8 +481,8 @@ contract DeployV1Test is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyV1.PlatformPathClosed.selector,
-                address(d.fixedPriceSale),
-                IFixedPriceSale.openSale.selector
+                address(d.workRecords),
+                IWorkRecords.addLocator.selector
             )
         );
         this.checkPlatformPathExternal(d, cfg);

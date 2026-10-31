@@ -1,6 +1,6 @@
 # Rendering and tokenURI
 
-How a 6529 Stream work and a 6529 Editions edition get their token metadata: which renderer
+How a 6529 Stream work and a 6529 Stream Editions edition get their token metadata: which renderer
 serves a token, how it bounds every read, how it turns a work's record and media into a `data:`
 URI, when media is inlined, and when marketplaces are told to refresh. For auditors and renderer
 authors. `Stream.tokenURI` and `Editions.uri` forward to an immutable, stateless `Renderer`,

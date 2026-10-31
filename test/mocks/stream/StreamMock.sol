@@ -13,8 +13,9 @@ import { IStream } from "src/interfaces/IStream.sol";
 ///         makes one read revert.
 /// @dev The other Stream stand-ins have a purpose this one does not: `EditionsStreamMock`
 ///      (test/mocks/editions) models masters, their settlement and the edition link, with
-///      faults, for 6529 Editions' unit tests; `LeanStream` (test/mocks/sales/LeanStartStack.sol)
-///      is the lean start-path model the auction's gas tests measure. Stream itself is tested
+///      faults, for 6529 Stream Editions' unit tests; `LeanStream`
+///      (test/mocks/sales/LeanStartStack.sol) is the lean start-path model the auction's gas tests
+///      measure. Stream itself is tested
 ///      as the real contract (`StreamFixture`), and the whole system as the real, wired stack
 ///      (`IntegrationBase`).
 contract StreamMock {

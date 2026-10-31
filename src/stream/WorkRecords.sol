@@ -40,7 +40,7 @@ import { SpdxId } from "./SpdxId.sol";
 ///      a governed action carrying consents is scheduled through AccessManager, so its deadline
 ///      must cover the delay. Royalty-rate changes are applied in the core (and a linked edition)
 ///      through their bound hooks, and every visible change asks the core to emit ERC-4906 and
-///      tells 6529 Editions.
+///      tells 6529 Stream Editions.
 contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     uint256 private constant NONE = type(uint256).max;
     bytes32 private constant STATE_DOMAIN = keccak256("6529WORKS_WORK_STATE_V1");
@@ -566,7 +566,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         return stored == 0 ? NONE : stored - 1;
     }
 
-    /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Editions check when binding.
+    /// @notice ERC-165: `IWorkRecords`, which 6529 Stream and 6529 Stream Editions check when
+    ///         binding.
     /// @param interfaceId The interface ID to test.
     /// @return True for the `IWorkRecords` and `IERC165` interface IDs.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
@@ -848,7 +849,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     }
 
     /// @dev ERC-4906 through the core, and a linked edition master's edition through 6529
-    ///      Editions.
+    ///      Stream Editions.
     function _refresh(uint256 tokenId) private {
         IStream(stream).emitMetadataUpdate(tokenId, tokenId);
         (address editions,) = _edition(tokenId);

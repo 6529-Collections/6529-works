@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 /// @title Typehashes
 /// @notice The EIP-712 domain names and typehashes of the package registry, curation verifier,
-///         work records, artist registry and fixed-price sale, and every Permit2 witness.
+///         work records and artist registry, and every Permit2 witness.
 ///         Implementations use these constants; golden tests in `test/interfaces/` pin their
 ///         values (ADR 0001 section 17 "golden typehash tests"). The statement log and the
 ///         release verifier keep their own domains and typehashes beside their code
@@ -23,8 +23,6 @@ library Typehashes {
     string internal constant WORK_RECORDS_NAME = "6529 Works Records";
     /// @notice Domain name of the artist registry.
     string internal constant ARTIST_REGISTRY_NAME = "6529 Works Artist Registry";
-    /// @notice Domain name of the fixed-price sale adapter.
-    string internal constant FIXED_PRICE_SALE_NAME = "6529 Works Fixed Price Sale";
 
     /// @notice The lead artist moves an approved item to Stream (package registry domain).
     bytes32 internal constant MOVE_TO_STREAM = keccak256(
@@ -67,20 +65,6 @@ library Typehashes {
         "OverrideAcceptance(uint256 artistId,uint8 kind,address authority,address payout,"
         "bytes32 profileId,bytes32 profileDocHash,bytes32 evidenceHash,uint64 deadline)"
     );
-    /// @notice One fixed-price phase, as typed inside `PHASE_CONFIGURATION`.
-    bytes32 internal constant PHASE = keccak256(
-        "Phase(uint64 start,uint64 end,bytes32 root,uint32 walletCap,bool payerKeyed,"
-        "bool leafPriced)"
-    );
-    /// @notice The creator approves a fixed-price phase configuration, binding the resolved
-    ///         currency, the package unit price and every phase (fixed-price domain). The phases
-    ///         hash as an EIP-712 array: `keccak256` of the concatenated
-    ///         `keccak256(abi.encode(PHASE, phase))` of each phase.
-    bytes32 internal constant PHASE_CONFIGURATION = keccak256(
-        "PhaseConfiguration(address token,uint256 id,address currency,uint256 packagePrice,"
-        "Phase[] phases,uint256 nonce,uint64 deadline)Phase(uint64 start,uint64 end,bytes32 root,"
-        "uint32 walletCap,bool payerKeyed,bool leafPriced)"
-    );
 
     // ----- Permit2 witnesses (relayable payment intents, signed in Permit2's own domain) -----
 
@@ -98,23 +82,5 @@ library Typehashes {
     /// @notice The `witnessTypeString` for `START_BID_WITNESS`.
     string internal constant START_BID_WITNESS_TYPE = "StartBid witness)StartBid(address token,"
         "bytes32 mintDataHash,address recipient,uint256 amount,uint256 deadline)"
-        "TokenPermissions(address token,uint256 amount)";
-    /// @notice A fixed-price purchase; `amount` is the exact total charged.
-    bytes32 internal constant PURCHASE_WITNESS = keccak256(
-        "Purchase(uint256 saleId,uint256 phase,address recipient,uint256 quantity,uint256 amount,"
-        "uint256 deadline)"
-    );
-    /// @notice The `witnessTypeString` for `PURCHASE_WITNESS`.
-    string internal constant PURCHASE_WITNESS_TYPE = "Purchase witness)Purchase(uint256 saleId,"
-        "uint256 phase,address recipient,uint256 quantity,uint256 amount,uint256 deadline)"
-        "TokenPermissions(address token,uint256 amount)";
-    /// @notice A Dutch purchase; the sale charges the current price, at most `maxUnitPrice` each.
-    bytes32 internal constant DUTCH_PURCHASE_WITNESS = keccak256(
-        "DutchPurchase(uint256 saleId,address recipient,uint256 quantity,uint256 maxUnitPrice,"
-        "uint256 deadline)"
-    );
-    /// @notice The `witnessTypeString` for `DUTCH_PURCHASE_WITNESS`.
-    string internal constant DUTCH_PURCHASE_WITNESS_TYPE = "DutchPurchase witness)DutchPurchase("
-        "uint256 saleId,address recipient,uint256 quantity,uint256 maxUnitPrice,uint256 deadline)"
         "TokenPermissions(address token,uint256 amount)";
 }

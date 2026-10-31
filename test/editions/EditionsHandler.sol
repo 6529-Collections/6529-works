@@ -2,29 +2,29 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
-import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { EditionFormat, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import {
     EditionsAdapterMock,
     EditionsPackages,
     EditionsStreamMock
 } from "../mocks/editions/EditionsMocks.sol";
 
-/// @notice Drives 6529 Editions with purchases through the right and the wrong adapter, mints by
-///         a non-minter, burns from adapter custody, transfers between holders, time warps,
-///         secondary sales of the master and repeated `createEdition` calls. Before each mint it
-///         predicts the outcome from the edition's terms (size, OPEN window from the first mint);
-///         any accepted call the model rejects, or rejected call it accepts, is counted in
-///         `unexpected`. Ghost counters mirror minted, burned and window starts.
+/// @notice Drives 6529 Stream Editions with mints through either of two admitted uniform-auction
+///         adapters, an admitted adapter of the wrong sale kind and a non-minter, burns from
+///         adapter custody, transfers between holders, time warps, secondary sales of the master
+///         and repeated `createEdition` calls. Before each mint it predicts the outcome from the
+///         edition's creator cap and its binding to the first adapter that minted it; any
+///         accepted call the model rejects, or rejected call it accepts, is counted in
+///         `unexpected`. Ghost counters mirror minted, burned and the bound adapter.
 contract EditionsHandler is Test {
     Editions internal immutable editions;
     EditionsStreamMock internal immutable stream;
-    EditionsAdapterMock internal immutable fixedAdapter;
-    EditionsAdapterMock internal immutable dutchAdapter;
+    EditionsAdapterMock internal immutable adapterA;
+    EditionsAdapterMock internal immutable adapterB;
+    EditionsAdapterMock internal immutable wrongKind;
 
     uint256[] internal _ids;
     bytes[] internal _items;
@@ -32,28 +32,30 @@ contract EditionsHandler is Test {
 
     mapping(uint256 => uint256) public ghostMinted;
     mapping(uint256 => uint256) public ghostBurned;
-    mapping(uint256 => uint64) public ghostWindowStart;
+    mapping(uint256 => address) public ghostMinter;
     /// @notice Calls whose outcome differed from the model.
     uint256 public unexpected;
-    /// @notice Copies accepted at or after an OPEN window's end.
-    uint256 public lateMints;
-    /// @notice Copies accepted beyond an edition's size.
+    /// @notice Copies accepted beyond an edition's creator cap.
     uint256 public overCapMints;
+    /// @notice Copies accepted from an adapter other than the edition's bound one.
+    uint256 public unboundMints;
     /// @notice Successful mints, for coverage.
     uint256 public mints;
 
     constructor(
         Editions editions_,
         EditionsStreamMock stream_,
-        EditionsAdapterMock fixedAdapter_,
-        EditionsAdapterMock dutchAdapter_,
+        EditionsAdapterMock adapterA_,
+        EditionsAdapterMock adapterB_,
+        EditionsAdapterMock wrongKind_,
         uint256[] memory ids_,
         PackageItem[] memory items
     ) {
         editions = editions_;
         stream = stream_;
-        fixedAdapter = fixedAdapter_;
-        dutchAdapter = dutchAdapter_;
+        adapterA = adapterA_;
+        adapterB = adapterB_;
+        wrongKind = wrongKind_;
         _ids = ids_;
         for (uint256 i; i < items.length; ++i) {
             _items.push(abi.encode(items[i]));
@@ -61,42 +63,42 @@ contract EditionsHandler is Test {
         _holders.push(makeAddr("holderA"));
         _holders.push(makeAddr("holderB"));
         _holders.push(makeAddr("holderC"));
-        _holders.push(address(fixedAdapter_));
-        _holders.push(address(dutchAdapter_));
+        _holders.push(address(adapterA_));
+        _holders.push(address(adapterB_));
     }
 
     // ------------------------------------------------------------------ actions
 
-    function buy(uint256 editionSeed, uint256 holderSeed, uint256 amount) external {
-        uint256 i = editionSeed % _ids.length;
-        uint256 id = _ids[i];
+    function buy(uint256 editionSeed, bool second, uint256 holderSeed, uint256 amount) external {
+        uint256 id = _ids[editionSeed % _ids.length];
         IEditions.Edition memory e = editions.edition(id);
-        amount = bound(amount, 1, e.terms.size == 0 ? 5_000 : uint256(e.terms.size) + 2);
+        uint256 cap = e.terms.maxCount == 0 ? type(uint48).max : e.terms.maxCount;
+        amount = bound(amount, 1, e.terms.maxCount == 0 ? 5_000 : uint256(e.terms.maxCount) + 2);
+        EditionsAdapterMock adapter = second ? adapterB : adapterA;
         address to = _holders[holderSeed % _holders.length];
-        bool open = e.terms.format == EditionFormat.OPEN;
-        uint256 start = e.windowStart == 0 ? block.timestamp : e.windowStart;
-        bool inWindow = !open || block.timestamp < start + e.terms.window;
-        uint256 cap = e.terms.size == 0 ? type(uint64).max : e.terms.size;
-        bool expectOk = inWindow && amount <= cap - e.minted;
+        bool bound_ = e.minter == address(0) || e.minter == address(adapter);
+        bool withinCap = amount <= cap - e.minted;
 
-        try _adapterFor(e.terms.saleKind).buy(editions, id, to, amount) {
-            if (!expectOk) ++unexpected;
-            if (!inWindow) lateMints += amount;
+        try adapter.buy(editions, id, to, amount) {
+            if (!bound_ || !withinCap) ++unexpected;
+            if (!bound_) unboundMints += amount;
             if (e.minted + amount > cap) overCapMints += amount;
-            if (open && ghostWindowStart[id] == 0) ghostWindowStart[id] = uint64(block.timestamp);
+            if (ghostMinter[id] == address(0)) ghostMinter[id] = address(adapter);
             ghostMinted[id] += amount;
             ++mints;
         } catch (bytes memory reason) {
-            if (expectOk || !_is(reason, IEditions.EditionUnavailable.selector)) ++unexpected;
+            if (!bound_) {
+                if (!_is(reason, IEditions.MinterMismatch.selector)) ++unexpected;
+            } else if (withinCap || !_is(reason, IEditions.EditionUnavailable.selector)) {
+                ++unexpected;
+            }
         }
     }
 
-    function buyWithWrongAdapter(uint256 editionSeed, uint256 amount) external {
+    function buyWithWrongKind(uint256 editionSeed, uint256 amount) external {
         uint256 id = _ids[editionSeed % _ids.length];
-        bytes32 kind = editions.edition(id).terms.saleKind;
-        EditionsAdapterMock wrong = kind == SaleKind.DUTCH ? fixedAdapter : dutchAdapter;
         amount = bound(amount, 1, 10);
-        try wrong.buy(editions, id, _holders[0], amount) {
+        try wrongKind.buy(editions, id, _holders[0], amount) {
             ++unexpected;
         } catch (bytes memory reason) {
             if (!_is(reason, IMintTarget.SaleKindMismatch.selector)) ++unexpected;
@@ -114,9 +116,9 @@ contract EditionsHandler is Test {
         }
     }
 
-    function burnFromCustody(uint256 editionSeed, bool dutch, uint256 amount) external {
+    function burnFromCustody(uint256 editionSeed, bool second, uint256 amount) external {
         uint256 id = _ids[editionSeed % _ids.length];
-        EditionsAdapterMock adapter = dutch ? dutchAdapter : fixedAdapter;
+        EditionsAdapterMock adapter = second ? adapterB : adapterA;
         uint256 held = editions.balanceOf(address(adapter), id);
         if (held == 0) return;
         amount = bound(amount, 1, held);
@@ -171,10 +173,6 @@ contract EditionsHandler is Test {
 
     function holders() external view returns (address[] memory) {
         return _holders;
-    }
-
-    function _adapterFor(bytes32 kind) internal view returns (EditionsAdapterMock) {
-        return kind == SaleKind.DUTCH ? dutchAdapter : fixedAdapter;
     }
 
     function _is(bytes memory reason, bytes4 selector) internal pure returns (bool) {

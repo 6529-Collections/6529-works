@@ -235,7 +235,7 @@ contract BlockablePermitToken is PermitToken {
 }
 
 /// @dev A minimal federated template: every `IMintTarget` function, with the settlement hook as a
-///      no-op (as 6529 Editions implements it).
+///      no-op (as 6529 Stream Editions implements it).
 contract PlainMintTarget is ERC721, IMintTarget {
     PrimaryTerms internal _terms;
     mapping(address => bool) public isAdmittedMinter;

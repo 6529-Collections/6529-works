@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import { Test } from "forge-std/Test.sol";
 import { WorksHashing } from "../../src/interfaces/types/WorksHashing.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -37,9 +36,9 @@ contract WorksHashingTest is Test {
     bytes32 internal constant GOLDEN_MEDIA_HASH =
         0x0a5c4982d55e403ee21588e7c9851a93c5898c87550395b244dca3b145c735c3;
     bytes32 internal constant GOLDEN_ITEM_HASH =
-        0x8c3d40f88019da4b66062bbc721b27d9fad44e3061e87d6e8d39cfe4ba0feb55;
+        0x9a18f021905d8c1e154ce9717383dfff71cca63b2c9601532692e7a5d4f667a3;
     bytes32 internal constant GOLDEN_LEAF =
-        0x4304572d88646e921991ab525d4ebf5b92a7d306d21581ca070f1affc3aa9e37;
+        0x6c93f6d7bc3aedd34cd21d79c12f9f5382e6c63c451e7f1ccc718dbe038b70c4;
     bytes32 internal constant GOLDEN_CC0_KEY =
         0xc524702ec980d5da7df189fec7f0c9b69529a70700cfd88d07f8cc34d042ad71;
 
@@ -69,9 +68,7 @@ contract WorksHashingTest is Test {
         item.seedPolicy = SeedPolicy.ARTIST;
         item.seed = keccak256("seed");
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
-        item.edition = EditionTerms(
-            EditionFormat.FIXED, 100, 0, 0.05 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
-        );
+        item.edition = EditionTerms(100, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
     }
 
     function test_domainLabels() public pure {
@@ -84,8 +81,7 @@ contract WorksHashingTest is Test {
         assertEq(CURRENCY_ETH, address(0));
         assertEq(CURRENCY_DEFAULT, 0xFFfFfFffFFfffFFfFFfFFFFFffFFFffffFfFFFfF);
         assertEq(SaleKind.ENGLISH_AUCTION, keccak256("ENGLISH_AUCTION"));
-        assertEq(SaleKind.FIXED_PRICE, keccak256("FIXED_PRICE"));
-        assertEq(SaleKind.DUTCH, keccak256("DUTCH"));
+        assertEq(SaleKind.UNIFORM_AUCTION, keccak256("UNIFORM_AUCTION"));
         assertEq(PRODUCT_STREAM, 0x8d6f9a2373152dc58ba78e223790bc7f77f86abeb152249f9dfa37dfb9f47de2);
         assertEq(
             PRODUCT_EDITIONS, 0xdda24e9b6aae8e08617e9965b04fb0c49afa288965fbdf1734798e07309ffb7b

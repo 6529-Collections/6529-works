@@ -6,7 +6,6 @@ import { PackageRegistry } from "src/curation/PackageRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     MoveAuthorization,
@@ -97,9 +96,7 @@ contract CurationHandler is CurationHelpers {
             item.mediaHash = keccak256(abi.encode("media list", i));
             if (i % 2 == 1) {
                 item.kind = ItemKind.EDITION_MASTER;
-                item.edition = EditionTerms(
-                    EditionFormat.FIXED, 10, 0, 1 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
-                );
+                item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
             }
             encodedItems[i] = abi.encode(item);
             itemHashes[i] = WorksHashing.itemHash(item);

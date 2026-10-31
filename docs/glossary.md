@@ -15,19 +15,19 @@ Governed delays are named by [delay class](#delay-class), and shares and rates a
 
 ## 0-9
 
-### 6529 Editions
-
-The one shared ERC-1155 for editions (`Editions`), each anchored by a 6529 Stream
-[edition master](#edition-master).
-
-See: [editions and sales](spec/editions-and-sales.md).
-
 ### 6529 Stream
 
 The one shared, network-curated ERC-721 of 1/1 works (`Stream`), sold by English auction, with
 each work's record in [WorkRecords](#workrecords).
 
 See: [stream and auctions](spec/stream-and-auctions.md).
+
+### 6529 Stream Editions
+
+The one shared ERC-1155 for editions (`Editions`), each anchored by a 6529 Stream
+[edition master](#edition-master). Named 6529 Editions before ADR 0005 (D139).
+
+See: [editions and sales](spec/editions-and-sales.md).
 
 ### 6529 Stream Federated
 
@@ -74,13 +74,6 @@ A sale adapter a token allows to call `mint` (`isAdmittedMinter`). A removed ada
 settle and [burn](#burn) what it minted.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
-
-### allowlist leaf
-
-The Merkle leaf that admits one wallet, with its cap and price, to a fixed-price
-[phase](#phase); it is bound to one chain and one adapter.
-
-See: [editions and sales](spec/editions-and-sales.md).
 
 ### amendment
 
@@ -250,8 +243,7 @@ See: [governance](spec/governance.md).
 ### consent
 
 An account's signed agreement: an [acceptance](#acceptance), an [amendment](#amendment)
-consent, a [phase configuration](#phase-configuration), an identity-change acceptance or an
-escrow recovery consent.
+consent, an identity-change acceptance or an escrow recovery consent.
 
 See: [`Typehashes.sol`](../src/interfaces/types/Typehashes.sol).
 
@@ -308,7 +300,7 @@ See: [identity and recovery](spec/identity-and-recovery.md).
 
 ### copy
 
-One unit of an edition's ERC-1155 supply, minted by an admitted fixed-price or Dutch adapter.
+One unit of an edition's ERC-1155 supply, minted by the edition's admitted sale adapter.
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -329,7 +321,7 @@ See: [rendering and tokenURI](spec/rendering-and-tokenuri.md).
 ### creator
 
 The lead artist's [active authority](#active-authority) in a token's
-[PrimaryTerms](#primaryterms). It receives an unsold auction token and controls edition sales.
+[PrimaryTerms](#primaryterms). It receives an unsold auction token.
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -464,15 +456,8 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### edition
 
-A 6529 Editions token ID, equal to its [edition master](#edition-master)'s Stream token ID.
+A 6529 Stream Editions token ID, equal to its [edition master](#edition-master)'s Stream token ID.
 Anyone creates it once the master's primary sale has settled.
-
-See: [editions and sales](spec/editions-and-sales.md).
-
-### edition format
-
-FIXED (at most `size` copies) or OPEN (sold for a `window` from the first mint, capped at a
-nonzero `size`) (`EditionFormat`).
 
 See: [editions and sales](spec/editions-and-sales.md).
 
@@ -563,7 +548,7 @@ See: [`Stream.sol`](../src/stream/Stream.sol).
 
 ### ERC-1155
 
-The multi-token standard 6529 Editions implements: each ID is an edition, each unit a
+The multi-token standard 6529 Stream Editions implements: each ID is an edition, each unit a
 [copy](#copy).
 
 See: [`Editions.sol`](../src/editions/Editions.sol).
@@ -597,7 +582,7 @@ See: [events and indexing](integrators/events-and-indexing.md).
 
 ### ERC-7572
 
-Contract-level metadata (`contractURI`) on 6529 Stream and 6529 Editions.
+Contract-level metadata (`contractURI`) on 6529 Stream and 6529 Stream Editions.
 
 See: [reading a work](integrators/reading-a-work.md).
 
@@ -686,12 +671,6 @@ The one-transaction governance setup (`GovernanceConfigurator.configure`): roles
 selectors and wiring, after which the configurator renounces ADMIN.
 
 See: [governance](spec/governance.md).
-
-### gift
-
-A zero-price edition sale, which pays no network fee.
-
-See: [editions and sales](spec/editions-and-sales.md).
 
 ### Glamsterdam
 
@@ -807,7 +786,7 @@ See: [storage](integrators/storage.md).
 
 The terms a sale adapter locks for one sale: token, ID, currency, price, seller and fee terms.
 
-See: [editions and sales](spec/editions-and-sales.md).
+See: [stream and auctions](spec/stream-and-auctions.md).
 
 ## M
 
@@ -818,8 +797,8 @@ Say which.
 
 ### marketplace owner
 
-The address `owner()` returns on 6529 Stream and 6529 Editions, for marketplace settings. It has
-no on-chain powers.
+The address `owner()` returns on 6529 Stream and 6529 Stream Editions, for marketplace
+settings. It has no on-chain powers.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 
@@ -852,7 +831,7 @@ See: [curation](spec/curation.md).
 ### network fee
 
 The network's share of a primary sale or royalty, locked per work at mint; 25,000 at launch for
-6529 Stream and 6529 Editions (`EconomicsResolver.DEFAULT_FEE_SHARE`).
+6529 Stream and 6529 Stream Editions (`EconomicsResolver.DEFAULT_FEE_SHARE`).
 
 See: [economics and payouts](spec/economics-and-payouts.md).
 
@@ -926,7 +905,7 @@ See: [curation](spec/curation.md).
 A [dispute pause](#dispute-pause) of one auction, or an adapter pause (PAUSER) of new sales,
 which `unpause` cannot end within 48 hours.
 
-See: [editions and sales](spec/editions-and-sales.md).
+See: [stream and auctions](spec/stream-and-auctions.md).
 
 ### payout address
 
@@ -967,20 +946,6 @@ relayer can submit it.
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
 
-### phase
-
-One time window of a fixed-price sale, with an optional allowlist root and a per-wallet cap; 1 to
-16 per sale (`Limits.MAX_PHASES`).
-
-See: [editions and sales](spec/editions-and-sales.md).
-
-### phase configuration
-
-The creator's EIP-712 approval of a fixed-price sale's price and phases, needed for leaf prices
-and OPEN editions (MARKET-6).
-
-See: [editions and sales](spec/editions-and-sales.md).
-
 ### pin
 
 To record an address with its code hash, so the protocol fails closed if the code changes.
@@ -989,9 +954,9 @@ See: [trust assumptions](audit/trust-assumptions.md).
 
 ### platform
 
-The holder of `Roles.PLATFORM`, 6529's zero-delay key. It creates collections, adds locators,
-opens FIXED edition sales and appends platform statements, as the only writer of
-DISPUTE_OUTCOME; a guardian can [suspend](#suspension) it.
+The holder of `Roles.PLATFORM`, 6529's zero-delay key. It creates collections, adds locators
+and appends platform statements, as the only writer of DISPUTE_OUTCOME; a guardian can
+[suspend](#suspension) it.
 
 See: [trust assumptions](audit/trust-assumptions.md).
 
@@ -1144,21 +1109,22 @@ See: [economics and payouts](spec/economics-and-payouts.md).
 
 ### sale adapter
 
-A shared contract that sells tokens through `IMintTarget`: the English auction, fixed-price and
-Dutch sales. It pays out with the escrow as fallback.
+A shared contract that sells tokens through `IMintTarget`: the English auction, and for
+editions the uniform-price edition auction of ADR 0005 once it lands. It pays out with the
+escrow as fallback.
 
 See: [buying, bidding and settling](integrators/buying-bidding-settling.md).
 
 ### sale ID
 
-A sale's number in its adapter: a hash of `(token, tokenId)` on the auction, a counter on the
-other adapters.
+A sale's number in its adapter: a hash of `(token, tokenId)` (`saleIdOf`).
 
 See: [architecture](architecture.md#identifiers-and-hashes).
 
 ### sale kind
 
-A `bytes32` label naming a sale type: `ENGLISH_AUCTION`, `FIXED_PRICE` or `DUTCH`.
+A `bytes32` label naming a sale method, claimed by its adapter: `ENGLISH_AUCTION` or
+`UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` are reserved labels of removed adapters.
 
 See: [`SaleTypes.sol`](../src/interfaces/types/SaleTypes.sol).
 
@@ -1167,13 +1133,6 @@ See: [`SaleTypes.sol`](../src/interfaces/types/SaleTypes.sol).
 A contract that serves 6529 Stream's core from outside it, chiefly [WorkRecords](#workrecords).
 
 See: [architecture](architecture.md#modules).
-
-### schedule delay
-
-How far a fixed-price or Dutch sale's schedule moved because of pauses and deprecations
-(`scheduleDelay`), so a halt never uses up a phase (MARKET-1).
-
-See: [editions and sales](spec/editions-and-sales.md).
 
 ### seed
 

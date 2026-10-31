@@ -29,7 +29,7 @@ Shared types and constants: [`ContentTypes.sol`](../../src/interfaces/types/Cont
 
 ### Who calls `WorkRecords`, and what it calls
 
-`WorkRecords` is bound once into 6529 Stream and 6529 Editions
+`WorkRecords` is bound once into 6529 Stream and 6529 Stream Editions
 ([bindings](governance.md#one-shot-bindings-instead-of-a-system-role)); its constructor reads
 Stream's `artistRegistry` and `entropyModule` once. "The artist" below is the lead artist's
 active authority (Stream's `artistOf`, then the artist registry's `activeAuthorityOf`).

@@ -48,7 +48,7 @@ the official contract addresses.
 | --- | --- | --- | --- |
 | A minted 6529 Stream work | the Stream address | the token ID | Artist and owner statements, fixity, dispute outcomes |
 | An approved item before its mint | `address(0)` | `uint256(itemHash)` | Curator or platform statements, pre-mint dispute outcomes |
-| A 6529 Editions edition | the Editions address | the edition ID | Owner statements by any holder, artist statements; never dispute outcomes (those go on the master) |
+| A 6529 Stream Editions edition | the Editions address | the edition ID | Owner statements by any holder, artist statements; never dispute outcomes (those go on the master) |
 | An artist | the `ArtistRegistry` address | the artist ID | Dispute outcomes of an identity contest vote |
 | The governance chain | the AccessManager address | `0` | `GOVERNANCE_MANIFEST` entries only ([Governance](governance.md)) |
 

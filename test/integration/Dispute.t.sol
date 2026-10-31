@@ -9,12 +9,7 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
-import {
-    EditionFormat,
-    EditionTerms,
-    ItemKind,
-    SeedPolicy
-} from "src/interfaces/types/PackageTypes.sol";
+import { EditionTerms, ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
@@ -472,9 +467,7 @@ contract DisputeFlowTest is IntegrationBase {
     function test_APreMintOutcomeShowsOnTheWorkAndItsEdition() public {
         Work memory w = _work(rightful, collectionId);
         w.item.kind = ItemKind.EDITION_MASTER;
-        w.item.edition = EditionTerms(
-            EditionFormat.FIXED, 10, 0, 0.01 ether, CURRENCY_ETH, SaleKind.FIXED_PRICE, ""
-        );
+        w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
         bytes32 masterRoot = _publish(_one(w));
         bytes32 preMint = _platformStatement(
             address(0),

@@ -22,8 +22,8 @@ import { CurationBase } from "./CurationBase.sol";
 
 /// @dev Gas on the auction-start path (`consume`, which includes the move-signature check) and
 ///      on edition creation (`claimContent`), measured cold around the external call as 6529
-///      Stream and 6529 Editions make it; and worst cases against the EIP-7825 transaction cap.
-///      Neither path reads the content store: uniqueness keys on the item's declared hash.
+///      Stream and 6529 Stream Editions make it; and worst cases against the EIP-7825 transaction
+///      cap. Neither path reads the content store: uniqueness keys on the item's declared hash.
 contract PackageRegistryGasTest is CurationBase {
     /// @dev Regression gates, measured with every account and slot cold, which overstates a
     ///      real start where some of them are already warm. Measured: 57,621 (first work),
