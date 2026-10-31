@@ -561,6 +561,31 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(ua.auction(saleId).liveUnits, max);
     }
 
+    /// @dev In a capped sale a bid's queue position counts every unit that ever entered its step,
+    ///      withdrawn ones included, so the step's entered units also stay below 2^32: a bid
+    ///      that would pass that limit is refused, though the sale's live units are low, and the
+    ///      queue stays exact. The departure log's 32-bit fields therefore cannot overflow.
+    function test_Bid_QueuePositionsStayBelow2To32() public {
+        uint256 saleId = _open(10);
+        uint256 max = type(uint32).max;
+        _bid(saleId, alice, 5, max - 1);
+        _withdrawDuringPause(saleId, 1);
+        assertEq(ua.auction(saleId).liveUnits, 0);
+        uint256 amount = 2 * _price(saleId, 5);
+        vm.deal(bob, amount);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.InvalidQuantity.selector, 2));
+        auction.bid{ value: amount }(saleId, 5, 2);
+        // One unit still fits, at the last position; another step is unaffected.
+        uint256 last = _bid(saleId, bob, 5, 1);
+        assertEq(ua.bidOf(saleId, last).position, max - 1);
+        _bid(saleId, carol, 6, 2);
+        IUniformEditionAuction.Departure[] memory d = ua.departures(saleId, 5);
+        assertEq(d.length, 1);
+        assertEq(d[0].position, 0);
+        assertEq(d[0].quantity, max - 1);
+    }
+
     function test_Bid_ClosedAfterTheEnd() public {
         uint256 saleId = _open(0);
         uint64 closeAt = uint64(block.timestamp + 1 days + 15 minutes);
