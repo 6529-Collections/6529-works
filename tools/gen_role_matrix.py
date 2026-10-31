@@ -106,6 +106,10 @@ NOTES: dict[tuple[str, str], str] = {
         "Duration, anti-snipe window and increment share; compare-and-set.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
     ("*", "setFederationRegistry(address,address)"): "v1.1: no registry is installed in v1.",
+    ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),"
+     "(uint96,uint16,uint16,uint32,uint32,uint32,uint32))"):
+        "Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, "
+        "with bounds in code. An auction keeps the values locked at its open.",
     ("EconomicsResolver", "setFeeTerms(bytes32,uint64,address,uint32)"):
         "New works only; compare-and-set on the product's revision; refuses a fee recipient "
         "that could never be paid.",

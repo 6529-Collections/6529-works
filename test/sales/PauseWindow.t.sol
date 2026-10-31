@@ -81,7 +81,7 @@ contract PauseWindowTest is IntegrationBase {
 
     /// Regression: GOV-5 (docs/security/internal-review-2026-10.md)
     function test_Unpause_ScheduledBeforeThePauseWaitsTwoDaysAfterIt() public {
-        address[1] memory adapters = [address(auction)];
+        address[2] memory adapters = [address(auction), address(editionAuction)];
         for (uint256 i; i < adapters.length; ++i) {
             ISaleAdapter adapter = ISaleAdapter(adapters[i]);
             bytes memory unpause = abi.encodeCall(adapter.unpause, ());

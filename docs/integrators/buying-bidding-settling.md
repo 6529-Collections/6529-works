@@ -504,8 +504,7 @@ Copies are sold by the edition's sale adapter: an adapter governance admitted on
 Editions whose sale kind the edition's terms name
 ([Editions and sales](../spec/editions-and-sales.md#mint-copies), ED-5). rc.2's is the
 uniform-price edition auction ([ADR 0005](../adr/0005-stream-editions-auction.md#2-design-summary));
-how to bid in it is added here with its adapter, and genesis admits no edition sale adapter
-until then. The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
+genesis deploys and admits it, and how to bid in it is added here with its rules. The fixed-price and Dutch adapters of `v1.0.0-rc.1` were removed by ADR 0005.
 
 Whatever the adapter:
 - An edition's ID is its master's Stream token ID. `Editions.edition(editionId)` gives the terms

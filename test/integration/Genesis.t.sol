@@ -33,9 +33,15 @@ contract GenesisFlowTest is IntegrationBase {
         assertEq(artists.federationRegistry(), address(0), "federation is deferred (v1.1)");
         // Admitted minters and sale targets.
         assertTrue(stream.isAdmittedMinter(address(auction)), "auction mints on Stream");
-        assertFalse(editions.isAdmittedMinter(address(auction)), "the 1/1 auction mints no edition");
+        assertTrue(
+            editions.isAdmittedMinter(address(editionAuction)), "the edition auction mints editions"
+        );
+        assertFalse(editions.isAdmittedMinter(address(auction)), "the 1/1 auction does not");
+        assertFalse(stream.isAdmittedMinter(address(editionAuction)), "Stream is auction-only");
         assertTrue(auction.isTarget(address(stream)), "auction sells Stream");
         assertFalse(auction.isTarget(address(editions)), "the auction does not sell editions");
+        assertTrue(editionAuction.isTarget(address(editions)), "the edition auction sells editions");
+        assertFalse(editionAuction.isTarget(address(stream)), "and nothing else");
         // The epoch-0 governance manifest, subject (manager, 0).
         (uint64 count,) = statements.chainOf(address(manager), 0);
         assertEq(count, 1, "the epoch-0 manifest is the manager's first statement");
@@ -67,7 +73,8 @@ contract GenesisFlowTest is IntegrationBase {
             IAccessManager.setTargetFunctionRole,
             (address(stream), _one(stream.createCollection.selector), Roles.PUBLIC)
         );
-        bytes memory admitMinter = abi.encodeCall(stream.setAdmittedMinter, (attacker, true));
+        bytes memory admitMinter =
+            abi.encodeCall(stream.setAdmittedMinter, (address(editionAuction), true));
         bytes memory dropGuardian =
             abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
 
@@ -110,7 +117,7 @@ contract GenesisFlowTest is IntegrationBase {
             manager.execute(targets[i], ops[i]);
         }
         assertEq(stream.authority(), address(manager), "Stream stays governed");
-        assertFalse(stream.isAdmittedMinter(attacker));
+        assertFalse(stream.isAdmittedMinter(address(editionAuction)));
         (bool guardian,) = manager.hasRole(Roles.GUARDIAN, guardian1);
         assertTrue(guardian, "guardian 1 stays");
     }

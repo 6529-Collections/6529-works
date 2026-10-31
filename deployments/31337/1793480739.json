@@ -1,0 +1,140 @@
+{
+  "cc0TextFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
+  "cc0TextSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+  "chainId": 31337,
+  "configHash": "0x743d3f55d9a451e5fcc105abc08f7c5e60b08fe2e87dea2d55c634d166863f9a",
+  "confirmed": false,
+  "contracts": {
+    "ArtistRegistry": {
+      "address": "0x55CDf5eC4705d32996fDA5F7F5F5095Fa2D6678E",
+      "codehash": "0x2c2036cf51e5670f99998b0dd1312a878f6165fe69b3efbbf5a0399872b83254"
+    },
+    "AssetAllowlist": {
+      "address": "0x2BDE4F39B0A9DE82086Eec3269528e9450adE9c6",
+      "codehash": "0xa01494f360ab3b3c83634bb6d8927aac6eac9739de16584e4c7c55eb437ebf09"
+    },
+    "ClaimRouter": {
+      "address": "0x46dfe2b916E7462389D36a1Fbec87F4435BD8af4",
+      "codehash": "0x3e3d3c1d38fc423c560add2901544f75a89f97ea6f6a425de485028d8ac96982"
+    },
+    "ConsolidationAdapter": {
+      "address": "0x55C1e5A87a020C2fDB456862D17Bc86dfa04bbbf",
+      "codehash": "0x20f372ffec24180fb27eb741bb5ce2491eb3158f62aa8172e7b40c0d2469458c"
+    },
+    "ContentStore": {
+      "address": "0x7C8cEe1F9536C5ce0d21215F11384cFdc45405Eb",
+      "codehash": "0x4f6146f0cc15c564d1eb9cb22d5179fb24c89d8e8c603683b35afd39cc449b62"
+    },
+    "CurationVerifier": {
+      "address": "0xcC6b65ac9410B25dE91Ef16E1AfeD958F6b3Aa63",
+      "codehash": "0x772e4bef962de419c5617de4c71671f9d3fbcbd8072ad348b70c57219dd82d3d"
+    },
+    "DependencyRegistry": {
+      "address": "0x2cA0C562E99274C0E9Cb6E15B72B787386eF5Ce9",
+      "codehash": "0x79ca442431bce7a01413768045759e76d4732b5de1134bf4d42dc52d019701cc"
+    },
+    "EconomicsResolver": {
+      "address": "0x833ee60308b33C01af8267E3b35066F206434EEe",
+      "codehash": "0x5c353ec60880d628fc63b166deb60560829b925545930578f4fa9a14cb234acc"
+    },
+    "Editions": {
+      "address": "0x25D300A99699b7af70A4aCC8130DD81E797EB5Ba",
+      "codehash": "0xa087c934d28bd350ca3d14570d80511e40d5836fc5c5700ec3beece493190b34"
+    },
+    "EnglishAuction": {
+      "address": "0xc37A6538778cFBBc687f4f124B7f7c5129c0CE15",
+      "codehash": "0x6dc9199ecd6ad9c8b8675e10db7b6dd60ce9128ab0e0094f01ecadbb0c88ddfa"
+    },
+    "GovernanceConfigurator": {
+      "address": "0x649c68DcbCC024DCC9be14Baf5B807C740c55011",
+      "codehash": "0x00fdbee21577beb2d641e62108506c108285b12e87631021491a60f1bdc71689"
+    },
+    "PackageRegistry": {
+      "address": "0x593bc3B16d0cdF17B239517f135e08C352B46910",
+      "codehash": "0xb90bd98a1623aba6fe1386480493ae3a7fb062ada2060198be774a1b72a9ac20"
+    },
+    "ReleaseVerifier": {
+      "address": "0xc4Fd83Dd8f53398a58142310eDd7Bd6017AfC9a9",
+      "codehash": "0x3d39add5fec58c44e7f1b9eb6a4595bd0da17710d50f27e1224cf80bbda5e9b0"
+    },
+    "Renderer": {
+      "address": "0xb6b88c79A01DCDcbe14C048f1c886442011E5363",
+      "codehash": "0x9018e020d8c08c4a9753050c4c5a8db5794be4e83d3f1774616d31df31a01f5e"
+    },
+    "RevenueEscrow": {
+      "address": "0xF2f23F9D1F1Dfa1743F0c71C91fB464C7507194E",
+      "codehash": "0x2c3cb0e76ae0fdfb7ec581d0e170cdba0ac5df3a84e053e060f2d20255cf47b3"
+    },
+    "SplitFactory": {
+      "address": "0x26A8d7a7D48b7B901169cbB39535488FF7DF020d",
+      "codehash": "0x18dde0b324ab8af7574ccde4bebd68100d871a762ed82bd6505696e8d476e571"
+    },
+    "StatementLog": {
+      "address": "0x991e51E2Cf9C7af6723d40364433fa917836d07e",
+      "codehash": "0x8fa06c65cf7d3ba975022243f5dcb9e59b4ee28c8f635d7c65677212efc6d297"
+    },
+    "Stream": {
+      "address": "0x4CC2cBf2aDB0937731d632b7Bb9b364cD20ea029",
+      "codehash": "0xee374b5c0805bc84ba235f3ce58ff06b0368539cd51e0abd441c45ff2b37cae2"
+    },
+    "UniformEditionAuction": {
+      "address": "0xdF934cB796DB7888D807Ba90682286a54F1CB640",
+      "codehash": "0x692406b3e293280e75055e471c1f1201262ca5cc0419571db32be7cbb4fd6333"
+    },
+    "UniformEditionAuctionLens": {
+      "address": "0x1E459DFCC07897F4d588F2D2036d6A85afe1998d",
+      "codehash": "0xa0cb27771024267166964ba5c887dd584b1eed3ad9f1d7d3b0dbac0edecd7348"
+    },
+    "WorkRecords": {
+      "address": "0xCCDa657462B027A79132841793ff7704d5054551",
+      "codehash": "0x94ae9388aff8bafde22483ea53e48b8f5bfeda7ef29eb59e5ec9616a711300b7"
+    },
+    "WorksAccessManager": {
+      "address": "0x8D061dE199cEc611924d6fe468A53AE1e90b22C7",
+      "codehash": "0xfbbd63a4c4893d6ce86f4ad2a55ab6639ea66e91fd0d721b1834b31a324db3d8"
+    }
+  },
+  "delegationCodeHash": "0x25382bc5e8ef8f8c5bdeb89893f11de4eef19cc728d9676354dd85cee6577a4b",
+  "delegationMock": true,
+  "entropy": "none",
+  "genesisConfig": "config/genesis.example.json",
+  "manifestDigest": "0xc7e5cbf5b233d69b1adbed84d434f21684538fcba57d202999091865e9c4fc1c",
+  "manifestPath": "",
+  "manifestUri": "ar://placeholder-epoch-0",
+  "note": "Written from the simulation before the broadcast; Verify.s.sol confirms it on chain.",
+  "params": {
+    "auctionDuration": 86400,
+    "auctionExtensionWindow": 900,
+    "auctionIncrementShare": 5000,
+    "delegation": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "editionBasePrice": 100000000000000,
+    "editionCloseOffset": 900,
+    "editionMarginShare": 10000,
+    "editionMaxExtension": 86400,
+    "editionSoftWindow": 300,
+    "editionStepCount": 336,
+    "editionStepsPerDecade": 48,
+    "ethIncrementFloor": "1000000000000000",
+    "factory": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "marketOwner": "0x000000000000000000000000000000000000c002",
+    "namespace": "0xe352ca778143318533cb3dc8cdd9bca6c035af4646ea7d778ecab44a7da9c005",
+    "networkFeeRecipient": "0x000000000000000000000000000000000000C001",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "vrfCallbackGasLimit": 0,
+    "vrfConfirmations": 0,
+    "vrfCoordinator": "0x0000000000000000000000000000000000000000",
+    "vrfCoordinatorCodeHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "vrfKeyHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "vrfNativePayment": false,
+    "vrfRetryDelay": 0,
+    "vrfSubscriptionId": "0"
+  },
+  "pendingLanes": [],
+  "placeholders": true,
+  "standIns": [],
+  "startBlock": 0,
+  "timestamp": 1793480739,
+  "wiringCalls": 17,
+  "wiringHash": "0xa3d9c221894b31c35f950e89d6cbf9064e9172e33689b259c2f3c595b067fb60"
+}
