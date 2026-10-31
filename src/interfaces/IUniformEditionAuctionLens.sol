@@ -11,7 +11,10 @@ import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
 ///         adapter's `open` consults. Stateless; the adapter creates it in its constructor
 ///         (`IUniformEditionAuctionStorage.lens`); the adapter forwards its own views here, so
 ///         each view below has the signature `IUniformEditionAuction` gives it. Errors are the adapter's.
-/// @dev Views that depend on the 1/1 read it live through `IEnglishAuction.auction`.
+/// @dev Views that depend on the 1/1 read it live through `IEnglishAuction.auction`. The
+///      adapter's fallback forwards every selector it does not declare, so the lens's own
+///      `adapter` and `masterTerms` are answered at the adapter's address too. Both are
+///      read-only (a `staticcall`), and the adapter's ERC-165 does not advertise them.
 interface IUniformEditionAuctionLens {
     /// @notice What `open` locks for a master, from its token-specific data.
     /// @param maxCount The creator's cap from the edition terms, zero for none.

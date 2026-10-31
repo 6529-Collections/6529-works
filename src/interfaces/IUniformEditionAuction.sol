@@ -36,9 +36,12 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      with `backstop = closeAt + maxExtension`. While the 1/1 is PAUSED for a dispute, bids
 ///      and raises are accepted whatever the time and do not move `softEnd`, and bidders may
 ///      withdraw; a resumed 1/1 runs at least its governed duration, and the edition close
-///      follows it. A CANCELLED 1/1 voids the sale: no bid is accepted, nothing is minted or
-///      paid, and every bid is refunded in full. Editions sell whether or not the 1/1 drew
-///      bids; no edition bids means no copies.
+///      follows it. A CANCELLED 1/1 voids the sale: nothing is minted or paid, and every bid
+///      is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
+///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
+///      still be accepted; it is refunded in full with every other, and `EndTimes.biddingOpen`
+///      (read live) is already false. Any `settle` call voids the sale at once. Editions sell
+///      whether or not the 1/1 drew bids; no edition bids means no copies.
 ///
 ///      Clearing (D138). Scanning used steps from the top, step s is a candidate of
 ///      `k_s = min(D_s, cap)` copies at `price(s)`, `D_s` being the live units at or above s;
