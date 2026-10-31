@@ -64,6 +64,7 @@ contract StreamGasTest is StreamFixture {
             new AssetAllowlist(address(manager), 1),
             ISplitFactory(address(splitFactory)),
             feeRecipient,
+            makeAddr("museum"),
             keccak256("cc0 text")
         );
         leanReal = new Stream(

@@ -225,7 +225,7 @@ contract AuctionHaltsHandler is Test {
 
     /// @dev Settles an ended sale, checking every outcome: a freeze with a standing bid
     ///      reverts, a re-admission in the last window or after the end reopens, and otherwise
-    ///      the token reaches the named recipient (or the artist with no bidder). A sale that
+    ///      the token reaches the named recipient (or the museum with no bidder). A sale that
     ///      has not ended must refuse to settle.
     function settle(uint256 saleSeed) public {
         if (sales.length == 0) return;
@@ -276,7 +276,8 @@ contract AuctionHaltsHandler is Test {
             return;
         }
         address expected = ghostRecipient[saleId];
-        if (expected == address(0)) expected = stream.primaryTerms(a.tokenId, "").creator;
+        // D140: an unbid canonical work goes to the museum.
+        if (expected == address(0)) expected = auction.economicsResolver().museum();
         uint256 sellerCredit = auction.claimable(seller, currency);
         auction.settle(saleId);
         address pending = auction.pendingDelivery(saleId);
@@ -545,9 +546,10 @@ contract AuctionHaltsHandler is Test {
     // ---------------------------------------------------------------------------- helpers
 
     /// @dev The 30-day freeze exit: the standing bid is credited back to its bidder and the
-    ///      work goes to its artist, delivered or pending.
+    ///      work goes where an unbid canonical work goes, the museum (D140, owner decision 10),
+    ///      delivered or pending.
     function _freezeExit(uint256 saleId, IEnglishAuction.Auction memory a) internal {
-        address artist = stream.primaryTerms(a.tokenId, "").creator;
+        address museum = auction.economicsResolver().museum();
         uint256 credit = a.bidder == address(0) ? 0 : auction.claimable(a.bidder, currency);
         auction.settle(saleId);
         if (a.bidder != address(0)) {
@@ -555,9 +557,9 @@ contract AuctionHaltsHandler is Test {
         }
         address pending = auction.pendingDelivery(saleId);
         if (pending == address(0)) {
-            assertEq(stream.ownerOf(a.tokenId), artist, "the work goes to its artist");
+            assertEq(stream.ownerOf(a.tokenId), museum, "the work goes to the museum");
         } else {
-            assertEq(pending, artist, "pending for its artist");
+            assertEq(pending, museum, "pending for the museum");
         }
         ghostRecipient[saleId] = address(0);
         ++ghostSettlements[saleId];

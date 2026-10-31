@@ -226,10 +226,13 @@ contract CuratedSaleFlowTest is IntegrationBase {
         assertEq(stream.ownerOf(a.tokenId), bidder1);
     }
 
-    function test_NoBidsDeliversToTheArtist() public {
+    /// @dev D140 (ADR 0005): an unbid work goes to the 6529 Network Museum. Under rc.1 it went
+    ///      to the artist's current authority.
+    function test_NoBidsDeliversToTheMuseum() public {
         (uint256 saleId, uint256 tokenId) = _start(root, _package(root), 2);
         _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(tokenId), artist, "no bids: the artist's current authority");
+        assertEq(stream.ownerOf(tokenId), museum, "no bids: the museum");
+        assertEq(stream.balanceOf(artist), 0, "not the artist");
         assertTrue(stream.primarySaleSettled(tokenId));
     }
 

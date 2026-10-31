@@ -44,6 +44,8 @@ library VerifyV1 {
     error Cc0Mismatch(string what);
     /// @notice A guardian suspended this configured holder (`WorksAccessManager.suspend`).
     error HolderSuspended(uint64 role, address account);
+    /// @notice The economics resolver's museum is not the recorded one.
+    error MuseumMismatch(address recorded, address actual);
 
     /// @notice Every contract in `recorded` is at the address `predicted` computes
     ///         (`DeployV1.predict` from the recorded constructor parameters), and nothing is
@@ -75,6 +77,14 @@ library VerifyV1 {
         }
         if (!d.contentStore.isComplete(id)) revert Cc0Mismatch("incomplete in the content store");
         if (d.contentStore.sha256Of(id) != digest) revert Cc0Mismatch("SHA-256");
+    }
+
+    /// @notice The economics resolver names `museum`, the recorded 6529 Network Museum (D140),
+    ///         as the account unbid canonical works go to. Genesis readback: a later governed
+    ///         change (FUNDS_SETTER, 14 days) fails it by design.
+    function checkMuseum(DeployV1.Deployment memory d, address museum) internal view {
+        address actual = d.economicsResolver.museum();
+        if (actual != museum) revert MuseumMismatch(museum, actual);
     }
 
     /// @notice Reverts on the first difference between the deployment and `cfg` / `calls`.

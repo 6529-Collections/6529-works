@@ -774,6 +774,13 @@
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800
+        },
+        {
+          "signature": "setMuseum(uint64,address)",
+          "selector": "0x10d71d79",
+          "role": "FUNDS_SETTER",
+          "class": "funds",
+          "delay": 1209600
         }
       ],
       "genesisOnly": [],
@@ -1072,7 +1079,7 @@
     }
   ],
   "initialInstalls": {
-    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics and default license in the EconomicsResolver.",
+    "constructor": "Anything immutable or installed once with a pinned code hash: the curation verifier in the PackageRegistry, the resolver and escrow in the sale adapters, the consolidation source in the ArtistRegistry, the artist resolver in the StatementLog, the initial economics, default license and museum in the EconomicsResolver.",
     "wiring": "One-shot binds between protocol contracts, admitted-minter grants (setAdmittedMinter), sale targets (setTarget), each product's first default currency (setDefaultCurrency: EnglishAuction.start reads PRODUCT_STREAM's) and the epoch-0 governance manifest (appendGovernanceManifest).",
     "grants": "Curation signers are active once granted CURATION_SIGNER in holders; the verifier has no signer list to wire."
   },

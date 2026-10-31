@@ -111,7 +111,7 @@ the [next section](#error-changes-in-the-source-quality-pass) lists:
 | [`IDutchSale.sol`](../../src/interfaces/IDutchSale.sol) | New `scheduleDelay(uint256)`. |
 | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | New `formatOf(uint256)`. |
 | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | New shared errors `ClaimFailed`, `InvalidRecipient`, `NotPaused`, `PaymentExpired`, `UnpauseTooEarly`. |
-| [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | New error `InvalidFeeRecipient`. |
+| [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | New error `InvalidFeeRecipient`. For rc.2 (D140): new `museum()`, `museumRevision()`, `setMuseum(uint64,address)`, event `MuseumSet` and error `InvalidMuseum`. |
 | [`IAssetAllowlist.sol`](../../src/economics/interfaces/IAssetAllowlist.sol) | New `statusClock(address)`; new error `ReadmissionTooEarly`. |
 | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | New `SHORTFALL_REVERT_CEILING()`. |
 | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | New `consentToRecovery(address)`, `recoveryConsent(address)`, event `RecoveryConsentSet` and error `RecoveryNotConsented`. |

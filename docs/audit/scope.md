@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 10,614 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
+| Source lines | 10,635 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
 | Deployed contracts | 23 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -36,7 +36,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 555 | 20,762 | 22,627 | 3,814 |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,958 | 25,936 | 1,618 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 334 | 18,649 | 20,363 | 5,927 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 763 | 24,361 | 26,631 | **215** |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
 | `FixedPriceSale` | [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol) | 306 | 22,975 | 24,622 | 1,601 |
 | `DutchSale` | [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol) | 144 | 17,150 | 18,313 | 7,426 |
 | `MintSaleBase` (abstract; in both adapters above) | [`src/sales/MintSaleBase.sol`](../../src/sales/MintSaleBase.sol) | 377 |  |  |  |
@@ -56,7 +56,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 202 | 9,270 | 12,728 | 15,306 |
+| `EconomicsResolver` | [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol) | 212 | 9,577 | 13,370 | 14,999 |
 | `AssetAllowlist` | [`src/economics/AssetAllowlist.sol`](../../src/economics/AssetAllowlist.sol) | 122 | 4,541 | 5,557 | 20,035 |
 | `SplitFactory` | [`src/economics/SplitFactory.sol`](../../src/economics/SplitFactory.sol) | 100 | 10,009 | 17,426 | 14,567 |
 | `SplitWallet` (one per payee configuration) | [`src/economics/SplitWallet.sol`](../../src/economics/SplitWallet.sol) | 143 | 5,375 | 6,886 | 19,201 |

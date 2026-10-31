@@ -360,6 +360,7 @@ contract at a CREATE2 address.
 | `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a6334…` | `setDefaultCurrency` (FUNDS_SETTER, 14 days; each product's first at genesis through the wiring) | The currency a sale of `product` locks when its terms say `CURRENCY_DEFAULT`. |
 | `EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next, uint64 revision)` | `0x7b619472…` | The resolver's constructor (once per product, from zeros, revision 1), `setFeeTerms` (FUNDS_SETTER, 14 days) and `setRoyaltyRate` (PARAMETER_SETTER, 48 hours) | `ProductEconomics` is `(address feeRecipient, uint32 feeShare, uint32 royaltyRate)`. Applies to new works and editions only ([ECO-6][eco]). `revision` is the changed setting's own counter: compare `previous` and `next` to tell fee terms from royalty rate. |
 | `DefaultLicenseSet(bytes32 indexed product, License previous, License next, uint64 revision)` | `0x45967214…` | The constructor (once per product) and `setDefaultLicense` (PARAMETER_SETTER, 48 hours) | The default license for new packages. |
+| `MuseumSet(address previous, address next, uint64 revision)` | `0x2a1c0960…` | The constructor (once, from zero, revision 1) and `setMuseum` (FUNDS_SETTER, 14 days) | The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. The auction reads it at settlement, so it applies to every settlement after the change, sales already running included; a delivery already pending for the previous museum stays with it ([AUC-24][auc], [ECO-37][eco]). Not indexed: filter by the resolver's address. |
 
 ### GovernanceConfigurator and WorksAccessManager
 
@@ -749,6 +750,7 @@ structs expanded to tuples: 123 signatures.
 | `ManifestRegistered(bytes32,uint256,uint256,uint8,bytes32,string)` | `0x1642eab57d0dfde0dbc96816fadfb0ff51124ba555f539163ab21409a54c2d6f` | ContentStore |
 | `MetadataUpdate(uint256)` | `0xf8e1a15aba9398e019f0b49df1a4fde98ee17ae345cb5f6b5e2c27f5033e8ce7` | Stream, Editions |
 | `MoveRevoked(uint256,uint256)` | `0x7cfb514923d27af9b82a4a821fe5a0bcd7ec408a9eb63cb78d0938a49b32e66e` | PackageRegistry |
+| `MuseumSet(address,address,uint64)` | `0x2a1c096078cbb1875dbcbf421f3c0f318e9bed496c866d5b4c3b234470ce684f` | EconomicsResolver |
 | `NonceRevoked(address,uint256)` | `0x22cd1acb7e7a306800a1b2c0ca9b0280187bbc00b7fbf55d38ad6cbf73082aec` | StatementLog |
 | `NonceRevoked(uint256,uint256)` | `0x7b1a3f30c1ca888cfd6defd5d5df604c39c92f54a37840d7b876254accf0d4d7` | ArtistRegistry |
 | `NonceUsed(address,uint256,bool)` | `0x4efdf80e1ee210a464536b94135bd8ee19bc4cfe4f456dee6baa71426721a82b` | ReleaseVerifier |

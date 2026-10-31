@@ -65,9 +65,10 @@ contract AuctionDisputePauseTest is IntegrationBase {
         assertEq(a.endTime, pausedAt + auction.MAX_PAUSE() + AUCTION_DURATION);
         _expectBidTooLow(saleId, mallory, 1, 2 ether);
 
-        // Nobody meets the reserve: the work returns to the artist and nothing is paid.
+        // Nobody meets the reserve: the work goes to the museum (D140; under rc.1 to the
+        // artist) and nothing is paid.
         _settleAtEnd(saleId);
-        assertEq(stream.ownerOf(tokenId), artist);
+        assertEq(stream.ownerOf(tokenId), museum);
         assertEq(auction.claimable(mallory, CURRENCY_ETH), 2 ether);
         assertEq(auction.claimable(alice, CURRENCY_ETH), 1 ether);
         assertEq(address(auction).balance, 3 ether, "the auction holds exactly the credits");

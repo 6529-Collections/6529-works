@@ -304,12 +304,12 @@ contract GenesisConfigTest is Test {
                     EconomicsResolver.setFeeTerms.selector,
                     EconomicsResolver.setRoyaltyRate.selector,
                     EconomicsResolver.setDefaultLicense.selector,
-                    z,
+                    EconomicsResolver.setMuseum.selector,
                     z,
                     z,
                     z
                 ],
-                3
+                4
             );
         }
         if (_eq(name, "AssetAllowlist")) {
@@ -435,7 +435,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 72, "62 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 73, "63 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

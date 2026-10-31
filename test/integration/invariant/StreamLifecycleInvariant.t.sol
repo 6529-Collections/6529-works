@@ -29,6 +29,9 @@ import { StreamLifecycleHandler } from "./StreamLifecycleHandler.sol";
 ///            pending, the artist has no active authority, and nothing the old or the reserved
 ///            key tries as the artist goes through.
 ///         8. The auction holds exactly the live high bids and the bidders' credits.
+///         9. An unbid work ends with the museum (D140, ADR 0005): a settlement without a bid
+///            delivers it to the 6529 Network Museum at once, even while its artist is
+///            restrained, and the museum holds nothing else.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
     uint256 internal constant ACTIONS = 18;
@@ -63,7 +66,7 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
         s[17] = this.warp.selector;
     }
 
-    /// @notice Every invariant above (1 to 8). In CI the state is asserted every fourth call
+    /// @notice Every invariant above (1 to 9). In CI the state is asserted every fourth call
     ///         and after the last call of each run (every action still checks its own outcome
     ///         at once); the `deep` profile asserts it after every call.
     /// forge-config: default.invariant.check_interval = 4
@@ -76,7 +79,7 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
     ///         actions, depth 128) replayed from fixed seeds reach every action and the paths
     ///         the invariants are about, with every invariant holding after each step.
     function test_EveryActionRuns() public {
-        string[30] memory paths = [
+        string[31] memory paths = [
             "register",
             "registerRefused",
             "accept",
@@ -84,7 +87,8 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             "revokedMove",
             "bid",
             "settle",
-            "restrainedWait",
+            "museum",
+            "restrainedMuseum",
             "disputePause",
             "pauseExhausted",
             "cancel",
@@ -108,7 +112,7 @@ contract StreamLifecycleInvariantTest is StreamLifecycleHandler {
             "locatorRefused",
             "cc0Held"
         ];
-        uint256[30] memory totals;
+        uint256[31] memory totals;
         // The deepest chain (a copy burned by an upheld dispute, its content released, a racing
         // copy refused, the rightful artist re-minting) is rare in random sequences: it is logged
         // here and asserted step by step by `test_CopyDisputeReleaseAndRemint`.

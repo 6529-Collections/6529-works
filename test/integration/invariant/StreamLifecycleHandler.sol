@@ -82,6 +82,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         bytes32 mediaDigest;
         uint8 artistLocators;
         uint8 platformLocators;
+        /// @dev Settled without a bid: the 6529 Network Museum's (D140).
+        bool unbid;
     }
 
     /// @dev A start's subject and its predicted outcome.
@@ -97,7 +99,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     address[ARTISTS] internal lcArtists;
     address internal lcCollaborator;
     address[BIDDERS] internal lcBidders;
-    /// @dev Every account that can hold a Stream token: actors, recovered keys and the auction.
+    /// @dev Every account that can hold a Stream token: actors, recovered keys, the auction and
+    ///      the museum.
     address[] internal holders;
     bytes32[] internal roots;
     PoolItem[] internal pool;
@@ -139,6 +142,7 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             holders.push(lcBidders[i]);
         }
         holders.push(address(auction));
+        holders.push(museum);
         byTextFileId = _storeText("Creative Commons Attribution 4.0 (fixture)", "text/plain");
         mitTextFileId = _storeText("MIT License (fixture)", "text/plain");
         altCc0TextFileId = _storeText("CC0 1.0 Universal (another copy)", "text/plain");
@@ -313,9 +317,9 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
     }
 
     /// @notice Settles an ended auction (a quarter of the time, warping to the end of a live one
-    ///         when none has ended):
-    ///         the winner receives the work, or the artist's active authority when nobody bid.
-    ///         A no-bid settlement while the artist is restrained must wait (revert).
+    ///         when none has ended): the winner receives the work, or the 6529 Network Museum
+    ///         when nobody bid (D140, ADR 0005), at once, even while the artist is restrained.
+    ///         Every settlement must go through.
     function settle(uint256 seed) external {
         (bool found, uint256 tokenId) = _sale(seed, IEnglishAuction.AuctionState.ENDED);
         if (!found) {
@@ -326,19 +330,22 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         }
         TokenGhost storage t = tok[tokenId];
         IEnglishAuction.Auction memory a = auction.auction(t.saleId);
-        address creator = artists.activeAuthorityOf(stream.artistOf(tokenId));
+        bool restrained = artists.activeAuthorityOf(stream.artistOf(tokenId)) == address(0);
         try auction.settle(t.saleId) {
-            if (a.bidder == address(0) && creator == address(0)) {
-                _violation("a no-bid auction settled to a restrained artist");
+            if (a.bidder != address(0)) {
+                t.owner = a.recipient;
+                ghostEthOut += a.bid;
+            } else {
+                t.owner = museum;
+                t.unbid = true;
+                if (stream.ownerOf(tokenId) != museum) {
+                    _violation("an unbid work did not reach the museum");
+                }
+                ++hits[restrained ? bytes32("restrainedMuseum") : bytes32("museum")];
             }
-            t.owner = a.bidder != address(0) ? a.recipient : creator;
-            ghostEthOut += a.bidder != address(0) ? a.bid : 0;
             ++hits["settle"];
         } catch {
-            if (a.bidder != address(0) || creator != address(0)) {
-                _violation("a settlement failed");
-            }
-            ++hits["restrainedWait"];
+            _violation("a settlement failed");
         }
     }
 
@@ -448,9 +455,12 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         for (uint256 k; k < ghostMinted; ++k) {
             uint256 tokenId = (seed % ghostMinted + k) % ghostMinted + 1;
             TokenGhost storage t = tok[tokenId];
-            if (t.burned || t.owner == address(auction)) continue;
+            // The museum keeps the unbid works it receives, and receives nothing else.
+            if (t.burned || t.owner == address(auction) || t.owner == museum) continue;
             address to = holders[toSeed % holders.length];
-            if (to == address(auction) || to == t.owner) to = lcBidders[toSeed % BIDDERS];
+            if (to == address(auction) || to == museum || to == t.owner) {
+                to = lcBidders[toSeed % BIDDERS];
+            }
             if (to == t.owner) to = lcBidders[(toSeed % BIDDERS + 1) % BIDDERS];
             vm.prank(t.owner);
             stream.transferFrom(t.owner, to, tokenId);
@@ -1032,6 +1042,19 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
         _assertRecords();
         _assertRestraint();
         _assertAuctionEth();
+        _assertMuseum();
+    }
+
+    /// @dev 9. An unbid work ends with the museum (D140): every work settled without a bid is
+    ///      held by the museum, and the museum holds nothing else.
+    function _assertMuseum() internal view {
+        uint256 unbid;
+        for (uint256 tokenId = 1; tokenId <= ghostMinted; ++tokenId) {
+            if (!tok[tokenId].unbid) continue;
+            assertEq(stream.ownerOf(tokenId), museum, "an unbid work ends with the museum");
+            ++unbid;
+        }
+        assertEq(stream.balanceOf(museum), unbid, "the museum holds only unbid works");
     }
 
     /// @dev Every token has exactly one owner, or is in auction custody while its sale runs.

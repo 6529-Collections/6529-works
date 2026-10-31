@@ -120,6 +120,7 @@ or stores a key:
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
+| 6529 Network Museum | No role (`MUSEUM`). Receives every unbid canonical 6529 Stream work (D140); FUNDS_SETTER can change it (`setMuseum`, 14 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
 | Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
 | VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
@@ -148,7 +149,7 @@ independent of the admins they check:
   the 14-day class and executes no earlier than 14 days from the deprecation); the first
   `settle` after the re-admission reopens each auction for at least the governed duration.
   After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
-  the bidder and the work goes to the artist.
+  the bidder and a 6529 Stream work goes to the museum (any other token's to its artist).
 
 #### The network fee recipient must exist
 
@@ -164,6 +165,21 @@ Glamsterdam that costs whoever settles or buys about 184K more gas
   `setFeeTerms` refuses the protocol contracts it recognises (`InvalidFeeRecipient`), but not
   the content store, the statement log, the AccessManager, the renderer, the curation verifier
   or the entropy module. Check the address against the deployment record before scheduling.
+
+#### The museum must exist
+
+The English auction sends every unbid canonical work, and every work a 30-day currency freeze
+ends unsold, to the museum the economics resolver names when the sale settles
+([AUC-24](../docs/spec/stream-and-auctions.md#rules-and-invariants)).
+- Off anvil the script requires `MUSEUM` and refuses an empty one (`AccountDoesNotExist`), as
+  for the fee recipient: an existing account is less likely to be a typo. On Sepolia a fresh
+  test Safe or EOA is fine once it has a balance or has sent a transaction.
+- Name a Safe or an EOA. A Safe needs a fallback handler that accepts ERC-721 tokens (the
+  default compatibility handler does); otherwise each work stays pending in the auction until
+  the museum calls `claimDelivery` to another address.
+- `setMuseum(expectedRevision, next)` refuses zero and the protocol contracts the fee-recipient
+  rule refuses (`InvalidMuseum`), nothing more. Before scheduling it, check that `next` exists and is
+  not a contract of the deployment, and remember that it redirects auctions already running.
 
 ### 2. Safe pre-flight
 
@@ -411,7 +427,7 @@ Genesis appends it to the statement log as the manager's first governance statem
 ```bash
 export SEPOLIA_RPC_URL=...                          # the operator's own endpoint
 export GENESIS_CONFIG=config/genesis.sepolia.json
-export NETWORK_FEE_RECIPIENT=0x... MARKETPLACE_OWNER=0x...
+export NETWORK_FEE_RECIPIENT=0x... MARKETPLACE_OWNER=0x... MUSEUM=0x...
 # DELEGATION_CONTRACT: unset on Sepolia (the official deployment, step 5)
 # CC0_TEXT_PATH: unset (the committed legal code, step 6)
 export VRF_COORDINATOR=... VRF_SUBSCRIPTION_ID=... VRF_KEY_HASH=...   # step 7
@@ -747,6 +763,7 @@ Unset and empty are the same. Numbers are checked against their type (`SafeCast`
 | `DEPLOY_NAMESPACE` | `keccak256("6529-works/v1")` | Required; changes every address. Use a fresh one, kept private until the broadcast |
 | `NETWORK_FEE_RECIPIENT` | Placeholder `0xC001` | Required; must exist: code, a balance or a nonce |
 | `MARKETPLACE_OWNER` | Placeholder `0xC002` | Required |
+| `MUSEUM` | Placeholder `0xC003` | Required; must exist: code, a balance or a nonce. A Safe or an EOA |
 | `DELEGATION_CONTRACT` | Canonical address; a mock is deployed when it has no code | Must have code; canonical on mainnet. Default on Sepolia: the official deployment |
 | `CC0_TEXT_PATH` | `test/fixtures/cc0-legalcode.txt` | Same default; must hash to the pinned digest |
 | `MANIFEST_PATH` | Placeholder digest | Required, under `config/` |
