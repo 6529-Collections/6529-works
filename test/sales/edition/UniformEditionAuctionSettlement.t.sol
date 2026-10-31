@@ -12,7 +12,8 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     /// @dev The adapter's settlement equals the lens's clearing (`UniformClearing.clear`) on
     ///      random books: steps spread over the whole ladder or clustered, random quantities,
     ///      caps and margins, and raises (departures) in capped sales. Exactly `count` copies
-    ///      are minted and every wei is accounted for.
+    ///      are minted and every wei is accounted for. Nightly runs it 10,000 times (deep).
+    /// forge-config: deep.fuzz.runs = 10000
     function testFuzz_Settlement_EqualsTheLibraryClearing(
         uint256 seed,
         uint8 bids,
@@ -130,6 +131,67 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertTrue(auction.settle(saleId, new uint256[](0)));
         paidOut += balance - address(auction).balance;
         assertEq(_claimAll(saleId), ua.settlement(saleId).count);
+        _assertConserved();
+    }
+
+    /// @dev The scan at its numeric limits: the widest governed ladder of the highest prices
+    ///      (base 10^17 wei, 24 steps per decade, 512 steps: a top price near 2 × 10^38 wei),
+    ///      every step holding its share of the most live units a sale can have (2^32 - 1), and
+    ///      the cap one short of them, so the scan reads every word, carries the largest demand
+    ///      and revenue through its scan word, and is rationed at step 0. The adapter must
+    ///      settle exactly as `UniformClearing.clear` clears, in every field.
+    function test_Settlement_AtTheNumericLimits() public {
+        IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+        (c.basePrice, c.stepsPerDecade, c.stepCount) = (1e17, 24, 512);
+        _setConfig(c);
+        uint256 total = type(uint32).max;
+        uint256 each = total / 512;
+        uint256 saleId = _open(uint32(total - 1));
+        _bid(saleId, makeAddr("bottom"), 0, each + total % 512);
+        for (uint256 step = 1; step < 512; ++step) {
+            _bid(saleId, makeAddr("whale"), step, each);
+        }
+        assertEq(ua.auction(saleId).liveUnits, total, "every unit a sale can hold");
+        IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        // The first call scans 24 words and keeps its state in the scan word: the demand of 192
+        // steps, below 2^32.
+        assertFalse(auction.settle(saleId, new uint256[](0)));
+        uint256 left = auction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0);
+        assertEq(uint8(left), 40, "the cursor: 64 words less 24");
+        assertEq(uint32(left >> 8), 192 * each, "the demand so far");
+        uint256 balance = address(auction).balance;
+        for (uint256 i; !auction.settle(saleId, ua.settlementOrder(saleId)); ++i) {
+            require(i < 8, "settlement does not advance");
+        }
+        paidOut += balance - address(auction).balance;
+        IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+        assertEq(s.count, live.count, "count");
+        assertEq(s.step, live.step, "step");
+        assertEq(s.price, live.price, "price");
+        assertEq(s.rationed, live.rationed, "rationed");
+        assertEq(s.cutUnits, live.cutUnits, "cut units");
+        assertEq(live.revenue, live.count * live.price);
+        assertGt(live.bestRevenue, 2 ** 128, "a revenue far past 128 bits");
+    }
+
+    /// @dev Every unit a sale can hold at the top of the highest ladder: the largest single
+    ///      revenue (about 8.4 × 10^47 wei) goes through the scan and the payout unchanged.
+    function test_Settlement_AllUnitsAtTheTopPrice() public {
+        IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+        (c.basePrice, c.stepsPerDecade, c.stepCount) = (1e17, 24, 512);
+        _setConfig(c);
+        uint256 saleId = _open(0);
+        _bid(saleId, makeAddr("whale"), 511, type(uint32).max - 1);
+        _bid(saleId, makeAddr("bottom"), 0, 1);
+        IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
+        assertEq(live.count, type(uint32).max - 1);
+        assertEq(live.step, 511);
+        _settle(saleId);
+        assertEq(ua.settlement(saleId).count, live.count);
+        assertEq(seller.balance + networkFee.balance, live.revenue, "paid in full");
+        assertEq(_claimAll(saleId), live.count);
         _assertConserved();
     }
 }

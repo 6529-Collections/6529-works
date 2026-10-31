@@ -86,7 +86,8 @@ contract UniformEditionAuction is
     /// @dev The ladder's E192 mantissas, `round(100·10^(j/192))` for j = 0..191, two bytes
     ///      each, exactly as `StepLadder.mantissa` gives them (the tests check every step's
     ///      price against `StepLadder.price`). A byte table rather than `StepLadder`'s
-    ///      branches, so the settlement scan reads a mantissa in a few gas.
+    ///      branches, so the settlement scan reads a mantissa in a few gas. Padded with 32
+    ///      zero bytes, so the 32-byte load that reads any entry stays inside the table.
     bytes private constant _MANTISSAS = hex"00640065006600680069006a006b006d006e006f007100720073007500760078"
         hex"0079007b007c007e007f008100820084008500870089008a008c008e008f0091"
         hex"0093009500960098009a009c009e00a000a200a400a500a700a900ac00ae00b0"
@@ -98,7 +99,8 @@ contract UniformEditionAuction is
         hex"01d001d601db01e101e701ed01f301f901ff0205020b02120218021e0225022c"
         hex"0232023902400247024e0255025c0264026b0272027a028202890291029902a1"
         hex"02a902b202ba02c202cb02d302dc02e502ee02f7030003090313031c03260330"
-        hex"03390343034d03580362036c03770382038d039703a303ae03b903c503d003dc";
+        hex"03390343034d03580362036c03770382038d039703a303ae03b903c503d003dc"
+        hex"0000000000000000000000000000000000000000000000000000000000000000";
     /// @dev Departure log entries in a step's head word; four in each word after it.
     uint256 private constant _HEAD_ENTRIES = 3;
     /// @dev Settlement runs in calls of bounded gas, each permissionless and each advancing it, so
@@ -483,6 +485,10 @@ contract UniformEditionAuction is
     ///      fills EIP-170.
     fallback() external {
         address target = lens;
+        // Invariants: `target` is the immutable lens; `staticcall` cannot change any state, so
+        // a view answered here is exactly the lens's answer. The calldata and the returndata are
+        // copied over memory from offset 0, which is not memory-safe and need not be: the frame
+        // ends in `return` or `revert` right after, and no Solidity code reads memory again.
         assembly {
             calldatacopy(0, 0, calldatasize())
             let ok := staticcall(gas(), target, 0, calldatasize(), 0, 0)
@@ -517,6 +523,8 @@ contract UniformEditionAuction is
         if (space == Space.DEPARTURE) return _departures[saleId][key];
         if (space == Space.FEE_RECIPIENT) return uint160(_feeRecipients[key]);
         if (space == Space.SCAN) return _scans[saleId];
+        // Invariant: each block below only reads the slot Solidity computed for a storage pointer
+        // (`.slot`), and the last loads that slot: no memory is touched.
         bytes32 slot;
         if (space == Space.SALE) {
             SaleWord storage s = _sales[saleId];
@@ -875,6 +883,9 @@ contract UniformEditionAuction is
         bytes memory table = _MANTISSAS;
         mapping(uint256 word => uint256) storage live = _live[saleId];
         bytes32 base;
+        // Invariants: writes element 3 of the fixed block `scan` (inside its allocation): the
+        // address of the table's first byte; `base` is the slot of `_live[saleId]`, whose word
+        // `w` lives at `keccak256(abi.encode(w, base))`, as Solidity places mapping values.
         assembly ("memory-safe") {
             mstore(add(scan, 0x60), add(table, 0x20))
             base := live.slot
@@ -884,12 +895,29 @@ contract UniformEditionAuction is
 
     /// @dev The pass of {_scan} over the live words of the mapping at `base`, with `scan` laid
     ///      out as {_scan} documents. In Yul because it runs once per used step of the book (up
-    ///      to 512), and a settlement call must fit its budget. Overflow is impossible: the
-    ///      demand stays below 2^32 (a sale's live units), a price below 2^137 (a base of at most
-    ///      10^17 wei, 21 decades, a mantissa below 1,000), so a revenue times 100,000 stays
-    ///      below 2^204.
+    ///      to 512), and a settlement call must fit its budget.
+    ///
+    ///      Invariants, each relied on by the arithmetic below (no checked arithmetic in Yul):
+    ///      - the loop reads words `scan[6] - 1` down to `scan[7]` (at most {_SCAN_WORDS}) and,
+    ///        within each, lanes 7 down to 0: steps strictly decreasing, as the D138 pass needs;
+    ///      - `demand` is a sum of live units of one sale, below 2^32, so `demand + units` and
+    ///        `demand - units` never wrap, and the packed `pick` fields (64 bits each) hold them;
+    ///      - `start` (the current decade's first step) stays at most `step`: the inner loop
+    ///        lowers it a decade at a time, and a step below `start` implies `start >= N`, so
+    ///        `start - N` and `step - start` never wrap, and `(step - start) * stride < 192`
+    ///        indexes the padded table;
+    ///      - `scale` is `basePrice × 10^decade`, at most 10^17 × 10^21 < 2^127, and a mantissa
+    ///        is below 2^10, so a price is below 2^137, a revenue (times at most 2^32 copies)
+    ///        below 2^169, and a revenue or the best times 100,000 below 2^186: no product wraps;
+    ///      - the best revenue only grows, so the last `pick` written is the lowest step within
+    ///        the margin of the final best;
+    ///      - memory: only `scan`'s own fifteen words and the scratch words 0x00-0x3f (the
+    ///        mapping key hash) are written, and the table is only read.
     function _scanWords(bytes32 base, uint256[15] memory scan) private view {
         assembly ("memory-safe") {
+            // p[0] cap, p[1] keep, p[2] steps per decade, p[3] table, p[4] decade start, p[5]
+            // scale, p[6] cursor, p[7] stop word, p[8] pick, p[9] stride, p[10] demand, p[11]
+            // best, p[12] best count, p[13] best step, p[14] cap reached (byte offsets `32i`).
             let p := scan
             let demand := mload(add(p, 0x140))
             let best := mload(add(p, 0x160))
@@ -1045,7 +1073,8 @@ contract UniformEditionAuction is
         bytes memory table = _MANTISSAS;
         uint256 j = (step % n) * (StepLadder.MANTISSAS / n);
         uint256 m;
-        // Entry `j` of the table: two bytes at offset `2j` (`j` is below 192).
+        // Invariant: `j` is below 192, so the 32-byte load at offset `2j` stays inside the padded
+        // table, and its top two bytes are entry `j`.
         assembly ("memory-safe") {
             m := shr(240, mload(add(add(table, 0x20), shl(1, j))))
         }

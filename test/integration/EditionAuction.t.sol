@@ -164,6 +164,95 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         assertEq(address(editionAuction).balance, refund, "only the credited refund remains");
     }
 
+    /// @dev Decision 12 against settlement. The 1/1 can be paused for a dispute only while it is
+    ///      live, and so cancelled only then; the edition sale settles only once the 1/1 has
+    ///      settled, which is final: a settled 1/1 can be neither paused nor cancelled. So no
+    ///      settle call, mid-scan included, can pay or mint while the 1/1 could still be
+    ///      cancelled.
+    function test_Flow_SettlementWaitsForAFinalOneOfOne() public {
+        (bytes32 root, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
+            _startMaster(artist, 0);
+        // A book 38 words wide, so its settlement takes two calls.
+        _editionBid(saleId, makeAddr("low"), 0, 3);
+        _editionBid(saleId, makeAddr("high"), 300, 1);
+        _ethBid(oneSaleId, collector, 1 ether);
+        uint64 end = auction.auction(oneSaleId).endTime;
+        // Past its end the 1/1 can no longer be paused for a dispute.
+        vm.warp(end);
+        vm.prank(guardian1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                oneSaleId,
+                IEnglishAuction.AuctionState.ENDED
+            )
+        );
+        auction.pause(oneSaleId, keccak256("late dispute"));
+        // Past the edition close, the edition settlement waits for the 1/1 to settle.
+        vm.warp(end + 15 minutes);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, saleId)
+        );
+        editionAuction.settle(saleId, new uint256[](0));
+        auction.settle(oneSaleId);
+        editions.createEdition(tokenId, w.item, root, _proofOf(_one(w), 0));
+        // Mid-scan (SETTLING): the 1/1 is settled, so it can be neither paused nor cancelled,
+        // and no edition bid can be withdrawn.
+        assertFalse(editionAuction.settle(saleId, new uint256[](0)), "the first scanning call");
+        assertEq(
+            uint8(ea.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
+        );
+        vm.prank(guardian1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                oneSaleId,
+                IEnglishAuction.AuctionState.SETTLED
+            )
+        );
+        auction.pause(oneSaleId, keccak256("dispute after settlement"));
+        bytes32 outcome = _platformStatement(
+            address(stream), tokenId, StatementKinds.DISPUTE_OUTCOME, "ar://too-late"
+        );
+        assertFalse(
+            _governTry(
+                hotAdmin, address(auction), abi.encodeCall(auction.cancel, (oneSaleId, outcome))
+            ),
+            "a settled 1/1 cannot be cancelled"
+        );
+        vm.prank(makeAddr("low"));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.InvalidAuctionState.selector,
+                saleId,
+                IUniformEditionAuction.AuctionStatus.SETTLING
+            )
+        );
+        editionAuction.withdrawBid(saleId, 1, makeAddr("low"));
+        assertTrue(editionAuction.settle(saleId, new uint256[](0)), "the clearing call");
+        (uint256 won,) = editionAuction.claimBidFor(saleId, 2);
+        assertEq(won, 1);
+    }
+
+    /// @dev A dispute raised while the 1/1 is live holds the edition settlement past the edition
+    ///      close for as long as the 1/1 is paused; bidding continues meanwhile.
+    function test_Flow_DisputePauseHoldsTheEditionSettlement() public {
+        (,, uint256 oneSaleId,, uint256 saleId) = _startMaster(artist, 0);
+        _editionBid(saleId, makeAddr("fan"), 40, 2);
+        uint64 end = auction.auction(oneSaleId).endTime;
+        vm.warp(end - 1 hours);
+        vm.prank(guardian1);
+        auction.pause(oneSaleId, keccak256("dispute"));
+        vm.warp(end + 1 days);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, saleId)
+        );
+        editionAuction.settle(saleId, new uint256[](0));
+        _editionBid(saleId, makeAddr("late"), 41, 1);
+        assertEq(ea.endTimes(saleId).endTime, end + 15 minutes, "no end while paused");
+        assertTrue(ea.endTimes(saleId).biddingOpen);
+    }
+
     /// @dev D141: editions sell whether or not the 1/1 drew bids.
     function test_Flow_EditionsSellWithoutOneOfOneBids() public {
         (bytes32 root, Work memory w, uint256 oneSaleId, uint256 tokenId, uint256 saleId) =
