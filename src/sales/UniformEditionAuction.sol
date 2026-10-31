@@ -1077,8 +1077,7 @@ contract UniformEditionAuction is
     function _setConfig(IUniformEditionAuction.AuctionConfig memory next) private {
         if (
             !StepLadder.isStepsPerDecade(next.stepsPerDecade)
-                || next.basePrice < StepLadder.MIN_BASE_PRICE
-                || next.basePrice > StepLadder.MAX_BASE_PRICE
+                || !StepLadder.isBasePrice(next.basePrice)
                 || next.stepCount < StepLadder.MIN_STEP_COUNT
                 || next.stepCount > StepLadder.MAX_STEP_COUNT
                 || _price(next, next.stepCount - 1) < StepLadder.MIN_TOP_PRICE

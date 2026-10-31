@@ -144,6 +144,46 @@ contract StepLadderTest is Test {
         assertFalse(StepLadder.isStepsPerDecade(384));
     }
 
+    /// @dev Every power of ten from 10^12 to 10^17 wei is a base price governance may set, on
+    ///      the 512-step default ladder (whose top step is at least 10 ETH from 10^12 up); the
+    ///      powers of ten just outside are not.
+    function test_IsValid_AcceptsEveryPowerOfTen() public pure {
+        uint256 p = StepLadder.MIN_BASE_PRICE;
+        for (uint256 k; k < 6; ++k) {
+            assertTrue(StepLadder.isBasePrice(p));
+            assertTrue(StepLadder.isValid(p, 48, StepLadder.MAX_STEP_COUNT));
+            p *= 10;
+        }
+        assertEq(p, StepLadder.MAX_BASE_PRICE * 10);
+        assertFalse(StepLadder.isBasePrice(1e11));
+        assertFalse(StepLadder.isValid(1e11, 24, StepLadder.MAX_STEP_COUNT));
+        assertFalse(StepLadder.isBasePrice(1e18));
+        assertFalse(StepLadder.isValid(1e18, 48, StepLadder.DEFAULT_STEP_COUNT));
+    }
+
+    /// @dev A base price in range that is not a power of ten is refused, though its ladder
+    ///      passes every other bound (ADR 0005 decision 3: readable prices from a fixed table).
+    function test_IsValid_RefusesABaseThatIsNotAPowerOfTen() public pure {
+        uint256[8] memory bases =
+            [uint256(1e12 + 1), 2e12, 15e13, 1e14 + 1, 1e14 + 100, 5e14, 3e16, 1e17 - 1];
+        for (uint256 i; i < bases.length; ++i) {
+            assertGe(StepLadder.price(bases[i], 48, StepLadder.MAX_STEP_COUNT - 1), 10 ether);
+            assertFalse(StepLadder.isBasePrice(bases[i]));
+            assertFalse(StepLadder.isValid(bases[i], 48, StepLadder.MAX_STEP_COUNT));
+        }
+    }
+
+    /// @dev `isBasePrice` against its definition: a power of ten, 10^12 to 10^17.
+    function testFuzz_IsBasePrice_IsAPowerOfTenInRange(uint256 base) public pure {
+        uint256 rest = base;
+        uint256 k;
+        while (rest != 0 && rest % 10 == 0) {
+            rest /= 10;
+            ++k;
+        }
+        assertEq(StepLadder.isBasePrice(base), rest == 1 && k >= 12 && k <= 17);
+    }
+
     function test_MantissaIndexOutOfRangeReverts() public {
         assertEq(harness.mantissa(191), 988);
         vm.expectRevert(abi.encodeWithSelector(StepLadder.MantissaIndexOutOfRange.selector, 192));

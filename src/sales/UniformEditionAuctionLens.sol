@@ -15,6 +15,7 @@ import {
 import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, PackageItem } from "../interfaces/types/PackageTypes.sol";
 import { SaleKind } from "../interfaces/types/SaleTypes.sol";
+import { StepLadder } from "../interfaces/types/StepLadder.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { UniformClearing } from "./UniformClearing.sol";
 
@@ -566,7 +567,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         pure
         returns (uint256)
     {
-        return UniformClearing.price(t.basePrice, t.stepsPerDecade, step);
+        return StepLadder.price(t.basePrice, t.stepsPerDecade, step);
     }
 
     /// @dev The sale's locked parameters, or the current ones for a sale not opened.

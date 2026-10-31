@@ -354,11 +354,12 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         _settleCalls("settle, worst case 336 steps, call", _slots(1, 1), 0);
     }
 
-    /// @dev The same at the governed maximum of 512 steps (192 per decade from 0.022 ETH, a top
-    ///      step of at least 10 ETH): 64 words, three scanning calls.
+    /// @dev The same at the governed maximum of 512 steps (192 per decade from 0.1 ETH, the
+    ///      highest power-of-ten base, so the top step is at least 10 ETH): 64 words, three
+    ///      scanning calls.
     function test_Gas_EditionAuction_SettleWorstCase512() public {
         IUniformEditionAuction.AuctionConfig memory c = _editionConfig();
-        (c.basePrice, c.stepsPerDecade, c.stepCount) = (2.2e16, 192, 512);
+        (c.basePrice, c.stepsPerDecade, c.stepCount) = (1e17, 192, 512);
         _govern(
             hotAdmin,
             address(editionAuction),

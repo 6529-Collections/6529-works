@@ -184,6 +184,32 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _assertConfig(ua.auction(second).terms, next);
     }
 
+    /// @dev The ladder bounds of the golden vectors (`ladder.json`, from the reference model):
+    ///      `setConfig` accepts exactly the ladders `StepLadder.isValid` does, power-of-ten
+    ///      base prices included.
+    function test_SetConfig_LadderBoundsMatchTheGoldenVectors() public {
+        string memory json = vm.readFile("test/fixtures/edition-auction/ladder.json");
+        uint256 n;
+        for (;; ++n) {
+            string memory key = string.concat(".bounds[", vm.toString(n), "]");
+            if (!vm.keyExistsJson(json, key)) break;
+            IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+            c.basePrice =
+                uint96(vm.parseUint(vm.parseJsonString(json, string.concat(key, ".basePrice"))));
+            c.stepsPerDecade = uint16(vm.parseJsonUint(json, string.concat(key, ".stepsPerDecade")));
+            c.stepCount = uint16(vm.parseJsonUint(json, string.concat(key, ".stepCount")));
+            bool valid = vm.parseJsonBool(json, string.concat(key, ".valid"));
+            assertEq(StepLadder.isValid(c.basePrice, c.stepsPerDecade, c.stepCount), valid, key);
+            if (valid) {
+                _setConfig(c);
+                _assertConfig(auction.config(), c);
+            } else {
+                _expectInvalidConfig(c);
+            }
+        }
+        assertEq(n, 28, "every bounds case");
+    }
+
     function test_SetConfig_Bounds() public {
         IUniformEditionAuction.AuctionConfig memory c;
         c = defaultConfig();
@@ -191,6 +217,13 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         _expectInvalidConfig(c);
         c = defaultConfig();
         c.basePrice = 1e17 + 1;
+        _expectInvalidConfig(c);
+        // Only a power of ten (`StepLadder.isBasePrice`), so prices read as the table does.
+        c = defaultConfig();
+        c.basePrice = 1.5e14;
+        _expectInvalidConfig(c);
+        c = defaultConfig();
+        c.basePrice = 1e14 + 1;
         _expectInvalidConfig(c);
         c = defaultConfig();
         c.stepsPerDecade = 12;

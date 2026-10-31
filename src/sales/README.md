@@ -18,7 +18,7 @@ dispute pause); how editions mint is in [Editions and sales](../../docs/spec/edi
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start (mints into its own custody), bids with an anti-snipe window, pull credits, settlement with pending delivery and escrow fallback, the dispute pause, the currency freeze, the emergency pause. |
 | `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol) (its writes) and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the edition auction's bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, settlement in calls of bounded gas, claims through `IMintTarget.mint`, governance. Its views are its lens's, answered through a read-only fallback. |
 | `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view of `IUniformEditionAuction`, computed from the adapter's storage words; the package-item check `open` consults. Stateless; the adapter creates it. |
-| `UniformClearing.sol` | The D138 clearing, the FIFO sweep and the what-if quote, pure (lane L1); the lens's views run it, the adapter's settlement must equal it. |
+| `UniformClearing.sol` | The pure core of the uniform-price edition auction (D138, ADR 0005), as an internal library: the one-pass clearing rule on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the first-in-first-out split of the cut step and the what-if quote. `UniformEditionAuctionLens` runs it for every view; the adapter's settlement uses its `sweep` and `wonAtCut`, and a differential fuzz holds the adapter's own scan equal to its `clear`. |
 
 Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
 
@@ -84,6 +84,12 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   ([federated](../federated/README.md#before-installing-a-registry)).
 - **Transaction cap and gas.** `EnglishAuctionGas.t.sol` keeps the auction's own gates;
   per-operation gas is in [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+- **Uniform clearing.** `UniformClearing` takes a book as packed words (8 steps of 32-bit live
+  units a word, at most 512 steps) and is pure, so the settlement, the views and the Halmos
+  proofs share one implementation. Its domain (`isValidLadder`: a base from 100 to 2**96 - 1
+  wei, 24, 48, 96 or 192 steps a decade) contains every ladder `StepLadder.isValid` accepts,
+  so a book on locked terms always clears. Clearing every one of 336 steps costs about 188K
+  Prague gas, plus about 100K to read the 42 words cold (`UniformClearingGas.t.sol`).
 - **Tests:** `forge test --match-path 'test/sales/**'` (the auction with its invariant suites;
   `PauseWindow.t.sol` for the 48-hour floors; `test/sales/edition/` for the edition auction on
   mocks, with the golden vectors and the shared `EditionAuctionBase` harness); end to end,

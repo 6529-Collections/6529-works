@@ -51,6 +51,24 @@
   token, federated or listed later by governance, keeps the rc.1 behaviour (its artist), at
   settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
+- Sales: `src/sales/UniformClearing.sol`, the pure core of the 6529 Stream Editions
+  uniform-price auction (ADR 0005), as an internal library (the edition auction's lens runs it, and its settlement sweeps and
+  splits the cut step with it): the
+  clearing rule in one pass over the steps (the largest count whose revenue is within the
+  breadth margin of the best, up to the creator's cap) on `StepLadder`'s prices, the
+  first-in-first-out split of the cut step with the settler's departure sweep, and the what-if
+  quote. Tested against a brute force over unit bids (10,000 fuzz runs), the reference model's
+  golden vectors (every clearing, sweep, bid outcome and quote), the plan's worked traces and
+  Halmos proofs (`test/symbolic/UniformClearingSymbolic.t.sol`). `StepLadder` packs its 192
+  mantissas as 10-bit fields in 8 words instead of 16-bit fields in 12, every price unchanged:
+  227 bytes and about 150 gas a lookup less. `StepLadder.isValid` now accepts only a base
+  price that is a power of ten from 10^12 to 10^17 wei (the new `StepLadder.isBasePrice`),
+  so every price reads as the table does (ADR 0005 decision 3); the reference model and its
+  ladder vectors follow, and `UniformClearing.isValidLadder` stays a superset of every
+  ladder governance may set. The reference model
+  (`tools/edition_auction_ref.py`) now validates a bid or raise before it changes the book, and
+  limits a capped step's entered units to 2^32 - 1 as `InvalidQuantity` states; the golden
+  vectors are unchanged.
 - Sales: `UniformEditionAuction`, the uniform-price edition auction (ADR 0005, D138 to D141),
   with the stateless `UniformEditionAuctionLens` it creates. Bids escrow ETH on the `StepLadder`
   steps and can be raised, never lowered, and withdrawn only while the 1/1 is paused for a
@@ -64,7 +82,7 @@
   departure sort is `O(n log n)`. Its genesis selectors, deployment and wiring come with the
   deploy lane. Gas rows, with exact slot and account counts, are in
   `test/integration/EditionAuctionGasReport.t.sol`; every settlement call stays within 350,000
-  execution gas, at most 211,025 in the worst case measured.
+  execution gas, at most 211,539 in the worst case measured.
 - Editions (ADR 0005 §6, an amendment of the frozen interface): `bindMinter(editionId, item)`
   binds an edition to the adapter whose sale opens it, before the edition exists if need be
   (the master's stored item proves its kind), so two admitted adapters of one kind can never
