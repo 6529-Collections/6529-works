@@ -10,10 +10,9 @@ import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { PRODUCT_EDITIONS, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
-import { CURRENCY_DEFAULT } from "src/interfaces/types/EconomicsTypes.sol";
+import { CURRENCY_DEFAULT, CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import {
-    EditionFormat,
     ItemKind,
     MoveAuthorization,
     PackageItem,
@@ -27,7 +26,8 @@ import { IEditions } from "src/interfaces/IEditions.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { MockBoundCaller } from "test/mocks/curation/MockBoundCaller.sol";
 import { Limits } from "src/interfaces/types/Limits.sol";
-import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { EditionRules } from "src/editions/EditionRules.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
@@ -996,23 +996,17 @@ contract PackageRegistryTest is CurationBase {
 
     function test_invalidItem_originalWithEditionTerms() public {
         PackageItem memory item = _item(lead, SHA_A);
-        item.edition.size = 1;
+        item.edition.maxCount = 1;
         _expectInvalid(item, _keys(leadKey));
-        item.edition.size = 0;
+        // Each of the other terms on its own.
+        item.edition.maxCount = 0;
         item.edition.params = hex"01";
         _expectInvalid(item, _keys(leadKey));
         item.edition.params = "";
-        item.edition.format = EditionFormat.OPEN;
+        item.edition.currency = address(1);
         _expectInvalid(item, _keys(leadKey));
-        // Each of the other terms on its own.
-        item.edition.format = EditionFormat.FIXED;
-        item.edition.window = 1;
-        _expectInvalid(item, _keys(leadKey));
-        item.edition.window = 0;
-        item.edition.price = 1;
-        _expectInvalid(item, _keys(leadKey));
-        item.edition.price = 0;
-        item.edition.saleKind = keccak256("FIXED_PRICE");
+        item.edition.currency = address(0);
+        item.edition.saleKind = SaleKind.UNIFORM_AUCTION;
         _expectInvalid(item, _keys(leadKey));
     }
 
@@ -1021,53 +1015,40 @@ contract PackageRegistryTest is CurationBase {
         item.edition.saleKind = 0;
         _expectInvalid(item, _keys(leadKey, collabKey));
         item = _masterItem(item.contentHash);
-        item.edition.size = 0; // a fixed edition of nothing
-        _expectInvalid(item, _keys(leadKey, collabKey));
-        item = _masterItem(item.contentHash);
-        item.edition.window = 1 days; // a fixed edition has no window
-        _expectInvalid(item, _keys(leadKey, collabKey));
-        item = _masterItem(item.contentHash);
-        item.edition.format = EditionFormat.OPEN; // an open edition needs a window
-        _expectInvalid(item, _keys(leadKey, collabKey));
-        item.edition.window = 1 days;
+        item.edition.maxCount = 0; // no creator cap
         _expectValid(item, _keys(leadKey, collabKey));
     }
 
-    /// @dev A priced edition must name its currency: `CURRENCY_DEFAULT` only with a zero price.
-    function test_invalidItem_pricedEditionInDefaultCurrency() public {
+    /// @dev The uniform-price edition auction is ETH-only (ADR 0005): an ERC-20 or the product
+    ///      default is refused.
+    function test_invalidItem_editionAuctionNotInEth() public {
         PackageItem memory item = _masterItem(SHA_A);
         item.edition.currency = CURRENCY_DEFAULT;
         _expectInvalid(item, _keys(leadKey, collabKey));
-        item.edition.price = 0;
+        item.edition.currency = address(0xE20);
+        _expectInvalid(item, _keys(leadKey, collabKey));
+        item.edition.currency = CURRENCY_ETH;
         _expectValid(item, _keys(leadKey, collabKey));
     }
 
-    /// @dev The registry applies the same edition-terms rule as 6529 Editions
-    ///      (`EditionRules.isValid`), so a master whose edition could never be created, or never
-    ///      be sold by its Dutch adapter, is refused at `consume`, before it can mint.
+    /// @dev The registry applies the same edition-terms rule as 6529 Stream Editions
+    ///      (`EditionRules.isValid`), so a master whose edition could never be created is refused
+    ///      at `consume`, before it can mint. Another sale method's terms pass (owner decision 14):
+    ///      a later adapter sells them.
     function test_invalidItem_masterEditionTermsSharedRule() public {
         uint256[] memory keys = _keys(leadKey, collabKey);
         PackageItem memory item = _masterItem(SHA_A);
-        item.edition.saleKind = SaleKind.ENGLISH_AUCTION; // no edition adapter sells it
+        item.edition.saleKind = SaleKind.ENGLISH_AUCTION; // the 1/1's sale
+        _expectInvalid(item, keys);
+        item = _masterItem(SHA_A);
+        item.edition.params = hex"01"; // the auction takes no params
         _expectInvalid(item, keys);
         item = _masterItem(SHA_A);
         item.edition.saleKind = keccak256("RAFFLE");
+        item.edition.params = new bytes(EditionRules.MAX_PARAMS_BYTES + 1);
         _expectInvalid(item, keys);
-        item = _masterItem(SHA_A);
-        item.edition.params = hex"01"; // fixed price takes no params
-        _expectInvalid(item, keys);
-
-        item = _masterItem(SHA_A);
-        item.edition.saleKind = SaleKind.DUTCH;
-        item.edition.params = abi.encode(DutchParams(0.02 ether, 1 hours, 0)); // rests above start
-        _expectInvalid(item, keys);
-        item.edition.params = abi.encode(DutchParams(0.001 ether, 0, 0)); // falls with no duration
-        _expectInvalid(item, keys);
-        item.edition.params = abi.encode(DutchParams(0.001 ether, 100, 7)); // steps do not divide
-        _expectInvalid(item, keys);
-        item.edition.params = abi.encode(uint256(0), uint256(1) << 64, uint256(0)); // not a uint64
-        _expectInvalid(item, keys);
-        item.edition.params = abi.encode(DutchParams(0.001 ether, 100, 10));
+        item.edition.params = abi.encode(uint256(1 ether));
+        item.edition.currency = address(0xE20);
         _expectValid(item, keys);
     }
 

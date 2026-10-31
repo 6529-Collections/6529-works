@@ -17,7 +17,7 @@ import {
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
-import { EditionFormat, License } from "src/interfaces/types/PackageTypes.sol";
+import { License } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 
@@ -49,18 +49,6 @@ contract MockEditionTarget is ERC1155, IMintTarget {
 
     function setCreator(uint256 id, address creator) external {
         _terms[id].creator = creator;
-    }
-
-    /// @dev `IEditions.formatOf`: FIXED unless set OPEN.
-    mapping(uint256 id => bool) public isOpenFormat;
-
-    function setOpenFormat(uint256 id, bool open) external {
-        isOpenFormat[id] = open;
-    }
-
-    function formatOf(uint256 id) external view returns (EditionFormat) {
-        if (_terms[id].saleKind == 0) revert UnknownEdition(id);
-        return isOpenFormat[id] ? EditionFormat.OPEN : EditionFormat.FIXED;
     }
 
     function setCurrency(uint256 id, address currency) external {

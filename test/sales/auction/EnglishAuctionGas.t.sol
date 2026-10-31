@@ -12,7 +12,6 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { CURRENCY_DEFAULT, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -382,7 +381,7 @@ contract EnglishAuctionGasTest is Test {
         item.license = License("CC0-1.0", keccak256("CC0 text"));
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_DEFAULT, "");
-        item.edition = EditionTerms(EditionFormat.FIXED, 0, 0, 0, address(0), bytes32(0), "");
+        item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }
 
     function _coolAll() internal {

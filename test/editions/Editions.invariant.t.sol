@@ -3,14 +3,16 @@ pragma solidity ^0.8.24;
 
 import { StdInvariant } from "forge-std/StdInvariant.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
-import { EditionFormat, PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { EditionsAdapterMock } from "../mocks/editions/EditionsMocks.sol";
 import { EditionsBase } from "./EditionsBase.sol";
 import { EditionsHandler } from "./EditionsHandler.sol";
 
-/// @notice Stateful invariants of 6529 Editions over three editions: a FIXED edition of 20 sold
-///         at fixed price, an uncapped OPEN edition with a one-day Dutch window, and an OPEN
-///         edition of 30 with a 12-hour fixed-price window.
+/// @notice Stateful invariants of 6529 Stream Editions over three editions: one capped at 20,
+///         one uncapped, and one capped at 30, minted through two admitted uniform-auction
+///         adapters (each edition binds to the first that mints it) and probed by an admitted
+///         adapter of the wrong sale kind.
 contract EditionsInvariantTest is StdInvariant, EditionsBase {
     EditionsHandler internal handler;
     uint256[] internal ids;
@@ -21,9 +23,9 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
     function setUp() public override {
         super.setUp();
         PackageItem[] memory items = new PackageItem[](3);
-        items[0] = _fixedItem(20);
-        items[1] = _openItem(1 days, 0);
-        items[2] = _item(EditionFormat.OPEN, 30, 12 hours, SaleKind.FIXED_PRICE);
+        items[0] = _item(20);
+        items[1] = _item(0);
+        items[2] = _item(30);
         for (uint256 i; i < items.length; ++i) {
             uint256 id = _create(items[i]);
             ids.push(id);
@@ -32,12 +34,16 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
             royaltyReceivers.push(receiver);
             royaltyAmounts.push(amount);
         }
-        handler = new EditionsHandler(editions, stream, fixedAdapter, dutchAdapter, ids, items);
+        EditionsAdapterMock wrongKind = new EditionsAdapterMock(SaleKind.ENGLISH_AUCTION);
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(wrongKind), true);
+        handler =
+            new EditionsHandler(editions, stream, adapter, secondAdapter, wrongKind, ids, items);
 
         bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = EditionsHandler.buy.selector;
-        selectors[1] = EditionsHandler.buy.selector; // purchases twice as often
-        selectors[2] = EditionsHandler.buyWithWrongAdapter.selector;
+        selectors[1] = EditionsHandler.buy.selector; // mints twice as often
+        selectors[2] = EditionsHandler.buyWithWrongKind.selector;
         selectors[3] = EditionsHandler.mintAsOutsider.selector;
         selectors[4] = EditionsHandler.burnFromCustody.selector;
         selectors[5] = EditionsHandler.transfer.selector;
@@ -48,22 +54,23 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         targetContract(address(handler));
     }
 
-    /// @notice Every mint matched the model: within size, inside the OPEN window, right sale
-    ///         kind, MINTER only; and no copy was accepted late or beyond the size.
+    /// @notice Every mint matched the model: within the creator cap, from the edition's bound
+    ///         adapter, of the uniform-auction kind, by an admitted minter only; and no copy was
+    ///         accepted beyond the cap or from another adapter.
     function invariant_MintsFollowEditionTerms() public view {
         assertEq(handler.unexpected(), 0, "an outcome differed from the edition terms");
-        assertEq(handler.lateMints(), 0, "a copy was minted after the window closed");
-        assertEq(handler.overCapMints(), 0, "a copy was minted beyond the size");
+        assertEq(handler.overCapMints(), 0, "a copy was minted beyond the cap");
+        assertEq(handler.unboundMints(), 0, "a copy was minted by an unbound adapter");
     }
 
-    /// @notice Supply: `minted` counts every copy ever minted, never exceeds the size, and the
+    /// @notice Supply: `minted` counts every copy ever minted, never exceeds the cap, and the
     ///         holders' balances equal minted minus burned.
     function invariant_SupplyAccounting() public view {
         address[] memory holders = handler.holders();
         for (uint256 i; i < ids.length; ++i) {
             IEditions.Edition memory e = editions.edition(ids[i]);
             assertEq(e.minted, handler.ghostMinted(ids[i]), "minted counter");
-            if (e.terms.size != 0) assertLe(e.minted, e.terms.size, "size cap");
+            if (e.terms.maxCount != 0) assertLe(e.minted, e.terms.maxCount, "creator cap");
             uint256 sum;
             for (uint256 h; h < holders.length; ++h) {
                 sum += editions.balanceOf(holders[h], ids[i]);
@@ -72,12 +79,13 @@ contract EditionsInvariantTest is StdInvariant, EditionsBase {
         }
     }
 
-    /// @notice An OPEN window starts at the first mint and never moves; FIXED has none.
-    function invariant_WindowStartsOnce() public view {
+    /// @notice An edition binds to the first adapter that minted it and never rebinds; an
+    ///         edition never minted is unbound.
+    function invariant_BoundToTheFirstMinter() public view {
         for (uint256 i; i < ids.length; ++i) {
             IEditions.Edition memory e = editions.edition(ids[i]);
-            assertEq(e.windowStart, handler.ghostWindowStart(ids[i]), "window start");
-            if (e.terms.format == EditionFormat.FIXED) assertEq(e.windowStart, 0);
+            assertEq(e.minter, handler.ghostMinter(ids[i]), "bound adapter");
+            if (e.minted == 0) assertEq(e.minter, address(0));
         }
     }
 

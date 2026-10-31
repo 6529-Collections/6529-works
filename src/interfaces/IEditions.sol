@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IMintTarget } from "./IMintTarget.sol";
-import { EditionFormat, EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
+import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 
 /// @title IEditions
 /// @notice 6529 Stream Editions (named 6529 Editions before ADR 0005, D139): the one shared
 ///         ERC-1155 for editions, each anchored by a 6529 Stream work of kind EDITION_MASTER
-///         (ADR 0001 section 6).
+///         (ADR 0001 section 6, as amended by ADR 0005).
 /// @dev The edition ID equals the master's Stream token ID, so the link is one ID in both
 ///      contracts. An edition is created only after the master's sale has settled
 ///      (`IStream.primarySaleSettled`), so a burned or disputed master never gets one. The link is
@@ -17,21 +17,22 @@ import { EditionFormat, EditionTerms, License, PackageItem } from "./types/Packa
 ///      transaction, and never changes. An edition renders its master's media and record and
 ///      carries its master's license: `uri(id)` is served by the master's renderer
 ///      (`IStream.rendererOf(id)`). Copies are minted only by an admitted sale adapter whose
-///      `saleKind()` equals the edition's terms, within the size the package fixed: any adapter
-///      governance admits (`setAdmittedMinter`, 30-day class), so a sale method is added by
-///      deploying and admitting an adapter, never by redeploying this contract (ADR 0005, owner
-///      decision 14). Under ADR 0005 the first adapter to mint an edition is the only one that
-///      may mint it again (`MinterMismatch`), so a second admitted adapter of the same kind can
-///      never add copies to a sale another one ran. A master with an edition can never be burned
-///      (6529 Stream burns only before the primary sale settles), so minting reads nothing from
-///      6529 Stream. There are no numbered editions.
+///      `saleKind()` equals the edition's terms, within the creator's cap
+///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 30-day
+///      class), so a sale method is added by deploying and admitting an adapter, never by
+///      redeploying this contract (ADR 0005, owner decision 14); in rc.2, the uniform-price
+///      edition auction, whose clearing decides how many copies exist. The first adapter to mint
+///      an edition is the only one that may mint it again (`MinterMismatch`), so a second
+///      admitted adapter of the same kind can never add copies to a sale another one ran. A
+///      master with an edition can never be burned (6529 Stream burns only before the primary
+///      sale settles), so minting reads nothing from 6529 Stream. There are no numbered editions.
 interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice An edition's state; economics are locked at creation.
     /// @param contentHash The master's content hash; unique in the Editions product.
     /// @param terms The edition terms from the approved package item.
     /// @param minted Copies minted so far.
-    /// @param windowStart For an OPEN edition, when its first copy was minted (its window's
-    ///        start); zero before that, and always zero for a FIXED edition.
+    /// @param minter The adapter the edition is bound to: the first that minted it; zero before
+    ///        the first mint.
     /// @param seller The artist-portion split wallet (a predicted address).
     /// @param feeRecipient The network fee recipient.
     /// @param feeShare The network share of primary sales and royalties, out of 100,000.
@@ -41,7 +42,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
         bytes32 contentHash;
         EditionTerms terms;
         uint64 minted;
-        uint64 windowStart;
+        address minter;
         address seller;
         address feeRecipient;
         uint32 feeShare;
@@ -65,11 +66,11 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param _toTokenId The last ID of the range, inclusive (this contract emits
     ///        `type(uint256).max`).
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
-    /// @notice An OPEN edition's window began with its first mint and ends at `closesAt`.
-    /// @param editionId The OPEN edition.
-    /// @param closesAt The first timestamp at which mints are refused: the first mint's time plus
-    ///        the window, in seconds, capped at `type(uint64).max`.
-    event EditionWindowOpened(uint256 indexed editionId, uint64 closesAt);
+    /// @notice An edition was bound to the adapter that minted its first copies; only that
+    ///         adapter may mint it from now on.
+    /// @param editionId The edition.
+    /// @param minter The adapter.
+    event EditionMinterBound(uint256 indexed editionId, address indexed minter);
     /// @notice A contract was bound under `name` (WORK_RECORDS), once.
     /// @param name The binding name.
     /// @param target The bound contract.
@@ -101,7 +102,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error EditionExists(uint256 editionId);
     /// @notice No edition has this ID.
     error UnknownEdition(uint256 editionId);
-    /// @notice The mint exceeds the edition size or falls outside the OPEN window.
+    /// @notice The mint would take the edition past its creator's cap (`EditionTerms.maxCount`).
     error EditionUnavailable(uint256 editionId);
     /// @notice The caller is not the bound contract this function serves.
     error UnboundCaller(address caller);
@@ -114,12 +115,10 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice 6529 Stream returned a zero package registry, economics resolver or artist
     ///         registry at deployment.
     error ZeroAddress();
-    /// @notice The item's edition terms are malformed (format, size, window, sale kind, params).
+    /// @notice The item's edition terms are invalid (`EditionRules.isValid`): the uniform-price
+    ///         edition auction other than in ETH with empty params, no sale kind or the 1/1's,
+    ///         or params past `EditionRules.MAX_PARAMS_BYTES`.
     error InvalidEditionTerms(uint256 workId);
-    /// @notice The edition terms price copies in `CURRENCY_DEFAULT`: a price is meaningless
-    ///         without its currency, since a governed change of the default would reprice the
-    ///         edition. `CURRENCY_DEFAULT` is allowed only with a zero price.
-    error PricedDefaultCurrency(uint256 workId);
     /// @notice 6529 Stream did not record the link back to this edition.
     error LinkFailed(uint256 workId);
     /// @notice A royalty rate above 100,000.
@@ -148,7 +147,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         registry must have registered (it may have been revoked since: a revocation stops
     ///         unconsumed items, not the edition of a master already sold). Claims the content
     ///         hash for the Editions product and locks `PRODUCT_EDITIONS` economics from the
-    ///         resolver. Reverts for edition terms with a non-zero price and `CURRENCY_DEFAULT`.
+    ///         resolver.
     /// @param workId The master's 6529 Stream token ID, which becomes the edition ID.
     /// @param item The master's EDITION_MASTER package item, whose hash must be the item hash
     ///        6529 Stream stored for `workId`.
@@ -191,7 +190,7 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
 
     /// @notice An edition's state. Reverts with `UnknownEdition`.
     /// @param editionId The edition ID.
-    /// @return The edition's content hash, terms as approved, mint count, window start, locked
+    /// @return The edition's content hash, terms as approved, mint count, bound adapter, locked
     ///        economics and current royalty rate.
     function edition(uint256 editionId) external view returns (Edition memory);
     /// @notice The master an edition is anchored by. Reverts with `UnknownEdition`.
@@ -207,12 +206,6 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param editionId The edition ID.
     /// @return True once `createEdition` created it.
     function exists(uint256 editionId) external view returns (bool);
-    /// @notice An edition's format: FIXED (a size) or OPEN (a one-time window from its first
-    ///         mint). The sale adapters let PLATFORM open a sale alone only for a FIXED edition.
-    ///         Reverts with `UnknownEdition`.
-    /// @param editionId The edition ID.
-    /// @return The format from the approved edition terms.
-    function formatOf(uint256 editionId) external view returns (EditionFormat);
     /// @notice An edition's content hash (its master's). Reverts with `UnknownEdition`.
     /// @param editionId The edition ID.
     /// @return The content hash stored when the edition was created.

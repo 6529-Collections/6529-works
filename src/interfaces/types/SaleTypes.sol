@@ -18,9 +18,10 @@ pragma solidity ^0.8.24;
 library SaleKind {
     /// @notice The English auction: 6529 Stream's only primary sale.
     bytes32 internal constant ENGLISH_AUCTION = keccak256("ENGLISH_AUCTION");
-    /// @notice Fixed price with optional allowlist phases (6529 Editions).
+    /// @notice rc.1's fixed-price sale, removed by ADR 0005; reserved for a restored
+    ///         fixed-price adapter.
     bytes32 internal constant FIXED_PRICE = keccak256("FIXED_PRICE");
-    /// @notice Descending price (6529 Editions).
+    /// @notice rc.1's descending-price sale, removed by ADR 0005.
     bytes32 internal constant DUTCH = keccak256("DUTCH");
     /// @notice The uniform-price edition auction (`IUniformEditionAuction`, ADR 0005): one
     ///         auction per edition decides how many copies exist and their one price.
@@ -93,14 +94,4 @@ struct LockedTerms {
     address seller;
     address feeRecipient;
     uint32 feeShare;
-}
-
-/// @notice The `params` of a DUTCH sale: `abi.encode(DutchParams)` (ADR 0001 section 5).
-/// @dev The price starts at the edition `price` and falls to `restingPrice` over `duration`
-///      seconds, linearly when `stepSeconds` is zero, otherwise in equal drops every
-///      `stepSeconds`; it then rests. `restingPrice` is at most the starting price.
-struct DutchParams {
-    uint256 restingPrice;
-    uint64 duration;
-    uint64 stepSeconds;
 }

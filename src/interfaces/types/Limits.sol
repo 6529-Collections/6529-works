@@ -27,8 +27,6 @@ library Limits {
     /// @notice Bytes per URI, the statement log's bound. A locator URI is a content address of
     ///         at most 66 bytes (`Locator`), well inside it.
     uint256 internal constant MAX_URI_BYTES = 2_048;
-    /// @notice Phases per fixed-price sale.
-    uint256 internal constant MAX_PHASES = 16;
     /// @notice Consolidated wallets captured as cancellers of one identity change.
     uint256 internal constant MAX_CANCELLERS = 16;
     /// @notice Bytes of a descriptive record file (12 KiB, half of a content-store chunk, so one

@@ -5,8 +5,6 @@ import { console2 } from "forge-std/console2.sol";
 import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
-import { IDutchSale } from "src/interfaces/IDutchSale.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import {
     CURRENCY_DEFAULT,
     CURRENCY_ETH,
@@ -35,13 +33,15 @@ contract GenesisFlowTest is IntegrationBase {
         assertEq(artists.federationRegistry(), address(0), "federation is deferred (v1.1)");
         // Admitted minters and sale targets.
         assertTrue(stream.isAdmittedMinter(address(auction)), "auction mints on Stream");
-        assertTrue(editions.isAdmittedMinter(address(fixedSale)), "fixed price mints editions");
-        assertTrue(editions.isAdmittedMinter(address(dutchSale)), "Dutch mints editions");
-        assertFalse(stream.isAdmittedMinter(address(fixedSale)), "Stream is auction-only");
+        assertTrue(
+            editions.isAdmittedMinter(address(editionAuction)), "the edition auction mints editions"
+        );
+        assertFalse(editions.isAdmittedMinter(address(auction)), "the 1/1 auction does not");
+        assertFalse(stream.isAdmittedMinter(address(editionAuction)), "Stream is auction-only");
         assertTrue(auction.isTarget(address(stream)), "auction sells Stream");
         assertFalse(auction.isTarget(address(editions)), "the auction does not sell editions");
-        assertTrue(fixedSale.isTarget(address(editions)), "fixed price sells editions");
-        assertTrue(dutchSale.isTarget(address(editions)), "Dutch sells editions");
+        assertTrue(editionAuction.isTarget(address(editions)), "the edition auction sells editions");
+        assertFalse(editionAuction.isTarget(address(stream)), "and nothing else");
         // The epoch-0 governance manifest, subject (manager, 0).
         (uint64 count,) = statements.chainOf(address(manager), 0);
         assertEq(count, 1, "the epoch-0 manifest is the manager's first statement");
@@ -54,14 +54,10 @@ contract GenesisFlowTest is IntegrationBase {
         configurator.verify(_genesisConfig());
     }
 
+    /// @dev PLATFORM keeps its locator path and holds no sale selector: the edition auction
+    ///      opens permissionlessly (ADR 0005).
     function test_PlatformHoldsItsZeroDelayPaths() public view {
         (bool immediate, uint32 delay) =
-            manager.canCall(platform, address(fixedSale), IFixedPriceSale.openSale.selector);
-        assertTrue(immediate && delay == 0, "PLATFORM opens fixed-price sales");
-        (immediate, delay) =
-            manager.canCall(platform, address(dutchSale), IDutchSale.closeSale.selector);
-        assertTrue(immediate && delay == 0, "PLATFORM closes Dutch sales");
-        (immediate, delay) =
             manager.canCall(platform, address(records), records.addLocator.selector);
         assertTrue(immediate && delay == 0, "PLATFORM adds locators");
         (immediate,) = manager.canCall(attacker, address(records), records.addLocator.selector);
@@ -78,7 +74,7 @@ contract GenesisFlowTest is IntegrationBase {
             (address(stream), _one(stream.createCollection.selector), Roles.PUBLIC)
         );
         bytes memory admitMinter =
-            abi.encodeCall(stream.setAdmittedMinter, (address(fixedSale), true));
+            abi.encodeCall(stream.setAdmittedMinter, (address(editionAuction), true));
         bytes memory dropGuardian =
             abi.encodeCall(IAccessManager.revokeRole, (Roles.GUARDIAN, guardian1));
 
@@ -121,7 +117,7 @@ contract GenesisFlowTest is IntegrationBase {
             manager.execute(targets[i], ops[i]);
         }
         assertEq(stream.authority(), address(manager), "Stream stays governed");
-        assertFalse(stream.isAdmittedMinter(address(fixedSale)));
+        assertFalse(stream.isAdmittedMinter(address(editionAuction)));
         (bool guardian,) = manager.hasRole(Roles.GUARDIAN, guardian1);
         assertTrue(guardian, "guardian 1 stays");
     }

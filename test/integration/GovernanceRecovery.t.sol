@@ -5,17 +5,11 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
-import { IDutchSale } from "src/interfaces/IDutchSale.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
 import { Locator, LocatorKind } from "src/interfaces/types/ContentTypes.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
-import { EditionFormat, EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
-import { DutchParams, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
-import { IMintSale } from "src/interfaces/IMintSale.sol";
 
 /// @notice Governance recovery on the real genesis deployment (ADR 0002 decision 5, owner
 ///         decision 2): the cold recovery admin completes a recovery even when the hot admin and
@@ -191,46 +185,25 @@ contract GovernanceRecoveryTest is IntegrationBase {
         assertEq(delay, 0, "no delayed path either");
     }
 
-    /// @dev A sold, open Stream work (for locators and statements) and a sold Dutch edition
-    ///      master with its edition created (for the adapters' PLATFORM path).
-    function _soldWorkAndEdition(address artist)
-        internal
-        returns (uint256 tokenId, bytes32 fileId, uint256 editionId)
-    {
-        Work[] memory works = new Work[](2);
+    /// @dev A sold, open Stream work, for locators and statements.
+    function _soldWork(address artist) internal returns (uint256 tokenId, bytes32 fileId) {
+        Work[] memory works = new Work[](1);
         works[0] = _work(artist, collectionId);
-        works[1] = _work(artist, collectionId);
-        works[1].item.kind = ItemKind.EDITION_MASTER;
-        works[1].item.edition = EditionTerms(
-            EditionFormat.FIXED,
-            20,
-            0,
-            0.1 ether,
-            CURRENCY_ETH,
-            SaleKind.DUTCH,
-            abi.encode(DutchParams(0.01 ether, 1 hours, 0))
-        );
         bytes32 root = _publish(works);
         tokenId = _sell(root, works, 0, makeAddr("collectorA"), 1 ether);
         records.openRecord(tokenId, works[0].item, works[0].media);
         fileId = works[0].media[0].fileId;
-        editionId = _sell(root, works, 1, makeAddr("collectorB"), 1 ether);
-        editions.createEdition(editionId, works[1].item, root, _proofOf(works, 1));
     }
 
     /// Regression: GOV-2 (docs/security/internal-review-2026-10.md)
     /// @dev A guardian suspends the PLATFORM key and every platform path closes in the same
-    ///      block: `canCall` and the manual checks that consult it. The creator path, which
+    ///      block: `canCall` and the manual checks that consult it. The artist's path, which
     ///      needs no role, stays open.
     function test_AGuardianSuspendsThePlatformKeyAtOnce() public {
         address artist = _actor("suspensionArtist");
-        (uint256 tokenId, bytes32 fileId, uint256 editionId) = _soldWorkAndEdition(artist);
+        (uint256 tokenId, bytes32 fileId) = _soldWork(artist);
 
         _suspend(guardian2, Roles.PLATFORM, platform);
-        _closed(platform, address(fixedSale), IFixedPriceSale.openSale.selector);
-        _closed(platform, address(fixedSale), IFixedPriceSale.closeSale.selector);
-        _closed(platform, address(dutchSale), IDutchSale.openSale.selector);
-        _closed(platform, address(dutchSale), IDutchSale.closeSale.selector);
         _closed(platform, address(records), records.addLocator.selector);
         _closed(platform, address(statements), statements.appendPlatform.selector);
         _closed(platform, address(stream), stream.createCollection.selector);
@@ -252,18 +225,15 @@ contract GovernanceRecoveryTest is IntegrationBase {
             abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, platform)
         );
         stream.createCollection("Another", keccak256("another"));
-        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
-        dutchSale.openSale(address(editions), editionId, uint64(block.timestamp));
         vm.stopPrank();
 
-        // The artist still opens its own sale; the suspended key cannot close it.
+        // The artist still adds a locator to its own work.
         vm.prank(artist);
-        uint256 saleId = dutchSale.openSale(address(editions), editionId, uint64(block.timestamp));
-        vm.prank(platform);
-        vm.expectRevert(abi.encodeWithSelector(IMintSale.NotSaleManager.selector, platform));
-        dutchSale.closeSale(saleId);
-        vm.prank(artist);
-        dutchSale.closeSale(saleId);
+        records.addLocator(
+            tokenId,
+            fileId,
+            Locator(LocatorKind.ARWEAVE, "ar://Art1st0000000000000000000000000000000000000")
+        );
 
         // Lifting it is an ADMIN action in the 30-day class, which a guardian may veto.
         bytes memory lift = abi.encodeCall(IAccessManager.grantRole, (Roles.PLATFORM, platform, 0));

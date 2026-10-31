@@ -12,7 +12,6 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -147,7 +146,7 @@ abstract contract IntegrationBase is WorksDeployment {
         item.license = License("CC0-1.0", cc0TextFileId);
         item.seedPolicy = SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
-        item.edition = EditionTerms(EditionFormat.FIXED, 0, 0, 0, address(0), bytes32(0), "");
+        item.edition = EditionTerms(0, address(0), bytes32(0), "");
     }
 
     /// @dev Uploads a valid descriptive record (one `Identity` chunk of JSON).
@@ -551,7 +550,7 @@ abstract contract IntegrationBase is WorksDeployment {
     ///      delegation contract, Permit2 and the test ERC-20. A report that measures calls into
     ///      other accounts (split wallets) adds them.
     function _cooled() internal view virtual returns (address[] memory all) {
-        address[24] memory list = [
+        address[23] memory list = [
             address(store),
             address(dependencies),
             address(consolidation),
@@ -570,8 +569,7 @@ abstract contract IntegrationBase is WorksDeployment {
             address(records),
             address(editions),
             address(auction),
-            address(fixedSale),
-            address(dutchSale),
+            address(editionAuction),
             address(manager),
             address(delegation),
             PERMIT2,

@@ -13,6 +13,7 @@ import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import {
@@ -25,7 +26,6 @@ import {
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { DeployGuards } from "script/DeployGuards.sol";
 import { EconomicsResolver } from "src/economics/EconomicsResolver.sol";
@@ -67,6 +67,7 @@ contract DeployV1Test is Test {
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
+        p.editionAuction = DeployV1.editionAuctionDefaults();
     }
 
     function _genesis(DeployV1.Params memory p)
@@ -154,11 +155,12 @@ contract DeployV1Test is Test {
         ) = _genesis(_params());
         // Every v1 contract with a governance map; the optional entropy module is not
         // deployed here.
-        assertEq(cfg.targets.length, 14, "governed targets");
+        assertEq(cfg.targets.length, 13, "governed targets");
         assertEq(cfg.grants.length, 17, "holders");
-        // Every wiring call in the genesis JSON: the binds, the admitted minters, the sale
-        // targets, three default currencies and the manifest.
-        assertEq(calls.length, 19, "wiring calls");
+        // Every wiring call in the genesis JSON: nine binds, two admitted minters (the 1/1
+        // auction on Stream, the edition auction on Editions), their two sale targets, three
+        // default currencies and the manifest.
+        assertEq(calls.length, 17, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
@@ -179,16 +181,26 @@ contract DeployV1Test is Test {
         assertEq(address(d.renderer.contentStore()), address(d.contentStore));
         assertEq(address(d.renderer.statementLog()), address(d.statementLog));
         assertEq(d.renderer.inlineThreshold(), d.renderer.DEFAULT_INLINE_THRESHOLD());
-        // 6529 Editions, linked to Stream and its records, with the fixed-price and Dutch sales
-        // as its minters and targets.
+        // 6529 Stream Editions, linked to Stream and its records, with the uniform-price edition
+        // auction as its minter, selling it, over the English auction and Editions.
         assertEq(d.editions.stream(), address(d.stream));
         assertEq(d.stream.editions(), address(d.editions));
         assertEq(IPackageRegistry(address(d.packageRegistry)).editions(), address(d.editions));
         assertEq(d.editions.workRecords(), address(d.workRecords));
-        assertTrue(d.editions.isAdmittedMinter(address(d.fixedPriceSale)));
-        assertTrue(d.editions.isAdmittedMinter(address(d.dutchSale)));
-        assertTrue(d.fixedPriceSale.isTarget(address(d.editions)));
-        assertTrue(d.dutchSale.isTarget(address(d.editions)));
+        assertTrue(d.editions.isAdmittedMinter(address(d.editionAuction)));
+        assertFalse(d.editions.isAdmittedMinter(address(d.englishAuction)));
+        assertTrue(d.editionAuction.isTarget(address(d.editions)));
+        assertEq(d.editionAuction.editions(), address(d.editions));
+        assertEq(d.editionAuction.stream(), address(d.stream));
+        assertEq(d.editionAuction.englishAuction(), address(d.englishAuction));
+        assertEq(d.editionAuction.escrow(), address(d.revenueEscrow));
+        assertEq(
+            keccak256(abi.encode(d.editionAuction.config())),
+            keccak256(abi.encode(DeployV1.editionAuctionDefaults())),
+            "genesis parameters"
+        );
+        assertEq(d.editions.name(), "6529 Stream Editions");
+        assertEq(d.editions.symbol(), "STREAMEDITIONS");
         assertEq(d.editions.owner(), makeAddr("marketOwner"));
         (uint64 count,) = IStatementLog(address(d.statementLog)).chainOf(address(d.manager), 0);
         assertEq(count, 1, "epoch-0 manifest recorded at genesis");
@@ -231,7 +243,7 @@ contract DeployV1Test is Test {
             GovernanceConfig.Call[] memory calls
         ) = _genesis(p);
         assertTrue(address(d.entropyModule) != address(0));
-        assertEq(cfg.targets.length, 15);
+        assertEq(cfg.targets.length, 14);
         assertEq(d.stream.entropyModule(), address(d.entropyModule));
         _settle(d);
         VerifyV1.check(d, cfg, calls);
@@ -377,10 +389,11 @@ contract DeployV1Test is Test {
         // Without Editions, its target and every wiring call on or naming it would be.
         d.editions = Editions(address(0));
         gone = DeployV1.dropped(d, json);
-        assertEq(gone.length, 9);
+        assertEq(gone.length, 7);
         assertEq(gone[0], "Editions");
         assertEq(gone[1], "EntropyModule");
         assertEq(gone[2], "Stream.bindEditions(address)");
+        assertEq(gone[6], "UniformEditionAuction.setTarget(address,bool)");
     }
 
     function test_ADelegationAddressWithoutCodeIsRefused() public {
@@ -393,13 +406,13 @@ contract DeployV1Test is Test {
     function test_ReadbackCatchesAnUnappliedWire() public {
         (DeployV1.Deployment memory d,,) = _genesis(_params());
         GovernanceConfig.Call memory fake = GovernanceConfig.Call(
-            address(d.fixedPriceSale),
+            address(d.editionAuction),
             abi.encodeCall(ISaleAdapter.setTarget, (makeAddr("never listed"), true))
         );
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyV1.WiringNotApplied.selector,
-                address(d.fixedPriceSale),
+                address(d.editionAuction),
                 ISaleAdapter.setTarget.selector
             )
         );
@@ -481,8 +494,8 @@ contract DeployV1Test is Test {
         vm.expectRevert(
             abi.encodeWithSelector(
                 VerifyV1.PlatformPathClosed.selector,
-                address(d.fixedPriceSale),
-                IFixedPriceSale.openSale.selector
+                address(d.workRecords),
+                IWorkRecords.addLocator.selector
             )
         );
         this.checkPlatformPathExternal(d, cfg);

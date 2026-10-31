@@ -30,14 +30,6 @@ enum SeedPolicy {
     VRF
 }
 
-/// @notice Whether an edition has a fixed size or sells for an open window (ADR 0001 section 6).
-/// @dev FIXED: at most `size` copies, no time limit. OPEN: any number of copies (or at most
-///      `size` when it is nonzero) during `window` seconds from the first mint.
-enum EditionFormat {
-    FIXED,
-    OPEN
-}
-
 /// @notice A party named by a package item: someone credited, paid, or both.
 /// @dev `account` signs the package root (ADR 0001 section 3 "every listed party signs"). Its
 ///      artist ID is `IArtistRegistry.artistIdOf(account)` if nonzero, otherwise
@@ -74,26 +66,19 @@ struct SaleTerms {
     bytes params;
 }
 
-/// @notice The edition an EDITION_MASTER item anchors (ADR 0001 section 6).
-/// @dev `price` is the unit price for FIXED_PRICE sales and the starting price for DUTCH sales.
-///      A non-zero `price` must name an explicit `currency`: `CURRENCY_DEFAULT` is allowed only
-///      with a zero price, because a price is meaningless without its currency.
-///      `saleKind` is `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`; `params` is that kind's
-///      encoding (empty for fixed price, `abi.encode(DutchParams)` for Dutch). For an ORIGINAL
-///      item every field is zero or empty.
-///      ADR 0005 replaces this struct, together with the removal of the fixed-price and Dutch
-///      adapters, by `EditionTerms {uint32 maxCount; address currency; bytes32 saleKind;
-///      bytes params;}`: `maxCount` is the creator's optional cap (0 for none), which 6529
-///      Stream Editions enforces for every minter; `saleKind` is any label an adapter claims
-///      (`SaleKind`, owner decision 14), `SaleKind.UNIFORM_AUCTION` in rc.2; `currency` and
-///      `params` are that kind's, opaque to the token and the package registry, which check only
-///      a nonzero kind and a bounded `params` length. The edition auction takes `CURRENCY_ETH`
-///      and empty `params`. An ORIGINAL item keeps every field zero or empty.
+/// @notice The edition an EDITION_MASTER item anchors (ADR 0001 section 6, as amended by
+///         ADR 0005).
+/// @dev `maxCount` is the creator's optional cap on the count (0 for none), which 6529 Stream
+///      Editions enforces for every minter: the sale decides how many copies exist, so the terms
+///      fix no size and no price. `saleKind` is any label a sale adapter claims (`SaleKind`,
+///      `ISaleAdapter.saleKind`, owner decision 14), `SaleKind.UNIFORM_AUCTION` in rc.2.
+///      `currency` and `params` are that kind's, opaque to the token and the package registry,
+///      which check only a nonzero kind and a bounded `params` length (`EditionRules`); a priced
+///      method carries its price in `params`, and the adapter validates both when it opens a
+///      sale. The edition auction takes `CURRENCY_ETH` and empty `params`. For an ORIGINAL item
+///      every field is zero or empty.
 struct EditionTerms {
-    EditionFormat format;
-    uint64 size;
-    uint64 window;
-    uint256 price;
+    uint32 maxCount;
     address currency;
     bytes32 saleKind;
     bytes params;

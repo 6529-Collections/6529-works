@@ -11,7 +11,6 @@ import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
-import { IFixedPriceSale } from "src/interfaces/IFixedPriceSale.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
@@ -19,7 +18,6 @@ import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { HASH_SHA256, HashRef } from "src/interfaces/types/HashRef.sol";
 import {
-    EditionFormat,
     EditionTerms,
     ItemKind,
     License,
@@ -88,8 +86,8 @@ contract Flows is Script {
     /// @dev Curation signer 1 of r1, r2 and r3 (holds CURATION_SIGNER).
     address internal constant DEFAULT_SIGNER = 0xc7091A91Fa76f7494a3b847B6A08f164C7097830;
     uint256 internal constant ITEMS = 8;
-    uint256 internal constant EDITION_PRICE = 0.0001 ether;
-    uint64 internal constant EDITION_SIZE = 10;
+    /// @dev The master's creator cap on its edition count.
+    uint32 internal constant EDITION_CAP = 10;
 
     /// @dev Item roles in the package.
     uint256 internal constant ITEM_FIRST_START = 0;
@@ -111,7 +109,6 @@ contract Flows is Script {
         address records;
         address editions;
         address auction;
-        address fixedSale;
         address entropy;
         bytes32 cc0TextFileId;
     }
@@ -142,7 +139,6 @@ contract Flows is Script {
         a.records = vm.parseJsonAddress(json, ".contracts.WorkRecords.address");
         a.editions = vm.parseJsonAddress(json, ".contracts.Editions.address");
         a.auction = vm.parseJsonAddress(json, ".contracts.EnglishAuction.address");
-        a.fixedSale = vm.parseJsonAddress(json, ".contracts.FixedPriceSale.address");
         a.entropy = vm.parseJsonAddress(json, ".contracts.EntropyModule.address");
         a.cc0TextFileId = vm.parseJsonBytes32(json, ".cc0TextFileId");
     }
@@ -280,16 +276,8 @@ contract Flows is Script {
         item.seedPolicy = i == ITEM_VRF ? SeedPolicy.VRF : SeedPolicy.NONE;
         item.sale = SaleTerms(SaleKind.ENGLISH_AUCTION, CURRENCY_ETH, "");
         item.edition = i == ITEM_MASTER
-            ? EditionTerms(
-                EditionFormat.FIXED,
-                EDITION_SIZE,
-                0,
-                EDITION_PRICE,
-                CURRENCY_ETH,
-                SaleKind.FIXED_PRICE,
-                ""
-            )
-            : EditionTerms(EditionFormat.FIXED, 0, 0, 0, address(0), bytes32(0), "");
+            ? EditionTerms(EDITION_CAP, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "")
+            : EditionTerms(0, address(0), bytes32(0), "");
         w.item = item;
     }
 
@@ -760,43 +748,6 @@ contract Flows is Script {
             abi.encodeCall(
                 IEditions.createEdition,
                 (workId, works[ITEM_MASTER].item, _root(leaves), _proof(leaves, ITEM_MASTER))
-            )
-        );
-    }
-
-    /// @notice The PLATFORM's `openSale` of edition `editionId`: one public phase from `start`
-    ///         to `end` at the package price, without the artist's consent.
-    function openSaleTx(uint256 editionId, uint64 start, uint64 end) external view {
-        Addrs memory a = _addrs();
-        IFixedPriceSale.Phase[] memory phases = new IFixedPriceSale.Phase[](1);
-        phases[0] = IFixedPriceSale.Phase(start, end, bytes32(0), 0, false, false);
-        _tx(
-            string.concat("openSale-", editionId.toString()),
-            "platform",
-            a.fixedSale,
-            0,
-            abi.encodeCall(
-                IFixedPriceSale.openSale,
-                (a.editions, editionId, phases, IFixedPriceSale.ArtistConsent(0, 0, ""))
-            )
-        );
-    }
-
-    /// @notice A public-phase purchase of `quantity` copies by `buyer`, paid in ETH.
-    function purchaseTx(uint256 saleId, address buyer, uint256 quantity) external view {
-        uint256 total = EDITION_PRICE * quantity;
-        _tx(
-            string.concat("purchase-", saleId.toString(), "-", quantity.toString()),
-            buyer.toHexString(),
-            _addrs().fixedSale,
-            total,
-            abi.encodeCall(
-                IFixedPriceSale.purchase,
-                (
-                    IFixedPriceSale.Purchase(saleId, 0, buyer, quantity, 0, 0),
-                    new bytes32[](0),
-                    Payment(PaymentMethod.DIRECT, buyer, total, 0, 0, "")
-                )
             )
         );
     }
