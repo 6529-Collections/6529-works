@@ -3,7 +3,11 @@ pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
-import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import {
+    CURRENCY_DEFAULT,
+    CURRENCY_ETH,
+    PRODUCT_STREAM
+} from "src/interfaces/types/EconomicsTypes.sol";
 import { SaleTerms } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
@@ -26,12 +30,14 @@ contract StreamSaleMethodsTest is IntegrationBase {
         super.setUp();
         artist = _actor("saleMethodArtist");
         fixedPrice = new FixedPriceOneOfOneMock();
-        Work[] memory works = new Work[](3);
+        Work[] memory works = new Work[](4);
         works[0] = _work(artist, collectionId);
         works[0].item.sale = SaleTerms(fixedPrice.KIND(), CURRENCY_ETH, abi.encode(PRICE));
         works[1] = _work(artist, collectionId); // an English-auction work
         works[2] = _work(artist, collectionId);
         works[2].item.sale = SaleTerms(fixedPrice.KIND(), CURRENCY_ETH, abi.encode(PRICE));
+        works[3] = _work(artist, collectionId); // the fixed-price kind, but not in ETH
+        works[3].item.sale = SaleTerms(fixedPrice.KIND(), CURRENCY_DEFAULT, abi.encode(PRICE));
         root = _publish(works);
         _keep(root, works);
     }
@@ -61,6 +67,21 @@ contract StreamSaleMethodsTest is IntegrationBase {
             abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(fixedPrice))
         );
         fixedPrice.buy{ value: PRICE }(address(stream), data);
+    }
+
+    /// @dev Stream leaves an item's currency to its adapter: this ETH-only method refuses an item
+    ///      naming any other, and nothing mints.
+    function test_TheAdapterRefusesACurrencyItDoesNotTake() public {
+        _admit(address(fixedPrice), true);
+        bytes memory data = _mintData(root, _package(root), 3);
+        uint256 minted = stream.totalMinted();
+        vm.deal(buyer, PRICE);
+        vm.prank(buyer);
+        vm.expectRevert(
+            abi.encodeWithSelector(FixedPriceOneOfOneMock.WrongCurrency.selector, CURRENCY_DEFAULT)
+        );
+        fixedPrice.buy{ value: PRICE }(address(stream), data);
+        assertEq(stream.totalMinted(), minted, "nothing minted");
     }
 
     /// @dev A second sale method, admitted after launch, sells a 6529 Stream 1/1 end to end: it

@@ -7,6 +7,7 @@ import { Splits } from "src/economics/Splits.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 
@@ -22,6 +23,7 @@ contract FixedPriceOneOfOneMock is ISaleAdapter {
     bytes32 public constant KIND = keccak256("FIXED_PRICE_1OF1");
 
     error WrongPrice(uint256 expected, uint256 paid);
+    error WrongCurrency(address currency);
     error PaymentFailed(address to);
     error NotListed(uint256 id);
     error ListingOpen(uint256 id);
@@ -37,6 +39,7 @@ contract FixedPriceOneOfOneMock is ISaleAdapter {
         PrimaryTerms memory t;
         (id, t) = IMintTarget(token).mint(address(this), 0, 1, mintData);
         if (t.saleKind != KIND) revert IMintTarget.SaleKindMismatch(KIND, t.saleKind);
+        if (t.currency != CURRENCY_ETH) revert WrongCurrency(t.currency);
         listedUntil[id] = deadline;
     }
 
@@ -57,6 +60,8 @@ contract FixedPriceOneOfOneMock is ISaleAdapter {
         PrimaryTerms memory t;
         (id, t) = IMintTarget(token).mint(address(this), 0, 1, mintData);
         if (t.saleKind != KIND) revert IMintTarget.SaleKindMismatch(KIND, t.saleKind);
+        // Stream leaves the currency to the adapter: this method takes ETH only.
+        if (t.currency != CURRENCY_ETH) revert WrongCurrency(t.currency);
         uint256 price = abi.decode(t.params, (uint256));
         if (msg.value != price) revert WrongPrice(price, msg.value);
         uint256 fee = price * t.feeShare / Splits.DENOMINATOR;

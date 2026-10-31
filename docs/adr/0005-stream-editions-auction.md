@@ -407,7 +407,8 @@ before each merge.
     true)` executes; a guardian vetoes an admission that does not hold them.
 
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
-  adapter that honours it.
+  adapter sending a work that ends unbid to the museum; its mock has no currency-freeze exit,
+  so the test does not show that branch.
 
   **Not enforced on-chain.** Stream never learns whether a sale had a buyer; a Stream-only
   settle call declaring the buyer would not stop an adapter that names its artist as one; and a
