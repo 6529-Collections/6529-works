@@ -88,21 +88,29 @@ library UniformClearing {
     // comment lists its word's entries; test/sales/uniform/UniformClearing.t.sol checks every
     // entry against the reference model (test/fixtures/uniform-clearing/ladder.json).
     // j = 0..23: 100 101 102 104 105 106 107 109 110 111 113 114 115 117 118 120 121 123 124 126 127 129 130 132
-    uint256 private constant E192_0 = 0x210822047f1f87c1ec791e0761d4731c8711bc6e1b46b1a8691a06619464;
+    uint256 private constant E192_0 =
+        0x210822047f1f87c1ec791e0761d4731c8711bc6e1b46b1a8691a06619464;
     // j = 24..47: 133 135 137 138 140 142 143 145 147 149 150 152 154 156 158 160 162 164 165 167 169 172 174 176
-    uint256 private constant E192_1 = 0x2c0ae2b0a929ca5290a22809e2709a26096254932448f2388c2288921c85;
+    uint256 private constant E192_1 =
+        0x2c0ae2b0a929ca5290a22809e2709a26096254932448f2388c2288921c85;
     // j = 48..71: 178 180 182 184 187 189 191 193 196 198 200 203 205 208 210 213 215 218 221 223 226 229 232 234
-    uint256 private constant E192_2 = 0x3a8e8394e237cdd368d7354d2340cd32cc8318c4304bf2f4bb2e0b62d0b2;
+    uint256 private constant E192_2 =
+        0x3a8e8394e237cdd368d7354d2340cd32cc8318c4304bf2f4bb2e0b62d0b2;
     // j = 72..95: 237 240 243 246 249 252 255 258 261 264 267 271 274 277 280 284 287 291 294 298 301 305 309 312
-    uint256 private constant E192_3 = 0x4e1354c52d4a92648d1f471184551243d0b42105408ff3f0f93d8f33c0ed;
+    uint256 private constant E192_3 =
+        0x4e1354c52d4a92648d1f471184551243d0b42105408ff3f0f93d8f33c0ed;
     // j = 96..119: 316 320 324 328 332 336 340 344 348 352 357 361 365 370 374 379 383 388 392 397 402 407 412 417
-    uint256 private constant E192_4 = 0x6859c65d92635886117f5ed765c96d5a5655815c561545414c521445013c;
+    uint256 private constant E192_4 =
+        0x6859c65d92635886117f5ed765c96d5a5655815c561545414c521445013c;
     // j = 120..143: 422 427 432 437 442 448 453 459 464 470 475 481 487 493 499 505 511 517 523 530 536 542 549 556
-    uint256 private constant E192_5 = 0x8b22587a1884a0b815ff7e5f37b5e7785db759d072dc5701ba6d5b06ada6;
+    uint256 private constant E192_5 =
+        0x8b22587a1884a0b815ff7e5f37b5e7785db759d072dc5701ba6d5b06ada6;
     // j = 144..167: 562 569 576 583 590 597 604 612 619 626 634 642 649 657 665 673 681 690 698 706 715 723 732 741
-    uint256 private constant E192_6 = 0xb96dcb4ecbb0abaacaa9a8699a4689a0a7a9ca6b9925c9564e91e408e632;
+    uint256 private constant E192_6 =
+        0xb96dcb4ecbb0abaacaa9a8699a4689a0a7a9ca6b9925c9564e91e408e632;
     // j = 168..191: 750 759 768 777 787 796 806 816 825 835 845 856 866 876 887 898 909 919 931 942 953 965 976 988
-    uint256 private constant E192_7 = 0xf73d0f17b9ebba3e5f8de0b77db362d634dd0f39cc326c7313c2700bdeee;
+    uint256 private constant E192_7 =
+        0xf73d0f17b9ebba3e5f8de0b77db362d634dd0f39cc326c7313c2700bdeee;
 
     /// @notice Whether `(basePrice, stepsPerDecade)` is inside the library's domain:
     ///         `basePrice` from 100 to 2**96 - 1, and `stepsPerDecade` 24, 48, 96 or 192.
@@ -113,13 +121,11 @@ library UniformClearing {
     /// @param basePrice The price of step 0 in wei.
     /// @param stepsPerDecade Steps per decade.
     /// @return Whether the ladder is supported.
-    function isValidLadder(uint256 basePrice, uint256 stepsPerDecade)
-        internal
-        pure
-        returns (bool)
-    {
+    function isValidLadder(uint256 basePrice, uint256 stepsPerDecade) internal pure returns (bool) {
         return basePrice >= 100 && basePrice <= type(uint96).max
-            && (stepsPerDecade == 24 || stepsPerDecade == 48 || stepsPerDecade == 96
+            && (stepsPerDecade == 24
+                || stepsPerDecade == 48
+                || stepsPerDecade == 96
                 || stepsPerDecade == 192);
     }
 

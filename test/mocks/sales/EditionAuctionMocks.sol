@@ -284,3 +284,32 @@ contract ReentrantSeller {
         auction.settle(saleId, new uint256[](0));
     }
 }
+
+/// @dev A payout wallet (seller or fee recipient) that, while being paid, tries to re-enter the
+///      auction's `settle` and `claimBid`, records each attempt's revert data, and then accepts
+///      the payment, so the payout lands directly and the re-entries' outcome is observable.
+contract ReenteringPayee {
+    IUniformEditionAuction public auction;
+    uint256 public saleId;
+    uint256 public bidId;
+    uint256 public calls;
+    bytes public settleRevert;
+    bytes public claimRevert;
+    bool public settleSucceeded;
+    bool public claimSucceeded;
+
+    function setTarget(IUniformEditionAuction auction_, uint256 saleId_, uint256 bidId_) external {
+        (auction, saleId, bidId) = (auction_, saleId_, bidId_);
+    }
+
+    receive() external payable {
+        ++calls;
+        if (address(auction) == address(0)) return;
+        (bool ok, bytes memory ret) = address(auction)
+            .call(abi.encodeCall(IUniformEditionAuction.settle, (saleId, new uint256[](0))));
+        (settleSucceeded, settleRevert) = (ok, ret);
+        (ok, ret) = address(auction)
+            .call(abi.encodeCall(IUniformEditionAuction.claimBid, (saleId, bidId, address(this))));
+        (claimSucceeded, claimRevert) = (ok, ret);
+    }
+}

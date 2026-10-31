@@ -907,10 +907,13 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         editions.setExists(ID, true);
         uint256 revenue = 51 * 0.0511 ether;
         uint256 fee = revenue * FEE_SHARE / 100_000;
+        // Every write first (the result, then SETTLED), the payout last.
         vm.expectEmit(address(auction));
         emit IUniformEditionAuction.AuctionCleared(
             saleId, 51, 130, 0.0511 ether, revenue, false, 50
         );
+        vm.expectEmit(address(auction));
+        emit IUniformEditionAuction.AuctionSettled(saleId, 51, 0);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleSettled(
             saleId,
@@ -926,8 +929,6 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             networkFee,
             fee
         );
-        vm.expectEmit(address(auction));
-        emit IUniformEditionAuction.AuctionSettled(saleId, 51, 0);
         assertTrue(auction.settle(saleId, new uint256[](0)));
         paidOut += revenue;
         assertEq(seller.balance, revenue - fee);

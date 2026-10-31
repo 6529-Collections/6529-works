@@ -51,6 +51,18 @@
   token, federated or listed later by governance, keeps the rc.1 behaviour (its artist), at
   settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
+- Sales: `UniformEditionAuction`, the uniform-price edition auction (ADR 0005, D138 to D141),
+  with the stateless `UniformEditionAuctionLens` it creates. Bids escrow ETH on the `StepLadder`
+  steps and can be raised, never lowered, and withdrawn only while the 1/1 is paused for a
+  dispute. The sale closes 15 minutes after the 1/1's final end, extended by its own soft
+  close up to the backstop. A cancelled 1/1 voids it. Settlement runs in permissionless calls
+  of bounded gas: at most 24 book words scanned per call, then the FIFO departure sweep in
+  chunks. It mints exactly the cleared count through `IMintTarget.mint` as bids are claimed.
+  Its views (every view of `IUniformEditionAuction`) are the lens's, answered through a
+  read-only fallback; `IUniformEditionAuctionStorage` documents the raw words they read.
+  Its genesis selectors, deployment and wiring come with the deploy lane. Gas rows, with exact slot and account counts, are in
+  `test/integration/EditionAuctionGasReport.t.sol`; every settlement call stays within 350,000
+  execution gas, at most 211,025 in the worst case measured.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

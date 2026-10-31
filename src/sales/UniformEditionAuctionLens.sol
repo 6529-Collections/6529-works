@@ -136,11 +136,12 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         e.oneOfOneState = o.state;
         bool open = a.status == IUniformEditionAuction.AuctionStatus.OPEN;
         e.withdrawalsOpen = open && o.state == IEnglishAuction.AuctionState.PAUSED;
-        // forge-lint: disable-next-line(block-timestamp)
+        // forge-lint: disable-start(block-timestamp)
         e.biddingOpen = e.withdrawalsOpen
             || (open
                 && o.state != IEnglishAuction.AuctionState.CANCELLED
                 && block.timestamp < e.endTime);
+        // forge-lint: disable-end(block-timestamp)
     }
 
     /// @dev Fills `e`'s clocks from the 1/1's end now (`oneOfOneEnd`, at least the cached one).
@@ -404,6 +405,10 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         c.cutoff = cutoff;
     }
 
+    // Safe: the departure helpers below read the 32-bit position and quantity fields of 64-bit
+    // log entries, and the 32-bit count of a log's head word.
+    // forge-lint: disable-start(unsafe-typecast)
+
     /// @dev The cutoff a complete departure sweep of `r`'s clearing step gives; zero unless `r`
     ///      is rationed.
     function _fullCutoff(uint256 saleId, UniformClearing.Result memory r)
@@ -414,7 +419,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         if (!r.rationed) return 0;
         (uint256[] memory order, uint256[] memory entries) = _sorted(saleId, r.step, 0);
         cutoff = r.cutUnits;
-        uint256 next;
+        uint256 next = 0;
         for (uint256 i; i < order.length; ++i) {
             (cutoff, next) = UniformClearing.sweep(
                 cutoff, next, uint32(entries[i]), uint32(entries[i] >> 32), i
@@ -444,6 +449,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
             }
             (order[k], entries[k]) = (i, entry);
         }
+        // Invariant: `n` is at most the length both arrays were allocated with, so shortening
+        // them in place keeps every element inside its allocation.
         assembly ("memory-safe") {
             mstore(order, n)
             mstore(entries, n)
@@ -485,6 +492,8 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         uint256 j = index - _HEAD_ENTRIES;
         return _word(IStorage.Space.DEPARTURE, saleId, step << 32 | 1 + (j >> 2)) >> ((j & 3) << 6);
     }
+
+    // forge-lint: disable-end(unsafe-typecast)
 
     /// @dev The live words of sale `a`, covering at least step `minStep` (zero words past its
     ///      highest step): `UniformClearing`'s book.

@@ -10,6 +10,7 @@ import { GasBurnerWallet } from "../../mocks/sales/SaleMocks.sol";
 import {
     CopyRefusingBidder,
     EthRefusingHolder,
+    ReenteringPayee,
     ReentrantBidder,
     ReentrantSeller
 } from "../../mocks/sales/EditionAuctionMocks.sol";
@@ -144,5 +145,54 @@ contract UniformEditionAuctionHostileTest is EditionAuctionBase {
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.CLOSED)
         );
         assertEq(seller.balance, 0);
+    }
+
+    /// @dev Regression (Slither `reentrancy-eth` on `settle`): the payout comes after every write
+    ///      of the call, and the guard refuses re-entry. A seller wallet and a fee recipient that,
+    ///      while being paid, try to re-enter `settle` and `claimBid` are both refused, the
+    ///      payout still lands directly (gas permitting: under 100,000 per wallet), and the sale
+    ///      is settled exactly once with every claim intact. Both the one-call settlement and the
+    ///      call that clears a capped book and starts its sweep are covered.
+    function test_Reentry_ByAPayeeDuringThePayoutIsRefused() public {
+        for (uint256 capped; capped < 2; ++capped) {
+            uint256 snapshot = vm.snapshotState();
+            ReenteringPayee seller_ = new ReenteringPayee();
+            ReenteringPayee fee_ = new ReenteringPayee();
+            economics.set(address(seller_), address(fee_), FEE_SHARE);
+            uint256 saleId = _open(capped == 1 ? 3 : 0);
+            uint256 winner = _bid(saleId, makeAddr("winner"), 100, 2);
+            _bid(saleId, makeAddr("queue"), 100, 2);
+            if (capped == 1) {
+                // A departure at the clearing step, so the clearing call also sweeps.
+                uint256 mover = _bid(saleId, makeAddr("mover"), 100, 1);
+                _raise(saleId, mover, 101);
+            }
+            seller_.setTarget(ua, saleId, winner);
+            fee_.setTarget(ua, saleId, winner);
+            _closeOneOfOne(saleId);
+            editions.setExists(ID, true);
+            uint256 balance = address(auction).balance;
+            bool done = auction.settle(saleId, ua.settlementOrder(saleId));
+            paidOut += balance - address(auction).balance;
+            assertTrue(done, "settled in one call");
+            assertEq(seller_.calls(), 1, "the seller was paid once, directly");
+            assertEq(fee_.calls(), 1, "the fee recipient was paid once, directly");
+            assertEq(escrow.owed(address(seller_), address(0)), 0, "nothing escrowed");
+            assertFalse(seller_.settleSucceeded());
+            assertFalse(seller_.claimSucceeded());
+            assertFalse(fee_.settleSucceeded());
+            assertFalse(fee_.claimSucceeded());
+            bytes4 guard = ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector;
+            assertEq(bytes4(seller_.settleRevert()), guard);
+            assertEq(bytes4(seller_.claimRevert()), guard);
+            assertEq(bytes4(fee_.settleRevert()), guard);
+            assertEq(bytes4(fee_.claimRevert()), guard);
+            IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+            uint256 revenue = s.count * s.price;
+            assertEq(address(seller_).balance + address(fee_).balance, revenue, "paid in full");
+            assertEq(_claimAll(saleId), s.count, "every claim intact");
+            _assertConserved();
+            vm.revertToState(snapshot);
+        }
     }
 }

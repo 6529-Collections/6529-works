@@ -359,9 +359,13 @@ contract UniformEditionAuction is
                 return _sweep(saleId, a, order.length > _SWEEP_CHUNK ? order[:_SWEEP_CHUNK] : order);
             }
         }
-        if (!_scanChunk(saleId, a)) return false;
-        if (a.status == IUniformEditionAuction.AuctionStatus.SETTLED) return true;
-        return _sweep(saleId, a, order.length > _SWEEP_FIRST ? order[:_SWEEP_FIRST] : order);
+        (bool cleared, uint256 count, uint256 price) = _scanChunk(saleId, a);
+        if (!cleared) return false;
+        bool settled = a.status == IUniformEditionAuction.AuctionStatus.SETTLED
+            || _sweep(saleId, a, order.length > _SWEEP_FIRST ? order[:_SWEEP_FIRST] : order);
+        // The payout comes last, after every write of this call.
+        _pay(saleId, _payouts[saleId], count, price);
+        return settled;
     }
 
     /// @notice Claims the caller's bid: its copies and its refund to `to`
@@ -437,6 +441,8 @@ contract UniformEditionAuction is
     /// @dev Stops new opens only: running sales bid, settle and claim as usual.
     function pause() external restricted {
         if (_settings.pausedAt != 0) revert SalePaused();
+        // Safe: a timestamp, far below 2^40.
+        // forge-lint: disable-next-line(unsafe-typecast)
         _settings.pausedAt = uint40(block.timestamp);
         emit Paused(msg.sender);
     }
@@ -683,10 +689,15 @@ contract UniformEditionAuction is
 
     /// @dev Scans the next words of SETTLING sale `stored`'s book ({_scan}); returns false and
     ///      records where it stopped when words remain, otherwise clears ({_finish}) and returns
-    ///      true.
-    function _scanChunk(uint256 saleId, SaleWord storage stored) private returns (bool) {
+    ///      true with the count and price `settle` pays last.
+    function _scanChunk(uint256 saleId, SaleWord storage stored)
+        private
+        returns (bool cleared, uint256 count, uint256 price)
+    {
         SaleWord memory a = stored;
         IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
+        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 left = _scans[saleId];
         uint256[15] memory scan = _scan(saleId, a, t, left);
         uint256 low = uint256(a.lowStep) >> 3;
@@ -697,43 +708,48 @@ contract UniformEditionAuction is
                 | (pick >> 128) << 88 | uint256(uint64(pick >> 64)) << 104 | uint256(uint64(pick))
                 << 136;
             emit SettlementScanned(saleId, scan[7] - low);
-            return false;
+            return (false, 0, 0);
         }
         if (left != 0) delete _scans[saleId];
-        _finish(saleId, stored, a, t, scan[8]);
-        return true;
+        // forge-lint: disable-end(unsafe-typecast)
+        (count, price) = _finish(saleId, stored, a, t, scan[8]);
+        cleared = true;
     }
 
-    /// @dev Stores and pays the clearing whose last passing candidate is `pick` (`step << 128 |
+    /// @dev Stores the clearing whose last passing candidate is `pick` (`step << 128 |
     ///      unitsAbove << 64 | demand`; zero for an empty book): SETTLED, or SETTLING while the
-    ///      clearing step's departures wait to be swept.
+    ///      clearing step's departures wait to be swept. Returns the count and the price, which
+    ///      `settle` pays after its last write.
     function _finish(
         uint256 saleId,
         SaleWord storage stored,
         SaleWord memory a,
         IUniformEditionAuction.AuctionConfig memory t,
         uint256 pick
-    ) private {
+    ) private returns (uint256 count, uint256 price) {
+        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 demand = uint64(pick);
-        uint256 count = a.maxCount != 0 && demand > a.maxCount ? a.maxCount : demand;
+        count = a.maxCount != 0 && demand > a.maxCount ? a.maxCount : demand;
         uint256 step = pick >> 128;
         uint256 cutUnits = count - uint64(pick >> 64);
         bool rationed = count < demand;
+        // forge-lint: disable-end(unsafe-typecast)
         PayoutWord memory p = _payouts[saleId];
         if (count != 0 && !IEditions(editions).exists(p.id)) {
             revert IUniformEditionAuction.EditionNotCreated(editions, p.id);
         }
         // Safe: counts below 2^32 and steps below 512.
-        // forge-lint: disable-next-line(unsafe-typecast)
+        // forge-lint: disable-start(unsafe-typecast)
         _results[saleId] = ResultWord(
             uint32(count), uint16(step), rationed, uint32(cutUnits), uint32(cutUnits), 0, 0, p.id
         );
-        uint256 price = count == 0 ? 0 : _price(t, step);
+        // forge-lint: disable-end(unsafe-typecast)
+        price = count == 0 ? 0 : _price(t, step);
         emit IUniformEditionAuction.AuctionCleared(
             saleId, count, step, price, count * price, rationed, cutUnits
         );
-        _pay(saleId, p, count, price);
-        if (rationed && uint32(_departures[saleId][step << 32]) != 0) return;
+        if (rationed && uint32(_departures[saleId][step << 32]) != 0) return (count, price);
         stored.status = IUniformEditionAuction.AuctionStatus.SETTLED;
         emit IUniformEditionAuction.AuctionSettled(saleId, count, rationed ? cutUnits : 0);
     }
@@ -748,6 +764,8 @@ contract UniformEditionAuction is
         returns (bool)
     {
         ResultWord memory r = _results[saleId];
+        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 head = _departures[saleId][uint256(r.step) << 32];
         uint256 total = uint32(head);
         uint256 swept = r.swept;
@@ -760,6 +778,7 @@ contract UniformEditionAuction is
                 UniformClearing.sweep(cutoff, next, uint32(entry), uint32(entry >> 32), i);
             ++swept;
         }
+        // forge-lint: disable-end(unsafe-typecast)
         // Safe: the cutoff is at most the step's entered units, and positions fit 32 bits.
         // forge-lint: disable-next-line(unsafe-typecast)
         (r.swept, r.cutoff, r.nextPosition) = (uint32(swept), uint32(cutoff), uint32(next));
@@ -814,9 +833,10 @@ contract UniformEditionAuction is
         }
         IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
         refund = uint256(b.quantity) * _price(t, b.step);
-        ResultWord memory r;
+        uint256 id = 0;
         if (status == IUniformEditionAuction.AuctionStatus.SETTLED) {
-            r = _results[saleId];
+            ResultWord memory r = _results[saleId];
+            id = r.id;
             if (r.count != 0 && b.step >= r.step) {
                 unitsWon = b.step > r.step || !r.rationed
                     ? b.quantity
@@ -827,8 +847,8 @@ contract UniformEditionAuction is
         delete _bids[saleId][bidId];
         emit IUniformEditionAuction.BidClaimed(saleId, bidId, b.bidder, to, unitsWon, refund);
         if (unitsWon != 0) {
-            (uint256 minted,) = IMintTarget(editions).mint(to, r.id, unitsWon, "");
-            if (minted != r.id) revert InvalidSaleTerms(editions, r.id);
+            (uint256 minted,) = IMintTarget(editions).mint(to, id, unitsWon, "");
+            if (minted != id) revert InvalidSaleTerms(editions, id);
         }
     }
 
@@ -857,6 +877,8 @@ contract UniformEditionAuction is
         uint256 left
     ) private view returns (uint256[15] memory scan) {
         uint256 perDecade = t.stepsPerDecade;
+        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 cursor = uint8(left) == 0 ? (uint256(a.highStep) >> 3) + 1 : uint8(left);
         uint256 low = uint256(a.lowStep) >> 3;
         scan[0] = a.maxCount == 0 ? type(uint256).max : a.maxCount;
@@ -876,6 +898,7 @@ contract UniformEditionAuction is
             uint256 bestStep = uint16(left >> 72);
             (scan[11], scan[12], scan[13]) = (bestCount * _price(t, bestStep), bestCount, bestStep);
         }
+        // forge-lint: disable-end(unsafe-typecast)
         if (a.liveUnits == 0) {
             scan[7] = low;
             return scan;
@@ -999,10 +1022,13 @@ contract UniformEditionAuction is
         // below 2^32.
         _live[saleId][step >> 3] = word + (quantity << shift);
         if (!capped) return 0;
+        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 position = uint32(word >> shift) + uint32(_departures[saleId][step << 32] >> 32);
         if (position + quantity > type(uint32).max) {
             revert IUniformEditionAuction.InvalidQuantity(quantity);
         }
+        // forge-lint: disable-end(unsafe-typecast)
         // forge-lint: disable-next-line(unsafe-typecast)
         return uint32(position);
     }
@@ -1015,10 +1041,13 @@ contract UniformEditionAuction is
         _live[saleId][step >> 3] -= quantity << ((step & 7) << 5);
         if (!capped) return;
         uint256 head = _departures[saleId][step << 32];
+        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 count = uint32(head);
         // The departed units stay at most the step's entered units, which fit 32 bits.
         head = (head >> 64 << 64) | (count + 1) | (uint256(uint32(head >> 32)) + quantity) << 32;
         uint256 entry = position | quantity << 32;
+        // forge-lint: disable-end(unsafe-typecast)
         if (count < _HEAD_ENTRIES) {
             _departures[saleId][step << 32] = head | entry << (64 + (count << 6));
         } else {
