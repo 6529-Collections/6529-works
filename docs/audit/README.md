@@ -40,7 +40,8 @@ merged in PRs #51 to #57 and are cited by finding ID. No external audit has star
 
 Areas where a small change has large effects, or where the review concentrated:
 
-- **Contract size.** `EnglishAuction` and `Renderer` have the smallest EIP-170 margins
+- **Contract size.** `Renderer` has the smallest EIP-170 margin, then `WorkRecords` and
+  `EnglishAuction`, whose views its lens answers through a read-only `staticcall` fallback
   ([scope](scope.md#contracts-in-scope)).
 - **The auction start path.** `EnglishAuction.start` → `Stream.mint` →
   `PackageRegistry.consume` carries a 350K Prague-gas budget and a cap of 6 new storage

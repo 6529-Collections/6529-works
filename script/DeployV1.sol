@@ -568,8 +568,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[23] memory all = [
-        string[22] memory all = [
+        string[24] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -590,7 +589,9 @@ library DeployV1 {
             "Stream",
             "WorkRecords",
             "EnglishAuction",
-        string[24] memory all = [
+            "EnglishAuctionLens",
+            "UniformEditionAuction",
+            "UniformEditionAuctionLens",
             "Editions"
         ];
         list = new string[](all.length);

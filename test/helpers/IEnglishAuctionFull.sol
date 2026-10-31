@@ -6,13 +6,20 @@ import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Rec
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 
 /// @dev Everything the deployed English auction answers, as one type for the tests:
-///      `IEnglishAuction`, the getters its lens adds (constants and dependencies), the functions
-///      `EnglishAuction` itself adds (`lens`, `storageWords`, `settlePayout`), the ERC-721
+///      `IEnglishAuction`, the integration view `IEnglishAuctionClock`, the getters its lens adds
+///      (constants and dependencies), the functions `EnglishAuction` itself adds (`lens`,
+///      `storageWords`, `settlePayout`), the ERC-721
 ///      receiver hook and `AccessManaged`. The auction declares some of these and forwards the
 ///      rest to its lens (`EnglishAuction.fallback`), so a test holds one address of this type.
-interface IEnglishAuctionFull is IEnglishAuction, IERC721Receiver, IAccessManaged {
+interface IEnglishAuctionFull is
+    IEnglishAuction,
+    IEnglishAuctionClock,
+    IERC721Receiver,
+    IAccessManaged
+{
     function MAX_PAUSE() external view returns (uint64);
     function OPENING_BID_FLOORS() external view returns (uint256);
     function PAYOUT_GAS() external view returns (uint256);

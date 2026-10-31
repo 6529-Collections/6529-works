@@ -17,6 +17,7 @@ import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -66,7 +67,12 @@ import { EnglishAuctionLens } from "./EnglishAuctionLens.sol";
 ///      currency is re-admitted (its bidder may withdraw meanwhile), and the first settle after a
 ///      re-admission in the auction's last window or after its end reopens it instead
 ///      (`AuctionResumed`). Refunds and claims never read the allowlist.
-contract EnglishAuction is IERC721Receiver, AccessManaged, ReentrancyGuardTransient {
+contract EnglishAuction is
+    IERC721Receiver,
+    IEnglishAuctionClock,
+    AccessManaged,
+    ReentrancyGuardTransient
+{
     /// @dev The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12). The
     ///      lens answers `MAX_PAUSE()` with the same value.
     uint64 private constant _MAX_PAUSE = 7 days;
@@ -633,6 +639,33 @@ contract EnglishAuction is IERC721Receiver, AccessManaged, ReentrancyGuardTransi
     ///         `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`, or a later adapter's own label.
     function saleKind() external pure returns (bytes32) {
         return SaleKind.ENGLISH_AUCTION;
+    }
+
+    /// @inheritdoc IEnglishAuctionClock
+    /// @dev Answered here, not through the lens, for contracts that read an auction on their own
+    ///      hot paths (the edition auction reads its 1/1 in `open`, `bid`, `settle` and
+    ///      `withdrawBid`): one cold slot for a sale never paused, against the lens's extra
+    ///      account and round trips.
+    function auctionClock(uint256 saleId)
+        external
+        view
+        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+    {
+        Sale storage s = _sales[saleId];
+        state = _state(s);
+        if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        endTime = s.endTime;
+        // Only a dispute pause sets `pausedAt`, and it sets `_PAUSE_USED` with it: an unpaused
+        // sale's slot 2 is not read.
+        if (s.flags & _PAUSE_USED != 0) {
+            uint256 pausedAt = s.pausedAt;
+            // forge-lint: disable-next-line(block-timestamp)
+            if (pausedAt != 0 && block.timestamp > pausedAt + _MAX_PAUSE) {
+                // Truncating as `auction` does: the end fits 32 bits.
+                // forge-lint: disable-next-line(unsafe-typecast)
+                endTime = uint64(_resumedEnd(s, _MAX_PAUSE));
+            }
+        }
     }
 
     /// @notice Accepts only a token minted into this adapter's custody during a start, so no
