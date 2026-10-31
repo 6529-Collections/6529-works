@@ -2,7 +2,7 @@
   "cc0TextFileId": "0x16f36978ff2763eee543b9e8af4dc7c1ab5ed2966aff3485474569012cfdd22b",
   "cc0TextSha256": "0xa2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
   "chainId": 31337,
-  "configHash": "0x743d3f55d9a451e5fcc105abc08f7c5e60b08fe2e87dea2d55c634d166863f9a",
+  "configHash": "0xd315d1b2e640af0741c113b4ab146c78078198a116df2676db7f7dfad4969a23",
   "confirmed": false,
   "contracts": {
     "ArtistRegistry": {
@@ -78,12 +78,12 @@
       "codehash": "0xee374b5c0805bc84ba235f3ce58ff06b0368539cd51e0abd441c45ff2b37cae2"
     },
     "UniformEditionAuction": {
-      "address": "0xdF934cB796DB7888D807Ba90682286a54F1CB640",
-      "codehash": "0x692406b3e293280e75055e471c1f1201262ca5cc0419571db32be7cbb4fd6333"
+      "address": "0x5C6f457cECACa7c99bb617f141e57154F4fd8086",
+      "codehash": "0x05f26e7cc1d5b63a4a3eb3f7e9e1a06be4b201edf3d1d30eb38951e86f42d18a"
     },
     "UniformEditionAuctionLens": {
-      "address": "0x1E459DFCC07897F4d588F2D2036d6A85afe1998d",
-      "codehash": "0xa0cb27771024267166964ba5c887dd584b1eed3ad9f1d7d3b0dbac0edecd7348"
+      "address": "0xc7041515959c83f099050C26f60561C447988e85",
+      "codehash": "0x043870d91ac3e36b59cb149397e8072ded5bf54151fbbfa0a23a7b494e5beb2b"
     },
     "WorkRecords": {
       "address": "0xCCDa657462B027A79132841793ff7704d5054551",
@@ -134,7 +134,7 @@
   "placeholders": true,
   "standIns": [],
   "startBlock": 0,
-  "timestamp": 1793480739,
+  "timestamp": 1793481726,
   "wiringCalls": 17,
-  "wiringHash": "0xa3d9c221894b31c35f950e89d6cbf9064e9172e33689b259c2f3c595b067fb60"
+  "wiringHash": "0xc3a60bdf59c25d247373bc94c3e4c71bb1d4c15781684e236f3eb76b87c8cc2c"
 }
