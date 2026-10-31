@@ -194,4 +194,125 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertEq(_claimAll(saleId), live.count);
         _assertConserved();
     }
+
+    /// @dev Every bid's claim against the lens, over any governed ladder and any chunking. The
+    ///      ladder is random (24, 48, 96 or 192 steps per decade, any base price and step count
+    ///      the bounds allow), so a resumed scan starts in any decade. The book is spread or
+    ///      clustered on a few steps, with raises and dispute withdrawals leaving departures at
+    ///      the cut step. Settlement is fed random prefixes of the remaining order, so the sweep
+    ///      resumes at any boundary. Before settling, each live bid's `bidOutcome` is read from
+    ///      the lens, which counts the live units ahead of a bid rather than sweeping a cutoff;
+    ///      each claim must then pay exactly that outcome, and the sale must mint exactly `k`
+    ///      and leave nothing behind.
+    function testFuzz_Settlement_AnyLadderAndChunkingPaysEveryOutcome(
+        uint256 seed,
+        uint8 bids,
+        uint32 maxCount,
+        uint32 marginShare,
+        uint256 ladder,
+        bool spread
+    ) public {
+        uint256 steps = _randomLadder(ladder, marginShare);
+        uint256 saleId = _open(uint32(bound(maxCount, 0, 300)));
+        _randomBook(saleId, seed, bound(bids, 1, 60), steps, spread);
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
+        uint256 count = ua.auction(saleId).bidCount;
+        IUniformEditionAuction.BidOutcome[] memory outcomes =
+            new IUniformEditionAuction.BidOutcome[](count + 1);
+        for (uint256 bidId = 1; bidId <= count; ++bidId) {
+            if (_live(saleId, bidId)) outcomes[bidId] = ua.bidOutcome(saleId, bidId);
+        }
+        _settleInRandomSlices(saleId, seed);
+        IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
+        assertEq(s.count, live.count, "count");
+        assertEq(s.price, live.price, "price");
+        assertEq(s.rationed, live.rationed, "rationed");
+        if (live.rationed) assertEq(s.cutoff, live.cutoff, "cutoff");
+        assertEq(_claimAgainst(saleId, outcomes), live.count, "exactly k");
+        _assertConserved();
+        assertEq(address(auction).balance, 0, "nothing left behind");
+    }
+
+    /// @dev Sets a random governed ladder and margin; returns its step count. A ladder whose top
+    ///      step is below the 10 ETH floor becomes the widest, highest one of its kind.
+    function _randomLadder(uint256 ladder, uint32 marginShare) internal returns (uint256) {
+        IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+        c.stepsPerDecade = uint16(24 << (ladder % 4));
+        c.basePrice = uint96(bound(ladder >> 8, 1e12, 1e17));
+        c.stepCount = uint16(bound(ladder >> 128, 64, 512));
+        c.marginShare = uint32(bound(marginShare, 0, 50_000));
+        try auction.setConfig(auction.config(), c) { }
+        catch {
+            (c.basePrice, c.stepCount) = (1e17, 512);
+            _setConfig(c);
+        }
+        return c.stepCount;
+    }
+
+    /// @dev `bids` random bids over `steps` steps, spread or on four steps, with every third
+    ///      raising an earlier live bid and every fifth (otherwise) withdrawing one during a
+    ///      dispute pause: departures in a capped sale.
+    function _randomBook(uint256 saleId, uint256 seed, uint256 bids, uint256 steps, bool spread)
+        internal
+    {
+        uint256 low = bound(seed >> 200, 0, steps - 8);
+        for (uint256 i; i < bids; ++i) {
+            uint256 r = uint256(keccak256(abi.encode(seed, i)));
+            _bid(
+                saleId,
+                makeAddr(vm.toString(i % 7)),
+                spread ? r % steps : low + r % 4,
+                1 + (r >> 16) % 40
+            );
+            uint256 bidId = 1 + (r >> 32) % (i + 1);
+            if (!_live(saleId, bidId)) continue;
+            if (i % 3 == 2) {
+                uint256 from = ua.bidOf(saleId, bidId).step;
+                uint256 room = steps - 1 - from;
+                // Clustered books raise by one or two steps, so departures stay near the cut.
+                uint256 span = spread || room < 2 ? room : 2;
+                if (room != 0) _raise(saleId, bidId, from + 1 + (r >> 40) % span);
+            } else if (i % 5 == 4) {
+                _withdrawDuringPause(saleId, bidId);
+            }
+        }
+    }
+
+    /// @dev Settles with a random nonempty prefix of the remaining order on each call, so the
+    ///      departure sweep stops and resumes at arbitrary points.
+    function _settleInRandomSlices(uint256 saleId, uint256 seed) internal {
+        uint256 balance = address(auction).balance;
+        for (uint256 call;; ++call) {
+            require(call < 64, "settlement does not advance");
+            uint256[] memory order = ua.settlementOrder(saleId);
+            uint256 take = order.length == 0
+                ? 0
+                : 1 + uint256(keccak256(abi.encode(seed, "slice", call))) % order.length;
+            assembly ("memory-safe") {
+                mstore(order, take)
+            }
+            if (auction.settle(saleId, order)) break;
+        }
+        paidOut += balance - address(auction).balance;
+    }
+
+    /// @dev Claims every live bid for its bidder and checks each against `outcomes`; returns the
+    ///      copies minted.
+    function _claimAgainst(uint256 saleId, IUniformEditionAuction.BidOutcome[] memory outcomes)
+        internal
+        returns (uint256 minted)
+    {
+        for (uint256 bidId = 1; bidId < outcomes.length; ++bidId) {
+            if (!_live(saleId, bidId)) continue;
+            address bidder = ua.bidOf(saleId, bidId).bidder;
+            vm.prank(bidder);
+            (uint256 won, uint256 refund) = auction.claimBid(saleId, bidId, bidder);
+            assertEq(won, outcomes[bidId].unitsWon, "units won as the lens said");
+            assertEq(refund, outcomes[bidId].refund, "refund as the lens said");
+            minted += won;
+            refundsOut += refund;
+        }
+    }
 }
