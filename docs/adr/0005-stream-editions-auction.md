@@ -43,8 +43,8 @@ design log (`design/README.md`, the decision table, D138 to D141, `main` at `3d5
   management". D140 amends D138's "it opens when the 1/1 auction closes".
 - **D141, three more rules.** The editions sell whether or not the 1/1 draws bids; an edition
   auction with no bids mints no editions; and the edition auction has its own soft close: a bid
-  in its last 5 minutes extends it by 5 minutes, and it never closes earlier than 15 minutes
-  after the 1/1 finally closes. The window is an operational parameter (D86). The owner: "YES"
+  in its last 5 minutes extends the close to 5 minutes after that bid, and it never closes
+  earlier than 15 minutes after the 1/1 finally closes. The window is an operational parameter (D86). The owner: "YES"
   to editions selling without 1/1 bids; "it is OK to not mint the edition if no bids"; "YES" to
   the soft close.
 
@@ -149,7 +149,9 @@ refund. Supply reaches exactly k once every winner has claimed.
 (compare-and-set on its own revision, as the resolver's other setters are) changes it. A
 canonical work, any token governance listed, whose 1/1 settles with no bid, or ends unsold
 after its currency stayed deprecated for 30 days, goes to the museum. A federated work goes to
-its artist. Only a federated work's artist may claim a pending delivery in the recipient's
+its artist. Governance lists 6529 Stream alone on the English auction (`setTarget` at genesis),
+so this is decision 9's rule; listing another token there would send its unbid works to the
+museum too. Only a federated work's artist may claim a pending delivery in the recipient's
 place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
 auction adapter and the resolver, not a hook in Core (ADR 0001 §15).
 
