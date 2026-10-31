@@ -184,6 +184,9 @@ contract UniformEditionAuction is
     // ------------------------------------------------------------------------------- open
 
     /// @notice Opens the sale of edition `id` on `token` (`IUniformEditionAuction.open`).
+    /// @dev Binds the edition to this adapter first (`IEditions.bindMinter`, which may precede
+    ///      the edition), so an edition another adapter sells refuses the open, and only this
+    ///      adapter can ever mint the copies this sale clears.
     /// @param token The edition contract: `editions`.
     /// @param id The edition ID, the master's 6529 Stream token ID.
     /// @param data `abi.encode(PackageItem)` of the master's EDITION_MASTER item.
@@ -212,6 +215,7 @@ contract UniformEditionAuction is
             // forge-lint: disable-next-line(unsafe-typecast)
             revert IUniformEditionAuction.BiddingClosed(saleId, uint64(closeAt));
         }
+        _bindEdition(id, data);
         // Safe: the 1/1 stores its end in 32 bits, and ids are below 2^32 (checked above).
         // forge-lint: disable-start(unsafe-typecast)
         a.status = IUniformEditionAuction.AuctionStatus.OPEN;
@@ -1120,6 +1124,33 @@ contract UniformEditionAuction is
     function _open(uint256 saleId) private view returns (SaleWord memory a) {
         a = _sales[saleId];
         _requireStatus(saleId, a.status, IUniformEditionAuction.AuctionStatus.OPEN);
+    }
+
+    /// @dev `IEditions.bindMinter(id, item)` with the item `open` received, bubbling a revert.
+    ///      `data` is `abi.encode(item)`: the tuple's offset word, then the tuple, whose inner
+    ///      offsets are relative to its start. So the call's arguments are `id`, the tuple's new
+    ///      offset (0x40) and `data` past its first word, and this contract needs no item codec.
+    ///      A `data` the lens decoded through another offset hands Editions a different item,
+    ///      whose hash is not the master's: the open reverts (`NotEditionMaster`).
+    function _bindEdition(uint256 id, bytes calldata data) private {
+        address target = editions;
+        bytes4 selector = IEditions.bindMinter.selector;
+        // Invariants: `data` is at least one word long (the lens decoded an item from it before
+        // this runs), so `n` does not wrap. The call is built in memory from the free memory
+        // pointer on without moving it: temporary memory nothing else reads. A failed call's
+        // returndata is copied over the same memory and the frame ends in `revert`.
+        assembly ("memory-safe") {
+            let p := mload(0x40)
+            let n := sub(data.length, 0x20)
+            mstore(p, selector)
+            mstore(add(p, 0x04), id)
+            mstore(add(p, 0x24), 0x40)
+            calldatacopy(add(p, 0x44), add(data.offset, 0x20), n)
+            if iszero(call(gas(), target, 0, p, add(n, 0x44), 0, 0)) {
+                returndatacopy(p, 0, returndatasize())
+                revert(p, returndatasize())
+            }
+        }
     }
 
     /// @dev Reverts with `UnknownAuction` for a sale never opened, and `InvalidAuctionState`

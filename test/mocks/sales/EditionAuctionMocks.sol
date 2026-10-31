@@ -13,8 +13,9 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { WorkTerms } from "src/interfaces/types/EconomicsTypes.sol";
-import { ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { ItemKind, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
 /// @dev The English auction surface the edition auction reads: `auction(saleId)`, with each
 ///      1/1's state and end set by the test. Unknown sales revert as the real one does.
@@ -82,6 +83,14 @@ contract MockEditionToken is ERC1155 {
     mapping(uint256 id => uint256) public minted;
     /// @dev Added to the ID `mint` returns, to model a broken token.
     uint256 public returnOffset;
+    /// @dev The binding Editions keeps: the adapter, the hash of the item it passed, and the
+    ///      economics locked from `resolver` at the binding (when set).
+    mapping(uint256 id => address) public minterOf;
+    mapping(uint256 id => bytes32) public boundItemHash;
+    mapping(uint256 id => WorkTerms) internal _locked;
+    address public resolver;
+    /// @dev Counts the `bindMinter` calls.
+    uint256 public binds;
 
     constructor(address stream_) ERC1155("") {
         stream = stream_;
@@ -103,11 +112,53 @@ contract MockEditionToken is ERC1155 {
         admitted[adapter] = value;
     }
 
+    function setResolver(address resolver_) external {
+        resolver = resolver_;
+    }
+
+    /// @dev Editions' rule: admitted callers only; binds an unbound edition (locking the
+    ///      resolver's economics if it does not exist yet), a no-op for the bound adapter, and
+    ///      `MinterMismatch` for another. The item is only hashed and recorded.
+    function bindMinter(uint256 id, PackageItem calldata item) external {
+        if (!admitted[msg.sender]) revert IMintTarget.NotAdmittedMinter(msg.sender);
+        ++binds;
+        address bound = minterOf[id];
+        if (bound == address(0)) {
+            minterOf[id] = msg.sender;
+            boundItemHash[id] = WorksHashing.itemHashCalldata(item);
+            if (!exists[id] && resolver != address(0)) {
+                _locked[id] = MockWorkTermsResolver(resolver).newWorkTerms(bytes32(0), item.payees);
+            }
+            emit IEditions.EditionMinterBound(id, msg.sender);
+        } else if (bound != msg.sender) {
+            revert IEditions.MinterMismatch(id, bound);
+        }
+    }
+
+    /// @dev The economics an edition recorded (as `createEdition` or a binding locked them).
+    function setLocked(uint256 id, address seller, address feeRecipient, uint32 feeShare) external {
+        _locked[id] = WorkTerms(seller, feeRecipient, feeShare, seller, 0);
+    }
+
+    /// @dev The fields the lens reads: the economics locked at the binding.
+    function edition(uint256 id) external view returns (IEditions.Edition memory e) {
+        WorkTerms memory w = _locked[id];
+        (e.seller, e.feeRecipient, e.feeShare, e.minter) =
+        (w.seller, w.feeRecipient, w.feeShare, minterOf[id]);
+        e.minted = uint64(minted[id]);
+    }
+
+    /// @dev Editions' rule: the bound adapter mints even after its removal; an unbound edition
+    ///      needs an admitted caller.
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256, PrimaryTerms memory terms)
     {
-        if (!admitted[msg.sender]) revert IMintTarget.NotAdmittedMinter(msg.sender);
+        address bound = minterOf[id];
+        if (bound != msg.sender) {
+            if (!admitted[msg.sender]) revert IMintTarget.NotAdmittedMinter(msg.sender);
+            if (bound != address(0)) revert IEditions.MinterMismatch(id, bound);
+        }
         if (amount == 0 || data.length != 0 || !exists[id]) {
             revert IMintTarget.InvalidMintRequest();
         }

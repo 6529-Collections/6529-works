@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { PackageItem } from "src/interfaces/types/PackageTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice The lens's views, read both directly and through the adapter's fallback (the same
@@ -25,6 +27,108 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
             keccak256(abi.encode(ua.clearing(saleId))), keccak256(abi.encode(lens.clearing(saleId)))
         );
         assertEq(ua.stepPrice(saleId, 130), lens.stepPrice(saleId, 130));
+    }
+
+    /// @dev `open` binds the edition to the adapter through `IEditions.bindMinter`, passing
+    ///      the very item it received (the adapter re-frames `data` without decoding it).
+    function test_Open_BindsTheEditionWithTheItemItReceived() public {
+        PackageItem memory item = _item(ID, 42);
+        vm.expectEmit(true, true, false, true, address(editions));
+        emit IEditions.EditionMinterBound(ID, address(auction));
+        auction.open(address(editions), ID, abi.encode(item));
+        assertEq(editions.minterOf(ID), address(auction));
+        assertEq(editions.boundItemHash(ID), WorksHashing.itemHash(item), "the item, intact");
+        assertEq(editions.binds(), 1);
+    }
+
+    /// @dev An edition bound to another adapter refuses the open, with Editions' error, and
+    ///      the sale is not recorded.
+    function test_Open_RefusedForAnEditionAnotherAdapterSells() public {
+        address other = makeAddr("otherAdapter");
+        editions.admit(other, true);
+        PackageItem memory item = _item(ID, 0);
+        vm.prank(other);
+        editions.bindMinter(ID, item);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.MinterMismatch.selector, ID, other));
+        auction.open(address(editions), ID, abi.encode(item));
+        uint256 saleId = auction.saleIdOf(address(editions), ID);
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.UnknownAuction.selector, saleId)
+        );
+        ua.auction(saleId);
+    }
+
+    /// @dev A sale opened after its edition exists pays the economics the edition recorded,
+    ///      not the resolver's current ones, so the edition always reports the split paid.
+    function test_Lens_MasterTermsOfAnExistingEditionAreItsRecorded() public {
+        address recordedSeller = makeAddr("recordedSeller");
+        address recordedFee = makeAddr("recordedFee");
+        editions.setExists(ID, true);
+        editions.setLocked(ID, recordedSeller, recordedFee, 10_000);
+        IUniformEditionAuctionLens.MasterTerms memory m =
+            lens.masterTerms(address(editions), ID, abi.encode(_item(ID, 0)));
+        assertEq(m.seller, recordedSeller);
+        assertEq(m.feeRecipient, recordedFee);
+        assertEq(m.feeShare, 10_000);
+        // No fee recorded: none paid.
+        editions.setLocked(ID, recordedSeller, recordedFee, 0);
+        m = lens.masterTerms(address(editions), ID, abi.encode(_item(ID, 0)));
+        assertEq(m.feeRecipient, address(0));
+        assertEq(m.feeShare, 0);
+    }
+
+    /// @dev The cut step's departure log sorted in `O(n log n)`: 600 departures logged in
+    ///      descending position order (the insertion sort's worst case, quadratic) keep
+    ///      `settlementOrder`, `clearing`, `quote` and `bidOutcome` far inside a 50M `eth_call`
+    ///      gas cap, and the order is by position.
+    function test_Lens_SixHundredDeparturesInReverseOrderStayCheap() public {
+        uint256 saleId = _open(900);
+        address crowd = makeAddr("crowd");
+        for (uint256 i; i < 1200; ++i) {
+            _bid(saleId, crowd, 100, 1);
+        }
+        // Raise the later 600 in reverse: each leaves step 100 with a lower position.
+        for (uint256 bidId = 1200; bidId > 600; --bidId) {
+            _raise(saleId, bidId, 101);
+        }
+        assertEq(ua.departures(saleId, 100).length, 600);
+        uint256 g = gasleft();
+        uint256[] memory order = ua.settlementOrder(saleId);
+        uint256 orderGas = g - gasleft();
+        assertEq(order.length, 600);
+        for (uint256 k; k < 600; ++k) {
+            assertEq(order[k], 599 - k, "by position");
+        }
+        g = gasleft();
+        IUniformEditionAuction.Clearing memory c = ua.clearing(saleId);
+        uint256 clearingGas = g - gasleft();
+        assertEq(c.step, 100);
+        assertEq(c.count, 900);
+        assertTrue(c.rationed);
+        assertEq(c.cutoff, 300, "the 600 left are behind the cut");
+        g = gasleft();
+        ua.quote(saleId, 100, 1);
+        uint256 quoteGas = g - gasleft();
+        g = gasleft();
+        ua.bidOutcome(saleId, 1);
+        uint256 outcomeGas = g - gasleft();
+        emit log_named_uint("settlementOrder gas", orderGas);
+        emit log_named_uint("clearing gas", clearingGas);
+        emit log_named_uint("quote gas", quoteGas);
+        emit log_named_uint("bidOutcome gas", outcomeGas);
+        assertLt(orderGas, 10_000_000);
+        assertLt(clearingGas, 10_000_000);
+        assertLt(quoteGas, 10_000_000);
+        assertLt(outcomeGas, 10_000_000);
+        // Settled with that order, in bounded calls.
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        uint256 balance = address(auction).balance;
+        for (uint256 i; !auction.settle(saleId, ua.settlementOrder(saleId)); ++i) {
+            require(i < 16, "settlement does not advance");
+        }
+        paidOut += balance - address(auction).balance;
+        assertEq(ua.settlement(saleId).count, 900);
     }
 
     function test_Lens_MasterTerms() public {

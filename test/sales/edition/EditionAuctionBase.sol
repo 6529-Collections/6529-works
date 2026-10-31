@@ -71,6 +71,7 @@ abstract contract EditionAuctionBase is Test {
         economics.set(seller, networkFee, FEE_SHARE);
         stream = new MockMasterStream(address(economics));
         editions = new MockEditionToken(address(stream));
+        editions.setResolver(address(economics));
         english = new MockOneOfOneAuction();
         auction = new UniformEditionAuction(
             address(manager), address(escrow), address(editions), address(english), defaultConfig()

@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { Splits } from "../economics/Splits.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
+import { IEditions } from "../interfaces/IEditions.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
@@ -83,8 +84,17 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
                 || WorksHashing.itemHash(item) != itemHash || e.saleKind != SaleKind.UNIFORM_AUCTION
                 || e.currency != CURRENCY_ETH || e.params.length != 0
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
-        WorkTerms memory w =
-            IEconomicsResolver(_economics).newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        // The economics the edition records: locked when it was created or bound, or, for an
+        // edition still unbound, the resolver's now, which `bindMinter` locks in this same
+        // transaction. So the split this sale pays is always the one the edition reports.
+        WorkTerms memory w;
+        if (IEditions(_editions).exists(id)) {
+            IEditions.Edition memory locked = IEditions(_editions).edition(id);
+            (w.seller, w.feeRecipient, w.feeShare) =
+            (locked.seller, locked.feeRecipient, locked.feeShare);
+        } else {
+            w = IEconomicsResolver(_economics).newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        }
         // CALLS-1: the escrow refuses to be paid as a wallet, so a sale paying it could never
         // settle; it is refused at open.
         if (
@@ -427,34 +437,62 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         }
     }
 
-    /// @dev `step`'s departure indexes whose position is at least `from`, sorted by position,
-    ///      with their entries in the same order.
+    /// @dev `step`'s departure indexes whose position is at least `from`, sorted by position
+    ///      (ties, which a log never holds, by index), with their entries (`position |
+    ///      quantity << 32`) in the same order. A heapsort of packed keys, `O(n log n)` in the
+    ///      worst case: a log of thousands of departures in any order stays far inside an
+    ///      `eth_call` gas cap.
     function _sorted(uint256 saleId, uint256 step, uint256 from)
         private
         view
         returns (uint256[] memory order, uint256[] memory entries)
     {
         (uint256 count, uint256 head) = _departureCount(saleId, step);
-        order = new uint256[](count);
-        entries = new uint256[](count);
+        uint256[] memory keys = new uint256[](count);
         uint256 n;
         for (uint256 i; i < count; ++i) {
             uint256 entry = _departure(saleId, step, head, i);
-            uint256 position = uint32(entry);
-            if (position < from) continue;
-            uint256 k = n++;
-            while (k != 0 && uint32(entries[k - 1]) > position) {
-                (order[k], entries[k]) = (order[k - 1], entries[k - 1]);
-                --k;
-            }
-            (order[k], entries[k]) = (i, entry);
+            if (uint32(entry) < from) continue;
+            // The key orders by position, then index; its low 64 bits are the entry.
+            keys[n++] = uint256(uint32(entry)) << 128 | i << 64 | uint64(entry);
         }
-        // Invariant: `n` is at most the length both arrays were allocated with, so shortening
-        // them in place keeps every element inside its allocation.
+        // Invariant: `n` is at most the length `keys` was allocated with, so shortening it in
+        // place keeps every element inside its allocation.
         assembly ("memory-safe") {
-            mstore(order, n)
-            mstore(entries, n)
+            mstore(keys, n)
         }
+        _heapSort(keys);
+        order = new uint256[](n);
+        entries = new uint256[](n);
+        for (uint256 k; k < n; ++k) {
+            (order[k], entries[k]) = (uint64(keys[k] >> 64), uint64(keys[k]));
+        }
+    }
+
+    /// @dev Sorts `a` ascending in place: heapsort, `O(n log n)` comparisons whatever the order.
+    function _heapSort(uint256[] memory a) private pure {
+        uint256 n = a.length;
+        for (uint256 i = n >> 1; i != 0;) {
+            --i;
+            _siftDown(a, i, n);
+        }
+        for (uint256 end = n; end > 1;) {
+            --end;
+            (a[0], a[end]) = (a[end], a[0]);
+            _siftDown(a, 0, end);
+        }
+    }
+
+    /// @dev Restores the max-heap below `root` within the first `n` elements of `a`.
+    function _siftDown(uint256[] memory a, uint256 root, uint256 n) private pure {
+        uint256 value = a[root];
+        for (uint256 child = 2 * root + 1; child < n; child = 2 * root + 1) {
+            if (child + 1 < n && a[child + 1] > a[child]) ++child;
+            if (a[child] <= value) break;
+            a[root] = a[child];
+            root = child;
+        }
+        a[root] = value;
     }
 
     /// @dev The live units ahead of `position` in `step`'s queue: the position less the departed

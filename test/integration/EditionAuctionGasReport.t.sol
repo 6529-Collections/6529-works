@@ -27,8 +27,9 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     /// @dev The settlement's worst case, held to 350,000 execution gas (ADR 0004).
     uint256 internal constant SETTLE_EXECUTION_BUDGET = 350_000;
     /// @dev Regression ceilings (ADR 0004).
-    uint256 internal constant OPEN_CEILING = 161_000;
-    uint256 internal constant OPEN_FIRST_CEILING = 208_000;
+    uint256 internal constant OPEN_CEILING = 284_000;
+    uint256 internal constant OPEN_FIRST_CEILING = 331_000;
+    uint256 internal constant CREATE_BOUND_CEILING = 144_000;
     uint256 internal constant RAISE_CEILING = 56_000;
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
@@ -70,7 +71,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
             data,
             0,
             OPEN_FIRST_CEILING,
-            4,
+            8,
             0
         );
     }
@@ -80,7 +81,30 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         (, uint256 id) = _start(r, _one(w), 0);
         bytes memory data =
             abi.encodeCall(editionAuction.open, (address(editions), id, abi.encode(w.item)));
-        _rowGate("open, steady state", keeper, address(editionAuction), data, 0, OPEN_CEILING, 2, 0);
+        _rowGate("open, steady state", keeper, address(editionAuction), data, 0, OPEN_CEILING, 6, 0);
+    }
+
+    /// @dev `createEdition` of an edition its sale bound at open (`bindMinter`): the seller,
+    ///      royalty and fee words were written then, so creation writes the rest. Compare the
+    ///      unbound `createEdition` row of `GasReport` (6 new slots).
+    function test_Gas_EditionAuction_CreateBoundEdition() public {
+        _openMaster(0);
+        _ethBid(oneSaleId, collector, 1 ether);
+        Work memory w = _package(keccak256(abi.encode("kept", saleId)))[0];
+        bytes32 r = _rootOf(_one(w));
+        _settleAtEnd(oneSaleId);
+        bytes memory data =
+            abi.encodeCall(editions.createEdition, (tokenId, w.item, r, _proofOf(_one(w), 0)));
+        _rowGate(
+            "createEdition, bound at open",
+            keeper,
+            address(editions),
+            data,
+            0,
+            CREATE_BOUND_CEILING,
+            2,
+            0
+        );
     }
 
     function test_Gas_EditionAuction_BidNewWord() public {
@@ -523,6 +547,11 @@ contract EditionAuctionGasReport is EditionAuctionStack {
             address(manager), address(escrow), address(editions), address(auction), _editionConfig()
         );
         ea = IUniformEditionAuction(address(editionAuction));
+        _govern(
+            hotAdmin,
+            address(editions),
+            abi.encodeCall(editions.setAdmittedMinter, (address(editionAuction), true))
+        );
         _govern(
             hotAdmin,
             address(editionAuction),
