@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { UniformClearingReference as Ref } from "../helpers/UniformClearingReference.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
