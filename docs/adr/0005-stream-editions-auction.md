@@ -146,14 +146,15 @@ refund. Supply reaches exactly k once every winner has claimed.
   terms (`test_itemHash_golden`).
 
 **The museum.** `IEconomicsResolver.museum()` names the 6529 Network Museum; `setMuseum`
-(compare-and-set on its own revision, as the resolver's other setters are) changes it. A
-canonical work, any token governance listed, whose 1/1 settles with no bid, or ends unsold
-after its currency stayed deprecated for 30 days, goes to the museum. A federated work goes to
-its artist. Governance lists 6529 Stream alone on the English auction (`setTarget` at genesis),
-so this is decision 9's rule; listing another token there would send its unbid works to the
-museum too. Only a federated work's artist may claim a pending delivery in the recipient's
-place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
-auction adapter and the resolver, not a hook in Core (ADR 0001 §15).
+(compare-and-set on its own revision, as the resolver's other setters are) changes it. A 6529
+Stream work whose 1/1 settles with no bid, or ends unsold after its currency stayed deprecated
+for 30 days, goes to the museum. The English auction takes 6529 Stream as a constructor
+argument and gates the museum branch on it, so decision 9 holds in code: any other token's
+unbid work, federated or listed later by governance, goes to its artist. A delivery pending for
+the museum is claimed only by the museum recorded at settlement; for any other token the artist
+may also claim in the recipient's place (L-5), so no artist can take the museum's. The museum
+is a recipient chosen by the auction adapter and the resolver, not a hook in Core (ADR 0001
+§15).
 
 ### 3. Adding a sale method (decision 14)
 
