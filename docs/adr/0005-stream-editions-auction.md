@@ -381,3 +381,17 @@ before each merge.
   6529 Stream still accepts only `SaleKind.ENGLISH_AUCTION`, both for its items and for its
   minter, so a new 1/1 sale method on 6529 Stream would need a new Stream. Whether decision 14
   should reach 6529 Stream's 1/1s too, before rc.2, is the owner's call.
+
+  **Closed, 31 October 2026 (owner decision 15).** Decision 14 covers 6529 Stream's own 1/1s
+  too, before rc.2 ("once this contract goes live we are never going to change it"). Stream
+  mints an item only for an admitted adapter whose `saleKind()` is the item's sale kind, and
+  checks only that the item names one; the adapter checks the sale's currency and params. The
+  English auction is admitted at genesis; a later 1/1 method is an adapter governance admits
+  (`Stream.setAdmittedMinter`, SUCCESSOR_SETTER, the 30-day class), with no new Stream.
+  `primaryTerms` reports, for a minted work, the kind its adapter had at its first admission.
+  Removing an adapter stops its new mints only: it keeps its index, so it still settles,
+  delivers and cancels every sale it started (AUC-8, AUC-9). As for editions, an item naming a
+  kind no admitted adapter serves cannot start until one is admitted; the curation signer
+  checks this (LIM-EA-8). Cost: Stream's runtime grows by 181 bytes, `start` by about 250
+  Prague gas with no new slot, and the English auction's `settle` by about 2,200 (one more cold
+  read, the minting adapter's kind) ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).

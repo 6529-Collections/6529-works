@@ -56,7 +56,7 @@ enters the item hash, so voters approve and parties sign exactly these values.
 | `payees` | The canonical payee list of the artist portion: fixed payees by account, artist-resolved payees by artist ID. | `consume` ([CUR-8](#rules-and-invariants)). |
 | `license` | SPDX ID and the content-store file of the full text. | Stream `mint`: `SpdxId` rule. `openRecord`: CC0 names the deployment's CC0 text. |
 | `seedPolicy`, `seed` | `NONE`, `ARTIST` (with the artist's nonzero seed) or `VRF`. See [entropy.md](entropy.md). | `consume` and Stream: a seed exactly under `ARTIST`. Stream: `VRF` needs an entropy module and a delivered seed. |
-| `sale` | `SaleTerms`: how the work is first sold. | Stream `mint`: `SaleKind.ENGLISH_AUCTION` with empty `params`. |
+| `sale` | `SaleTerms`: how the work is first sold. | Stream `mint`: a nonzero sale kind, minted only by an admitted adapter of that kind (the English auction at genesis, which also requires empty `params`). |
 | `edition` | `EditionTerms` of the edition a master anchors; all zero for an `ORIGINAL`. | `consume` and Editions `createEdition`: `EditionRules.isValid`. |
 
 Canonical payee order is strictly increasing `(artistId, account)`, so fixed payees (`artistId`
