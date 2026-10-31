@@ -106,7 +106,7 @@ lite profile). Of the 46 src/ contracts with code, 40 are at 100% of lines, bran
 | `curation/PackageRegistry.sol` | 98.99% (196/198) | 95.45% (42/44) | two defensive reverts: an artist registry that returns another ID than the one it just assigned, and `releaseContent` to an artist whose authority is zero (the registry reverts `UnknownArtist` first) |
 | `economics/TokenTransfer.sol` | 98.28% (57/58) | 92.31% (12/13) | `transferExact`'s own revert: unreachable, because the strict transfer path never returns false (it reverts inside) |
 | `sales/EnglishAuction.sol` | 100% (433/433) | 97.98% (97/99) | `start` on a sale that already exists, and a locked fee share above the denominator |
-| `sales/MintSaleBase.sol` (deleted in rc.2) | 99.40% (167/168) | 98.00% (49/50) | `claim` of an ERC-20: unreachable, since only ETH was ever credited (Dutch refunds) |
+| `sales/MintSaleBase.sol` | 99.40% (167/168) | 98.00% (49/50) | `claim` of an ERC-20: unreachable today, since only ETH is ever credited (Dutch refunds) |
 | `stream/Stream.sol` | 100% (288/288) | 94.34% (50/53) | a package registry that returns a malformed `consume` result, the 65,536th fee recipient, and the 2**23rd terms word in the overflow range |
 | `stream/WorkRecords.sol` | 100% (366/366) | 97.53% (79/81) | consent from a party that never registered as an artist, and a content store that returns a short `FileInfo` |
 | **src/ total** | **99.91% (4,624/4,628)** | **98.96% (1,043/1,054)** | functions 100% (661/661) |
