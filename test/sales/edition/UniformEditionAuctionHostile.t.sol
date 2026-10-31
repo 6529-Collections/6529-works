@@ -139,6 +139,10 @@ contract UniformEditionAuctionHostileTest is EditionAuctionBase {
             abi.encodeCall(IUniformEditionAuction.settle, (saleId, new uint256[](0)))
         );
         assertFalse(ok);
-        assertEq(uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.OPEN));
+        // Nothing moved: still closed and unsettled.
+        assertEq(
+            uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.CLOSED)
+        );
+        assertEq(seller.balance, 0);
     }
 }
