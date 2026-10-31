@@ -137,7 +137,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     /// @notice Starts the next master's 1/1 auction.
     function startOneOfOne(uint256 seed) external {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             if (pieces[i].started) continue;
             _startPiece(i);
             ++hits["startOneOfOne"];
@@ -224,7 +224,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     ///         offset (an unopened one first); a late or second open is refused.
     function open(uint256 seed, uint256 callerSeed) external {
         for (uint256 k; k < 2 * MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.started || p.cancelled || (k < MASTERS && p.opened && seed % 4 != 0)) continue;
             PackageItem memory item = _package(root)[i].item;
@@ -285,7 +285,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     ///         decision 1). Without the sweep the third bid would win nothing.
     function fifoHole(uint256 seed) external {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (p.cap < 4 || !p.opened || !_biddingOpen(i) || p.hi >= HOLE_STEP) continue;
             uint256 first = book[i].length;
@@ -327,7 +327,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     ///         allows (bids are firm otherwise).
     function withdraw(uint256 seed, uint256 bidSeed) external {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.opened || p.settled || p.voided || book[i].length == 0) continue;
             uint256 index = bidSeed % book[i].length;
@@ -358,7 +358,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     /// @notice Anyone creates the edition of a settled master.
     function createEdition(uint256 seed) external {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.masterSettled || p.editionCreated) continue;
             editions.createEdition(p.tokenId, _package(root)[i].item, root, _proofOf(_package(root), i));
@@ -374,7 +374,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     ///         the 1/1 settles, or before its edition exists, all refused.
     function settle(uint256 seed, uint256 mode) external {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.opened || p.settled || p.voided) continue;
             if (p.cancelled) {
@@ -403,11 +403,11 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     ///         pushes it with `claimBidFor`; a second claim is refused.
     function claim(uint256 seed, uint256 bidSeed, uint256 mode) external {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!(p.settled || p.voided)) continue;
             for (uint256 j; j < book[i].length; ++j) {
-                uint256 index = (bidSeed + j) % book[i].length;
+                uint256 index = (bidSeed % book[i].length + j) % book[i].length;
                 GhostBid storage b = book[i][index];
                 if (b.withdrawn || b.claimed) continue;
                 _claim(i, index, mode);
@@ -740,7 +740,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     /// @dev The first piece, from `seed`, whose edition auction takes bids now.
     function _biddable(uint256 seed) internal view returns (bool, uint256) {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             if (pieces[i].opened && _biddingOpen(i)) return (true, i);
         }
         return (false, 0);
@@ -752,7 +752,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         returns (bool, uint256)
     {
         for (uint256 k; k < MASTERS; ++k) {
-            uint256 i = (seed + k) % MASTERS;
+            uint256 i = (seed % MASTERS + k) % MASTERS;
             if (pieces[i].started && _state1of1(i) == state) return (true, i);
         }
         return (false, 0);
