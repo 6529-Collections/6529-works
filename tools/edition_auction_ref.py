@@ -288,14 +288,26 @@ class Book:
         if not 0 <= step < self.step_count:
             raise InvalidAction(f"step {step} outside the ladder")
 
+    def _check_entry(self, step: int, quantity: int, moving: bool = False) -> None:
+        """Refuses (`InvalidQuantity`) `quantity` more units at `step` that would take the
+        step's entered units (capped sales, where positions exist) or live units, or the sale's
+        live units, past 2^32 - 1. `moving`: the units already count in the sale's live units
+        (a raise moves them from another step). Changes nothing."""
+        if self.cap and self.entered.get(step, 0) + quantity > MAX_QUANTITY:
+            raise InvalidAction("step's entered units past 2^32 - 1")
+        if self.live.get(step, 0) + quantity > MAX_QUANTITY:
+            raise InvalidAction("step's live units past 2^32 - 1")
+        if not moving and self.total_units() + quantity > MAX_QUANTITY:
+            raise InvalidAction("sale's live units past 2^32 - 1")
+
     def _enter(self, step: int, quantity: int) -> int:
+        """Validates first, then queues `quantity` units at `step`; returns their position."""
+        self._check_entry(step, quantity)
         position = 0
         if self.cap:
             position = self.entered.get(step, 0)
             self.entered[step] = position + quantity
         self.live[step] = self.live.get(step, 0) + quantity
-        if self.live[step] > MAX_QUANTITY or self.total_units() > MAX_QUANTITY:
-            raise InvalidAction("units past 2^32 - 1")
         return position
 
     def _leave(self, bid: Bid) -> None:
@@ -319,6 +331,8 @@ class Book:
         self._check_step(new_step)
         if new_step <= bid.step:
             raise InvalidAction("a raise must move up")
+        # Every check before the bid leaves its step, so a refused raise changes nothing.
+        self._check_entry(new_step, bid.quantity, moving=True)
         top_up = bid.quantity * (self.price(new_step) - self.price(bid.step))
         self._leave(bid)
         bid.step = new_step
