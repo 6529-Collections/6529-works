@@ -228,7 +228,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             PackageItem memory item = _package(root)[i].item;
             bool expected = !p.opened && _openable(i);
             vm.prank(bidders[callerSeed % BIDDERS]);
-            try editionAuction.open(address(editions), p.tokenId, abi.encode(item)) returns (
+            try _ea().open(address(editions), p.tokenId, abi.encode(item)) returns (
                 uint256 saleId
             ) {
                 if (!expected) _violation("an edition auction opened late or twice");
@@ -250,7 +250,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         (bool found, uint256 i) = _biddable(seed);
         if (!found) return;
         if (qtySeed % 4 == 0) _warpIntoSoftWindow(i, qtySeed >> 2);
-        uint256 step = _step(stepSeed);
+        uint256 step = _stepFrom(stepSeed);
         uint256 qty = _bound(qtySeed >> 8, 1, MAX_QTY);
         _placeBid(i, bidders[seed % BIDDERS], step, qty);
     }
@@ -268,7 +268,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         uint256 cost = b.qty * (_price(i, next) - _price(i, b.step));
         uint256 id = index + 1;
         vm.prank(collectors[0]);
-        try editionAuction.raise(pieces[i].editionSaleId, id, next) {
+        try _ea().raise(pieces[i].editionSaleId, id, next) {
             _violation("a stranger raised another's bid");
         } catch {
             ++hits["raiseRefused"];
@@ -276,7 +276,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         _softClose(i);
         vm.deal(b.bidder, b.bidder.balance + cost);
         vm.prank(b.bidder);
-        try editionAuction.raise{ value: cost }(pieces[i].editionSaleId, id, next) {
+        try _ea().raise{ value: cost }(pieces[i].editionSaleId, id, next) {
             ghostIn += cost;
             _depart(i, b.step, b.pos, b.qty);
             b.step = next;
@@ -304,7 +304,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             uint256 escrow = b.qty * _price(i, b.step);
             uint256 before = b.bidder.balance;
             vm.prank(b.bidder);
-            try editionAuction.withdrawBid(p.editionSaleId, index + 1, b.bidder) {
+            try _ea().withdrawBid(p.editionSaleId, index + 1, b.bidder) {
                 if (!paused) {
                     _violation("a bid was withdrawn outside a dispute pause");
                     return;
@@ -357,7 +357,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             }
             if (mode % 3 != 0) continue;
             uint256[] memory order = _hint(i);
-            try editionAuction.settle(p.editionSaleId, order) {
+            try _ea().settle(p.editionSaleId, order) {
                 _violation("an edition auction settled early");
             } catch {
                 ++hits[!closed ? bytes32("settleTooEarly") : bytes32("settleWaits")];
@@ -390,7 +390,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         if (credit == 0) return;
         uint256 before = account.balance;
         vm.prank(account);
-        editionAuction.claim(CURRENCY_ETH, account);
+        _ea().claim(CURRENCY_ETH, account);
         if (account.balance - before != credit) _violation("a credit was not paid in full");
         ghostOut += credit;
         ghostCredits -= credit;
@@ -408,7 +408,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     function _startPiece(uint256 i) internal {
         Piece storage p = pieces[i];
         (p.saleId, p.tokenId) = _start(root, _package(root), i);
-        p.editionSaleId = editionAuction.saleIdOf(address(editions), p.tokenId);
+        p.editionSaleId = _ea().saleIdOf(address(editions), p.tokenId);
         p.started = true;
     }
 
@@ -417,14 +417,14 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         uint256 cost = qty * _price(i, step);
         vm.deal(bidder, bidder.balance + cost + 1);
         vm.prank(bidder);
-        try editionAuction.bid{ value: cost + 1 }(p.editionSaleId, step, qty) {
+        try _ea().bid{ value: cost + 1 }(p.editionSaleId, step, qty) {
             _violation("an inexact payment was accepted");
         } catch {
             ++hits["inexactRefused"];
         }
         _softClose(i);
         vm.prank(bidder);
-        try editionAuction.bid{ value: cost }(p.editionSaleId, step, qty) returns (uint256 id) {
+        try _ea().bid{ value: cost }(p.editionSaleId, step, qty) returns (uint256 id) {
             if (id != book[i].length + 1) _violation("bid IDs are not sequential");
             ghostIn += cost;
             uint256 pos = p.cap == 0 ? 0 : enteredUnits[i][step];
@@ -472,8 +472,8 @@ abstract contract EditionAuctionHandler is IntegrationBase {
 
     function _settle(uint256 i, uint256 mode) internal {
         Piece storage p = pieces[i];
-        IUniformEditionAuction.Clearing memory live = editionAuction.clearing(p.editionSaleId);
-        uint256[] memory suggested = editionAuction.settlementOrder(p.editionSaleId);
+        IUniformEditionAuction.Clearing memory live = _ea().clearing(p.editionSaleId);
+        uint256[] memory suggested = _ea().settlementOrder(p.editionSaleId);
         (uint256 refK, uint256 refPrice, uint256 best) = _reference(i);
         uint256[] memory order = _hint(i);
         if (keccak256(abi.encode(order)) != keccak256(abi.encode(suggested))) {
@@ -490,14 +490,14 @@ abstract contract EditionAuctionHandler is IntegrationBase {
                 if (j < half) first[j] = order[j];
                 else rest[j - half] = order[j];
             }
-            if (editionAuction.settle(p.editionSaleId, first)) _violation("half a sweep settled");
-            done = editionAuction.settle(p.editionSaleId, rest);
+            if (_ea().settle(p.editionSaleId, first)) _violation("half a sweep settled");
+            done = _ea().settle(p.editionSaleId, rest);
             ++hits["settleChunked"];
         } else {
-            done = editionAuction.settle(p.editionSaleId, order);
+            done = _ea().settle(p.editionSaleId, order);
         }
         if (!done) _violation("a complete sweep did not settle");
-        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(p.editionSaleId);
+        IUniformEditionAuction.Clearing memory c = _ea().clearing(p.editionSaleId);
         if (c.count != live.count || c.step != live.step || c.price != live.price) {
             _violation("the live view differs from the settled result");
         }
@@ -512,7 +512,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         p.clearStep = c.step;
         p.price = c.price;
         uint256 revenue = uint256(c.count) * c.price;
-        uint256 fee = revenue * editionAuction.auction(p.editionSaleId).feeShare / DENOMINATOR;
+        uint256 fee = revenue * _ea().auction(p.editionSaleId).feeShare / DENOMINATOR;
         if (networkFee.balance - feeBefore != fee) _violation("the network was not paid its share");
         ghostOut += revenue;
         if (c.count == 0) {
@@ -530,14 +530,14 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         uint256 cost = _price(i, 0);
         vm.deal(bidders[0], bidders[0].balance + cost);
         vm.prank(bidders[0]);
-        try editionAuction.bid{ value: cost }(p.editionSaleId, 0, 1) {
+        try _ea().bid{ value: cost }(p.editionSaleId, 0, 1) {
             _violation("a cancelled 1/1's edition auction took a bid");
         } catch {
             ++hits["cancelledBidRefused"];
         }
-        editionAuction.settle(p.editionSaleId, new uint256[](0));
+        _ea().settle(p.editionSaleId, new uint256[](0));
         if (
-            editionAuction.auction(p.editionSaleId).status
+            _ea().auction(p.editionSaleId).status
                 != IUniformEditionAuction.AuctionStatus.VOID
         ) {
             _violation("a cancelled 1/1 did not void its edition auction");
@@ -552,21 +552,21 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         uint256 id = index + 1;
         uint256 won = p.voided ? 0 : _expectedWon(i, index);
         uint256 refund = b.qty * _price(i, b.step) - won * p.price;
-        IUniformEditionAuction.BidOutcome memory o = editionAuction.bidOutcome(p.editionSaleId, id);
+        IUniformEditionAuction.BidOutcome memory o = _ea().bidOutcome(p.editionSaleId, id);
         if (o.unitsWon != won || o.refund != refund || !o.isFinal) {
             _violation("bidOutcome differs from the claim");
         }
         uint256 copiesBefore = won == 0 ? 0 : editions.balanceOf(b.bidder, p.tokenId);
         if (mode % 3 == 0) {
             vm.prank(collectors[1]);
-            editionAuction.claimBidFor(p.editionSaleId, id);
+            _ea().claimBidFor(p.editionSaleId, id);
             ghostCredit[b.bidder] += refund;
             ghostCredits += refund;
             ++hits["claimFor"];
         } else {
             uint256 ethBefore = b.bidder.balance;
             vm.prank(b.bidder);
-            editionAuction.claimBid(p.editionSaleId, id, b.bidder);
+            _ea().claimBid(p.editionSaleId, id, b.bidder);
             if (b.bidder.balance - ethBefore != refund) _violation("a claim refund was not exact");
             ghostOut += refund;
             ++hits["claim"];
@@ -579,7 +579,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         if (won != 0 && won < b.qty) ++hits["partFilled"];
         if (p.voided) ++hits["voidRefund"];
         vm.prank(b.bidder);
-        try editionAuction.claimBid(p.editionSaleId, id, b.bidder) {
+        try _ea().claimBid(p.editionSaleId, id, b.bidder) {
             _violation("a bid was claimed twice");
         } catch {
             ++hits["claimTwiceRefused"];
@@ -587,6 +587,11 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     }
 
     // ------------------------------------------------------------------ internals: the model
+
+    /// @dev The edition auction through its full interface (its views are answered by its lens).
+    function _ea() internal view returns (IUniformEditionAuction) {
+        return IUniformEditionAuction(address(editionAuction));
+    }
 
     /// @dev The per-unit reference clearing of piece `i`'s live book.
     function _reference(uint256 i) internal view returns (uint256 k, uint256 price, uint256 best) {
@@ -678,7 +683,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     }
 
     /// @dev Mostly the band of low steps; one bid in sixteen far above it.
-    function _step(uint256 seed) internal pure returns (uint256) {
+    function _stepFrom(uint256 seed) internal pure returns (uint256) {
         return seed % 16 == 0 ? FAR + (seed >> 4) % 4 : (seed >> 4) % BAND;
     }
 
@@ -739,15 +744,15 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         IEnglishAuction.AuctionState s = _state1of1(i);
         if (s == IEnglishAuction.AuctionState.CANCELLED) return false;
         return s == IEnglishAuction.AuctionState.PAUSED
-            || block.timestamp < _oneOfOneEnd(i) + editionAuction.config().closeOffset;
+            || block.timestamp < _oneOfOneEnd(i) + _ea().config().closeOffset;
     }
 
     function _terms(uint256 i) internal view returns (IUniformEditionAuction.AuctionConfig memory) {
-        return editionAuction.auction(pieces[i].editionSaleId).terms;
+        return _ea().auction(pieces[i].editionSaleId).terms;
     }
 
     function _price(uint256 i, uint256 step) internal view returns (uint256) {
-        return editionAuction.stepPrice(pieces[i].editionSaleId, step);
+        return _ea().stepPrice(pieces[i].editionSaleId, step);
     }
 
     function _violation(string memory what) internal {
@@ -793,7 +798,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     function _assertTiming(uint256 i) internal view {
         Piece storage p = pieces[i];
         if (p.settled || p.voided) return;
-        IUniformEditionAuction.EndTimes memory e = editionAuction.endTimes(p.editionSaleId);
+        IUniformEditionAuction.EndTimes memory e = _ea().endTimes(p.editionSaleId);
         IUniformEditionAuction.AuctionConfig memory t = _terms(i);
         IEnglishAuction.AuctionState s = _state1of1(i);
         assertEq(e.oneOfOneEnd, _oneOfOneEnd(i), "the 1/1's end is read live");
@@ -819,13 +824,13 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         Piece storage p = pieces[i];
         if (p.voided) return;
         if (p.settled) {
-            IUniformEditionAuction.Settlement memory r = editionAuction.settlement(p.editionSaleId);
+            IUniformEditionAuction.Settlement memory r = _ea().settlement(p.editionSaleId);
             assertEq(r.count, p.k, "the stored count never changes");
             assertEq(r.price, p.price, "the stored price never changes");
             assertEq(r.departuresSwept, r.departures, "the sweep is complete");
             return;
         }
-        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(p.editionSaleId);
+        IUniformEditionAuction.Clearing memory c = _ea().clearing(p.editionSaleId);
         (uint256 refK, uint256 refPrice, uint256 best) = _reference(i);
         assertEq(c.count, refK, "the live count equals the per-unit reference");
         assertEq(c.price, refK == 0 ? 0 : refPrice, "the live price equals the reference");

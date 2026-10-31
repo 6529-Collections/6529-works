@@ -47,6 +47,11 @@ contract PieceLifecycleTest is IntegrationBase {
 
     // ------------------------------------------------------------------ helpers
 
+    /// @dev The edition auction through its full interface (its views are answered by its lens).
+    function _ea() internal view returns (IUniformEditionAuction) {
+        return IUniformEditionAuction(address(editionAuction));
+    }
+
     /// @dev Starts master `index`'s 1/1 and, as the keeper does in the same batch, opens its
     ///      edition auction.
     function _startPiece(uint256 index)
@@ -56,18 +61,18 @@ contract PieceLifecycleTest is IntegrationBase {
         (saleId, workId) = _start(root, _package(root), index);
         vm.prank(keeper);
         editionSale =
-            editionAuction.open(address(editions), workId, abi.encode(_package(root)[index].item));
-        assertEq(editionSale, editionAuction.saleIdOf(address(editions), workId));
+            _ea().open(address(editions), workId, abi.encode(_package(root)[index].item));
+        assertEq(editionSale, _ea().saleIdOf(address(editions), workId));
     }
 
     function _editionBid(uint256 sale, address bidder, uint256 step, uint256 quantity)
         internal
         returns (uint256 bidId)
     {
-        uint256 cost = quantity * editionAuction.stepPrice(sale, step);
+        uint256 cost = quantity * _ea().stepPrice(sale, step);
         vm.deal(bidder, bidder.balance + cost);
         vm.prank(bidder);
-        bidId = editionAuction.bid{ value: cost }(sale, step, quantity);
+        bidId = _ea().bid{ value: cost }(sale, step, quantity);
     }
 
     function _createEdition(uint256 workId, uint256 index) internal {
@@ -76,11 +81,11 @@ contract PieceLifecycleTest is IntegrationBase {
     }
 
     function _close(uint256 sale) internal view returns (uint256) {
-        return editionAuction.endTimes(sale).endTime;
+        return _ea().endTimes(sale).endTime;
     }
 
     function _offset(uint256 sale) internal view returns (uint256) {
-        return editionAuction.auction(sale).terms.closeOffset;
+        return _ea().auction(sale).terms.closeOffset;
     }
 
     // ------------------------------------------------------------------ the flows
@@ -115,31 +120,31 @@ contract PieceLifecycleTest is IntegrationBase {
         _createEdition(workId, 0);
 
         // The edition auction's own soft close: a bid in its last window extends it.
-        uint256 window = editionAuction.auction(sale).terms.softWindow;
+        uint256 window = _ea().auction(sale).terms.softWindow;
         vm.warp(_close(sale) - 1 minutes);
         uint256 late = _editionBid(sale, bidders[3], 12, 1);
         assertEq(_close(sale), block.timestamp + window, "the soft close extends the close");
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, sale)
         );
-        editionAuction.settle(sale, new uint256[](0));
+        _ea().settle(sale, new uint256[](0));
 
         // The clearing equals the per-unit reference.
         (uint256 k, uint256 price) = _referenceOf(sale, 0);
         assertEq(k, 10, "10 copies");
-        assertEq(price, editionAuction.stepPrice(sale, 6), "at step 6's price");
-        IUniformEditionAuction.Clearing memory live = editionAuction.clearing(sale);
+        assertEq(price, _ea().stepPrice(sale, 6), "at step 6's price");
+        IUniformEditionAuction.Clearing memory live = _ea().clearing(sale);
         assertEq(live.count, k, "count");
         assertEq(live.price, price, "price");
 
         // Settlement pays the network its share and the seller the rest.
-        IUniformEditionAuction.Auction memory ea = editionAuction.auction(sale);
+        IUniformEditionAuction.Auction memory ea = _ea().auction(sale);
         uint256 revenue = k * price;
         uint256 fee = revenue * ea.feeShare / DENOMINATOR;
         uint256 feeBefore = ea.feeRecipient.balance;
         uint256 sellerBefore = ea.seller.balance;
         vm.warp(_close(sale));
-        assertTrue(editionAuction.settle(sale, new uint256[](0)));
+        assertTrue(_ea().settle(sale, new uint256[](0)));
         assertEq(ea.feeRecipient.balance - feeBefore, fee, "the network's share");
         assertEq(ea.seller.balance - sellerBefore, revenue - fee, "the seller's share");
 
@@ -171,10 +176,10 @@ contract PieceLifecycleTest is IntegrationBase {
         assertEq(stream.ownerOf(workId), economics.museum(), "the museum holds the 1/1");
         _createEdition(workId, 1);
         vm.warp(_close(sale));
-        assertTrue(editionAuction.settle(sale, new uint256[](0)));
-        assertEq(editionAuction.settlement(sale).count, 3, "both bids win: 3 copies");
+        assertTrue(_ea().settle(sale, new uint256[](0)));
+        assertEq(_ea().settlement(sale).count, 3, "both bids win: 3 copies");
         vm.prank(bidders[0]);
-        (uint256 won,) = editionAuction.claimBid(sale, id, bidders[0]);
+        (uint256 won,) = _ea().claimBid(sale, id, bidders[0]);
         assertEq(won, 2);
         assertEq(editions.balanceOf(bidders[0], workId), 2);
     }
@@ -186,15 +191,15 @@ contract PieceLifecycleTest is IntegrationBase {
         _ethBid(saleId, collector, 1 ether);
         vm.warp(auction.auction(saleId).endTime);
         auction.settle(saleId);
-        IUniformEditionAuction.Auction memory ea = editionAuction.auction(sale);
+        IUniformEditionAuction.Auction memory ea = _ea().auction(sale);
         uint256 feeBefore = ea.feeRecipient.balance;
         vm.warp(_close(sale));
-        assertTrue(editionAuction.settle(sale, new uint256[](0)));
-        assertEq(editionAuction.settlement(sale).count, 0);
+        assertTrue(_ea().settle(sale, new uint256[](0)));
+        assertEq(_ea().settlement(sale).count, 0);
         assertEq(ea.feeRecipient.balance, feeBefore, "nothing paid");
         assertFalse(editions.exists(workId), "no edition was needed");
         assertEq(
-            uint8(editionAuction.auction(sale).status),
+            uint8(_ea().auction(sale).status),
             uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
         );
     }
@@ -208,34 +213,34 @@ contract PieceLifecycleTest is IntegrationBase {
         uint256 leaving = _editionBid(sale, bidders[1], 4, 1);
         vm.prank(guardian1);
         auction.pause(saleId, keccak256("piece dispute"));
-        IUniformEditionAuction.EndTimes memory e = editionAuction.endTimes(sale);
+        IUniformEditionAuction.EndTimes memory e = _ea().endTimes(sale);
         assertTrue(e.biddingOpen && e.withdrawalsOpen, "bidding and withdrawals open in a pause");
         vm.warp(e.endTime + 1 days);
-        assertTrue(editionAuction.endTimes(sale).biddingOpen, "whatever the time");
+        assertTrue(_ea().endTimes(sale).biddingOpen, "whatever the time");
         uint256 during = _editionBid(sale, bidders[2], 7, 1);
-        uint256 escrow = editionAuction.stepPrice(sale, 4);
+        uint256 escrow = _ea().stepPrice(sale, 4);
         uint256 before = bidders[1].balance;
         vm.prank(bidders[1]);
-        editionAuction.withdrawBid(sale, leaving, bidders[1]);
+        _ea().withdrawBid(sale, leaving, bidders[1]);
         assertEq(bidders[1].balance - before, escrow, "a withdrawal refunds in full");
 
         bytes32 outcome = _platformStatement(
             address(stream), workId, StatementKinds.DISPUTE_OUTCOME, "ar://piece-outcome"
         );
         _govern(hotAdmin, address(auction), abi.encodeCall(auction.cancel, (saleId, outcome)));
-        assertFalse(editionAuction.endTimes(sale).biddingOpen, "a cancelled 1/1 takes no bids");
-        assertTrue(editionAuction.settle(sale, new uint256[](0)));
+        assertFalse(_ea().endTimes(sale).biddingOpen, "a cancelled 1/1 takes no bids");
+        assertTrue(_ea().settle(sale, new uint256[](0)));
         assertEq(
-            uint8(editionAuction.auction(sale).status),
+            uint8(_ea().auction(sale).status),
             uint8(IUniformEditionAuction.AuctionStatus.VOID)
         );
         uint256[2] memory ids = [kept, during];
         address[2] memory who = [bidders[0], bidders[2]];
-        uint256[2] memory paid = [2 * escrow, editionAuction.stepPrice(sale, 7)];
+        uint256[2] memory paid = [2 * escrow, _ea().stepPrice(sale, 7)];
         for (uint256 i; i < 2; ++i) {
             uint256 b = who[i].balance;
             vm.prank(who[i]);
-            (uint256 won, uint256 refund) = editionAuction.claimBid(sale, ids[i], who[i]);
+            (uint256 won, uint256 refund) = _ea().claimBid(sale, ids[i], who[i]);
             assertEq(won, 0);
             assertEq(refund, paid[i]);
             assertEq(who[i].balance - b, paid[i]);
@@ -254,26 +259,26 @@ contract PieceLifecycleTest is IntegrationBase {
         uint256 quantity,
         uint256 price
     ) internal returns (uint256 won) {
-        uint256 workId = editionAuction.auction(sale).id;
-        uint256 paid = quantity * editionAuction.stepPrice(sale, step);
+        uint256 workId = _ea().auction(sale).id;
+        uint256 paid = quantity * _ea().stepPrice(sale, step);
         uint256 before = bidder.balance;
         uint256 copies = editions.balanceOf(bidder, workId);
         uint256 refund;
         vm.prank(bidder);
-        (won, refund) = editionAuction.claimBid(sale, bidId, bidder);
+        (won, refund) = _ea().claimBid(sale, bidId, bidder);
         assertEq(refund, paid - won * price, "refund = escrow - won x price");
         assertEq(bidder.balance - before, refund);
         assertEq(editions.balanceOf(bidder, workId) - copies, won);
-        assertEq(won, editionAuction.stepPrice(sale, step) >= price ? quantity : 0);
+        assertEq(won, _ea().stepPrice(sale, step) >= price ? quantity : 0);
     }
 
     /// @dev The per-unit reference clearing of the auction's live book (`stepTotals`).
     function _referenceOf(uint256 sale, uint32 cap) internal view returns (uint256 k, uint256 price) {
-        (uint256 low, uint256[] memory units) = editionAuction.stepTotals(sale);
+        (uint256 low, uint256[] memory units) = _ea().stepTotals(sale);
         uint256[] memory prices = new uint256[](units.length);
         for (uint256 s; s < units.length; ++s) {
-            prices[s] = editionAuction.stepPrice(sale, low + s);
+            prices[s] = _ea().stepPrice(sale, low + s);
         }
-        (k, price,) = Ref.clear(units, prices, cap, editionAuction.auction(sale).terms.marginShare);
+        (k, price,) = Ref.clear(units, prices, cap, _ea().auction(sale).terms.marginShare);
     }
 }

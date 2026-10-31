@@ -67,34 +67,34 @@ contract EditionAuctionVectorsTest is IntegrationBase {
                 address bidder = makeAddr(vm.parseJsonString(json, _event(i, j, ".bidder")));
                 uint256 step = vm.parseJsonUint(json, _event(i, j, ".step"));
                 uint256 quantity = vm.parseJsonUint(json, _event(i, j, ".quantity"));
-                uint256 cost = quantity * editionAuction.stepPrice(sale, step);
+                uint256 cost = quantity * _ea().stepPrice(sale, step);
                 vm.deal(bidder, cost);
                 vm.prank(bidder);
-                editionAuction.bid{ value: cost }(sale, step, quantity);
+                _ea().bid{ value: cost }(sale, step, quantity);
             } else if (_eq(op, "raise")) {
                 uint256 bidId = vm.parseJsonUint(json, _event(i, j, ".bidId"));
                 uint256 toStep = vm.parseJsonUint(json, _event(i, j, ".toStep"));
-                IUniformEditionAuction.Bid memory b = editionAuction.bidOf(sale, bidId);
+                IUniformEditionAuction.Bid memory b = _ea().bidOf(sale, bidId);
                 uint256 cost = uint256(b.quantity)
-                    * (editionAuction.stepPrice(sale, toStep) - editionAuction.stepPrice(sale, b.step));
+                    * (_ea().stepPrice(sale, toStep) - _ea().stepPrice(sale, b.step));
                 vm.deal(b.bidder, cost);
                 vm.prank(b.bidder);
-                editionAuction.raise{ value: cost }(sale, bidId, toStep);
+                _ea().raise{ value: cost }(sale, bidId, toStep);
             } else {
                 assertTrue(_eq(op, "withdraw"), string.concat(name, ": unknown op"));
                 if (!paused) {
                     // Withdrawals open only while the 1/1 is paused for a dispute.
                     vm.prank(guardian1);
                     auction.pause(
-                        auction.saleIdOf(address(stream), editionAuction.auction(sale).id),
+                        auction.saleIdOf(address(stream), _ea().auction(sale).id),
                         keccak256(bytes(name))
                     );
                     paused = true;
                 }
                 uint256 bidId = vm.parseJsonUint(json, _event(i, j, ".bidId"));
-                address bidder = editionAuction.bidOf(sale, bidId).bidder;
+                address bidder = _ea().bidOf(sale, bidId).bidder;
                 vm.prank(bidder);
-                editionAuction.withdrawBid(sale, bidId, bidder);
+                _ea().withdrawBid(sale, bidId, bidder);
             }
         }
         _checkClearing(i, sale, name);
@@ -110,7 +110,7 @@ contract EditionAuctionVectorsTest is IntegrationBase {
             if (CAPS[k] == cap) index = k;
         }
         require(index != type(uint256).max, "no master with the case's cap");
-        IUniformEditionAuction.AuctionConfig memory current = editionAuction.config();
+        IUniformEditionAuction.AuctionConfig memory current = _ea().config();
         IUniformEditionAuction.AuctionConfig memory next = current;
         next.marginShare = uint32(vm.parseJsonUint(json, _case(i, ".config.marginShare")));
         assertEq(
@@ -122,97 +122,115 @@ contract EditionAuctionVectorsTest is IntegrationBase {
             _govern(
                 hotAdmin,
                 address(editionAuction),
-                abi.encodeCall(editionAuction.setConfig, (current, next))
+                abi.encodeCall(IUniformEditionAuction.setConfig, (current, next))
             );
         }
         (, uint256 workId) = _start(root, _package(root), index);
-        sale = editionAuction.open(address(editions), workId, abi.encode(_package(root)[index].item));
+        sale = _ea().open(address(editions), workId, abi.encode(_package(root)[index].item));
     }
 
     // ------------------------------------------------------------------ checks
 
     function _checkClearing(uint256 i, uint256 sale, string memory name) internal view {
-        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(sale);
-        string memory at = string.concat(name, ": ");
-        assertEq(c.count, _uint(i, ".expected.clearing.count"), string.concat(at, "count"));
+        IUniformEditionAuction.Clearing memory c = _ea().clearing(sale);
+        string memory where = string.concat(name, ": ");
+        assertEq(c.count, _uint(i, ".expected.clearing.count"), string.concat(where, "count"));
         if (c.count == 0) return;
-        assertEq(c.step, _uint(i, ".expected.clearing.step"), string.concat(at, "step"));
-        assertEq(c.price, _uint(i, ".expected.clearing.price"), string.concat(at, "price"));
-        assertEq(c.revenue, _uint(i, ".expected.clearing.revenue"), string.concat(at, "revenue"));
-        assertEq(c.networkFee, _uint(i, ".expected.clearing.networkFee"), string.concat(at, "fee"));
-        assertEq(c.bestRevenue, _uint(i, ".expected.clearing.bestRevenue"), string.concat(at, "R*"));
+        assertEq(c.step, _uint(i, ".expected.clearing.step"), string.concat(where, "step"));
+        assertEq(c.price, _uint(i, ".expected.clearing.price"), string.concat(where, "price"));
+        assertEq(c.revenue, _uint(i, ".expected.clearing.revenue"), string.concat(where, "revenue"));
+        assertEq(c.networkFee, _uint(i, ".expected.clearing.networkFee"), string.concat(where, "fee"));
+        assertEq(c.bestRevenue, _uint(i, ".expected.clearing.bestRevenue"), string.concat(where, "R*"));
         bool rationed = vm.parseJsonBool(json, _case(i, ".expected.clearing.rationed"));
-        assertEq(c.rationed, rationed, string.concat(at, "rationed"));
-        assertEq(c.cutUnits, _uint(i, ".expected.clearing.cutUnits"), string.concat(at, "cut units"));
+        assertEq(c.rationed, rationed, string.concat(where, "rationed"));
+        assertEq(c.cutUnits, _uint(i, ".expected.clearing.cutUnits"), string.concat(where, "cut units"));
         assertEq(
-            c.unitsAtStep, _uint(i, ".expected.clearing.unitsAtStep"), string.concat(at, "units at step")
+            c.unitsAtStep, _uint(i, ".expected.clearing.unitsAtStep"), string.concat(where, "units at step")
         );
         if (rationed) {
-            assertEq(c.cutoff, _uint(i, ".expected.clearing.cutoff"), string.concat(at, "cutoff"));
+            assertEq(c.cutoff, _uint(i, ".expected.clearing.cutoff"), string.concat(where, "cutoff"));
         }
     }
 
     /// @dev Step totals, each step's departure log, and the settlement order.
     function _checkBook(uint256 i, uint256 sale, string memory name) internal view {
-        string memory at = string.concat(name, ": ");
-        (uint256 low, uint256[] memory units) = editionAuction.stepTotals(sale);
-        string[] memory steps = vm.parseJsonKeys(json, _case(i, ".expected.stepTotals"));
-        uint256 live;
-        for (uint256 k; k < units.length; ++k) {
-            if (units[k] != 0) ++live;
-        }
-        assertEq(live, steps.length, string.concat(at, "used steps"));
-        for (uint256 k; k < steps.length; ++k) {
-            uint256 step = vm.parseUint(steps[k]);
-            uint256 expected = _uint(i, string.concat(".expected.stepTotals.", steps[k]));
-            assertGe(step, low, string.concat(at, "low step"));
-            assertEq(units[step - low], expected, string.concat(at, "units at ", steps[k]));
-        }
+        string memory where = string.concat(name, ": ");
+        _checkTotals(i, sale, where);
         string[] memory logged = vm.parseJsonKeys(json, _case(i, ".expected.departures"));
         for (uint256 k; k < logged.length; ++k) {
-            IUniformEditionAuction.Departure[] memory d =
-                editionAuction.departures(sale, vm.parseUint(logged[k]));
-            // The model writes each departure as [position, quantity].
-            string memory list = string.concat(".expected.departures.", logged[k]);
-            for (uint256 n; n < d.length; ++n) {
-                uint256[] memory pair = vm.parseJsonUintArray(
-                    json, _case(i, string.concat(list, "[", vm.toString(n), "]"))
-                );
-                assertEq(d[n].position, pair[0], string.concat(at, "departure position"));
-                assertEq(d[n].quantity, pair[1], string.concat(at, "departure quantity"));
-            }
-            assertFalse(
-                vm.keyExistsJson(json, _case(i, string.concat(list, "[", vm.toString(d.length), "]"))),
-                string.concat(at, "departures at ", logged[k])
+            _checkDepartures(i, sale, logged[k], where);
+        }
+        assertEq(
+            _ea().settlementOrder(sale),
+            vm.parseJsonUintArray(json, _case(i, ".expected.settlementOrder")),
+            string.concat(where, "settlement order")
+        );
+    }
+
+    function _checkTotals(uint256 i, uint256 sale, string memory where) internal view {
+        (uint256 low, uint256[] memory units) = _ea().stepTotals(sale);
+        string[] memory steps = vm.parseJsonKeys(json, _case(i, ".expected.stepTotals"));
+        uint256 used;
+        for (uint256 k; k < units.length; ++k) {
+            if (units[k] != 0) ++used;
+        }
+        assertEq(used, steps.length, string.concat(where, "used steps"));
+        for (uint256 k; k < steps.length; ++k) {
+            uint256 step = vm.parseUint(steps[k]);
+            assertGe(step, low, string.concat(where, "low step"));
+            assertEq(
+                units[step - low],
+                _uint(i, string.concat(".expected.stepTotals.", steps[k])),
+                string.concat(where, "units at ", steps[k])
             );
         }
-        uint256[] memory order = editionAuction.settlementOrder(sale);
-        uint256[] memory expectedOrder =
-            vm.parseJsonUintArray(json, _case(i, ".expected.settlementOrder"));
-        assertEq(order, expectedOrder, string.concat(at, "settlement order"));
+    }
+
+    /// @dev One step's departure log; the model writes each departure as [position, quantity].
+    function _checkDepartures(uint256 i, uint256 sale, string memory step, string memory where)
+        internal
+        view
+    {
+        IUniformEditionAuction.Departure[] memory d = _ea().departures(sale, vm.parseUint(step));
+        string memory list = _case(i, string.concat(".expected.departures.", step));
+        for (uint256 n; n < d.length; ++n) {
+            uint256[] memory pair =
+                vm.parseJsonUintArray(json, string.concat(list, "[", vm.toString(n), "]"));
+            assertEq(d[n].position, pair[0], string.concat(where, "departure position"));
+            assertEq(d[n].quantity, pair[1], string.concat(where, "departure quantity"));
+        }
+        assertFalse(
+            vm.keyExistsJson(json, string.concat(list, "[", vm.toString(d.length), "]")),
+            string.concat(where, "departures at ", step)
+        );
     }
 
     /// @dev Every bid's outcome if the sale closed now; a withdrawn bid is gone.
     function _checkBids(uint256 i, uint256 sale, string memory name) internal view {
         for (uint256 k; vm.keyExistsJson(json, _bid(i, k, "")); ++k) {
             uint256 bidId = vm.parseJsonUint(json, _bid(i, k, ".bidId"));
-            string memory at = string.concat(name, ": bid ", vm.toString(bidId), " ");
+            string memory where = string.concat(name, ": bid ", vm.toString(bidId), " ");
             if (!vm.parseJsonBool(json, _bid(i, k, ".active"))) {
-                try editionAuction.bidOf(sale, bidId) {
-                    revert(string.concat(at, "should be gone"));
+                try _ea().bidOf(sale, bidId) {
+                    revert(string.concat(where, "should be gone"));
                 } catch { }
                 continue;
             }
-            IUniformEditionAuction.Bid memory b = editionAuction.bidOf(sale, bidId);
-            assertEq(b.step, vm.parseJsonUint(json, _bid(i, k, ".step")), string.concat(at, "step"));
-            assertEq(b.quantity, vm.parseJsonUint(json, _bid(i, k, ".quantity")), string.concat(at, "qty"));
-            assertEq(b.position, vm.parseJsonUint(json, _bid(i, k, ".position")), string.concat(at, "pos"));
-            IUniformEditionAuction.BidOutcome memory o = editionAuction.bidOutcome(sale, bidId);
-            assertEq(o.escrow, vm.parseJsonUint(json, _bid(i, k, ".escrow")), string.concat(at, "escrow"));
-            assertEq(o.unitsWon, vm.parseJsonUint(json, _bid(i, k, ".unitsWon")), string.concat(at, "won"));
-            assertEq(o.refund, vm.parseJsonUint(json, _bid(i, k, ".refund")), string.concat(at, "refund"));
-            assertEq(o.unitsAhead, vm.parseJsonUint(json, _bid(i, k, ".unitsAhead")), string.concat(at, "ahead"));
+            IUniformEditionAuction.Bid memory b = _ea().bidOf(sale, bidId);
+            assertEq(b.step, vm.parseJsonUint(json, _bid(i, k, ".step")), string.concat(where, "step"));
+            assertEq(b.quantity, vm.parseJsonUint(json, _bid(i, k, ".quantity")), string.concat(where, "qty"));
+            assertEq(b.position, vm.parseJsonUint(json, _bid(i, k, ".position")), string.concat(where, "pos"));
+            IUniformEditionAuction.BidOutcome memory o = _ea().bidOutcome(sale, bidId);
+            assertEq(o.escrow, vm.parseJsonUint(json, _bid(i, k, ".escrow")), string.concat(where, "escrow"));
+            assertEq(o.unitsWon, vm.parseJsonUint(json, _bid(i, k, ".unitsWon")), string.concat(where, "won"));
+            assertEq(o.refund, vm.parseJsonUint(json, _bid(i, k, ".refund")), string.concat(where, "refund"));
+            assertEq(o.unitsAhead, vm.parseJsonUint(json, _bid(i, k, ".unitsAhead")), string.concat(where, "ahead"));
         }
+    }
+
+    /// @dev The edition auction through its full interface (its views are answered by its lens).
+    function _ea() internal view returns (IUniformEditionAuction) {
+        return IUniformEditionAuction(address(editionAuction));
     }
 
     // ------------------------------------------------------------------ JSON paths
