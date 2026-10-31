@@ -637,16 +637,18 @@ abstract contract IntegrationBase is WorksDeployment {
 
     /// @dev Every account a measured call may reach besides its sender and target, whose warmth
     ///      `_measureGrowth` probes: by default the contracts `_coolAll` cools, the network fee
-    ///      recipient and the museum. A report adds its actors and wallets. Computed from a
+    ///      recipient, the museum and the English auction's lens (no storage to cool, but an
+    ///      account a view call reaches). A report adds its actors and wallets. Computed from a
     ///      snapshot, so the calls it makes warm nothing.
     function _probeSet() internal virtual returns (address[] memory accounts) {
         address[] memory cooled = _cooled();
-        accounts = new address[](cooled.length + 2);
+        accounts = new address[](cooled.length + 3);
         for (uint256 i; i < cooled.length; ++i) {
             accounts[i] = cooled[i];
         }
         accounts[cooled.length] = networkFee;
         accounts[cooled.length + 1] = museum;
+        accounts[cooled.length + 2] = auction.lens();
     }
 
     /// @dev Probes the warmth of every account in `_probeSet`, then restores the state (and

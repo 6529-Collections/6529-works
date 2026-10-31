@@ -35,6 +35,16 @@
   wiring calls, was 19). `FixedPriceSale` can be restored from `v1.0.0-rc.1` as a newly
   admitted adapter without redeploying Editions (ADR 0005 §3); `SaleKind.FIXED_PRICE` and
   `DUTCH` stay reserved.
+- Auction: EIP-170 headroom for the 7-lens review. `EnglishAuction`'s views move to
+  `EnglishAuctionLens`, which its constructor creates (`lens()`, immutable): the auction
+  forwards every call it does not declare to the lens through a non-payable, read-only
+  `staticcall` fallback (no delegatecall), and the lens reads the auction's storage through
+  `storageWords`. No signature, selector or ERC-165 ID changes, and a differential test
+  compares every moved view, byte for byte, with the pre-lens build over random sequences.
+  The auction goes from 52 to 2,144 bytes under EIP-170. A cold view call costs about 7,000
+  more Prague gas (ADR 0004's table gains `auction` and `minimumBid` rows; LIM-SAL-13). The
+  deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its address
+  (the auction's first CREATE), its code hash and `lens()`.
 - ADR 0005, the edition auction and 6529 Stream Editions
   ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the
   owner's D138 to D141 and decisions 1 to 14 of 31 October 2026, the design, the governed

@@ -166,6 +166,8 @@ each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one col
 | `settle`, first payout to a seller wallet | 168,552 | 400,000 | 1 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 143,552 | 400,000 | 1 | 0 | 257,763 (r2) |
 | `settle`, no bid (to the museum, D140) | 133,993 | 400,000 | 1 | 0 | — |
+| `auction` (view, cold, answered by the auction's lens) | 39,342 | 41,000 (regression) | 0 | 0 | — |
+| `minimumBid` (view, cold, answered by the auction's lens) | 38,194 | 39,000 (regression) | 0 | 0 | — |
 | `consume`, as Stream calls it | 93,069 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 240,698 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | re-rate a work (governed `execute`) | 186,911 | 192,000 (regression) | 1 | 0 | — |

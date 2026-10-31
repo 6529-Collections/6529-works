@@ -27,6 +27,7 @@ import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { MockArtistResolver } from "../../mocks/economics/EconomicsMocks.sol";
 import {
     LeanArtistRegistry,
@@ -70,7 +71,7 @@ contract EnglishAuctionGasTest is Test {
     LeanPackageRegistry internal registry;
     LeanEconomicsResolver internal resolver;
     LeanStream internal stream;
-    EnglishAuction internal auction;
+    IEnglishAuctionFull internal auction;
     address internal network = makeAddr("network");
 
     uint256 internal artistPk = 0xA27157;
@@ -91,15 +92,19 @@ contract EnglishAuctionGasTest is Test {
         address[] memory targets = new address[](1);
         targets[0] = address(stream);
         resolver.setAssetAllowlist(address(allowlist));
-        auction = new EnglishAuction(
-            address(manager),
-            address(new RevenueEscrow(address(manager), factory)),
-            IEconomicsResolver(address(resolver)),
-            address(new StatementLog(address(manager), address(0), bytes32(0))),
-            address(0),
-            IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
-            targets,
-            address(stream)
+        auction = IEnglishAuctionFull(
+            address(
+                new EnglishAuction(
+                    address(manager),
+                    address(new RevenueEscrow(address(manager), factory)),
+                    IEconomicsResolver(address(resolver)),
+                    address(new StatementLog(address(manager), address(0), bytes32(0))),
+                    address(0),
+                    IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
+                    targets,
+                    address(stream)
+                )
+            )
         );
         stream.setAdmittedMinter(address(auction), true);
         allowlist.setDefaultCurrency(PRODUCT_STREAM, 0, address(0));

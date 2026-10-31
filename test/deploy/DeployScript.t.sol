@@ -17,6 +17,7 @@ import { Verify } from "script/Verify.s.sol";
 import { Editions } from "src/editions/Editions.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
+import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import {
@@ -1466,6 +1467,45 @@ contract DeployScriptTest is Test {
             )
         );
         verifier.verify(record);
+    }
+
+    /// @dev The English auction's lens (its first CREATE, answering its views) is recorded with
+    ///      its code hash: Verify recomputes its address from the auction's, compares its code
+    ///      hash with the chain, and checks that `lens()` is it.
+    function test_VerifyChecksTheAuctionsLens() public {
+        (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
+        address lens = d.englishAuction.lens();
+        assertEq(address(d.englishAuctionLens), lens);
+        assertEq(vm.parseJsonAddress(record, ".contracts.EnglishAuctionLens.address"), lens);
+        assertEq(
+            vm.parseJsonBytes32(record, ".contracts.EnglishAuctionLens.codehash"), lens.codehash
+        );
+        string memory tampered =
+            _tamper(record, vm.toString(lens.codehash), vm.toString(keccak256("other code")));
+        vm.expectRevert(
+            abi.encodeWithSelector(Verify.CodeHashMismatch.selector, "EnglishAuctionLens", lens)
+        );
+        verifier.verify(tampered);
+        tampered = _tamper(record, vm.toString(lens), vm.toString(makeAddr("anotherLens")));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VerifyV1.AddressMismatch.selector,
+                "EnglishAuctionLens",
+                lens,
+                makeAddr("anotherLens")
+            )
+        );
+        verifier.verify(tampered);
+        // A deployment whose recorded lens is not the auction's: `checkLens` refuses it.
+        d.englishAuctionLens = EnglishAuctionLens(makeAddr("anotherLens"));
+        vm.expectRevert(
+            abi.encodeWithSelector(VerifyV1.LensMismatch.selector, makeAddr("anotherLens"), lens)
+        );
+        this.checkLensExternal(d);
+    }
+
+    function checkLensExternal(DeployV1.Deployment memory d) external view {
+        VerifyV1.checkLens(d);
     }
 
     function test_VerifyChecksTheDefaultLicenseText() public {
