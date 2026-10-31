@@ -67,9 +67,31 @@ interface IUniformEditionAuctionStorage {
         uint32 id;
     }
 
+    /// @notice A settlement scan in progress (`Space.SCAN`): written by a settle call that could
+    ///      not scan the whole book within its word budget, deleted when the scan completes.
+    /// @param cursor One past the next live word to scan (the scan runs downward); zero when no
+    ///        scan is in progress.
+    /// @param demand The live units at or above the words scanned so far.
+    /// @param bestCount The count of the best candidate so far.
+    /// @param bestStep The step of the best candidate so far (its revenue is `bestCount` times
+    ///        its price).
+    /// @param pickStep The step of the last candidate within the margin of the best so far.
+    /// @param pickAbove The live units above `pickStep`.
+    /// @param pickDemand The live units at or above `pickStep`.
+    struct ScanWord {
+        uint8 cursor;
+        uint32 demand;
+        uint32 bestCount;
+        uint16 bestStep;
+        uint16 pickStep;
+        uint32 pickAbove;
+        uint32 pickDemand;
+    }
+
     /// @notice The storage word families `storageWord` reads.
     /// @dev Struct words pack their fields from the least significant bit, in declaration order.
-    ///      SALE (`SaleWord`), PAYOUT (`PayoutWord`), RESULT (`ResultWord`): `key` ignored. BID:
+    ///      SALE (`SaleWord`), PAYOUT (`PayoutWord`), RESULT (`ResultWord`), SCAN (`ScanWord`):
+    ///      `key` ignored. BID:
     ///      `key` the bid ID (`IUniformEditionAuction.Bid`). LIVE: `key` a word index `w`; eight 32-bit live-unit
     ///      counters, step `8w + j` in bits `32j`. DEPARTURE: `key` is `step << 32 | w`; word 0
     ///      holds the step's departure count (bits 0-31), its departed units (32-63) and entries
@@ -84,8 +106,15 @@ interface IUniformEditionAuctionStorage {
         LIVE,
         DEPARTURE,
         TERMS,
-        FEE_RECIPIENT
+        FEE_RECIPIENT,
+        SCAN
     }
+
+    /// @notice A settle call scanned part of a sale's book and stopped at its gas bound; the
+    ///         next settle call continues the scan (`ScanWord`).
+    /// @param saleId The sale ID.
+    /// @param wordsLeft The live words still to scan.
+    event SettlementScanned(uint256 indexed saleId, uint256 wordsLeft);
 
     /// @notice The read-only lens this adapter created in its constructor. It computes every
     ///         view of `IUniformEditionAuction`, which the adapter forwards to it, and the master

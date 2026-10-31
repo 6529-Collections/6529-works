@@ -353,9 +353,16 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     ///      list (in chunks if long) to `settle`.
     function settlementOrder(uint256 saleId) external view returns (uint256[] memory order) {
         IStorage.SaleWord memory a = _opened(saleId);
-        if (a.status == IUniformEditionAuction.AuctionStatus.OPEN) {
-            UniformClearing.Result memory r =
-                UniformClearing.clear(_book(saleId, a, 0), _rules(a, _config(a.termsId)));
+        // Before the clearing is stored (open, or a settlement scan still running), the order
+        // the live clearing needs; once stored, what is left of its sweep.
+        if (
+            a.status == IUniformEditionAuction.AuctionStatus.OPEN
+                || (a.status == IUniformEditionAuction.AuctionStatus.SETTLING
+                    && _word(IStorage.Space.SCAN, saleId, 0) != 0)
+        ) {
+            UniformClearing.Result memory r = UniformClearing.clear(
+                _book(saleId, a, 0), _rules(a, _config(a.termsId))
+            );
             if (!r.rationed) return order;
             (order,) = _sorted(saleId, r.step, 0);
         } else if (a.status == IUniformEditionAuction.AuctionStatus.SETTLING) {

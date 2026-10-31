@@ -24,6 +24,8 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     uint256 internal constant CLAIM_BUDGET = 100_000;
     uint256 internal constant SETTLE_BUDGET = 400_000;
     uint256 internal constant SETTLE_DENSE_BUDGET = 1_000_000;
+    /// @dev The settlement's worst case, held to 350,000 execution gas (ADR 0004).
+    uint256 internal constant SETTLE_EXECUTION_BUDGET = 350_000;
     /// @dev Regression ceilings (ADR 0004).
     uint256 internal constant OPEN_CEILING = 161_000;
     uint256 internal constant OPEN_FIRST_CEILING = 208_000;
@@ -226,23 +228,15 @@ contract EditionAuctionGasReport is EditionAuctionStack {
         );
     }
 
+    /// @dev Every one of the 336 steps used, no cap: two calls (24 words, then 18 and the
+    ///      clearing).
     function test_Gas_EditionAuction_SettleDense() public {
         _openMaster(0);
         for (uint256 step; step < 336; ++step) {
             _editionBid(saleId, makeAddr(string.concat("d", vm.toString(step))), step, 1 + step % 7);
         }
         _readyToSettle();
-        bytes memory data = abi.encodeCall(editionAuction.settle, (saleId, new uint256[](0)));
-        _rowGate(
-            "settle, all 336 steps used (adversarial)",
-            keeper,
-            address(editionAuction),
-            data,
-            0,
-            SETTLE_DENSE_BUDGET,
-            1,
-            0
-        );
+        _settleCalls("settle, all 336 steps used, call", _slots(1, 1), 0);
     }
 
     function test_Gas_EditionAuction_SettleWithSweep() public {
@@ -320,6 +314,151 @@ contract EditionAuctionGasReport is EditionAuctionStack {
             1,
             0
         );
+    }
+
+    // ------------------------------------------------------------------ worst cases
+
+    /// @dev The settlement's worst case on the default ladder: every one of the 336 steps
+    ///      occupied, the cap binding at the lowest step (so the scan reads every word and never
+    ///      stops early), and 40 departures at that step, so the call that clears also sweeps
+    ///      its longest legal chunk (16). Every call is gated on execution gas: at most 350,000.
+    function test_Gas_EditionAuction_SettleWorstCase() public {
+        _worstBook(336, 200_000_000, 40);
+        // 42 words: the first call scans 24 (the scan word is new), the second scans 18,
+        // clears (the result word is new; the scan word is deleted) and sweeps 16; the third
+        // sweeps the remaining 24.
+        _settleCalls("settle, worst case 336 steps, call", _slots(1, 1), 0);
+    }
+
+    /// @dev The same at the governed maximum of 512 steps (192 per decade from 0.022 ETH, a top
+    ///      step of at least 10 ETH): 64 words, three scanning calls.
+    function test_Gas_EditionAuction_SettleWorstCase512() public {
+        IUniformEditionAuction.AuctionConfig memory c = _editionConfig();
+        (c.basePrice, c.stepsPerDecade, c.stepCount) = (2.2e16, 192, 512);
+        _govern(
+            hotAdmin,
+            address(editionAuction),
+            abi.encodeCall(editionAuction.setConfig, (_editionConfig(), c))
+        );
+        _worstBook(512, 100_000, 40);
+        // 64 words: 24 (the scan word is new), 24, then 16 and the clearing (the result word).
+        uint256[] memory slots = new uint256[](3);
+        (slots[0], slots[1], slots[2]) = (1, 0, 1);
+        _settleCalls("settle, worst case 512 steps, call", slots, 0);
+    }
+
+    /// @dev The longest legal sweep chunk: 300 departures at the cut step, so after the two
+    ///      scanning calls (which sweep 16) the sweep calls take 96, 96, 92.
+    function test_Gas_EditionAuction_SweepChunkWorstCase() public {
+        _worstBook(336, 200_000_000, 300);
+        assertEq(ea.settlementOrder(saleId).length, 300);
+        _settleCalls("settle, 300 departures, call", _slots(1, 1), 0);
+    }
+
+    /// @dev The new slots each settle call creates, by call: the given first ones, then none.
+    function _slots(uint256 first, uint256 second) internal pure returns (uint256[] memory s) {
+        s = new uint256[](2);
+        (s[0], s[1]) = (first, second);
+    }
+
+    /// @dev Settles `saleId` call by call, each with the lens's order, holding each call to
+    ///      350,000 execution gas and its exact new slots (`slots[i]`, then none) and accounts.
+    ///      Two passes from one snapshot, since nothing can be measured after a state-diff
+    ///      recording: every call's gas first, then every call's growth, which also gives the
+    ///      accounts each call reached cold (`_measureGrowth`'s surcharge).
+    function _settleCalls(string memory label, uint256[] memory slots, uint256 accounts) internal {
+        uint256 snapshot = vm.snapshotState();
+        uint256[] memory execution = new uint256[](16);
+        Warmth[] memory warmth = new Warmth[](16);
+        uint256 calls;
+        for (; calls < 16; ++calls) {
+            warmth[calls] = _warmth();
+            (, execution[calls]) = _measure(keeper, address(editionAuction), _settleData(), 0);
+            if (_settled()) break;
+        }
+        require(calls < 16, "settlement does not advance");
+        vm.revertToState(snapshot);
+        for (uint256 i; i <= calls; ++i) {
+            StateGrowth.Growth memory growth =
+                _growth(keeper, address(editionAuction), _settleData(), 0);
+            uint256 gas = execution[i] + COLD_ACCOUNT_SURCHARGE
+                * _warmButCold(warmth[i], growth.coldAccounts);
+            string memory row = string.concat(label, " ", vm.toString(i + 1));
+            console2.log(row);
+            console2.log("  execution gas", gas);
+            console2.log("  new slots", growth.slots);
+            console2.log("  new accounts", growth.accounts);
+            assertLe(gas, SETTLE_EXECUTION_BUDGET, string.concat(row, ": execution gas"));
+            assertEq(growth.slots, i < slots.length ? slots[i] : 0, string.concat(row, ": slots"));
+            assertEq(growth.accounts, accounts, string.concat(row, ": accounts"));
+        }
+        assertTrue(_settled());
+        assertEq(_claimTotal(), ea.settlement(saleId).count, "exactly k minted");
+    }
+
+    function _settleData() internal view returns (bytes memory) {
+        return abi.encodeCall(editionAuction.settle, (saleId, ea.settlementOrder(saleId)));
+    }
+
+    function _settled() internal view returns (bool) {
+        return ea.auction(saleId).status == IUniformEditionAuction.AuctionStatus.SETTLED;
+    }
+
+    /// @dev Claims every live bid of `saleId` for its bidder; returns the copies minted.
+    function _claimTotal() internal returns (uint256 minted) {
+        uint256 bids = ea.auction(saleId).bidCount;
+        for (uint256 bidId = 1; bidId <= bids; ++bidId) {
+            (uint256 won,) = editionAuction.claimBidFor(saleId, bidId);
+            minted += won;
+        }
+    }
+
+    /// @dev A master whose sale has one unit on every step from 1 to `steps - 1`, `base` units
+    ///      at step 0 that make it the clearing step, and `departed` one-unit bids raised out of
+    ///      step 0 (its departure log); capped one unit short of the demand at step 0, so step
+    ///      0 is rationed. Ready to settle.
+    function _worstBook(uint256 steps, uint256 base, uint256 departed) internal {
+        _openMaster(uint32(base + steps - 1 + departed - 1));
+        for (uint256 i; i < departed; ++i) {
+            _editionBid(saleId, makeAddr("leaver"), 0, 1);
+        }
+        _editionBid(saleId, makeAddr("base"), 0, base);
+        for (uint256 step = 1; step < steps; ++step) {
+            _editionBid(saleId, makeAddr("ladder"), step, 1);
+        }
+        uint256 topUp = ea.stepPrice(saleId, 1) - ea.stepPrice(saleId, 0);
+        for (uint256 i; i < departed; ++i) {
+            vm.deal(makeAddr("leaver"), topUp);
+            vm.prank(makeAddr("leaver"));
+            editionAuction.raise{ value: topUp }(saleId, i + 1, 1);
+        }
+        IUniformEditionAuction.Clearing memory c = ea.clearing(saleId);
+        assertEq(c.step, 0, "step 0 clears");
+        assertTrue(c.rationed, "rationed at step 0");
+        _readyToSettle();
+    }
+
+    /// @dev `_rowGate` on execution gas (the called frame's, with the cold-account surcharge),
+    ///      which the settlement worst case is held to.
+    function _rowExecution(
+        string memory label,
+        address from,
+        address target,
+        bytes memory data,
+        uint256 budget,
+        uint256 slots,
+        uint256 accounts
+    ) internal {
+        (uint256 total, uint256 execution, StateGrowth.Growth memory growth) =
+            _measureGrowth(from, target, data, 0);
+        console2.log(label);
+        console2.log("  execution gas", execution);
+        console2.log("  Prague gas (whole transaction)", total);
+        console2.log("  new slots", growth.slots);
+        console2.log("  new accounts", growth.accounts);
+        assertLe(execution, budget, string.concat(label, ": execution gas over its budget"));
+        assertEq(growth.slots, slots, string.concat(label, ": new storage slots (ADR 0004)"));
+        assertEq(growth.accounts, accounts, string.concat(label, ": new accounts (ADR 0004)"));
     }
 
     // ------------------------------------------------------------------ fixtures

@@ -101,20 +101,13 @@ contract UniformEditionAuction is
         hex"03390343034d03580362036c03770382038d039703a303ae03b903c503d003dc";
     /// @dev Departure log entries in a step's head word; four in each word after it.
     uint256 private constant _HEAD_ENTRIES = 3;
-    /// @dev The most departures one settle call sweeps: few in the call that clears the book,
-    ///      which already scans it, more in each later call. Every call stays within the
-    ///      settlement budget whatever the book and the log (ADR 0004).
-    uint256 private constant _SWEEP_FIRST = 32;
-    uint256 private constant _SWEEP_CHUNK = 256;
-
-    /// @dev A settlement's clearing.
-    struct Cleared {
-        uint256 count;
-        uint256 step;
-        uint256 price;
-        bool rationed;
-        uint256 cutUnits;
-    }
+    /// @dev Settlement runs in calls of bounded gas, each permissionless and each advancing it, so
+    ///      every call fits the settlement budget whatever the book and its departure logs (ADR
+    ///      0004): a call scans at most {_SCAN_WORDS} live words (eight steps each), the call that finishes the scan sweeps at most {_SWEEP_FIRST} departures, and
+    ///      each later call at most {_SWEEP_CHUNK}.
+    uint256 private constant _SCAN_WORDS = 24;
+    uint256 private constant _SWEEP_FIRST = 16;
+    uint256 private constant _SWEEP_CHUNK = 96;
 
     /// @dev The current parameters' ID, the interning counters, the open pause (when it began,
     ///      zero while not paused) and whether `editions` is listed: read once per open.
@@ -149,6 +142,8 @@ contract UniformEditionAuction is
     mapping(uint256 saleId => SaleWord) private _sales;
     mapping(uint256 saleId => PayoutWord) private _payouts;
     mapping(uint256 saleId => ResultWord) private _results;
+    /// @dev A scan in progress, packed as `ScanWord` is (from the least significant bit).
+    mapping(uint256 saleId => uint256) private _scans;
     mapping(uint256 saleId => mapping(uint256 bidId => IUniformEditionAuction.Bid)) private _bids;
     mapping(uint256 saleId => mapping(uint256 word => uint256)) private _live;
     mapping(uint256 saleId => mapping(uint256 key => uint256)) private _departures;
@@ -340,8 +335,11 @@ contract UniformEditionAuction is
 
     // ------------------------------------------------------------------------- settlement
 
-    /// @notice Settles a closed sale, or voids it after a 1/1 cancel; resumes a departure sweep
-    ///         (`IUniformEditionAuction.settle`).
+    /// @notice Settles a closed sale, or voids it after a 1/1 cancel, in calls of bounded gas
+    ///         (`IUniformEditionAuction.settle`): the first checks the close and the 1/1 and
+    ///         starts scanning the book; each call scans up to 24 words of it; the call that
+    ///         finishes the scan stores the result, pays it and starts the departure sweep; later
+    ///         calls continue the sweep. Every call is permissionless and advances settlement.
     /// @param saleId The sale ID.
     /// @param order The next departure indexes of the clearing step, in position order.
     /// @return Whether the sale is now SETTLED or VOID.
@@ -351,11 +349,17 @@ contract UniformEditionAuction is
         SaleWord storage a = _sales[saleId];
         IUniformEditionAuction.AuctionStatus status = a.status;
         if (status == IUniformEditionAuction.AuctionStatus.OPEN) {
-            if (_clearAtClose(saleId, a)) return true;
-            return _sweep(saleId, a, order.length > _SWEEP_FIRST ? order[:_SWEEP_FIRST] : order);
+            if (_begin(saleId, a)) return true;
+        } else {
+            _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
+            // Cleared already: sweep the clearing step's departures.
+            if (_scans[saleId] == 0) {
+                return _sweep(saleId, a, order.length > _SWEEP_CHUNK ? order[:_SWEEP_CHUNK] : order);
+            }
         }
-        _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
-        return _sweep(saleId, a, order.length > _SWEEP_CHUNK ? order[:_SWEEP_CHUNK] : order);
+        if (!_scanChunk(saleId, a)) return false;
+        if (a.status == IUniformEditionAuction.AuctionStatus.SETTLED) return true;
+        return _sweep(saleId, a, order.length > _SWEEP_FIRST ? order[:_SWEEP_FIRST] : order);
     }
 
     /// @notice Claims the caller's bid: its copies and its refund to `to`
@@ -512,6 +516,7 @@ contract UniformEditionAuction is
         if (space == Space.LIVE) return _live[saleId][key];
         if (space == Space.DEPARTURE) return _departures[saleId][key];
         if (space == Space.FEE_RECIPIENT) return uint160(_feeRecipients[key]);
+        if (space == Space.SCAN) return _scans[saleId];
         bytes32 slot;
         if (space == Space.SALE) {
             SaleWord storage s = _sales[saleId];
@@ -648,10 +653,10 @@ contract UniformEditionAuction is
         endTime = soft > closeAt ? soft : closeAt;
     }
 
-    /// @dev The first settle call: voids the sale if the 1/1 was cancelled (returns true), or
-    ///      requires the end passed and the 1/1 settled, stores the clearing and pays it, and
-    ///      returns whether the sale is SETTLED (false: a departure sweep must run first).
-    function _clearAtClose(uint256 saleId, SaleWord storage stored) private returns (bool) {
+    /// @dev The first settle call's checks: voids the sale if the 1/1 was cancelled (returns
+    ///      true), or requires the close passed and the 1/1 settled and moves the sale to
+    ///      SETTLING, its book frozen for the scan.
+    function _begin(uint256 saleId, SaleWord storage stored) private returns (bool voided) {
         SaleWord memory a = stored;
         IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
         (uint256 endTime,, IEnglishAuction.AuctionState one) = _end(saleId, a, t, true);
@@ -664,35 +669,65 @@ contract UniformEditionAuction is
         if (one != IEnglishAuction.AuctionState.SETTLED || block.timestamp < endTime) {
             revert IUniformEditionAuction.SettlementNotReady(saleId);
         }
+        stored.oneOfOneEnd = a.oneOfOneEnd;
+        stored.status = IUniformEditionAuction.AuctionStatus.SETTLING;
+    }
+
+    /// @dev Scans the next words of SETTLING sale `stored`'s book ({_scan}); returns false and
+    ///      records where it stopped when words remain, otherwise clears ({_finish}) and returns
+    ///      true.
+    function _scanChunk(uint256 saleId, SaleWord storage stored) private returns (bool) {
+        SaleWord memory a = stored;
+        IUniformEditionAuction.AuctionConfig memory t = _terms[a.termsId];
+        uint256 left = _scans[saleId];
+        uint256[15] memory scan = _scan(saleId, a, t, left);
+        uint256 low = uint256(a.lowStep) >> 3;
+        if (scan[14] == 0 && scan[7] > low) {
+            // `ScanWord`: cursor, demand, best count and step, and the last passing candidate.
+            uint256 pick = scan[8];
+            _scans[saleId] = scan[7] | scan[10] << 8 | scan[12] << 40 | scan[13] << 72
+                | (pick >> 128) << 88 | uint256(uint64(pick >> 64)) << 104 | uint256(uint64(pick))
+                << 136;
+            emit SettlementScanned(saleId, scan[7] - low);
+            return false;
+        }
+        if (left != 0) delete _scans[saleId];
+        _finish(saleId, stored, a, t, scan[8]);
+        return true;
+    }
+
+    /// @dev Stores and pays the clearing whose last passing candidate is `pick` (`step << 128 |
+    ///      unitsAbove << 64 | demand`; zero for an empty book): SETTLED, or SETTLING while the
+    ///      clearing step's departures wait to be swept.
+    function _finish(
+        uint256 saleId,
+        SaleWord storage stored,
+        SaleWord memory a,
+        IUniformEditionAuction.AuctionConfig memory t,
+        uint256 pick
+    ) private {
+        uint256 demand = uint64(pick);
+        uint256 count = a.maxCount != 0 && demand > a.maxCount ? a.maxCount : demand;
+        uint256 step = pick >> 128;
+        uint256 cutUnits = count - uint64(pick >> 64);
+        bool rationed = count < demand;
         PayoutWord memory p = _payouts[saleId];
-        Cleared memory c = _scan(saleId, a, t);
-        if (c.count != 0 && !IEditions(editions).exists(p.id)) {
+        if (count != 0 && !IEditions(editions).exists(p.id)) {
             revert IUniformEditionAuction.EditionNotCreated(editions, p.id);
         }
-        uint256 logged = c.rationed ? uint32(_departures[saleId][c.step << 32]) : 0;
         // Safe: counts below 2^32 and steps below 512.
         // forge-lint: disable-next-line(unsafe-typecast)
         _results[saleId] = ResultWord(
-            uint32(c.count),
-            uint16(c.step),
-            c.rationed,
-            uint32(c.cutUnits),
-            uint32(c.cutUnits),
-            0,
-            0,
-            p.id
+            uint32(count), uint16(step), rationed, uint32(cutUnits), uint32(cutUnits), 0, 0, p.id
         );
-        stored.oneOfOneEnd = a.oneOfOneEnd;
-        stored.status = logged == 0
-            ? IUniformEditionAuction.AuctionStatus.SETTLED
-            : IUniformEditionAuction.AuctionStatus.SETTLING;
+        uint256 price = count == 0 ? 0 : _price(t, step);
         emit IUniformEditionAuction.AuctionCleared(
-            saleId, c.count, c.step, c.price, c.count * c.price, c.rationed, c.cutUnits
+            saleId, count, step, price, count * price, rationed, cutUnits
         );
-        _pay(saleId, p, c.count, c.price);
-        if (logged != 0) return false;
-        emit IUniformEditionAuction.AuctionSettled(saleId, c.count, c.rationed ? c.cutUnits : 0);
-        return true;
+        _pay(saleId, p, count, price);
+        if (rationed && uint32(_departures[saleId][step << 32]) != 0) return;
+        stored.status = IUniformEditionAuction.AuctionStatus.SETTLED;
+        emit IUniformEditionAuction.AuctionSettled(saleId, count, rationed ? cutUnits : 0);
     }
 
     /// @dev Runs one chunk of the departure sweep of a SETTLING sale (ADR 0005; PLAN section
@@ -789,68 +824,78 @@ contract UniformEditionAuction is
         }
     }
 
-    /// @dev The D138 clearing of sale `a`'s live book, in one downward pass over its occupied
-    ///      words (ADR 0005). It gives exactly `UniformClearing.clear`'s result, which the lens
-    ///      runs: the tests replay the golden vectors through both and fuzz one against the
+    /// @dev One chunk of the D138 clearing of sale `a`'s live book (ADR 0005): a downward pass
+    ///      over at most {_SCAN_WORDS} of its words, resuming from `left` (a scan in progress) or
+    ///      from its highest word. It gives exactly `UniformClearing.clear`'s result, which the
+    ///      lens runs: the tests replay the golden vectors through both and fuzz one against the
     ///      other. Each used step is a candidate of `min(demand at or above it, cap)` copies at
     ///      its price; the pass stops below the step where the demand reaches the cap, keeps the
     ///      best revenue so far, and records a candidate whenever its revenue is within the
     ///      margin of that best (itself included). The best only grows, so the last candidate
     ///      recorded is the lowest within the margin of the final best: the result. Prices are
     ///      `StepLadder.price`'s, computed decade by decade from one scale.
-    function _scan(uint256 saleId, SaleWord memory a, IUniformEditionAuction.AuctionConfig memory t)
-        private
-        view
-        returns (Cleared memory c)
-    {
-        if (a.liveUnits == 0) return c;
+    ///
+    ///      Returns the scan's memory block, read and written by {_scanWords}: [0] the cap (or
+    ///      `type(uint256).max`), [1] `100,000 - marginShare`, [2] steps per decade, [3] the
+    ///      mantissa table, [4] the current decade's first step and [5] its scale, [6] one past
+    ///      the next word to scan, [7] the lowest word this chunk scans (where it stops), [8] the
+    ///      last passing candidate (`step << 128 | unitsAbove << 64 | demand`), [9] the table
+    ///      stride `192 / stepsPerDecade`, [10] the demand so far, [11] the best revenue so far,
+    ///      [12] and [13] its count and step, [14] nonzero once the cap ended the scan.
+    function _scan(
+        uint256 saleId,
+        SaleWord memory a,
+        IUniformEditionAuction.AuctionConfig memory t,
+        uint256 left
+    ) private view returns (uint256[15] memory scan) {
         uint256 perDecade = t.stepsPerDecade;
-        uint256 cap = a.maxCount == 0 ? type(uint256).max : a.maxCount;
-        uint256 decade = uint256(a.highStep) / perDecade;
-        bytes memory table = _MANTISSAS;
-        // The scan's parameters and running state, read by {_scanWords}: the cap, `100,000 -
-        // marginShare`, steps per decade, the mantissa table, the decade's first step and its
-        // scale, the words to scan (from the highest, down to `lowStep / 8` inclusive), the
-        // result, and the table stride `192 / stepsPerDecade`.
-        uint256[] memory scan = new uint256[](10);
-        scan[0] = cap;
+        uint256 cursor = uint8(left) == 0 ? (uint256(a.highStep) >> 3) + 1 : uint8(left);
+        uint256 low = uint256(a.lowStep) >> 3;
+        scan[0] = a.maxCount == 0 ? type(uint256).max : a.maxCount;
         scan[1] = Splits.DENOMINATOR - t.marginShare;
         scan[2] = perDecade;
+        uint256 decade = ((cursor << 3) - 1) / perDecade;
         scan[4] = decade * perDecade;
         scan[5] = uint256(t.basePrice) * 10 ** decade;
-        scan[6] = (uint256(a.highStep) >> 3) + 1;
-        scan[7] = uint256(a.lowStep) >> 3;
+        scan[6] = cursor;
+        scan[7] = cursor > low + _SCAN_WORDS ? cursor - _SCAN_WORDS : low;
+        scan[8] = uint256(uint16(left >> 88)) << 128 | uint256(uint32(left >> 104)) << 64
+            | uint32(left >> 136);
         scan[9] = StepLadder.MANTISSAS / perDecade;
+        scan[10] = uint32(left >> 8);
+        uint256 bestCount = uint32(left >> 40);
+        if (bestCount != 0) {
+            uint256 bestStep = uint16(left >> 72);
+            (scan[11], scan[12], scan[13]) = (bestCount * _price(t, bestStep), bestCount, bestStep);
+        }
+        if (a.liveUnits == 0) {
+            scan[7] = low;
+            return scan;
+        }
+        bytes memory table = _MANTISSAS;
         mapping(uint256 word => uint256) storage live = _live[saleId];
         bytes32 base;
         assembly ("memory-safe") {
-            mstore(add(scan, 0x80), add(table, 0x20))
+            mstore(add(scan, 0x60), add(table, 0x20))
             base := live.slot
         }
         _scanWords(base, scan);
-        uint256 pick = scan[8];
-        uint256 demand = uint64(pick);
-        c.count = demand < cap ? demand : cap;
-        c.step = pick >> 128;
-        c.price = _price(t, c.step);
-        c.cutUnits = c.count - uint64(pick >> 64);
-        c.rationed = c.count < demand;
     }
 
     /// @dev The pass of {_scan} over the live words of the mapping at `base`, with `scan` laid
-    ///      out as {_scan} documents; writes the last passing candidate, packed as `step << 128
-    ///      | unitsAbove << 64 | demand`, to `scan[8]`. In Yul because it runs once per used
-    ///      step of the book (up to 512): the settlement's worst case must fit its budget.
-    ///      Overflow is impossible: the demand stays below 2^33 (a sale's live units are below
-    ///      2^32), a price below 2^137 (a base of at most 10^17 wei, 21 decades, a mantissa
-    ///      below 1,000), so a revenue times 100,000 stays below 2^204.
-    function _scanWords(bytes32 base, uint256[] memory scan) private view {
+    ///      out as {_scan} documents. In Yul because it runs once per used step of the book (up
+    ///      to 512), and a settlement call must fit its budget. Overflow is impossible: the
+    ///      demand stays below 2^32 (a sale's live units), a price below 2^137 (a base of at most
+    ///      10^17 wei, 21 decades, a mantissa below 1,000), so a revenue times 100,000 stays
+    ///      below 2^204.
+    function _scanWords(bytes32 base, uint256[15] memory scan) private view {
         assembly ("memory-safe") {
-            let p := add(scan, 0x20)
-            let demand := 0
-            let best := 0
-            let pick := 0
-            for { let w := mload(add(p, 0xc0)) } gt(w, mload(add(p, 0xe0))) { } {
+            let p := scan
+            let demand := mload(add(p, 0x140))
+            let best := mload(add(p, 0x160))
+            let pick := mload(add(p, 0x100))
+            let w := mload(add(p, 0xc0))
+            for { } gt(w, mload(add(p, 0xe0))) { } {
                 w := sub(w, 1)
                 mstore(0x00, w)
                 mstore(0x20, base)
@@ -861,6 +906,7 @@ contract UniformEditionAuction is
                     if iszero(units) { continue }
                     // Once the demand above a used step reaches the cap, no lower step counts.
                     if iszero(lt(demand, mload(p))) {
+                        mstore(add(p, 0x1c0), 1)
                         w := 0
                         break
                     }
@@ -897,13 +943,19 @@ contract UniformEditionAuction is
                                 100
                             )
                         )
-                    if gt(revenue, best) { best := revenue }
+                    if gt(revenue, best) {
+                        best := revenue
+                        mstore(add(p, 0x180), count)
+                        mstore(add(p, 0x1a0), step)
+                    }
                     if iszero(lt(mul(revenue, 100000), mul(best, mload(add(p, 0x20))))) {
                         pick := or(or(shl(128, step), shl(64, sub(demand, units))), demand)
                     }
                 }
             }
             mstore(add(p, 0x100), pick)
+            mstore(add(p, 0x140), demand)
+            mstore(add(p, 0x160), best)
         }
     }
 
@@ -992,7 +1044,11 @@ contract UniformEditionAuction is
         uint256 n = t.stepsPerDecade;
         bytes memory table = _MANTISSAS;
         uint256 j = (step % n) * (StepLadder.MANTISSAS / n);
-        uint256 m = uint256(uint8(table[2 * j])) << 8 | uint8(table[2 * j + 1]);
+        uint256 m;
+        // Entry `j` of the table: two bytes at offset `2j` (`j` is below 192).
+        assembly ("memory-safe") {
+            m := shr(240, mload(add(add(table, 0x20), shl(1, j))))
+        }
         return uint256(t.basePrice) * m * 10 ** (step / n) / StepLadder.MANTISSA_SCALE;
     }
 

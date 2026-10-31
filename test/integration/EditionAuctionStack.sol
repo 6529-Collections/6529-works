@@ -100,7 +100,10 @@ abstract contract EditionAuctionStack is IntegrationBase {
     function _settleEditions(uint256 saleId) internal {
         IUniformEditionAuction.EndTimes memory e = ea.endTimes(saleId);
         if (block.timestamp < e.endTime) vm.warp(e.endTime);
-        assertTrue(editionAuction.settle(saleId, ea.settlementOrder(saleId)), "settled");
+        // Settlement runs in calls of bounded gas: call until it is done.
+        for (uint256 i; !editionAuction.settle(saleId, ea.settlementOrder(saleId)); ++i) {
+            require(i < 64, "settlement does not advance");
+        }
     }
 
     /// @dev The seller split wallet a master's edition pays (predicted, maybe undeployed).

@@ -58,7 +58,8 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      Positions and departures exist only when a cap is set.
 interface IUniformEditionAuction is ISaleAdapter {
     /// @notice A sale's lifecycle. CLOSED is derived: OPEN with its end passed (it can reopen
-    ///         if the 1/1's end moves later). SETTLING: cleared and paid, the departure sweep not
+    ///         if the 1/1's end moves later). SETTLING: settlement under way, in calls of bounded
+    ///         gas: the book still being scanned, or cleared and paid with the departure sweep not
     ///         yet complete. SETTLED: claims are open. VOID: the 1/1 was cancelled; claims refund.
     enum AuctionStatus {
         NONE,
@@ -451,13 +452,16 @@ interface IUniformEditionAuction is ISaleAdapter {
     function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
 
     /// @notice Settles a closed sale. Permissionless; once the end has passed and the 1/1 is
-    ///         SETTLED or CANCELLED. A cancelled 1/1 makes the sale VOID. Otherwise the first
-    ///         call clears the book, stores the result and pays the revenue: the network fee to
+    ///         SETTLED or CANCELLED. A cancelled 1/1 makes the sale VOID. Otherwise settlement
+    ///         runs in calls of bounded gas, each advancing it: a call scans a bounded number of
+    ///         the book's words (a wide book takes several calls), and the call that finishes the
+    ///         scan clears the book, stores the result and pays the revenue: the network fee to
     ///         the fee recipient and the rest to the seller, each through the revenue escrow if
     ///         refused; it emits `AuctionCleared` and `ISaleAdapter.SaleSettled` (buyer and
     ///         recipient zero, quantity the count). Copies sold need the edition to exist
-    ///         (`EditionNotCreated`). When the cap binds inside the clearing step, the call then
-    ///         sweeps the step's departures in the order given, which must continue the sweep:
+    ///         (`EditionNotCreated`). When the cap binds inside the clearing step, that call and
+    ///         the next ones sweep a bounded number of the step's departures each, in the order
+    ///         given, which must continue the sweep:
     ///         departure indexes (`departures(saleId, step)`) whose positions strictly increase,
     ///         from the previous call's last; the sweep is chunked and resumes across calls
     ///         until every departure is swept. The sale is SETTLED, and claims open, when it is.
