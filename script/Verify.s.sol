@@ -36,7 +36,9 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            default name the recorded CC0 file, complete, hashing to the recorded digest;
 ///            off anvil that digest must be the pinned canonical one.
 ///         4. The manifest file (`MANIFEST_PATH`, by default the recorded path) hashes to the
-///            recorded manifest digest; required off anvil.
+///            recorded manifest digest; required off anvil. The economics resolver's museum is
+///            the recorded one (`VerifyV1.checkMuseum`; genesis readback, so a later 14-day
+///            FUNDS_SETTER change fails it, as a later default-currency change fails check 6).
 ///         5. Off anvil, the genesis file still matches the committed policy and names nothing
 ///            the deployment lacks, and its holders pass the deploy's holder guards against the
 ///            chain as it is now: Safes, signer separation, no deployment contract
@@ -136,6 +138,7 @@ contract Verify is ScriptIO {
         _checkCodeHashes(record);
         _checkCc0(d, record, local);
         DeployV1.Manifest memory manifest = _checkManifest(record, local);
+        VerifyV1.checkMuseum(d, _address(record, "museum"));
 
         string memory genesis = _read(vm.parseJsonString(record, ".genesisConfig"));
         GovernanceConfig.Config memory cfg = DeployV1.config(d, _currentConfig(genesis));
@@ -165,6 +168,7 @@ contract Verify is ScriptIO {
         p.deployer = _address(record, "deployer");
         p.namespace = vm.parseJsonBytes32(record, ".params.namespace");
         p.feeRecipient = _address(record, "networkFeeRecipient");
+        p.museum = _address(record, "museum");
         p.marketOwner = _address(record, "marketOwner");
         p.delegation = _address(record, "delegation");
         p.ethIncrementFloor = vm.parseUint(vm.parseJsonString(record, ".params.ethIncrementFloor"));

@@ -13,7 +13,7 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      randomness and nothing is ever in custody without a clock. The start never deploys a
 ///      split wallet. Sale IDs are derived: `saleIdOf(token, tokenId)`. Per sale the adapter
 ///      keeps at most three storage words (one from the start, one more from the first bid, and
-///      a third only for a recipient other than the bidder, a dispute pause, or the artist a
+///      a third only for a recipient other than the bidder, a dispute pause, or the recipient a
 ///      no-bid settlement records); the seller and fee terms are read back from the token
 ///      (`IMintTarget.primaryTerms`) at settlement.
 ///
@@ -120,7 +120,8 @@ interface IEnglishAuction is ISaleAdapter {
     event BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount);
     /// @notice Delivery to `recipient` failed at settlement; it may claim the token.
     /// @param saleId The auction's sale ID.
-    /// @param recipient The winning bid's recipient, or the artist when no bid won.
+    /// @param recipient The winning bid's recipient or, when no bid won, the museum (a canonical
+    ///        work) or the artist (a federated work).
     event DeliveryPending(uint256 indexed saleId, address indexed recipient);
     /// @notice A pending token was claimed.
     /// @param saleId The auction's sale ID.

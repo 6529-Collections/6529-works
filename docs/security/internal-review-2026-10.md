@@ -391,7 +391,8 @@ guardian veto, a contest decided by the TDH vote, or the lapse.
 **Regression tests.** `test/integration/RecoveryRestraint.t.sol` (14 tests on the real
 deployment, including `test_RestrainedKeyCannotManageTheEditionSale`,
 `test_NobodyStartsAnUnmintedWorkDuringTheNotice`, `test_RestrainedKeyCannotAmendTheRecord`,
-`test_NoBidAuctionRunningAtStagingWaitsForTheOutcome`,
+`test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce` (it tested this wait until ADR 0005
+sent an unbid canonical work to the museum),
 `test_PreSignedAcceptanceRefusedWhileRestrained`,
 `test_PowersReturnWhenAVoteVoidsTheOverride`); `test/identity/ArtistRegistry.t.sol`
 (`test_ActiveAuthority_RestrainedUntilTheOverrideExecutes`);

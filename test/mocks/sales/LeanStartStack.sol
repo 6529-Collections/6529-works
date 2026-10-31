@@ -147,6 +147,8 @@ contract LeanEconomicsResolver {
     uint32 public royaltyRate;
     /// @dev The allowlist the auction derives from its resolver (MARKET-3).
     address public assetAllowlist;
+    /// @dev The museum an unbid work goes to (D140): an account with no code.
+    address public museum = address(0x6529);
 
     function setAssetAllowlist(address allowlist_) external {
         assetAllowlist = allowlist_;

@@ -27,6 +27,7 @@ contract StreamEconomicsTest is StreamFixture {
             allowlist,
             ISplitFactory(address(splitFactory)),
             feeRecipient,
+            makeAddr("museum"),
             keccak256("cc0 text")
         );
         wired = new Stream(

@@ -56,6 +56,8 @@ contract DeploySimulationSepoliaForkTest is Test {
         _env("DEPLOY_NAMESPACE", vm.toString(keccak256("6529-works/sepolia/fork-simulation")));
         _env("NETWORK_FEE_RECIPIENT", vm.toString(_r3Address("networkFeeRecipient")));
         _env("MARKETPLACE_OWNER", vm.toString(_r3Address("marketOwner")));
+        // r3 recorded no museum (D140 came after it): r3's network fee Safe, an existing account.
+        _env("MUSEUM", vm.toString(_r3Address("networkFeeRecipient")));
         _env("VRF_COORDINATOR", vm.toString(_r3Address("vrfCoordinator")));
         _env("VRF_SUBSCRIPTION_ID", vm.toString(_newSubscription()));
         _env("VRF_KEY_HASH", vm.toString(vm.parseJsonBytes32(r3, ".params.vrfKeyHash")));

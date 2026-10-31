@@ -29,10 +29,12 @@ import { Splits } from "./Splits.sol";
 ///         out of 100,000); the default license is CC0. Currencies come from the asset allowlist.
 /// @dev Changes apply to new works only: a work locks its terms (seller wallet, fee terms,
 ///      royalty receiver and rate) at mint and a sale locks its currency at start, and nothing
-///      here reaches back into either. Governed through AccessManager with `Roles`
-///      (src/governance/Roles.sol): {setFeeTerms} maps to `Roles.FUNDS_SETTER` (14 days);
-///      {setRoyaltyRate} and {setDefaultLicense} map to `Roles.PARAMETER_SETTER` (48 hours).
-///      Each setter compares its own revision, bumped by every change to that setting.
+///      here reaches back into either. The museum is the exception: the English auction reads
+///      it when it settles an unbid canonical work (D140). Governed through AccessManager with
+///      `Roles` (src/governance/Roles.sol): {setFeeTerms} and {setMuseum} map to
+///      `Roles.FUNDS_SETTER` (14 days); {setRoyaltyRate} and {setDefaultLicense} map to
+///      `Roles.PARAMETER_SETTER` (48 hours). Each setter compares its own revision, bumped by
+///      every change to that setting (the museum's is {museumRevision}).
 ///      A fee recipient must be able to accept payments, because works lock it at mint: the
 ///      resolver refuses itself, its allowlist and factory, the factory's release verifier, and
 ///      every protocol contract that declares an interface it cannot be paid through
@@ -41,7 +43,8 @@ import { Splits } from "./Splits.sol";
 ///      Residual: system contracts that declare none of those interfaces and that the resolver
 ///      does not know (the content store, the statement log, the AccessManager, the renderer,
 ///      the curation verifier, the entropy module) are not refused here; the runbook's check
-///      that a new recipient is an existing account that accepts ETH covers them.
+///      that a new recipient is an existing account that accepts ETH covers them. The museum
+///      must hold the unbid works it receives, so the same rule refuses it, and zero.
 contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @notice The launch network share of Stream and Editions primary sales and royalties.
     uint32 public constant DEFAULT_FEE_SHARE = 25_000;
@@ -51,9 +54,6 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     uint32 public constant DEFAULT_ROYALTY_RATE = 6_529;
     /// @notice The launch default license's SPDX ID; its key is `WorksHashing.CC0_LICENSE_KEY`.
     string public constant CC0 = "CC0-1.0";
-
-    /// @notice An ADR 0005 function whose implementation has not landed yet (the museum).
-    error NotImplemented();
 
     struct Product {
         ProductEconomics economics;
@@ -69,17 +69,22 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     IAssetAllowlist private immutable _allowlist;
     ISplitFactory private immutable _factory;
     mapping(bytes32 product => Product) private _products;
+    /// @dev The museum and its revision share one slot.
+    address private _museum;
+    uint64 private _museumRevision;
 
     /// @param authority The AccessManager governing the setters.
     /// @param allowlist_ The asset allowlist.
     /// @param factory_ The split factory.
     /// @param feeRecipient The network fee recipient for every product at launch.
+    /// @param museum_ The 6529 Network Museum (D140): an existing Safe or EOA.
     /// @param cc0TextFileId_ The content store file ID of the CC0 1.0 legal text.
     constructor(
         address authority,
         IAssetAllowlist allowlist_,
         ISplitFactory factory_,
         address feeRecipient,
+        address museum_,
         bytes32 cc0TextFileId_
     ) AccessManaged(authority) {
         cc0TextFileId = cc0TextFileId_;
@@ -94,6 +99,7 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         _configure(PRODUCT_EDITIONS, standard, cc0);
         standard.feeShare = FEDERATED_FEE_SHARE;
         _configure(PRODUCT_FEDERATED, standard, cc0);
+        _setMuseum(museum_);
     }
 
     /// @inheritdoc IEconomicsResolver
@@ -143,6 +149,12 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
         License memory previous = p.license;
         p.license = next;
         emit DefaultLicenseSet(product, previous, next, ++p.licenseRevision);
+    }
+
+    /// @inheritdoc IEconomicsResolver
+    function setMuseum(uint64 expectedRevision, address next) external restricted {
+        _check(expectedRevision, _museumRevision);
+        _setMuseum(next);
     }
 
     /// @inheritdoc IEconomicsResolver
@@ -211,22 +223,13 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     }
 
     /// @inheritdoc IEconomicsResolver
-    /// @dev ADR 0005 interface stub: reverts with {NotImplemented} until the museum lands.
-    function museum() external pure returns (address) {
-        revert NotImplemented();
+    function museum() external view returns (address) {
+        return _museum;
     }
 
     /// @inheritdoc IEconomicsResolver
-    /// @dev ADR 0005 interface stub: reverts with {NotImplemented} until the museum lands.
-    function museumRevision() external pure returns (uint64) {
-        revert NotImplemented();
-    }
-
-    /// @inheritdoc IEconomicsResolver
-    /// @dev ADR 0005 interface stub: reverts with {NotImplemented}, and is not yet `restricted`
-    ///      or mapped at genesis; the museum lane makes it a FUNDS_SETTER setter.
-    function setMuseum(uint64, address) external pure {
-        revert NotImplemented();
+    function museumRevision() external view returns (uint64) {
+        return _museumRevision;
     }
 
     /// @inheritdoc IERC165
@@ -261,11 +264,23 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
             e.feeShare >= Splits.DENOMINATOR || e.royaltyRate > Splits.DENOMINATOR
                 || (e.feeShare != 0 && e.feeRecipient == address(0))
         ) revert InvalidEconomics();
-        address r = e.feeRecipient;
-        if (
-            r == address(this) || r == address(_allowlist) || r == address(_factory)
-                || r == address(_factory.verifier()) || ProtocolContracts.isProtocolContract(r)
-        ) revert InvalidFeeRecipient(r);
+        if (_refused(e.feeRecipient)) revert InvalidFeeRecipient(e.feeRecipient);
+    }
+
+    /// @dev D140: the museum holds every unbid canonical work it receives, so it is never zero
+    ///      and never a contract the fee-recipient rule refuses.
+    function _setMuseum(address next) private {
+        if (next == address(0) || _refused(next)) revert InvalidMuseum(next);
+        uint64 revision = _museumRevision + 1;
+        emit MuseumSet(_museum, next, revision);
+        (_museum, _museumRevision) = (next, revision);
+    }
+
+    /// @dev The fee-recipient rule (CALLS-1): this resolver, its allowlist, factory and release
+    ///      verifier, and every protocol contract that cannot be paid or hold a work.
+    function _refused(address r) private view returns (bool) {
+        return r == address(this) || r == address(_allowlist) || r == address(_factory)
+            || r == address(_factory.verifier()) || ProtocolContracts.isProtocolContract(r);
     }
 
     function _validateLicense(License memory license) private pure {

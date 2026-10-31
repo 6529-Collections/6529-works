@@ -15,6 +15,17 @@
   `test/fixtures/edition-auction/`, checked in CI. Nothing is deployed differently yet: the
   English auction still returns an unbid work to its artist, and the fixed-price and Dutch
   sales still run, until the implementation lanes land.
+- Auction (D140, ADR 0005, owner decisions 9 to 11): an unbid canonical 6529 Stream 1/1 goes to
+  the 6529 Network Museum, not to its artist, and so does a work a 30-day currency freeze ends
+  unsold, with the standing bid credited back. `EconomicsResolver` implements ADR 0005's
+  `museum()`, `museumRevision()` and `setMuseum(expectedRevision, next)` (FUNDS_SETTER, 14 days,
+  compare-and-set on its revision; event `MuseumSet`, error `InvalidMuseum`), set at genesis
+  from the new `MUSEUM` deploy parameter, which off anvil must be an existing account;
+  `Verify.s.sol` reads it back. The auction reads the museum at settlement, so a restrained
+  artist no longer holds up an unbid canonical work, and only the museum recorded at
+  settlement can claim one whose delivery is pending (AUC-33). A federated work keeps the rc.1
+  behaviour: its artist. ADR 0004's table gains the no-bid settlement (1 new slot, no new
+  account), and LIM-SAL-12 records the museum as a governed address.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

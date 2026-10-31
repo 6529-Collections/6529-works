@@ -80,6 +80,9 @@ library DeployV1 {
         bytes32 namespace;
         /// Network share recipient of every product (EconomicsResolver defaults).
         address feeRecipient;
+        /// The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. An
+        /// existing Safe or EOA; FUNDS_SETTER can change it.
+        address museum;
         /// The marketplace `owner()` of 6529 Stream (and 6529 Editions): collection admin on
         /// marketplaces, no protocol power. FUNDS_SETTER can change it.
         address marketOwner;
@@ -261,7 +264,9 @@ library DeployV1 {
         if (n == keccak256("EconomicsResolver")) {
             return _code(
                 type(EconomicsResolver).creationCode,
-                abi.encode(m, d.assetAllowlist, d.splitFactory, p.feeRecipient, d.cc0TextFileId)
+                abi.encode(
+                    m, d.assetAllowlist, d.splitFactory, p.feeRecipient, p.museum, d.cc0TextFileId
+                )
             );
         }
         if (n == keccak256("RevenueEscrow")) {

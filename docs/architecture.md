@@ -199,8 +199,10 @@ default when the sale starts".
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).
-   - With no bids, the token goes to the artist's active authority, resolved
-     at settlement; while a recovery override is pending, settlement waits.
+   - With no bids, the token goes to the 6529 Network Museum,
+     `EconomicsResolver.museum()` resolved at settlement (D140); a federated
+     work goes to its artist's active authority, and while a recovery override
+     is pending its settlement waits.
    - Settlement calls `IMintTarget.markPrimarySettled`, even when delivery is still
      pending, so a winner who never claims cannot block the edition.
 10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and
@@ -312,8 +314,9 @@ default when the sale starts".
      as the artist (ADR 0003 owner decision 6). `activeAuthorityOf` is zero, so
      the sale `creator`, move and acceptance signatures, record amendments and
      consents, and ARTIST statements all refuse both the old and the new key
-     until it executes, is vetoed or voided, or lapses. A no-bid auction's
-     settlement waits for the outcome; sales already running continue, with
+     until it executes, is vetoed or voided, or lapses. A federated work's
+     no-bid settlement waits for the outcome (a canonical one goes to the
+     museum); sales already running continue, with
      the artist's share frozen. `authorityOf` keeps identifying the artist.
 
 ### Dispute pause

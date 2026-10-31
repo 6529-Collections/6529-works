@@ -33,8 +33,8 @@ import { MockPermit2 } from "../../../mocks/sales/SaleMocks.sol";
 ///      and left the auction. Ghost terms record what each sale locked and whom its live high
 ///      bid names. A bid checks the anti-snipe extension against the locked window; a
 ///      settlement checks that the token reaches (or is pending for) that recipient, or the
-///      artist when there was no bid; a second dispute pause must revert; and a withdrawal must
-///      leave the sale paused.
+///      museum when there was no bid (D140); a second dispute pause must revert; and a
+///      withdrawal must leave the sale paused.
 contract AuctionHandler is Test {
     uint256 internal constant MAX_SALES = 8;
 
@@ -213,7 +213,8 @@ contract AuctionHandler is Test {
         IEnglishAuction.Auction memory a = auction.auction(saleId);
         if (a.state != IEnglishAuction.AuctionState.ENDED) return;
         address expected = ghostRecipient[saleId];
-        if (expected == address(0)) expected = stream.primaryTerms(a.tokenId, "").creator;
+        // D140: an unbid canonical work goes to the museum.
+        if (expected == address(0)) expected = auction.economicsResolver().museum();
         auction.settle(saleId);
         address pending = auction.pendingDelivery(saleId);
         if (pending == address(0)) {

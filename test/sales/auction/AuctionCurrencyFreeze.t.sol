@@ -15,7 +15,9 @@ import { SalesStackBase } from "../SalesStackBase.sol";
 ///         and a standing bidder may withdraw (the bid stays as the reserve). Once the currency
 ///         is re-admitted (no sooner than 14 days after the deprecation), the first `settle`
 ///         reopens the auction for the governed duration. A currency deprecated for 30 days lets
-///         anyone end the sale unsold: the bid is credited back and the work goes to its artist.
+///         anyone end the sale unsold: the bid is credited back and the work goes where an unbid
+///         work goes, the 6529 Network Museum (D140, ADR 0005 owner decision 10; under rc.1 its
+///         artist).
 contract AuctionCurrencyFreezeTest is SalesStackBase {
     address internal alice = makeAddr("lowBidder");
     address internal bob = makeAddr("realBidder");
@@ -104,14 +106,16 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
     }
 
     /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md)
-    function test_Settle_ACurrencyThatNeverReturnsReleasesTheWorkToTheArtist() public {
+    /// @dev Since ADR 0005 (owner decision 10) the released work goes to the museum, as an unbid
+    ///      work does; under rc.1 it returned to its artist.
+    function test_Settle_ACurrencyThatNeverReturnsReleasesTheWorkToTheMuseum() public {
         (uint256 saleId, uint256 tokenId) = _freezeAnHourBeforeTheEnd();
         vm.warp(block.timestamp + 365 days);
         vm.prank(alice);
         auction.withdrawBid(saleId);
-        // With no standing bid there is nothing to pay: the work returns to its artist.
+        // With no standing bid there is nothing to pay: the work goes to the museum.
         auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), artist);
+        assertEq(stream.ownerOf(tokenId), museum);
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
         assertEq(address(auction).balance, 0.01 ether, "the credit is all the auction holds");
     }
@@ -162,7 +166,8 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
     /// Regression: MARKET-2 (docs/security/internal-review-2026-10.md); L2 in the review of #57
     /// @dev A deprecation that never ends, with a high bidder who never withdraws, no longer
     ///      holds the work: 30 days into the freeze anyone ends the sale unsold, the bid is
-    ///      credited back and the work goes to its artist.
+    ///      credited back and the work goes to the museum (ADR 0005, owner decision 10; under
+    ///      rc.1 to its artist).
     function test_Settle_AFrozenSaleEndsUnsoldThirtyDaysIntoTheFreeze() public {
         Work[] memory works = _package(root);
         (uint256 saleId, uint256 tokenId) = _start(root, works, 2);
@@ -187,7 +192,8 @@ contract AuctionCurrencyFreezeTest is SalesStackBase {
         emit ISaleAdapter.Credited(passive, CURRENCY_ETH, saleId, 1 ether);
         vm.prank(keeper);
         auction.settle(saleId);
-        assertEq(stream.ownerOf(tokenId), artist, "the work goes to its artist");
+        assertEq(stream.ownerOf(tokenId), museum, "the work goes to the museum");
+        assertEq(stream.balanceOf(artist), 0, "not the artist");
         assertEq(auction.claimable(passive, CURRENCY_ETH), 1 ether, "the bid is credited back");
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
         assertEq(address(auction).balance, 1 ether, "only the credit is held");

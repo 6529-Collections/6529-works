@@ -24,9 +24,11 @@ import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
 import {
     MockAssetAllowlist,
     MockEconomicsResolver,
+    MockFederationRegistry,
     MockPermit2,
     PermitToken
 } from "../../mocks/sales/SaleMocks.sol";
+import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
 
 /// @dev Deploys the auction against the real AccessManager, asset allowlist, revenue escrow and
@@ -75,6 +77,8 @@ abstract contract AuctionBase is Test {
     address internal federatedNetwork = makeAddr("federatedNetwork");
     address internal artist = makeAddr("artist");
     address internal relayer = makeAddr("relayer");
+    /// @dev The 6529 Network Museum the resolver names (D140): an unbid canonical work goes here.
+    address internal museum = makeAddr("museum");
 
     uint256 internal alicePk = 0xA11CE;
     uint256 internal bobPk = 0xB0B;
@@ -100,6 +104,7 @@ abstract contract AuctionBase is Test {
         resolver = new MockEconomicsResolver(MockAssetAllowlist(address(0)));
         resolver.setAllowlistOverride(address(allowlist));
         resolver.set(PRODUCT_FEDERATED, federatedNetwork, 10_000);
+        resolver.setMuseumAccount(museum);
         auction = _deploy(address(permit2));
         stream.setTerms(_terms(ETH));
         _grant(GUARDIAN, guardian);
@@ -153,6 +158,31 @@ abstract contract AuctionBase is Test {
 
     function _terms(address currency) internal view returns (PrimaryTerms memory) {
         return PrimaryTerms(SaleKind.ENGLISH_AUCTION, currency, 0, "", seller, network, FEE, artist);
+    }
+
+    /// @dev A federated ERC-721 (D21) on `_terms(ETH)`, registered ACTIVE with a 10% fee in a
+    ///      federation registry installed on the auction: its unbid works stay with their artist
+    ///      (owner decision 9), not the museum.
+    function _federated() internal returns (MockMintTarget fed) {
+        MockFederationRegistry registry = new MockFederationRegistry();
+        fed = new MockMintTarget();
+        fed.setAdmittedMinter(address(auction), true);
+        fed.setTerms(_terms(ETH));
+        address installed = auction.federationRegistry();
+        vm.prank(successor);
+        auction.setFederationRegistry(installed, address(registry));
+        registry.register(
+            address(fed),
+            IFederationRegistry.Entry(
+                IFederationRegistry.Form.ERC721,
+                address(0),
+                uint160(artist),
+                1,
+                address(fed).codehash,
+                10_000,
+                IFederationRegistry.Status.ACTIVE
+            )
+        );
     }
 
     // --------------------------------------------------------------------------- actions
