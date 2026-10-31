@@ -692,6 +692,24 @@ Deploy the target with `authority` set to the manager, then:
 4. read the manager back with the target added to the configuration
    (`GovernanceConfigurator.verify`, `test_OnboardATargetAfterGenesis`).
 
+### The edition auction keeper
+
+Every step of an edition sale is permissionless; a keeper (any funded EOA, no role) batches
+them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
+
+1. **Open the edition auction in the same batch as the master's 1/1 start** (owner decision 7):
+   `UniformEditionAuction.open(editions, tokenId, abi.encode(item))`, the master's
+   EDITION_MASTER package item. `open` also binds the edition to the adapter. An auction nobody
+   opens before the 1/1's end plus the close offset can never be opened by this adapter
+   (LIM-EA-11); a later admitted adapter of the edition's kind still can.
+2. **Create the edition once the 1/1 settles:** `Editions.createEdition(tokenId, item,
+   packageRoot, proof)`. A sale with winners settles only once the edition exists
+   (`EditionNotCreated`; LIM-EA-12).
+3. **Settle after the edition close:** call `settle(saleId, settlementOrder(saleId))` until it
+   returns `true`. Each call stays within 350,000 execution gas; a typical sale settles in one.
+4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
+   refund is credited to it.
+
 ### Publishing a configuration epoch
 
 Schedule `StatementLog.appendGovernanceManifest` (SUCCESSOR_SETTER, 30 days) with the epoch's

@@ -103,12 +103,15 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | New `SaleKind.UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` stay as reserved labels; `DutchParams` is removed. |
 | [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | `FIXED_PRICE_SALE_NAME`, `PHASE`, `PHASE_CONFIGURATION`, `PURCHASE_WITNESS`, `DUTCH_PURCHASE_WITNESS` and their type strings are removed. |
 | [`types/Limits.sol`](../../src/interfaces/types/Limits.sol) | `MAX_PHASES` is removed. |
-| [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, not yet implemented. |
+| [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, implemented by `UniformEditionAuction` and `EconomicsResolver`. |
+| [`IUniformEditionAuctionStorage.sol`](../../src/interfaces/IUniformEditionAuctionStorage.sol), [`IUniformEditionAuctionLens.sol`](../../src/interfaces/IUniformEditionAuctionLens.sol) | New: the adapter's raw storage words and `SettlementScanned`, and the stateless lens that answers its views. Neither is advertised through ERC-165. |
+| [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `bindMinter(editionId, item)` (ADR 0005 §6): an adapter binds an edition when its sale opens. |
 
 | Function or event | r3 | `main` |
 | --- | --- | --- |
 | `PackageRegistry.consume` | `0xbe93e628` | `0xbf69b193` |
 | `Editions.createEdition` | `0xb44dd3d8` | `0x26c8844c` |
+| `Editions.bindMinter` (ADR 0005 §6) | none | `0x459e34d7` |
 | `WorkRecords.openRecord` | `0x22029b68` | `0x0068e575` |
 | `WorkRecords.relicense` | `0x291e2c27` | `0xd60ad0db` |
 | `WorkRecords.setRoyaltyRate` | `0xe27fed56` | `0xc13560ef` |
@@ -221,10 +224,10 @@ selectors.
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0x4f4f5133` | `0x4f4f5133` | Stream, Editions |
 | `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x6d0d5203` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
-| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xa41d86b8` | `0xa5bd946e` | Editions |
+| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
-| `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | None yet: the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md), not implemented on `main` |
+| `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | UniformEditionAuction, the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md) (its views are answered by its lens, through a read-only fallback) |
 | `IFixedPriceSale`, `IDutchSale`, `IMintSale` | Removed by ADR 0005 | none | `0xfedd2754`, `0xb1c10995`, none | FixedPriceSale and DutchSale on r1 to r3 (r3: `0x773a4920`, `0x382667e1`) |
 | `ICurationVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | `0x492733ca` | Eip712CurationVerifier |
 | `ICurationSignerVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | `0xb7ab1d96` | Eip712CurationVerifier |

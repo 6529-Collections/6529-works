@@ -410,10 +410,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         auction's start until the edition close; refused while the adapter is paused
     ///         (`SalePaused`). Locks the creator's cap, the current `config()`, and the economics:
     ///         for 6529 Stream Editions, `IEconomicsResolver.newWorkTerms(PRODUCT_EDITIONS,
-    ///         item.payees)`. Emits `AuctionOpened` and `ISaleAdapter.SaleStarted` (price: step
-    ///         0's; end time: `closeAt`). Reverts with `TargetNotAllowed` for a token that is
-    ///         not served, `NoOneOfOneAuction`, `AuctionExists`, `BiddingClosed` after the close,
-    ///         and `InvalidSaleTerms` when the terms do not match or are not this kind's.
+    ///         item.payees)`, or the economics an existing edition recorded. Binds the edition
+    ///         to this adapter first (`IEditions.bindMinter`, ADR 0005 section 6), so an edition
+    ///         another adapter sells refuses the open with that token's `MinterMismatch`. Emits
+    ///         `AuctionOpened` and `ISaleAdapter.SaleStarted` (price: step 0's; end time:
+    ///         `closeAt`). Reverts with `TargetNotAllowed` for a token that is not served,
+    ///         `NoOneOfOneAuction`, `AuctionExists`, `BiddingClosed` after the close, and
+    ///         `InvalidSaleTerms` when the terms do not match or are not this kind's.
     /// @param token A served edition contract.
     /// @param id The edition ID (the master's token ID).
     /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem)`

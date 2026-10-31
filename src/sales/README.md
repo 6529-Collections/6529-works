@@ -65,6 +65,14 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **Edition auction bytecode.** The adapter's writes nearly fill EIP-170, so its views live on
   the lens it creates, reached through a read-only `staticcall` fallback: one address and the
   one frozen interface for callers.
+- **The edition is bound at open.** `open` calls `Editions.bindMinter(id, item)` before it
+  records the sale (ADR 0005 §6), re-framing the `data` it received (no item codec in the
+  adapter), so a second adapter of the same kind cannot open the same edition. The binding
+  also snapshots the edition's economics in 6529 Stream Editions, and the lens reads an
+  existing edition's recorded economics, so the split paid is the split the edition reports.
+- **The lens's departure sort** is a heapsort of packed keys, `O(n log n)` whatever the log's
+  order: 600 departures logged in reverse keep `settlementOrder`, `clearing` and `quote` near
+  5.2M gas, far inside an `eth_call` cap.
 - **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours
   from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
 - **ERC-20 transfers.** `TokenTransfer` requires exact balance deltas and exactly one `true`

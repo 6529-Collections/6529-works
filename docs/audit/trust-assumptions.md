@@ -175,8 +175,10 @@ by the genesis wiring and then locked ([GV-24][gv]).
 - **Removal stops new mints only.** The minting adapter keeps `burn` and `markPrimarySettled`, so
   a running dispute can finish ([AUC-8, AUC-9][auc]).
 - **On 6529 Stream Editions,** an admitted adapter of an edition's sale kind may mint copies up
-  to the creator's cap, and the first adapter to mint an edition is the only one that may mint it
-  again ([ED-5, ED-6][ed]).
+  to the creator's cap. Each edition is bound to one adapter, the one whose sale opened it
+  (`bindMinter`) or else the first to mint it, which alone mints it, even after governance
+  removes it, so that winners already charged can claim ([ED-5, ED-6][ed]; LIM-EA-10 in
+  [ADR 0005](../adr/0005-stream-editions-auction.md#known-limitations)).
 - **The auction holds nothing it did not mint**
   ([AUC-29][auc]), except a token sent with a
   plain `transferFrom` ([LIM-SAL-10][lim-sal]).

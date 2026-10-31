@@ -60,9 +60,20 @@
   chunks. It mints exactly the cleared count through `IMintTarget.mint` as bids are claimed.
   Its views (every view of `IUniformEditionAuction`) are the lens's, answered through a
   read-only fallback; `IUniformEditionAuctionStorage` documents the raw words they read.
-  Its genesis selectors, deployment and wiring come with the deploy lane. Gas rows, with exact slot and account counts, are in
+  `open` binds the edition to the adapter first (see the Editions entry below). Its views'
+  departure sort is `O(n log n)`. Its genesis selectors, deployment and wiring come with the
+  deploy lane. Gas rows, with exact slot and account counts, are in
   `test/integration/EditionAuctionGasReport.t.sol`; every settlement call stays within 350,000
   execution gas, at most 211,025 in the worst case measured.
+- Editions (ADR 0005 §6, an amendment of the frozen interface): `bindMinter(editionId, item)`
+  binds an edition to the adapter whose sale opens it, before the edition exists if need be
+  (the master's stored item proves its kind), so two admitted adapters of one kind can never
+  both sell an edition and strand one sale's winners. Binding before creation also locks the
+  edition's `PRODUCT_EDITIONS` economics, which `createEdition` keeps, so the edition reports
+  the split its sale paid. A bound adapter keeps minting its edition after removal, within the
+  creator's cap (LIM-EA-10); removal stops new bindings. The `IEditions` interface ID becomes
+  `0xe183b26f`. The edition auction's `open` writes 6 new slots (278,215 Prague gas) and
+  `createEdition` of an edition it bound 2 (140,201); an edition created unbound still writes 6.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

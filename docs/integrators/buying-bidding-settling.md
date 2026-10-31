@@ -511,7 +511,8 @@ Whatever the adapter:
 - An edition's ID is its master's Stream token ID. `Editions.edition(editionId)` gives the terms
   (the creator's cap `maxCount`, the currency, sale kind and params), the copies minted so far
   and the bound adapter (`minter`).
-- The first adapter to mint an edition is the only one that may mint it again (ED-5);
+- An edition is bound to one adapter, the only one that may mint it (ED-5): the one whose sale
+  opened it (`bindMinter`, possibly before the edition exists), or else the first to mint it.
   `EditionMinterBound` names it ([Editions](events-and-indexing.md#editions)).
 - A mint to a recipient that rejects `onERC1155Received` reverts.
 - `EditionUnavailable(editionId)` means the creator's cap is reached (ED-6).

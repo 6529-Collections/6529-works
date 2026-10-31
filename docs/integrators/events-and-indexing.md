@@ -130,7 +130,7 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `EditionCreated(uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms)` | `0x3a4f273b…` | `createEdition` (permissionless, once the master's primary sale settled) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`. The economics locked at creation are not emitted: read `edition(id)`. |
-| `EditionMinterBound(uint256 indexed editionId, address indexed minter)` | `0x35bb9c80…` | The first `mint` of an edition, by an admitted adapter | The edition is bound to `minter`, the only adapter that may mint it from now on ([ED-5][ed]). Precedes that mint's `TransferSingle`. |
+| `EditionMinterBound(uint256 indexed editionId, address indexed minter)` | `0x35bb9c80…` | `bindMinter`, when an adapter's sale of the edition opens; or else the first `mint` of an edition no sale bound | The edition is bound to `minter`, the only adapter that may mint it from now on ([ED-5][ed]). From `bindMinter` it may precede the edition's `EditionCreated` (the edition auction opens with the 1/1); from a mint it precedes that mint's `TransferSingle`. |
 | `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)` | `0xc3d58168…` | Each mint (`operator` is the sale adapter, `from` zero), holder transfers, and an adapter's `burn` (to zero) | Copies minted is the sum of `value` with `from` zero. No v1 adapter calls `burn`. |
 | `TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)` | `0x4a39dc06…` | Holder batch transfers | Never from a mint: adapters mint one ID per call. |
 | `ApprovalForAll(address indexed account, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-1155. |
@@ -462,8 +462,9 @@ Per `saleId`:
 - **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`,
   and 6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction. Read
   `edition(editionId)` for the locked economics.
-- **Bound.** `EditionMinterBound` on the first mint names the adapter that sells the edition;
-  `edition(id).minter` reads it.
+- **Bound.** `EditionMinterBound` names the adapter that sells the edition: emitted when its
+  sale opens (`bindMinter`, often before `EditionCreated`), or else on the first mint;
+  `edition(id).minter` reads it once the edition exists.
 - **Mints.** `TransferSingle` from zero, with the sale adapter as `operator`; the adapter's own
   events tell the sale.
 - **Supply.** The sum of `TransferSingle.value` from zero equals `edition(id).minted`.
