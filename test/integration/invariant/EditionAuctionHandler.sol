@@ -487,14 +487,16 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
-    /// @dev D141: a bid or raise at or after `endTime - softWindow` sets the soft end to
+    /// @dev D141: a bid or raise within `softWindow` of the end sets the soft end to
     ///      `min(now + softWindow, backstop)`, the backstop being the 1/1's end plus the offset
     ///      plus `maxExtension`. While the 1/1 is paused bids are accepted at any time and move
-    ///      nothing. Called just before a bid lands.
+    ///      nothing. Called just before a bid lands. A bid exactly `softWindow` before the end
+    ///      would only set the soft end to the end itself; the adapter leaves it unset then, and
+    ///      the end is the same either way.
     function _softClose(uint256 i) internal {
         if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return;
         IUniformEditionAuction.AuctionConfig memory t = _terms(i);
-        if (block.timestamp + t.softWindow < _endTime(i)) return;
+        if (block.timestamp + t.softWindow <= _endTime(i)) return;
         uint256 backstop = _closeAt(i) + t.maxExtension;
         uint256 next = block.timestamp + t.softWindow;
         pieces[i].softEnd = next < backstop ? next : backstop;
