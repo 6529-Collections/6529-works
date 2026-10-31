@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- 6529 Stream: the 1/1 sale method is pluggable (ADR 0005, owner decision 15). `mint` takes any
+  admitted adapter whose `saleKind()` is the item's sale kind, and `_checkItem` requires only a
+  nonzero kind; the adapter checks the sale's currency and params (the English auction refuses
+  any params, as before). The English auction is admitted at genesis; a later 1/1 method is an
+  adapter governance admits (`setAdmittedMinter`, SUCCESSOR_SETTER, 30 days), with no new
+  Stream. `primaryTerms` reports a work's minting adapter's kind, recorded at its first
+  admission; an adapter reporting no kind is refused. Removing an adapter stops its new mints
+  and never strands a live sale (AUC-9). Stream's runtime grows by 181 bytes; `start` costs
+  about 230 more Prague gas and `settle` 2,169 more, with no new slot
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - 6529 Editions is renamed 6529 Stream Editions (ADR 0005, D139) in every current document and
   NatSpec comment; `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS`. The
   identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label do

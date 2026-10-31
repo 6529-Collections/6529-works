@@ -381,3 +381,57 @@ before each merge.
   6529 Stream still accepts only `SaleKind.ENGLISH_AUCTION`, both for its items and for its
   minter, so a new 1/1 sale method on 6529 Stream would need a new Stream. Whether decision 14
   should reach 6529 Stream's 1/1s too, before rc.2, is the owner's call.
+
+  **Closed, 31 October 2026 (owner decision 15).** Decision 14 covers 6529 Stream's own 1/1s
+  too, before rc.2 ("once this contract goes live we are never going to change it"). Stream
+  mints an item only for an admitted adapter whose `saleKind()` is the item's sale kind, and
+  checks only that the item names one; the adapter checks the sale's currency and params. The
+  English auction is admitted at genesis; a later 1/1 method is an adapter governance admits
+  (`Stream.setAdmittedMinter`, SUCCESSOR_SETTER, the 30-day class), with no new Stream.
+  `primaryTerms` reports, for a minted work, the kind its adapter had at its first admission.
+  Removing an adapter stops its new mints only: it keeps its index, so it still settles,
+  delivers and cancels every sale it started (AUC-8, AUC-9). As for editions, an item naming a
+  kind no admitted adapter serves cannot start until one is admitted; the curation signer
+  checks this (LIM-EA-8). Cost: Stream's runtime grows by 181 bytes, `start` by about 230
+  Prague gas with no new slot, and the English auction's `settle` by about 2,200 (one more cold
+  read, the minting adapter's kind) ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
+
+  **Admission requirement for a 1/1 sale adapter (decisions 9, 10 and 15).** The museum rule
+  is enforced inside the English auction, for 6529 Stream's tokens; nothing in Stream makes
+  another adapter follow it. Any 1/1 sale adapter admitted for 6529 Stream must therefore:
+  - send a work that ends its sale unbid, and a work that leaves the 30-day currency-freeze
+    exit unsold, to `IEconomicsResolver.museum()`, read at settlement;
+  - never send either to the work's artist (decision 9's artist branch is for federated works
+    only);
+  - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
+    true)` executes; a guardian vetoes an admission that does not hold them.
+
+  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  adapter sending a work that ends unbid to the museum; its mock has no currency-freeze exit,
+  so the test does not show that branch.
+
+  **Not enforced on-chain.** Stream never learns whether a sale had a buyer; a Stream-only
+  settle call declaring the buyer would not stop an adapter that names its artist as one; and a
+  transfer rule refusing the artist would block an artist buying their own work. The 30-day
+  review, with the guardians' veto, is the control.
+
+  **The rest of the 1/1 adapter review.** Stream trusts an admitted adapter, unchecked, for the
+  works it mints, so the same review also confirms that the adapter:
+  - burns a work (`IMintTarget.burn`) only to cancel a sale after an upheld dispute, through a
+    governed action like the English auction's `cancel` (48 hours): Stream lets the minting
+    adapter burn any work it holds before the sale settles;
+  - marks the primary sale settled (`markPrimarySettled`) when the sale is final, and only then:
+    an edition of a master waits for it, and a settled work can no longer be burned;
+  - pays the fee recipient and the seller wallet the shares `primaryTerms` reports;
+  - reports a constant `saleKind()`: `mint` compares the live value with the item's, while
+    `primaryTerms` reports the value recorded at the first admission, so an adapter whose kind
+    could change (an upgradeable one, for example) could mint another kind's items under its
+    recorded label;
+  - claims a kind no other admitted adapter serves, unless it replaces that adapter, which is
+    then removed in the same governance batch: the move signature names no adapter, so two
+    admitted adapters of one kind can each start the same item.
+
+  An edition master sold by a method other than the English auction gets no edition auction
+  from the genesis edition auction, which reads the 1/1's clock from the English auction
+  (`IEnglishAuction.saleIdOf`); its editions need an edition sale method that reads the new
+  method's clock (a new adapter, with no new Stream or Editions).

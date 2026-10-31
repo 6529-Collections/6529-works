@@ -55,11 +55,12 @@ struct License {
 
 /// @notice How a work is first sold: a sale kind, its parameters and the currency
 ///         (ADR 0001 section 5 "Sale extensibility").
-/// @dev `saleKind` is a `SaleKind` label; only an adapter reporting the same kind may sell the
-///      work, and 6529 Stream accepts only `SaleKind.ENGLISH_AUCTION`. `currency` is
-///      `CURRENCY_ETH` (`address(0)`), an allowlisted ERC-20, or `CURRENCY_DEFAULT` for the
-///      product's default currency when the sale starts. `params` is the encoding the kind
-///      defines; the English auction takes none, so it must be empty.
+/// @dev `saleKind` is a `SaleKind` label; only an admitted adapter reporting the same kind may
+///      sell the work (6529 Stream admits the English auction at genesis, and later methods by
+///      governance: ADR 0005, owner decision 15). `currency` is `CURRENCY_ETH` (`address(0)`),
+///      an allowlisted ERC-20, or `CURRENCY_DEFAULT` for the product's default currency when
+///      the sale starts. `params` is the encoding the kind defines, checked by its adapter; the
+///      English auction takes none, so it must be empty.
 struct SaleTerms {
     bytes32 saleKind;
     address currency;

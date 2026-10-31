@@ -28,7 +28,7 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "../interfaces/types/PackageTypes.sol";
-import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
+import { PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
 import { SpdxId } from "./SpdxId.sol";
@@ -60,9 +60,16 @@ import { SpdxId } from "./SpdxId.sol";
 ///      makes that one plain view call and no other: it can run out of gas and revert, but never
 ///      return a zero royalty for lack of gas (RC1's Medium finding).
 ///
+///      Sale methods are pluggable (ADR 0005, owner decisions 14 and 15): an item names its 1/1
+///      sale method by a `SaleKind` label, and only an admitted adapter reporting that label
+///      mints it. Adapters are admitted one by one by a governed action (`setAdmittedMinter`,
+///      SUCCESSOR_SETTER, the 30-day class); the English auction is admitted at genesis, and a
+///      later sale method is a new adapter, with no new Stream. A removed adapter mints no more,
+///      but still settles and cancels the sales it started.
+///
 ///      Trust: the package registry, artist registry, economics resolver, split factory and
-///      entropy module are immutable. Sale adapters are admitted one by one by a governed action
-///      (`setAdmittedMinter`); the records satellite and 6529 Editions are bound once each.
+///      entropy module are immutable. The records satellite and 6529 Stream Editions are bound
+///      once each.
 contract Stream is ERC721, AccessManaged, IStream {
     /// @notice The longest accepted collection name, in bytes.
     uint256 public constant MAX_NAME_BYTES = 256;
@@ -105,7 +112,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
-    ///      the sales it started.
+    ///      the sales it started. Its sale kind is recorded then too (`_minterKinds`).
     struct Minter {
         bool admitted;
         uint16 id;
@@ -160,6 +167,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      storage slot.
     mapping(uint24 termsId => Terms) private _terms;
     mapping(bytes32 termsHash => uint24 termsId) private _overflowIds;
+    /// @dev Each admitted adapter's sale kind, by its ID: what `primaryTerms` reports for the
+    ///      works it minted. Declared last, so the earlier slots keep their positions.
+    mapping(uint16 minterId => bytes32 saleKind) private _minterKinds;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param packageRegistry_ The package registry `mint` consumes items from.
@@ -204,11 +214,13 @@ contract Stream is ERC721, AccessManaged, IStream {
     // ------------------------------------------------------------------------------- minting
 
     /// @inheritdoc IMintTarget
-    /// @dev Admitted minters only. The adapter mints into its own custody (`to == msg.sender`)
+    /// @dev Admitted minters only, and only for an item whose sale kind is the adapter's
+    ///      (`SaleKindMismatch`). The adapter mints into its own custody (`to == msg.sender`)
     ///      and passes `id = 0`, `amount = 1` and `data = abi.encode(StreamMintRequest)`. The
     ///      registry checks the approval, consents, move signature, single use and content
     ///      uniqueness; this contract checks the Stream rules and the delivered VRF seed, and
-    ///      assigns the next token ID and collection serial.
+    ///      assigns the next token ID and collection serial. The item's sale currency and
+    ///      params are the adapter's to check (the English auction takes empty params).
     function mint(address to, uint256 id, uint256 amount, bytes calldata data)
         external
         returns (uint256 tokenId, PrimaryTerms memory terms)
@@ -216,13 +228,11 @@ contract Stream is ERC721, AccessManaged, IStream {
         Minter memory minter = _minters[msg.sender];
         if (!minter.admitted) revert NotAdmittedMinter(msg.sender);
         if (to != msg.sender || id != 0 || amount != 1) revert InvalidMintRequest();
-        bytes32 kind = ISaleAdapter(msg.sender).saleKind();
-        if (kind != SaleKind.ENGLISH_AUCTION) {
-            revert SaleKindMismatch(SaleKind.ENGLISH_AUCTION, kind);
-        }
         StreamMintRequest calldata req = _request(data);
         PackageItem calldata item = req.item;
         _checkItem(item);
+        bytes32 kind = ISaleAdapter(msg.sender).saleKind();
+        if (kind != item.sale.saleKind) revert SaleKindMismatch(item.sale.saleKind, kind);
         (bytes32 itemHash, uint256 artistId) = _consume(data);
         if (
             item.seedPolicy == SeedPolicy.VRF
@@ -244,9 +254,10 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev For a minted token, only the sale kind, seller, fee terms and the creator (the lead
-    ///      artist's active authority, resolved now: zero while a recovery override is pending):
-    ///      the auction reads them at settlement and owns the currency. For `id` 0, a
+    /// @dev For a minted token, only the sale kind (the minting adapter's), seller, fee terms
+    ///      and the creator (the lead artist's active authority, resolved now: zero while a
+    ///      recovery override is pending): the adapter reads them at settlement and owns the
+    ///      currency. For `id` 0, a
     ///      preview from `data`; it resolves the lead artist through `artistIdOf`, so it reverts
     ///      while the lead artist has no identity.
     function primaryTerms(uint256 id, bytes calldata data)
@@ -256,7 +267,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     {
         if (id != 0) {
             (TokenData storage t, Terms memory shared) = _shared(id);
-            terms.saleKind = SaleKind.ENGLISH_AUCTION;
+            terms.saleKind = _minterKinds[shared.minterId];
             terms.seller = t.seller;
             terms.feeRecipient = _feeRecipients[shared.feeRecipientId - 1];
             terms.feeShare = shared.feeShare;
@@ -313,14 +324,22 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev SUCCESSOR_SETTER role. Admission checks code, ERC-165 for `ISaleAdapter` and no
-    ///      EIP-7702 delegation. Removal stops new mints only: the adapter keeps its index, so
-    ///      it can still settle and cancel (burn) the sales it started.
+    /// @dev SUCCESSOR_SETTER role (the 30-day class). Admission checks code, ERC-165 for
+    ///      `ISaleAdapter`, no EIP-7702 delegation and a nonzero sale kind, which the first
+    ///      admission records with the adapter's index. Removal stops new mints only: the adapter
+    ///      keeps its index, so it can still settle (`markPrimarySettled`) and cancel (`burn`)
+    ///      the sales it started; a live sale is never stranded.
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         Minter storage minter = _minters[adapter];
         if (admitted) {
             Dependency.check(adapter, type(ISaleAdapter).interfaceId);
-            if (minter.id == 0) minter.id = ++_counts.minters;
+            if (minter.id == 0) {
+                bytes32 kind = ISaleAdapter(adapter).saleKind();
+                if (kind == 0) revert Dependency.InvalidDependency(adapter);
+                uint16 id = ++_counts.minters;
+                minter.id = id;
+                _minterKinds[id] = kind;
+            }
         }
         minter.admitted = admitted;
         emit AdmittedMinterSet(adapter, admitted);
@@ -640,17 +659,16 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (artistId == 0 || artistId > type(uint160).max) revert InvalidMintRequest();
     }
 
-    /// @dev Stream rules the registry does not know: auction-only with empty parameters, a lead
-    ///      party, an existing collection, a coherent seed policy, and a license ID that follows
+    /// @dev Stream rules the registry does not know: a sale kind (whose adapter checks the
+    ///      sale's currency and params), a lead party, an existing collection, a coherent seed
+    ///      policy, and a license ID that follows
     ///      the `SpdxId` rule `WorkRecords` applies at relicense. `openRecord` stores the
     ///      approved record file and license as they are; the media commitments it checks (at
     ///      most 32 files, the primary first with the item's content hash) are not visible
     ///      here, so the curation signer's tooling must simulate `openRecord` before attesting
     ///      an item.
     function _checkItem(PackageItem calldata item) private view {
-        if (item.sale.saleKind != SaleKind.ENGLISH_AUCTION || item.sale.params.length != 0) {
-            revert InvalidItemSale();
-        }
+        if (item.sale.saleKind == 0) revert InvalidItemSale();
         if (item.parties.length == 0) revert InvalidLeadArtist();
         if (!_collections[item.collectionId].exists) revert UnknownCollection(item.collectionId);
         SeedPolicy policy = item.seedPolicy;
@@ -680,10 +698,12 @@ contract Stream is ERC721, AccessManaged, IStream {
                 || (e.feeShare != 0 && (e.feeRecipient == address(0) || e.feeRecipient == seller))
         ) revert InvalidWorkTerms();
         w = WorkTerms(seller, e.feeRecipient, e.feeShare, address(0), e.royaltyRate);
-        terms.saleKind = SaleKind.ENGLISH_AUCTION;
+        terms.saleKind = item.sale.saleKind;
         // The adapter resolves `CURRENCY_DEFAULT` and checks the allowlist when it locks the
-        // currency (`PrimaryTerms`); an auction's price is zero, so the default is allowed.
+        // currency (`PrimaryTerms`); an auction's price is zero, so the default is allowed. It
+        // also checks the params (the English auction refuses any).
         terms.currency = item.sale.currency;
+        terms.params = item.sale.params;
         terms.seller = w.seller;
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;
