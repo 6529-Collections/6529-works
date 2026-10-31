@@ -31,7 +31,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     uint256 internal constant BAND = 14;
     uint256 internal constant FAR = 48;
     uint256 internal constant MAX_QTY = 6;
-    uint256 internal constant BPS = 10_000;
+    uint256 internal constant DENOMINATOR = 100_000;
 
     /// @dev One edition bid as the handler expects it.
     struct GhostBid {
@@ -54,7 +54,9 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     struct Piece {
         uint32 cap;
         uint256 tokenId;
+        /// @dev The 1/1's English auction sale ID, and the edition auction's.
         uint256 saleId;
+        uint256 editionSaleId;
         bool started;
         bool opened;
         bool pauseUsed;
@@ -154,7 +156,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             uint256 room = end - block.timestamp - 1;
             vm.warp(end - _bound(amountSeed >> 8, 1, window < room ? window : room));
         }
-        uint256 before = _editionEnd(i);
+        uint256 before = _endTime(i);
         uint256 minimum = auction.minimumBid(p.saleId);
         _ethBid(p.saleId, collectors[seed % COLLECTORS], _bound(amountSeed >> 16, minimum, minimum + 1 ether));
         if (snipe) {
@@ -162,7 +164,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
                 _violation("the 1/1 anti-snipe did not extend its end");
             }
             ++hits["oneOfOneSnipe"];
-            uint256 after_ = _editionEnd(i);
+            uint256 after_ = _endTime(i);
             if (p.opened && after_ < before) _violation("the edition end moved earlier");
             if (p.opened && after_ > before) ++hits["editionEndMoved"];
         }
@@ -224,11 +226,13 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             Piece storage p = pieces[i];
             if (!p.started || p.cancelled) continue;
             PackageItem memory item = _package(root)[i].item;
-            bool expected = !p.opened && block.timestamp < _openUntil(i);
+            bool expected = !p.opened && _openable(i);
             vm.prank(bidders[callerSeed % BIDDERS]);
-            try editionAuction.open(p.tokenId, item) returns (uint256 saleId) {
+            try editionAuction.open(address(editions), p.tokenId, abi.encode(item)) returns (
+                uint256 saleId
+            ) {
                 if (!expected) _violation("an edition auction opened late or twice");
-                if (saleId != p.tokenId) _violation("the sale ID is not the work ID");
+                if (saleId != p.editionSaleId) _violation("the sale ID is not saleIdOf");
                 p.opened = true;
                 ++hits["open"];
             } catch {
@@ -262,9 +266,9 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         if (b.withdrawn) return;
         uint256 next = b.step + 1 + stepSeed % 6;
         uint256 cost = b.qty * (_price(i, next) - _price(i, b.step));
-        uint256 id = _bidId(i, index);
+        uint256 id = index + 1;
         vm.prank(collectors[0]);
-        try editionAuction.raise(id, next) {
+        try editionAuction.raise(pieces[i].editionSaleId, id, next) {
             _violation("a stranger raised another's bid");
         } catch {
             ++hits["raiseRefused"];
@@ -272,7 +276,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         _softClose(i);
         vm.deal(b.bidder, b.bidder.balance + cost);
         vm.prank(b.bidder);
-        try editionAuction.raise{ value: cost }(id, next) {
+        try editionAuction.raise{ value: cost }(pieces[i].editionSaleId, id, next) {
             ghostIn += cost;
             _depart(i, b.step, b.pos, b.qty);
             b.step = next;
@@ -300,7 +304,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             uint256 escrow = b.qty * _price(i, b.step);
             uint256 before = b.bidder.balance;
             vm.prank(b.bidder);
-            try editionAuction.withdraw(_bidId(i, index), b.bidder) {
+            try editionAuction.withdrawBid(p.editionSaleId, index + 1, b.bidder) {
                 if (!paused) {
                     _violation("a bid was withdrawn outside a dispute pause");
                     return;
@@ -344,7 +348,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
                 _void(i);
                 return;
             }
-            bool closed = block.timestamp >= _editionEnd(i);
+            bool closed = block.timestamp >= _endTime(i);
             bool final_ = _state1of1(i) == IEnglishAuction.AuctionState.SETTLED;
             (uint256 refK,,) = _reference(i);
             if (closed && final_ && (refK == 0 || p.editionCreated)) {
@@ -353,7 +357,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             }
             if (mode % 3 != 0) continue;
             uint256[] memory order = _hint(i);
-            try editionAuction.settle(p.tokenId, order) {
+            try editionAuction.settle(p.editionSaleId, order) {
                 _violation("an edition auction settled early");
             } catch {
                 ++hits[!closed ? bytes32("settleTooEarly") : bytes32("settleWaits")];
@@ -404,6 +408,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     function _startPiece(uint256 i) internal {
         Piece storage p = pieces[i];
         (p.saleId, p.tokenId) = _start(root, _package(root), i);
+        p.editionSaleId = editionAuction.saleIdOf(address(editions), p.tokenId);
         p.started = true;
     }
 
@@ -412,15 +417,15 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         uint256 cost = qty * _price(i, step);
         vm.deal(bidder, bidder.balance + cost + 1);
         vm.prank(bidder);
-        try editionAuction.bid{ value: cost + 1 }(p.tokenId, step, qty) {
+        try editionAuction.bid{ value: cost + 1 }(p.editionSaleId, step, qty) {
             _violation("an inexact payment was accepted");
         } catch {
             ++hits["inexactRefused"];
         }
         _softClose(i);
         vm.prank(bidder);
-        try editionAuction.bid{ value: cost }(p.tokenId, step, qty) returns (uint256 id) {
-            if (id != _bidId(i, book[i].length)) _violation("bid IDs are not sequential");
+        try editionAuction.bid{ value: cost }(p.editionSaleId, step, qty) returns (uint256 id) {
+            if (id != book[i].length + 1) _violation("bid IDs are not sequential");
             ghostIn += cost;
             uint256 pos = p.cap == 0 ? 0 : enteredUnits[i][step];
             book[i].push(GhostBid(bidder, step, qty, pos, false, false));
@@ -433,25 +438,24 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         }
     }
 
-    /// @dev D141: a bid or raise in the last `softCloseWindow` seconds before the close moves
-    ///      the soft end to `now + softCloseWindow`, never past the 1/1's end plus the offset
-    ///      plus the backstop. While the 1/1 is paused the close is undetermined: no soft close.
-    ///      Called just before the bid lands.
+    /// @dev D141: a bid or raise at or after `endTime - softWindow` sets the soft end to
+    ///      `min(now + softWindow, backstop)`, the backstop being the 1/1's end plus the offset
+    ///      plus `maxExtension`. While the 1/1 is paused bids are accepted at any time and move
+    ///      nothing. Called just before a bid lands.
     function _softClose(uint256 i) internal {
         if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return;
         IUniformEditionAuction.AuctionConfig memory t = _terms(i);
-        if (block.timestamp + t.softCloseWindow < _editionEnd(i)) return;
-        uint256 cap = _oneOfOneEnd(i) + t.closeOffset + t.maxExtension;
-        uint256 next = block.timestamp + t.softCloseWindow;
-        if (next > cap) next = cap;
-        if (next > pieces[i].softEnd) pieces[i].softEnd = next;
+        if (block.timestamp + t.softWindow < _endTime(i)) return;
+        uint256 backstop = _closeAt(i) + t.maxExtension;
+        uint256 next = block.timestamp + t.softWindow;
+        pieces[i].softEnd = next < backstop ? next : backstop;
         ++hits["softClose"];
     }
 
     function _warpIntoSoftWindow(uint256 i, uint256 seed) internal {
         if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return;
-        uint256 end = _editionEnd(i);
-        uint256 into = _bound(seed, 1, _terms(i).softCloseWindow);
+        uint256 end = _endTime(i);
+        uint256 into = _bound(seed, 1, _terms(i).softWindow);
         if (end > block.timestamp + into) vm.warp(end - into);
     }
 
@@ -468,9 +472,13 @@ abstract contract EditionAuctionHandler is IntegrationBase {
 
     function _settle(uint256 i, uint256 mode) internal {
         Piece storage p = pieces[i];
-        IUniformEditionAuction.Clearing memory live = editionAuction.clearing(p.tokenId);
+        IUniformEditionAuction.Clearing memory live = editionAuction.clearing(p.editionSaleId);
+        uint256[] memory suggested = editionAuction.settlementOrder(p.editionSaleId);
         (uint256 refK, uint256 refPrice, uint256 best) = _reference(i);
         uint256[] memory order = _hint(i);
+        if (keccak256(abi.encode(order)) != keccak256(abi.encode(suggested))) {
+            _violation("settlementOrder differs from the departures sorted by position");
+        }
         uint256 feeBefore = networkFee.balance;
         bool done;
         if (order.length > 1 && mode % 2 == 0) {
@@ -482,21 +490,21 @@ abstract contract EditionAuctionHandler is IntegrationBase {
                 if (j < half) first[j] = order[j];
                 else rest[j - half] = order[j];
             }
-            if (editionAuction.settle(p.tokenId, first)) _violation("half a sweep settled");
-            done = editionAuction.settle(p.tokenId, rest);
+            if (editionAuction.settle(p.editionSaleId, first)) _violation("half a sweep settled");
+            done = editionAuction.settle(p.editionSaleId, rest);
             ++hits["settleChunked"];
         } else {
-            done = editionAuction.settle(p.tokenId, order);
+            done = editionAuction.settle(p.editionSaleId, order);
         }
         if (!done) _violation("a complete sweep did not settle");
-        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(p.tokenId);
+        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(p.editionSaleId);
         if (c.count != live.count || c.step != live.step || c.price != live.price) {
             _violation("the live view differs from the settled result");
         }
         if (c.count != refK) _violation("the count differs from the per-unit reference");
         if (c.count != 0 && c.price != refPrice) _violation("the price differs from the reference");
         if (p.cap != 0 && c.count > p.cap) _violation("the count exceeds the cap");
-        if (c.count * c.price * BPS < best * (BPS - _terms(i).marginBps)) {
+        if (c.count * c.price * DENOMINATOR < best * (DENOMINATOR - _terms(i).marginShare)) {
             _violation("revenue below the breadth threshold");
         }
         p.settled = true;
@@ -504,7 +512,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         p.clearStep = c.step;
         p.price = c.price;
         uint256 revenue = uint256(c.count) * c.price;
-        uint256 fee = revenue * editionAuction.auctionOf(p.tokenId).feeShare / 100_000;
+        uint256 fee = revenue * editionAuction.auction(p.editionSaleId).feeShare / DENOMINATOR;
         if (networkFee.balance - feeBefore != fee) _violation("the network was not paid its share");
         ghostOut += revenue;
         if (c.count == 0) {
@@ -522,13 +530,16 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         uint256 cost = _price(i, 0);
         vm.deal(bidders[0], bidders[0].balance + cost);
         vm.prank(bidders[0]);
-        try editionAuction.bid{ value: cost }(p.tokenId, 0, 1) {
+        try editionAuction.bid{ value: cost }(p.editionSaleId, 0, 1) {
             _violation("a cancelled 1/1's edition auction took a bid");
         } catch {
             ++hits["cancelledBidRefused"];
         }
-        editionAuction.settle(p.tokenId, new uint256[](0));
-        if (editionAuction.auctionOf(p.tokenId).state != IUniformEditionAuction.AuctionState.VOID) {
+        editionAuction.settle(p.editionSaleId, new uint256[](0));
+        if (
+            editionAuction.auction(p.editionSaleId).status
+                != IUniformEditionAuction.AuctionStatus.VOID
+        ) {
             _violation("a cancelled 1/1 did not void its edition auction");
         }
         p.voided = true;
@@ -538,22 +549,24 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     function _claim(uint256 i, uint256 index, uint256 mode) internal {
         Piece storage p = pieces[i];
         GhostBid storage b = book[i][index];
-        uint256 id = _bidId(i, index);
+        uint256 id = index + 1;
         uint256 won = p.voided ? 0 : _expectedWon(i, index);
         uint256 refund = b.qty * _price(i, b.step) - won * p.price;
-        (uint256 viewWon, uint256 viewRefund,) = editionAuction.outcomeOf(id);
-        if (viewWon != won || viewRefund != refund) _violation("outcomeOf differs from the claim");
+        IUniformEditionAuction.BidOutcome memory o = editionAuction.bidOutcome(p.editionSaleId, id);
+        if (o.unitsWon != won || o.refund != refund || !o.isFinal) {
+            _violation("bidOutcome differs from the claim");
+        }
         uint256 copiesBefore = won == 0 ? 0 : editions.balanceOf(b.bidder, p.tokenId);
         if (mode % 3 == 0) {
             vm.prank(collectors[1]);
-            editionAuction.claimBidFor(id);
+            editionAuction.claimBidFor(p.editionSaleId, id);
             ghostCredit[b.bidder] += refund;
             ghostCredits += refund;
             ++hits["claimFor"];
         } else {
             uint256 ethBefore = b.bidder.balance;
             vm.prank(b.bidder);
-            editionAuction.claimBid(id, b.bidder);
+            editionAuction.claimBid(p.editionSaleId, id, b.bidder);
             if (b.bidder.balance - ethBefore != refund) _violation("a claim refund was not exact");
             ghostOut += refund;
             ++hits["claim"];
@@ -566,7 +579,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         if (won != 0 && won < b.qty) ++hits["partFilled"];
         if (p.voided) ++hits["voidRefund"];
         vm.prank(b.bidder);
-        try editionAuction.claimBid(id, b.bidder) {
+        try editionAuction.claimBid(p.editionSaleId, id, b.bidder) {
             _violation("a bid was claimed twice");
         } catch {
             ++hits["claimTwiceRefused"];
@@ -586,16 +599,24 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             units[s] = liveUnits[i][p.lo + s];
             prices[s] = _price(i, p.lo + s);
         }
-        return Ref.clear(units, prices, p.cap, _terms(i).marginBps);
+        return Ref.clear(units, prices, p.cap, _terms(i).marginShare);
     }
 
     /// @dev The settler's hint: the indexes of the clearing step's departures, in position
-    ///      order. Empty unless the reference clearing is rationed at a step with departures.
+    ///      order. Empty unless the reference clearing is rationed (the cap binds inside the
+    ///      clearing step), the only case in which settlement sweeps departures.
     function _hint(uint256 i) internal view returns (uint256[] memory order) {
-        if (pieces[i].cap == 0) return order;
+        Piece storage p = pieces[i];
+        if (p.cap == 0) return order;
         (uint256 k, uint256 price,) = _reference(i);
         if (k == 0) return order;
-        Departure[] storage d = departures[i][_stepAt(i, price)];
+        uint256 step = _stepAt(i, price);
+        uint256 atOrAbove;
+        for (uint256 s = step; s <= p.hi; ++s) {
+            atOrAbove += liveUnits[i][s];
+        }
+        if (atOrAbove <= k) return order;
+        Departure[] storage d = departures[i][step];
         order = new uint256[](d.length);
         bool[] memory used = new bool[](d.length);
         for (uint256 n; n < d.length; ++n) {
@@ -661,16 +682,12 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         return seed % 16 == 0 ? FAR + (seed >> 4) % 4 : (seed >> 4) % BAND;
     }
 
-    function _bidId(uint256 i, uint256 index) internal view returns (uint256) {
-        return pieces[i].tokenId << 32 | (index + 1);
-    }
 
     /// @dev The first piece, from `seed`, whose edition auction takes bids now.
     function _biddable(uint256 seed) internal view returns (bool, uint256) {
         for (uint256 k; k < MASTERS; ++k) {
             uint256 i = (seed + k) % MASTERS;
-            Piece storage p = pieces[i];
-            if (p.opened && !p.cancelled && block.timestamp < _editionEnd(i)) return (true, i);
+            if (pieces[i].opened && _biddingOpen(i)) return (true, i);
         }
         return (false, 0);
     }
@@ -695,28 +712,42 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         return auction.auction(pieces[i].saleId).endTime;
     }
 
-    /// @dev The close the handler expects: `max(1/1 end + offset, soft end)` (D140, D141), and
-    ///      undetermined (`type(uint64).max`) while the 1/1 is paused for a dispute.
-    function _editionEnd(uint256 i) internal view returns (uint256) {
-        if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return type(uint64).max;
-        uint256 base = _oneOfOneEnd(i) + _terms(i).closeOffset;
-        uint256 soft = pieces[i].softEnd;
-        return soft > base ? soft : base;
+    /// @dev The 1/1's end plus the locked offset: the earliest the edition auction can close.
+    function _closeAt(uint256 i) internal view returns (uint256) {
+        return _oneOfOneEnd(i) + _terms(i).closeOffset;
     }
 
-    /// @dev An auction may open until the 1/1's end plus the offset (undetermined while
-    ///      paused). Before it opens it has no locked terms: the current configuration applies.
-    function _openUntil(uint256 i) internal view returns (uint256) {
-        if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return type(uint64).max;
-        return _oneOfOneEnd(i) + editionAuction.config().closeOffset;
+    /// @dev The end the handler expects: `max(closeAt, softEnd)` (D140, D141).
+    function _endTime(uint256 i) internal view returns (uint256) {
+        uint256 closeAt = _closeAt(i);
+        uint256 soft = pieces[i].softEnd;
+        return soft > closeAt ? soft : closeAt;
+    }
+
+    /// @dev Bidding is open before the end, and at any time while the 1/1 is paused for a
+    ///      dispute; never once the 1/1 is cancelled.
+    function _biddingOpen(uint256 i) internal view returns (bool) {
+        IEnglishAuction.AuctionState s = _state1of1(i);
+        if (s == IEnglishAuction.AuctionState.CANCELLED) return false;
+        return s == IEnglishAuction.AuctionState.PAUSED || block.timestamp < _endTime(i);
+    }
+
+    /// @dev An auction may open from the 1/1's start until the edition close, which before it
+    ///      opens is the 1/1's end plus the current offset (at any time while the 1/1 is paused),
+    ///      never once the 1/1 is cancelled.
+    function _openable(uint256 i) internal view returns (bool) {
+        IEnglishAuction.AuctionState s = _state1of1(i);
+        if (s == IEnglishAuction.AuctionState.CANCELLED) return false;
+        return s == IEnglishAuction.AuctionState.PAUSED
+            || block.timestamp < _oneOfOneEnd(i) + editionAuction.config().closeOffset;
     }
 
     function _terms(uint256 i) internal view returns (IUniformEditionAuction.AuctionConfig memory) {
-        return editionAuction.configOf(editionAuction.auctionOf(pieces[i].tokenId).termsId);
+        return editionAuction.auction(pieces[i].editionSaleId).terms;
     }
 
     function _price(uint256 i, uint256 step) internal view returns (uint256) {
-        return editionAuction.stepPrice(pieces[i].tokenId, step);
+        return editionAuction.stepPrice(pieces[i].editionSaleId, step);
     }
 
     function _violation(string memory what) internal {
@@ -756,38 +787,49 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         assertEq(address(editionAuction).balance, owed, "the balance is exactly what is owed");
     }
 
-    /// @dev The close is `max(1/1 end + offset, soft end)` (undetermined while the 1/1 is
-    ///      paused), never before the 1/1's end plus the offset, and the soft end within the
-    ///      backstop.
+    /// @dev The clocks: the 1/1's end read live, `closeAt` its end plus the offset, the soft end
+    ///      the handler expects, `endTime = max(closeAt, softEnd)` within the backstop, and
+    ///      bidding and withdrawals open exactly when the rules say.
     function _assertTiming(uint256 i) internal view {
         Piece storage p = pieces[i];
-        if (p.settled || p.voided || p.cancelled) return;
-        IUniformEditionAuction.Auction memory a = editionAuction.auctionOf(p.tokenId);
+        if (p.settled || p.voided) return;
+        IUniformEditionAuction.EndTimes memory e = editionAuction.endTimes(p.editionSaleId);
         IUniformEditionAuction.AuctionConfig memory t = _terms(i);
-        assertEq(a.endTime, _editionEnd(i), "the close is max(1/1 end + offset, soft end)");
-        if (_state1of1(i) == IEnglishAuction.AuctionState.PAUSED) return;
-        uint256 base = _oneOfOneEnd(i) + t.closeOffset;
-        assertEq(a.oneOfOneEnd, _oneOfOneEnd(i), "the 1/1's end is read live");
-        assertGe(a.endTime, base, "never before the 1/1's end plus the offset");
-        assertLe(a.endTime, base + t.maxExtension, "the soft close stays within the backstop");
+        IEnglishAuction.AuctionState s = _state1of1(i);
+        assertEq(e.oneOfOneEnd, _oneOfOneEnd(i), "the 1/1's end is read live");
+        assertEq(e.closeAt, _closeAt(i), "closeAt is the 1/1's end plus the offset");
+        assertEq(e.softEnd, p.softEnd, "the soft end");
+        assertEq(e.endTime, _endTime(i), "endTime is max(closeAt, softEnd)");
+        assertEq(e.backstop, e.closeAt + t.maxExtension, "the backstop");
+        assertGe(e.endTime, e.closeAt, "never before the 1/1's end plus the offset");
+        assertLe(e.endTime, e.backstop, "the soft close stays within the backstop");
+        assertEq(uint8(e.oneOfOneState), uint8(s), "the 1/1's state");
+        assertEq(e.biddingOpen, _biddingOpen(i), "bidding open exactly when the rules say");
+        assertEq(
+            e.withdrawalsOpen,
+            s == IEnglishAuction.AuctionState.PAUSED,
+            "withdrawals open exactly while the 1/1 is paused"
+        );
     }
 
     /// @dev Before settlement the live result equals the per-unit reference (so it is the
-    ///      largest count within the breadth margin of the best revenue), within the cap, and
-    ///      each live bid's outcome is the reference's fill; after it, the stored result
-    ///      never changes.
+    ///      largest count within the breadth margin of the best revenue, and its best revenue is
+    ///      R*), within the cap; after it, the stored result never changes.
     function _assertClearing(uint256 i) internal view {
         Piece storage p = pieces[i];
         if (p.voided) return;
-        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(p.tokenId);
         if (p.settled) {
-            assertEq(c.count, p.k, "the stored count never changes");
-            assertEq(c.price, p.price, "the stored price never changes");
+            IUniformEditionAuction.Settlement memory r = editionAuction.settlement(p.editionSaleId);
+            assertEq(r.count, p.k, "the stored count never changes");
+            assertEq(r.price, p.price, "the stored price never changes");
+            assertEq(r.departuresSwept, r.departures, "the sweep is complete");
             return;
         }
-        (uint256 refK, uint256 refPrice,) = _reference(i);
+        IUniformEditionAuction.Clearing memory c = editionAuction.clearing(p.editionSaleId);
+        (uint256 refK, uint256 refPrice, uint256 best) = _reference(i);
         assertEq(c.count, refK, "the live count equals the per-unit reference");
         assertEq(c.price, refK == 0 ? 0 : refPrice, "the live price equals the reference");
+        assertEq(c.bestRevenue, best, "R* equals the reference's best revenue");
         if (p.cap != 0) assertLe(c.count, p.cap, "the cap");
     }
 

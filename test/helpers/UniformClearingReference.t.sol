@@ -19,7 +19,7 @@ contract UniformClearingReferenceTest is Test {
 
     function test_Clear_TheOwnersExampleSells80AtTheFifthStep() public pure {
         (uint256[] memory units, uint256[] memory prices) = _ownerBook();
-        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 0, 1000);
+        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 0, 10_000);
         assertEq(k, 80);
         assertEq(price, 50);
         assertEq(best, 4000);
@@ -27,7 +27,7 @@ contract UniformClearingReferenceTest is Test {
 
     function test_Clear_AWiderMarginTakesMoreEditionsAtALowerPrice() public pure {
         (uint256[] memory units, uint256[] memory prices) = _ownerBook();
-        (uint256 k, uint256 price,) = Ref.clear(units, prices, 0, 3000);
+        (uint256 k, uint256 price,) = Ref.clear(units, prices, 0, 30_000);
         assertEq(k, 280);
         assertEq(price, 10);
         (k, price,) = Ref.clear(units, prices, 0, 0);
@@ -57,19 +57,19 @@ contract UniformClearingReferenceTest is Test {
 
     function test_Clear_OnTheLadderSells80At0511AndOneMoreUnitTiltsTo81At0464() public pure {
         (uint256[] memory units, uint256[] memory prices) = _ladderBook(0);
-        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 0, 1000);
+        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 0, 10_000);
         assertEq(k, 80);
         assertEq(price, 0.0511 ether);
         assertEq(best, 4.088 ether);
         (units, prices) = _ladderBook(1);
-        (k, price,) = Ref.clear(units, prices, 0, 1000);
+        (k, price,) = Ref.clear(units, prices, 0, 10_000);
         assertEq(k, 81);
         assertEq(price, 0.0464 ether);
     }
 
     function test_Clear_ACapOf60StopsInsideTheStep() public pure {
         (uint256[] memory units, uint256[] memory prices) = _ladderBook(0);
-        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 60, 1000);
+        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 60, 10_000);
         assertEq(k, 60);
         assertEq(price, 0.0511 ether);
         assertEq(best, 3.066 ether);
@@ -79,7 +79,7 @@ contract UniformClearingReferenceTest is Test {
         uint256[] memory units = new uint256[](2);
         uint256[] memory prices = new uint256[](2);
         (prices[0], prices[1]) = (1, 2);
-        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 0, 1000);
+        (uint256 k, uint256 price, uint256 best) = Ref.clear(units, prices, 0, 10_000);
         assertEq(k, 0);
         assertEq(price, 0);
         assertEq(best, 0);

@@ -7,21 +7,21 @@ pragma solidity ^0.8.24;
 ///      orders them by price from the highest, and scans every count `k`:
 ///      `revenue(k) = k x P(k)`, where `P(k)` is the k-th highest unit price; `R*` is the
 ///      highest revenue at any `k` up to the cap; the result is the LARGEST `k` whose revenue
-///      is at least `(10,000 - marginBps) / 10,000` of `R*`, at price `P(k)`. The allocation at
+///      is at least `(100,000 - marginShare) / 100,000` of `R*`, at price `P(k)`. The allocation at
 ///      the cut step fills the units the step wins in arrival order (lowest position first),
 ///      the last filled bid partly. Both are quadratic or worse and meant for small books.
 library UniformClearingReference {
-    uint256 internal constant BPS = 10_000;
+    uint256 internal constant DENOMINATOR = 100_000;
 
     /// @notice The clearing of a book given as live units per step.
     /// @param units Live units at each step, lowest step first.
     /// @param prices The price of each step, strictly increasing.
     /// @param cap The creator's cap on the count; zero for none.
-    /// @param marginBps The breadth margin, out of 10,000.
+    /// @param marginShare The breadth margin, out of 100,000.
     /// @return k The number of editions sold (zero for an empty book).
     /// @return price The clearing price `P(k)` (zero when `k` is zero).
     /// @return best `R*`, the highest revenue at any count up to the cap.
-    function clear(uint256[] memory units, uint256[] memory prices, uint256 cap, uint256 marginBps)
+    function clear(uint256[] memory units, uint256[] memory prices, uint256 cap, uint256 marginShare)
         internal
         pure
         returns (uint256 k, uint256 price, uint256 best)
@@ -33,7 +33,7 @@ library UniformClearingReference {
             if (revenue > best) best = revenue;
         }
         for (uint256 i = n; i > 0; --i) {
-            if (i * unitPrices[i - 1] * BPS >= best * (BPS - marginBps)) {
+            if (i * unitPrices[i - 1] * DENOMINATOR >= best * (DENOMINATOR - marginShare)) {
                 return (i, unitPrices[i - 1], best);
             }
         }
