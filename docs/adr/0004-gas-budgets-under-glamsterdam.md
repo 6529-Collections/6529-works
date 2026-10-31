@@ -142,25 +142,30 @@ price is stored.
 The fixed-price and Dutch rows left with their adapters; the edition auction's rows come with
 it. The Sepolia column stays r3's receipts.
 
+Re-measured for owner decision 15 (6529 Stream's pluggable 1/1 sale): every `start` row rose by
+about 230 gas (the item's sale kind is compared with the adapter's and its params returned) and
+each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one cold word); no row
+writes a new slot. The binding row keeps 10,449 gas of margin.
+
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 268,836 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 310,933 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 277,160 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 319,244 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 276,506 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 268,883 | 350,000 | **5** | 0 | 736,477 |
-| `start`, an artist's first work | 288,948 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 331,045 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 339,348 | 350,000 | **7** | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 356,011 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 268,871 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 438,043 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 381,082 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `start`, steady state | 269,082 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 311,179 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 277,395 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 319,479 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 276,741 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 269,105 | 350,000 | **5** | 0 | 736,477 |
+| `start`, an artist's first work | 289,174 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 331,271 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 339,551 | 350,000 | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 356,253 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 269,105 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 438,257 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 381,328 | 390,000 (regression) | 9 | 0 | 1,213,250 |
 | `bid` that outbids | 73,452 | 75,000 (regression) | 1 | 0 | 169,060 |
-| `settle`, first payout to a seller wallet | 166,383 | 400,000 | 1 | 1 | 449,934 (sim.) |
-| `settle`, with a bid | 141,383 | 400,000 | 1 | 0 | 257,763 (r2) |
-| `settle`, no bid (to the museum, D140) | 131,824 | 400,000 | 1 | 0 | — |
+| `settle`, first payout to a seller wallet | 168,552 | 400,000 | 1 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 143,552 | 400,000 | 1 | 0 | 257,763 (r2) |
+| `settle`, no bid (to the museum, D140) | 133,993 | 400,000 | 1 | 0 | — |
 | `consume`, as Stream calls it | 93,057 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 240,708 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | re-rate a work (governed `execute`) | 186,911 | 192,000 (regression) | 1 | 0 | — |

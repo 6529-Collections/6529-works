@@ -392,7 +392,7 @@ before each merge.
   Removing an adapter stops its new mints only: it keeps its index, so it still settles,
   delivers and cancels every sale it started (AUC-8, AUC-9). As for editions, an item naming a
   kind no admitted adapter serves cannot start until one is admitted; the curation signer
-  checks this (LIM-EA-8). Cost: Stream's runtime grows by 181 bytes, `start` by about 250
+  checks this (LIM-EA-8). Cost: Stream's runtime grows by 181 bytes, `start` by about 230
   Prague gas with no new slot, and the English auction's `settle` by about 2,200 (one more cold
   read, the minting adapter's kind) ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
 
