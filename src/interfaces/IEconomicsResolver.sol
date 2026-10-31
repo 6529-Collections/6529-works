@@ -36,6 +36,12 @@ interface IEconomicsResolver is IERC165 {
     event DefaultLicenseSet(
         bytes32 indexed product, License previous, License next, uint64 revision
     );
+    /// @notice The 6529 Network Museum's address changed; its revision is now `revision`
+    ///         (ADR 0005).
+    /// @param previous The museum before the change; zero at deployment.
+    /// @param next The museum after the change.
+    /// @param revision The museum revision after the change; 1 at deployment.
+    event MuseumSet(address previous, address next, uint64 revision);
 
     /// @notice The currency is not active in the asset allowlist.
     error CurrencyNotAllowed(address currency);
@@ -54,6 +60,10 @@ interface IEconomicsResolver is IERC165 {
     ///         accept a payment (the revenue escrow, the claim router, a sale adapter, a mint
     ///         target, the artist or package registry, or the work records).
     error InvalidFeeRecipient(address recipient);
+    /// @notice `museum` cannot hold the network's works: zero, or a protocol contract that
+    ///         cannot take an ERC-721 for the network (the resolver itself, a sale adapter, a
+    ///         token contract, a registry, the revenue escrow or the claim router).
+    error InvalidMuseum(address museum);
 
     /// @notice The terms a new work of `product` locks at mint, for the artist-portion payees of
     ///         its package item. Both wallets are predicted CREATE2 addresses; nothing is
@@ -112,6 +122,16 @@ interface IEconomicsResolver is IERC165 {
     /// @notice The split factory (immutable).
     /// @return The `ISplitFactory` this resolver predicts wallet addresses with.
     function splitFactory() external view returns (address);
+    /// @notice The 6529 Network Museum (ADR 0005; 6529chain D140): the network-held account
+    ///         that receives a 6529 Stream work whose 1/1 auction drew no bids, or that ended
+    ///         unsold after its currency stayed deprecated for 30 days. The English auction reads
+    ///         it at settlement; a federated work goes to its artist instead. Set at deployment
+    ///         (revision 1) and never zero.
+    /// @return The museum's address.
+    function museum() external view returns (address);
+    /// @notice The revision `setMuseum` compares.
+    /// @return The museum revision: 1 at deployment, bumped by every change.
+    function museumRevision() external view returns (uint64);
 
     /// @notice Sets a product's network fee recipient and fee share for new works. FUNDS_SETTER
     ///         role (14 days). Reverts with {InvalidFeeRecipient} for a recipient that could
@@ -142,4 +162,13 @@ interface IEconomicsResolver is IERC165 {
     ///        `Limits.MAX_LICENSE_ID_BYTES` bytes, and a non-zero text file ID.
     function setDefaultLicense(bytes32 product, uint64 expectedRevision, License calldata next)
         external;
+    /// @notice Sets the 6529 Network Museum for settlements from now on. FUNDS_SETTER role
+    ///         (14 days, the network-level recipients class), compare-and-set on the museum
+    ///         revision. Reverts with {InvalidMuseum} for an address that could never hold the
+    ///         network's works; the runbook also requires an existing account that accepts
+    ///         ERC-721 tokens (a Safe). A work already delivered or pending for the previous
+    ///         museum stays with it.
+    /// @param expectedRevision The museum revision the resolver must be at.
+    /// @param next The new museum: nonzero, and not a protocol contract.
+    function setMuseum(uint64 expectedRevision, address next) external;
 }

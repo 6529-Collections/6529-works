@@ -52,6 +52,9 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @notice The launch default license's SPDX ID; its key is `WorksHashing.CC0_LICENSE_KEY`.
     string public constant CC0 = "CC0-1.0";
 
+    /// @notice An ADR 0005 function whose implementation has not landed yet (the museum).
+    error NotImplemented();
+
     struct Product {
         ProductEconomics economics;
         uint64 feeRevision;
@@ -205,6 +208,25 @@ contract EconomicsResolver is IEconomicsResolver, AccessManaged {
     /// @inheritdoc IEconomicsResolver
     function splitFactory() external view returns (address) {
         return address(_factory);
+    }
+
+    /// @inheritdoc IEconomicsResolver
+    /// @dev ADR 0005 interface stub: reverts with {NotImplemented} until the museum lands.
+    function museum() external pure returns (address) {
+        revert NotImplemented();
+    }
+
+    /// @inheritdoc IEconomicsResolver
+    /// @dev ADR 0005 interface stub: reverts with {NotImplemented} until the museum lands.
+    function museumRevision() external pure returns (uint64) {
+        revert NotImplemented();
+    }
+
+    /// @inheritdoc IEconomicsResolver
+    /// @dev ADR 0005 interface stub: reverts with {NotImplemented}, and is not yet `restricted`
+    ///      or mapped at genesis; the museum lane makes it a FUNDS_SETTER setter.
+    function setMuseum(uint64, address) external pure {
+        revert NotImplemented();
     }
 
     /// @inheritdoc IERC165

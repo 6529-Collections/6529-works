@@ -159,6 +159,12 @@ jobs:
       - name: NatSpec checker unit tests
         run: python -m tools.test_check_natspec
 
+      - name: Edition auction reference model
+        # tools/edition_auction_ref.py (ADR 0005): the ladder, the clearing rule against brute
+        # force, the FIFO sweep, and the committed golden vectors in test/fixtures/edition-auction/
+        # (stale vectors fail; regenerate with `python tools/edition_auction_ref.py --write`).
+        run: python -m tools.test_edition_auction_ref
+
       - name: Coverage and mutation tool unit tests
         # The tools run on main and on a schedule (strength.yml, mutation.yml); their unit
         # tests are cheap enough for every pull request.

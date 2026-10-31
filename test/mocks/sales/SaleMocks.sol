@@ -252,6 +252,18 @@ contract MockEconomicsResolver is IEconomicsResolver {
         revert("unused");
     }
 
+    function museum() external pure returns (address) {
+        revert("unused");
+    }
+
+    function museumRevision() external pure returns (uint64) {
+        revert("unused");
+    }
+
+    function setMuseum(uint64, address) external pure {
+        revert("unused");
+    }
+
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IEconomicsResolver).interfaceId || interfaceId == 0x01ffc9a7;
     }

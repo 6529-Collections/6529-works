@@ -3,7 +3,9 @@
 Status: Accepted by the owner, 11 October 2026. §13 is amended by
 [ADR 0002](0002-access-manager-hardening.md); build-time decisions across §3–§13
 are recorded in [ADR 0003](0003-build-time-decisions.md); the gas budgets under
-Glamsterdam are in [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
+Glamsterdam are in [ADR 0004](0004-gas-budgets-under-glamsterdam.md). The edition sale, the
+6529 Stream Editions name and where an unbid work goes (§1–§3, §5, §6, §12, §16, §17 and the
+non-goals) are amended by [ADR 0005](0005-stream-editions-auction.md).
 
 Origin: this decision was accepted in the 6529Stream repository as ADR 0055
 (6529Stream PR #745),
@@ -180,6 +182,8 @@ is not obliged to pay. The transaction:
 Starting together with a first bid is allowed.
 
 **If there are no bids, the NFT goes to the artist.**
+(Amended by [ADR 0005](0005-stream-editions-auction.md): to the 6529 Network Museum for 6529 Stream, and to
+the artist for a federated work.)
 
 **Sale extensibility.** Package sale terms carry a sale-kind identifier and
 its parameters.
@@ -193,6 +197,9 @@ its parameters.
   - 6529 Editions may use fixed price or Dutch.
   - 6529 Stream Federated contracts may use any shared adapter once they
     launch, under the network fee.
+  (Amended by [ADR 0005](0005-stream-editions-auction.md): v1 ships the English auction and the uniform-price
+  edition auction; fixed price and Dutch are removed, 6529 Stream Editions sell only by the
+  edition auction, in ETH, and further methods are adapters governance admits.)
 - **Adding a sale type later,** such as private sales, offers or burn-to-mint:
   - it is a separate adapter contract;
   - it receives the minter role through a timelocked AccessManager action;
@@ -202,6 +209,11 @@ its parameters.
 fails, the winner gets a pending claim instead (fixes the RC1 Medium finding).
 
 ### 6. 6529 Editions
+
+(Amended by [ADR 0005](0005-stream-editions-auction.md): renamed 6529 Stream Editions; an optional maximum count
+replaces the artist's size, format and price, and the uniform-price edition auction, which
+runs alongside the master's 1/1, replaces the fixed-price and Dutch sales, allowlist phases and
+ERC-20 payments.)
 
 - **One shared ERC-1155, "6529 Editions", in v1 scope.**
 - **Every edition is anchored by an edition master.** The master is a Stream
@@ -430,6 +442,10 @@ Entropy is not part of Core's mint path. Copies never get their own seeds
 - If the dispute is rejected, or no outcome arrives within 7 days, the auction
   resumes with its remaining time, and anti-sniping still applies.
 
+(Amended by [ADR 0005](0005-stream-editions-auction.md): while a 1/1 is paused, its edition
+auction keeps taking bids and its bidders may withdraw; an upheld dispute's cancel voids the
+edition auction with full refunds.)
+
 **After a sale**
 - A dispute results only in a public statement in the statement log, shown in
   the work's metadata.
@@ -593,6 +609,9 @@ shared sale adapters, the template-ready token code, and a registry interface.
   - The template's mint function accepts calls only from the adapters that
     governance has admitted.
   - Gifting is a zero-price adapter sale.
+  (Amended by [ADR 0005](0005-stream-editions-auction.md): federated contracts start with the English auction and
+  the uniform-price edition auction, further methods are adapters governance admits, and v1
+  has no gifting adapter. An unbid federated 1/1 stays with its artist.)
 - **Fees.** Primary sales split 90% artist, 10% network. The adapter settles the
   fee on each sale. The fee terms are fixed in the registry entry at
   deployment. They change for new deployments only, and existing contracts
@@ -679,6 +698,9 @@ This plan is the result of a five-domain "keep the excellent work" review,
 | Core | Gas-reserve check (63/64 rule); overflow-free royalty math | Code-hash and ERC-165 pinned links at install; one-way freeze; per-token pins; burn-surviving token identity and supply counters; restricted ERC-4906/7572 emitters | Old/new-state binding (as compare-and-set); genesis-plan verification as a deploy script; guardian rules; publish/challenge/supersede; golden typehash tests |
 | Metadata, content, entropy | Escaping and UTF-8 kit with parity fuzz tests; VRF v2.5 adapter (moved to the V2Plus base); SSTORE2; bounded staticcall | Content store (24,575-byte chunks, range reads); RC1 entropy coordinator slimmed into the optional VRF module; owner record book and `HashRef` as the statement-log base; freeze compare-and-set for finalize | Compact `tokenURI` with `web3://` full views; plan-based multi-transaction upload; dependency-registry API. Dropped: Arweave inclusion verifier (it still trusts an observer quorum; signed fixity statements cover v1) |
 | Tooling, tests, SDK | Deployed-bytecode verifier; official Safe fixture (1.3/1.4.1/1.5) | Compiler export with `--check`; invariant handler and campaign runner; adversarial mocks; RC1 TypeScript client and #744 Safe-plan helpers (SDK base); deploy assembly with non-broadcastable rehearsal; CI hygiene | Deployment-evidence layout; pre-send gas-cap simulation and transaction journal; threat model; [LTA-HASH]/[LTA-DEPLOY] rules; English-auction and money-invariant spec text |
+
+(Amended by [ADR 0005](0005-stream-editions-auction.md): the ported allowlist phases, ERC-20 permits for editions
+and Dutch pricing leave v1; they remain at `v1.0.0-rc.1`.)
 
 The minimal reproducibility kit replaces about 35K lines of release tooling with
 about 800. It consists of:
@@ -803,6 +825,8 @@ AccessManager governs all of them. The VRF module is optional.
 **Not in v1:**
 - for 6529 Stream: buy-now, offers, private sales and gifting as primary sales
   (Stream is auction-only; Editions keep fixed-price and Dutch sales, §6);
+  (amended by [ADR 0005](0005-stream-editions-auction.md): editions sell by the uniform-price edition auction;
+  clearing sales stay a non-goal for 6529 Stream's 1/1s)
 - in Stream: Dutch auctions, clearing sales, refund windows, pay-what-you-want,
   curated sales, burn-to-mint, consignment, allowlist phases and delegated
   minting;

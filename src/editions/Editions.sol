@@ -76,6 +76,11 @@ import { EditionRules } from "./EditionRules.sol";
 ///      genesis binds Stream's work-records satellite here once, before any edition can be
 ///      created (an edition's license and record updates go through it).
 contract Editions is IEditions, ERC1155, AccessManaged {
+    /// @inheritdoc IEditions
+    string public constant name = "6529 Stream Editions";
+    /// @inheritdoc IEditions
+    string public constant symbol = "STREAMEDITIONS";
+
     /// @dev The binding name of the work-records satellite, as 6529 Stream names it.
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     /// @dev Minter status: never admitted, admitted, or admitted once and since removed.

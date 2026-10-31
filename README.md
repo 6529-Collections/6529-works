@@ -79,12 +79,12 @@ pay 75% to the artist's side and 25% to the network, and royalties are 6.529% (E
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 555 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 619 |
-| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 332 |
+| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 334 |
 | [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 360 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause | 763 |
 | [`FixedPriceSale`](src/sales/README.md), [`DutchSale`](src/sales/README.md), on [`MintSaleBase`](src/sales/README.md) | Edition sales: allowlist phases, permits, a descending price | 306 + 144 + 377 |
-| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 192 + 122 |
+| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 202 + 122 |
 | [`SplitFactory`](src/economics/README.md), [`SplitWallet`](src/economics/README.md) | Immutable pull-payment wallets at predicted addresses | 100 + 143 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`ReleaseVerifier`](src/economics/README.md) | Failed-payment escrow, batch claims, signed releases | 89 + 99 + 41 |
 | [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Artist identity and payouts; 7-day recovery and 180-day overrides through 6529 consolidations | 561 + 133 |
