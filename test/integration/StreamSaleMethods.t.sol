@@ -108,6 +108,28 @@ contract StreamSaleMethodsTest is IntegrationBase {
         fixedPrice.buy{ value: PRICE }(address(stream), data);
     }
 
+    /// @dev The admission requirement (ADR 0005, owner decisions 9, 10 and 15): a second 1/1
+    ///      adapter that honours it sends an unbid 6529 Stream work to the 6529 Network Museum,
+    ///      read from the economics resolver at settlement, and never to the artist.
+    function test_ASecondAdapterSendsAnUnbidWorkToTheMuseum() public {
+        _admit(address(fixedPrice), true);
+        Work[] memory works = _package(root);
+        uint256 deadline = block.timestamp + 3 days;
+        uint256 tokenId = fixedPrice.list(address(stream), _mintData(root, works, 0), deadline);
+        assertEq(stream.ownerOf(tokenId), address(fixedPrice), "listed in custody");
+        vm.expectRevert(
+            abi.encodeWithSelector(FixedPriceOneOfOneMock.ListingOpen.selector, tokenId)
+        );
+        fixedPrice.closeUnsold(address(stream), tokenId);
+
+        vm.warp(deadline);
+        fixedPrice.closeUnsold(address(stream), tokenId);
+        assertEq(economics.museum(), museum);
+        assertEq(stream.ownerOf(tokenId), museum, "the museum, not the artist");
+        assertTrue(stream.primarySaleSettled(tokenId));
+        assertEq(stream.balanceOf(artist), 0);
+    }
+
     /// @dev The English auction works exactly as before beside a second adapter: it starts,
     ///      takes a bid and settles its own items, and reports its own kind.
     function test_TheEnglishAuctionIsUnchangedBesideASecondAdapter() public {

@@ -60,6 +60,13 @@ adds:
 - **Freeze.** A running or ended, unsettled auction whose locked currency the guardian has
   deprecated on the asset allowlist (MARKET-2). It is not an `AuctionState`: the auction reports
   its usual state, but bids and settlement revert with `AssetNotActive`.
+- **Admitting another 1/1 sale adapter** (owner decision 15). Stream admits any sale adapter
+  governance admits, in the 30-day class, and mints an item only for one whose kind the item
+  names. The museum rule below lives in the English auction, so it binds a later adapter only
+  through its review: it must send an unbid work and the 30-day freeze exit's unsold work to
+  `IEconomicsResolver.museum()`, read at settlement, never to the artist
+  ([ADR 0005](../adr/0005-stream-editions-auction.md#open-items)); governance checks this before
+  the admission executes.
 - **The museum.** The 6529 Network Museum (D140) is an account the economics resolver names,
   `IEconomicsResolver.museum()`: set at genesis, changed by FUNDS_SETTER in the 14-day class
   ([Economics and payouts](economics-and-payouts.md#products-and-launch-terms), ECO-37). An unbid

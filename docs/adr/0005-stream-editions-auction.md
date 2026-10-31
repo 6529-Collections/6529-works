@@ -395,3 +395,18 @@ before each merge.
   checks this (LIM-EA-8). Cost: Stream's runtime grows by 181 bytes, `start` by about 250
   Prague gas with no new slot, and the English auction's `settle` by about 2,200 (one more cold
   read, the minting adapter's kind) ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
+
+  **Admission requirement for a 1/1 sale adapter (decisions 9, 10 and 15).** The museum rule
+  is enforced inside the English auction, for 6529 Stream's tokens; nothing in Stream makes
+  another adapter follow it. Any 1/1 sale adapter admitted for 6529 Stream must therefore:
+  - send a work that ends its sale unbid, and a work that leaves the 30-day currency-freeze
+    exit unsold, to `IEconomicsResolver.museum()`, read at settlement;
+  - never send either to the work's artist (decision 9's artist branch is for federated works
+    only);
+  - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
+    true)` executes; a guardian vetoes an admission that does not hold them.
+
+  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  adapter that honours it. Enforcing it on-chain would cost Stream bytecode on a path every
+  transfer takes (for example, refusing an unsold work's transfer out of its minting
+  adapter's custody to anyone but a buyer or the museum), and is left to the owner.
