@@ -97,64 +97,20 @@ contract PieceLifecycleTest is IntegrationBase {
     ///      everything back.
     function test_AOneOfOneAndItsEditionsSellSideBySide() public {
         (uint256 saleId, uint256 workId, uint256 sale) = _startPiece(0);
-        uint256[4] memory steps = [uint256(12), 10, 6, 0];
-        uint256[4] memory quantities = [uint256(3), 2, 4, 1];
-        uint256[4] memory ids;
-        for (uint256 i; i < 4; ++i) {
-            ids[i] = _editionBid(sale, bidders[i], steps[i], quantities[i]);
-        }
+        uint256[5] memory ids = _sideBySideBids(sale);
         _ethBid(saleId, collector, 1 ether);
-
-        // The 1/1's anti-snipe moves its end, and the edition close follows it.
-        vm.warp(auction.auction(saleId).endTime - 1 minutes);
-        _ethBid(saleId, sniper, 2 ether);
-        uint256 oneOfOneEnd = auction.auction(saleId).endTime;
-        assertEq(oneOfOneEnd, block.timestamp + auction.config().extensionWindow, "anti-snipe");
-        assertEq(_close(sale), oneOfOneEnd + _offset(sale), "the edition close follows");
+        _antiSnipeMovesTheEditionClose(saleId, sale);
 
         // The 1/1 settles to the sniper and anyone creates the edition; the edition auction is
-        // still open.
-        vm.warp(oneOfOneEnd);
+        // still open, and its own soft close extends it.
+        vm.warp(auction.auction(saleId).endTime);
         auction.settle(saleId);
         assertEq(stream.ownerOf(workId), sniper);
         _createEdition(workId, 0);
+        ids[4] = _softCloseExtends(sale);
 
-        // The edition auction's own soft close: a bid in its last window extends it.
-        uint256 window = _ea().auction(sale).terms.softWindow;
-        vm.warp(_close(sale) - 1 minutes);
-        uint256 late = _editionBid(sale, bidders[3], 12, 1);
-        assertEq(_close(sale), block.timestamp + window, "the soft close extends the close");
-        vm.expectRevert(
-            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, sale)
-        );
-        _ea().settle(sale, new uint256[](0));
-
-        // The clearing equals the per-unit reference.
-        (uint256 k, uint256 price) = _referenceOf(sale, 0);
-        assertEq(k, 10, "10 copies");
-        assertEq(price, _ea().stepPrice(sale, 6), "at step 6's price");
-        IUniformEditionAuction.Clearing memory live = _ea().clearing(sale);
-        assertEq(live.count, k, "count");
-        assertEq(live.price, price, "price");
-
-        // Settlement pays the network its share and the seller the rest.
-        IUniformEditionAuction.Auction memory ea = _ea().auction(sale);
-        uint256 revenue = k * price;
-        uint256 fee = revenue * ea.feeShare / DENOMINATOR;
-        uint256 feeBefore = ea.feeRecipient.balance;
-        uint256 sellerBefore = ea.seller.balance;
-        vm.warp(_close(sale));
-        assertTrue(_ea().settle(sale, new uint256[](0)));
-        assertEq(ea.feeRecipient.balance - feeBefore, fee, "the network's share");
-        assertEq(ea.seller.balance - sellerBefore, revenue - fee, "the seller's share");
-
-        // Every bid claims: winners get their copies at the one price, everyone the rest back.
-        uint256 minted;
-        for (uint256 i; i < 4; ++i) {
-            minted += _claimAndCheck(sale, ids[i], bidders[i], steps[i], quantities[i], price);
-        }
-        minted += _claimAndCheck(sale, late, bidders[3], 12, 1, price);
-        assertEq(minted, k, "exactly k copies");
+        (uint256 k, uint256 price) = _settleAndCheckPayouts(sale);
+        _claimEveryBid(sale, ids, k, price);
         assertEq(editions.edition(workId).minted, k, "the edition's supply is k");
         assertEq(address(editionAuction).balance, 0, "nothing left in escrow");
 
@@ -163,6 +119,68 @@ contract PieceLifecycleTest is IntegrationBase {
         (address receiver, uint256 editionRoyalty) = editions.royaltyInfo(workId, 1 ether);
         assertTrue(receiver != address(0));
         assertEq(editionRoyalty, masterRoyalty, "the master's rate");
+    }
+
+    uint256[5] internal sideSteps = [uint256(12), 10, 6, 0, 12];
+    uint256[5] internal sideQuantities = [uint256(3), 2, 4, 1, 1];
+
+    function _sideBySideBids(uint256 sale) internal returns (uint256[5] memory ids) {
+        for (uint256 i; i < 4; ++i) {
+            ids[i] = _editionBid(sale, bidders[i], sideSteps[i], sideQuantities[i]);
+        }
+    }
+
+    /// @dev A 1/1 bid in its last minute: the 1/1's anti-snipe moves its end, and the edition
+    ///      close follows it.
+    function _antiSnipeMovesTheEditionClose(uint256 saleId, uint256 sale) internal {
+        vm.warp(auction.auction(saleId).endTime - 1 minutes);
+        _ethBid(saleId, sniper, 2 ether);
+        uint256 oneOfOneEnd = auction.auction(saleId).endTime;
+        assertEq(oneOfOneEnd, block.timestamp + auction.config().extensionWindow, "anti-snipe");
+        assertEq(_close(sale), oneOfOneEnd + _offset(sale), "the edition close follows");
+    }
+
+    /// @dev A bid in the edition auction's last window extends its close; settling before the
+    ///      new close is refused. Returns the late bid's ID.
+    function _softCloseExtends(uint256 sale) internal returns (uint256 late) {
+        uint256 window = _ea().auction(sale).terms.softWindow;
+        vm.warp(_close(sale) - 1 minutes);
+        late = _editionBid(sale, bidders[3], sideSteps[4], sideQuantities[4]);
+        assertEq(_close(sale), block.timestamp + window, "the soft close extends the close");
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.SettlementNotReady.selector, sale)
+        );
+        _ea().settle(sale, new uint256[](0));
+    }
+
+    /// @dev The clearing equals the per-unit reference; settlement pays the network its share
+    ///      and the seller the rest.
+    function _settleAndCheckPayouts(uint256 sale) internal returns (uint256 k, uint256 price) {
+        (k, price) = _referenceOf(sale, 0);
+        assertEq(k, 10, "10 copies");
+        assertEq(price, _ea().stepPrice(sale, 6), "at step 6's price");
+        IUniformEditionAuction.Clearing memory live = _ea().clearing(sale);
+        assertEq(live.count, k, "count");
+        assertEq(live.price, price, "price");
+        IUniformEditionAuction.Auction memory a = _ea().auction(sale);
+        uint256 fee = k * price * a.feeShare / DENOMINATOR;
+        uint256 feeBefore = a.feeRecipient.balance;
+        uint256 sellerBefore = a.seller.balance;
+        vm.warp(_close(sale));
+        assertTrue(_ea().settle(sale, new uint256[](0)));
+        assertEq(a.feeRecipient.balance - feeBefore, fee, "the network's share");
+        assertEq(a.seller.balance - sellerBefore, k * price - fee, "the seller's share");
+    }
+
+    /// @dev Every bid claims: winners get their copies at the one price, everyone the rest back.
+    function _claimEveryBid(uint256 sale, uint256[5] memory ids, uint256 k, uint256 price)
+        internal
+    {
+        uint256 minted;
+        for (uint256 i; i < 5; ++i) {
+            minted += _claimAndCheck(sale, ids[i], price);
+        }
+        assertEq(minted, k, "exactly k copies");
     }
 
     /// @dev D140, D141: nobody bids on the 1/1, which goes to the 6529 Network Museum; its
@@ -234,42 +252,41 @@ contract PieceLifecycleTest is IntegrationBase {
             uint8(_ea().auction(sale).status),
             uint8(IUniformEditionAuction.AuctionStatus.VOID)
         );
-        uint256[2] memory ids = [kept, during];
-        address[2] memory who = [bidders[0], bidders[2]];
-        uint256[2] memory paid = [2 * escrow, _ea().stepPrice(sale, 7)];
-        for (uint256 i; i < 2; ++i) {
-            uint256 b = who[i].balance;
-            vm.prank(who[i]);
-            (uint256 won, uint256 refund) = _ea().claimBid(sale, ids[i], who[i]);
-            assertEq(won, 0);
-            assertEq(refund, paid[i]);
-            assertEq(who[i].balance - b, paid[i]);
-        }
+        _refundInFull(sale, kept, bidders[0], 2 * escrow);
+        _refundInFull(sale, during, bidders[2], _ea().stepPrice(sale, 7));
         assertEq(address(editionAuction).balance, 0);
         assertFalse(editions.exists(workId), "a void sale needs no edition");
     }
 
     // ------------------------------------------------------------------ internals
 
-    function _claimAndCheck(
-        uint256 sale,
-        uint256 bidId,
-        address bidder,
-        uint256 step,
-        uint256 quantity,
-        uint256 price
-    ) internal returns (uint256 won) {
-        uint256 workId = _ea().auction(sale).id;
-        uint256 paid = quantity * _ea().stepPrice(sale, step);
+    /// @dev A void sale's claim: no copies, the whole escrow back.
+    function _refundInFull(uint256 sale, uint256 bidId, address bidder, uint256 paid) internal {
         uint256 before = bidder.balance;
-        uint256 copies = editions.balanceOf(bidder, workId);
-        uint256 refund;
         vm.prank(bidder);
-        (won, refund) = _ea().claimBid(sale, bidId, bidder);
+        (uint256 won, uint256 refund) = _ea().claimBid(sale, bidId, bidder);
+        assertEq(won, 0);
+        assertEq(refund, paid);
+        assertEq(bidder.balance - before, paid);
+    }
+
+    /// @dev The bidder claims bid `bidId`: it wins all its units at or above the clearing price,
+    ///      none below, and gets back its escrow less the copies at the one price.
+    function _claimAndCheck(uint256 sale, uint256 bidId, uint256 price)
+        internal
+        returns (uint256 won)
+    {
+        IUniformEditionAuction.Bid memory b = _ea().bidOf(sale, bidId);
+        uint256 paid = uint256(b.quantity) * _ea().stepPrice(sale, b.step);
+        uint256 before = b.bidder.balance;
+        uint256 copies = editions.balanceOf(b.bidder, _ea().auction(sale).id);
+        uint256 refund;
+        vm.prank(b.bidder);
+        (won, refund) = _ea().claimBid(sale, bidId, b.bidder);
         assertEq(refund, paid - won * price, "refund = escrow - won x price");
-        assertEq(bidder.balance - before, refund);
-        assertEq(editions.balanceOf(bidder, workId) - copies, won);
-        assertEq(won, _ea().stepPrice(sale, step) >= price ? quantity : 0);
+        assertEq(b.bidder.balance - before, refund);
+        assertEq(editions.balanceOf(b.bidder, _ea().auction(sale).id) - copies, won);
+        assertEq(won, _ea().stepPrice(sale, b.step) >= price ? b.quantity : 0);
     }
 
     /// @dev The per-unit reference clearing of the auction's live book (`stepTotals`).

@@ -35,9 +35,9 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///         10. A void auction refunds every bid in full and mints nothing.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract EditionAuctionInvariantTest is EditionAuctionHandler {
-    uint256 internal constant ACTIONS = 15;
+    uint256 internal constant ACTIONS = 22;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
-    uint256 internal constant RUNS = 32;
+    uint256 internal constant RUNS = 64;
 
     function setUp() public override {
         super.setUp();
@@ -62,6 +62,13 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         s[12] = this.withdrawCredit.selector;
         s[13] = this.warp.selector;
         s[14] = this.bid.selector;
+        s[15] = this.bid.selector;
+        s[16] = this.raise.selector;
+        s[17] = this.claim.selector;
+        s[18] = this.settle.selector;
+        s[19] = this.settleOneOfOne.selector;
+        s[20] = this.createEdition.selector;
+        s[21] = this.fifoHole.selector;
     }
 
     /// @notice Every invariant above. In CI the state is asserted every fourth call and after
@@ -77,7 +84,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
     ///         fixed seeds reach every action and the paths the invariants are about, with every
     ///         invariant holding along the way.
     function test_EveryActionRuns() public {
-        string[34] memory paths = [
+        string[35] memory paths = [
             "startOneOfOne",
             "bidOneOfOne",
             "oneOfOneSnipe",
@@ -100,6 +107,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "settle",
             "settleEmpty",
             "settleChunked",
+            "fifoHole",
             "settleTooEarly",
             "settleWaits",
             "rationed",
@@ -113,7 +121,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "withdrawCredit",
             "warp"
         ];
-        uint256[34] memory totals;
+        uint256[35] memory totals;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {
@@ -150,17 +158,18 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         );
         if (which == 0) this.startOneOfOne(a);
         else if (which == 1) this.bidOneOfOne(a, b);
-        else if (which == 2) this.settleOneOfOne(a);
+        else if (which == 2 || which == 19) this.settleOneOfOne(a);
         else if (which == 3) this.disputePause(a);
         else if (which == 4) this.resolveDispute(a, b);
         else if (which == 5) this.open(a, b);
-        else if (which == 6 || which == 14) this.bid(a, b, c);
-        else if (which == 7) this.raise(a, b, c);
+        else if (which == 6 || which == 14 || which == 15) this.bid(a, b, c);
+        else if (which == 7 || which == 16) this.raise(a, b, c);
         else if (which == 8) this.withdraw(a, b);
-        else if (which == 9) this.createEdition(a);
-        else if (which == 10) this.settle(a, b);
-        else if (which == 11) this.claim(a, b, c);
+        else if (which == 9 || which == 20) this.createEdition(a);
+        else if (which == 10 || which == 18) this.settle(a, b);
+        else if (which == 11 || which == 17) this.claim(a, b, c);
         else if (which == 12) this.withdrawCredit(a);
+        else if (which == 21) this.fifoHole(a);
         else this.warp(a);
     }
 }

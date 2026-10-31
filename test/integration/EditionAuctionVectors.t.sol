@@ -42,6 +42,9 @@ contract EditionAuctionVectorsTest is IntegrationBase {
 
     /// @notice Every golden case the ladder can express, replayed on the real contracts.
     function test_GoldenVectors_TheContractAgreesWithTheReferenceModel() public {
+        // Seventeen sales and their JSON reads, the densest with a bid on every step: far more
+        // than one transaction's gas, and none of it under test here.
+        vm.pauseGasMetering();
         uint256 cases;
         for (uint256 i; vm.keyExistsJson(json, _case(i, "")); ++i) {
             ++cases;
@@ -84,11 +87,9 @@ contract EditionAuctionVectorsTest is IntegrationBase {
                 assertTrue(_eq(op, "withdraw"), string.concat(name, ": unknown op"));
                 if (!paused) {
                     // Withdrawals open only while the 1/1 is paused for a dispute.
+                    uint256 oneOfOne = auction.saleIdOf(address(stream), _ea().auction(sale).id);
                     vm.prank(guardian1);
-                    auction.pause(
-                        auction.saleIdOf(address(stream), _ea().auction(sale).id),
-                        keccak256(bytes(name))
-                    );
+                    auction.pause(oneOfOne, keccak256(bytes(name)));
                     paused = true;
                 }
                 uint256 bidId = vm.parseJsonUint(json, _event(i, j, ".bidId"));
@@ -111,7 +112,7 @@ contract EditionAuctionVectorsTest is IntegrationBase {
         }
         require(index != type(uint256).max, "no master with the case's cap");
         IUniformEditionAuction.AuctionConfig memory current = _ea().config();
-        IUniformEditionAuction.AuctionConfig memory next = current;
+        IUniformEditionAuction.AuctionConfig memory next = _ea().config();
         next.marginShare = uint32(vm.parseJsonUint(json, _case(i, ".config.marginShare")));
         assertEq(
             uint256(next.basePrice), vm.parseJsonUint(json, _case(i, ".config.basePrice")), "base"
@@ -127,6 +128,8 @@ contract EditionAuctionVectorsTest is IntegrationBase {
         }
         (, uint256 workId) = _start(root, _package(root), index);
         sale = _ea().open(address(editions), workId, abi.encode(_package(root)[index].item));
+        assertEq(_ea().auction(sale).terms.marginShare, next.marginShare, "the sale locked the margin");
+        assertEq(_ea().auction(sale).maxCount, cap, "the sale locked the cap");
     }
 
     // ------------------------------------------------------------------ checks

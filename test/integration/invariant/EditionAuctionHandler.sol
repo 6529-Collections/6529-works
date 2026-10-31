@@ -20,7 +20,7 @@ import { IntegrationBase } from "../IntegrationBase.sol";
 ///      records any disagreement in `violations`.
 ///
 ///      Six edition masters by one artist, in one approved package, with creator caps of 0
-///      (none), 0, 7, 0, 12 and 3. Five edition bidders and two 1/1 collectors. Bids land on a
+///      (none), 0, 4, 0, 6 and 2. Five edition bidders and two 1/1 collectors. Bids land on a
 ///      narrow band of low steps, so steps collide, caps bind inside a step and raises leave
 ///      holes at the cut step; one bid in sixteen lands far above the band.
 abstract contract EditionAuctionHandler is IntegrationBase {
@@ -28,9 +28,11 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     uint256 internal constant BIDDERS = 5;
     uint256 internal constant COLLECTORS = 2;
     /// @dev The band of steps most bids use, and the first of the far steps a few use.
-    uint256 internal constant BAND = 14;
+    uint256 internal constant BAND = 8;
     uint256 internal constant FAR = 48;
-    uint256 internal constant MAX_QTY = 6;
+    uint256 internal constant MAX_QTY = 4;
+    /// @dev The step `fifoHole` builds its hole on: above every band and far step and raise.
+    uint256 internal constant HOLE_STEP = 64;
     uint256 internal constant DENOMINATOR = 100_000;
 
     /// @dev One edition bid as the handler expects it.
@@ -81,7 +83,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     address[COLLECTORS] internal collectors;
     bytes32 internal root;
     Piece[MASTERS] internal pieces;
-    uint32[MASTERS] internal caps = [uint32(0), 0, 7, 0, 12, 3];
+    uint32[MASTERS] internal caps = [uint32(0), 0, 4, 0, 6, 2];
 
     mapping(uint256 piece => GhostBid[]) internal book;
     mapping(uint256 piece => mapping(uint256 step => uint256)) internal liveUnits;
@@ -156,7 +158,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
             uint256 room = end - block.timestamp - 1;
             vm.warp(end - _bound(amountSeed >> 8, 1, window < room ? window : room));
         }
-        uint256 before = _endTime(i);
+        uint256 before = p.opened ? _endTime(i) : 0;
         uint256 minimum = auction.minimumBid(p.saleId);
         _ethBid(p.saleId, collectors[seed % COLLECTORS], _bound(amountSeed >> 16, minimum, minimum + 1 ether));
         if (snipe) {
@@ -164,7 +166,7 @@ abstract contract EditionAuctionHandler is IntegrationBase {
                 _violation("the 1/1 anti-snipe did not extend its end");
             }
             ++hits["oneOfOneSnipe"];
-            uint256 after_ = _endTime(i);
+            uint256 after_ = p.opened ? _endTime(i) : 0;
             if (p.opened && after_ < before) _violation("the edition end moved earlier");
             if (p.opened && after_ > before) ++hits["editionEndMoved"];
         }
@@ -219,12 +221,12 @@ abstract contract EditionAuctionHandler is IntegrationBase {
     // ------------------------------------------------------------------ actions: editions
 
     /// @notice Anyone opens a started master's edition auction until the 1/1's end plus the
-    ///         offset; a late or second open is refused.
+    ///         offset (an unopened one first); a late or second open is refused.
     function open(uint256 seed, uint256 callerSeed) external {
-        for (uint256 k; k < MASTERS; ++k) {
+        for (uint256 k; k < 2 * MASTERS; ++k) {
             uint256 i = (seed + k) % MASTERS;
             Piece storage p = pieces[i];
-            if (!p.started || p.cancelled) continue;
+            if (!p.started || p.cancelled || (k < MASTERS && p.opened && seed % 4 != 0)) continue;
             PackageItem memory item = _package(root)[i].item;
             bool expected = !p.opened && _openable(i);
             vm.prank(bidders[callerSeed % BIDDERS]);
@@ -265,7 +267,6 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         GhostBid storage b = book[i][index];
         if (b.withdrawn) return;
         uint256 next = b.step + 1 + stepSeed % 6;
-        uint256 cost = b.qty * (_price(i, next) - _price(i, b.step));
         uint256 id = index + 1;
         vm.prank(collectors[0]);
         try _ea().raise(pieces[i].editionSaleId, id, next) {
@@ -273,14 +274,46 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         } catch {
             ++hits["raiseRefused"];
         }
+        _raiseBid(i, index, next);
+    }
+
+    /// @notice On a capped sale (a cap `c` of at least 4) that is still taking bids, builds
+    ///         holes at the cut step: bids of 1, 1, `c - 3` and 2 units on one step above every
+    ///         other, the first two then raised two steps higher. The step is rationed (it sells
+    ///         `c - 2` of its `c - 1` live units), the sweep closes both holes, the third bid wins
+    ///         in full and the fourth, the marginal bid, 1 of its 2 (FIFO with holes, owner
+    ///         decision 1). Without the sweep the third bid would win nothing.
+    function fifoHole(uint256 seed) external {
+        for (uint256 k; k < MASTERS; ++k) {
+            uint256 i = (seed + k) % MASTERS;
+            Piece storage p = pieces[i];
+            if (p.cap < 4 || !p.opened || !_biddingOpen(i) || p.hi >= HOLE_STEP) continue;
+            uint256 first = book[i].length;
+            _placeBid(i, bidders[0], HOLE_STEP, 1);
+            _placeBid(i, bidders[1], HOLE_STEP, 1);
+            _placeBid(i, bidders[2], HOLE_STEP, p.cap - 3);
+            _placeBid(i, bidders[3], HOLE_STEP, 2);
+            if (book[i].length != first + 4) return;
+            _raiseBid(i, first, HOLE_STEP + 2);
+            _raiseBid(i, first + 1, HOLE_STEP + 2);
+            ++hits["fifoHole"];
+            return;
+        }
+    }
+
+    /// @dev The bidder of bid `index` raises it to `next`, paying exactly the difference; in a
+    ///      capped sale it leaves a departure at its old step and rejoins at the back of `next`.
+    function _raiseBid(uint256 i, uint256 index, uint256 next) internal {
+        GhostBid storage b = book[i][index];
+        uint256 cost = b.qty * (_price(i, next) - _price(i, b.step));
         _softClose(i);
         vm.deal(b.bidder, b.bidder.balance + cost);
         vm.prank(b.bidder);
-        try _ea().raise{ value: cost }(pieces[i].editionSaleId, id, next) {
+        try _ea().raise{ value: cost }(pieces[i].editionSaleId, index + 1, next) {
             ghostIn += cost;
             _depart(i, b.step, b.pos, b.qty);
             b.step = next;
-            b.pos = enteredUnits[i][next];
+            b.pos = pieces[i].cap == 0 ? 0 : enteredUnits[i][next];
             enteredUnits[i][next] += b.qty;
             liveUnits[i][next] += b.qty;
             _widen(i, next);
@@ -398,8 +431,24 @@ abstract contract EditionAuctionHandler is IntegrationBase {
         ++hits["withdrawCredit"];
     }
 
+    /// @notice Time passes: half the time a short while, otherwise to just past the next clock
+    ///         of a started piece (a 1/1's end or an edition close), so sales close within a run.
     function warp(uint256 secondsSeed) external {
-        vm.warp(block.timestamp + _bound(secondsSeed, 1 minutes, 8 hours));
+        uint256 next = type(uint256).max;
+        if (secondsSeed % 2 == 1) {
+            for (uint256 i; i < MASTERS; ++i) {
+                Piece storage p = pieces[i];
+                if (!p.started || p.settled || p.voided) continue;
+                uint256 end = _oneOfOneEnd(i);
+                if (end > block.timestamp && end < next) next = end;
+                if (!p.opened || _state1of1(i) == IEnglishAuction.AuctionState.PAUSED) continue;
+                end = _endTime(i);
+                if (end > block.timestamp && end < next) next = end;
+            }
+        }
+        if (next == type(uint256).max) next = block.timestamp + _bound(secondsSeed >> 1, 1 minutes, 3 hours);
+        else next += _bound(secondsSeed >> 1, 0, 10 minutes);
+        vm.warp(next);
         ++hits["warp"];
     }
 
