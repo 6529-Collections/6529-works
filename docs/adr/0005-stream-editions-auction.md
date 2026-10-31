@@ -413,3 +413,24 @@ before each merge.
   settle call declaring the buyer would not stop an adapter that names its artist as one; and a
   transfer rule refusing the artist would block an artist buying their own work. The 30-day
   review, with the guardians' veto, is the control.
+
+  **The rest of the 1/1 adapter review.** Stream trusts an admitted adapter, unchecked, for the
+  works it mints, so the same review also confirms that the adapter:
+  - burns a work (`IMintTarget.burn`) only to cancel a sale after an upheld dispute, through a
+    governed action like the English auction's `cancel` (48 hours): Stream lets the minting
+    adapter burn any work it holds before the sale settles;
+  - marks the primary sale settled (`markPrimarySettled`) when the sale is final, and only then:
+    an edition of a master waits for it, and a settled work can no longer be burned;
+  - pays the fee recipient and the seller wallet the shares `primaryTerms` reports;
+  - reports a constant `saleKind()`: `mint` compares the live value with the item's, while
+    `primaryTerms` reports the value recorded at the first admission, so an adapter whose kind
+    could change (an upgradeable one, for example) could mint another kind's items under its
+    recorded label;
+  - claims a kind no other admitted adapter serves, unless it replaces that adapter, which is
+    then removed in the same governance batch: the move signature names no adapter, so two
+    admitted adapters of one kind can each start the same item.
+
+  An edition master sold by a method other than the English auction gets no edition auction
+  from the genesis edition auction, which reads the 1/1's clock from the English auction
+  (`IEnglishAuction.saleIdOf`); its editions need an edition sale method that reads the new
+  method's clock (a new adapter, with no new Stream or Editions).
