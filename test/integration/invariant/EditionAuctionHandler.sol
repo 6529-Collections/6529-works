@@ -160,7 +160,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
         uint256 before = p.opened ? _endTime(i) : 0;
         uint256 minimum = auction.minimumBid(p.saleId);
-        _ethBid(p.saleId, collectors[seed % COLLECTORS], _bound(amountSeed >> 16, minimum, minimum + 1 ether));
+        _ethBid(
+            p.saleId,
+            collectors[seed % COLLECTORS],
+            _bound(amountSeed >> 16, minimum, minimum + 1 ether)
+        );
         if (snipe) {
             if (_oneOfOneEnd(i) != block.timestamp + window) {
                 _violation("the 1/1 anti-snipe did not extend its end");
@@ -230,9 +234,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             PackageItem memory item = _package(root)[i].item;
             bool expected = !p.opened && _openable(i);
             vm.prank(bidders[callerSeed % BIDDERS]);
-            try ea.open(address(editions), p.tokenId, abi.encode(item)) returns (
-                uint256 saleId
-            ) {
+            try ea.open(address(editions), p.tokenId, abi.encode(item)) returns (uint256 saleId) {
                 if (!expected) _violation("an edition auction opened late or twice");
                 if (saleId != p.editionSaleId) _violation("the sale ID is not saleIdOf");
                 p.opened = true;
@@ -361,7 +363,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             uint256 i = (seed % MASTERS + k) % MASTERS;
             Piece storage p = pieces[i];
             if (!p.masterSettled || p.editionCreated) continue;
-            editions.createEdition(p.tokenId, _package(root)[i].item, root, _proofOf(_package(root), i));
+            editions.createEdition(
+                p.tokenId, _package(root)[i].item, root, _proofOf(_package(root), i)
+            );
             p.editionCreated = true;
             ++hits["createEdition"];
             return;
@@ -446,8 +450,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
                 if (end > block.timestamp && end < next) next = end;
             }
         }
-        if (next == type(uint256).max) next = block.timestamp + _bound(secondsSeed >> 1, 1 minutes, 3 hours);
-        else next += _bound(secondsSeed >> 1, 0, 10 minutes);
+        if (next == type(uint256).max) {
+            next = block.timestamp + _bound(secondsSeed >> 1, 1 minutes, 3 hours);
+        } else {
+            next += _bound(secondsSeed >> 1, 0, 10 minutes);
+        }
         vm.warp(next);
         ++hits["warp"];
     }
@@ -537,7 +544,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         p.price = c.price;
         uint256 revenue = uint256(c.count) * c.price;
         uint256 fee = revenue * ea.auction(p.editionSaleId).feeShare / DENOMINATOR;
-        if (networkFee.balance - feeBefore != fee) _violation("the network was not paid its share");
+        if (networkFee.balance - feeBefore != fee) {
+            _violation("the network was not paid its share");
+        }
         ghostOut += revenue;
         if (c.count == 0) {
             ++hits["settleEmpty"];
@@ -548,9 +557,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (c.rationed && departures[i][c.step].length != 0) ++hits["holeSwept"];
     }
 
-    /// @dev Settles with the departure order, which must equal `settlementOrder`. Half the time
-    ///      the first call gets only the first half of the sweep; every later call continues
-    ///      from the departures already swept, as a keeper would, until the sale settles.
+    /// @dev Settles with the departure order, which must equal `settlementOrder`. Settlement runs
+    ///      in calls of bounded gas (a wide book's scan takes several, and each call sweeps a
+    ///      bounded number of departures). Half the time the first call gets only the first half
+    ///      of the sweep; every later call continues from the departures already swept, as a
+    ///      keeper would, until the sale settles.
     function _sweep(uint256 i, uint256 mode) internal {
         uint256 sale = pieces[i].editionSaleId;
         uint256[] memory order = _hint(i);
@@ -563,11 +574,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             if (done) _violation("half a sweep settled");
             ++hits["settleChunked"];
         }
-        for (uint256 calls; !done && calls < 8; ++calls) {
+        for (uint256 calls; !done && calls < 64; ++calls) {
             uint256 swept = ea.settlement(sale).departuresSwept;
             done = ea.settle(sale, _slice(order, swept, order.length));
         }
-        if (!done) _violation("a complete sweep did not settle");
+        if (!done) _violation("settlement did not finish in 64 calls");
     }
 
     /// @dev The settled count and price equal the per-unit reference's, within the cap and the
@@ -594,10 +605,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             ++hits["cancelledBidRefused"];
         }
         ea.settle(p.editionSaleId, new uint256[](0));
-        if (
-            ea.auction(p.editionSaleId).status
-                != IUniformEditionAuction.AuctionStatus.VOID
-        ) {
+        if (ea.auction(p.editionSaleId).status != IUniformEditionAuction.AuctionStatus.VOID) {
             _violation("a cancelled 1/1 did not void its edition auction");
         }
         p.voided = true;
@@ -750,7 +758,6 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     function _stepFrom(uint256 seed) internal pure returns (uint256) {
         return seed % 16 == 0 ? FAR + (seed >> 4) % 4 : (seed >> 4) % BAND;
     }
-
 
     /// @dev The first piece, from `seed`, whose edition auction takes bids now.
     function _biddable(uint256 seed) internal view returns (bool, uint256) {

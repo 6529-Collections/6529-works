@@ -21,11 +21,12 @@ library UniformClearingReference {
     /// @return k The number of editions sold (zero for an empty book).
     /// @return price The clearing price `P(k)` (zero when `k` is zero).
     /// @return best `R*`, the highest revenue at any count up to the cap.
-    function clear(uint256[] memory units, uint256[] memory prices, uint256 cap, uint256 marginShare)
-        internal
-        pure
-        returns (uint256 k, uint256 price, uint256 best)
-    {
+    function clear(
+        uint256[] memory units,
+        uint256[] memory prices,
+        uint256 cap,
+        uint256 marginShare
+    ) internal pure returns (uint256 k, uint256 price, uint256 best) {
         uint256[] memory unitPrices = expand(units, prices, cap);
         uint256 n = unitPrices.length;
         for (uint256 i; i < n; ++i) {

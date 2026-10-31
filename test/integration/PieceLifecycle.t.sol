@@ -201,7 +201,11 @@ contract PieceLifecycleTest is EditionAuctionStack {
     }
 
     /// @dev The per-unit reference clearing of the auction's live book (`stepTotals`).
-    function _referenceOf(uint256 sale, uint32 cap) internal view returns (uint256 k, uint256 price) {
+    function _referenceOf(uint256 sale, uint32 cap)
+        internal
+        view
+        returns (uint256 k, uint256 price)
+    {
         (uint256 low, uint256[] memory units) = ea.stepTotals(sale);
         uint256[] memory prices = new uint256[](units.length);
         for (uint256 s; s < units.length; ++s) {

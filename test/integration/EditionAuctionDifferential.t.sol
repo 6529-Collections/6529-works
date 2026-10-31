@@ -109,7 +109,8 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
         returns (uint256 oneSaleId, uint256 workId, uint256 sale)
     {
         (oneSaleId, workId) = _start(root, _package(root), index);
-        sale = editionAuction.open(address(editions), workId, abi.encode(_package(root)[index].item));
+        sale =
+            editionAuction.open(address(editions), workId, abi.encode(_package(root)[index].item));
     }
 
     /// @dev Up to 16 bids of 1 to 5 units, mostly on a band of 10 low steps, one in eight a
@@ -199,7 +200,11 @@ contract EditionAuctionDifferentialTest is EditionAuctionStack {
 
     /// @dev The units each bid at `step` wins, in the bids' order, filling `units` by position
     ///      (by bid order in an uncapped sale, whose clearing step is never split).
-    function _fill(uint256 step, uint256 units, uint32 cap) internal view returns (uint256[] memory) {
+    function _fill(uint256 step, uint256 units, uint32 cap)
+        internal
+        view
+        returns (uint256[] memory)
+    {
         uint256 n;
         for (uint256 j; j < bidStep.length; ++j) {
             if (bidStep[j] == step) ++n;

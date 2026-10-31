@@ -44,15 +44,9 @@ contract UniformClearingReferenceTest is Test {
         units = new uint256[](6);
         prices = new uint256[](6);
         (units[0], units[1], units[2], units[3], units[4], units[5]) =
-            (200, extraAt0464, 50, 20, 9, 1);
-        (prices[0], prices[1], prices[2], prices[3], prices[4], prices[5]) = (
-            0.01 ether,
-            0.0464 ether,
-            0.0511 ether,
-            0.1 ether,
-            0.196 ether,
-            1 ether
-        );
+        (200, extraAt0464, 50, 20, 9, 1);
+        (prices[0], prices[1], prices[2], prices[3], prices[4], prices[5]) =
+        (0.01 ether, 0.0464 ether, 0.0511 ether, 0.1 ether, 0.196 ether, 1 ether);
     }
 
     function test_Clear_OnTheLadderSells80At0511AndOneMoreUnitTiltsTo81At0464() public pure {
