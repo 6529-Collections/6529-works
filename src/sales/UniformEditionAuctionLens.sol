@@ -91,8 +91,13 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         WorkTerms memory w;
         if (IEditions(_editions).exists(id)) {
             IEditions.Edition memory locked = IEditions(_editions).edition(id);
-            (w.seller, w.feeRecipient, w.feeShare) =
-            (locked.seller, locked.feeRecipient, locked.feeShare);
+            w = WorkTerms(
+                locked.seller,
+                locked.feeRecipient,
+                locked.feeShare,
+                locked.royaltyReceiver,
+                locked.royaltyRate
+            );
         } else {
             w = IEconomicsResolver(_economics).newWorkTerms(PRODUCT_EDITIONS, item.payees);
         }

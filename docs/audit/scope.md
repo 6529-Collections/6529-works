@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 11,193 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
+| Source lines | 11,198 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
 | Deployed contracts | 21 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -37,8 +37,8 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,883 | 25,861 | 1,693 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 337 | 18,051 | 19,779 | 6,525 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 802 | 24,090 | 45,458 | 486 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 523 | 17,378 | 17,749 | 7,198 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 802 | 24,090 | 45,515 | 486 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 528 | 17,435 | 17,806 | 7,141 |
 
 ### Curation, identity and records
 
@@ -136,7 +136,7 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 | `ERC721` | `Stream` |
 | `ERC1155` | `Editions` |
 | `EIP712` | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `StatementLog`, `WorkRecords`, `ReleaseVerifier` |
-| `ReentrancyGuardTransient` | `EnglishAuction`, `SplitWallet`, `RevenueEscrow` |
+| `ReentrancyGuardTransient` | `EnglishAuction`, `SplitWallet`, `RevenueEscrow`, `UniformEditionAuction` |
 | `ERC165`, `ERC165Checker`, `MerkleProof`, `ECDSA`, `Math`, `SafeCast`, `Base64`, `Strings`, `Create2` | Utilities across modules |
 
 ## Out of scope
