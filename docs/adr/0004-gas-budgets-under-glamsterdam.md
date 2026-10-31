@@ -144,8 +144,8 @@ it. The Sepolia column stays r3's receipts.
 
 Re-measured for owner decision 15 (6529 Stream's pluggable 1/1 sale): every `start` row rose by
 about 230 gas (the item's sale kind is compared with the adapter's and its params returned) and
-each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one cold word); no row
-writes a new slot. The binding row keeps 10,449 gas of margin.
+each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one cold word); `bid`,
+`consume`, `createEdition` and `royaltyInfo` moved by at most 12 gas; no row writes a new slot. The binding row keeps 10,449 gas of margin.
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -162,16 +162,16 @@ writes a new slot. The binding row keeps 10,449 gas of margin.
 | `start`, first work in a new collection | 269,105 | 400,000 | 5 | 0 | 846,977 (r2) |
 | `start`, first work ever (one-time) | 438,257 | 449,000 (regression) | 13 | 0 | 1,601,871 |
 | `startWithBid`, first bid under new sale terms (one-time) | 381,328 | 390,000 (regression) | 9 | 0 | 1,213,250 |
-| `bid` that outbids | 73,452 | 75,000 (regression) | 1 | 0 | 169,060 |
+| `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 169,060 |
 | `settle`, first payout to a seller wallet | 168,552 | 400,000 | 1 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 143,552 | 400,000 | 1 | 0 | 257,763 (r2) |
 | `settle`, no bid (to the museum, D140) | 133,993 | 400,000 | 1 | 0 | — |
-| `consume`, as Stream calls it | 93,057 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 240,708 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
+| `consume`, as Stream calls it | 93,069 | 97,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 240,698 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | re-rate a work (governed `execute`) | 186,911 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
-| `royaltyInfo` (view) | 41,632 | 50,000 of execution | 0 | 0 | 36,426 |
+| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 36,426 |
 | `tokenURI` (view, the size matrix) | at most 2,735,362 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,241,422 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
