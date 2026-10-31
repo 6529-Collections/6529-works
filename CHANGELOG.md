@@ -37,7 +37,11 @@
   golden vectors (every clearing, sweep, bid outcome and quote), the plan's worked traces and
   Halmos proofs (`test/symbolic/UniformClearingSymbolic.t.sol`). `StepLadder` packs its 192
   mantissas as 10-bit fields in 8 words instead of 16-bit fields in 12, every price unchanged:
-  227 bytes and about 150 gas a lookup less. The reference model
+  227 bytes and about 150 gas a lookup less. `StepLadder.isValid` now accepts only a base
+  price that is a power of ten from 10^12 to 10^17 wei (the new `StepLadder.isBasePrice`),
+  so every price reads as the table does (ADR 0005 decision 3); the reference model and its
+  ladder vectors follow, and `UniformClearing.isValidLadder` stays a superset of every
+  ladder governance may set. The reference model
   (`tools/edition_auction_ref.py`) now validates a bid or raise before it changes the book, and
   limits a capped step's entered units to 2^32 - 1 as `InvalidQuantity` states; the golden
   vectors are unchanged.

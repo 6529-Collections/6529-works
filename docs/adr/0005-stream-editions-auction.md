@@ -196,7 +196,7 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
 | --- | --- | --- | --- |
 | Breadth margin (D138) | 10% (10,000 of 100,000) | 0 to 50% | PARAMETER_SETTER, 48 hours |
 | Steps per decade (the step size) | 48 | 24, 48, 96 or 192 | PARAMETER_SETTER, 48 hours |
-| Base price | 0.0001 ETH | 10^12 to 10^17 wei | PARAMETER_SETTER, 48 hours |
+| Base price | 0.0001 ETH | a power of ten from 10^12 to 10^17 wei, so prices read as the table does (decision 3) | PARAMETER_SETTER, 48 hours |
 | Steps | 336 | 64 to 512, with a top step of at least 10 ETH | PARAMETER_SETTER, 48 hours |
 | Close offset after the 1/1 (D140) | 15 minutes | 0 to 1 day | PARAMETER_SETTER, 48 hours |
 | Soft-close window (D141) | 5 minutes | 1 minute to 1 hour | PARAMETER_SETTER, 48 hours |

@@ -59,6 +59,40 @@ contract UniformClearingTest is UniformClearingBase {
         }
     }
 
+    /// @dev The superset claim: every ladder governance may set (`StepLadder.isValid`, every
+    ///      base, steps per decade and step count) is inside the library's domain, and the
+    ///      largest book on each clears, so a settlement on locked terms cannot revert.
+    function test_IsValidLadder_ContainsEveryLadderGovernanceMaySet() public view {
+        uint256[4] memory ladders = [uint256(24), 48, 96, 192];
+        uint256[] memory full = new uint256[](UniformClearing.MAX_STEPS / 8);
+        for (uint256 w; w < full.length; ++w) {
+            full[w] = type(uint256).max;
+        }
+        uint256 governed;
+        for (uint256 p = 1e11; p <= 1e18; p *= 10) {
+            for (uint256 l; l < 4; ++l) {
+                bool any;
+                for (uint256 c; c <= StepLadder.MAX_STEP_COUNT; ++c) {
+                    if (!StepLadder.isValid(p, ladders[l], c)) continue;
+                    assertTrue(h.isValidLadder(p, ladders[l]));
+                    (any, governed) = (true, governed + 1);
+                }
+                if (!any) continue;
+                UniformClearing.Result memory r = h.clear(
+                    full,
+                    UniformClearing.Rules({
+                        basePrice: p, stepsPerDecade: ladders[l], maxCount: 0, marginShare: 0
+                    })
+                );
+                assertGt(r.count, 0);
+            }
+        }
+        // As the reference model counts them: none at 10^11 or 10^18, and from 10^12 the step
+        // counts whose top step is at least 10 ETH (from 0 at 192 steps a decade up to all 449).
+        assertEq(governed, 5017);
+        assertTrue(h.isValidLadder(3e16, N), "the domain also holds bases governance may not set");
+    }
+
     function test_IsValidLadder_RejectsEverythingElse() public view {
         // Bases below 100 would not give strictly increasing prices; 2**96 and up could overflow.
         assertFalse(h.isValidLadder(0, N));

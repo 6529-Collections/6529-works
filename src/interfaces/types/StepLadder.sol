@@ -29,9 +29,10 @@ library StepLadder {
     uint256 internal constant DEFAULT_STEPS_PER_DECADE = 48;
     /// @notice The default number of steps: 336, from 0.0001 ETH to 953 ETH.
     uint256 internal constant DEFAULT_STEP_COUNT = 336;
-    /// @notice The lowest base price governance may set, in wei.
+    /// @notice The lowest base price governance may set, in wei: 0.000001 ETH. Every base
+    ///         price is a power of ten (`isBasePrice`).
     uint256 internal constant MIN_BASE_PRICE = 1e12;
-    /// @notice The highest base price governance may set, in wei.
+    /// @notice The highest base price governance may set, in wei: 0.1 ETH.
     uint256 internal constant MAX_BASE_PRICE = 1e17;
     /// @notice The fewest steps a ladder may have.
     uint256 internal constant MIN_STEP_COUNT = 64;
@@ -75,17 +76,29 @@ library StepLadder {
             || stepsPerDecade == 192;
     }
 
+    /// @notice Whether `basePrice` is a power of ten from `MIN_BASE_PRICE` to `MAX_BASE_PRICE`
+    ///         (10^12 to 10^17 wei). With a power-of-ten base every price is a table mantissa
+    ///         times a power of ten, so it reads as the table does (ADR 0005 decision 3, readable
+    ///         prices from a fixed table). A base of 0.00015 ETH would price the next steps
+    ///         at 0.0001575 and 0.000165 ETH instead of 0.000105 and 0.00011.
+    function isBasePrice(uint256 basePrice) internal pure returns (bool) {
+        for (uint256 p = MIN_BASE_PRICE; p <= MAX_BASE_PRICE; p *= 10) {
+            if (basePrice == p) return true;
+        }
+        return false;
+    }
+
     /// @notice Whether a ladder is within the bounds governance may set: a valid steps per
-    ///         decade, a base price in `[MIN_BASE_PRICE, MAX_BASE_PRICE]`, a step count in
-    ///         `[MIN_STEP_COUNT, MAX_STEP_COUNT]` and a top step of at least `MIN_TOP_PRICE`.
+    ///         decade, a base price `isBasePrice` accepts (a power of ten from `MIN_BASE_PRICE`
+    ///         to `MAX_BASE_PRICE`), a step count in `[MIN_STEP_COUNT, MAX_STEP_COUNT]` and a
+    ///         top step of at least `MIN_TOP_PRICE`.
     function isValid(uint256 basePrice, uint256 stepsPerDecade, uint256 stepCount)
         internal
         pure
         returns (bool)
     {
-        return isStepsPerDecade(stepsPerDecade) && basePrice >= MIN_BASE_PRICE
-            && basePrice <= MAX_BASE_PRICE && stepCount >= MIN_STEP_COUNT
-            && stepCount <= MAX_STEP_COUNT
+        return isStepsPerDecade(stepsPerDecade) && isBasePrice(basePrice)
+            && stepCount >= MIN_STEP_COUNT && stepCount <= MAX_STEP_COUNT
             && price(basePrice, stepsPerDecade, stepCount - 1) >= MIN_TOP_PRICE;
     }
 

@@ -83,6 +83,14 @@ class LadderTest(unittest.TestCase):
         self.assertFalse(ref.ladder_is_valid(10**14, 12, 336))
         self.assertTrue(ref.ladder_is_valid(10**17, 192, 512))
 
+    def test_base_price_is_a_power_of_ten(self):
+        for k in range(12, 18):  # every power of ten in range, on the 512-step default ladder
+            self.assertTrue(ref.ladder_is_valid(10**k, 48, 512), k)
+        for base in (10**11, 10**18, 3 * 10**16, 5 * 10**14, 10**14 + 1, 2 * 10**12,
+                     10**17 - 1, 15 * 10**13):
+            self.assertGreaterEqual(ref.price(511, base, 48), ref.MIN_TOP_PRICE)
+            self.assertFalse(ref.ladder_is_valid(base, 48, 512), base)
+
     def test_price_rejects_other_ladders(self):
         with self.assertRaises(ValueError):
             ref.price(1, 10**14, 12)
