@@ -83,8 +83,38 @@ contract UniformEditionAuction is
     uint256 private constant _MAX_MAX_EXTENSION = 7 days;
     /// @dev The end while the 1/1 is paused for a dispute: undetermined.
     uint64 private constant _NO_END = type(uint64).max;
+    /// @dev The ladder's E192 mantissas, `round(100·10^(j/192))` for j = 0..191, two bytes
+    ///      each, exactly as `StepLadder.mantissa` gives them (the tests check every step's
+    ///      price against `StepLadder.price`). A byte table rather than `StepLadder`'s
+    ///      branches, so the settlement scan reads a mantissa in a few gas.
+    bytes private constant _MANTISSAS = hex"00640065006600680069006a006b006d006e006f007100720073007500760078"
+        hex"0079007b007c007e007f008100820084008500870089008a008c008e008f0091"
+        hex"0093009500960098009a009c009e00a000a200a400a500a700a900ac00ae00b0"
+        hex"00b200b400b600b800bb00bd00bf00c100c400c600c800cb00cd00d000d200d5"
+        hex"00d700da00dd00df00e200e500e800ea00ed00f000f300f600f900fc00ff0102"
+        hex"01050108010b010f011201150118011c011f01230126012a012d013101350138"
+        hex"013c014001440148014c015001540158015c016001650169016d01720176017b"
+        hex"017f01840188018d01920197019c01a101a601ab01b001b501ba01c001c501cb"
+        hex"01d001d601db01e101e701ed01f301f901ff0205020b02120218021e0225022c"
+        hex"0232023902400247024e0255025c0264026b0272027a028202890291029902a1"
+        hex"02a902b202ba02c202cb02d302dc02e502ee02f7030003090313031c03260330"
+        hex"03390343034d03580362036c03770382038d039703a303ae03b903c503d003dc";
     /// @dev Departure log entries in a step's head word; four in each word after it.
     uint256 private constant _HEAD_ENTRIES = 3;
+    /// @dev The most departures one settle call sweeps: few in the call that clears the book,
+    ///      which already scans it, more in each later call. Every call stays within the
+    ///      settlement budget whatever the book and the log (ADR 0004).
+    uint256 private constant _SWEEP_FIRST = 32;
+    uint256 private constant _SWEEP_CHUNK = 256;
+
+    /// @dev A settlement's clearing.
+    struct Cleared {
+        uint256 count;
+        uint256 step;
+        uint256 price;
+        bool rationed;
+        uint256 cutUnits;
+    }
 
     /// @dev The current parameters' ID, the interning counters, the open pause (when it began,
     ///      zero while not paused) and whether `editions` is listed: read once per open.
@@ -322,10 +352,10 @@ contract UniformEditionAuction is
         IUniformEditionAuction.AuctionStatus status = a.status;
         if (status == IUniformEditionAuction.AuctionStatus.OPEN) {
             if (_clearAtClose(saleId, a)) return true;
-        } else {
-            _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
+            return _sweep(saleId, a, order.length > _SWEEP_FIRST ? order[:_SWEEP_FIRST] : order);
         }
-        return _sweep(saleId, a, order);
+        _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
+        return _sweep(saleId, a, order.length > _SWEEP_CHUNK ? order[:_SWEEP_CHUNK] : order);
     }
 
     /// @notice Claims the caller's bid: its copies and its refund to `to`
@@ -635,10 +665,7 @@ contract UniformEditionAuction is
             revert IUniformEditionAuction.SettlementNotReady(saleId);
         }
         PayoutWord memory p = _payouts[saleId];
-        UniformClearing.Result memory c = UniformClearing.clear(
-            _book(saleId, a),
-            UniformClearing.Rules(t.basePrice, t.stepsPerDecade, a.maxCount, t.marginShare)
-        );
+        Cleared memory c = _scan(saleId, a, t);
         if (c.count != 0 && !IEditions(editions).exists(p.id)) {
             revert IUniformEditionAuction.EditionNotCreated(editions, p.id);
         }
@@ -670,8 +697,9 @@ contract UniformEditionAuction is
 
     /// @dev Runs one chunk of the departure sweep of a SETTLING sale (ADR 0005; PLAN section
     ///      1.6): each departure from the clearing step, in strictly increasing position, moves
-    ///      the cutoff past its units when it starts below the cutoff. Once every departure is
-    ///      swept the cutoff is exact, the sale is SETTLED and claims open.
+    ///      the cutoff past its units when it starts below the cutoff. The caller passes at
+    ///      most {_SWEEP_FIRST} or {_SWEEP_CHUNK} entries; the rest wait for the next call. Once every departure is swept
+    ///      the cutoff is exact, the sale is SETTLED and claims open.
     function _sweep(uint256 saleId, SaleWord storage a, uint256[] calldata order)
         private
         returns (bool)
@@ -761,12 +789,121 @@ contract UniformEditionAuction is
         }
     }
 
-    /// @dev The live words of sale `a` up to its highest step: `UniformClearing`'s book.
-    function _book(uint256 saleId, SaleWord memory a) private view returns (uint256[] memory live) {
-        if (a.liveUnits == 0) return live;
-        live = new uint256[]((uint256(a.highStep) >> 3) + 1);
-        for (uint256 w = uint256(a.lowStep) >> 3; w < live.length; ++w) {
-            live[w] = _live[saleId][w];
+    /// @dev The D138 clearing of sale `a`'s live book, in one downward pass over its occupied
+    ///      words (ADR 0005). It gives exactly `UniformClearing.clear`'s result, which the lens
+    ///      runs: the tests replay the golden vectors through both and fuzz one against the
+    ///      other. Each used step is a candidate of `min(demand at or above it, cap)` copies at
+    ///      its price; the pass stops below the step where the demand reaches the cap, keeps the
+    ///      best revenue so far, and records a candidate whenever its revenue is within the
+    ///      margin of that best (itself included). The best only grows, so the last candidate
+    ///      recorded is the lowest within the margin of the final best: the result. Prices are
+    ///      `StepLadder.price`'s, computed decade by decade from one scale.
+    function _scan(uint256 saleId, SaleWord memory a, IUniformEditionAuction.AuctionConfig memory t)
+        private
+        view
+        returns (Cleared memory c)
+    {
+        if (a.liveUnits == 0) return c;
+        uint256 perDecade = t.stepsPerDecade;
+        uint256 cap = a.maxCount == 0 ? type(uint256).max : a.maxCount;
+        uint256 decade = uint256(a.highStep) / perDecade;
+        bytes memory table = _MANTISSAS;
+        // The scan's parameters and running state, read by {_scanWords}: the cap, `100,000 -
+        // marginShare`, steps per decade, the mantissa table, the decade's first step and its
+        // scale, the words to scan (from the highest, down to `lowStep / 8` inclusive), the
+        // result, and the table stride `192 / stepsPerDecade`.
+        uint256[] memory scan = new uint256[](10);
+        scan[0] = cap;
+        scan[1] = Splits.DENOMINATOR - t.marginShare;
+        scan[2] = perDecade;
+        scan[4] = decade * perDecade;
+        scan[5] = uint256(t.basePrice) * 10 ** decade;
+        scan[6] = (uint256(a.highStep) >> 3) + 1;
+        scan[7] = uint256(a.lowStep) >> 3;
+        scan[9] = StepLadder.MANTISSAS / perDecade;
+        mapping(uint256 word => uint256) storage live = _live[saleId];
+        bytes32 base;
+        assembly ("memory-safe") {
+            mstore(add(scan, 0x80), add(table, 0x20))
+            base := live.slot
+        }
+        _scanWords(base, scan);
+        uint256 pick = scan[8];
+        uint256 demand = uint64(pick);
+        c.count = demand < cap ? demand : cap;
+        c.step = pick >> 128;
+        c.price = _price(t, c.step);
+        c.cutUnits = c.count - uint64(pick >> 64);
+        c.rationed = c.count < demand;
+    }
+
+    /// @dev The pass of {_scan} over the live words of the mapping at `base`, with `scan` laid
+    ///      out as {_scan} documents; writes the last passing candidate, packed as `step << 128
+    ///      | unitsAbove << 64 | demand`, to `scan[8]`. In Yul because it runs once per used
+    ///      step of the book (up to 512): the settlement's worst case must fit its budget.
+    ///      Overflow is impossible: the demand stays below 2^33 (a sale's live units are below
+    ///      2^32), a price below 2^137 (a base of at most 10^17 wei, 21 decades, a mantissa
+    ///      below 1,000), so a revenue times 100,000 stays below 2^204.
+    function _scanWords(bytes32 base, uint256[] memory scan) private view {
+        assembly ("memory-safe") {
+            let p := add(scan, 0x20)
+            let demand := 0
+            let best := 0
+            let pick := 0
+            for { let w := mload(add(p, 0xc0)) } gt(w, mload(add(p, 0xe0))) { } {
+                w := sub(w, 1)
+                mstore(0x00, w)
+                mstore(0x20, base)
+                let word := sload(keccak256(0x00, 0x40))
+                for { let j := 8 } j { } {
+                    j := sub(j, 1)
+                    let units := and(shr(shl(5, j), word), 0xffffffff)
+                    if iszero(units) { continue }
+                    // Once the demand above a used step reaches the cap, no lower step counts.
+                    if iszero(lt(demand, mload(p))) {
+                        w := 0
+                        break
+                    }
+                    let step := or(shl(3, w), j)
+                    let start := mload(add(p, 0x80))
+                    if lt(step, start) {
+                        let scale := mload(add(p, 0xa0))
+                        for { } lt(step, start) { } {
+                            start := sub(start, mload(add(p, 0x40)))
+                            scale := div(scale, 10)
+                        }
+                        mstore(add(p, 0x80), start)
+                        mstore(add(p, 0xa0), scale)
+                    }
+                    demand := add(demand, units)
+                    let count := demand
+                    if gt(count, mload(p)) { count := mload(p) }
+                    let revenue :=
+                        mul(
+                            count,
+                            div(
+                                mul(
+                                    mload(add(p, 0xa0)),
+                                    shr(
+                                        240,
+                                        mload(
+                                            add(
+                                                mload(add(p, 0x60)),
+                                                shl(1, mul(sub(step, start), mload(add(p, 0x120))))
+                                            )
+                                        )
+                                    )
+                                ),
+                                100
+                            )
+                        )
+                    if gt(revenue, best) { best := revenue }
+                    if iszero(lt(mul(revenue, 100000), mul(best, mload(add(p, 0x20))))) {
+                        pick := or(or(shl(128, step), shl(64, sub(demand, units))), demand)
+                    }
+                }
+            }
+            mstore(add(p, 0x100), pick)
         }
     }
 
@@ -845,14 +982,18 @@ contract UniformEditionAuction is
         (st.termsId, st.termsCount) = (id, id);
     }
 
-    /// @dev Step `step`'s price under `t`: `UniformClearing.price`, which equals `StepLadder.price`
-    ///      (one mantissa table in the bytecode, not two; the tests check every step).
+    /// @dev Step `step`'s price under `t`: `basePrice × M[(step mod N)·192/N] × 10^(step div N) /
+    ///      100`, `StepLadder.price` from {_MANTISSAS}.
     function _price(IUniformEditionAuction.AuctionConfig memory t, uint256 step)
         private
         pure
         returns (uint256)
     {
-        return UniformClearing.price(t.basePrice, t.stepsPerDecade, step);
+        uint256 n = t.stepsPerDecade;
+        bytes memory table = _MANTISSAS;
+        uint256 j = (step % n) * (StepLadder.MANTISSAS / n);
+        uint256 m = uint256(uint8(table[2 * j])) << 8 | uint8(table[2 * j + 1]);
+        return uint256(t.basePrice) * m * 10 ** (step / n) / StepLadder.MANTISSA_SCALE;
     }
 
     /// @dev The 1/1 auction of sale `saleId` (its edition ID is in the payout word).
