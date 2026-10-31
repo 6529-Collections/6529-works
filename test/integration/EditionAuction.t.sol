@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { EditionAuctionStack } from "./EditionAuctionStack.sol";
@@ -284,7 +285,11 @@ contract EditionAuctionIntegrationTest is EditionAuctionStack {
         bytes32 root = _publish(works);
         (, uint256 tokenId) = _start(root, works, 0);
         Work memory other = _masterWork(artist, 7);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ISaleAdapter.InvalidSaleTerms.selector, address(editions), tokenId
+            )
+        );
         editionAuction.open(address(editions), tokenId, abi.encode(other.item));
         editionAuction.open(address(editions), tokenId, abi.encode(w.item));
     }

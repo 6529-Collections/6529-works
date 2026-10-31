@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- 6529 Stream: the 1/1 sale method is pluggable (ADR 0005, owner decision 15). `mint` takes any
+  admitted adapter whose `saleKind()` is the item's sale kind, and `_checkItem` requires only a
+  nonzero kind; the adapter checks the sale's currency and params (the English auction refuses
+  any params, as before). The English auction is admitted at genesis; a later 1/1 method is an
+  adapter governance admits (`setAdmittedMinter`, SUCCESSOR_SETTER, 30 days), with no new
+  Stream. `primaryTerms` reports a work's minting adapter's kind, recorded at its first
+  admission; an adapter reporting no kind is refused. Removing an adapter stops its new mints
+  and never strands a live sale (AUC-9). Stream's runtime grows by 181 bytes; `start` costs
+  about 230 more Prague gas and `settle` 2,169 more, with no new slot
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - Deploy: genesis deploys the uniform-price edition auction (`UniformEditionAuction`, with
   the stateless lens its constructor creates) at the launch parameters of ADR 0005 §4,
   admits it on 6529 Stream Editions and lists Editions as its target (17 wiring calls, was
@@ -99,7 +109,7 @@
   edition's `PRODUCT_EDITIONS` economics, which `createEdition` keeps, so the edition reports
   the split its sale paid. A bound adapter keeps minting its edition after removal, within the
   creator's cap (LIM-EA-10); removal stops new bindings. The `IEditions` interface ID becomes
-  `0xe183b26f`. The edition auction's `open` writes 6 new slots (278,215 Prague gas) and
+  `0xe183b26f`. The edition auction's `open` writes 6 new slots (278,235 Prague gas) and
   `createEdition` of an edition it bound 2 (140,201); an edition created unbound still writes 6.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4

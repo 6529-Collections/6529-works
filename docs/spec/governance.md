@@ -382,7 +382,7 @@ committed example's 15 are listed in order in the [matrix](../audit/roles.md#gen
 | --- | --- |
 | `bindWorkRecords`, `bindEditions`, `bindStream`, `bindPackageRegistry`, `bindSplitFactory`, `bindStatementLog` | The one-shot bindings |
 | `bindFederationRegistry` (artist registry) | Allowed but not wired: the federation registry ships in v1.1, then bound by a 30-day `ADMIN` action |
-| `setAdmittedMinter(address,bool)` | Admits each sale adapter to its token |
+| `setAdmittedMinter(address,bool)` | Admits each sale adapter to its token. A later one is admitted the same way, in the 30-day class; for 6529 Stream the review checks that the adapter sends an unbid or frozen-out work to the museum, never to the artist, and the other obligations ADR 0005 lists: burns only on an upheld dispute, settles, pays the locked shares, keeps a constant sale kind (ADR 0005, owner decision 15) |
 | `setTarget(address,bool)` | Lists each token on its sale adapter |
 | `setDefaultCurrency(bytes32,uint64,address)` | Each product's first default currency, ETH, the only active asset at genesis. Without it no auction could start for 14 days, because `EnglishAuction.start` reads `PRODUCT_STREAM`'s. |
 | `appendGovernanceManifest(...)` | The epoch-0 manifest |

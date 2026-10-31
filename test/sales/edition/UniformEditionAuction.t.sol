@@ -458,8 +458,8 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         stream.setWork(ID, WorksHashing.itemHash(item), ItemKind.EDITION_MASTER);
         vm.expectRevert(terms);
         auction.open(address(editions), ID, abi.encode(item));
-        // Malformed data.
-        vm.expectRevert();
+        // Malformed data: the lens's ABI decoding reverts without data.
+        vm.expectRevert(bytes(""));
         auction.open(address(editions), ID, hex"1234");
     }
 
@@ -723,7 +723,12 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         uint256 price = _price(saleId, 5);
         vm.deal(bob, price);
         vm.prank(bob);
-        vm.expectRevert();
+        // Alice's bid was not in the soft window, so the close is the moved one.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IUniformEditionAuction.BiddingClosed.selector, saleId, end + 25 minutes
+            )
+        );
         auction.bid{ value: price }(saleId, 5, 1);
     }
 
@@ -832,10 +837,13 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         auction.raise(saleId, 2, 101);
         vm.stopPrank();
+        uint64 close = ua.endTimes(saleId).endTime;
         vm.warp(block.timestamp + 2 days);
         vm.deal(alice, paid);
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(IUniformEditionAuction.BiddingClosed.selector, saleId, close)
+        );
         auction.raise{ value: paid }(saleId, 1, 101);
     }
 

@@ -20,7 +20,7 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| An admitted adapter (the English auction) | `mint` at `start`, which consumes the item through the package registry in the same call; `markPrimarySettled` at settle; `burn` on an upheld dispute; `primaryTerms` (view) | AUC-1 to AUC-9, ENT-12 |
+| An admitted adapter whose sale kind is the item's (the English auction at genesis; a later 1/1 method once governance admits it, owner decision 15) | `mint` at `start`, which consumes the item through the package registry in the same call; `markPrimarySettled` at settle; `burn` on an upheld dispute; `primaryTerms` (view) | AUC-1 to AUC-9, ENT-12 |
 | PLATFORM | `createCollection` | AUC-12 |
 | Editions | `linkEdition` once per settled master | AUC-11, ED-2 |
 | The bound `WorkRecords` | `setRoyaltyRate`, `emitMetadataUpdate` | AUC-6, WS-23 |
@@ -34,6 +34,10 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 
 ## Developer notes
 
+- **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
+  at its first admission, after every earlier mapping, so the storage layout of the other
+  slots is unchanged; `primaryTerms` reads it for a minted work. `mint` compares the live
+  `saleKind()` of the caller with the item's.
 - **Start-path storage (QUALITY-6).** A mint writes the ERC-721 owner, two token words (seller,
   serial, collection, a flags byte and a 24-bit terms ID; the item hash) and rewrites two
   nonzero counter words (the global counts and the collection's). The

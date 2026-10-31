@@ -14,9 +14,12 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      starts and never reused; a burn leaves a gap. Collections are groupings with
 ///      per-collection serials from 1; collection IDs and serials stay below 2^32. Tokens are
 ///      minted only through `IMintTarget.mint`, for an approved, unconsumed item whose lead
-///      artist signed "move to Stream"; 6529 Stream is auction-only, so the item's sale kind and
-///      the adapter's are both `SaleKind.ENGLISH_AUCTION`. A VRF item's seed must already be
-///      delivered (`IEntropyModule.requestSeed` runs before the start).
+///      artist signed "move to Stream", by an admitted sale adapter whose `saleKind()` is the
+///      item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
+///      the English auction (`SaleKind.ENGLISH_AUCTION`) is admitted at genesis, and a later
+///      method is an adapter governance admits (`setAdmittedMinter`, the 30-day class), with no
+///      new Stream. A VRF item's seed must already be delivered (`IEntropyModule.requestSeed`
+///      runs before the start).
 ///
 ///      Start-gas budget: 350K Prague gas, and at most 6 new storage slots (7 with a bid), per
 ///      steady-state start transaction (ADR 0003, ADR 0004; the first start in an empty
@@ -144,7 +147,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error AlreadyBound(bytes32 name);
     /// @notice The satellite serves another Stream: its `stream()` is not this contract.
     error InvalidBinding(address target);
-    /// @notice The item's sale is not an English auction with empty parameters.
+    /// @notice The item names no sale kind. Its sale currency and params are the adapter's
+    ///         to check (the English auction takes empty params).
     error InvalidItemSale();
     /// @notice The item names no parties, or (a preview) its lead party has no artist ID yet.
     error InvalidLeadArtist();
