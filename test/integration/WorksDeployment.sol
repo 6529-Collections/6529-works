@@ -25,6 +25,7 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import { DeployV1 } from "script/DeployV1.sol";
@@ -87,7 +88,7 @@ abstract contract WorksDeployment is Test {
     Stream internal stream;
     WorkRecords internal records;
     Editions internal editions;
-    EnglishAuction internal auction;
+    IEnglishAuctionFull internal auction;
     UniformEditionAuction internal editionAuction;
 
     // ------------------------------------------------------------------ genesis holders
@@ -178,7 +179,7 @@ abstract contract WorksDeployment is Test {
         stream = d.stream;
         records = d.workRecords;
         editions = Editions(address(d.editions));
-        auction = d.englishAuction;
+        auction = IEnglishAuctionFull(address(d.englishAuction));
         editionAuction = d.editionAuction;
     }
 

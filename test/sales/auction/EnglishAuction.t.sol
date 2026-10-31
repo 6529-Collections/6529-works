@@ -34,6 +34,7 @@ import {
 import { MockPermit2 } from "../../mocks/sales/SaleMocks.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 
 /// @dev Unit tests for starting, bidding, settling, delivery claims and credits.
 contract EnglishAuctionTest is AuctionBase {
@@ -79,7 +80,9 @@ contract EnglishAuctionTest is AuctionBase {
                 none,
                 address(stream)
             );
-            assertEq(a.config().extensionWindow, edge[i].extensionWindow);
+            assertEq(
+                IEnglishAuctionFull(address(a)).config().extensionWindow, edge[i].extensionWindow
+            );
         }
     }
 
@@ -801,7 +804,7 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     function test_Bid_Permit2Disabled() public {
-        EnglishAuction noPermit2 = _deploy(address(0));
+        IEnglishAuctionFull noPermit2 = _deploy(address(0));
         stream.setTerms(_terms(address(usd)));
         uint256 saleId = noPermit2.start(address(stream), "");
         Payment memory p = _permit2Payment(alicePk, saleId, alice, 10e18, 1);
