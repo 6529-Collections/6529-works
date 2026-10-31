@@ -18,6 +18,7 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | `MintSaleBase.sol` | Abstract base of the two mint-per-purchase adapters: targets, terms locked at open, one open sale per `(token, id)`, payment collection (direct, EIP-2612, Permit2), payouts with the escrow fallback, ETH credits, the pause and the schedule delay. |
 | `FixedPriceSale.sol` | [`IFixedPriceSale`](../interfaces/IFixedPriceSale.sol): up to 16 phases, Merkle allowlists, per-wallet caps and prices, the artist's signed phase configuration. |
 | `DutchSale.sol`, `DutchPricing.sol` | [`IDutchSale`](../interfaces/IDutchSale.sol): a descending price on the curve the edition's terms fix; the curve as an internal library. |
+| `UniformClearing.sol` | The pure core of the uniform-price edition auction (D138, ADR 0005), as an internal library: the one-pass clearing rule on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the first-in-first-out split of the cut step and the what-if quote. No adapter uses it yet; the auction adapter is being built on it. |
 
 Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
 
@@ -72,6 +73,12 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   cases (16 phases with a 4 KiB ERC-1271 consent; purchases with a 32-node proof, gas-burning
   wallets or escrowed token payouts); each stays under 1.2M Prague gas, against a mock edition.
   Per-operation gas is in [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+- **Uniform clearing.** `UniformClearing` takes a book as packed words (8 steps of 32-bit live
+  units a word, at most 512 steps) and is pure, so the settlement, the views and the Halmos
+  proofs share one implementation. Its domain (`isValidLadder`: a base from 100 to 2**96 - 1
+  wei, 24, 48, 96 or 192 steps a decade) contains every ladder `StepLadder.isValid` accepts,
+  so a book on locked terms always clears. Clearing every one of 336 steps costs about 188K
+  Prague gas, plus about 100K to read the 42 words cold (`UniformClearingGas.t.sol`).
 - **Tests:** `forge test --match-path 'test/sales/**'` (each adapter with an invariant suite;
   `EnglishAuctionGas.t.sol` keeps the auction's own gates); end to end, `CuratedSale.t.sol`,
   `Dispute.t.sol` and `MasterEdition.t.sol` in [`test/integration/`](../../test/integration/);

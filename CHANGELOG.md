@@ -28,6 +28,19 @@
   token, federated or listed later by governance, keeps the rc.1 behaviour (its artist), at
   settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
+- Sales: `src/sales/UniformClearing.sol`, the pure core of the 6529 Stream Editions
+  uniform-price auction (ADR 0005), as an internal library that no contract uses yet: the
+  clearing rule in one pass over the steps (the largest count whose revenue is within the
+  breadth margin of the best, up to the creator's cap) on `StepLadder`'s prices, the
+  first-in-first-out split of the cut step with the settler's departure sweep, and the what-if
+  quote. Tested against a brute force over unit bids (10,000 fuzz runs), the reference model's
+  golden vectors (every clearing, sweep, bid outcome and quote), the plan's worked traces and
+  Halmos proofs (`test/symbolic/UniformClearingSymbolic.t.sol`). `StepLadder` packs its 192
+  mantissas as 10-bit fields in 8 words instead of 16-bit fields in 12, every price unchanged:
+  227 bytes and about 150 gas a lookup less. The reference model
+  (`tools/edition_auction_ref.py`) now validates a bid or raise before it changes the book, and
+  limits a capped step's entered units to 2^32 - 1 as `InvalidQuantity` states; the golden
+  vectors are unchanged.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,
