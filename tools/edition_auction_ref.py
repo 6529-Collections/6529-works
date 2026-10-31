@@ -119,15 +119,17 @@ def ladder(config: Config = DEFAULT) -> list[int]:
     return [config.price(i) for i in range(config.step_count)]
 
 
-# The ladder bounds governance may set (`StepLadder.isValid`).
+# The ladder bounds governance may set (`StepLadder.isValid`). The base price is a power of
+# ten (`StepLadder.isBasePrice`), so every price reads as the table does (decision 3).
 MIN_BASE_PRICE, MAX_BASE_PRICE = 10**12, 10**17
+BASE_PRICES = tuple(10**k for k in range(12, 18))
 MIN_STEP_COUNT, MAX_STEP_COUNT = 64, 512
 MIN_TOP_PRICE = 10 * 10**18
 
 
 def ladder_is_valid(base_price: int, steps_per_decade: int, step_count: int) -> bool:
     return (steps_per_decade in STEPS_PER_DECADE
-            and MIN_BASE_PRICE <= base_price <= MAX_BASE_PRICE
+            and base_price in BASE_PRICES
             and MIN_STEP_COUNT <= step_count <= MAX_STEP_COUNT
             and price(step_count - 1, base_price, steps_per_decade) >= MIN_TOP_PRICE)
 
@@ -288,14 +290,26 @@ class Book:
         if not 0 <= step < self.step_count:
             raise InvalidAction(f"step {step} outside the ladder")
 
+    def _check_entry(self, step: int, quantity: int, moving: bool = False) -> None:
+        """Refuses (`InvalidQuantity`) `quantity` more units at `step` that would take the
+        step's entered units (capped sales, where positions exist) or live units, or the sale's
+        live units, past 2^32 - 1. `moving`: the units already count in the sale's live units
+        (a raise moves them from another step). Changes nothing."""
+        if self.cap and self.entered.get(step, 0) + quantity > MAX_QUANTITY:
+            raise InvalidAction("step's entered units past 2^32 - 1")
+        if self.live.get(step, 0) + quantity > MAX_QUANTITY:
+            raise InvalidAction("step's live units past 2^32 - 1")
+        if not moving and self.total_units() + quantity > MAX_QUANTITY:
+            raise InvalidAction("sale's live units past 2^32 - 1")
+
     def _enter(self, step: int, quantity: int) -> int:
+        """Validates first, then queues `quantity` units at `step`; returns their position."""
+        self._check_entry(step, quantity)
         position = 0
         if self.cap:
             position = self.entered.get(step, 0)
             self.entered[step] = position + quantity
         self.live[step] = self.live.get(step, 0) + quantity
-        if self.live[step] > MAX_QUANTITY or self.total_units() > MAX_QUANTITY:
-            raise InvalidAction("units past 2^32 - 1")
         return position
 
     def _leave(self, bid: Bid) -> None:
@@ -319,6 +333,8 @@ class Book:
         self._check_step(new_step)
         if new_step <= bid.step:
             raise InvalidAction("a raise must move up")
+        # Every check before the bid leaves its step, so a refused raise changes nothing.
+        self._check_entry(new_step, bid.quantity, moving=True)
         top_up = bid.quantity * (self.price(new_step) - self.price(bid.step))
         self._leave(bid)
         bid.step = new_step
@@ -673,7 +689,11 @@ def ladder_vectors() -> dict:
         (10**14, 96, 336), (10**14, 96, 512), (10**14, 192, 512), (10**17, 192, 512),
         (10**12, 48, 336), (10**12 - 1, 48, 336), (10**17, 48, 336), (10**17 + 1, 48, 336),
         (10**14, 48, 63), (10**14, 48, 513), (10**14, 12, 336), (10**14, 0, 336),
-        (2 * 10**16, 192, 512), (3 * 10**16, 192, 512),
+        (10**16, 192, 512),  # the top step at 4.59 ETH
+        (10**12, 48, 512), (10**13, 48, 336), (10**15, 48, 336), (10**16, 48, 336),
+        # In range and with a top step above 10 ETH, but not powers of ten.
+        (3 * 10**16, 192, 512), (5 * 10**14, 48, 336), (10**14 + 1, 48, 336),
+        (2 * 10**12, 48, 512), (10**17 - 1, 48, 336),
         (10**14, 48, 240), (10**14, 48, 241),  # the top step at 9.53 ETH, then exactly 10 ETH
     ]
     return {
@@ -684,7 +704,8 @@ def ladder_vectors() -> dict:
                        "`prices` and `steps` are the default ladder (wei, and readable ETH); "
                        "`ladders` gives the mantissas and first prices of each allowed "
                        "steps-per-decade at the default base price; `bounds` gives ladders "
-                       "governance may or may not set (`StepLadder.isValid`).",
+                       "governance may or may not set (`StepLadder.isValid`: among them, "
+                       "the base price is a power of ten from 10^12 to 10^17 wei).",
         "model": "tools/edition_auction_ref.py",
         "mantissas": MANTISSAS,
         "default": {

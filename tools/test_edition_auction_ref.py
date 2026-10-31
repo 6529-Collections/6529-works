@@ -7,6 +7,8 @@ under test/fixtures/edition-auction/ are stale.
 
 from __future__ import annotations
 
+import copy
+import dataclasses
 import importlib.util
 import json
 import sys
@@ -80,6 +82,14 @@ class LadderTest(unittest.TestCase):
         self.assertFalse(ref.ladder_is_valid(10**12 - 1, 48, 336))
         self.assertFalse(ref.ladder_is_valid(10**14, 12, 336))
         self.assertTrue(ref.ladder_is_valid(10**17, 192, 512))
+
+    def test_base_price_is_a_power_of_ten(self):
+        for k in range(12, 18):  # every power of ten in range, on the 512-step default ladder
+            self.assertTrue(ref.ladder_is_valid(10**k, 48, 512), k)
+        for base in (10**11, 10**18, 3 * 10**16, 5 * 10**14, 10**14 + 1, 2 * 10**12,
+                     10**17 - 1, 15 * 10**13):
+            self.assertGreaterEqual(ref.price(511, base, 48), ref.MIN_TOP_PRICE)
+            self.assertFalse(ref.ladder_is_valid(base, 48, 512), base)
 
     def test_price_rejects_other_ladders(self):
         with self.assertRaises(ValueError):
@@ -164,6 +174,59 @@ class BookTest(unittest.TestCase):
         book.withdraw(1)
         with self.assertRaises(ref.InvalidAction):
             book.withdraw(1)
+
+    @staticmethod
+    def _state(book):
+        return copy.deepcopy((book.live, book.entered, book.departures,
+                              [dataclasses.asdict(b) for b in book.bids.values()], book.next_id))
+
+    def test_a_refused_bid_changes_nothing(self):
+        # The sale's live units would pass 2^32 - 1: refused before anything is queued.
+        book = book_of(ref._bids(("A", 5, ref.MAX_QUANTITY - 3)), cap=10)
+        before = self._state(book)
+        with self.assertRaises(ref.InvalidAction):
+            book.bid("B", 6, 4)
+        self.assertEqual(self._state(book), before)
+        # The step's live units would pass it.
+        with self.assertRaises(ref.InvalidAction):
+            book.bid("B", 5, 4)
+        self.assertEqual(self._state(book), before)
+        book.bid("B", 6, 3)  # exactly 2^32 - 1 live units
+        self.assertEqual(book.total_units(), ref.MAX_QUANTITY)
+
+    def test_a_refused_raise_changes_nothing(self):
+        # A capped sale: step 7 has entered 2^32 - 6 units, all withdrawn, so a raise of 6
+        # units into it would take its entered units past 2^32 - 1.
+        book = book_of(ref._bids(("A", 7, ref.MAX_QUANTITY - 5)), cap=10)
+        book.withdraw(1)
+        book.bid("B", 6, 6)
+        before = self._state(book)
+        with self.assertRaises(ref.InvalidAction):
+            book.raise_bid(2, 7)
+        # B is still on step 6, at its position, and left no departure there.
+        self.assertEqual(self._state(book), before)
+        self.assertEqual((book.bids[2].step, book.bids[2].position), (6, 0))
+        self.assertNotIn(6, book.departures)
+        self.assertEqual(book.raise_bid(2, 8), 6 * (ref.price(8) - ref.price(6)))
+
+    def test_entered_units_are_limited_in_a_capped_sale(self):
+        # Entered units only grow: a withdrawal frees live units but not the step's queue, so
+        # 11 more units at step 5 are refused although its live units would be 11.
+        events = ref._bids(("A", 5, ref.MAX_QUANTITY - 10))
+        capped = book_of(events, cap=10)
+        capped.withdraw(1)
+        before = self._state(capped)
+        with self.assertRaises(ref.InvalidAction):
+            capped.bid("B", 5, 11)
+        self.assertEqual(self._state(capped), before)
+        bid_id = capped.bid("B", 5, 10)  # exactly 2^32 - 1 entered units
+        self.assertEqual(capped.bids[bid_id].position, ref.MAX_QUANTITY - 10)
+        self.assertEqual(capped.entered[5], ref.MAX_QUANTITY)
+        # Without a cap there are no positions, so only live units count.
+        uncapped = book_of(events)
+        uncapped.withdraw(1)
+        uncapped.bid("B", 5, 11)
+        self.assertEqual(uncapped.live[5], 11)
 
     def test_settlement_order_sorts_the_cut_step_departures(self):
         book = book_of(ref.fifo_holes_events(), cap=30)

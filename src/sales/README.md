@@ -17,6 +17,7 @@ dispute pause); how editions mint is in [Editions and sales](../../docs/spec/edi
 | File | What it is |
 | --- | --- |
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start (mints into its own custody), bids with an anti-snipe window, pull credits, settlement with pending delivery and escrow fallback, the dispute pause, the currency freeze, the emergency pause. |
+| `UniformClearing.sol` | The pure core of the uniform-price edition auction (D138, ADR 0005), as an internal library: the one-pass clearing rule on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the first-in-first-out split of the cut step and the what-if quote. No adapter uses it yet; the auction adapter is being built on it. |
 
 Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
 
@@ -61,6 +62,12 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   ([federated](../federated/README.md#before-installing-a-registry)).
 - **Transaction cap and gas.** `EnglishAuctionGas.t.sol` keeps the auction's own gates;
   per-operation gas is in [ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table).
+- **Uniform clearing.** `UniformClearing` takes a book as packed words (8 steps of 32-bit live
+  units a word, at most 512 steps) and is pure, so the settlement, the views and the Halmos
+  proofs share one implementation. Its domain (`isValidLadder`: a base from 100 to 2**96 - 1
+  wei, 24, 48, 96 or 192 steps a decade) contains every ladder `StepLadder.isValid` accepts,
+  so a book on locked terms always clears. Clearing every one of 336 steps costs about 188K
+  Prague gas, plus about 100K to read the 42 words cold (`UniformClearingGas.t.sol`).
 - **Tests:** `forge test --match-path 'test/sales/**'` (the auction with its invariant suites;
   `PauseWindow.t.sol` for the 48-hour floors); end to end, `CuratedSale.t.sol`,
   `Dispute.t.sol` and `MasterEdition.t.sol` in [`test/integration/`](../../test/integration/);

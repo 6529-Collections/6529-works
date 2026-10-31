@@ -494,10 +494,10 @@ interface IUniformEditionAuction is ISaleAdapter {
 
     /// @notice Sets the governed parameters for sales that open afterwards. PARAMETER_SETTER role
     ///         (48 hours), compare-and-set. Bounds: a ladder `StepLadder.isValid` accepts (24,
-    ///         48, 96 or 192 steps per decade; a base price of 10^12 to 10^17 wei; 64 to 512
-    ///         steps; a top step of at least 10 ETH), a margin of at most 50,000, a close offset
-    ///         of at most 1 day, a soft-close window of 1 minute to 1 hour, and a maximum
-    ///         extension of 1 hour to 7 days.
+    ///         48, 96 or 192 steps per decade; a base price that is a power of ten from 10^12 to
+    ///         10^17 wei, `StepLadder.isBasePrice`; 64 to 512 steps; a top step of at least 10
+    ///         ETH), a margin of at most 50,000, a close offset of at most 1 day, a soft-close
+    ///         window of 1 minute to 1 hour, and a maximum extension of 1 hour to 7 days.
     /// @param expected The parameters the caller expects are current; a stale value reverts with
     ///        `ExpectedValueMismatch`.
     /// @param next The new parameters, within the bounds above (`InvalidConfig`).

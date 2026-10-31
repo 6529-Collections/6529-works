@@ -15,7 +15,9 @@ pragma solidity ^0.8.24;
 ///      read no storage, so the bid, settlement and every view price a step identically, and
 ///      `tools/edition_auction_ref.py` reproduces every price (golden vectors in
 ///      `test/fixtures/edition-auction/ladder.json`, pinned by `test/interfaces/StepLadder.t.sol`).
-///      The 192 mantissas are three-digit values packed as 16-bit words, 16 to a constant.
+///      The 192 mantissas are packed as 10-bit fields, 24 to a constant (mantissa `j` in bits
+///      `10 * (j % 24)` of constant `j / 24`): 8 words, the cheapest exact packing measured in
+///      bytecode and gas (lane L1).
 library StepLadder {
     /// @notice Entries in the mantissa table.
     uint256 internal constant MANTISSAS = 192;
@@ -27,9 +29,10 @@ library StepLadder {
     uint256 internal constant DEFAULT_STEPS_PER_DECADE = 48;
     /// @notice The default number of steps: 336, from 0.0001 ETH to 953 ETH.
     uint256 internal constant DEFAULT_STEP_COUNT = 336;
-    /// @notice The lowest base price governance may set, in wei.
+    /// @notice The lowest base price governance may set, in wei: 0.000001 ETH. Every base
+    ///         price is a power of ten (`isBasePrice`).
     uint256 internal constant MIN_BASE_PRICE = 1e12;
-    /// @notice The highest base price governance may set, in wei.
+    /// @notice The highest base price governance may set, in wei: 0.1 ETH.
     uint256 internal constant MAX_BASE_PRICE = 1e17;
     /// @notice The fewest steps a ladder may have.
     uint256 internal constant MIN_STEP_COUNT = 64;
@@ -39,42 +42,30 @@ library StepLadder {
     ///         edition's price below plausible demand: 10 ETH.
     uint256 internal constant MIN_TOP_PRICE = 10 ether;
 
-    /// @dev Mantissas 0 to 15.
-    uint256 private constant _M0 =
-        0x00640065006600680069006a006b006d006e006f007100720073007500760078;
-    /// @dev Mantissas 16 to 31.
-    uint256 private constant _M1 =
-        0x0079007b007c007e007f008100820084008500870089008a008c008e008f0091;
-    /// @dev Mantissas 32 to 47.
-    uint256 private constant _M2 =
-        0x0093009500960098009a009c009e00a000a200a400a500a700a900ac00ae00b0;
-    /// @dev Mantissas 48 to 63.
-    uint256 private constant _M3 =
-        0x00b200b400b600b800bb00bd00bf00c100c400c600c800cb00cd00d000d200d5;
-    /// @dev Mantissas 64 to 79.
-    uint256 private constant _M4 =
-        0x00d700da00dd00df00e200e500e800ea00ed00f000f300f600f900fc00ff0102;
-    /// @dev Mantissas 80 to 95.
-    uint256 private constant _M5 =
-        0x01050108010b010f011201150118011c011f01230126012a012d013101350138;
-    /// @dev Mantissas 96 to 111.
-    uint256 private constant _M6 =
-        0x013c014001440148014c015001540158015c016001650169016d01720176017b;
-    /// @dev Mantissas 112 to 127.
-    uint256 private constant _M7 =
-        0x017f01840188018d01920197019c01a101a601ab01b001b501ba01c001c501cb;
-    /// @dev Mantissas 128 to 143.
-    uint256 private constant _M8 =
-        0x01d001d601db01e101e701ed01f301f901ff0205020b02120218021e0225022c;
-    /// @dev Mantissas 144 to 159.
-    uint256 private constant _M9 =
-        0x0232023902400247024e0255025c0264026b0272027a028202890291029902a1;
-    /// @dev Mantissas 160 to 175.
-    uint256 private constant _M10 =
-        0x02a902b202ba02c202cb02d302dc02e502ee02f7030003090313031c03260330;
-    /// @dev Mantissas 176 to 191.
-    uint256 private constant _M11 =
-        0x03390343034d03580362036c03770382038d039703a303ae03b903c503d003dc;
+    /// @dev Mantissas 0 to 23: 100 101 102 104 105 106 107 109 110 111 113 114
+    ///      115 117 118 120 121 123 124 126 127 129 130 132.
+    uint256 private constant _M0 = 0x210822047f1f87c1ec791e0761d4731c8711bc6e1b46b1a8691a06619464;
+    /// @dev Mantissas 24 to 47: 133 135 137 138 140 142 143 145 147 149 150 152
+    ///      154 156 158 160 162 164 165 167 169 172 174 176.
+    uint256 private constant _M1 = 0x2c0ae2b0a929ca5290a22809e2709a26096254932448f2388c2288921c85;
+    /// @dev Mantissas 48 to 71: 178 180 182 184 187 189 191 193 196 198 200 203
+    ///      205 208 210 213 215 218 221 223 226 229 232 234.
+    uint256 private constant _M2 = 0x3a8e8394e237cdd368d7354d2340cd32cc8318c4304bf2f4bb2e0b62d0b2;
+    /// @dev Mantissas 72 to 95: 237 240 243 246 249 252 255 258 261 264 267 271
+    ///      274 277 280 284 287 291 294 298 301 305 309 312.
+    uint256 private constant _M3 = 0x4e1354c52d4a92648d1f471184551243d0b42105408ff3f0f93d8f33c0ed;
+    /// @dev Mantissas 96 to 119: 316 320 324 328 332 336 340 344 348 352 357 361
+    ///      365 370 374 379 383 388 392 397 402 407 412 417.
+    uint256 private constant _M4 = 0x6859c65d92635886117f5ed765c96d5a5655815c561545414c521445013c;
+    /// @dev Mantissas 120 to 143: 422 427 432 437 442 448 453 459 464 470 475 481
+    ///      487 493 499 505 511 517 523 530 536 542 549 556.
+    uint256 private constant _M5 = 0x8b22587a1884a0b815ff7e5f37b5e7785db759d072dc5701ba6d5b06ada6;
+    /// @dev Mantissas 144 to 167: 562 569 576 583 590 597 604 612 619 626 634 642
+    ///      649 657 665 673 681 690 698 706 715 723 732 741.
+    uint256 private constant _M6 = 0xb96dcb4ecbb0abaacaa9a8699a4689a0a7a9ca6b9925c9564e91e408e632;
+    /// @dev Mantissas 168 to 191: 750 759 768 777 787 796 806 816 825 835 845 856
+    ///      866 876 887 898 909 919 931 942 953 965 976 988.
+    uint256 private constant _M7 = 0xf73d0f17b9ebba3e5f8de0b77db362d634dd0f39cc326c7313c2700bdeee;
 
     /// @notice A mantissa index at or past `MANTISSAS`.
     error MantissaIndexOutOfRange(uint256 index);
@@ -85,33 +76,47 @@ library StepLadder {
             || stepsPerDecade == 192;
     }
 
+    /// @notice Whether `basePrice` is a power of ten from `MIN_BASE_PRICE` to `MAX_BASE_PRICE`
+    ///         (10^12 to 10^17 wei). With a power-of-ten base every price is a table mantissa
+    ///         times a power of ten, so it reads as the table does (ADR 0005 decision 3, readable
+    ///         prices from a fixed table). A base of 0.00015 ETH would price the next steps
+    ///         at 0.0001575 and 0.000165 ETH instead of 0.000105 and 0.00011.
+    function isBasePrice(uint256 basePrice) internal pure returns (bool) {
+        for (uint256 p = MIN_BASE_PRICE; p <= MAX_BASE_PRICE; p *= 10) {
+            if (basePrice == p) return true;
+        }
+        return false;
+    }
+
     /// @notice Whether a ladder is within the bounds governance may set: a valid steps per
-    ///         decade, a base price in `[MIN_BASE_PRICE, MAX_BASE_PRICE]`, a step count in
-    ///         `[MIN_STEP_COUNT, MAX_STEP_COUNT]` and a top step of at least `MIN_TOP_PRICE`.
+    ///         decade, a base price `isBasePrice` accepts (a power of ten from `MIN_BASE_PRICE`
+    ///         to `MAX_BASE_PRICE`), a step count in `[MIN_STEP_COUNT, MAX_STEP_COUNT]` and a
+    ///         top step of at least `MIN_TOP_PRICE`.
     function isValid(uint256 basePrice, uint256 stepsPerDecade, uint256 stepCount)
         internal
         pure
         returns (bool)
     {
-        return isStepsPerDecade(stepsPerDecade) && basePrice >= MIN_BASE_PRICE
-            && basePrice <= MAX_BASE_PRICE && stepCount >= MIN_STEP_COUNT
-            && stepCount <= MAX_STEP_COUNT
+        return isStepsPerDecade(stepsPerDecade) && isBasePrice(basePrice)
+            && stepCount >= MIN_STEP_COUNT && stepCount <= MAX_STEP_COUNT
             && price(basePrice, stepsPerDecade, stepCount - 1) >= MIN_TOP_PRICE;
     }
 
     /// @notice Mantissa `j`: `100 * 10^(j / 192)` rounded half up, from 100 to 988.
     function mantissa(uint256 j) internal pure returns (uint256) {
         if (j >= MANTISSAS) revert MantissaIndexOutOfRange(j);
-        uint256 q = j >> 4;
-        uint256 w;
-        if (q < 6) {
-            if (q < 3) w = q == 0 ? _M0 : q == 1 ? _M1 : _M2;
-            else w = q == 3 ? _M3 : q == 4 ? _M4 : _M5;
-        } else {
-            if (q < 9) w = q == 6 ? _M6 : q == 7 ? _M7 : _M8;
-            else w = q == 9 ? _M9 : q == 10 ? _M10 : _M11;
+        unchecked {
+            uint256 q = j / 24;
+            uint256 w;
+            if (q < 4) {
+                if (q < 2) w = q == 0 ? _M0 : _M1;
+                else w = q == 2 ? _M2 : _M3;
+            } else {
+                if (q < 6) w = q == 4 ? _M4 : _M5;
+                else w = q == 6 ? _M6 : _M7;
+            }
+            return (w >> ((j - q * 24) * 10)) & 0x3ff;
         }
-        return (w >> ((15 - (j & 15)) * 16)) & 0xffff;
     }
 
     /// @notice The price of `step`, in wei: `basePrice * mantissa * 10^decade / 100`.
