@@ -196,14 +196,14 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     }
 
     /// @dev Every bid's claim against the lens, over any governed ladder and any chunking. The
-    ///      ladder is random (24, 48, 96 or 192 steps per decade, any base price and step count
-    ///      the bounds allow), so a resumed scan starts in any decade. The book is spread or
-    ///      clustered on a few steps, with raises and dispute withdrawals leaving departures at
-    ///      the cut step. Settlement is fed random prefixes of the remaining order, so the sweep
-    ///      resumes at any boundary. Before settling, each live bid's `bidOutcome` is read from
-    ///      the lens, which counts the live units ahead of a bid rather than sweeping a cutoff;
-    ///      each claim must then pay exactly that outcome, and the sale must mint exactly `k`
-    ///      and leave nothing behind.
+    ///      ladder is random (24, 48, 96 or 192 steps per decade, any governed base price and
+    ///      any step count the bounds allow), so a resumed scan starts in any decade. The book is
+    ///      spread or clustered on a few steps, with raises and dispute withdrawals leaving
+    ///      departures at the cut step. Settlement is fed random prefixes of the remaining order,
+    ///      so the sweep resumes at any boundary. Before settling, each live bid's `bidOutcome`
+    ///      is read from the lens, which counts the live units ahead of a bid rather than
+    ///      sweeping a cutoff; each claim must then pay exactly that outcome, and the sale must
+    ///      mint exactly `k` and leave nothing behind.
     function testFuzz_Settlement_AnyLadderAndChunkingPaysEveryOutcome(
         uint256 seed,
         uint8 bids,
@@ -240,7 +240,8 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     function _randomLadder(uint256 ladder, uint32 marginShare) internal returns (uint256) {
         IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
         c.stepsPerDecade = uint16(24 << (ladder % 4));
-        c.basePrice = uint96(bound(ladder >> 8, 1e12, 1e17));
+        // Governed base prices are the powers of ten from 10^12 to 10^17 (`isBasePrice`).
+        c.basePrice = uint96(10 ** (12 + (ladder >> 8) % 6));
         c.stepCount = uint16(bound(ladder >> 128, 64, 512));
         c.marginShare = uint32(bound(marginShare, 0, 50_000));
         try auction.setConfig(auction.config(), c) { }
