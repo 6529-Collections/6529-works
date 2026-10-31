@@ -83,6 +83,9 @@ abstract contract EditionAuctionStack is IntegrationBase {
         vm.deal(bidder, bidder.balance + amount);
         vm.prank(bidder);
         bidId = editionAuction.bid{ value: amount }(saleId, step, quantity);
+        // A bidder has sent a transaction, so its account is never empty: a refund to it never
+        // pays for a new account (a prank leaves the nonce at zero).
+        if (vm.getNonce(bidder) == 0) vm.setNonce(bidder, 1);
     }
 
     /// @dev Settles the 1/1 at its end and creates the edition (both permissionless, as the
