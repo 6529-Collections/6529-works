@@ -34,6 +34,9 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
 
 ## Developer notes
 
+- **Governed dependencies (owner decision 16).** The package registry, artist registry,
+  economics resolver and entropy module live in four consecutive slots after every earlier
+  variable, which `setDependency` indexes; the split factory stays immutable.
 - **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
   at its first admission, after every earlier mapping, so the storage layout of the other
   slots is unchanged; `primaryTerms` reads it for a minted work. `mint` compares the live

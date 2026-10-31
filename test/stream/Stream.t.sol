@@ -33,8 +33,10 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import {
+    MockArtistRegistry,
     MockEconomics,
     MockEditions,
+    MockEntropy,
     MockPackageRegistry,
     MockRenderer,
     MockSaleAdapter,
@@ -471,6 +473,98 @@ contract StreamTest is StreamFixture {
         entropy.deliver(itemHash, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(stream, data);
         assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+    }
+
+    // --------------------------------------------------- governed dependencies (decision 16)
+
+    /// @dev Each dependency is replaced by SUCCESSOR_SETTER, compare-and-set, after the same
+    ///      install checks as the constructor's; the getter follows and the event names both.
+    function test_setDependency_replacesEachDependency() public {
+        bytes32[4] memory kinds =
+            [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
+        address[4] memory nexts = [
+            address(new MockPackageRegistry()),
+            address(new MockArtistRegistry()),
+            address(new MockEconomics(_defaultTerms(), address(splitFactory))),
+            address(new MockEntropy())
+        ];
+        address[4] memory previous =
+            [address(registry), address(artists), address(econ), address(entropy)];
+        for (uint256 i; i < 4; ++i) {
+            vm.expectEmit(address(stream));
+            emit IStream.DependencySet(kinds[i], previous[i], nexts[i]);
+            vm.prank(governor);
+            stream.setDependency(kinds[i], previous[i], nexts[i]);
+        }
+        assertEq(stream.packageRegistry(), nexts[0]);
+        assertEq(stream.artistRegistry(), nexts[1]);
+        assertEq(stream.economics(), nexts[2]);
+        assertEq(stream.entropyModule(), nexts[3]);
+        assertEq(stream.splitFactory(), address(splitFactory), "the split factory stays");
+    }
+
+    function test_setDependency_reverts() public {
+        address next = address(new MockPackageRegistry());
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), next);
+
+        vm.startPrank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.UnknownDependency.selector, bytes32("SPLIT_FACTORY"))
+        );
+        stream.setDependency("SPLIT_FACTORY", address(splitFactory), next);
+        vm.expectRevert(IStream.ExpectedValueMismatch.selector);
+        stream.setDependency("PACKAGE_REGISTRY", next, next);
+        // An EOA, zero, and a contract that is not the dependency's kind are refused.
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), eoa);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(0)));
+        stream.setDependency("ENTROPY_MODULE", address(entropy), address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(econ))
+        );
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), address(econ));
+        vm.stopPrank();
+        assertEq(stream.packageRegistry(), address(registry));
+    }
+
+    /// @dev A replaced package registry is the one new works consume from; works already
+    ///      minted are untouched.
+    function test_setDependency_newWorksUseTheReplacement() public {
+        uint256 first = _mint(1);
+        MockPackageRegistry next = new MockPackageRegistry();
+        vm.prank(governor);
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), address(next));
+        (uint256 second,) = auction.start(stream, _request(_item(2)));
+        assertEq(second, first + 1);
+        assertEq(stream.ownerOf(first), address(auction));
+        assertEq(stream.work(first).itemHash, WorksHashing.itemHash(_item(1)));
+    }
+
+    /// @dev A Stream deployed without an entropy module can install one later; VRF works then
+    ///      mint. It can never remove it again.
+    function test_setDependency_installsAnEntropyModuleLater() public {
+        Stream noVrf = _deploy(
+            address(registry), address(artists), address(econ), address(0), address(renderer)
+        );
+        _map(address(noVrf), noVrf.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(noVrf), noVrf.createCollection.selector, Roles.PLATFORM);
+        _map(address(noVrf), noVrf.setDependency.selector, Roles.SUCCESSOR_SETTER);
+        vm.prank(governor);
+        noVrf.setAdmittedMinter(address(auction), true);
+        vm.prank(platform);
+        noVrf.createCollection("c", bytes32(0));
+        vm.prank(governor);
+        noVrf.setDependency("ENTROPY_MODULE", address(0), address(entropy));
+        PackageItem memory item = _item(1);
+        item.seedPolicy = SeedPolicy.VRF;
+        entropy.deliver(WorksHashing.itemHash(item), keccak256("vrf"));
+        (uint256 tokenId,) = auction.start(noVrf, _request(item));
+        assertEq(uint8(noVrf.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
     }
 
     function test_mint_vrfRejectedWithoutEntropyModule() public {

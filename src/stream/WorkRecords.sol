@@ -85,10 +85,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
 
     /// @inheritdoc IWorkRecords
     address public immutable stream;
-    /// @notice The artist registry resolving every party's active authority (the core's).
-    address public immutable artistRegistry;
-    /// @notice The VRF entropy module (the core's), or zero.
-    address public immutable entropyModule;
     /// @notice The content store holding records, media and license texts (immutable).
     address public immutable contentStore;
     /// @notice The text file of the default CC0 license (immutable).
@@ -131,8 +127,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             revert InvalidLicense();
         }
         stream = stream_;
-        artistRegistry = IStream(stream_).artistRegistry();
-        entropyModule = IStream(stream_).entropyModule();
         contentStore = contentStore_;
         cc0TextFileId = cc0.textFileId;
         _cc0SpdxId = cc0.spdxId;
@@ -193,7 +187,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             r.customLicense = true;
             _licenses[tokenId] = item.license;
         }
-        if (item.seedPolicy == SeedPolicy.ARTIST) _seeds[tokenId] = item.seed;
+        // The seed is fixed for good at open: an ARTIST seed from the item, a VRF seed from the
+        // entropy module, which a governed replacement (owner decision 16) can then not change.
+        if (item.seedPolicy == SeedPolicy.ARTIST) {
+            _seeds[tokenId] = item.seed;
+        } else if (item.seedPolicy == SeedPolicy.VRF) {
+            _seeds[tokenId] =
+                IEntropyModule(entropyModule()).seedOf(WorksHashing.itemHashCalldata(item));
+        }
         emit RecordOpened(tokenId, item.recordFileId, item.mediaHash);
         _refresh(tokenId);
     }
@@ -337,16 +338,26 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         }
     }
 
+    /// @notice The artist registry resolving every party's active authority: 6529 Stream's,
+    ///         read from it on every use, so a governed replacement there (owner decision 16)
+    ///         applies here at once.
+    /// @return The artist registry.
+    function artistRegistry() public view returns (address) {
+        return IStream(stream).artistRegistry();
+    }
+
+    /// @notice The VRF entropy module: 6529 Stream's, read from it on every use (a work's VRF
+    ///         seed is fixed when its record opens).
+    /// @return The entropy module, or zero.
+    function entropyModule() public view returns (address) {
+        return IStream(stream).entropyModule();
+    }
+
     /// @inheritdoc IWorkRecords
     function seedOf(uint256 tokenId) external view returns (SeedPolicy policy, bytes32 seed) {
         _open(tokenId);
-        bytes32 itemHash;
-        (itemHash,,,, policy,) = _core(tokenId);
-        if (policy == SeedPolicy.ARTIST) {
-            seed = _seeds[tokenId];
-        } else if (policy == SeedPolicy.VRF) {
-            seed = IEntropyModule(entropyModule).seedOf(itemHash);
-        }
+        (,,,, policy,) = _core(tokenId);
+        seed = _seeds[tokenId];
     }
 
     // ------------------------------------------------------------------------------ amendments
@@ -630,7 +641,8 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @dev The lead artist's active authority (zero while a recovery override is pending);
     ///      reverts with the core's `UnknownWork` for a burned token.
     function _artistOf(uint256 tokenId) private view returns (address) {
-        return IArtistRegistry(artistRegistry).activeAuthorityOf(IStream(stream).artistOf(tokenId));
+        return
+            IArtistRegistry(artistRegistry()).activeAuthorityOf(IStream(stream).artistOf(tokenId));
     }
 
     function _isArtist(uint256 tokenId, address account) private view returns (bool) {
@@ -658,7 +670,7 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
         uint256 parties = item.parties.length;
         if (signatures.length != parties) revert InvalidConsent(tokenId, signatures.length);
         bytes32 digest = _hashTypedDataV4(structHash);
-        IArtistRegistry registry = IArtistRegistry(artistRegistry);
+        IArtistRegistry registry = IArtistRegistry(artistRegistry());
         for (uint256 i; i < parties; ++i) {
             address account = item.parties[i].account;
             uint256 artistId = registry.artistIdOf(account);

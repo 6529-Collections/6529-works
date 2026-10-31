@@ -35,7 +35,7 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x6d0d5203), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0x25064b7e), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xa41d86b8), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");

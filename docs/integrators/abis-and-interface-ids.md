@@ -103,6 +103,7 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | New `SaleKind.UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` stay as reserved labels; `DutchParams` is removed. |
 | [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | `FIXED_PRICE_SALE_NAME`, `PHASE`, `PHASE_CONFIGURATION`, `PURCHASE_WITNESS`, `DUTCH_PURCHASE_WITNESS` and their type strings are removed. |
 | [`types/Limits.sol`](../../src/interfaces/types/Limits.sol) | `MAX_PHASES` is removed. |
+| [`IStream.sol`](../../src/interfaces/IStream.sol) | New `setDependency(bytes32,address,address)` (`0x480b197d`), event `DependencySet(bytes32,address,address)` and error `UnknownDependency(bytes32)` (owner decision 16): `packageRegistry()`, `artistRegistry()`, `economics()` and `entropyModule()` are governed, no longer immutable. |
 | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, not yet implemented. |
 
 | Function or event | r3 | `main` |
@@ -116,7 +117,7 @@ surface on `main`; more lands with the edition auction and the museum.
 | `EditionCreated` topic0 | `0xda49138a…` | `0x3a4f273b…` |
 
 The interface IDs of `IWorkRecords`, `IEditions`, `IPackageRegistry` and `IEntropyModule`
-changed with them, and `IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
+changed with them, `IStream`'s with `setDependency`, and `IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
 the role matrix maps the new selectors.
 
 ## Changes since the Sepolia r2 build
@@ -219,7 +220,7 @@ selectors.
 | Interface | Source | ID on `main` | ID on r2 | Deployed contract that answers `supportsInterface` |
 | --- | --- | --- | --- | --- |
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0x4f4f5133` | `0x4f4f5133` | Stream, Editions |
-| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x6d0d5203` | `0x4b62279d` | Stream |
+| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x25064b7e` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
 | `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xa41d86b8` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |

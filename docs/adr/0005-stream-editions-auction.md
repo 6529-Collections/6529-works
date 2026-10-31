@@ -435,3 +435,16 @@ before each merge.
   from the genesis edition auction, which reads the 1/1's clock from the English auction
   (`IEnglishAuction.saleIdOf`); its editions need an edition sale method that reads the new
   method's clock (a new adapter, with no new Stream or Editions).
+
+- **Stream's dependency pointers (owner decision 16, 31 October 2026).** Stream's package
+  registry, artist registry, economics resolver and entropy module are replaceable by
+  governance (`setDependency`, SUCCESSOR_SETTER, the 30-day class, compare-and-set); Stream's
+  code and address stay immutable, with no proxy, and the split factory stays fixed. Existing
+  tokens are unaffected: ownership, the terms and royalty receiver locked at mint, a finalized
+  work's pinned renderer and, since a work's VRF seed is now stored when its record opens, its
+  seed. 6529 Stream Editions and `WorkRecords` read the pointers from Stream instead of copying
+  them, so a replacement reaches them at once. Contracts wired to the same dependencies on
+  their own (one-shot binds, pinned code hashes, the auctions' economics resolver) do not
+  follow, so a replacement is a migration planned with them. Cost: Stream +142 bytes; `start`
+  about +6,340 Prague gas, leaving the binding row 4,073 under 350K
+  ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).

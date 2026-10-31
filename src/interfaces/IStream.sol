@@ -133,6 +133,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param previous The URI before the change.
     /// @param next The URI after the change.
     event ContractURISet(string previous, string next);
+    /// @notice Governance replaced a dependency (owner decision 16).
+    /// @param kind `"PACKAGE_REGISTRY"`, `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`.
+    /// @param previous The address before.
+    /// @param next The address after.
+    event DependencySet(bytes32 indexed kind, address previous, address next);
 
     /// @notice No live token has this ID.
     error UnknownWork(uint256 tokenId);
@@ -180,6 +185,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error EditionLinkInvalid(uint256 tokenId);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice `setDependency` names no dependency Stream has.
+    error UnknownDependency(bytes32 kind);
 
     // ----- wiring -----
 
@@ -197,19 +204,33 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice The bound 6529 Stream Editions contract.
     /// @return The 6529 Stream Editions contract, or zero before it is bound.
     function editions() external view returns (address);
-    /// @notice The package registry consulted by `mint` (immutable).
+    /// @notice The package registry consulted by `mint` (governed, `setDependency`).
     /// @return The package registry.
     function packageRegistry() external view returns (address);
-    /// @notice The artist registry that resolves each work's artist (immutable).
+    /// @notice The artist registry that resolves each work's artist (governed,
+    ///         `setDependency`).
     /// @return The artist registry.
     function artistRegistry() external view returns (address);
-    /// @notice The economics resolver whose `PRODUCT_STREAM` terms works lock at mint
-    ///         (immutable).
+    /// @notice The economics resolver whose `PRODUCT_STREAM` terms works lock at mint (governed,
+    ///         `setDependency`).
     /// @return The economics resolver.
     function economics() external view returns (address);
-    /// @notice The VRF entropy module, or zero if VRF works are not supported (immutable).
+    /// @notice The VRF entropy module, or zero if VRF works are not supported (governed,
+    ///         `setDependency`).
     /// @return The entropy module, or zero.
     function entropyModule() external view returns (address);
+    /// @notice Replaces one of Stream's dependencies (owner decision 16): `"PACKAGE_REGISTRY"`,
+    ///         `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`. SUCCESSOR_SETTER role
+    ///         (the 30-day class), compare-and-set. The replacement must have code, no EIP-7702
+    ///         delegation and ERC-165 support for its interface; it is never zero. Stream's own
+    ///         code and every existing token are unaffected: ownership, the terms and royalty
+    ///         receiver locked at mint (the split factory stays fixed) and a finalized work's
+    ///         pinned renderer. 6529 Stream Editions and the work-records satellite read these
+    ///         pointers from Stream, so they follow at once.
+    /// @param kind The dependency (`UnknownDependency` for any other).
+    /// @param expected Its current address (`ExpectedValueMismatch` otherwise).
+    /// @param next The replacement.
+    function setDependency(bytes32 kind, address expected, address next) external;
 
     // ----- collections, supply and works -----
 

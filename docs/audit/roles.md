@@ -47,7 +47,7 @@ Docs).
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 13 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 14 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 15 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -63,8 +63,8 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | Immediate | immediate | 14 |
 | Standard | 48 hours | 15 |
 | Funds and recipients | 14 days | 8 |
-| Verifier and successor | 30 days | 14 |
-| **Total** | | **51** |
+| Verifier and successor | 30 days | 15 |
+| **Total** | | **52** |
 
 ## Matrix by contract
 
@@ -80,6 +80,7 @@ Source: [`src/stream/Stream.sol`](../../src/stream/Stream.sol).
 | `setDefaultRenderer(address,address,bytes32)` | `0x95021460` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Compare-and-set; ERC-165 and code hash pinned. Finalized works keep their pin. |
 | `setAdmittedMinter(address,bool)` | `0xa82ed63a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
 | `releaseContent(uint256,bytes32,uint256)` | `0x56c6d728` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | After an upheld dispute; scheduled with the auction's `cancel`, to execute after it. |
+| `setDependency(bytes32,address,address)` | `0x480b197d` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the package registry, artist registry, economics resolver or entropy module (owner decision 16); compare-and-set. Existing tokens are unaffected. |
 
 ### WorkRecords
 

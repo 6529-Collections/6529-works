@@ -26,6 +26,21 @@ Collaborators have their own pages: `PackageRegistry` ([Curation](curation.md));
 `VrfEntropyModule` ([Entropy](entropy.md)); `StatementLog`
 ([Disputes and statements](disputes-and-statements.md)).
 
+**Governed dependencies (owner decision 16).** Stream's package registry, artist registry,
+economics resolver and entropy module are replaceable by governance: `setDependency(kind,
+expected, next)`, SUCCESSOR_SETTER in the 30-day class, compare-and-set, with the
+constructor's install checks (code, no EIP-7702 delegation, ERC-165 for the kind's interface;
+never zero, so an entropy module can be installed on a Stream deployed without one but never
+removed). Stream's code and address stay immutable, and existing tokens are unaffected: their
+owners, the terms and royalty receiver locked at mint (the split factory stays immutable), a
+finalized work's pinned renderer, and a work's seed once its record opens. 6529 Stream
+Editions and `WorkRecords` read these pointers from Stream, so they follow at once. Other
+contracts hold their own wiring to the same contracts (the package registry's artist registry
+and one-shot `bindStream`, the artist registry's one-shot `bindPackageRegistry`, the entropy
+module's pinned package registry, the English auction's and the edition auction's economics
+resolver): replacing a dependency in Stream does not reach them, so a replacement is a
+migration that governance plans with them.
+
 ## Concepts
 
 The [glossary](../glossary.md) defines the terms this page relies on: [work](../glossary.md#work),

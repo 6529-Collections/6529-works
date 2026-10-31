@@ -76,6 +76,11 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
+    /// @dev The dependencies governance may replace (`setDependency`, owner decision 16).
+    bytes32 private constant PACKAGE_REGISTRY = "PACKAGE_REGISTRY";
+    bytes32 private constant ARTIST_REGISTRY = "ARTIST_REGISTRY";
+    bytes32 private constant ECONOMICS = "ECONOMICS";
+    bytes32 private constant ENTROPY_MODULE = "ENTROPY_MODULE";
 
     /// @dev `TokenData.flags`: an EDITION_MASTER, the seed policy (two bits), the primary sale
     ///      settled, the edition linked.
@@ -134,15 +139,8 @@ contract Stream is ERC721, AccessManaged, IStream {
         uint24 overflowTerms;
     }
 
-    /// @inheritdoc IStream
-    address public immutable packageRegistry;
-    /// @inheritdoc IStream
-    address public immutable artistRegistry;
-    /// @inheritdoc IStream
-    address public immutable economics;
-    /// @inheritdoc IStream
-    address public immutable entropyModule;
-    /// @notice The split factory that derives royalty receivers (the economics resolver's).
+    /// @notice The split factory that derives royalty receivers (the first economics
+    ///         resolver's). Immutable: every royalty receiver ever derived stays valid.
     address public immutable splitFactory;
 
     /// @inheritdoc IStream
@@ -170,6 +168,17 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev Each admitted adapter's sale kind, by its ID: what `primaryTerms` reports for the
     ///      works it minted. Declared last, so the earlier slots keep their positions.
     mapping(uint16 minterId => bytes32 saleKind) private _minterKinds;
+    /// @inheritdoc IStream
+    /// @dev This and the next three are the governed dependencies (owner decision 16), in four
+    ///      consecutive slots that `setDependency` indexes; declared last, so the earlier slots
+    ///      keep their positions.
+    address public packageRegistry;
+    /// @inheritdoc IStream
+    address public artistRegistry;
+    /// @inheritdoc IStream
+    address public economics;
+    /// @inheritdoc IStream
+    address public entropyModule;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param packageRegistry_ The package registry `mint` consumes items from.
@@ -522,6 +531,38 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @return The metadata URI the renderer builds (`IRenderer.tokenURI`).
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         return IRenderer(rendererOf(tokenId)).tokenURI(address(this), tokenId);
+    }
+
+    // ---------------------------------------------------------------------------- dependencies
+
+    /// @inheritdoc IStream
+    /// @dev SUCCESSOR_SETTER role (the 30-day class). The entropy module may be installed on a
+    ///      Stream deployed without one, but never removed: a VRF work's record reads its seed
+    ///      from it.
+    function setDependency(bytes32 kind, address expected, address next) external restricted {
+        bytes4 interfaceId;
+        uint256 index;
+        if (kind == PACKAGE_REGISTRY) {
+            interfaceId = type(IPackageRegistry).interfaceId;
+        } else if (kind == ARTIST_REGISTRY) {
+            (interfaceId, index) = (type(IArtistRegistry).interfaceId, 1);
+        } else if (kind == ECONOMICS) {
+            (interfaceId, index) = (type(IEconomicsResolver).interfaceId, 2);
+        } else if (kind == ENTROPY_MODULE) {
+            (interfaceId, index) = (type(IEntropyModule).interfaceId, 3);
+        } else {
+            revert UnknownDependency(kind);
+        }
+        address current;
+        assembly ("memory-safe") {
+            current := sload(add(packageRegistry.slot, index))
+        }
+        if (current != expected) revert ExpectedValueMismatch();
+        Dependency.check(next, interfaceId);
+        assembly ("memory-safe") {
+            sstore(add(packageRegistry.slot, index), next)
+        }
+        emit DependencySet(kind, expected, next);
     }
 
     // ------------------------------------------------------------------------ satellite hooks

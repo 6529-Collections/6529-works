@@ -53,9 +53,11 @@ The create flow, with every check in order, is under
 - **Minter status is three-valued** (never, admitted, removed), so a removed adapter can still
   burn what it holds and call the no-op `markPrimarySettled`. Its binding ID survives removal,
   so a re-admitted adapter mints its editions again; at most 65,535 adapters are ever admitted.
-- **Wiring is immutable.** The constructor checks Stream (code, no EIP-7702 delegation, ERC-165
-  `IStream`, the reviewed code hash) and reads the package registry, economics resolver and
-  artist registry from it. No edition exists before genesis binds `WorkRecords`
+- **Wiring.** Stream is immutable here: the constructor checks it (code, no EIP-7702
+  delegation, ERC-165 `IStream`, the reviewed code hash). The package registry, economics
+  resolver and artist registry are read from Stream on every use (`packageRegistry()`,
+  `economics()`, `artistRegistry()`), so a governed replacement there (owner decision 16)
+  reaches Editions at once. No edition exists before genesis binds `WorkRecords`
   (`WorkRecordsUnbound`).
 - **Bytecode:** well inside EIP-170; current figures in the
   [audit scope](../../docs/audit/scope.md#products-and-sales).

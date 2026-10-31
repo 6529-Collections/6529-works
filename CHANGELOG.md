@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- 6529 Stream: the package registry, artist registry, economics resolver and entropy module are
+  replaceable by governance (owner decision 16): `setDependency(kind, expected, next)`,
+  SUCCESSOR_SETTER (30 days), compare-and-set, with the constructor's install checks; never
+  zero. Stream's code and address, the split factory and every existing token stay as they are.
+  6529 Stream Editions and `WorkRecords` read the pointers from Stream instead of holding
+  immutable copies, and `WorkRecords` stores a VRF seed when the record opens, so a replaced
+  entropy module never changes an opened work. `IStream`'s interface ID changes. Stream grows by
+  142 bytes; `start` costs about 6,340 more Prague gas (the binding row 345,927, 4,073 under
+  350K), `settle` 2,122, `createEdition` 6,754, with no new slot
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - 6529 Stream: the 1/1 sale method is pluggable (ADR 0005, owner decision 15). `mint` takes any
   admitted adapter whose `saleKind()` is the item's sale kind, and `_checkItem` requires only a
   nonzero kind; the adapter checks the sale's currency and params (the English auction refuses
