@@ -291,6 +291,12 @@ None was a bug. What mutation testing still leaves:
    both sides of each code-hash comparison), so its mutants die in the fast first pass.
 2. Only an exact-gas harness would see the 32 gas-margin survivors, and only a lying mock of a
    trusted contract the 74 defensive ones.
+3. The edition auction (ADR 0005) adds `UniformEditionAuction`, `UniformEditionAuctionLens`,
+   `UniformClearing` and `StepLadder` with no baseline row and no floor. Record both from the
+   first weekly run after they land, then triage every survivor as the baseline did; the
+   differential fuzz and the real-stack invariant suite run in the second pass, so a mutant only
+   they notice still counts as killed. The deleted fixed-price and Dutch contracts' floors left
+   `tools/mutation-floors.json` with them.
 
 **From coverage:**
 
