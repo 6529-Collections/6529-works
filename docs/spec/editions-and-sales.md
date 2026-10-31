@@ -13,7 +13,7 @@ integrators and operators. The master's auction is in [Stream and auctions](stre
 
 **Sale methods.** rc.2 sells editions by the uniform-price edition auction
 (`UniformEditionAuction`, [ADR 0005 §2](../adr/0005-stream-editions-auction.md#2-design-summary)).
-Its adapter is not in `src/` yet, and genesis admits no edition sale adapter until it lands.
+Genesis deploys it, admits it on 6529 Stream Editions and lists Editions as its target.
 Its rules (`EA-*`) are being written by the specification lane and will be added to this page
 with it. ADR 0005 removed the fixed-price and Dutch adapters, with their rules (ED-9 to ED-24);
 they remain at the `v1.0.0-rc.1` tag, and a fixed-price sale can be restored as a newly
@@ -38,8 +38,8 @@ on the pages under [References](#references).
 package registry, economics resolver and artist registry from it as immutables (`ZeroAddress`).
 Genesis binds Editions in Stream and the package registry and calls `Editions.bindWorkRecords`
 once (`AlreadyBound`) ([`config/genesis.example.json`](../../config/genesis.example.json),
-`wiring`); it admits no edition sale adapter yet, so no copy can be minted until governance
-admits one. `notifyMasterUpdated` and `setRoyaltyRate` accept only that satellite;
+`wiring`); it admits the uniform-price edition auction as the edition minter
+(`setAdmittedMinter`, the 30-day SUCCESSOR_SETTER class for any later one). `notifyMasterUpdated` and `setRoyaltyRate` accept only that satellite;
 `notifyAllUpdated` accepts it or Stream (`UnboundCaller`).
 
 ## Concepts

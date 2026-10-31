@@ -5,35 +5,22 @@ import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.so
 import { CURRENCY_ETH, PRODUCT_EDITIONS } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
-import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
-/// @notice The edition auction on the real, wired v1 stack: `UniformEditionAuction` deployed
-///         against the deployment's 6529 Stream Editions, English auction and revenue escrow,
-///         admitted as an edition minter and listed through governance, as genesis does. Shared
-///         by the end-to-end flows and the gas report.
-/// @dev Until the deploy wiring (L3) lists the adapter in `DeployV1`, this fixture deploys it and
-///      runs the two governed wiring calls itself (`Editions.setAdmittedMinter` and `setTarget`),
-///      warping their delays in `setUp`, before any sale starts.
+/// @notice The edition auction on the real, wired v1 stack: the `UniformEditionAuction` that
+///         `DeployV1` deploys against the deployment's 6529 Stream Editions, English auction and
+///         revenue escrow, admitted as the edition minter and listed by the genesis wiring.
+///         Shared by the end-to-end flows and the gas report.
 abstract contract EditionAuctionStack is IntegrationBase {
-    UniformEditionAuction internal editionAuction;
     IUniformEditionAuction internal ea;
 
     function setUp() public virtual override {
         super.setUp();
-        editionAuction = new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(auction), _editionConfig()
-        );
         ea = IUniformEditionAuction(address(editionAuction));
-        _govern(
-            hotAdmin,
-            address(editions),
-            abi.encodeCall(editions.setAdmittedMinter, (address(editionAuction), true))
-        );
-        _govern(
-            hotAdmin,
-            address(editionAuction),
-            abi.encodeCall(editionAuction.setTarget, (address(editions), true))
+        assertEq(
+            keccak256(abi.encode(editionAuction.config())),
+            keccak256(abi.encode(_editionConfig())),
+            "the genesis parameters"
         );
     }
 
@@ -42,17 +29,6 @@ abstract contract EditionAuctionStack is IntegrationBase {
         return IUniformEditionAuction.AuctionConfig(
             1e14, 48, 336, 10_000, 15 minutes, 5 minutes, 1 days
         );
-    }
-
-    /// @dev The adapter is measured like every deployed contract (the lens has no storage).
-    function _cooled() internal view virtual override returns (address[] memory all) {
-        address[] memory base = super._cooled();
-        all = new address[](base.length + 2);
-        for (uint256 i; i < base.length; ++i) {
-            all[i] = base[i];
-        }
-        all[base.length] = address(editionAuction);
-        all[base.length + 1] = editionAuction.lens();
     }
 
     /// @dev An EDITION_MASTER work by `lead` whose edition is sold by the uniform auction, in ETH,

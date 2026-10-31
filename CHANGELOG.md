@@ -12,6 +12,15 @@
   and never strands a live sale (AUC-9). Stream's runtime grows by 181 bytes; `start` costs
   about 230 more Prague gas and `settle` 2,169 more, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- Deploy: genesis deploys the uniform-price edition auction (`UniformEditionAuction`, with
+  the stateless lens its constructor creates) at the launch parameters of ADR 0005 §4,
+  admits it on 6529 Stream Editions and lists Editions as its target (17 wiring calls, was
+  15). Its five governed selectors are in the role matrix: `pause` (PAUSER), `unpause`
+  (UNPAUSER), `setConfig` (PARAMETER_SETTER, 48 hours), `setTarget` and
+  `setFederationRegistry` (SUCCESSOR_SETTER, 30 days). Every sale adapter's admission,
+  `setAdmittedMinter` on Stream and on Editions, stays in the 30-day class. Verify checks the
+  lens is the auction's own and its code hash the recorded one. The anvil dry-run record in
+  `deployments/31337/` is regenerated.
 - 6529 Editions is renamed 6529 Stream Editions (ADR 0005, D139) in every current document and
   NatSpec comment; `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS`. The
   identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label do

@@ -14,8 +14,9 @@ code hashes with the record, but it does not rebuild the bytecode.
 launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deployments/11155111/README.md).
 The library deploys every v1 contract: identity, curation, economics, content and the
 renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
-Stream Editions, and the English auction. The edition auction of ADR 0005 is deployed and
-admitted once it lands; until then genesis admits no edition sale adapter. No stand-in
+Stream Editions, the English auction, and the edition auction of ADR 0005
+(`UniformEditionAuction`, which creates its stateless lens; genesis admits it on Editions and
+lists Editions as its target, and Verify checks the lens against the record). No stand-in
 remains. A Sepolia run needs the owner's accounts and keys (steps 1 and 2), and the inputs
 below.
 
