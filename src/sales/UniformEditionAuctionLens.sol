@@ -91,17 +91,9 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
             w.seller == address(0) || w.seller == _escrow || w.feeShare > Splits.DENOMINATOR
                 || (w.feeShare != 0 && (w.feeRecipient == address(0) || w.feeRecipient == _escrow))
         ) revert ISaleAdapter.InvalidSaleTerms(token, id);
-        m.maxCount = _maxCountOf(e);
+        m.maxCount = e.maxCount;
         m.seller = w.seller;
         if (w.feeShare != 0) (m.feeRecipient, m.feeShare) = (w.feeRecipient, w.feeShare);
-    }
-
-    /// @dev The creator's cap in edition terms `e`, zero for none. A cap the sale's units (below
-    ///      2^32) can never reach is no cap. Reads `size` until `EditionTerms` gains `maxCount`.
-    function _maxCountOf(EditionTerms memory e) private pure returns (uint32) {
-        uint256 cap = e.size;
-        // forge-lint: disable-next-line(unsafe-typecast)
-        return cap >= type(uint32).max ? 0 : uint32(cap);
     }
 
     // ----------------------------------------------------------------------------- a sale

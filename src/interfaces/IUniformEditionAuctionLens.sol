@@ -14,8 +14,7 @@ import { IUniformEditionAuction } from "./IUniformEditionAuction.sol";
 /// @dev Views that depend on the 1/1 read it live through `IEnglishAuction.auction`.
 interface IUniformEditionAuctionLens {
     /// @notice What `open` locks for a master, from its token-specific data.
-    /// @param maxCount The creator's cap, zero for none (a cap of 2^32 - 1 or more, which the
-    ///        sale's units cannot reach, is none).
+    /// @param maxCount The creator's cap from the edition terms, zero for none.
     /// @param seller The `PRODUCT_EDITIONS` seller split wallet of the item's payees.
     /// @param feeRecipient The network fee recipient; zero when the fee share is zero.
     /// @param feeShare The network fee share, out of 100,000.
