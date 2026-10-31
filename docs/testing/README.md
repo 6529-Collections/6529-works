@@ -53,7 +53,7 @@ pins, with the finding's ID in a `/// Regression:` NatSpec line
 | Static analysis | every pull request and push | Slither 0.11.6: no untriaged High or Medium finding | about 1 min | yes |
 | Docs | every pull request and push | relative links and anchors in Markdown, the generated role matrix, and the facts the docs quote from the code | under 1 min | no |
 | Coverage (`.github/workflows/strength.yml`) | every push to `main`, every day at 04:30 UTC, and on demand | `forge coverage` under the lite profile; the per-contract table in the job summary; fails when a contract drops below its floor; uploads `lcov.info` | about 4 min | no (not on pull requests) |
-| Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 4 min (23 proofs) | no (not on pull requests) |
+| Symbolic (Halmos) (`strength.yml`) | as Coverage | every `check_*` in `test/symbolic`, one test contract at a time; fails unless every declared proof passes | about 7 min (31 proofs) | no (not on pull requests) |
 | Nightly (`.github/workflows/nightly.yml`) | every day at 03:30 UTC, and on demand | the invariant suites under the `deep` profile (2,000 runs of depth 256), economics and the others in two jobs of up to 3 hours; the fork tests in `test/fork` against public mainnet and Sepolia endpoints | about an hour | no (scheduled) |
 | Mutation (`.github/workflows/mutation.yml`) | weekly, Sunday 02:00 UTC, and on demand; one small shard when a push to `main` changes the workflow or the tool | every shard of `tools/mutation.py`, eight jobs at a time; the merged report in the run summary; fails when a planned shard left no results, or a contract's kill rate drops below its floor | several hours | no (scheduled) |
 
@@ -220,14 +220,29 @@ beyond.
 | `DataUri` | `dataUri_findsEveryHitInAWord`, `dataUri_ignoresTheBytesPastTheEnd`: a `%` or `#` is found wherever it is | unbounded: every 32-byte and 31-byte text |
 | `HtmlScript` | `htmlScript_matchesTheReference`: output and `<` cap against a reference | bounded: every input of 4 to 6 bytes |
 | | `htmlScript_endTagInAnyCase`: `</script` in every case mix | bounded: 8 to 10 bytes starting `</` |
+| `StepLadder.mantissa` | `mantissa_isBoundedAndStrictlyIncreasing`: the packed E192 table is 100 to 988, strictly rising, and its last entry is below ten times its first, so every ladder rises across decades | unbounded: every index |
+| `UniformClearing.clear` | `clear_isD138UncappedOnThreeSteps`, `clear_isD138CappedOnTwoSteps`, `clear_isD138WithNoMargin`, `clear_isD138AtTheLargestMargin`: the result is D138 unit by unit (`R*` is attained and no count earns more; the result passes the margin and no larger count does; its step, price and cut-step fields) | bounded: every unit count from 0 to 255 on fixed steps of the 100-wei, 48-a-decade ladder; 3 steps a decade apart (0, 48, 96) uncapped at 10%; 2 neighbouring steps (2, 3) under every cap from 1 to 255 at 10%; 2 steps (0 and 48, 0 and 34) under every cap below 256 or none at 0% and 50% |
+| `UniformClearing.sweep`, `wonAtCut` | `sweep_unitsWonSumToTheCutInArrivalOrder`: the swept cut-off hands out exactly the cut units, first in first out | bounded: queues of 5 entries of 1 to 255 units, any of them departed |
+| | `sweep_acceptsExactlyTheNextDeparture`, `wonAtCut_isTheClamp`: the order check and the clamp | unbounded (64-bit positions and units for the sweep) |
 
 Every proof was checked to fail when a bug is planted in the library it covers (a sort test
 made non-strict in `Splits`, a bit flipped in the `SpdxId` mask, a range constant moved in
 `Base64Validator`, a field shifted in the epoch, the padding check dropped in
 `decodeString`, overlong two-byte forms let through in `Utf8`, upper-case hex in
-`JsonEscape`).
+`JsonEscape`, two mantissas swapped in `StepLadder`, a strict margin comparison in
+`UniformClearing.clear`, a sweep that moves the cut-off one unit too far).
 
 **Not proved, and why.**
+
+- **`UniformClearing` on larger books, and `StepLadder.price` with a symbolic base.** The
+  library branches on every used step, so the paths multiply: three neighbouring steps without a
+  cap already timed out (a 120 s solver query), and the plan's five steps would not fit the CI
+  job. Every price of every ladder symbolic in the base needs 256-bit division by 100 and timed
+  out too; the table proof above and the floor `base * x / 100` rising with `x` (for a base of at
+  least 100) give the order instead. The brute force over unit bids (10,000 fuzz runs), the
+  two-pass step reference on up to 512 steps of 32-bit units, the golden vectors in
+  [`test/sales/uniform/`](../../test/sales/uniform), and every step of every ladder at the
+  domain's extreme bases cover them.
 
 - **`Splits.entitlement`** (equals `mulDiv`, never above what was observed, the sum of the
   shares at most it with bounded dust). Every formulation tried, at full width and with
@@ -254,8 +269,10 @@ made non-strict in `Splits`, a bit flipped in the `SpdxId` mask, a range constan
 **Stability.** Halmos 0.3.3 crashed once on a CI runner inside Z3 while Python's cyclic
 garbage collector ran; `disable-gc` in `halmos.toml` turns that collector off. Running one test
 contract at a time (`--match-contract`) makes a crash name its contract while the rest still
-report. The results are otherwise deterministic: the solver and every input are pinned. The 24
-proofs take about 4 minutes on a GitHub runner.
+report. The results are otherwise deterministic: the solver and every input are pinned. The 23
+proofs before the edition auction take about 4 minutes on a GitHub runner; the 8 for
+`UniformClearing` and `StepLadder` took about 3 more locally with 4 solver threads, a runner's
+core count.
 
 ## Gaps: the next testing lane
 
