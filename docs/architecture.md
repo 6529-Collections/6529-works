@@ -199,10 +199,11 @@ default when the sale starts".
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).
-   - With no bids, the token goes to the 6529 Network Museum,
-     `EconomicsResolver.museum()` resolved at settlement (D140); a federated
-     work goes to its artist's active authority, and while a recovery override
-     is pending its settlement waits.
+   - With no bids, a 6529 Stream token goes to the 6529 Network Museum,
+     `EconomicsResolver.museum()` resolved at settlement (D140; the auction is
+     deployed with Stream's address). Any other token's work, federated or
+     listed, goes to its artist's active authority, and while a recovery
+     override is pending its settlement waits.
    - Settlement calls `IMintTarget.markPrimarySettled`, even when delivery is still
      pending, so a winner who never claims cannot block the edition.
 10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and

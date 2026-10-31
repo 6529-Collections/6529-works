@@ -149,7 +149,7 @@ independent of the admins they check:
   the 14-day class and executes no earlier than 14 days from the deprecation); the first
   `settle` after the re-admission reopens each auction for at least the governed duration.
   After day 30, anyone can end a frozen auction unsold: its standing bid is credited back to
-  the bidder and the work goes to the museum (a federated work to its artist).
+  the bidder and a 6529 Stream work goes to the museum (any other token's to its artist).
 
 #### The network fee recipient must exist
 

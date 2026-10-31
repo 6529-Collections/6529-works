@@ -357,7 +357,8 @@ library DeployV1 {
             );
         }
         if (n == keccak256("EnglishAuction")) {
-            // Targets are genesis wiring, not constructor arguments (config/README.md).
+            // Targets are genesis wiring, not constructor arguments (config/README.md); 6529
+            // Stream is also named here as the only token whose unbid works go to the museum.
             return _code(
                 type(EnglishAuction).creationCode,
                 abi.encode(
@@ -367,7 +368,8 @@ library DeployV1 {
                     d.statementLog,
                     auctionPermit2(p),
                     p.auction,
-                    new address[](0)
+                    new address[](0),
+                    d.stream
                 )
             );
         }

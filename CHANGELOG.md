@@ -23,8 +23,10 @@
   from the new `MUSEUM` deploy parameter, which off anvil must be an existing account;
   `Verify.s.sol` reads it back. The auction reads the museum at settlement, so a restrained
   artist no longer holds up an unbid canonical work, and only the museum recorded at
-  settlement can claim one whose delivery is pending (AUC-33). A federated work keeps the rc.1
-  behaviour: its artist. ADR 0004's table gains the no-bid settlement (1 new slot, no new
+  settlement can claim one whose delivery is pending (AUC-33). The museum branch is gated in
+  code on 6529 Stream, which `EnglishAuction` now takes as a constructor argument: any other
+  token, federated or listed later by governance, keeps the rc.1 behaviour (its artist), at
+  settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4

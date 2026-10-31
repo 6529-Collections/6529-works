@@ -94,6 +94,30 @@ contract MuseumTest is IntegrationBase {
         );
     }
 
+    /// @dev Another ERC-721 governance lists on the auction (`setTarget`, SUCCESSOR_SETTER, 30
+    ///      days), whose artist is `federatedArtist`. It is not 6529 Stream, the token the auction
+    ///      was deployed with.
+    function _listedToken() internal returns (MockMintTarget token) {
+        token = new MockMintTarget();
+        token.setAdmittedMinter(address(auction), true);
+        token.setTerms(
+            PrimaryTerms(
+                SaleKind.ENGLISH_AUCTION,
+                CURRENCY_ETH,
+                0,
+                "",
+                makeAddr("listedSeller"),
+                networkFee,
+                25_000,
+                federatedArtist
+            )
+        );
+        _govern(
+            hotAdmin, address(auction), abi.encodeCall(auction.setTarget, (address(token), true))
+        );
+        assertTrue(auction.isTarget(address(token)));
+    }
+
     function _deprecateEth() internal returns (uint256 frozenAt) {
         _govern(
             guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (CURRENCY_ETH))
@@ -284,6 +308,40 @@ contract MuseumTest is IntegrationBase {
         );
         assertEq(stream.ownerOf(tokenId), vault);
         assertEq(auction.pendingDelivery(saleId), address(0));
+    }
+
+    // ------------------------------------------------------------------ other listed tokens
+
+    /// @dev Owner decision 9, enforced in code: the museum branch is for 6529 Stream, the token
+    ///      the auction was deployed with. A token governance lists later keeps its unbid works
+    ///      with its artist, as a federated token does, while Stream's own still go to the
+    ///      museum.
+    function test_AnotherListedTokensUnbidWorkGoesToItsArtist() public {
+        MockMintTarget other = _listedToken();
+        uint256 saleId = auction.start(address(other), "");
+        (uint256 streamSale, uint256 tokenId) = _startItem(0);
+        vm.warp(auction.auction(saleId).endTime);
+        auction.settle(saleId);
+        auction.settle(streamSale);
+        assertEq(other.ownerOf(1), federatedArtist, "its artist");
+        assertEq(other.balanceOf(museum), 0, "never the museum");
+        assertEq(stream.ownerOf(tokenId), museum, "Stream's unbid work: the museum");
+    }
+
+    /// @dev Decision 10 with decision 9: another listed token's 30-day freeze exit takes its
+    ///      no-bid branch, so the work goes to its artist, with the bid credited back in full.
+    function test_AnotherListedTokensFreezeExitGoesToItsArtist() public {
+        MockMintTarget other = _listedToken();
+        uint256 saleId = auction.start(address(other), "");
+        _ethBid(saleId, collector, 1 ether);
+        uint256 frozenAt = _deprecateEth();
+        vm.warp(frozenAt + 30 days);
+        auction.settle(saleId);
+        assertEq(other.ownerOf(1), federatedArtist, "its artist, not the museum");
+        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "the bid is credited back");
+        vm.prank(collector);
+        auction.claim(CURRENCY_ETH, collector);
+        assertEq(collector.balance, 1 ether, "refunded in full");
     }
 
     // ------------------------------------------------------------------ federated works

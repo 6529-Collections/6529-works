@@ -76,7 +76,8 @@ contract EnglishAuctionTest is AuctionBase {
                 address(statements),
                 address(0),
                 edge[i],
-                none
+                none,
+                address(stream)
             );
             assertEq(a.config().extensionWindow, edge[i].extensionWindow);
         }
@@ -96,15 +97,36 @@ contract EnglishAuctionTest is AuctionBase {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), eoa, resolver, address(statements), address(0), _config(), none
+            address(manager),
+            eoa,
+            resolver,
+            address(statements),
+            address(0),
+            _config(),
+            none,
+            address(stream)
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), resolver, address(statements), eoa, _config(), none
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            eoa,
+            _config(),
+            none,
+            address(stream)
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), resolver, eoa, address(0), _config(), none
+            address(manager),
+            address(escrow),
+            resolver,
+            eoa,
+            address(0),
+            _config(),
+            none,
+            address(stream)
         );
         address[] memory bad = new address[](1);
         bad[0] = address(escrow);
@@ -118,7 +140,8 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            bad
+            bad,
+            address(stream)
         );
     }
 
@@ -136,7 +159,8 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            none
+            none,
+            address(stream)
         );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
@@ -148,7 +172,8 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            none
+            none,
+            address(stream)
         );
         resolver.setAllowlistOverride(eoa);
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
@@ -159,7 +184,8 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            none
+            none,
+            address(stream)
         );
     }
 
@@ -181,7 +207,8 @@ contract EnglishAuctionTest is AuctionBase {
                 address(statements),
                 address(0),
                 bad[i],
-                none
+                none,
+                address(stream)
             );
         }
     }
@@ -1181,6 +1208,83 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(fed.ownerOf(1), recovered);
         assertEq(auction.auction(saleId).recipient, recovered);
         assertEq(fed.balanceOf(museum), 0, "never the museum");
+    }
+
+    /// @dev Owner decision 9, enforced in code: only 6529 Stream, the token the auction was
+    ///      deployed with, sends its unbid works to the museum. Another token governance lists
+    ///      sends them to its artist, on the federated path, and never reads the museum.
+    function test_Settle_AnotherListedTokensUnbidWorkGoesToItsArtist() public {
+        MockMintTarget other = _listedToken(ETH);
+        assertTrue(auction.isTarget(address(other)));
+        uint256 saleId = auction.start(address(other), "");
+        uint256 streamSale = _start();
+        _end(streamSale);
+        // 6529 Stream's own unbid work still goes to the museum.
+        auction.settle(streamSale);
+        assertEq(stream.ownerOf(1), museum);
+
+        vm.expectCall(address(resolver), abi.encodeCall(IEconomicsResolver.museum, ()), 0);
+        auction.settle(saleId);
+        assertEq(other.ownerOf(1), artist, "its artist");
+        assertEq(other.balanceOf(museum), 0, "never the museum");
+        assertEq(auction.auction(saleId).recipient, artist);
+    }
+
+    /// @dev Owner decision 10 with decision 9: another listed token's 30-day freeze exit takes
+    ///      its no-bid branch too, so its work goes to its artist, with the bid credited back.
+    function test_Settle_AnotherListedTokensFreezeExitGoesToItsArtist() public {
+        MockMintTarget other = _listedToken(address(usd));
+        uint256 saleId = auction.start(address(other), "");
+        usd.mint(alice, 100e18);
+        vm.startPrank(alice);
+        usd.approve(address(auction), 100e18);
+        auction.bid(saleId, address(0), _direct(alice, 100e18));
+        vm.stopPrank();
+        allowlist.deprecateAsset(address(usd));
+        vm.warp(block.timestamp + 30 days);
+        auction.settle(saleId);
+        assertEq(other.ownerOf(1), artist, "its artist, not the museum");
+        assertEq(auction.claimable(alice, address(usd)), 100e18, "the bid is credited back");
+        assertEq(usd.balanceOf(seller) + usd.balanceOf(network), 0, "nothing is paid");
+    }
+
+    /// @dev L-5 applies to every token but 6529 Stream: another listed token's artist, as the
+    ///      token reports it now, claims its unbid work's pending delivery.
+    function test_ClaimDelivery_AnotherListedTokensArtistClaims() public {
+        HostileActor artistWallet = new HostileActor();
+        artistWallet.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
+        MockMintTarget other = _listedToken(ETH);
+        PrimaryTerms memory t = _terms(ETH);
+        t.creator = address(artistWallet);
+        other.setTerms(t);
+        uint256 saleId = auction.start(address(other), "");
+        _end(saleId);
+        auction.settle(saleId);
+        assertEq(auction.pendingDelivery(saleId), address(artistWallet));
+        address recovered = makeAddr("recoveredAuthority");
+        other.setCreatorNow(recovered);
+        vm.prank(museum);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, museum);
+        vm.prank(recovered);
+        auction.claimDelivery(saleId, recovered);
+        assertEq(other.ownerOf(1), recovered);
+    }
+
+    /// @dev 6529 Stream, named at construction, must be an ERC-721 with code.
+    function test_Constructor_RejectsAStreamThatIsNotAnErc721() public {
+        address eoa = makeAddr("notStream");
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            address(0),
+            _config(),
+            new address[](0),
+            eoa
+        );
     }
 
     /// @dev IDENTITY-1, kept for federated works: with no active artist the no-bid settle

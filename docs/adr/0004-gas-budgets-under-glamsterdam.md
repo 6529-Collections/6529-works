@@ -153,7 +153,7 @@ one marked "r2" or "r1" is that rehearsal's receipt, for a row r3 has not run.
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 169,060 |
 | `settle`, first payout to a seller wallet | 166,585 | 400,000 | 1 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 141,585 | 400,000 | 1 | 0 | 257,763 (r2) |
-| `settle`, no bid (to the museum, D140) | 131,825 | 400,000 | 1 | 0 | — |
+| `settle`, no bid (to the museum, D140) | 131,836 | 400,000 | 1 | 0 | — |
 | `consume`, as Stream calls it | 94,300 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 268,938 | 275,000 (regression) | 7 | 0 | 887,954 (sim.) |
 | `createEdition`, a Dutch edition | 317,127 | 324,000 (regression) | 9 | 0 | — |

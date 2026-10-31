@@ -132,7 +132,8 @@ abstract contract AuctionBase is Test {
             address(statements),
             permit2_,
             _config(),
-            targets
+            targets,
+            address(stream)
         );
         stream.setAdmittedMinter(address(a), true);
         _map(address(a), DISPUTE_PAUSE, GUARDIAN);
@@ -158,6 +159,17 @@ abstract contract AuctionBase is Test {
 
     function _terms(address currency) internal view returns (PrimaryTerms memory) {
         return PrimaryTerms(SaleKind.ENGLISH_AUCTION, currency, 0, "", seller, network, FEE, artist);
+    }
+
+    /// @dev Another ERC-721 that governance lists on the auction (`setTarget`), on `currency`'s
+    ///      terms. It is not 6529 Stream, the token the auction was deployed with, so its unbid
+    ///      works go to their artist (owner decision 9), as a federated token's do.
+    function _listedToken(address currency) internal returns (MockMintTarget token) {
+        token = new MockMintTarget();
+        token.setAdmittedMinter(address(auction), true);
+        token.setTerms(_terms(currency));
+        vm.prank(successor);
+        auction.setTarget(address(token), true);
     }
 
     /// @dev A federated ERC-721 (D21) on `_terms(ETH)`, registered ACTIVE with a 10% fee in a

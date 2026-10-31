@@ -52,9 +52,10 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      window, and a federated token's registry fee) and is written once per distinct combination.
 ///      The currency's increment floor is locked by the first bid (E2), which only later bids need.
 ///      Seller, fee recipient and fee share are read back from the token
-///      (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`, and so is the no-bid
-///      recipient: the museum the economics resolver names then for a canonical work, the
-///      artist's active authority for a federated one (D140). A VRF item's seed is checked
+///      (`IMintTarget.primaryTerms`) at settlement, as `LockedTerms`. The no-bid recipient is
+///      resolved then too: the museum the economics resolver names for 6529 Stream (the token
+///      given at construction), the artist's active authority for any other token (D140). A
+///      VRF item's seed is checked
 ///      by the token's `mint` (`IEntropyModule.isDelivered(itemHash)`), since the mint data is
 ///      opaque here. A pause is recorded once (`pausedAt`) and is live through `pausedAt +
 ///      MAX_PAUSE` inclusive, so an upheld `cancel` scheduled with the 48-hour delay exactly at day
@@ -107,7 +108,7 @@ contract EnglishAuction is
     uint256 private constant _ERC20_PAYOUT_GAS = 1_000_000;
     /// @dev How long a sale's currency must have been deprecated before anyone may end the
     ///      frozen sale unsold (MARKET-2): the standing bid is credited back and the work goes
-    ///      where an unbid work goes (D140: the museum, or a federated work's artist).
+    ///      where an unbid work goes (D140: the museum for 6529 Stream, else the artist).
     uint256 private constant _FREEZE_EXIT = 30 days;
 
     bytes4 private constant _SAFE_TRANSFER_FROM = 0x42842e0e;
@@ -116,11 +117,15 @@ contract EnglishAuction is
     /// @dev Slot 2 holds a recipient. With this flag and `_PAUSE_USED` clear, a bid never reads
     ///      slot 2, which a first bid for oneself would otherwise read cold.
     uint8 private constant _RECIPIENT_SET = 4;
+    /// @dev Set with `_RECIPIENT_SET` at an unbid 6529 Stream settlement: the recipient is the
+    ///      museum, so nobody may claim its pending delivery in its place (D140; L-5 is for
+    ///      every other token).
+    uint8 private constant _MUSEUM = 8;
 
     /// @dev One auction in three slots. Slot 0 is written at start (and its terms reference
     ///      and flags again by the first bid, which locks the increment floor). Slot 1 holds the
     ///      high bidder and the high bid (at most `uint96`). Slot 2 holds the recipient only when
-    ///      it differs from the bidder (`_RECIPIENT_SET`), the museum or the federated artist
+    ///      it differs from the bidder (`_RECIPIENT_SET`), the museum (`_MUSEUM`) or the artist
     ///      after a no-bid settlement, and the dispute pause (`_PAUSE_USED`), with the lowest
     ///      statement-log chain position an outcome recorded after the pause has
     ///      (`outcomeFrom`). A first bid for oneself writes one fresh slot and does not read
@@ -169,10 +174,13 @@ contract EnglishAuction is
     /// @notice The asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
     /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3)
-    ///         and the museum an unbid canonical work goes to (D140).
+    ///         and the museum an unbid 6529 Stream work goes to (D140).
     IEconomicsResolver public immutable economicsResolver;
     /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
     address public immutable permit2;
+    /// @dev 6529 Stream, the canonical token: only its unbid works go to the museum (D140, owner
+    ///      decision 9). Any other token, listed or federated, keeps its artist.
+    address private immutable _stream;
 
     /// @inheritdoc ISaleAdapter
     address public federationRegistry;
@@ -197,6 +205,8 @@ contract EnglishAuction is
     /// @param permit2_ The canonical Permit2, or zero to disable PERMIT2 payments.
     /// @param config_ The initial auction parameters.
     /// @param targets Token contracts listed at genesis.
+    /// @param stream_ 6529 Stream (an ERC-721), the only token whose unbid works go to the
+    ///        museum; it is listed by the genesis wiring, like any target.
     constructor(
         address authority,
         address escrow_,
@@ -204,7 +214,8 @@ contract EnglishAuction is
         address statementLog_,
         address permit2_,
         AuctionConfig memory config_,
-        address[] memory targets
+        address[] memory targets,
+        address stream_
     ) AccessManaged(authority) {
         Dependency.check(escrow_);
         Dependency.check(address(economicsResolver_), type(IEconomicsResolver).interfaceId);
@@ -212,6 +223,8 @@ contract EnglishAuction is
         Dependency.check(address(allowlist_));
         Dependency.check(statementLog_);
         if (permit2_ != address(0)) Dependency.check(permit2_);
+        Dependency.check(stream_, type(IERC721).interfaceId);
+        _stream = stream_;
         escrow = escrow_;
         economicsResolver = economicsResolver_;
         allowlist = allowlist_;
@@ -308,15 +321,16 @@ contract EnglishAuction is
 
     /// @inheritdoc IEnglishAuction
     /// @dev Reads the seller, the fee terms and the artist's active authority back from the token.
-    ///      With no bids the recipient is recorded (D140, ADR 0005): for a canonical 6529 Stream
-    ///      work the museum the economics resolver names now, whether or not the artist is
-    ///      restrained; for a federated work the artist's active authority (owner decision 9).
-    ///      Marks the token's primary sale settled (`IMintTarget.markPrimarySettled`, E11) while
-    ///      the token is still in custody, whether or not the delivery then succeeds, so a winner
-    ///      who never claims cannot hold up the edition. With no bids on a federated work and no
-    ///      active artist (the token reports a zero creator while a recovery override is pending)
-    ///      it reverts with `InvalidRecipient(address(0))` and moves nothing, the token staying in
-    ///      custody; anyone may retry once the override executes, is vetoed or voided, or lapses.
+    ///      With no bids the recipient is recorded (D140, ADR 0005): for 6529 Stream, the token
+    ///      this auction was deployed with, the museum the economics resolver names now, whether
+    ///      or not the artist is restrained (`_MUSEUM` is recorded with it); for any other token,
+    ///      listed or federated, the artist's active authority (owner decision 9). Marks the
+    ///      token's primary sale settled (`IMintTarget.markPrimarySettled`, E11) while the token
+    ///      is still in custody, whether or not the delivery then succeeds, so a winner who never
+    ///      claims cannot hold up the edition. With no bids on another token and no active artist
+    ///      (the token reports a zero creator while a recovery override is pending) it reverts
+    ///      with `InvalidRecipient(address(0))` and moves nothing, the token staying in custody;
+    ///      anyone may retry once the override executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, AuctionState.ENDED);
         if (_reopenedAfterFreeze(saleId, s)) return;
@@ -328,9 +342,14 @@ contract EnglishAuction is
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
         uint256 price = 0;
         if (s.bidder == address(0)) {
+            // D140: an unbid 6529 Stream work goes to the museum; any other keeps its artist.
+            uint8 flags = _RECIPIENT_SET;
+            if (s.token == _stream) {
+                (unbid, flags) = (economicsResolver.museum(), _RECIPIENT_SET | _MUSEUM);
+            }
             if (unbid == address(0)) revert InvalidRecipient(unbid);
             s.recipient = unbid;
-            s.flags |= _RECIPIENT_SET;
+            s.flags |= flags;
         } else {
             price = s.bid;
         }
@@ -346,8 +365,8 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuction
     /// @dev The pending recipient or the winning bidder (the payer of the high bid) may claim, to
     ///      any address except zero and this adapter, so a recipient contract that cannot make the
-    ///      call does not strand the token. With no bids, for a canonical work only the museum
-    ///      recorded at settlement may, never the artist (D140, ADR 0005); for a federated work
+    ///      call does not strand the token. With no bids, for 6529 Stream only the museum
+    ///      recorded at settlement may, never the artist (D140, ADR 0005); for any other token
     ///      the artist may, as the authority recorded at settlement or the active one the token
     ///      reports (L-5). If neither the recipient nor the winner can make the call, the token
     ///      stays in custody: that is the winner's choice of recipient.
@@ -721,16 +740,12 @@ contract EnglishAuction is
     /// @dev The sale's terms: the locked currency, the token's seller and fee terms, and for a
     ///      federated token the registry fee share, locked at start, paid to the resolver's
     ///      federated network fee recipient, never to a recipient the token reports (MARKET-3).
-    ///      `unbid` is who receives the work while no bid stands (D140, ADR 0005): for a
-    ///      canonical 6529 Stream work (a listed target) the museum the economics resolver names
-    ///      now, whatever the artist's state; for a federated work the artist's active authority
-    ///      the token reports now (owner decision 9), zero while it is restrained. While a bid
-    ///      stands it is the artist's authority, unused, so a sold settlement makes no museum
-    ///      read.
+    ///      `creator` is the artist's active authority the token reports now, zero while it is
+    ///      restrained.
     function _lockedTerms(Sale storage s)
         private
         view
-        returns (LockedTerms memory lt, address unbid)
+        returns (LockedTerms memory lt, address creator)
     {
         Terms storage t = _terms[s.termsId];
         bool federated = t.federated;
@@ -745,7 +760,7 @@ contract EnglishAuction is
             federated ? t.registryFee : p.feeShare
         );
         if (lt.feeShare > Splits.DENOMINATOR) revert InvalidSaleTerms(s.token, s.tokenId);
-        unbid = federated || s.bidder != address(0) ? p.creator : economicsResolver.museum();
+        creator = p.creator;
     }
 
     /// @dev Records the bid, then takes its payment: the whole bid reverts if the payment does
@@ -986,8 +1001,8 @@ contract EnglishAuction is
     /// @dev MARKET-2: a currency freeze (deprecation) stops the auction, not just its bids. While
     ///      frozen, nothing settles, sold or unsold (a standing bidder may withdraw), until the
     ///      currency has been deprecated for {_FREEZE_EXIT}: then anyone may end the sale, the
-    ///      standing bid is credited back and the work goes where an unbid work goes (the museum,
-    ///      or a federated work's artist; owner decision 10). If the currency came back in the
+    ///      standing bid is credited back and the work goes where an unbid work goes (the museum
+    ///      for 6529 Stream, else the artist; owner decision 10). If the currency came back in the
     ///      auction's last window or after its end, the first settle reopens the auction instead,
     ///      for {_reopening}, so the bidders the freeze shut out can bid.
     function _reopenedAfterFreeze(uint256 saleId, Sale storage s) private returns (bool) {
@@ -1039,11 +1054,11 @@ contract EnglishAuction is
     }
 
     /// @dev L-5: who besides the recorded recipient may claim an unbid work's pending delivery:
-    ///      a federated work's artist, as the token reports it now. For a canonical work nobody
-    ///      (zero, never a caller): the delivery pending for the museum is the museum's alone
-    ///      (D140, ADR 0005).
+    ///      the artist, as the token reports it now, for any token but 6529 Stream. When the
+    ///      museum is the recipient (`_MUSEUM`), nobody (zero, never a caller): the delivery
+    ///      pending for the museum is that museum's alone (D140, ADR 0005).
     function _unbidClaimant(Sale storage s) private view returns (address creator) {
-        if (_terms[s.termsId].federated) (, creator) = _lockedTerms(s);
+        if (s.flags & _MUSEUM == 0) (, creator) = _lockedTerms(s);
     }
 
     /// @dev The token's own latest dispute outcome in the statement log, and its position in
