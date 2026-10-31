@@ -14,7 +14,6 @@ import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { StepLadder } from "src/interfaces/types/StepLadder.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
-import { UniformClearing } from "src/sales/UniformClearing.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { EthRefusingHolder } from "../../mocks/sales/EditionAuctionMocks.sol";
@@ -126,15 +125,34 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         ua.auction(9);
     }
 
-    function test_StepPrices_MatchStepLadder() public pure {
+    /// @dev The adapter prices a bid from its own byte table of the mantissas. On a 512-step
+    ///      ladder of each shape, the first two decades (every table entry the shape uses, and a
+    ///      decade carry) and the top step cost exactly `StepLadder.price`, read from the
+    ///      `IncorrectPayment` a zero-value bid reverts with.
+    function test_StepPrices_MatchStepLadder() public {
         uint16[4] memory perDecade = [uint16(24), 48, 96, 192];
+        uint96[4] memory base = [uint96(1e14), 1e14, 1e14, 1e17];
         for (uint256 n; n < 4; ++n) {
-            for (uint256 step; step < 512; ++step) {
-                assertEq(
-                    UniformClearing.price(1e14, perDecade[n], step),
-                    StepLadder.price(1e14, perDecade[n], step),
-                    "ladder"
+            IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+            (c.basePrice, c.stepsPerDecade, c.stepCount) = (base[n], perDecade[n], 512);
+            _setConfig(c);
+            uint256 id = ID + 1 + n;
+            english.set(
+                address(stream),
+                id,
+                IEnglishAuction.AuctionState.ACTIVE,
+                uint64(block.timestamp + 1 days)
+            );
+            uint256 saleId = _openId(id, 0);
+            for (uint256 step; step < 512; step = step + 1 == 2 * perDecade[n] ? 511 : step + 1) {
+                vm.expectRevert(
+                    abi.encodeWithSelector(
+                        IUniformEditionAuction.IncorrectPayment.selector,
+                        StepLadder.price(base[n], perDecade[n], step),
+                        0
+                    )
                 );
+                auction.bid(saleId, step, 1);
             }
         }
     }
