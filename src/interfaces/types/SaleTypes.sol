@@ -16,7 +16,7 @@ pragma solidity ^0.8.24;
 ///      adapters, which ADR 0005 removes; FIXED_PRICE stays reserved for a restored fixed-price
 ///      sale.
 library SaleKind {
-    /// @notice The English auction: 6529 Stream's only primary sale.
+    /// @notice The English auction: 6529 Stream's 1/1 sale method at genesis.
     bytes32 internal constant ENGLISH_AUCTION = keccak256("ENGLISH_AUCTION");
     /// @notice rc.1's fixed-price sale, removed by ADR 0005; reserved for a restored
     ///         fixed-price adapter.

@@ -203,6 +203,122 @@ contract StreamTest is StreamFixture {
         assertFalse(stream.isAdmittedMinter(notAnAdapter));
     }
 
+    // ------------------------------------------------------- pluggable 1/1 sales (decision 15)
+
+    /// @dev Owner decisions 14 and 15: a 1/1 sale method added after launch is an adapter that
+    ///      governance admits; it mints exactly the items that name its kind, and reports that
+    ///      kind for its works. The English auction and its items are untouched.
+    function test_saleMethod_aSecondAdapterMintsOnlyItsOwnKind() public {
+        bytes32 kind = keccak256("FIXED_PRICE_1OF1");
+        MockSaleAdapter fixedPrice = new MockSaleAdapter(kind);
+        PackageItem memory item = _item(1);
+        item.sale.saleKind = kind;
+        item.sale.params = abi.encode(uint256(2 ether));
+
+        // Not admitted: refused, whatever the item.
+        bytes memory data = _request(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(fixedPrice))
+        );
+        fixedPrice.start(stream, data);
+
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(fixedPrice), true);
+        (uint256 tokenId, PrimaryTerms memory t) = fixedPrice.start(stream, data);
+        assertEq(stream.ownerOf(tokenId), address(fixedPrice), "into the adapter's custody");
+        assertEq(t.saleKind, kind);
+        assertEq(abi.decode(t.params, (uint256)), 2 ether, "its params, as approved");
+        assertEq(stream.primaryTerms(tokenId, "").saleKind, kind, "the minting adapter's kind");
+
+        // Each adapter mints only its own kind.
+        data = _request(_item(2));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.ENGLISH_AUCTION, kind
+            )
+        );
+        fixedPrice.start(stream, data);
+        item = _item(3);
+        item.sale.saleKind = kind;
+        data = _request(item);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, kind, SaleKind.ENGLISH_AUCTION
+            )
+        );
+        auction.start(stream, data);
+        uint256 english = _mint(4);
+        assertEq(stream.primaryTerms(english, "").saleKind, SaleKind.ENGLISH_AUCTION);
+
+        // It settles and delivers its own sale like the auction.
+        fixedPrice.settle(stream, tokenId);
+        fixedPrice.deliver(address(stream), tokenId, outsider);
+        assertTrue(stream.primarySaleSettled(tokenId));
+        assertEq(stream.ownerOf(tokenId), outsider);
+    }
+
+    /// @dev The kind is recorded at the first admission and kept through a removal and a
+    ///      re-admission; an adapter reporting no kind is refused.
+    function test_saleMethod_kindRecordedAtFirstAdmission() public {
+        MockSaleAdapter none = new MockSaleAdapter(bytes32(0));
+        vm.prank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(none))
+        );
+        stream.setAdmittedMinter(address(none), true);
+
+        bytes32 kind = keccak256("RAFFLE_1OF1");
+        MockSaleAdapter raffle = new MockSaleAdapter(kind);
+        vm.startPrank(governor);
+        stream.setAdmittedMinter(address(raffle), true);
+        stream.setAdmittedMinter(address(raffle), false);
+        stream.setAdmittedMinter(address(raffle), true);
+        vm.stopPrank();
+        PackageItem memory item = _item(1);
+        item.sale.saleKind = kind;
+        (uint256 tokenId,) = raffle.start(stream, _request(item));
+        assertEq(stream.primaryTerms(tokenId, "").saleKind, kind);
+    }
+
+    /// @dev The de-admission rule (decision 15): removal stops new mints at once, and never
+    ///      strands a live sale. The adapter keeps its index, so it can still settle, deliver
+    ///      and cancel (burn) every token it minted, while no other adapter can.
+    function test_saleMethod_removalStopsNewSalesButNeverStrandsALiveOne() public {
+        bytes32 kind = keccak256("FIXED_PRICE_1OF1");
+        MockSaleAdapter fixedPrice = new MockSaleAdapter(kind);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(fixedPrice), true);
+        PackageItem memory a = _item(1);
+        a.sale.saleKind = kind;
+        PackageItem memory b = _item(2);
+        b.sale.saleKind = kind;
+        (uint256 sold,) = fixedPrice.start(stream, _request(a));
+        (uint256 disputed,) = fixedPrice.start(stream, _request(b));
+
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(fixedPrice), false);
+        PackageItem memory c = _item(3);
+        c.sale.saleKind = kind;
+        bytes memory data = _request(c);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(fixedPrice))
+        );
+        fixedPrice.start(stream, data);
+
+        // Another adapter, admitted, cannot finish or cancel them.
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.NotMintingAdapter.selector, address(auction))
+        );
+        auction.settle(stream, sold);
+        // The removed adapter still settles one and cancels the other.
+        fixedPrice.settle(stream, sold);
+        fixedPrice.deliver(address(stream), sold, outsider);
+        fixedPrice.burn(stream, disputed, 1);
+        assertEq(stream.ownerOf(sold), outsider);
+        assertTrue(stream.primarySaleSettled(sold));
+        assertEq(stream.primaryTerms(sold, "").saleKind, kind, "still reported after removal");
+    }
+
     function test_setAdmittedMinter_reverts() public {
         address eoa = makeAddr("eoa");
         vm.startPrank(governor);
@@ -455,12 +571,20 @@ contract StreamTest is StreamFixture {
 
     function test_mint_revertsForStreamRuleBreaks() public {
         PackageItem memory item = _item(1);
-        item.sale.saleKind = SaleKind.UNIFORM_AUCTION;
+        item.sale.saleKind = 0;
         _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
 
+        // Another sale method's item: the English adapter may not mint it (decision 15).
         item = _item(1);
-        item.sale.params = hex"01";
-        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
+        item.sale.saleKind = SaleKind.FIXED_PRICE;
+        _expectInvalid(
+            item,
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector,
+                SaleKind.FIXED_PRICE,
+                SaleKind.ENGLISH_AUCTION
+            )
+        );
 
         item = _item(1);
         item.parties = new Party[](0);
@@ -611,7 +735,12 @@ contract StreamTest is StreamFixture {
         assertLt(uint256(low), uint256(SaleKind.ENGLISH_AUCTION));
         PackageItem memory item = _item(1);
         item.sale.saleKind = low;
-        _expectInvalid(item, abi.encodeWithSelector(IStream.InvalidItemSale.selector));
+        _expectInvalid(
+            item,
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, low, SaleKind.ENGLISH_AUCTION
+            )
+        );
         auction.setSaleKind(low);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -709,9 +838,15 @@ contract StreamTest is StreamFixture {
     /// @dev A preview applies the Stream rules a mint does.
     function test_primaryTerms_previewChecksTheStreamRules() public {
         PackageItem memory item = _item(1);
-        item.sale.saleKind = SaleKind.UNIFORM_AUCTION;
+        item.sale.saleKind = 0;
         vm.expectRevert(IStream.InvalidItemSale.selector);
         stream.primaryTerms(0, _request(item));
+        // Another sale method's item previews with its own kind, currency and params.
+        item.sale.saleKind = SaleKind.FIXED_PRICE;
+        item.sale.params = abi.encode(uint256(1 ether));
+        PrimaryTerms memory t = stream.primaryTerms(0, _request(item));
+        assertEq(t.saleKind, SaleKind.FIXED_PRICE);
+        assertEq(t.params, abi.encode(uint256(1 ether)));
     }
 
     // ---------------------------------------------------------------------- primary sale
