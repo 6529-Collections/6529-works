@@ -407,6 +407,13 @@ before each merge.
     true)` executes; a guardian vetoes an admission that does not hold them.
 
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
-  adapter that honours it. Enforcing it on-chain would cost Stream bytecode on a path every
-  transfer takes (for example, refusing an unsold work's transfer out of its minting
-  adapter's custody to anyone but a buyer or the museum), and is left to the owner.
+  adapter that honours it.
+
+  It is a review obligation, not an on-chain check. Stream never learns whether a sale had a
+  buyer: an adapter marks the sale settled (`markPrimarySettled`, the same call for every mint
+  target) and moves the work itself. An on-chain guard would need each Stream adapter to
+  declare the outcome through a Stream-only settle call, with an exception for the English
+  auction (which has no bytecode left to adopt it); even then an adapter that declares its
+  artist as the buyer would pass. Refusing transfers out of custody to the artist would block an
+  artist who buys their own work, and change the English auction. Governance's 30-day review,
+  with the guardians' veto, is therefore the control.
