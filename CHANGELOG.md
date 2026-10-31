@@ -35,9 +35,9 @@
   (stubs that revert `NotImplemented` until it lands), `name()` "6529 Stream Editions" and
   `symbol()` `STREAMEDITIONS` on Editions, and the museum behaviour in `IEnglishAuction`'s
   NatSpec. `tools/edition_auction_ref.py`, the reference model, generates golden vectors in
-  `test/fixtures/edition-auction/`, checked in CI. Nothing is deployed differently yet: the
-  English auction still returns an unbid work to its artist, and the fixed-price and Dutch
-  sales still run, until the implementation lanes land.
+  `test/fixtures/edition-auction/`, checked in CI. This entry alone deploys nothing
+  differently: the English auction returns an unbid work to its artist until the museum lane
+  lands, and the entry on the edition terms removes the fixed-price and Dutch sales.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

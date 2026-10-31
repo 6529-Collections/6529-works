@@ -50,8 +50,8 @@ library Roles {
     ///         execution, refreshes, flushes, claim batches) is permissionless, no selector maps
     ///         to it and genesis grants it to nobody.
     uint64 internal constant KEEPER = 7;
-    /// @notice Platform operations: creating collections, opening and closing fixed-price and
-    ///         Dutch sales, registering locators, and posting platform statements
+    /// @notice Platform operations: creating collections, registering locators, and posting
+    ///         platform statements
     ///         (`StatementLog.appendPlatform`). Zero delay: the log refuses delayed writers.
     uint64 internal constant PLATFORM = 8;
     /// @notice Standard-class governed setters (48 hours).

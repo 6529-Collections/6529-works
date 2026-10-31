@@ -13,7 +13,7 @@ pragma solidity ^0.8.24;
 ///      - `openRecord`: per media file, one content-store read and one stored file ID, under
 ///        1.5M gas at 32 (the descriptive record is a content-store file, so only its ID is
 ///        stored);
-///      - captured cancellers, sale phases and locators: under 1M gas each at these bounds,
+///      - captured cancellers and locators: under 1M gas each at these bounds,
 ///        and `preferredLocator` scans at most 16 locators inside `tokenURI`'s 8M budget.
 library Limits {
     /// @notice Parties (artists and collaborators) per package item, and so payees per item.

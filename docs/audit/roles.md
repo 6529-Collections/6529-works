@@ -38,16 +38,16 @@ Docs).
 | --- | ---: | --- | --- | --- | ---: | --- |
 | `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe | 0 | No |
 | `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 6 | No |
-| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 3 | No |
-| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 4 | No |
+| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 1 | No |
+| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 2 | No |
 | `CURATION_SIGNER` | 4 | immediate | 30 days | Curation signer key 1, Curation signer key 2 | 0 | No |
 | `STORAGE_OPERATOR` | 5 | immediate | 48 hours | Storage operator key | 3 | Yes |
 | `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 | No |
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
-| `PLATFORM` | 8 | immediate | 48 hours | Platform key | 7 | Yes |
+| `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 13 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 7 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 18 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 14 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -60,11 +60,11 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| Immediate | immediate | 20 |
-| Standard | 48 hours | 17 |
+| Immediate | immediate | 14 |
+| Standard | 48 hours | 15 |
 | Funds and recipients | 14 days | 7 |
-| Verifier and successor | 30 days | 18 |
-| **Total** | | **62** |
+| Verifier and successor | 30 days | 14 |
+| **Total** | | **50** |
 
 ## Matrix by contract
 
@@ -91,8 +91,8 @@ Source: [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol).
 | `setCollectionPreferredKind(uint256,uint8)` | `0x4ddc92d1` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `setFilePreference(uint256,bytes32,uint256)` | `0x65a48a4e` | `STORAGE_OPERATOR` | Immediate | immediate | No: executes at once |  |
 | `addLocator(uint256,bytes32,(uint8,string))` | `0xf3326c0f` | `PLATFORM` | Immediate | immediate | No: executes at once | The work's artist may also call it directly before finalize; PLATFORM's path is a `canCall` check in the contract and needs a zero-delay grant. |
-| `relicense(uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0x291e2c27` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Also needs every party's signed consent. CC0 is irrevocable. |
-| `setRoyaltyRate(uint256,uint32,(…),bytes32,uint64,bytes[])` | `0xe27fed56` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Also needs every party's signed consent; re-rates the linked edition. |
+| `relicense(uint256,(string,bytes32),(…),bytes32,uint64,bytes[])` | `0xd60ad0db` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Also needs every party's signed consent. CC0 is irrevocable. |
+| `setRoyaltyRate(uint256,uint32,(…),bytes32,uint64,bytes[])` | `0xc13560ef` | `FUNDS_SETTER` | Funds and recipients | 14 days | Yes: any guardian, during the delay | Also needs every party's signed consent; re-rates the linked edition. |
 | `repinRenderer(uint256,address,bytes32,bytes32,uint64,bytes)` | `0x12e96e4a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | The errata repin: also needs the lead artist's signature. |
 
 ### Editions
@@ -158,32 +158,6 @@ Source: [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 | `cancel(uint256,bytes32)` | `0xeafb64d5` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Upheld dispute: while paused, citing the token's DISPUTE_OUTCOME recorded after the pause. |
 | `setConfig((uint32,uint32,uint32),(uint32,uint32,uint32))` | `0x8a5268b2` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Duration, anti-snipe window and increment share; compare-and-set. |
 | `setOpeningBid(address,uint256,uint256)` | `0x5d918358` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Per currency; compare-and-set, with a ceiling. |
-| `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
-| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
-
-### FixedPriceSale
-
-Source: [`src/sales/FixedPriceSale.sol`](../../src/sales/FixedPriceSale.sol).
-
-| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops `openSale` and `purchase`; closing a sale and claims still work. |
-| `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
-| `openSale(address,uint256,(…)[],(uint256,uint64,bytes))` | `0xc243cebe` | `PLATFORM` | Immediate | immediate | No: executes at once | The sale's creator may also call it directly. PLATFORM alone opens only a listed FIXED edition with no leaf-priced phase; with the creator's signed phase configuration it may open any. |
-| `closeSale(uint256)` | `0xa4223d53` | `PLATFORM` | Immediate | immediate | No: executes at once | The sale's creator may also call it directly; anyone once every phase has ended. PLATFORM closes only sales it opened without the artist's approval, or any sale while the creator resolves to zero. |
-| `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
-| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
-
-### DutchSale
-
-Source: [`src/sales/DutchSale.sol`](../../src/sales/DutchSale.sol).
-
-| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops `openSale` and `purchase`; closing a sale and claims still work. |
-| `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
-| `openSale(address,uint256,uint64)` | `0x7068827a` | `PLATFORM` | Immediate | immediate | No: executes at once | The sale's creator may also call it directly. PLATFORM alone opens only a listed FIXED edition. |
-| `closeSale(uint256)` | `0xa4223d53` | `PLATFORM` | Immediate | immediate | No: executes at once | The sale's creator may also call it directly. PLATFORM closes only sales it opened without the artist's approval, or any sale while the creator resolves to zero. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
 | `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
 
@@ -279,15 +253,11 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 7 | ArtistRegistry | `bindSplitFactory(address)` | SplitFactory |
 | 8 | ArtistRegistry | `bindStatementLog(address)` | StatementLog |
 | 9 | Stream | `setAdmittedMinter(address,bool)` | EnglishAuction, `true` |
-| 10 | Editions | `setAdmittedMinter(address,bool)` | FixedPriceSale, `true` |
-| 11 | Editions | `setAdmittedMinter(address,bool)` | DutchSale, `true` |
-| 12 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
-| 13 | FixedPriceSale | `setTarget(address,bool)` | Editions, `true` |
-| 14 | DutchSale | `setTarget(address,bool)` | Editions, `true` |
-| 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
-| 16 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
-| 17 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
-| 18 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
+| 10 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
+| 11 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
+| 12 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
+| 13 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
+| 14 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
 
 ## The AccessManager's own functions
 
@@ -319,11 +289,10 @@ for the call they carry.
 
 | Selector | Signature |
 | --- | --- |
-| `0x291e2c27` | `relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes)),bytes32,uint64,bytes[])` |
-| `0xe27fed56` | `setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint8,uint64,uint64,uint256,address,bytes32,bytes)),bytes32,uint64,bytes[])` |
+| `0xd60ad0db` | `relicense(uint256,(string,bytes32),(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])` |
+| `0xc13560ef` | `setRoyaltyRate(uint256,uint32,(uint8,uint256,bytes32,bytes32,bytes32,(address,uint8)[],(uint256,address,uint32)[],(string,bytes32),uint8,bytes32,(bytes32,address,bytes),(uint32,address,bytes32,bytes)),bytes32,uint64,bytes[])` |
 | `0xf27323a6` | `stageOverride(uint256,uint8,(address,address,bytes32,bytes32),bytes32,uint64,bytes)` |
 | `0xa054305a` | `appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x8479b292` | `appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x5cab7fab` | `appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
-| `0xc243cebe` | `openSale(address,uint256,(uint64,uint64,bytes32,uint32,bool,bool)[],(uint256,uint64,bytes))` |
 | `0x058832db` | `setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` |
