@@ -26,8 +26,10 @@ import { IRenderer } from "../../src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "../../src/interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../../src/interfaces/IStatementLog.sol";
 import { IStream } from "../../src/interfaces/IStream.sol";
+import { IUniformEditionAuction } from "../../src/interfaces/IUniformEditionAuction.sol";
 import { IWorkRecords } from "../../src/interfaces/IWorkRecords.sol";
 import { Limits } from "../../src/interfaces/types/Limits.sol";
+import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 
 /// @notice Imports every interface so the whole surface compiles, and pins each ERC-165
 ///         interface ID. A failing ID means an external function was added, removed or changed:
@@ -38,9 +40,12 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
         assertEq(type(IStream).interfaceId, bytes4(0x6d0d5203), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0x3f3d6835), "IWorkRecords");
-        assertEq(type(IEditions).interfaceId, bytes4(0x9c689136), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0x0f4dd474), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
+        assertEq(
+            type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b), "IUniformEditionAuction"
+        );
         assertEq(type(IFixedPriceSale).interfaceId, bytes4(0x773a4920), "IFixedPriceSale");
         assertEq(type(IDutchSale).interfaceId, bytes4(0x382667e1), "IDutchSale");
         // Errors only: no function, so the ID is zero and nothing reports it.
@@ -53,7 +58,7 @@ contract InterfacesCompileTest is Test {
         assertEq(type(IContentStore).interfaceId, bytes4(0x3f437f81), "IContentStore");
         assertEq(type(IDependencyRegistry).interfaceId, bytes4(0xe5338d57), "IDependencyRegistry");
         assertEq(type(IRenderer).interfaceId, bytes4(0xa772216d), "IRenderer");
-        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x310247d8), "IEconomicsResolver");
+        assertEq(type(IEconomicsResolver).interfaceId, bytes4(0x9ba8ecb3), "IEconomicsResolver");
         assertEq(type(IStatementLog).interfaceId, bytes4(0xbb5574c7), "IStatementLog");
         assertEq(type(IArtistRoleResolver).interfaceId, bytes4(0x3074ca00), "IArtistRoleResolver");
         assertEq(
@@ -113,6 +118,24 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(keccak256("payoutAddress(uint256)"))
         );
+    }
+
+    /// @dev ADR 0005, owner decision 14: the edition auction is a sale adapter like any other,
+    ///      claiming its own kind label, so tokens admit it through the generic minter mapping
+    ///      and later methods claim new labels. Its sale IDs derive as the English auction's do.
+    function test_editionAuctionIsASaleAdapter() public pure {
+        ISaleAdapter adapter = IUniformEditionAuction(address(0x6529));
+        assertEq(address(adapter), address(0x6529));
+        assertEq(SaleKind.UNIFORM_AUCTION, keccak256("UNIFORM_AUCTION"));
+        bytes32[4] memory kinds = [
+            SaleKind.ENGLISH_AUCTION, SaleKind.FIXED_PRICE, SaleKind.DUTCH, SaleKind.UNIFORM_AUCTION
+        ];
+        for (uint256 i; i < kinds.length; ++i) {
+            for (uint256 j = i + 1; j < kinds.length; ++j) {
+                assertTrue(kinds[i] != kinds[j]);
+            }
+        }
+        assertEq(IUniformEditionAuction.saleIdOf.selector, IEnglishAuction.saleIdOf.selector);
     }
 
     function test_limits() public pure {

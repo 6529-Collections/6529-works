@@ -81,6 +81,14 @@ struct SaleTerms {
 ///      `saleKind` is `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`; `params` is that kind's
 ///      encoding (empty for fixed price, `abi.encode(DutchParams)` for Dutch). For an ORIGINAL
 ///      item every field is zero or empty.
+///      ADR 0005 replaces this struct, together with the removal of the fixed-price and Dutch
+///      adapters, by `EditionTerms {uint32 maxCount; address currency; bytes32 saleKind;
+///      bytes params;}`: `maxCount` is the creator's optional cap (0 for none), which 6529
+///      Stream Editions enforces for every minter; `saleKind` is any label an adapter claims
+///      (`SaleKind`, owner decision 14), `SaleKind.UNIFORM_AUCTION` in rc.2; `currency` and
+///      `params` are that kind's, opaque to the token and the package registry, which check only
+///      a nonzero kind and a bounded `params` length. The edition auction takes `CURRENCY_ETH`
+///      and empty `params`. An ORIGINAL item keeps every field zero or empty.
 struct EditionTerms {
     EditionFormat format;
     uint64 size;

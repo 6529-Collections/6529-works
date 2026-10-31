@@ -79,12 +79,12 @@ pay 75% to the artist's side and 25% to the network, and royalties are 6.529% (E
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 555 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 619 |
-| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 332 |
+| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 334 |
 | [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 360 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause | 763 |
 | [`FixedPriceSale`](src/sales/README.md), [`DutchSale`](src/sales/README.md), on [`MintSaleBase`](src/sales/README.md) | Edition sales: allowlist phases, permits, a descending price | 306 + 144 + 377 |
-| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 192 + 122 |
+| [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 202 + 122 |
 | [`SplitFactory`](src/economics/README.md), [`SplitWallet`](src/economics/README.md) | Immutable pull-payment wallets at predicted addresses | 100 + 143 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`ReleaseVerifier`](src/economics/README.md) | Failed-payment escrow, batch claims, signed releases | 89 + 99 + 41 |
 | [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Artist identity and payouts; 7-day recovery and 180-day overrides through 6529 consolidations | 561 + 133 |
@@ -107,7 +107,7 @@ network's templates) is [v1.1, only if needed](src/federated/README.md).
 | --- | --- |
 | Maturity | **Pre-audit.** Not production-ready. An internal adversarial review, carried out by AI agents in October 2026, found no Critical or High issues; its fixes are merged ([report](docs/security/internal-review-2026-10.md)). No external audit has started. |
 | Release | **[v1.0.0-rc.1](docs/releases/v1.0.0-rc.1.md)**, 16 October 2026: the first release candidate, pre-audit. Its contracts and deploy pipeline are the code Sepolia r3 runs. |
-| Scope | Fixed by [ADR 0001](docs/adr/0001-v1-scope.md), amended by ADRs [0002](docs/adr/0002-access-manager-hardening.md), [0003](docs/adr/0003-build-time-decisions.md) and [0004](docs/adr/0004-gas-budgets-under-glamsterdam.md). |
+| Scope | Fixed by [ADR 0001](docs/adr/0001-v1-scope.md), amended by ADRs [0002](docs/adr/0002-access-manager-hardening.md), [0003](docs/adr/0003-build-time-decisions.md), [0004](docs/adr/0004-gas-budgets-under-glamsterdam.md) and [0005](docs/adr/0005-stream-editions-auction.md). |
 | Code | Every v1 module is on `main`, with about 2,400 unit, fuzz, integration and fork tests in 136 test files, and 75 stateful invariants in 18 invariant suites ([invariants](docs/audit/invariants.md), [testing](docs/testing/README.md)). |
 | Testnet | Sepolia rehearsal **r3**, deployed on 15 October 2026 from `e5fe78c` (every review fix, the gas diet and the quality pass) with throwaway signers in the mainnet Safe structure, every contract verified on Sourcify: [addresses](docs/integrators/addresses.md), [deployment record](deployments/11155111/README.md), [flows and their gas](deployments/11155111/flows.md). Its live Verify is due from 20 October 2026, after the 5-day setback. |
 | Mainnet | Not deployed. It follows an external audit ([delivery plan](ops/DELIVERY_PLAN.md)). |

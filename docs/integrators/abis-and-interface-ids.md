@@ -192,9 +192,10 @@ selectors.
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0x4f4f5133` | `0x4f4f5133` | Stream, Editions |
 | `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x6d0d5203` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0x3f3d6835` | `0x3f3d6835` | WorkRecords |
-| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0x9c689136` | `0xa5bd946e` | Editions |
+| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0x0f4dd474` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction, FixedPriceSale, DutchSale |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
+| `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | None yet: the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md), not implemented on `main` |
 | `IFixedPriceSale` | [`IFixedPriceSale.sol`](../../src/interfaces/IFixedPriceSale.sol) | `0x773a4920` | `0xfedd2754` | FixedPriceSale |
 | `IDutchSale` | [`IDutchSale.sol`](../../src/interfaces/IDutchSale.sol) | `0x382667e1` | `0xb1c10995` | DutchSale |
 | `IMintSale` | [`IMintSale.sol`](../../src/interfaces/IMintSale.sol) | `0x00000000` | none | None: it declares errors only (the fixed-price and Dutch adapters' own) |
@@ -204,7 +205,7 @@ selectors.
 | `IContentStore` | [`IContentStore.sol`](../../src/interfaces/IContentStore.sol) | `0x3f437f81` | `0x3f437f81` | None: ContentStore does not implement ERC-165 |
 | `IDependencyRegistry` | [`IDependencyRegistry.sol`](../../src/interfaces/IDependencyRegistry.sol) | `0xe5338d57` | `0xe5338d57` | None: DependencyRegistry does not implement ERC-165 |
 | `IRenderer` | [`IRenderer.sol`](../../src/interfaces/IRenderer.sol) | `0xa772216d` | `0xa772216d` | Renderer |
-| `IEconomicsResolver` | [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | `0x310247d8` | `0x310247d8` | EconomicsResolver |
+| `IEconomicsResolver` | [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | `0x9ba8ecb3` | `0x310247d8` | EconomicsResolver |
 | `IStatementLog` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) | `0xbb5574c7` | `0x276fbc56` | None: StatementLog does not implement ERC-165 |
 | `IArtistRoleResolver` | [`IArtistRoleResolver.sol`](../../src/interfaces/IArtistRoleResolver.sol) | `0x3074ca00` | `0x3074ca00` | ArtistRegistry |
 | `IArtistPayoutResolver` | [`IArtistPayoutResolver.sol`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | `0x9b2c1793` | ArtistRegistry |

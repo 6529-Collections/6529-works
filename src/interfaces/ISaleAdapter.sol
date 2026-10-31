@@ -46,9 +46,13 @@ interface ISaleAdapter is IERC165 {
     /// @param saleId The sale's ID.
     /// @param token The token contract.
     /// @param tokenId The token ID (the edition ID for fixed price and Dutch).
-    /// @param buyer The paying bidder or buyer; zero when no bid won an auction.
-    /// @param recipient Who receives the tokens (the artist when no bid won).
-    /// @param quantity The number of tokens sold: 1 for an auction, the copies bought otherwise.
+    /// @param buyer The paying bidder or buyer; zero when no bid won an auction, and zero for an
+    ///        edition auction, whose winners claim later (`IUniformEditionAuction.BidClaimed`).
+    /// @param recipient Who receives the tokens: when no bid won an English auction, the 6529
+    ///        Network Museum, or a federated work's artist (ADR 0005); zero for an edition
+    ///        auction.
+    /// @param quantity The number of tokens sold: 1 for an English auction, the copies sold
+    ///        otherwise (an edition auction's count, possibly zero).
     /// @param currency The locked currency, zero for ETH.
     /// @param price The realized total price, equal to `sellerProceeds + fee`.
     /// @param seller The seller split wallet.
@@ -140,8 +144,11 @@ interface ISaleAdapter is IERC165 {
     ///         adapters also: a new fee recipient past their 65,535.
     error InvalidSaleTerms(address token, uint256 id);
 
-    /// @notice This adapter's `SaleKind` label.
-    /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`.
+    /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
+    ///         label equals its terms' kind. A new sale method claims a new label (ADR 0005,
+    ///         owner decision 14).
+    /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.UNIFORM_AUCTION`, rc.1's
+    ///         `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`, or a later adapter's own label.
     function saleKind() external view returns (bytes32);
     /// @notice Pauses the adapter: no new opens or purchases, and for the auction no new `start`.
     ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role

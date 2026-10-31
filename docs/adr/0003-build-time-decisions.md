@@ -3,7 +3,9 @@
 Status: Accepted by the delivery owner (Claude Code, acting for the repository
 owner), 11 October 2026. Amends [ADR 0001](0001-v1-scope.md) and extends
 [ADR 0002](0002-access-manager-hardening.md). Its gas budgets are amended by
-[ADR 0004](0004-gas-budgets-under-glamsterdam.md).
+[ADR 0004](0004-gas-budgets-under-glamsterdam.md). Its sales bullets, MARKET-6, the no-bid
+outcome, owner decision 6's edition sales and the selector table are amended by
+[ADR 0005](0005-stream-editions-auction.md).
 
 The owner's decisions on the items this ADR left open are recorded in
 [Owner decisions](#owner-decisions-11-october-2026).
@@ -59,6 +61,9 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
     edition, need the creator to open the sale or sign it (MARKET-6).
   - The signed phase configuration binds the resolved currency, the package
     price and a typed phase list.
+  - (Amended by [ADR 0005](0005-stream-editions-auction.md): MARKET-6 is retired with the fixed-price
+    and Dutch adapters. The edition auction opens permissionlessly at the package's terms, and
+    the creator's only input, an optional cap, is signed with the package.)
 - **Statement subjects before mint.**
   - A statement about a work that is not yet minted uses the subject
     `(address(0), uint256(itemHash))`.
@@ -136,6 +141,12 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 - **Finalize** requires the record file to be complete on-chain.
 
 ### Sales and auctions (amends ADR 0001 §5, §6 and §9)
+
+(Amended by [ADR 0005](0005-stream-editions-auction.md): the fixed-price allowlist bullets and the Dutch
+bullet leave with those adapters; "an edition opens only after its master's sale settles" now
+covers `createEdition` only, since the edition auction runs alongside the master's 1/1; an
+unbid 6529 Stream work goes to the 6529 Network Museum; the edition auction's pause blocks only
+new opens, and it takes ETH only.)
 
 - **Starting an auction costs at most 350K gas at steady state, not 300K.**
   - Reaching 300K would need every optimisation at once. The measured design
@@ -287,7 +298,8 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
   - After 30 days frozen, anyone may end it: the standing bid is credited back
     to the bidder and the work goes to the artist, as with no bid. A
     re-admission waits 14 days from the deprecation, so it is possible between
-    day 14 and day 30.
+    day 14 and day 30. (Amended by [ADR 0005](0005-stream-editions-auction.md): a 6529 Stream
+    work goes to the museum, as with no bid; a federated work still goes to its artist.)
 - **Reserved statement kinds.**
   - `DISPUTE_OUTCOME` is reserved to PLATFORM, and `CURATION_EVIDENCE` to
     CURATOR.
@@ -328,6 +340,12 @@ Each records what changed and why, so the code, the tests and the ADRs agree.
 | Entropy `setCoordinator` | Verifier and successor (30 days) |
 | Entropy `setConfig` | Standard (48 hours) |
 | Stream and Editions `setAdmittedMinter` | Verifier and successor (30 days) |
+
+(Amended by [ADR 0005](0005-stream-editions-auction.md): the `openSale` and `closeSale` row is removed, so
+PLATFORM holds no sale selector; the `setTarget`, `setFederationRegistry` and
+`pause`/`unpause` rows cover the edition auction; `UniformEditionAuction.setConfig` is standard
+(48 hours), compare-and-set with bounds, and `EconomicsResolver.setMuseum` is funds and
+recipients (14 days), compare-and-set.)
 
 ### Decisions from integration (11 October 2026, later)
 
@@ -476,6 +494,9 @@ until execution, as the payout freeze already does for money. A no-bid
 settlement waits for the outcome; sales and auctions already running continue
 with their artist share frozen. PLATFORM still opens and closes edition sales
 at the package terms during the restraint, and the artist cannot close them.
+(Amended by [ADR 0005](0005-stream-editions-auction.md): no edition sale is managed any more, and an
+unbid 6529 Stream work goes to the museum without waiting; a federated work's no-bid
+settlement still waits.)
 `authorityOf` still identifies the artist, and a STANDARD change or a
 payout-only override restrains nothing. The trade-off accepted: a network that
 abused the recovery path would also freeze the real artist, until a guardian

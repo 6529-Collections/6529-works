@@ -6,6 +6,15 @@ pragma solidity ^0.8.24;
 ///         (ADR 0001 section 5 "Sale extensibility"). A kind is a `bytes32` label so a new
 ///         adapter needs no change to Core or to the package format.
 /// @dev Constants only; nothing here is linked bytecode.
+///      Adding a sale method (ADR 0005, owner decision 14) needs no new token contract: a new
+///      adapter claims a fresh label, `keccak256("<NAME>")`, and reports it from
+///      `ISaleAdapter.saleKind()`; packages approved afterwards name it in their terms; and
+///      governance admits the adapter on each token it may mint (`IMintTarget.setAdmittedMinter`,
+///      30-day class). A token mints only for an admitted adapter whose kind equals the terms'
+///      kind, so no label is reserved to one adapter forever and no token hard-wires one minter.
+///      Labels are never reused for a different method. FIXED_PRICE and DUTCH name rc.1's
+///      adapters, which ADR 0005 removes; FIXED_PRICE stays reserved for a restored fixed-price
+///      sale.
 library SaleKind {
     /// @notice The English auction: 6529 Stream's only primary sale.
     bytes32 internal constant ENGLISH_AUCTION = keccak256("ENGLISH_AUCTION");
@@ -13,6 +22,9 @@ library SaleKind {
     bytes32 internal constant FIXED_PRICE = keccak256("FIXED_PRICE");
     /// @notice Descending price (6529 Editions).
     bytes32 internal constant DUTCH = keccak256("DUTCH");
+    /// @notice The uniform-price edition auction (`IUniformEditionAuction`, ADR 0005): one
+    ///         auction per edition decides how many copies exist and their one price.
+    bytes32 internal constant UNIFORM_AUCTION = keccak256("UNIFORM_AUCTION");
 }
 
 /// @notice How a buyer or bidder pays (ADR 0001 section 5 "Asset admission").
@@ -56,7 +68,9 @@ struct Payment {
 ///      `Splits.DENOMINATOR` (100,000). `creator` is the lead artist's active authority, resolved
 ///      through the artist registry when the terms are read: it receives an auction token that drew
 ///      no bids, and may open edition sales. It is zero while a recovery override is pending
-///      (`IArtistRegistry.activeAuthorityOf`).
+///      (`IArtistRegistry.activeAuthorityOf`). Under ADR 0005 an unbid 6529 Stream work goes to
+///      the 6529 Network Museum instead (`IEconomicsResolver.museum`); only a federated work's
+///      creator receives it.
 struct PrimaryTerms {
     bytes32 saleKind;
     address currency;

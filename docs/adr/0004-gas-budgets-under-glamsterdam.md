@@ -2,6 +2,8 @@
 
 Status: Accepted by the owner, 13 October 2026. Amends the gas budgets of
 [ADR 0001](0001-v1-scope.md) and [ADR 0003](0003-build-time-decisions.md).
+[ADR 0005](0005-stream-editions-auction.md) adds the edition auction's budgets (`bid`, `claimBid`
+and `settle`) and its rows, and removes the fixed-price and Dutch rows, when that code lands.
 
 ## Problem
 

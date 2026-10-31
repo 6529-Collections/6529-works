@@ -7,18 +7,24 @@ import { IMintTarget } from "./IMintTarget.sol";
 import { EditionFormat, EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 
 /// @title IEditions
-/// @notice 6529 Editions: the one shared ERC-1155 for editions, each anchored by a 6529 Stream
-///         work of kind EDITION_MASTER (ADR 0001 section 6).
+/// @notice 6529 Stream Editions (named 6529 Editions before ADR 0005, D139): the one shared
+///         ERC-1155 for editions, each anchored by a 6529 Stream work of kind EDITION_MASTER
+///         (ADR 0001 section 6).
 /// @dev The edition ID equals the master's Stream token ID, so the link is one ID in both
 ///      contracts. An edition is created only after the master's sale has settled
 ///      (`IStream.primarySaleSettled`), so a burned or disputed master never gets one. The link is
 ///      written once, from the approved package item, in both directions in the same
 ///      transaction, and never changes. An edition renders its master's media and record and
 ///      carries its master's license: `uri(id)` is served by the master's renderer
-///      (`IStream.rendererOf(id)`). Copies are sold only through the admitted fixed-price or
-///      Dutch adapters, at the price, currency and size the package fixed. A master with an
-///      edition can never be burned (6529 Stream burns only before the primary sale settles), so
-///      minting reads nothing from 6529 Stream. There are no numbered editions.
+///      (`IStream.rendererOf(id)`). Copies are minted only by an admitted sale adapter whose
+///      `saleKind()` equals the edition's terms, within the size the package fixed: any adapter
+///      governance admits (`setAdmittedMinter`, 30-day class), so a sale method is added by
+///      deploying and admitting an adapter, never by redeploying this contract (ADR 0005, owner
+///      decision 14). Under ADR 0005 the first adapter to mint an edition is the only one that
+///      may mint it again (`MinterMismatch`), so a second admitted adapter of the same kind can
+///      never add copies to a sale another one ran. A master with an edition can never be burned
+///      (6529 Stream burns only before the primary sale settles), so minting reads nothing from
+///      6529 Stream. There are no numbered editions.
 interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @notice An edition's state; economics are locked at creation.
     /// @param contentHash The master's content hash; unique in the Editions product.
@@ -120,6 +126,16 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error InvalidRoyaltyRate(uint32 rate);
     /// @notice The work-records satellite is not bound yet, so no edition can be created.
     error WorkRecordsUnbound();
+    /// @notice `minter` is admitted, but another adapter already minted this edition, and only
+    ///         that one may mint it again (ADR 0005).
+    error MinterMismatch(uint256 editionId, address minter);
+
+    /// @notice The collection's name (D139): "6529 Stream Editions".
+    /// @return The name, for wallets and marketplaces.
+    function name() external view returns (string memory);
+    /// @notice The collection's symbol: "STREAMEDITIONS" (ADR 0005, owner decision 13).
+    /// @return The symbol, for wallets and marketplaces.
+    function symbol() external view returns (string memory);
 
     /// @notice The 6529 Stream contract whose masters anchor editions (immutable).
     /// @return The 6529 Stream address.

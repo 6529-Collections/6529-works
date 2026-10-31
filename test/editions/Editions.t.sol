@@ -1329,6 +1329,14 @@ contract EditionsTest is EditionsBase {
 
     // ------------------------------------------------------------------ introspection
 
+    /// @dev D139 and ADR 0005 owner decision 13: the collection is 6529 Stream Editions.
+    function test_NameAndSymbol() public view {
+        assertEq(editions.name(), "6529 Stream Editions");
+        assertEq(editions.symbol(), "STREAMEDITIONS");
+        assertEq(IEditions(address(editions)).name.selector, bytes4(keccak256("name()")));
+        assertEq(IEditions(address(editions)).symbol.selector, bytes4(keccak256("symbol()")));
+    }
+
     function test_SupportsInterface() public view {
         assertTrue(editions.supportsInterface(type(IERC165).interfaceId));
         assertTrue(editions.supportsInterface(type(IERC1155).interfaceId));

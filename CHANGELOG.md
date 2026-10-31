@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- ADR 0005, the edition auction and 6529 Stream Editions
+  ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the
+  owner's D138 to D141 and decisions 1 to 14 of 31 October 2026, the design, the governed
+  parameters, LIM-EA-1 to LIM-EA-10 and the delivery plan for v1.0.0-rc.2, with amendment
+  pointers in ADRs 0001, 0003 and 0004. Frozen interfaces for the lanes that build it:
+  `IUniformEditionAuction` (keyed like the English auction by `saleIdOf(token, id)`), the
+  `StepLadder` price table, `SaleKind.UNIFORM_AUCTION`, the museum on `IEconomicsResolver`
+  (stubs that revert `NotImplemented` until it lands), `name()` "6529 Stream Editions" and
+  `symbol()` `STREAMEDITIONS` on Editions, and the museum behaviour in `IEnglishAuction`'s
+  NatSpec. `tools/edition_auction_ref.py`, the reference model, generates golden vectors in
+  `test/fixtures/edition-auction/`, checked in CI. Nothing is deployed differently yet: the
+  English auction still returns an unbid work to its artist, and the fixed-price and Dutch
+  sales still run, until the implementation lanes land.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

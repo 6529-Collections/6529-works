@@ -25,9 +25,14 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      A bid in the last `extensionWindow` seconds moves the end to `extensionWindow` seconds
 ///      after it. Outbid bidders are credited (pull). Settlement is permissionless after the end
 ///      and never depends on the winner accepting the token: a failed delivery leaves a pending
-///      claim. With no bids the token goes to the artist's active authority, resolved at
-///      settlement; while a recovery override is pending there is none, and settlement waits
-///      for its outcome.
+///      claim. With no bids (ADR 0005; 6529chain D140), a 6529 Stream work, or any token
+///      governance listed, goes to the 6529 Network Museum, `IEconomicsResolver.museum()` read
+///      at settlement, so an artist gains nothing by letting a curated work go unsold and no
+///      artist restraint can hold it up; a federated work goes to its artist's active
+///      authority, resolved at settlement, and while a recovery override is pending there is
+///      none, so that settlement waits for its outcome (owner decision 9). The edition auction
+///      of an EDITION_MASTER work (`IUniformEditionAuction`) runs alongside and reads this
+///      auction's `endTime`: it closes `closeOffset` after this auction's final end.
 ///
 ///      Disputes: the guardian may pause a live auction once, for at most 7 days (`MAX_PAUSE`);
 ///      bidders may withdraw while it is paused; an upheld dispute cancels it, refunds the bid
@@ -194,12 +199,17 @@ interface IEnglishAuction is ISaleAdapter {
     ///         reopens the auction for the governed duration (or the anti-snipe window if longer)
     ///         and emits `AuctionResumed` instead of settling. Once the currency has been
     ///         deprecated for 30 days, the call ends the sale unsold: the standing bid is
-    ///         credited back and the work goes to the artist (MARKET-2). A sale of a federated
-    ///         contract the registry has since delisted settles the same way (MARKET-5).
+    ///         credited back and the work goes where an unbid work goes, the museum for a listed
+    ///         token and the artist for a federated one (MARKET-2; ADR 0005, owner decision 10).
+    ///         A sale of a federated contract the registry has since delisted settles the same
+    ///         way, to its artist (MARKET-5).
     /// @param saleId The ended auction's sale ID.
     function settle(uint256 saleId) external;
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
-    ///         token there.
+    ///         token there. For an unbid work, the pending recipient (the museum, or a federated
+    ///         work's artist) claims it; only a federated work's current artist may also claim
+    ///         in its place (L-5), so no artist can take the museum's pending delivery (ADR
+    ///         0005).
     /// @param saleId The auction's sale ID.
     /// @param to The address that receives the token; neither zero nor this adapter.
     function claimDelivery(uint256 saleId, address to) external;
