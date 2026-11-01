@@ -194,8 +194,9 @@ default when the sale starts".
      its last anti-snipe window, the first `settle` reopens the auction for at
      least the governed duration; otherwise the auction settles as usual. Once
      the currency has been deprecated for 30 days, anyone
-     may end the sale unsold: the standing bid is credited back and the work goes
-     to the artist.
+     may end the sale unsold (reported FROZEN_OUT): the standing bid is credited
+     back and the work goes where an unbid work goes, the museum for a 6529
+     Stream work and the artist for any other token (owner decisions 9 and 10).
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).

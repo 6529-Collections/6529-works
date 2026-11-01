@@ -776,6 +776,8 @@ contract EnglishAuctionPreLens is
                 returndatacopy(out, 0, returndatasize())
                 revert(out, returndatasize())
             }
+            // Fail closed, as the typed call does: a short answer leaves calldata in `out`.
+            if lt(returndatasize(), 0x80) { revert(0, 0) }
             holder := mload(add(out, 0x60))
         }
         if (bidder == address(0)) {
