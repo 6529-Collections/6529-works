@@ -258,7 +258,15 @@ python tools/check_genesis.py --config config/genesis.sepolia.json
   - any holder at or below `0xFFFF` (the placeholder range and the precompiles);
   - a system contract, the CREATE2 deployer, Permit2 or the delegation contract;
   - a contract of the deployment itself;
-  - fewer than three guardians or two curation signers.
+  - fewer than three guardians or two curation signers;
+  - on mainnet only (owner decision 18, `DeployGuards.checkRoleGroups`), any role held by the
+    deployer EOA, or an account holding roles of two groups. The groups are:
+    - the community council: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
+      SUCCESSOR_SETTER;
+    - the security council: GUARDIAN and PAUSER;
+    - the curation signers: CURATION_SIGNER.
+
+    Verify repeats this check ([mainnet governance](#mainnet-governance-owner-decision-18)).
 
 Commit the Sepolia genesis file with the deployment record.
 
@@ -478,6 +486,11 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
     missing, the policy is the committed one, and no holder is a contract of the deployment.
 - **The sender is the deployer.** It becomes the configurator's `deployer`, the only account
   that can call `configure`.
+- **The opening bid.** The committed policy wires the English auction's ETH opening bid at
+  0.05 ETH (owner decision 19), on Sepolia as on mainnet: a rehearsal's first ETH bid on each
+  1/1 must be at least 0.05 ETH, so fund the bidders for it. `ETH_INCREMENT_FLOOR` must stay at
+  least 0.00005 ETH, or the wired bid is above the auction's ceiling (1,000 floors) and
+  `configure` reverts.
 - **Addresses are predictable.** Most depend on the deployer and `DEPLOY_NAMESPACE`;
   ContentStore, ReleaseVerifier and ClaimRouter depend on `DEPLOY_NAMESPACE` alone. To repeat a
   rehearsal, use a new `DEPLOY_NAMESPACE`.
@@ -623,7 +636,7 @@ whose rehearsals keep the owner's keys ([accounts](#1-accounts)).
 | Holder | Roles | Who |
 | --- | --- | --- |
 | Community council multisig | The delayed roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER (the hot admin Safe's roles, with execution delays of 48 hours to 30 days) | A Safe of about 5 of 9 independent signers, none from 6529 |
-| Security council multisig | The immediate roles: PAUSER and GUARDIAN | A smaller Safe of independent signers |
+| Security council | The immediate roles: PAUSER and GUARDIAN | Three guardian Safes, each holding both roles, whose signers are separate members of a council of independent signers (below) |
 | Curation signer | CURATION_SIGNER | A dedicated key that signs only the published TDH-vote result |
 
 Later, on-chain TDH governance takes the roles over through ordinary role grants (and the
@@ -634,12 +647,35 @@ revocation of the councils' roles), each in its class's delay.
   not cover PLATFORM, CURATOR, STORAGE_OPERATOR or the cold recovery admin (the second ADMIN
   Safe, which acts only for [admin recovery](#admin-recovery)). Who holds them on mainnet,
   consistent with D67 and D98, needs an owner decision.
-- **Three guardian Safes.** Off anvil the deploy requires at least three GUARDIAN Safes whose
-  signers are disjoint from each other's and from the admin Safes' (`DeployGuards`), while
-  decision 18 names one security-council multisig. How the security council fills those seats
-  is not decided.
-- **No deploy-side guard for decision 18 exists yet.** Nothing in the scripts refuses a mainnet
-  configuration that breaks it; until one is built, the checklist below is the only check.
+
+**How the security council fills the three guardian seats.** Off anvil the deploy requires at
+least three GUARDIAN Safes whose signers are disjoint from each other's and from the admin
+Safes' (`DeployGuards.checkHolders`, owner decisions 2 and 3, GOV-4). Decision 18 names one
+security council, and the deploy keeps the three seats: the security council is held as three
+guardian Safes, each holding GUARDIAN and PAUSER, each with a threshold of at least two, and
+each signed by a different subset of the council's members. A council of nine, for example,
+holds three 2-of-3 Safes. This keeps the redundancy the guardian design was built for:
+
+- each Safe can veto a scheduled operation and pause on its own, at once;
+- one Safe whose keys are lost leaves the other two with the veto and the pause;
+- no signer sits in two Safes, so one stolen key never acts for more than one seat.
+
+A single security-council Safe would give the immediate roles one point of failure, and the
+veto would go if its keys were lost.
+
+**The deploy-side guard.** On mainnet (chain 1), `Deploy.s.sol` and `Verify.s.sol` run
+`DeployGuards.checkRoleGroups` on the genesis holders. It refuses:
+
+- any role held by the deployer EOA;
+- an account that holds roles of two groups: the community council's (ADMIN, UNPAUSER,
+  PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER), the security council's (GUARDIAN,
+  PAUSER) or the curation signers' (CURATION_SIGNER).
+
+Together with `checkHolders`, which keeps every admin and guardian Safe's signers disjoint,
+this keeps the community council and the security council apart. The guard compares
+addresses only: the same people behind different addresses pass it, for example a
+curation signer key whose holder also signs for a council Safe, or a setter or PAUSER held
+by a separate account the other group controls. The checklist below checks the people.
 
 ### Mainnet genesis checklist
 
@@ -649,14 +685,15 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
    above, and none of their signers is a 6529 entity or key; check each Safe's owners by hand
    ([Safe pre-flight](#2-safe-pre-flight)).
 2. The genesis configuration gives ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
-   SUCCESSOR_SETTER to the community council, and PAUSER and GUARDIAN to the security council,
-   in as many Safes as the deploy requires (the open item above).
+   SUCCESSOR_SETTER to the community council, and PAUSER and GUARDIAN to the security
+   council's three guardian Safes (above).
 3. The curation signer keys are dedicated to signing the published TDH-vote result, and are
    held outside 6529.
 4. The owner has decided who holds the operational keys and the cold recovery admin (the open
    item above), and the genesis configuration names them.
-5. Every holder is checked against decision 18 by hand, or by a deploy-side guard once one
-   exists, and Verify reads every role holder back ([step 11](#11-verify-after-5-days)).
+5. The deploy's mainnet guard (`DeployGuards.checkRoleGroups`, above) passes, every holder is
+   also checked against decision 18 by hand, and Verify reads every role holder back
+   ([step 11](#11-verify-after-5-days)).
 6. The VRF subscription owner is the community council (it must hold ADMIN and
    PARAMETER_SETTER; Verify checks it).
 

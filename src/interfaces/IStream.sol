@@ -150,6 +150,14 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param previous The address before.
     /// @param next The address after.
     event DependencySet(bytes32 indexed kind, address previous, address next);
+    /// @notice Governance moved a work stranded in a removed sale adapter's custody to the museum
+    ///         (`rescueToMuseum`, owner decision 20), right after its `Transfer` there. Its
+    ///         primary sale is recorded as UNBID. No `PrimarySaleSettled` is emitted: the adapter
+    ///         never reported an outcome.
+    /// @param tokenId The rescued work.
+    /// @param adapter The removed minting adapter that held it.
+    /// @param museum The museum it moved to (`IEconomicsResolver.museum()`, read now).
+    event WorkRescued(uint256 indexed tokenId, address indexed adapter, address museum);
 
     /// @notice No live token has this ID.
     error UnknownWork(uint256 tokenId);
@@ -202,6 +210,10 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error ExpectedValueMismatch();
     /// @notice `setDependency` names no dependency Stream has.
     error UnknownDependency(bytes32 kind);
+    /// @notice The work is not stranded: its primary sale settled, its holder is not the adapter
+    ///         that minted it, or that adapter is admitted or was removed less than 90 days ago
+    ///         (`rescueToMuseum`).
+    error WorkNotRescuable(uint256 tokenId);
 
     // ----- wiring -----
 
@@ -256,6 +268,17 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param expected Its current address (`ExpectedValueMismatch` otherwise).
     /// @param next The replacement.
     function setDependency(bytes32 kind, address expected, address next) external;
+    /// @notice Moves a stranded work to the museum (owner decision 20): one whose primary sale
+    ///         never settled (`primarySale` NONE), still held by the sale adapter that minted
+    ///         it, which governance removed at least 90 days ago and has not
+    ///         admitted again. SUCCESSOR_SETTER role (the 30-day class). The destination is
+    ///         always the museum the economics resolver names now (`ERC721InvalidReceiver` for
+    ///         zero), never a caller's choice; a collector's work, a settled work and a work in a
+    ///         live adapter's custody are refused (`WorkNotRescuable`). The work is then settled
+    ///         as UNBID, so the stranded adapter can never settle or burn it, and moves with no
+    ///         receiver callback (`Transfer`, then `WorkRescued`).
+    /// @param tokenId The stranded work.
+    function rescueToMuseum(uint256 tokenId) external;
 
     // ----- collections, supply and works -----
 

@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 12,000 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
+| Source lines | 12,023 non-blank, non-comment lines in 87 files under `src/` (budget: 13,000; ADR 0001, amended 1 November 2026) |
 | Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it: the 21 (or 22) that `DeployV1.order` lists, the edition auction's lens among them (deployed in its own transaction and pinned by the auction), plus the AccessManager the governance configurator creates and the lens the English auction creates; and one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,10 +33,10 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 731 | 23,732 | 25,569 | 844 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 749 | 24,200 | 26,037 | **376** |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,990 | 25,685 | 1,586 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 374 | 19,003 | 20,685 | 5,573 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 799 | 23,139 | 26,175 | **1,437** |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 799 | 23,139 | 26,175 | 1,437 |
 | `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 290 | 6,372 | 6,665 | 18,204 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 848 | 24,156 | 28,190 | 420 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 668 | 19,102 | 19,461 | 5,474 |
@@ -77,7 +77,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `WorksAccessManager` | [`src/governance/WorksAccessManager.sol`](../../src/governance/WorksAccessManager.sol) | 71 | 11,636 | 13,045 | 12,940 |
-| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 10,634 | 23,981 | 13,942 |
+| `GovernanceConfigurator` | [`src/governance/GovernanceConfigurator.sol`](../../src/governance/GovernanceConfigurator.sol) | 43 | 10,661 | 24,008 | 13,915 |
 
 `WorksAccessManager` is 71 lines over OpenZeppelin's `AccessManager`, whose code is part of
 what it deploys. `GovernanceConfigurator`'s initcode includes the manager it deploys.
@@ -89,7 +89,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | Library | Source | nSLOC | Used by |
 | --- | --- | ---: | --- |
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | Renderer |
-| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 246 | GovernanceConfigurator |
+| `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 248 | GovernanceConfigurator |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `Stream`, `StatementLog` |
 | `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | `UniformEditionAuction` (sweep, claims), `UniformEditionAuctionLens` (every clearing view) |
 | `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 134 | Sale adapters, `SplitWallet`, `RevenueEscrow`, `AssetAllowlist`, `RevenuePayment` |
@@ -115,7 +115,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,939 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,942 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -170,9 +170,8 @@ python tools/check_docs_facts.py --artifacts out --update  # refresh the figures
 ```
 
 Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
-sizes are the compiled `bytecode` and `deployedBytecode` lengths. `EnglishAuction` and
-`Renderer` have the smallest EIP-170 margins (see the tables); CI fails any change that crosses
-the limit.
+sizes are the compiled `bytecode` and `deployedBytecode` lengths. `Renderer` and `Stream` have
+the smallest EIP-170 margins (see the tables); CI fails any change that crosses the limit.
 
 ## Related
 

@@ -202,7 +202,7 @@ contract DeployScriptTest is Test {
         assertEq(d.economicsResolver.museum(), address(0xC003));
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 13);
-        assertEq(calls, 17);
+        assertEq(calls, 18);
         assertEq(holders, 17);
     }
 
@@ -281,7 +281,7 @@ contract DeployScriptTest is Test {
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
         assertEq(targets, 13);
-        assertEq(calls, 17);
+        assertEq(calls, 18);
         assertEq(holders, 17);
         // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));
@@ -491,6 +491,114 @@ contract DeployScriptTest is Test {
         );
         vm.expectRevert(abi.encodeWithSelector(DeployGuards.TooFewAdmins.selector, 1));
         deployer.prepare();
+    }
+
+    /// @dev `json` with the holder of `role` whose account is `_account(from)` moved to `to`.
+    function _moveHolder(string memory json, string memory role, string memory from, address to)
+        internal
+        pure
+        returns (string memory)
+    {
+        return vm.replace(
+            json,
+            string.concat('"role": "', role, '",\n      "account": "', FILLED_PREFIX, from),
+            string.concat('"role": "', role, '",\n      "account": "', vm.toString(to))
+        );
+    }
+
+    /// Owner decision 18: at mainnet genesis the community council, the security council and
+    /// the curation signers are held by distinct accounts, and the deployer holds none of them.
+    /// The same files pass on Sepolia, where a rehearsal may reuse accounts.
+    function test_MainnetSeparatesTheRoleGroupsFromEachOtherAndTheDeployer() public {
+        _sepolia();
+        address hot = _account("01");
+        address guardian1 = _account("11");
+        // A curation signer that is the deployer (this test calls `prepare`).
+        string memory deployerSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", address(this));
+        // The security council's Safe also holding a community council role.
+        string memory securityFunds = _moveHolder(_filled(), "FUNDS_SETTER", "01", guardian1);
+        // The community council's Safe also signing curation results.
+        string memory councilSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", hot);
+        string[3] memory files = [deployerSigns, securityFunds, councilSigns];
+        bytes[3] memory reasons = [
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsTheDeployer.selector, "CURATION_SIGNER", address(this)
+            ),
+            abi.encodeWithSelector(
+                DeployGuards.RoleGroupsShareAHolder.selector, guardian1, "GUARDIAN", "FUNDS_SETTER"
+            ),
+            abi.encodeWithSelector(
+                DeployGuards.RoleGroupsShareAHolder.selector, hot, "ADMIN", "CURATION_SIGNER"
+            )
+        ];
+        for (uint256 i; i < files.length; ++i) {
+            assertTrue(keccak256(bytes(files[i])) != keccak256(bytes(_filled())), "moved");
+            _genesisFile(files[i]);
+            vm.chainId(SEPOLIA);
+            deployer.prepare();
+            vm.chainId(1);
+            vm.expectRevert(reasons[i]);
+            deployer.prepare();
+        }
+        // The deployer holds no role at all on mainnet, an operational one included.
+        _genesisFile(_moveHolder(_filled(), "PLATFORM", "51", address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsTheDeployer.selector, "PLATFORM", address(this)
+            )
+        );
+        deployer.prepare();
+        // The committed example's groups pass the mainnet check.
+        DeployGuards.checkRoleGroups(_filled(), address(this));
+        // An operational role belongs to no group, so a council account may also hold one.
+        DeployGuards.checkRoleGroups(_moveHolder(_filled(), "PLATFORM", "51", hot), address(this));
+    }
+
+    /// Owner decision 18: Verify repeats the role-group guard on mainnet. Its canonical
+    /// dependency checks run first and need mainnet's code, so the harness drives check 5.
+    function test_VerifyRepeatsTheRoleGroupGuardOnMainnet() public {
+        _sepolia();
+        address hot = _account("01");
+        string memory shared = _moveHolder(_filled(), "CURATION_SIGNER", "21", hot);
+        _genesisFile(shared);
+        deployer.run();
+        string memory record = deployer.lastRecord();
+        verifier.setFile(GENESIS, bytes(shared));
+        verifier.setFile("config/manifest.json", MANIFEST);
+        verifier.checkGuardsExternal(record, shared);
+        vm.chainId(1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.RoleGroupsShareAHolder.selector, hot, "ADMIN", "CURATION_SIGNER"
+            )
+        );
+        verifier.checkGuardsExternal(record, shared);
+        // The recorded deployer is refused as a holder too.
+        string memory deployerSigns = _moveHolder(_filled(), "CURATION_SIGNER", "21", address(this));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DeployGuards.HolderIsTheDeployer.selector, "CURATION_SIGNER", address(this)
+            )
+        );
+        verifier.checkGuardsExternal(record, deployerSigns);
+    }
+
+    /// Owner decision 18: the groups are ADMIN and the delayed setters, GUARDIAN and PAUSER,
+    /// and CURATION_SIGNER; the operational roles belong to none.
+    function test_RoleGroupsAreTheDecidedOnes() public pure {
+        string[5] memory community =
+            ["ADMIN", "UNPAUSER", "PARAMETER_SETTER", "FUNDS_SETTER", "SUCCESSOR_SETTER"];
+        for (uint256 i; i < community.length; ++i) {
+            assertEq(DeployGuards.roleGroup(community[i]), DeployGuards.COMMUNITY_COUNCIL);
+        }
+        assertEq(DeployGuards.roleGroup("GUARDIAN"), DeployGuards.SECURITY_COUNCIL);
+        assertEq(DeployGuards.roleGroup("PAUSER"), DeployGuards.SECURITY_COUNCIL);
+        assertEq(DeployGuards.roleGroup("CURATION_SIGNER"), DeployGuards.CURATION_SIGNERS);
+        string[5] memory operational =
+            ["STORAGE_OPERATOR", "MINTER", "KEEPER", "PLATFORM", "CURATOR"];
+        for (uint256 i; i < operational.length; ++i) {
+            assertEq(DeployGuards.roleGroup(operational[i]), 0);
+        }
     }
 
     /// Owner decision 2: the cold admin's signers differ from the hot admin's and the

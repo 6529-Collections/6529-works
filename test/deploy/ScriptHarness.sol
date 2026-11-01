@@ -164,6 +164,13 @@ contract VerifyHarness is Verify, ScriptInputs {
         return _checkManifest(record, local);
     }
 
+    /// @dev Verify's off-anvil guards (check 5) on `json` for the deployment `record` names,
+    ///      without the mainnet checks of canonical dependencies that run before them.
+    function checkGuardsExternal(string memory record, string memory json) external view {
+        DeployV1.Deployment memory d = load(record);
+        _checkGuards(record, d, json, DeployV1.config(d, json), _checkManifest(record, false));
+    }
+
     function addLogs(Vm.Log[] memory logs) external {
         for (uint256 i; i < logs.length; ++i) {
             _add(logs[i].emitter, logs[i].topics, logs[i].data);

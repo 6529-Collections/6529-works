@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { DeployV1 } from "script/DeployV1.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
@@ -124,8 +125,8 @@ contract AuctionDisputePauseTest is IntegrationBase {
             "the governed duration, not just the anti-snipe window"
         );
         assertEq(auction.minimumBid(saleId), 1 ether + 0.05 ether);
-        // An unpaused auction never had a reserve: the opening bid applies.
+        // An unpaused auction never had a reserve: the opening bid applies (0.05 ETH at genesis).
         (uint256 fresh,) = _startOne();
-        assertEq(auction.minimumBid(fresh), 1);
+        assertEq(auction.minimumBid(fresh), DeployV1.ETH_OPENING_BID, "the genesis opening bid");
     }
 }

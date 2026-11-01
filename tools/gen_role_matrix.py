@@ -55,6 +55,9 @@ NOTES: dict[tuple[str, str], str] = {
     ("Stream", "setDependency(bytes32,address,address)"):
         "Replaces the package registry, artist registry, economics resolver or entropy module "
         "(owner decision 16); compare-and-set. Existing tokens are unaffected.",
+    ("Stream", "rescueToMuseum(uint256)"):
+        "Only a never-settled work its minting adapter holds, 90 days after governance removed "
+        "that adapter; to the museum only (owner decision 20).",
     ("Stream", "releaseContent(uint256,bytes32,uint256)"):
         "After an upheld dispute; scheduled with the auction's `cancel`, to execute after it.",
     ("WorkRecords", "addLocator(uint256,bytes32,(uint8,string))"):

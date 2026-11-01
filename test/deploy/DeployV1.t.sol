@@ -167,7 +167,7 @@ contract DeployV1Test is Test {
         // Every wiring call in the genesis JSON: nine binds, two admitted minters (the 1/1
         // auction on Stream, the edition auction on Editions), their two sale targets, three
         // default currencies and the manifest.
-        assertEq(calls.length, 17, "wiring calls");
+        assertEq(calls.length, 18, "wiring calls");
         _settle(d);
         VerifyV1.check(d, cfg, calls);
 
@@ -182,6 +182,11 @@ contract DeployV1Test is Test {
         assertEq(d.artistRegistry.stream(), address(d.stream));
         assertTrue(d.stream.isAdmittedMinter(address(d.englishAuction)));
         assertTrue(IEnglishAuctionFull(address(d.englishAuction)).isTarget(address(d.stream)));
+        // The committed policy wires the ETH opening bid DeployV1 names (owner decision 19).
+        assertEq(
+            IEnglishAuctionFull(address(d.englishAuction)).openingBid(address(0)),
+            DeployV1.ETH_OPENING_BID
+        );
         // The English auction's lens is deployed in its own CREATE2 entry just before it (F8),
         // with the auction's dependencies, and pinned by it.
         assertEq(d.englishAuction.lens(), address(d.englishAuctionLens));

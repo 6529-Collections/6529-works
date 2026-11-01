@@ -12,11 +12,14 @@ import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import {
     LockedTerms,
+    Payment,
+    PaymentMethod,
     PrimaryOutcome,
     PrimaryTerms,
     SaleKind
 } from "src/interfaces/types/SaleTypes.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { DeployV1 } from "script/DeployV1.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { HostileActor, MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
 import { MockFederationRegistry } from "../mocks/sales/SaleMocks.sol";
@@ -283,6 +286,36 @@ contract MuseumTest is IntegrationBase {
         assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
         assertEq(currency, CURRENCY_ETH);
         assertEq(price, 1 ether);
+    }
+
+    /// @dev Owner decision 19 (LIM-SAL-1): genesis wires a 0.05 ETH opening bid, so the artist
+    ///      can no longer keep an unsold 1/1 from the museum with a 1-wei bid of their own. A
+    ///      self-bid at the floor still can, but it shows publicly as SOLD to the artist, and
+    ///      the network fee on it, about 0.0125 ETH at the genesis 25%, is paid like any sale's.
+    function test_ASelfBidMustMeetTheOpeningBidAndShowsAsSold() public {
+        assertEq(auction.openingBid(CURRENCY_ETH), DeployV1.ETH_OPENING_BID, "genesis wires it");
+        assertEq(DeployV1.ETH_OPENING_BID, 0.05 ether);
+        (uint256 saleId, uint256 tokenId) = _startItem(1);
+        vm.deal(artist, 1 ether);
+        vm.prank(artist);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, 0.05 ether, 1));
+        auction.bid{ value: 1 }(
+            saleId, address(0), Payment(PaymentMethod.DIRECT, artist, 1, 0, 0, "")
+        );
+
+        _ethBid(saleId, artist, 0.05 ether);
+        uint256 feeBefore = networkFee.balance;
+        vm.warp(auction.auction(saleId).endTime);
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(
+            tokenId, PrimaryOutcome.SOLD, artist, CURRENCY_ETH, 0.05 ether
+        );
+        auction.settle(saleId);
+        assertEq(stream.ownerOf(tokenId), artist, "kept from the museum, but as a sale");
+        (PrimaryOutcome outcome,, uint256 price) = stream.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
+        assertEq(price, 0.05 ether);
+        assertEq(networkFee.balance - feeBefore, 0.0125 ether, "the network fee it costs");
     }
 
     /// @dev Owner decision 10: the 30-day currency-freeze exit takes the no-bid branch. The

@@ -124,9 +124,11 @@ interface IEconomicsResolver is IERC165 {
     function splitFactory() external view returns (address);
     /// @notice The 6529 Network Museum (ADR 0005; 6529chain D140): the network-held account
     ///         that receives a 6529 Stream work whose 1/1 auction drew no bids, or that ended
-    ///         unsold after its currency stayed deprecated for 30 days. The English auction reads
-    ///         it at settlement; a federated work goes to its artist instead. Set at deployment
-    ///         (revision 1) and never zero.
+    ///         unsold after its currency stayed deprecated for 30 days, whatever the sale method
+    ///         (owner decision 22), and a work governance rescues from a removed sale adapter
+    ///         (owner decision 20). 6529 Stream reads it when the sale settles and moves the work
+    ///         itself (owner decision 17); another token's unsold work goes to its artist
+    ///         instead. Set at deployment (revision 1) and never zero.
     /// @return The museum's address.
     function museum() external view returns (address);
     /// @notice The revision `setMuseum` compares.

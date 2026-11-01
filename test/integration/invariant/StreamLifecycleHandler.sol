@@ -770,7 +770,8 @@ abstract contract StreamLifecycleHandler is IntegrationBase {
             }
         }
         address bidder = lcBidders[(bidSeed >> 8) % BIDDERS];
-        paid = _bound(bidSeed >> 16, 1, 2 ether);
+        // At least the genesis ETH opening bid (owner decision 19).
+        paid = _bound(bidSeed >> 16, auction.openingBid(CURRENCY_ETH), 2 ether);
         vm.deal(bidder, bidder.balance + paid);
         vm.prank(bidder);
         try auction.startWithBid{ value: paid }(

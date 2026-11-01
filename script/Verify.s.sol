@@ -418,6 +418,9 @@ contract Verify is ScriptIO {
         (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
         DeployGuards.checkHolders(json, example, singletons, codehashes);
         DeployGuards.checkHoldersAgainst(d, paramsOf(record), cfg);
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            DeployGuards.checkRoleGroups(json, paramsOf(record).deployer);
+        }
     }
 
     /// @dev The record is for this chain; off anvil it carries no placeholder or stand-in.

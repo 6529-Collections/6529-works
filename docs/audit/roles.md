@@ -47,7 +47,7 @@ Docs).
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 14 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 18 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 19 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -63,8 +63,8 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | Immediate | immediate | 15 |
 | Standard | 48 hours | 17 |
 | Funds and recipients | 14 days | 8 |
-| Verifier and successor | 30 days | 18 |
-| **Total** | | **58** |
+| Verifier and successor | 30 days | 19 |
+| **Total** | | **59** |
 
 ## Matrix by contract
 
@@ -81,6 +81,7 @@ Source: [`src/stream/Stream.sol`](../../src/stream/Stream.sol).
 | `setAdmittedMinter(address,bool)` | `0xa82ed63a` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
 | `releaseContent(uint256,bytes32,uint256)` | `0x56c6d728` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | After an upheld dispute; scheduled with the auction's `cancel`, to execute after it. |
 | `setDependency(bytes32,address,address)` | `0x480b197d` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the package registry, artist registry, economics resolver or entropy module (owner decision 16); compare-and-set. Existing tokens are unaffected. |
+| `rescueToMuseum(uint256)` | `0xe9c794a4` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Only a never-settled work its minting adapter holds, 90 days after governance removed that adapter; to the museum only (owner decision 20). |
 
 ### WorkRecords
 
@@ -270,11 +271,12 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 9 | Stream | `setAdmittedMinter(address,bool)` | EnglishAuction, `true` |
 | 10 | Editions | `setAdmittedMinter(address,bool)` | UniformEditionAuction, `true` (The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)) |
 | 11 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
-| 12 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
-| 13 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
-| 14 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
-| 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
-| 16 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
+| 12 | EnglishAuction | `setOpeningBid(address,uint256,uint256)` | `address(0)` (ETH), 0, 50000000000000000 (ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum) |
+| 13 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
+| 14 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
+| 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
+| 16 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
+| 17 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
 
 ## The AccessManager's own functions
 

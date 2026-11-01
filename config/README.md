@@ -62,6 +62,8 @@ The deploy script follows one rule:
   - each product's first default currency (`setDefaultCurrency`, ETH for `PRODUCT_STREAM`,
     `PRODUCT_EDITIONS` and `PRODUCT_FEDERATED`): `EnglishAuction.start` reads it, and the
     setter is otherwise a 14-day FUNDS_SETTER action;
+  - the English auction's ETH opening bid of 0.05 ETH (`setOpeningBid`, owner decision 19),
+    later a 48-hour PARAMETER_SETTER action;
   - the epoch-0 governance manifest (`appendGovernanceManifest` on the statement log).
 
   Nothing else can be wired: `GovernanceConfig.isGenesisSelector` is an allow-list.

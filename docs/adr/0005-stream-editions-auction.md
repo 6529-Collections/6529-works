@@ -404,6 +404,10 @@ and amends the decision 15 note under [Open items](#open-items).
   settles can hand an unsold work to anyone; such a work stays NONE in `primarySale` and its
   edition can never be created. Refusing transfers of unsettled works would cost about 2,100 gas
   on every later transfer of every work, so it is left to the admission review.
+  *Amended 1 November 2026 (owner decision 20):* a work an adapter minted and still holds,
+  unsettled, 90 days after governance removed that adapter, can be moved to the museum by
+  `Stream.rescueToMuseum` (SUCCESSOR_SETTER, 30 days), which settles it as UNBID. A work the
+  adapter handed to anyone else is not touched ([AUC-35](../spec/stream-and-auctions.md#rules-and-invariants)).
 - **The admission requirement** (decisions 9, 10, 15 and 17). Any 1/1 sale adapter admitted for
   6529 Stream must settle each sale with Stream (`settlePrimary`) and report its true outcome:
   SOLD with the buyer who paid, the currency and the price; UNBID when the sale ended with no
