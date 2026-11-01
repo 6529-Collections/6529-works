@@ -8,7 +8,9 @@
     only to a work whose primary sale never settled, still held by the adapter that minted it,
     90 days after governance removed that adapter. The work is then settled as UNBID
     (`WorkRescued`), so the adapter can neither settle nor burn it. Each adapter's removal
-    time is kept in its minter word, whose sale-kind key is now 192 bits. AUC-35.
+    time is kept in its minter word, whose sale-kind key is now 192 bits. AUC-35; the rescue
+    cannot see the adapter's sale, so a sale that can still settle is settled first
+    (LIM-SAL-14).
   - Decision 19: genesis wires the English auction's ETH opening bid at 0.05 ETH
     (`setOpeningBid`, now a genesis selector; `DeployV1.ETH_OPENING_BID`; Verify reads it
     back). A self-bid at the floor still keeps a 1/1 from the museum, but it shows as SOLD and

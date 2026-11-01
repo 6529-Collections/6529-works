@@ -161,11 +161,9 @@ contract GenesisConfigTest is Test {
             for (uint256 i; i < 7; ++i) {
                 all[i] = out[i];
             }
-            (all[7], all[8], all[9]) = (
-                IStream.releaseContent.selector,
-                IStream.setDependency.selector,
-                IStream.rescueToMuseum.selector
-            );
+            all[7] = IStream.releaseContent.selector;
+            all[8] = IStream.setDependency.selector;
+            all[9] = IStream.rescueToMuseum.selector;
             return all;
         }
         if (_eq(name, "WorkRecords")) {

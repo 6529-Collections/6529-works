@@ -672,7 +672,10 @@ veto would go if its keys were lost.
   PAUSER) or the curation signers' (CURATION_SIGNER).
 
 Together with `checkHolders`, which keeps every admin and guardian Safe's signers disjoint,
-this keeps the community council and the security council apart.
+this keeps the community council and the security council apart. The guard compares
+addresses only: the same people behind different addresses pass it, for example a
+curation signer key whose holder also signs for a council Safe, or a setter or PAUSER held
+by a separate account the other group controls. The checklist below checks the people.
 
 ### Mainnet genesis checklist
 
