@@ -15,9 +15,13 @@
     costs the network fee on it, about 0.0125 ETH (LIM-SAL-1).
   - Decision 24: ADR 0001's source-size budget rises from 12,000 to 13,000 lines, by a dated
     amendment; `check_budgets.py` enforces it.
-  - Decision 18: on mainnet, Deploy and Verify refuse a genesis whose community council,
-    security council and curation signer roles share an account across groups, or name the
-    deployer EOA in any of them (`DeployGuards.checkRoleGroups`, GV-36).
+  - Decision 18: on mainnet, Deploy and Verify refuse a genesis that names the deployer EOA
+    as any role holder, or whose community council, security council and curation signer
+    roles share an account across groups (`DeployGuards.checkRoleGroups`, GV-36). The security
+    council fills the three guardian seats the deploy requires as three guardian Safes with
+    disjoint signers, which keeps the guardians' redundancy; the runbook explains it.
+  - The museum NatSpec in `EconomicsResolver` and `IEconomicsResolver` now says 6529 Stream,
+    not the English auction, reads the museum.
 - Docs and runbook after the rc.2 seven-lens review (fix pass C). The museum wording follows
   owner decision 17 everywhere: 6529 Stream moves an unsold work itself, nothing is pending for
   the museum, and after an economics replacement running sales use the new resolver's museum
