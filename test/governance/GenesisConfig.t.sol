@@ -125,9 +125,9 @@ contract GenesisConfigTest is Test {
 
     // ------------------------------------------------------------------ compiled selectors
 
-    function _s9(bytes4[9] memory xs) internal pure returns (bytes4[] memory out) {
-        out = new bytes4[](9);
-        for (uint256 i; i < 9; ++i) {
+    function _s10(bytes4[10] memory xs) internal pure returns (bytes4[] memory out) {
+        out = new bytes4[](10);
+        for (uint256 i; i < 10; ++i) {
             out[i] = xs[i];
         }
     }
@@ -157,11 +157,11 @@ contract GenesisConfigTest is Test {
                 ],
                 7
             );
-            bytes4[] memory all = new bytes4[](8);
+            bytes4[] memory all = new bytes4[](9);
             for (uint256 i; i < 7; ++i) {
                 all[i] = out[i];
             }
-            all[7] = IStream.releaseContent.selector;
+            (all[7], all[8]) = (IStream.releaseContent.selector, IStream.setDependency.selector);
             return all;
         }
         if (_eq(name, "WorkRecords")) {
@@ -221,11 +221,12 @@ contract GenesisConfigTest is Test {
             );
         }
         if (_eq(name, "ArtistRegistry")) {
-            return _s9(
+            return _s10(
                 [
                     IArtistRegistry.vetoChange.selector,
                     IArtistRegistry.stageOverride.selector,
                     IArtistRegistry.setConsolidationSource.selector,
+                    IArtistRegistry.setPackageRegistry.selector,
                     IArtistRegistry.resolveContested.selector,
                     IArtistRegistry.bindPackageRegistry.selector,
                     IArtistRegistry.bindStream.selector,
@@ -420,7 +421,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 66, "56 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 68, "58 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

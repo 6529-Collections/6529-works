@@ -12,9 +12,10 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///         edition auctions, bids (sometimes in the soft-close window), raises, bids on the
 ///         1/1 in its anti-snipe window, pauses a 1/1 for a dispute and withdraws edition bids
 ///         during the pause, cancels the 1/1 (voiding its editions) or resumes it, settles the
-///         1/1 (an unbid one goes to the museum), creates editions, settles edition auctions
-///         with the departure hint (and tries to settle them early), and claims bids directly
-///         or by `claimFor`, on capped and uncapped editions. After every call:
+///         1/1 (an unbid one goes to the museum), creates editions, spreads a few books wider
+///         than one settle call scans, settles edition auctions with the departure hint (and
+///         tries to settle them early, and to claim while they are SETTLING), and claims bids
+///         directly or by `claimFor`, on capped and uncapped editions. After every call:
 ///
 ///         1. No unsold editions: copies minted equal the units claimed, never exceed the
 ///            clearing count `k`, and equal `k` once every bid is claimed.
@@ -33,11 +34,14 @@ import { EditionAuctionHandler } from "./EditionAuctionHandler.sol";
 ///            final end plus the offset, and within the backstop.
 ///         9. No settlement before the end, or before the 1/1 settles or is cancelled.
 ///         10. A void auction refunds every bid in full and mints nothing.
+///         11. No claim while SETTLING: a book spread wider than one call's scan settles over
+///             calls, and neither a partial scan nor an unfinished sweep lets a bid be claimed,
+///             by its bidder or pushed by anyone.
 ///         Every action also predicts its outcome; any disagreement fails the campaign.
 contract EditionAuctionInvariantTest is EditionAuctionHandler {
-    uint256 internal constant ACTIONS = 22;
+    uint256 internal constant ACTIONS = 23;
     /// @dev Replayed sequences in `test_EveryActionRuns`.
-    uint256 internal constant RUNS = 64;
+    uint256 internal constant RUNS = 128;
 
     function setUp() public override {
         super.setUp();
@@ -69,6 +73,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         s[19] = this.settleOneOfOne.selector;
         s[20] = this.createEdition.selector;
         s[21] = this.fifoHole.selector;
+        s[22] = this.wideBook.selector;
     }
 
     /// @notice Every invariant above. In CI the state is asserted every fourth call and after
@@ -84,9 +89,9 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
     ///         fixed seeds reach every action and the paths the invariants are about, with every
     ///         invariant holding along the way.
     function test_EveryActionRuns() public {
-        // 64 campaign-shaped runs exceed the test gas limit; the metering is not what is tested.
+        // The campaign-shaped runs exceed the test gas limit; the metering is not what is tested.
         vm.pauseGasMetering();
-        string[39] memory paths = [
+        string[43] memory paths = [
             "startOneOfOne",
             "bidOneOfOne",
             "oneOfOneSnipe",
@@ -114,6 +119,10 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "completedAfterGrief",
             "settlersInterleave",
             "fifoHole",
+            "wideBook",
+            "scanChunked",
+            "scanBeforeEdition",
+            "claimWhileSettlingRefused",
             "settleTooEarly",
             "settleWaits",
             "rationed",
@@ -127,7 +136,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "withdrawCredit",
             "warp"
         ];
-        uint256[39] memory totals;
+        uint256[43] memory totals;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {
@@ -176,6 +185,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
         else if (which == 11 || which == 17) this.claim(a, b, c);
         else if (which == 12) this.withdrawCredit(a);
         else if (which == 21) this.fifoHole(a);
+        else if (which == 22) this.wideBook(a);
         else this.warp(a);
     }
 }

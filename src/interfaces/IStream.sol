@@ -14,8 +14,8 @@ import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
 ///      starts and never reused; a burn leaves a gap. Collections are groupings with
 ///      per-collection serials from 1; collection IDs and serials stay below 2^32. Tokens are
 ///      minted only through `IMintTarget.mint`, for an approved, unconsumed item whose lead
-///      artist signed "move to Stream", by an admitted sale adapter whose `saleKind()` is the
-///      item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
+///      artist signed "move to Stream", by an admitted sale adapter whose sale kind, recorded at
+///      its first admission, is the item's sale kind. The 1/1 sale method is pluggable (ADR 0005, owner decisions 14 and 15):
 ///      the English auction (`SaleKind.ENGLISH_AUCTION`) is admitted at genesis, and a later
 ///      method is an adapter governance admits (`setAdmittedMinter`, the 30-day class), with no
 ///      new Stream. A VRF item's seed must already be delivered (`IEntropyModule.requestSeed`
@@ -133,6 +133,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param previous The URI before the change.
     /// @param next The URI after the change.
     event ContractURISet(string previous, string next);
+    /// @notice Governance replaced a dependency (owner decision 16).
+    /// @param kind `"PACKAGE_REGISTRY"`, `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`.
+    /// @param previous The address before.
+    /// @param next The address after.
+    event DependencySet(bytes32 indexed kind, address previous, address next);
 
     /// @notice No live token has this ID.
     error UnknownWork(uint256 tokenId);
@@ -180,6 +185,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error EditionLinkInvalid(uint256 tokenId);
     /// @notice A compare-and-set setter's expected current value is stale.
     error ExpectedValueMismatch();
+    /// @notice `setDependency` names no dependency Stream has.
+    error UnknownDependency(bytes32 kind);
 
     // ----- wiring -----
 
@@ -197,19 +204,41 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice The bound 6529 Stream Editions contract.
     /// @return The 6529 Stream Editions contract, or zero before it is bound.
     function editions() external view returns (address);
-    /// @notice The package registry consulted by `mint` (immutable).
+    /// @notice The package registry consulted by `mint` (governed, `setDependency`).
     /// @return The package registry.
     function packageRegistry() external view returns (address);
-    /// @notice The artist registry that resolves each work's artist (immutable).
+    /// @notice The artist registry that resolves each work's artist (governed,
+    ///         `setDependency`).
     /// @return The artist registry.
     function artistRegistry() external view returns (address);
-    /// @notice The economics resolver whose `PRODUCT_STREAM` terms works lock at mint
-    ///         (immutable).
+    /// @notice The economics resolver whose `PRODUCT_STREAM` terms works lock at mint (governed,
+    ///         `setDependency`).
     /// @return The economics resolver.
     function economics() external view returns (address);
-    /// @notice The VRF entropy module, or zero if VRF works are not supported (immutable).
+    /// @notice The VRF entropy module, or zero if VRF works are not supported (governed,
+    ///         `setDependency`).
     /// @return The entropy module, or zero.
     function entropyModule() external view returns (address);
+    /// @notice The entropy module that was current when `tokenId` minted, which held its VRF
+    ///         seed (`mint` checked the delivery there): `WorkRecords.openRecord` stores the seed
+    ///         from it, and the renderer reads it before the record opens, so replacing the
+    ///         module never changes an existing work's seed (owner decision 16).
+    /// @param tokenId A token ID; one not minted yet gets the current module.
+    /// @return The entropy module, or zero.
+    function entropyModuleOf(uint256 tokenId) external view returns (address);
+    /// @notice Replaces one of Stream's dependencies (owner decision 16): `"PACKAGE_REGISTRY"`,
+    ///         `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`. SUCCESSOR_SETTER role
+    ///         (the 30-day class), compare-and-set. The replacement must have code, no EIP-7702
+    ///         delegation and ERC-165 support for its interface; it is never zero. Stream's own
+    ///         code and every existing token are unaffected: ownership, the terms and royalty
+    ///         receiver locked at mint (the split factory stays fixed), a finalized work's
+    ///         pinned renderer and a VRF work's seed (`entropyModuleOf`). 6529 Stream Editions
+    ///         and the work-records satellite read these pointers from Stream, so they follow at
+    ///         once.
+    /// @param kind The dependency (`UnknownDependency` for any other).
+    /// @param expected Its current address (`ExpectedValueMismatch` otherwise).
+    /// @param next The replacement.
+    function setDependency(bytes32 kind, address expected, address next) external;
 
     // ----- collections, supply and works -----
 
@@ -300,9 +329,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         before. `tokenURI` forwards to it (and 6529 Stream Editions' `uri`). Fails closed:
     ///         reverts with `Dependency.DependencyCodeChanged` when the default renderer's code is
     ///         no longer the code hash `setDefaultRenderer` (or the constructor) pinned, or when a
-    ///         finalized work's pinned renderer changed code; it never falls back to another
-    ///         renderer. A new default renderer, or the errata repin for a finalized work,
-    ///         restores the metadata.
+    ///         finalized work's pinned renderer changed code; it never falls back from either to
+    ///         another renderer. A new default renderer, or the errata repin for a finalized work,
+    ///         restores the metadata. Any other fault of the records satellite (a revert, running
+    ///         out of its `RECORDS_GAS`, a malformed answer) serves the default renderer, so a
+    ///         faulty satellite never takes every work's metadata down.
     /// @param tokenId A live token ID (`UnknownWork` otherwise).
     /// @return The renderer that builds the token's metadata.
     function rendererOf(uint256 tokenId) external view returns (address);

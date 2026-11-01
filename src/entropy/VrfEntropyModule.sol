@@ -344,6 +344,18 @@ contract VrfEntropyModule is IEntropyModule, AccessManaged, ERC165 {
     }
 
     /// @inheritdoc IEntropyModule
+    function isDeliveredContent(bytes32 contentHash) external view returns (bool) {
+        return _seeds[contentHash].delivered;
+    }
+
+    /// @inheritdoc IEntropyModule
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32) {
+        Seed storage seed = _seeds[contentHash];
+        if (!seed.delivered) revert SeedNotDelivered(contentHash);
+        return bytes32(seed.value);
+    }
+
+    /// @inheritdoc IEntropyModule
     function seedOf(bytes32 itemHash) external view returns (bytes32) {
         Seed storage seed = _seeds[_contentOf[itemHash]];
         if (!seed.delivered) revert SeedNotDelivered(itemHash);

@@ -52,6 +52,9 @@ NOTES: dict[tuple[str, str], str] = {
     ("Stream", "setDefaultRenderer(address,address,bytes32)"):
         "Compare-and-set; ERC-165 and code hash pinned. Finalized works keep their pin.",
     ("*", "setAdmittedMinter(address,bool)"): "Also a genesis wiring call.",
+    ("Stream", "setDependency(bytes32,address,address)"):
+        "Replaces the package registry, artist registry, economics resolver or entropy module "
+        "(owner decision 16); compare-and-set. Existing tokens are unaffected.",
     ("Stream", "releaseContent(uint256,bytes32,uint256)"):
         "After an upheld dispute; scheduled with the auction's `cancel`, to execute after it.",
     ("WorkRecords", "addLocator(uint256,bytes32,(uint8,string))"):
@@ -76,6 +79,9 @@ NOTES: dict[tuple[str, str], str] = {
     ("ArtistRegistry", "stageOverride(uint256,uint8,(address,address,bytes32,bytes32),bytes32,"
      "uint64,bytes)"): "Starts a 180-day notice. An override that moves the authority "
      "restrains the artist until it ends.",
+    ("ArtistRegistry", "setPackageRegistry(address,address)"):
+        "Replaces the only `register` caller with Stream's successor package registry (owner "
+        "decision 16); compare-and-set.",
     ("ArtistRegistry", "setConsolidationSource(address,address,bytes32)"):
         "Compare-and-set; code hash re-checked at every use.",
     ("ArtistRegistry", "resolveContested(uint256,bool,bytes32)"):

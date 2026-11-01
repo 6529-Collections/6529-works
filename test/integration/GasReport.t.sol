@@ -61,6 +61,15 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant START_WITH_BID_MAX_SLOTS = 7;
     /// @dev Test ceilings in Prague gas, kept by ADR 0004.
     uint256 internal constant SETTLE_CEILING = 400_000;
+    /// @dev The margin every start row with Stream's genesis dependencies keeps under the 350K
+    ///      budget (the review of #81).
+    uint256 internal constant START_MARGIN = 5000;
+    /// @dev After governance replaced all four of Stream's dependencies (owner decision 16), a
+    ///      mint reads each it uses from storage: about 2,100 more per dependency. The binding
+    ///      rows are then measured against these regression ceilings, not the 350K budget
+    ///      (LIM-GAS-11, ADR 0004).
+    uint256 internal constant REPLACED_BINDING_CEILING = 346_000;
+    uint256 internal constant REPLACED_BINDING_VRF_CEILING = 354_000;
     /// @dev `createCollection` writes a new collection's counter word, so the first start in it
     ///      costs what any steady-state start costs; this ceiling only tracks it.
     uint256 internal constant FIRST_IN_COLLECTION_CEILING = 400_000;
@@ -302,7 +311,7 @@ contract IntegrationGasReport is IntegrationBase {
     function _rowStart() internal returns (Row memory r) {
         _steadyState();
         r = _row("start, steady state", starter, address(auction), _startData(2), 0);
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -311,7 +320,7 @@ contract IntegrationGasReport is IntegrationBase {
         _steadyState();
         bytes memory data = _startWithBidData(root, _package(root), 2);
         r = _row("startWithBid, steady state", bidder, address(auction), data, 1 ether);
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -347,7 +356,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(twoRoot, works, 1)));
         r = _row("start, steady state, two-party work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -363,7 +372,7 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row(
             "startWithBid, steady state, two-party work", bidder, address(auction), data, 1 ether
         );
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -379,7 +388,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(vrfRoot, works, 0)));
         r = _row("start, steady state, VRF work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -400,7 +409,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0)));
         r = _row("start, steady state, edition master", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 5, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -509,7 +518,7 @@ contract IntegrationGasReport is IntegrationBase {
         bytes memory data =
             abi.encodeCall(auction.start, (address(stream), _mintData(cRoot, works, 0)));
         r = _row("start, an artist's first work", starter, address(auction), data, 0);
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 6, 0);
         _slotsAtMost(r, START_MAX_SLOTS);
     }
@@ -525,7 +534,7 @@ contract IntegrationGasReport is IntegrationBase {
             _startWithBidData(cRoot, works, 0),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -533,16 +542,107 @@ contract IntegrationGasReport is IntegrationBase {
     /// @dev An artist's first start is a two-party work with a bid: the binding row of the 350K
     ///      budget (ADR 0004).
     function _rowStartWithBidArtistFirstTwoParty() internal returns (Row memory r) {
-        _steadyState();
-        (bytes32 twoRoot, Work[] memory works) = _twoPartyPackageOf(_actor("gasArtistC"));
         r = _row(
             "startWithBid, an artist's first work, two-party",
             bidder,
             address(auction),
-            _startWithBidData(twoRoot, works, 0),
+            _bindingData(false),
             1 ether
         );
-        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
+    /// @dev The binding row after governance replaced all four of Stream's dependencies (each
+    ///      with itself, which sets every `Counts.replaced` bit): a regression ceiling, not the
+    ///      350K budget (LIM-GAS-11).
+    function _rowStartWithBidArtistFirstTwoPartyReplaced() internal returns (Row memory r) {
+        _replaceAllDependencies();
+        r = _row(
+            "startWithBid, an artist's first work, two-party, dependencies replaced",
+            bidder,
+            address(auction),
+            _bindingData(false),
+            1 ether
+        );
+        _gasAtMost(r, REPLACED_BINDING_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev The VRF binding row after all four dependencies were replaced (LIM-GAS-11).
+    function _rowStartWithBidArtistFirstTwoPartyVrfReplaced() internal returns (Row memory r) {
+        _replaceAllDependencies();
+        r = _row(
+            "startWithBid, an artist's first work, two-party, VRF, dependencies replaced",
+            bidder,
+            address(auction),
+            _bindingData(true),
+            1 ether
+        );
+        _gasAtMost(r, REPLACED_BINDING_VRF_CEILING, "regression ceiling");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev Each of Stream's four dependencies replaced with itself, each a 30-day
+    ///      SUCCESSOR_SETTER action.
+    function _replaceAllDependencies() internal {
+        bytes32[4] memory kinds =
+            [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
+        address[4] memory current = [
+            stream.packageRegistry(),
+            stream.artistRegistry(),
+            stream.economics(),
+            stream.entropyModule()
+        ];
+        for (uint256 i; i < 4; ++i) {
+            _govern(
+                hotAdmin,
+                address(stream),
+                abi.encodeCall(stream.setDependency, (kinds[i], current[i], current[i]))
+            );
+        }
+    }
+
+    /// @dev The binding row's start: an artist's first two-party work with a bid, in steady
+    ///      state; with `vrf`, a VRF work whose seed was delivered before.
+    function _bindingData(bool vrf) internal returns (bytes memory) {
+        _steadyState();
+        address lead = _actor("gasArtistC");
+        if (!vrf) {
+            (bytes32 twoRoot, Work[] memory two) = _twoPartyPackageOf(lead);
+            return _startWithBidData(twoRoot, two, 0);
+        }
+        address collaborator = _actor("gasCollaborator");
+        Work[] memory works = new Work[](ITEMS);
+        for (uint256 i; i < ITEMS; ++i) {
+            works[i] = _work(lead, collectionId);
+            works[i].item.parties = new Party[](2);
+            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
+            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.payees = new ISplitWallet.Payee[](2);
+            works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
+            works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
+        }
+        works[0].item.seedPolicy = SeedPolicy.VRF;
+        bytes32 root = _publish(works);
+        uint256 requestId = entropy.requestSeed(works[0].item, root, _proofOf(works, 0));
+        coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
+        return _startWithBidData(root, works, 0);
+    }
+
+    /// @dev The binding row with a VRF seed: an artist's first start, two-party, with a bid, of
+    ///      a work whose seed was delivered before. The VRF check reads the entropy module and
+    ///      its delivery (the review of #81 found this combination unmeasured).
+    function _rowStartWithBidArtistFirstTwoPartyVrf() internal returns (Row memory r) {
+        r = _row(
+            "startWithBid, an artist's first work, two-party, VRF",
+            bidder,
+            address(auction),
+            _bindingData(true),
+            1 ether
+        );
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
         _growthIs(r, 7, 0);
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
@@ -984,6 +1084,18 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartWithBidArtistFirstTwoParty();
     }
 
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf() public {
+        _rowStartWithBidArtistFirstTwoPartyVrf();
+    }
+
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Replaced() public {
+        _rowStartWithBidArtistFirstTwoPartyReplaced();
+    }
+
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf_Replaced() public {
+        _rowStartWithBidArtistFirstTwoPartyVrfReplaced();
+    }
+
     function test_Gas_Start_FirstWorkEver() public {
         _rowStartFirstEver();
     }
@@ -1071,7 +1183,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[30] memory rows = [
+        function() internal returns (Row memory)[33] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1083,6 +1195,9 @@ contract IntegrationGasReport is IntegrationBase {
             _rowStartArtistFirst,
             _rowStartWithBidArtistFirst,
             _rowStartWithBidArtistFirstTwoParty,
+            _rowStartWithBidArtistFirstTwoPartyVrf,
+            _rowStartWithBidArtistFirstTwoPartyReplaced,
+            _rowStartWithBidArtistFirstTwoPartyVrfReplaced,
             _rowStartFirstEver,
             _rowStartWithBidNewTerms,
             _rowBid,
@@ -1103,7 +1218,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[30] memory measured;
+        Row[33] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

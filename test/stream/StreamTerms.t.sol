@@ -186,7 +186,7 @@ contract StreamTermsTest is StreamFixture {
 
         PackageItem memory vrf = _item(2);
         vrf.seedPolicy = SeedPolicy.VRF;
-        entropy.deliver(WorksHashing.itemHash(vrf), keccak256("vrf"));
+        entropy.deliver(vrf, keccak256("vrf"));
         uint256 vrfId = _mint(vrf);
         (,,, kind, policy,) = stream.coreOf(vrfId);
         assertEq(uint8(kind), uint8(ItemKind.ORIGINAL));

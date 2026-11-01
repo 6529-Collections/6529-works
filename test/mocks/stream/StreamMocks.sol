@@ -15,6 +15,7 @@ import { IRenderer } from "src/interfaces/IRenderer.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
 import { IWorkRecords } from "src/interfaces/IWorkRecords.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 import {
     CURRENCY_DEFAULT,
     ProductEconomics,
@@ -93,7 +94,7 @@ contract MockPackageRegistry is Supports165 {
         PackageItem calldata item,
         bytes32[] calldata proof,
         MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId) {
+    ) external returns (bytes32 itemHash, uint256 artistId, address authority) {
         itemHash = WorksHashing.itemHashCalldata(item);
         if (isConsumed[itemHash]) revert ItemConsumedAlready(itemHash);
         bytes32 claimedBy = consumedItemOf[item.contentHash];
@@ -104,6 +105,11 @@ contract MockPackageRegistry is Supports165 {
         lastProofLength = proof.length;
         lastMoveNonce = move.nonce;
         artistId = overrideArtist ? artistOverride : uint256(uint160(item.parties[0].account));
+        // The active authority, as the real registry returns it once it checked the move: read
+        // from the caller's (Stream's) artist registry.
+        authority = overrideArtist
+            ? address(uint160(artistOverride))
+            : IArtistRegistry(IStream(msg.sender).artistRegistry()).activeAuthorityOf(artistId);
         address adapter = _reentryAdapter;
         if (adapter != address(0)) {
             delete _reentryAdapter;
@@ -132,9 +138,9 @@ contract ConstantPackageRegistry is Supports165 {
     function consume(bytes32, PackageItem calldata, bytes32[] calldata, MoveAuthorization calldata)
         external
         view
-        returns (bytes32, uint256)
+        returns (bytes32, uint256, address)
     {
-        return (keccak256(abi.encode(gasleft())), artist);
+        return (keccak256(abi.encode(gasleft())), artist, address(uint160(artist)));
     }
 }
 
@@ -253,13 +259,17 @@ contract ConstantEconomics is Supports165 {
 /// @notice Entropy module mock: seeds keyed by item hash, delivered by the test.
 contract MockEntropy is Supports165 {
     mapping(bytes32 => bytes32) internal _seeds;
+    mapping(bytes32 => bytes32) internal _contentSeeds;
 
     function _interface() internal pure override returns (bytes4) {
         return type(IEntropyModule).interfaceId;
     }
 
-    function deliver(bytes32 itemHash, bytes32 seed) external {
-        _seeds[itemHash] = seed;
+    /// @dev Delivers `item`'s seed, by item hash and by content hash, as the real module links
+    ///      them.
+    function deliver(PackageItem memory item, bytes32 seed) external {
+        _seeds[WorksHashing.itemHash(item)] = seed;
+        _contentSeeds[item.contentHash] = seed;
     }
 
     function isDelivered(bytes32 itemHash) external view returns (bool) {
@@ -268,6 +278,14 @@ contract MockEntropy is Supports165 {
 
     function seedOf(bytes32 itemHash) external view returns (bytes32) {
         return _seeds[itemHash];
+    }
+
+    function isDeliveredContent(bytes32 contentHash) external view returns (bool) {
+        return _contentSeeds[contentHash] != 0;
+    }
+
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32) {
+        return _contentSeeds[contentHash];
     }
 }
 
@@ -383,12 +401,57 @@ contract ConstantAuction is IERC721Receiver, Supports165 {
     }
 }
 
-/// @notice A records-satellite mock: holds renderer pins and drives the core's hooks.
+/// @notice A records-satellite mock: holds renderer pins and drives the core's hooks. Its
+///         `pinnedRenderer` can be made to fail in each way `Stream.rendererOf` tolerates.
 contract MockWorkRecords is Supports165 {
     /// @notice The Stream this satellite serves, which `bindWorkRecords` checks.
     address public immutable stream;
-    mapping(uint256 => address) public pinnedRenderer;
+    mapping(uint256 => address) internal _pins;
     mapping(uint256 => bool) public isOpen;
+    /// @notice 0 none; 1 revert; 2 run out of gas; 3 answer nothing; 4 answer two words;
+    ///         5 a word that is not an address; 6 an address without code; 7 revert with
+    ///         `DependencyCodeChanged` for the pin; 8 answer the pin only when given nearly all
+    ///         of `Stream.RECORDS_GAS`, else revert.
+    uint8 public fault;
+
+    function setFault(uint8 fault_) external {
+        fault = fault_;
+    }
+
+    function pinnedRenderer(uint256 tokenId) external view returns (address) {
+        uint256 given = gasleft();
+        uint8 f = fault;
+        if (f == 8 && given < 99_000) revert("records starved");
+        if (f == 1) revert("records fault");
+        if (f == 2) {
+            uint256 i;
+            while (gasleft() > 0) {
+                ++i;
+            }
+        }
+        if (f == 3) {
+            assembly ("memory-safe") {
+                return(0, 0)
+            }
+        }
+        if (f == 4) {
+            address pin = _pins[tokenId];
+            assembly ("memory-safe") {
+                mstore(0, pin)
+                mstore(0x20, pin)
+                return(0, 0x40)
+            }
+        }
+        if (f == 5) {
+            assembly ("memory-safe") {
+                mstore(0, not(0))
+                return(0, 0x20)
+            }
+        }
+        if (f == 6) return address(0xdead);
+        if (f == 7) revert Dependency.DependencyCodeChanged(_pins[tokenId]);
+        return _pins[tokenId];
+    }
 
     constructor(address stream_) {
         stream = stream_;
@@ -399,7 +462,7 @@ contract MockWorkRecords is Supports165 {
     }
 
     function setPin(uint256 tokenId, address renderer) external {
-        pinnedRenderer[tokenId] = renderer;
+        _pins[tokenId] = renderer;
         isOpen[tokenId] = true;
     }
 

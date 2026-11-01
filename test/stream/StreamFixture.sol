@@ -108,6 +108,7 @@ abstract contract StreamFixture is Test {
         _map(address(stream), stream.setOwner.selector, Roles.FUNDS_SETTER);
         _map(address(stream), stream.setDefaultRenderer.selector, Roles.SUCCESSOR_SETTER);
         _map(address(stream), stream.releaseContent.selector, Roles.PARAMETER_SETTER);
+        _map(address(stream), stream.setDependency.selector, Roles.SUCCESSOR_SETTER);
         manager.grantRole(Roles.PLATFORM, platform, 0);
         manager.grantRole(Roles.PARAMETER_SETTER, governor, 0);
         manager.grantRole(Roles.FUNDS_SETTER, governor, 0);

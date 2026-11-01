@@ -254,7 +254,10 @@ Every transition but "effectiveAt passes" is made by a refresh (any trigger in t
 
 The one-shot [bindings](governance.md#one-shot-bindings-instead-of-a-system-role)
 (`bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog`) are made at
-genesis (ID-29); the statement log's `artistResolver()` must name this registry.
+genesis (ID-29); the statement log's `artistResolver()` must name this registry. The package
+registry, the only `register` caller, is replaceable afterwards with Stream's successor
+registry (`setPackageRegistry`, SUCCESSOR_SETTER, 30 days, compare-and-set, the same install
+check; owner decision 16, ID-30).
 `bindFederationRegistry` is deferred to v1.1, and only that registry may call
 `listFederatedContract` (at most 64 per artist). Roles and delays: [roles](../audit/roles.md).
 
@@ -571,6 +574,7 @@ Test files: [`ArtistRegistry.t.sol`](../../test/identity/ArtistRegistry.t.sol) (
 | ID-27 | The source is swapped only by compare-and-set to a contract with the reviewed code hash, ERC-165 support and no EIP-7702 delegation. | `ArtistRegistry.setConsolidationSource`, `_checkSource` | AR `test_SetConsolidationSource`, `test_SetConsolidationSource_RevertsForStaleExpected`, `test_SetConsolidationSource_RevertsForBadSourceOrCodeHash`, `test_SetConsolidationSource_RevertsForNonSetter` |
 | ID-28 | `isArtist` is true only for the active authority of a Stream work's lead artist, or of an edition's master; false for anything else. | `ArtistRegistry.isArtist` | AR `test_IsArtist_StreamWorksAndEditions`, `test_IsArtist_FalseBeforeTheStreamIsSet`, `test_ActiveAuthority_RestrainedUntilTheOverrideExecutes` |
 | ID-29 | Each binding is set once, by ADMIN, to a valid target. | `ArtistRegistry._bind`, `Dependency.check`, `bindStatementLog` | AR `test_Bindings_AreOneShot`, `test_Bindings_RejectInvalidTargets`, `test_Bindings_RevertForNonAdmin`; CO `test_BindStatementLog_OneShotAndChecksTheResolver`, `test_BindStatementLog_ResolverReadIsBounded` |
+| ID-30 | The package registry, the only `register` caller, is replaced only by SUCCESSOR_SETTER (30 days), compare-and-set, with a contract that has code, no EIP-7702 delegation and ERC-165 `IPackageRegistry`; the successor then registers new artists and the predecessor none. | `ArtistRegistry.setPackageRegistry` | [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol) `test_AReplacementPackageRegistryRegistersNewArtists`, `test_SetPackageRegistryChecks` |
 
 ## Events
 

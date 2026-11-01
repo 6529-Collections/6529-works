@@ -27,6 +27,51 @@
   economics, storage, governance delays); the collections' names and symbols; the gas figures of
   ADR 0004's table with their labels; and the links. The Docs CI job runs the generator's unit
   tests and `gen_facts.py --check`.
+- 6529 Stream: the package registry, artist registry, economics resolver and entropy module are
+  replaceable by governance (owner decision 16): `setDependency(kind, expected, next)`,
+  SUCCESSOR_SETTER (30 days), compare-and-set, with the constructor's install checks; never
+  zero. Stream's code and address, the split factory and every existing token stay as they are.
+  The genesis contracts stay immutables, with a replacement bit each in the counter word
+  every mint reads, so a start with no replacement reads no extra slot. 6529 Stream Editions
+  and `WorkRecords` read the pointers from Stream instead of holding immutable copies. Stream
+  records the entropy module each work minted under (`entropyModuleOf`), which `openRecord`
+  stores the VRF seed from and the renderer reads before the record opens, so a replaced
+  entropy module never changes an existing work's seed or metadata (ENT-18; the review of #81).
+  The artist registry's one `register` caller is governed too
+  (`ArtistRegistry.setPackageRegistry(expected, next)`, SUCCESSOR_SETTER, 30 days,
+  compare-and-set, event `PackageRegistrySet`), so a successor package registry onboards new
+  artists (ID-30). The replacement procedure for each dependency, and what it cannot reach (the
+  genesis artist registry stays the payout resolver of every Stream work, LIM-GV-16), is in the
+  runbook. `IStream`'s and `IArtistRegistry`'s interface IDs change.
+- The start path, for 5,000 gas of margin under the 350K budget on every start row (the review
+  of #81): `PackageRegistry.consume` also returns the lead artist's active authority it checked
+  the move against, which 6529 Stream reports as the creator without a second artist-registry
+  call (every start about −1,160); the entropy module answers `isDeliveredContent(contentHash)`
+  and `seedOfContent(contentHash)` from one word, which Stream's VRF check and
+  `WorkRecords.openRecord` use (a VRF start about −2,140 more; a content hash is consumed once,
+  CUR-12); Stream resolves the entropy module only for a VRF item. The binding row is 338,200
+  and with a VRF seed 343,760. After governance replaces dependencies, the rarest start can pass
+  350K by up to about 3K (LIM-GAS-11). `IEntropyModule`'s interface ID changes.
+- 6529 Stream: `mint` compares an item's sale kind with the adapter's kind recorded at its first
+  admission, the kind `primaryTerms` reports, instead of the adapter's live `saleKind()` (the
+  review of #80). The kind is also kept, as 232 bits of its hash, in the minter word `mint`
+  reads anyway, so the check costs no extra slot; `mint` resolves its four dependencies from one
+  read of the counter word.
+- 6529 Stream: `rendererOf` reads the records satellite with a fixed gas cap (`RECORDS_GAS`) and
+  serves the default renderer on any fault of it but a changed pinned renderer, which still
+  fails closed; one read instead of two. The gas check covers a cold satellite account, so the
+  satellite always gets all of `RECORDS_GAS`. Stream grows by 1,399 bytes with the two entries
+  above; `start` costs about 40 less Prague gas than before decision 16 at steady state (an
+  artist's first two-party start with a bid 338,200; with a VRF seed 343,760, a gated row,
+  6,240 under 350K), `settle` 2,280, `createEdition` 5,597, with no new slot
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- Tests: the edition auction's invariant suite also checks that nothing is claimed while a sale
+  is SETTLING (review of #84). `wideBook` spreads up to two sales a run wider than one settle
+  call scans (24 words), so settlement scans over calls; while a scan or a sweep is unfinished,
+  `claimBid` and `claimBidFor` must revert with `InvalidAuctionState`. An early settle call may
+  advance a wide book's scan before its edition exists; any other early success still fails.
+  `test_EveryActionRuns` replays 128 sequences instead of 64, so the multi-settler paths are hit
+  more than once.
 - Tests: the edition auction on the real stack (rc.2 L5). A stateful invariant suite,
   `EditionAuctionInvariant.t.sol` with `EditionAuctionHandler`, runs six masters with and
   without creator caps beside their 1/1 auctions: opens, bids, raises, soft-close bids, a FIFO

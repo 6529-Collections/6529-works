@@ -29,7 +29,9 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     /// @dev Regression ceilings (ADR 0004).
     uint256 internal constant OPEN_CEILING = 275_000;
     uint256 internal constant OPEN_FIRST_CEILING = 322_000;
-    uint256 internal constant CREATE_BOUND_CEILING = 144_000;
+    /// @dev Moved from 144,000 by owner decision 16: 6529 Stream Editions reads the package
+    ///      registry from Stream (two reads) instead of an immutable.
+    uint256 internal constant CREATE_BOUND_CEILING = 148_000;
     uint256 internal constant RAISE_CEILING = 56_000;
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;

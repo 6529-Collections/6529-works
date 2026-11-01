@@ -488,7 +488,8 @@ before each merge.
 
   **Closed, 31 October 2026 (owner decision 15).** Decision 14 covers 6529 Stream's own 1/1s
   too, before rc.2 ("once this contract goes live we are never going to change it"). Stream
-  mints an item only for an admitted adapter whose `saleKind()` is the item's sale kind, and
+  mints an item only for an admitted adapter whose sale kind, recorded at its first
+  admission, is the item's sale kind, and
   checks only that the item names one; the adapter checks the sale's currency and params. The
   English auction is admitted at genesis; a later 1/1 method is an adapter governance admits
   (`Stream.setAdmittedMinter`, SUCCESSOR_SETTER, the 30-day class), with no new Stream.
@@ -527,10 +528,10 @@ before each merge.
   - marks the primary sale settled (`markPrimarySettled`) when the sale is final, and only then:
     an edition of a master waits for it, and a settled work can no longer be burned;
   - pays the fee recipient and the seller wallet the shares `primaryTerms` reports;
-  - reports a constant `saleKind()`: `mint` compares the live value with the item's, while
-    `primaryTerms` reports the value recorded at the first admission, so an adapter whose kind
-    could change (an upgradeable one, for example) could mint another kind's items under its
-    recorded label;
+  - claims, at its first admission, the kind it sells: Stream records it then and compares it
+    at every mint and reports it in `primaryTerms`, so a later change of the adapter's
+    `saleKind()` changes nothing for Stream (the review of #80 found that `mint` compared the
+    live value);
   - claims a kind no other admitted adapter serves, unless it replaces that adapter, which is
     then removed in the same governance batch: the move signature names no adapter, so two
     admitted adapters of one kind can each start the same item.
@@ -543,3 +544,33 @@ before each merge.
   end and state, so for such a master its `open` reverts with `NoOneOfOneAuction`. Adding a
   1/1 sale method therefore also means deploying and admitting a matching edition adapter;
   until then, that method's masters sell no editions by auction.
+
+- **Stream's dependency pointers (owner decision 16, 31 October 2026).** Stream's package
+  registry, artist registry, economics resolver and entropy module are replaceable by
+  governance (`setDependency`, SUCCESSOR_SETTER, the 30-day class, compare-and-set); Stream's
+  code and address stay immutable, with no proxy, and the split factory stays fixed. Existing
+  tokens are unaffected: ownership, the terms and royalty receiver locked at mint, a finalized
+  work's pinned renderer and a VRF work's seed, which always comes from the entropy module the
+  work minted under (`entropyModuleOf`; the review of #81 found that the renderer and
+  `openRecord` read the current module, so a replacement could change or break the seed of a
+  work whose record was not open yet). 6529 Stream Editions and `WorkRecords` read the pointers
+  from Stream instead of copying them, so a replacement reaches them at once. Contracts wired to
+  the same dependencies on their own (one-shot binds, pinned code hashes, the auctions'
+  economics resolver) do not follow, so a replacement is a set planned with them
+  ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
+  immutable split factory keeps the genesis artist registry as the payout resolver of every
+  Stream work, so that registry is only partly replaceable (LIM-GV-16). The artist registry's
+  one `register` caller is governed (`setPackageRegistry`, 30 days), so a successor package
+  registry onboards new artists. The genesis contracts stay
+  immutables, with a replacement bit each in the counter word every mint already reads, so a
+  start with no replacement reads no extra slot: about +820 Prague gas. With the #80 review's
+  fix (`mint` compares the kind recorded at admission, about +1,530), an artist's first
+  two-party start with a bid is 339,511 (the kind kept in the minter word `mint` reads), and
+  with a VRF seed 347,186, 2,814 under 350K
+  ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
+
+- **Metadata survives a faulty records satellite (31 October 2026).** Stream is permanent and
+  `WorkRecords` is bound once, so `rendererOf` reads `pinnedRenderer` with a fixed gas cap and
+  one word back, and serves the default renderer on any fault but a changed pinned
+  renderer's `DependencyCodeChanged`, which still fails closed (WS-16, RND-28). Cost: Stream
+  +224 bytes.

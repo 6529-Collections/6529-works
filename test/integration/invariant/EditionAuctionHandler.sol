@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
+import { IUniformEditionAuctionStorage } from "src/interfaces/IUniformEditionAuctionStorage.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -34,6 +35,11 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     uint256 internal constant MAX_QTY = 4;
     /// @dev The step `fifoHole` builds its hole on: above every band and far step and raise.
     uint256 internal constant HOLE_STEP = 64;
+    /// @dev The lowest step `wideBook` bids far up the ladder: more than 24 words (one settle
+    ///      call's scan) above step 0.
+    uint256 internal constant WIDE_STEP = 200;
+    /// @dev The most sales `wideBook` spreads in one run (each widens every later check).
+    uint256 internal constant WIDE_BOOKS = 2;
     uint256 internal constant DENOMINATOR = 100_000;
 
     /// @dev One edition bid as the handler expects it.
@@ -68,6 +74,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         bool editionCreated;
         bool settled;
         bool voided;
+        /// @dev `wideBook` spread its book wider than one settle call scans.
+        bool wide;
         /// @dev The soft end the handler expects (zero until a bid lands in the soft window).
         uint256 softEnd;
         /// @dev The result settlement stored.
@@ -85,6 +93,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     /// @dev Two keepers and a griefer, each settling from its own address (its own sweep).
     address[2] internal keepers;
     address internal griefer;
+    /// @dev Starts a wide book's settlement with no order: its first call only scans.
+    address internal scanner;
+    uint256 internal wideBooks;
     bytes32 internal root;
     Piece[MASTERS] internal pieces;
     uint32[MASTERS] internal caps = [uint32(0), 0, 4, 0, 6, 2];
@@ -115,6 +126,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
         keepers = [makeAddr("eaKeeper0"), makeAddr("eaKeeper1")];
         griefer = makeAddr("eaGriefer");
+        scanner = makeAddr("eaScanner");
         Work[] memory works = new Work[](MASTERS);
         for (uint256 i; i < MASTERS; ++i) {
             works[i] = _work(artist, collectionId);
@@ -309,6 +321,24 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         }
     }
 
+    /// @notice Spreads a sale that is still taking bids wider than one settle call scans (24
+    ///         words of eight steps): one unit at step 0 and one far up the ladder, so its
+    ///         settlement scans over two calls, the sale SETTLING in between. At most
+    ///         `WIDE_BOOKS` sales a run, never one `fifoHole` serves (a cap of 4 or more), whose
+    ///         far unit would take the clearing above the hole.
+    function wideBook(uint256 seed) external {
+        if (wideBooks >= WIDE_BOOKS) return;
+        (bool found, uint256 i) = _biddable(seed);
+        if (!found || pieces[i].wide || pieces[i].cap >= 4) return;
+        uint256 first = book[i].length;
+        _placeBid(i, bidders[seed % BIDDERS], 0, 1);
+        _placeBid(i, bidders[(seed >> 8) % BIDDERS], WIDE_STEP + (seed >> 16) % 100, 1);
+        if (book[i].length != first + 2) return;
+        pieces[i].wide = true;
+        ++wideBooks;
+        ++hits["wideBook"];
+    }
+
     /// @dev The bidder of bid `index` raises it to `next`, paying exactly the difference; in a
     ///      capped sale it leaves a departure at its old step and rejoins at the back of `next`.
     function _raiseBid(uint256 i, uint256 index, uint256 next) internal {
@@ -400,8 +430,13 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             }
             if (mode % 3 != 0) continue;
             uint256[] memory order = _hint(i);
-            try ea.settle(p.editionSaleId, order) {
-                _violation("an edition auction settled early");
+            try ea.settle(p.editionSaleId, order) returns (bool done) {
+                // Once the sale may settle but before its edition exists, a wide book's scan
+                // advances (the call that would finish it waits for the edition).
+                if (done || !closed || !final_ || !_scansOverCalls(i)) {
+                    _violation("an edition auction settled early");
+                }
+                ++hits["scanBeforeEdition"];
             } catch {
                 ++hits[!closed ? bytes32("settleTooEarly") : bytes32("settleWaits")];
             }
@@ -538,6 +573,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         Piece storage p = pieces[i];
         IUniformEditionAuction.Clearing memory live = ea.clearing(p.editionSaleId);
         uint256 feeBefore = networkFee.balance;
+        _scanOverCalls(i);
         _sweep(i, mode);
         IUniformEditionAuction.Clearing memory c = ea.clearing(p.editionSaleId);
         if (c.count != live.count || c.step != live.step || c.price != live.price) {
@@ -617,6 +653,7 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             finisher = keepers[1];
             ++hits["settlersInterleave"];
         }
+        _claimsRefusedWhileSettling(i);
         if (!_finish(finisher, sale)) {
             _violation("a keeper could not complete settlement");
             return;
@@ -630,6 +667,82 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
             ++hits["settlerHandoff"];
         }
         if (kind == 2) ++hits["completedAfterGrief"];
+    }
+
+    /// @dev A book spread over more than one call's scan (24 words of eight steps): anyone's
+    ///      first settle call, with no order, only scans part of it (or an early call already
+    ///      did, while the edition did not exist yet), and the sale is SETTLING with its scan in
+    ///      progress, no result stored and every claim refused. The keepers' calls then finish
+    ///      the scan, clear and sweep as `_sweep` describes.
+    function _scanOverCalls(uint256 i) internal {
+        uint256 sale = pieces[i].editionSaleId;
+        // CLOSED (OPEN past its end) until the first settle call.
+        if (ea.auction(sale).status != IUniformEditionAuction.AuctionStatus.SETTLING) {
+            if (!_scansOverCalls(i)) return;
+            vm.prank(scanner);
+            if (ea.settle(sale, new uint256[](0))) _violation("a wide book settled in one call");
+        }
+        if (ea.auction(sale).status != IUniformEditionAuction.AuctionStatus.SETTLING) {
+            _violation("a wide book's first call left the sale outside SETTLING");
+        }
+        if (
+            editionAuction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, sale, 0) == 0
+                || ea.settlement(sale).count != 0
+        ) {
+            _violation("a partial scan stored no progress, or a result");
+        }
+        _claimsRefusedWhileSettling(i);
+        ++hits["scanChunked"];
+    }
+
+    /// @dev Whether settling sale `i`'s book takes more than one call's scan: it spans more than
+    ///      24 words, and the top 24 hold no used step below the demand reaching the cap (where
+    ///      the scan ends).
+    function _scansOverCalls(uint256 i) internal view returns (bool) {
+        (uint256 low, uint256[] memory units) = ea.stepTotals(pieces[i].editionSaleId);
+        if (units.length == 0) return false;
+        uint256 high = low + units.length - 1;
+        if ((high >> 3) - (low >> 3) < 24) return false;
+        uint256 cap = pieces[i].cap;
+        uint256 demand;
+        for (uint256 s = high + 1; s > ((high >> 3) - 23) << 3;) {
+            uint256 used = units[--s - low];
+            if (used == 0) continue;
+            if (cap != 0 && demand >= cap) return false;
+            demand += used;
+        }
+        return true;
+    }
+
+    /// @dev While a sale is SETTLING, its scan or a sweep unfinished, no bid can be claimed, by
+    ///      its bidder or pushed by anyone.
+    function _claimsRefusedWhileSettling(uint256 i) internal {
+        Piece storage p = pieces[i];
+        if (ea.auction(p.editionSaleId).status != IUniformEditionAuction.AuctionStatus.SETTLING) {
+            return;
+        }
+        for (uint256 j; j < book[i].length; ++j) {
+            GhostBid storage b = book[i][j];
+            if (b.withdrawn) continue;
+            vm.prank(b.bidder);
+            try ea.claimBid(p.editionSaleId, j + 1, b.bidder) {
+                _violation("a bid was claimed while the sale was SETTLING");
+            } catch (bytes memory reason) {
+                if (bytes4(reason) != IUniformEditionAuction.InvalidAuctionState.selector) {
+                    _violation("a claim while SETTLING failed for another reason");
+                }
+            }
+            vm.prank(collectors[1]);
+            try ea.claimBidFor(p.editionSaleId, j + 1) {
+                _violation("a claim was pushed while the sale was SETTLING");
+            } catch (bytes memory reason) {
+                if (bytes4(reason) != IUniformEditionAuction.InvalidAuctionState.selector) {
+                    _violation("a pushed claim while SETTLING failed for another reason");
+                }
+            }
+            ++hits["claimWhileSettlingRefused"];
+            return;
+        }
     }
 
     /// @dev Settles as `settler`, each call continuing its own sweep, until the sale settles or
@@ -736,12 +849,18 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     function _reference(uint256 i) internal view returns (uint256 k, uint256 price, uint256 best) {
         Piece storage p = pieces[i];
         if (p.lo == type(uint256).max) return (0, 0, 0);
-        uint256 n = p.hi - p.lo + 1;
+        // Only the steps with live units: a wide book spans hundreds of empty steps.
+        uint256 n;
+        for (uint256 s = p.lo; s <= p.hi; ++s) {
+            if (liveUnits[i][s] != 0) ++n;
+        }
         uint256[] memory units = new uint256[](n);
         uint256[] memory prices = new uint256[](n);
-        for (uint256 s; s < n; ++s) {
-            units[s] = liveUnits[i][p.lo + s];
-            prices[s] = _price(i, p.lo + s);
+        n = 0;
+        for (uint256 s = p.lo; s <= p.hi; ++s) {
+            if (liveUnits[i][s] == 0) continue;
+            units[n] = liveUnits[i][s];
+            prices[n++] = _price(i, s);
         }
         return Ref.clear(units, prices, p.cap, _terms(i).marginShare);
     }
@@ -826,8 +945,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
 
     function _stepAt(uint256 i, uint256 price) internal view returns (uint256) {
         Piece storage p = pieces[i];
+        // The clearing price is a live unit's: its step has live units.
         for (uint256 s = p.lo; s <= p.hi; ++s) {
-            if (_price(i, s) == price) return s;
+            if (liveUnits[i][s] != 0 && _price(i, s) == price) return s;
         }
         revert("no step at that price");
     }

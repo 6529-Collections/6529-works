@@ -39,13 +39,15 @@ The types live in [`SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) an
 on the pages under [References](#references).
 
 **Wiring.** The constructor requires Stream to have code, no EIP-7702 delegation, ERC-165
-`IStream` and the reviewed code hash (`InvalidDependency`), and reads the package registry,
-economics resolver and artist registry from it as immutables (`ZeroAddress`). Genesis binds
-Editions in Stream and the package registry and calls `Editions.bindWorkRecords` once
-(`AlreadyBound`) ([`config/genesis.example.json`](../../config/genesis.example.json), `wiring`);
-it admits the uniform-price edition auction as the edition minter (`setAdmittedMinter`, the
-30-day SUCCESSOR_SETTER class for any later one). `notifyMasterUpdated` and `setRoyaltyRate`
-accept only that satellite; `notifyAllUpdated` accepts it or Stream (`UnboundCaller`).
+`IStream` and the reviewed code hash (`InvalidDependency`), and requires it to name a package
+registry, economics resolver and artist registry (`ZeroAddress`). It reads all three from Stream
+on every use, so a governed replacement in Stream (`setDependency`, owner decision 16) applies
+to Editions at once. Genesis binds Editions in Stream and the package registry and calls
+`Editions.bindWorkRecords` once (`AlreadyBound`)
+([`config/genesis.example.json`](../../config/genesis.example.json), `wiring`); it admits the
+uniform-price edition auction as the edition minter (`setAdmittedMinter`, the 30-day
+SUCCESSOR_SETTER class for any later one). `notifyMasterUpdated` and `setRoyaltyRate` accept only
+that satellite; `notifyAllUpdated` accepts it or Stream (`UnboundCaller`).
 
 **The edition auction's wiring.** Its constructor checks and stores the revenue escrow, Editions
 and the English auction, reads Stream from Editions and the economics resolver from Stream (each

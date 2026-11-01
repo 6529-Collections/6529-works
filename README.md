@@ -78,21 +78,21 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 
 | Contract | Purpose | nSLOC |
 | --- | --- | ---: |
-| [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 559 |
+| [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 683 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 619 |
-| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters | 337 |
-| [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 358 |
+| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters | 339 |
+| [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 359 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 781 + 293 |
 | [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 826 + 553 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 122 |
 | [`SplitFactory`](src/economics/README.md), [`SplitWallet`](src/economics/README.md) | Immutable pull-payment wallets at predicted addresses | 100 + 143 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`ReleaseVerifier`](src/economics/README.md) | Failed-payment escrow, batch claims, signed releases | 89 + 99 + 41 |
-| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Artist identity and payouts; 7-day recovery and 180-day overrides through 6529 consolidations | 561 + 133 |
+| [`ArtistRegistry`](src/identity/README.md), [`ConsolidationAdapter`](src/identity/README.md) | Artist identity and payouts; 7-day recovery and 180-day overrides through 6529 consolidations | 567 + 133 |
 | [`ContentStore`](src/content/README.md), [`DependencyRegistry`](src/content/README.md) | Content-addressed on-chain chunks and shared libraries | 240 + 66 |
-| [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 769 |
+| [`Renderer`](src/content/README.md) | `tokenURI` and `fullTokenURI` for works and editions | 770 |
 | [`StatementLog`](src/records/README.md) | Append-only signed statements: dispute outcomes, curation evidence, manifests | 314 |
-| [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 218 |
+| [`VrfEntropyModule`](src/entropy/README.md) | Optional Chainlink VRF seed per work, delivered before the start | 226 |
 | [`WorksAccessManager`](src/governance/README.md), [`GovernanceConfigurator`](src/governance/README.md) | One AccessManager for everything; guardians cancel any scheduled operation and can suspend operational keys | 71 + 43 |
 
 nSLOC counts non-blank lines without comments. The [audit scope](docs/audit/scope.md) lists every

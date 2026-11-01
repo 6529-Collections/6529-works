@@ -162,7 +162,8 @@ package tooling's proofs verify directly.
 3. `PackageRegistry.acceptedAs(root, party.account)` is nonzero for every `item.parties[i]`.
 4. `Stream.collection(item.collectionId)` does not revert.
 5. The move is unexpired and `PackageRegistry.isMoveNonceUsed(artistId, nonce)` is false.
-6. For a VRF item, `IEntropyModule.isDelivered(itemHash)` is true.
+6. For a VRF item, `IEntropyModule.isDeliveredContent(item.contentHash)` is true (the check
+   `Stream.mint` makes; `isDelivered(itemHash)` answers the same for an item `requestSeed` linked).
 7. The currency is usable ([The currency](#the-currency)).
 8. `Stream.primaryTerms(0, mintData).creator` is nonzero, so the lead artist is not
    [restrained](../glossary.md#restraint). This preview does not check the proof, acceptances or
@@ -229,7 +230,7 @@ A work whose item has `seedPolicy == VRF` starts only after its seed is delivere
 1. Anyone calls `requestSeed(item, packageRoot, proof)` on the entropy module.
 2. Wait for `SeedDelivered(contentHash, requestId, seed)`; on Sepolia it arrived five blocks after
    the request ([flows §6](../../deployments/11155111/flows.md#6-vrf)).
-3. Check `isDelivered(itemHash)`, then start.
+3. Check `isDeliveredContent(item.contentHash)`, then start.
 
 If no seed arrives, anyone may request again once `retryDelay()` has passed (at least 3 days,
 `VrfEntropyModule.MIN_RETRY_DELAY`); earlier calls revert with `RequestPending(itemHash, retryAt)`.

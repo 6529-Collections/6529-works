@@ -27,6 +27,26 @@ Collaborators have their own pages: `PackageRegistry` ([Curation](curation.md));
 `VrfEntropyModule` ([Entropy](entropy.md)); `StatementLog`
 ([Disputes and statements](disputes-and-statements.md)).
 
+**Governed dependencies (owner decision 16).** Stream's package registry, artist registry,
+economics resolver and entropy module are replaceable by governance: `setDependency(kind,
+expected, next)`, SUCCESSOR_SETTER in the 30-day class, compare-and-set, with the
+constructor's install checks (code, no EIP-7702 delegation, ERC-165 for the kind's interface;
+never zero, so an entropy module can be installed on a Stream deployed without one but never
+removed). The genesis contracts stay immutables; a replacement is stored with a bit in the
+counter word every mint reads, so a mint with no replacement reads no extra slot. Stream's code and address stay immutable, and existing tokens are unaffected: their
+owners, the terms and royalty receiver locked at mint (the split factory stays immutable), a
+finalized work's pinned renderer, and a VRF work's seed, which comes from the entropy module the
+work minted under (`entropyModuleOf`, [ENT-18](entropy.md#rules-and-invariants)). 6529 Stream
+Editions and `WorkRecords` read these pointers from Stream, so they follow at once. Other
+contracts hold their own wiring to the same contracts (the package registry's artist registry
+and one-shot `bindStream`, the artist registry's `register` caller (governed:
+`setPackageRegistry`), the entropy
+module's pinned package registry, the English auction's and the edition auction's economics
+resolver, the split factory's payout resolver): replacing a dependency in Stream does not reach
+them, so a replacement is a set that governance plans with them
+([the procedure](../../script/README.md#replacing-one-of-streams-dependencies),
+[LIM-GV-16](../audit/known-limitations.md#trust-and-governance)).
+
 ## Concepts
 
 The [glossary](../glossary.md) defines the terms this page relies on: [work](../glossary.md#work),
@@ -227,12 +247,12 @@ sequenceDiagram
     Anyone->>Auction: start(stream, abi.encode(StreamMintRequest))
     Note over Auction: refused while the emergency pause is on, or for an unlisted token
     Auction->>Stream: mint(auction, 0, 1, mintData)
-    Stream->>Auction: saleKind() must be the item's kind, ENGLISH_AUCTION
+    Note over Stream: the adapter's kind recorded at admission must be the item's, ENGLISH_AUCTION
     Note over Stream: Stream rules - sale kind, collection, seed policy, license ID
     Stream->>Registry: consume(root, item, proof, move)
     Registry-->>Stream: itemHash, lead artistId
     opt VRF item
-        Stream->>Entropy: isDelivered(itemHash), else SeedNotDelivered
+        Stream->>Entropy: isDeliveredContent(item.contentHash), else SeedNotDelivered
     end
     Stream->>Econ: economics(PRODUCT_STREAM)
     Stream->>Factory: walletFor(payees, 0) gives the seller wallet
@@ -620,9 +640,9 @@ sequenceDiagram
 | ID | Rule | Enforced in | Tested by |
 | --- | --- | --- | --- |
 | AUC-1 | Only an admitted minter mints, into its own custody, with `id` 0 and `amount` 1. Admission requires code, ERC-165 `ISaleAdapter` and no EIP-7702 delegation. | `Stream.mint`, `Stream.setAdmittedMinter` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_revertsForUnadmittedCaller`, `test_mint_revertsForWrongShape`, `test_setAdmittedMinter`, `test_setAdmittedMinter_reverts` |
-| AUC-2 | Stream mints only for an admitted adapter whose sale kind is the item's, and an item that names a sale kind and has at least one party, an existing collection, a coherent seed policy and a valid license ID. The 1/1 sale method is pluggable (owner decision 15): the English auction is admitted at genesis, a later method by governance (30 days), and `primaryTerms` reports the minting adapter's kind, recorded at its first admission. | `Stream.mint`, `Stream._checkItem`, `Stream.setAdmittedMinter`, `Stream.primaryTerms` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_revertsForWrongAdapterKind`, `test_mint_revertsForStreamRuleBreaks`, `test_mint_acceptsMixedCaseLicenseId`, `test_mint_refusesALicenseIdTheRecordsWouldRefuse`, `test_saleMethod_aSecondAdapterMintsOnlyItsOwnKind`, `test_saleMethod_kindRecordedAtFirstAdmission`; [`StreamSaleMethods.t.sol`](../../test/integration/StreamSaleMethods.t.sol): `test_ASecondAdmittedAdapterSellsAWorkEndToEnd`, `test_AnUnadmittedAdapterIsRefused` |
+| AUC-2 | Stream mints only for an admitted adapter whose sale kind, recorded at its first admission, is the item's, and an item that names a sale kind and has at least one party, an existing collection, a coherent seed policy and a valid license ID. The 1/1 sale method is pluggable (owner decision 15): the English auction is admitted at genesis, a later method by governance (30 days), and `primaryTerms` reports the minting adapter's kind, recorded at its first admission. | `Stream.mint`, `Stream._checkItem`, `Stream.setAdmittedMinter`, `Stream.primaryTerms` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_comparesTheKindRecordedAtAdmission`, `test_mint_revertsForStreamRuleBreaks`, `test_mint_acceptsMixedCaseLicenseId`, `test_mint_refusesALicenseIdTheRecordsWouldRefuse`, `test_saleMethod_aSecondAdapterMintsOnlyItsOwnKind`, `test_saleMethod_kindRecordedAtFirstAdmission`; [`StreamSaleMethods.t.sol`](../../test/integration/StreamSaleMethods.t.sol): `test_ASecondAdmittedAdapterSellsAWorkEndToEnd`, `test_AnUnadmittedAdapterIsRefused` |
 | AUC-3 | Every mint consumes its package item in the same call; a registry revert reverts the mint. | `Stream._consume` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_bubblesRegistryRevert`, `testFuzz_mintRequestEncodesAsConsumeArguments`, `test_mint_reentrantRegistryKeepsCountersConsistent` |
-| AUC-4 | A VRF item mints only when Stream has an entropy module and the item's seed is delivered. | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered` |
+| AUC-4 | A VRF item mints only when Stream has an entropy module and the seed of the item's content is delivered (`isDeliveredContent`, one word; a content hash is consumed once, CUR-12). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered` |
 | AUC-5 | Token IDs are one global sequence from 1, never reused; serials count per collection from 1; `totalSupply` is minted minus burned. | `Stream._store`, `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_assignsGlobalIdsAndPerCollectionSerials`, `test_burn_leavesGapAndCountsSupply`; [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_idsMonotonicAndNeverReused`, `invariant_serialsPerCollection`, `invariant_supplyIsMintedMinusBurned` |
 | AUC-6 | A work's seller, fee recipient and fee share are locked at mint; only its royalty rate changes, and only through the bound `WorkRecords`, at most 100,000. | `Stream._store`, `Stream.setRoyaltyRate` | [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_royaltyTermsLocked`; [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_setRoyaltyRate_fromRecords`, `test_hooks_revertBeforeBinding` |
 | AUC-7 | `royaltyInfo` returns the seller wallet with no fee, otherwise the split factory's salt-zero wallet for the canonical royalty payees, and exactly `floor(price × rate / 100,000)`; it reverts rather than return zero when gas runs short. | `Stream.royaltyInfo`, `Stream._royaltyReceiver` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `testFuzz_royaltyInfo_isTheFactoryWallet`, `test_royaltyInfo_noFeeIsTheSeller`, `testFuzz_royaltyInfo_matchesMulDiv`, `testFuzz_royaltyInfo_neverZeroForLackOfGas`; [`StreamEconomics.t.sol`](../../test/stream/StreamEconomics.t.sol): `test_receiverIsTheResolversAndTheFactorys` |
