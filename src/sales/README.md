@@ -31,7 +31,7 @@ Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatu
 | Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
 | Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, every view | ADR 0005 |
 | An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | ADR 0005, decision 12 |
-| Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setTarget`, `setFederationRegistry` | ADR 0005 §4 (the role matrix gains them with the deploy lane's genesis entry) |
+| Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setTarget`, `setFederationRegistry` | ADR 0005 §4; [role matrix](../../docs/audit/roles.md#uniformeditionauction) |
 
 Call sequences and errors: [Buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md);
 events and their ordering: [Events and indexing](../../docs/integrators/events-and-indexing.md#englishauction).
