@@ -17,8 +17,9 @@ import { ItemKind, PackageItem, SeedPolicy } from "src/interfaces/types/PackageT
 import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
-/// @dev The English auction surface the edition auction reads: `auction(saleId)`, with each
-///      1/1's state and end set by the test. Unknown sales revert as the real one does.
+/// @dev The English auction surface the edition auction reads: `auctionClock(saleId)` on its
+///      hot paths and `auction(saleId)` in the lens's `endTimes`, with each 1/1's state and end
+///      set by the test. Unknown sales revert as the real one does.
 contract MockOneOfOneAuction {
     mapping(uint256 saleId => IEnglishAuction.Auction) internal _auctions;
 
@@ -36,6 +37,16 @@ contract MockOneOfOneAuction {
     function auction(uint256 saleId) external view returns (IEnglishAuction.Auction memory a) {
         a = _auctions[saleId];
         if (a.state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+    }
+
+    function auctionClock(uint256 saleId)
+        external
+        view
+        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+    {
+        IEnglishAuction.Auction storage a = _auctions[saleId];
+        (state, endTime) = (a.state, a.endTime);
+        if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

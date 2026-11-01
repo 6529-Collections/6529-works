@@ -171,8 +171,9 @@ python tools/check_docs_facts.py --artifacts out --update  # refresh the figures
 
 Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
 sizes are the compiled `bytecode` and `deployedBytecode` lengths. `Renderer` has the smallest
-EIP-170 margin, then `WorkRecords` and `EnglishAuction`, whose views its lens answers (see the
-tables); CI fails any change that crosses the limit.
+EIP-170 margin, then `UniformEditionAuction`, `WorkRecords` and `EnglishAuction` (both
+auctions' views are answered by their lenses; see the tables); CI fails any change that
+crosses the limit.
 
 ## Related
 

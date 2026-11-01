@@ -54,9 +54,12 @@
   reads other contracts make on their hot paths stay on the auction: `saleKind`, and a new
   integration view, `auctionClock(saleId)` (`IEnglishAuctionClock`, ID `0x968c7b07`, outside
   `IEnglishAuction` and never reported through ERC-165), which returns exactly
-  `auction(saleId).state` and `.endTime` from one cold slot. The auction goes from 52 to 1,849
-  bytes under EIP-170. ADR 0004's table gains `auction`, `minimumBid` and `auctionClock`
-  rows. The deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its
+  `auction(saleId).state` and `.endTime` from one cold slot. The edition auction reads its
+  1/1 through it (`UniformEditionAuction._oneOfOne` and its lens's `masterTerms`), so `open`,
+  a bid near the close, the first settle call and `withdrawBid` while the 1/1 is paused each
+  cost 6,900 to 9,200 less Prague gas, and their regression ceilings come down with them. The
+  English auction goes from 52 to 1,849 bytes under EIP-170. ADR 0004's table gains
+  `auction`, `minimumBid` and `auctionClock` rows. The deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its
   address (the auction's first CREATE), its code hash and `lens()`.
 - ADR 0005, the edition auction and 6529 Stream Editions
   ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the

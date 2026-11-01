@@ -151,27 +151,39 @@ about 230 gas (the item's sale kind is compared with the adapter's and its param
 each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one cold word); `bid`,
 `consume`, `createEdition` and `royaltyInfo` moved by at most 12 gas; no row writes a new slot. The binding row keeps 10,449 gas of margin.
 
+Re-measured for the English auction's lens (EIP-170 headroom): the auction's views moved to
+`EnglishAuctionLens`, answered through a read-only `staticcall` fallback. A cold `auction` or
+`minimumBid` costs about 7,000 more (one more cold account and the lens's reads), so the read
+other contracts make on their hot paths stays on the auction: `auctionClock`, `auction`'s
+state and end from one cold slot (24,207). The edition auction reads its 1/1 through it, so
+its `open` (−9,184), a bid near the close (−9,048), the first call of each `settle` (about
+−9,050) and `withdrawBid` while the 1/1 is paused (−6,926) cost less than before and their
+ceilings came down. The auction's own rows moved with its smaller dispatch: each `start` −63,
+each `startWithBid` −151, `bid` +66, each `settle` +21; no row writes a new slot or account.
+The binding row now keeps 10,568 gas of margin.
+
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 269,082 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 311,179 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 277,395 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 319,479 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 276,741 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 269,105 | 350,000 | **5** | 0 | 736,477 |
-| `start`, an artist's first work | 289,174 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 331,271 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 339,551 | 350,000 | **7** | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 356,253 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 269,105 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 438,257 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 381,328 | 390,000 (regression) | 9 | 0 | 1,213,250 |
-| `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 169,060 |
-| `settle`, first payout to a seller wallet | 168,552 | 400,000 | 1 | 1 | 449,934 (sim.) |
-| `settle`, with a bid | 143,552 | 400,000 | 1 | 0 | 257,763 (r2) |
-| `settle`, no bid (to the museum, D140) | 133,993 | 400,000 | 1 | 0 | — |
+| `start`, steady state | 268,987 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 310,996 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 277,332 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 319,328 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 276,686 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 269,074 | 350,000 | **5** | 0 | 736,477 |
+| `start`, an artist's first work | 289,131 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 331,140 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 339,432 | 350,000 | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 356,114 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 269,022 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 438,194 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 381,145 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `bid` that outbids | 73,530 | 75,000 (regression) | 1 | 0 | 169,060 |
+| `settle`, first payout to a seller wallet | 168,573 | 400,000 | 1 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 143,573 | 400,000 | 1 | 0 | 257,763 (r2) |
+| `settle`, no bid (to the museum, D140) | 134,014 | 400,000 | 1 | 0 | — |
 | `auction` (view, cold, answered by the auction's lens) | 39,342 | 41,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold, answered by the auction's lens) | 38,194 | 39,000 (regression) | 0 | 0 | — |
+| `auctionClock` (view, cold, answered by the auction itself) | 24,207 | 25,000 (regression) | 0 | 0 | — |
 | `consume`, as Stream calls it | 93,069 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 240,698 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 140,201 | 144,000 (regression) | 2 | 0 | — |
@@ -184,12 +196,12 @@ each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one col
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 90,164 | 92,000 (regression) | 0 | 0 | — |
-| Edition auction `open`, steady state (binds the edition) | 278,235 | 284,000 (regression) | 6 | 0 | — |
-| Edition auction `open`, the adapter's first (one-time) | 323,960 | 331,000 (regression) | 8 | 0 | — |
+| Edition auction `open`, steady state (binds the edition) | 269,051 | 275,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 314,776 | 322,000 (regression) | 8 | 0 | — |
 | Edition `bid`, its 8-step word exists | 69,257 | 110,000 | 1 | 0 | — |
 | Edition `bid`, opens an 8-step word | 86,327 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 71,674 | 110,000 | 1 | 0 | — |
-| Edition `bid` near the close (1/1 read, soft close) | 87,641 | 110,000 | 1 | 0 | — |
+| Edition `bid` near the close (1/1 read, soft close) | 78,593 | 110,000 | 1 | 0 | — |
 | Edition `raise`, same 8-step word | 53,770 | 56,000 (regression) | 0 | 0 | — |
 | Edition `raise`, capped (departure logged) | 78,996 | 81,000 (regression) | 1 | 0 | — |
 | Edition `withdrawBid`, capped, 1/1 paused | 94,687 | 97,000 (regression) | 1 | 0 | — |
