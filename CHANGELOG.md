@@ -50,10 +50,14 @@
   `staticcall` fallback (no delegatecall), and the lens reads the auction's storage through
   `storageWords`. No signature, selector or ERC-165 ID changes, and a differential test
   compares every moved view, byte for byte, with the pre-lens build over random sequences.
-  The auction goes from 52 to 2,144 bytes under EIP-170. A cold view call costs about 7,000
-  more Prague gas (ADR 0004's table gains `auction` and `minimumBid` rows; LIM-SAL-13). The
-  deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its address
-  (the auction's first CREATE), its code hash and `lens()`.
+  A cold view call through the lens costs about 7,000 more Prague gas (LIM-SAL-13), so the
+  reads other contracts make on their hot paths stay on the auction: `saleKind`, and a new
+  integration view, `auctionClock(saleId)` (`IEnglishAuctionClock`, ID `0x968c7b07`, outside
+  `IEnglishAuction` and never reported through ERC-165), which returns exactly
+  `auction(saleId).state` and `.endTime` from one cold slot. The auction goes from 52 to 1,849
+  bytes under EIP-170. ADR 0004's table gains `auction`, `minimumBid` and `auctionClock`
+  rows. The deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its
+  address (the auction's first CREATE), its code hash and `lens()`.
 - ADR 0005, the edition auction and 6529 Stream Editions
   ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the
   owner's D138 to D141 and decisions 1 to 14 of 31 October 2026, the design, the governed

@@ -5,6 +5,7 @@ import { console2 } from "forge-std/console2.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import {
@@ -80,6 +81,7 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
     uint256 internal constant SIGNED_LATER_CEILING = 92_000;
     uint256 internal constant AUCTION_VIEW_CEILING = 41_000;
+    uint256 internal constant AUCTION_CLOCK_VIEW_CEILING = 25_000;
     uint256 internal constant MINIMUM_BID_VIEW_CEILING = 39_000;
     /// @dev The edition master's creator cap (the Sepolia rehearsal's edition size).
     uint32 internal constant EDITION_CAP = 10;
@@ -655,6 +657,18 @@ contract IntegrationGasReport is IntegrationBase {
         _gasAtMost(r, MINIMUM_BID_VIEW_CEILING, "regression ceiling");
     }
 
+    /// @dev The integration view other contracts read on their hot paths, answered by the
+    ///      auction itself (no lens): one cold slot for a sale never paused.
+    function _rowAuctionClockView() internal returns (Row memory r) {
+        _steadyState();
+        uint256 saleId = auction.saleIdOf(address(stream), 1);
+        r = _viewRow(
+            "auctionClock (view, in the auction)",
+            abi.encodeCall(IEnglishAuctionClock.auctionClock, (saleId))
+        );
+        _gasAtMost(r, AUCTION_CLOCK_VIEW_CEILING, "regression ceiling");
+    }
+
     function _viewRow(string memory label, bytes memory data) internal returns (Row memory r) {
         r = _row(label, starter, address(auction), data, 0);
         r.isView = true;
@@ -1002,6 +1016,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowAuctionView();
     }
 
+    function test_Gas_AuctionClockView() public {
+        _rowAuctionClockView();
+    }
+
     function test_Gas_MinimumBidView() public {
         _rowMinimumBidView();
     }
@@ -1053,7 +1071,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[29] memory rows = [
+        function() internal returns (Row memory)[30] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1073,6 +1091,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSettleNoBid,
             _rowAuctionView,
             _rowMinimumBidView,
+            _rowAuctionClockView,
             _rowConsume,
             _rowCreateEdition,
             _rowReRate,
@@ -1084,7 +1103,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[29] memory measured;
+        Row[30] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }
