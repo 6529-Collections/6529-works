@@ -20,7 +20,12 @@ import { IWorkRecords } from "../interfaces/IWorkRecords.sol";
 import { CURRENCY_ETH, PRODUCT_EDITIONS, WorkTerms } from "../interfaces/types/EconomicsTypes.sol";
 import { Limits } from "../interfaces/types/Limits.sol";
 import { EditionTerms, ItemKind, License, PackageItem } from "../interfaces/types/PackageTypes.sol";
-import { PrimaryTerms, SaleKind } from "../interfaces/types/SaleTypes.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms,
+    SaleKind
+} from "../interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "../interfaces/types/WorksHashing.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { EditionRules } from "./EditionRules.sol";
@@ -377,11 +382,17 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev Every edition copy is sold at mint, so there is nothing to settle: a no-op that any
-    ///      adapter ever admitted (the minting adapter included, even after removal) may call, so
-    ///      a generic adapter never fails here; anyone else is refused with `NotAdmittedMinter`.
-    function markPrimarySettled(uint256) external view {
+    /// @dev Every edition copy is sold at mint, so there is nothing to settle: a no-op returning
+    ///      nothing that any adapter ever admitted (the minting adapter included, even after
+    ///      removal) may call, so a generic adapter never fails here; anyone else is refused with
+    ///      `NotAdmittedMinter`.
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        view
+        returns (PrimarySettlement memory nothing)
+    {
         if (_minters[msg.sender].status == MINTER_NONE) revert NotAdmittedMinter(msg.sender);
+        return nothing;
     }
 
     // ----------------------------------------------------------------- royalties, rendering

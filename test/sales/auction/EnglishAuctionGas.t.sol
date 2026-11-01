@@ -101,8 +101,7 @@ contract EnglishAuctionGasTest is Test {
                     address(new StatementLog(address(manager), address(0), bytes32(0))),
                     address(0),
                     IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
-                    targets,
-                    address(stream)
+                    targets
                 )
             )
         );

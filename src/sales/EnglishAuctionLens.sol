@@ -76,8 +76,7 @@ contract EnglishAuctionLens {
     address public immutable statementLog;
     /// @notice The asset allowlist: currencies, defaults and increment floors.
     IAssetAllowlist public immutable allowlist;
-    /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3)
-    ///         and the museum an unbid 6529 Stream work goes to (D140).
+    /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3).
     IEconomicsResolver public immutable economicsResolver;
     /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
     address public immutable permit2;

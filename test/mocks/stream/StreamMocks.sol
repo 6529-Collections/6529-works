@@ -22,7 +22,11 @@ import {
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { MoveAuthorization, PackageItem } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms
+} from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
 /// @notice Answers ERC-165 for one interface (plus IERC165 itself), as installs require.
@@ -198,6 +202,8 @@ contract MockEconomics is Supports165 {
     WorkTerms internal _terms;
     mapping(address => bool) public blocked;
     address public immutable splitFactory;
+    /// @notice The museum an unsold work goes to (owner decision 17); settable, even to zero.
+    address public museum = address(0x6529);
 
     constructor(WorkTerms memory terms, address factory) {
         _terms = terms;
@@ -214,6 +220,10 @@ contract MockEconomics is Supports165 {
 
     function setBlocked(address currency, bool value) external {
         blocked[currency] = value;
+    }
+
+    function setMuseum(address next) external {
+        museum = next;
     }
 
     /// @dev The fee terms of `_terms`; Stream derives the seller from the item's payees, so
@@ -315,8 +325,20 @@ contract MockSaleAdapter is IERC721Receiver, Supports165 {
         saleKind = kind;
     }
 
+    /// @dev Settles as SOLD to `buyer` (the adapter keeps the work to deliver).
     function settle(IStream stream, uint256 tokenId) external {
-        stream.markPrimarySettled(tokenId);
+        stream.settlePrimary(tokenId, PrimaryOutcome.SOLD, address(this), address(0), 0);
+    }
+
+    function settleWith(
+        IStream stream,
+        uint256 tokenId,
+        PrimaryOutcome outcome,
+        address buyer,
+        address currency,
+        uint256 price
+    ) external returns (PrimarySettlement memory) {
+        return stream.settlePrimary(tokenId, outcome, buyer, currency, price);
     }
 
     function start(IMintTarget token, bytes calldata data)

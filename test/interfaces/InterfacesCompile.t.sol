@@ -35,16 +35,14 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x25064b7e), "IStream");
+        assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
+        assertEq(type(IStream).interfaceId, bytes4(0xfa7d02c3), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xa41d86b8), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
-        assertEq(
-            type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock"
-        );
+        assertEq(type(IEnglishAuctionClock).interfaceId, bytes4(0x968c7b07), "IEnglishAuctionClock");
         assertEq(
             type(IUniformEditionAuction).interfaceId, bytes4(0x69e7405b), "IUniformEditionAuction"
         );
@@ -75,7 +73,7 @@ contract InterfacesCompileTest is Test {
             type(IMintTarget).interfaceId,
             IMintTarget.mint.selector ^ IMintTarget.primaryTerms.selector
                 ^ IMintTarget.burn.selector ^ IMintTarget.isAdmittedMinter.selector
-                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.markPrimarySettled.selector
+                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.settlePrimary.selector
         );
     }
 

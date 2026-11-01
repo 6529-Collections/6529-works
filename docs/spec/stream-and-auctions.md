@@ -100,7 +100,7 @@ The contracts check these callers themselves; the AccessManager governs every ot
 | Function | Contract | Caller |
 | --- | --- | --- |
 | `mint` | Stream | an admitted minter, into its own custody |
-| `markPrimarySettled`, `burn` | Stream | the adapter that minted the token |
+| `settlePrimary`, `burn` | Stream | the adapter that minted the token |
 | `setRoyaltyRate`, `emitMetadataUpdate` | Stream | the bound `WorkRecords` (a rate change is governed there) |
 | `linkEdition` | Stream | the bound `Editions` |
 | `start`, `startWithBid`, `bid`, `settle`, `claim`, `claimFor` | EnglishAuction | anyone |
@@ -141,13 +141,16 @@ stateDiagram-v2
 | Nonexistent to in custody | the auction, inside anyone's start | none | `Stream.mint`, from `EnglishAuction.start` or `startWithBid` |
 | In custody to burned | the minting adapter, from the auction's `cancel` (PARAMETER_SETTER) | standard, 48 hours | `Stream.burn` |
 | Burned (content released) | PARAMETER_SETTER | standard, 48 hours | `Stream.releaseContent`; the token stays burned and the ID unused |
-| In custody to primary settled | the minting adapter, inside anyone's `settle` | none | `Stream.markPrimarySettled` |
+| In custody to primary settled | the minting adapter, inside anyone's `settle` | none | `Stream.settlePrimary` (SOLD) |
+| In custody to the museum | the minting adapter, inside anyone's `settle` | none | `Stream.settlePrimary` (UNBID or FROZEN_OUT): Stream moves the work itself |
 | Primary settled to held | the auction at `settle`, or the claimant | none | the token's `safeTransferFrom`, or `EnglishAuction.claimDelivery` |
 | Held to held | owner or approved operator | none | standard ERC-721 transfers |
 
-A settled token can never be burned (`SaleAlreadySettled`), and ERC-721 transfers never mark a
-sale settled. `primarySaleSettled(tokenId)` reads the flag, which gates
-`IEditions.createEdition` and `linkEdition`.
+A settled token can never be burned or settled again (`SaleAlreadySettled`), and ERC-721
+transfers never mark a sale settled. `primarySaleSettled(tokenId)` reads the flag, which gates
+`IEditions.createEdition` and `linkEdition`; `primarySale(tokenId)` reads the outcome (owner
+decision 17): SOLD with its currency and price, UNBID or FROZEN_OUT, or NONE before
+settlement.
 
 ### An auction
 
@@ -364,13 +367,14 @@ sequenceDiagram
     participant Winner as Recipient
     Keeper->>Auction: settle(saleId) after the end
     Note over Auction: currency active (else frozen), not reopened after a freeze
-    Auction->>Stream: primaryTerms(tokenId) gives seller, fee terms, creator
+    Auction->>Stream: settlePrimary(tokenId, SOLD, bidder, currency, price)
+    Note over Stream: records SOLD, currency and price; PrimarySaleSettled names the buyer
+    Stream-->>Auction: seller and fee terms
     Auction->>Seller: price minus fee
     Auction->>Fee: fee, floor of price x feeShare / 100,000
     opt a wallet refuses its payout
         Auction->>Escrow: deposit for that wallet
     end
-    Auction->>Stream: markPrimarySettled(tokenId)
     Auction->>Stream: safeTransferFrom(auction, recipient) with 300,000 gas
     alt the token left custody
         Stream->>Winner: token delivered
@@ -388,8 +392,8 @@ sequenceDiagram
   [freeze](#currency-freeze-and-recovery)). The caller must forward each bounded call's gas in
   full: a shortfall reverts (`DeliveryInsufficientGas`, `PaymentInsufficientGas`) instead of
   forcing the escrow, credit or pending-delivery route.
-- **Terms.** Read back from Stream, so a later economics change never reaches a started
-  auction. A zero amount is not paid.
+- **Terms.** Returned by Stream's `settlePrimary`, from the terms locked at mint, so a later
+  economics change never reaches a started auction. A zero amount is not paid.
 - **ETH payouts** forward `PAYOUT_GAS` (100,000) to each wallet; a refusing wallet is
   credited in the revenue escrow (`RevenuePayment.payETH`), which anyone flushes to it later.
 - **ERC-20 payouts** (MONEY-1) run in their own 1,000,000-gas frame (`settlePayout`, callable
@@ -397,7 +401,7 @@ sequenceDiagram
   goes to the escrow. If the frame fails even so, the amount is credited to the wallet in the
   auction, and anyone pays it out later with `claimFor(wallet, currency)`, which pays only the
   account itself and refuses ETH (`IRevenueEscrow.InvalidAsset`).
-- **Settlement is marked before delivery**, so a winner who never claims cannot hold up the
+- **Settlement is recorded before delivery**, so a winner who never claims cannot hold up the
   master's edition.
 - **Delivery** (`_deliver`) gives the token's `safeTransferFrom` exactly `DELIVERY_GAS`
   (300,000) and copies no return data. `claimDelivery(saleId, to)` later delivers a pending
@@ -419,34 +423,34 @@ sequenceDiagram
     participant Resolver as EconomicsResolver
     participant Museum as 6529 Network Museum
     Keeper->>Auction: settle(saleId) after the end, no bid
-    Auction->>Stream: primaryTerms(tokenId) gives seller and fee terms
-    Auction->>Resolver: museum()
-    Resolver-->>Auction: the museum now
-    Auction->>Stream: markPrimarySettled(tokenId)
-    Auction->>Stream: safeTransferFrom(auction, museum) with 300,000 gas
-    Stream->>Museum: token delivered, or left as a pending delivery
+    Auction->>Stream: settlePrimary(tokenId, UNBID, 0, currency, 0)
+    Stream->>Resolver: museum()
+    Resolver-->>Stream: the museum now
+    Stream->>Museum: the work, moved from the auction's custody (no receiver callback)
+    Stream-->>Auction: seller and fee terms, holder the museum
     Auction->>Auction: SaleSettled with price 0, recipient the museum
 ```
 
-- **The museum** (D140, [ADR 0005](../adr/0005-stream-editions-auction.md)) is read from the economics resolver at
-  settlement, so a governed change that lands before the settle redirects the work. The artist
-  plays no part: a restrained artist (an override pending) does not hold up the settlement, and
-  neither the artist's recorded authority nor its active one can claim the work (AUC-33).
+- **The museum** (D140, [ADR 0005](../adr/0005-stream-editions-auction.md)) is read by Stream
+  from its economics resolver at settlement, so a governed change that lands before the settle
+  redirects the work, and Stream moves the work there itself (owner decision 17), for this
+  auction and for every other admitted 1/1 adapter. The artist plays no part: a restrained
+  artist (an override pending) does not hold up the settlement, and nothing is left pending
+  for anyone to claim (AUC-33).
 - **Any other token's work** (owner decision 9), federated or listed by governance, goes to its
-  artist's active authority, read from the token at settlement: the museum branch is gated in
-  code on 6529 Stream, the token the auction was deployed with. A completed recovery redirects
+  artist's active authority, read from the token at settlement: such a token leaves the work
+  to the auction (`holder` zero), which delivers it. A completed recovery redirects
   it, and during a restraint the token
   reports none, so `settle` reverts with `InvalidRecipient(address(0))`, moves nothing, and
   anyone retries once the override's outcome is known
   ([Identity and recovery](identity-and-recovery.md)).
-- **A pending delivery.** If the museum's account rejects the token, it is pending for the
-  museum, which claims it to an address it names. It stays that museum's even after
-  governance names another (ADR 0005).
-  Another token's artist claims as the recorded recipient or as the active authority at claim
-  time.
+- **A pending delivery.** Never for a 6529 Stream work: Stream moves it with no receiver
+  callback, so a museum account that would reject a safe transfer still receives it. Another
+  token's artist whose account rejects the token claims it as the recorded recipient or as the
+  active authority at claim time.
 - Nothing is paid, even when a withdrawn bid left a reserve. The same outcome ends a frozen sale
   after 30 days (owner decision 10) and a delisted federated contract's sale, after crediting
-  the standing bid.
+  the standing bid; the auction reports those FROZEN_OUT, and a sale with no bid UNBID.
 
 ### Currency freeze and recovery
 
@@ -607,8 +611,8 @@ sequenceDiagram
 | AUC-5 | Token IDs are one global sequence from 1, never reused; serials count per collection from 1; `totalSupply` is minted minus burned. | `Stream._store`, `Stream.burn` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_assignsGlobalIdsAndPerCollectionSerials`, `test_burn_leavesGapAndCountsSupply`; [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_idsMonotonicAndNeverReused`, `invariant_serialsPerCollection`, `invariant_supplyIsMintedMinusBurned` |
 | AUC-6 | A work's seller, fee recipient and fee share are locked at mint; only its royalty rate changes, and only through the bound `WorkRecords`, at most 100,000. | `Stream._store`, `Stream.setRoyaltyRate` | [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_royaltyTermsLocked`; [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_setRoyaltyRate_fromRecords`, `test_hooks_revertBeforeBinding` |
 | AUC-7 | `royaltyInfo` returns the seller wallet with no fee, otherwise the split factory's salt-zero wallet for the canonical royalty payees, and exactly `floor(price × rate / 100,000)`; it reverts rather than return zero when gas runs short. | `Stream.royaltyInfo`, `Stream._royaltyReceiver` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `testFuzz_royaltyInfo_isTheFactoryWallet`, `test_royaltyInfo_noFeeIsTheSeller`, `testFuzz_royaltyInfo_matchesMulDiv`, `testFuzz_royaltyInfo_neverZeroForLackOfGas`; [`StreamEconomics.t.sol`](../../test/stream/StreamEconomics.t.sol): `test_receiverIsTheResolversAndTheFactorys` |
-| AUC-8 | Only the adapter that minted a token marks its primary sale settled; transfers never do. | `Stream.markPrimarySettled` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_markPrimarySettled_byMintingAdapterOnly`, `test_transfersDoNotSettle`; [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_primarySaleSettledOnlyByMintingAdapter` |
-| AUC-9 | Only the adapter that minted a token burns it, while it holds the token and before the primary sale settled, even after the adapter was removed. Removing an adapter stops its new mints only: it still settles, delivers and cancels every sale it started, so a live sale is never stranded (owner decision 15). | `Stream.burn`, `Stream.markPrimarySettled`, `Stream.setAdmittedMinter` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_burn_onlyByMintingAdapter`, `test_burn_byRemovedMintingAdapter`, `test_burn_neverAfterSettlement`, `test_burn_refusesAnAdmittedAdapterThatDidNotMint`, `test_burn_refusedAfterSettlement`, `test_saleMethod_removalStopsNewSalesButNeverStrandsALiveOne`; [`StreamSaleMethods.t.sol`](../../test/integration/StreamSaleMethods.t.sol): `test_RemovingAnAdapterStopsNewSalesButNeverStrandsALiveOne` |
+| AUC-8 | Only the adapter that minted a token settles its primary sale, once, with a coherent outcome (owner decision 17): SOLD with a buyer, or UNBID or FROZEN_OUT with no buyer and no price; Stream records the outcome, and for SOLD the currency and price, and names the buyer in `PrimarySaleSettled`. Transfers never settle. | `Stream.settlePrimary`, `Stream.primarySale` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_settlePrimary_soldRecordsTheSale`, `test_settlePrimary_unsoldGoesToTheMuseumNamedNow`, `test_settlePrimary_refusesAnIncoherentReport`, `test_settlePrimary_saturatesAPriceAbove96Bits`, `test_transfersDoNotSettle`; [`StreamInvariant.t.sol`](../../test/stream/StreamInvariant.t.sol): `invariant_primarySaleSettledOnlyByMintingAdapter`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_ASoldWorkStillGoesToItsWinner` |
+| AUC-9 | Only the adapter that minted a token burns it, while it holds the token and before the primary sale settled, even after the adapter was removed. Removing an adapter stops its new mints only: it still settles, delivers and cancels every sale it started, so a live sale is never stranded (owner decision 15). | `Stream.burn`, `Stream.settlePrimary`, `Stream.setAdmittedMinter` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_burn_onlyByMintingAdapter`, `test_burn_byRemovedMintingAdapter`, `test_burn_neverAfterSettlement`, `test_burn_refusesAnAdmittedAdapterThatDidNotMint`, `test_burn_refusedAfterSettlement`, `test_saleMethod_removalStopsNewSalesButNeverStrandsALiveOne`, `test_settlePrimary_byARemovedAdapter`; [`StreamSaleMethods.t.sol`](../../test/integration/StreamSaleMethods.t.sol): `test_RemovingAnAdapterStopsNewSalesButNeverStrandsALiveOne` |
 | AUC-10 | `releaseContent` runs only for a burned token. | `Stream.releaseContent` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_releaseContent_reverts`, `test_releaseContent_afterBurnLetsTheRealArtistMint` |
 | AUC-11 | Satellites bind once each and must serve this Stream; `linkEdition` runs once, from Editions, for a settled master, with the edition ID equal to the token ID. | `Stream.bindWorkRecords`, `bindEditions`, `linkEdition` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_bind_oncePerTargetWithEvents`, `test_bind_reverts`, `test_linkEdition_reverts`, `test_bind_refusesASatelliteOfAnotherStream`, `test_linkEdition_needsASettledMaster` |
 | AUC-12 | Collection names are 1 to 256 bytes of UTF-8 without control characters, `<`, `"` or `\`. | `Stream.createCollection` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_createCollection_reverts` |
@@ -620,11 +624,11 @@ sequenceDiagram
 | AUC-18 | Outbid and withdrawn bids are credited to their payer, never pushed, and only the account claims its ETH credits. | `EnglishAuction._credit`, `claim`, `claimFor` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Bid_OutbidBidderIsCreditedAndClaims`; [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol): `test_RevertingBidderCannotBlockOutbidding`, `test_OutsidersCannotClaimSomeoneElsesCredit`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_ClaimFor_RefusesEth` |
 | AUC-19 | Every ERC-20 payment is checked by exact balance delta on both sides; the `TokenTransfer` paths also require a call to return exactly `true` (the `PERMIT2` pull checks balances only). A Permit2 witness binds the sale (or token and mint data), recipient, amount and deadline. | `EnglishAuction._collect`; `TokenTransfer` | [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol): `test_FeeOnTransferBidsFailClosed`, `test_RebasingBidsFailClosed`, `test_NoReturnAndFalseReturningTokensFailClosed` (`DIRECT`); [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Bid_Permit2WitnessBindsTheSaleAndRecipient`, `test_Bid_Permit2WitnessBindsAmountAndDeadline`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_Permit2Witness_Golden` |
 | AUC-20 | The auction holds exactly its live high bids plus its credits, and every sale ends at most once, settled or cancelled, with exact custody. | `EnglishAuction` (all value paths) | [`AuctionInvariant.t.sol`](../../test/sales/auction/invariant/AuctionInvariant.t.sol): `invariant_HeldEqualsLiveBidsPlusCredits`, `invariant_ValueIsConserved`, `invariant_OneOutcomeAndExactCustody`; [`AuctionHaltsInvariant.t.sol`](../../test/sales/auction/invariant/AuctionHaltsInvariant.t.sol): `invariant_BalanceCoversOwed`, `invariant_ExactCustody` |
-| AUC-21 | Settlement never depends on the recipient accepting the token: a failed delivery leaves a pending delivery, and the primary sale is marked settled before delivery. | `EnglishAuction.settle`, `_deliver` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_FailedDeliveryLeavesAPendingClaim`, `test_Settle_TokenThatBlocksTransfersLeavesAPendingClaim`, `test_ClaimDelivery_TheWinnerCanRedirect`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_WinnerThatCannotReceiveGetsAPendingDelivery` |
+| AUC-21 | Settlement never depends on the recipient accepting the token: a failed delivery leaves a pending delivery, and the primary sale is settled with Stream before delivery. | `EnglishAuction.settle`, `_deliver` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_FailedDeliveryLeavesAPendingClaim`, `test_Settle_TokenThatBlocksTransfersLeavesAPendingClaim`, `test_ClaimDelivery_TheWinnerCanRedirect`; [`CuratedSale.t.sol`](../../test/integration/CuratedSale.t.sol): `test_WinnerThatCannotReceiveGetsAPendingDelivery` |
 | AUC-22 | A settler that cannot forward the delivery or payout gas in full is refused, so it cannot force the pending, escrow or credit route. | `EnglishAuction._deliver`, `_pay`; `RevenuePayment.payETH` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_RevertsWhenTheCallerStarvesDelivery`, `test_Settle_AStarvedSettleRevertsInsteadOfCrediting` |
 | AUC-23 | A refused payout goes to the escrow; an ERC-20 payout that fails even there is credited to its wallet, and `claimFor` pays only that wallet. | `EnglishAuction._pay`, `settlePayout`, `claimFor` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_RefusingWalletIsEscrowed`; [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol): `test_GasHungryTokenPayoutIsEscrowed`, `test_BlocklistedSellerIsEscrowedAndBlocklistedBidderClaimsElsewhere`; [`AuctionPayoutFailures.t.sol`](../../test/sales/auction/AuctionPayoutFailures.t.sol): `test_Settle_ATokenThatBlocksTheAuctionDoesNotHoldTheWork`, `test_SettlePayout_OnlyTheAuctionRunsAPayoutFrame`, `test_ClaimFor_PaysOnlyTheAccountItself` |
-| AUC-24 | With no bid a 6529 Stream work (the token the auction was deployed with) goes to the museum the economics resolver names at settlement, whatever its artist's state (D140); any other token's work, federated or listed, goes to its artist's active authority at settlement, and while that is zero settlement reverts and moves nothing (owner decision 9). A sold settlement makes no museum read. | `EnglishAuction.settle`, `_lockedTerms` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_NoBidsSendsTheTokenToTheMuseum`, `test_Settle_NoBidsFollowsTheMuseumAtSettlement`, `test_Settle_NoBidsReachesTheMuseumWhileTheArtistIsUnresolved`, `test_Settle_ASoldSettlementDoesNotReadTheMuseum`, `test_Settle_AnotherListedTokensUnbidWorkGoesToItsArtist`, `test_Settle_FederatedNoBidsFollowsTheArtistsCurrentAuthority`, `test_Settle_FederatedNoBidsRefusesAnUnresolvedArtist`, `test_Constructor_RejectsAStreamThatIsNotAnErc721`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_UnbidWorkGoesToTheMuseum`, `test_UnbidWorkGoesToTheMuseumNamedAtSettlement`, `test_AnotherListedTokensUnbidWorkGoesToItsArtist`, `test_UnbidFederatedWorkStaysWithItsArtist`; [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol): `test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce`, `test_AuctionWithABidRunningAtStagingSettlesNormally`; [`StreamLifecycleInvariant.t.sol`](../../test/integration/invariant/StreamLifecycleInvariant.t.sol): `invariant_streamLifecycle` (invariant 9) |
-| AUC-25 | A deprecated currency freezes the auction: no bid and no settlement until re-admission, and the bidder may withdraw; after a re-admission the first settle reopens the auction only if `since + extensionWindow > endTime`; after 30 days of deprecation the sale ends unsold: the standing bid is credited back and the work goes where an unbid work goes (the museum for 6529 Stream, the artist for any other token; owner decisions 9 and 10). | `EnglishAuction._reopenedAfterFreeze`, `withdrawBid`, `_bid` | [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol): `test_Settle_AFrozenAuctionWaitsAndReopensAfterReadmission`, `test_Settle_NothingSettlesWhileFrozen`, `test_Settle_AFrozenSaleEndsUnsoldThirtyDaysIntoTheFreeze`, `test_WithdrawBid_NeedsAPauseOrAFreeze`, `test_Settle_AnAuctionStartedAfterAFreezeSettlesNormally`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_FreezeExitSendsTheWorkToTheMuseumAndCreditsTheBid`, `test_AnotherListedTokensFreezeExitGoesToItsArtist`, `test_FederatedFreezeExitGoesToItsArtist`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_AnotherListedTokensFreezeExitGoesToItsArtist` |
+| AUC-24 | With no bid a 6529 Stream work goes to the museum Stream's economics resolver names at settlement, whatever its artist's state (D140): Stream moves it itself when the auction reports UNBID (owner decision 17); any other token's work, federated or listed, goes to its artist's active authority at settlement, and while that is zero settlement reverts and moves nothing (owner decision 9). A sold settlement makes no museum read. | `EnglishAuction.settle`, `_settleWithToken`; `Stream.settlePrimary` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_NoBidsSendsTheTokenToTheMuseum`, `test_Settle_NoBidsFollowsTheMuseumAtSettlement`, `test_Settle_NoBidsReachesTheMuseumWhileTheArtistIsUnresolved`, `test_Settle_ASoldSettlementDoesNotReadTheMuseum`, `test_Settle_AnotherListedTokensUnbidWorkGoesToItsArtist`, `test_Settle_FederatedNoBidsFollowsTheArtistsCurrentAuthority`, `test_Settle_FederatedNoBidsRefusesAnUnresolvedArtist`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_UnbidWorkGoesToTheMuseum`, `test_UnbidWorkGoesToTheMuseumNamedAtSettlement`, `test_AnotherListedTokensUnbidWorkGoesToItsArtist`, `test_UnbidFederatedWorkStaysWithItsArtist`; [`RecoveryRestraint.t.sol`](../../test/integration/RecoveryRestraint.t.sol): `test_NoBidAuctionRunningAtStagingGoesToTheMuseumAtOnce`, `test_AuctionWithABidRunningAtStagingSettlesNormally`; [`StreamLifecycleInvariant.t.sol`](../../test/integration/invariant/StreamLifecycleInvariant.t.sol): `invariant_streamLifecycle` (invariant 9) |
+| AUC-25 | A deprecated currency freezes the auction: no bid and no settlement until re-admission, and the bidder may withdraw; after a re-admission the first settle reopens the auction only if `since + extensionWindow > endTime`; after 30 days of deprecation the sale ends unsold: the standing bid is credited back and the work goes where an unbid work goes (the museum for 6529 Stream, the artist for any other token; owner decisions 9 and 10), reported FROZEN_OUT (owner decision 17). | `EnglishAuction._reopenedAfterFreeze`, `withdrawBid`, `_bid` | [`AuctionCurrencyFreeze.t.sol`](../../test/sales/auction/AuctionCurrencyFreeze.t.sol): `test_Settle_AFrozenAuctionWaitsAndReopensAfterReadmission`, `test_Settle_NothingSettlesWhileFrozen`, `test_Settle_AFrozenSaleEndsUnsoldThirtyDaysIntoTheFreeze`, `test_WithdrawBid_NeedsAPauseOrAFreeze`, `test_Settle_AnAuctionStartedAfterAFreezeSettlesNormally`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_FreezeExitSendsTheWorkToTheMuseumAndCreditsTheBid`, `test_AnotherListedTokensFreezeExitGoesToItsArtist`, `test_FederatedFreezeExitGoesToItsArtist`; [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Settle_AnotherListedTokensFreezeExitGoesToItsArtist` |
 | AUC-26 | A dispute pause is GUARDIAN-only, once per live auction, at most 7 days; `resume` and `cancel` wait 48 hours from the pause; `cancel` cites the token's own outcome recorded after the pause. | `EnglishAuction.pause(uint256,bytes32)`, `resume`, `cancel` | [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_Pause_OnlyTheGuardian`, `test_Pause_OnlyALiveAuctionOnce`, `test_Pause_EndsByItselfAfterSevenDays`, `test_Cancel_NeedsTheRecordedOutcome`, `test_Cancel_PauseWindowBoundary`; [`PauseWindow.t.sol`](../../test/sales/PauseWindow.t.sol): `test_Resume_ScheduledBeforeThePauseWaitsTwoDaysAfterIt`; [`AuctionDisputeCancel.t.sol`](../../test/sales/auction/AuctionDisputeCancel.t.sol): `test_Cancel_RefusesAnOutcomeRecordedBeforeThePause` |
 | AUC-27 | A resumed or reopened auction runs at least the longer of the governed duration and its locked window. | `EnglishAuction._resumedEnd`, `_reopening` | [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_Resume_GivesAtLeastTheDuration`, `test_Resume_LeavesAtLeastTheWindow`, `test_Resume_ReopeningIsNeverShorterThanTheLockedWindow`; [`AuctionDisputePause.t.sol`](../../test/sales/auction/AuctionDisputePause.t.sol): `test_Pause_WithAStandingBidAlsoReopensForTheDuration` |
 | AUC-28 | A federated token sells only while the registry reports it active with its recorded code; a delisted contract takes no bids and settles unsold; its fee goes to the network's federated recipient. | `EnglishAuction.isTarget`, `_delisted`, `_lockedTerms` | [`AuctionFederatedTokens.t.sol`](../../test/sales/auction/AuctionFederatedTokens.t.sol): `test_Bid_ADelistedFederatedAuctionStopsSelling`, `test_Settle_AFederatedAuctionPaysTheNetworksFederatedRecipient`; [`EnglishAuctionFederation.t.sol`](../../test/sales/auction/EnglishAuctionFederation.t.sol): `test_Federation_CodeHashesArePinned` |
@@ -632,7 +636,7 @@ sequenceDiagram
 | AUC-30 | Governed parameters stay within bounds and are compare-and-set. | `EnglishAuction.setConfig`, `setOpeningBid` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_Constructor_RejectsConfigOutOfBounds`; [`EnglishAuctionDisputes.t.sol`](../../test/sales/auction/EnglishAuctionDisputes.t.sol): `test_SetConfig_CompareAndSet`, `test_SetOpeningBid_MovesBothWaysWithinTheCeiling`, `testFuzz_SetOpeningBid_AnyValueUpToTheCeiling`, `test_SetOpeningBid_CappedAtTheLargestBid` |
 | AUC-31 | No reentrant call reaches a value-moving entry point. | `nonReentrant` on `start`, `startWithBid`, `bid`, `withdrawBid`, `settle`, `claimDelivery`, `claim`, `claimFor`, `pause(saleId)`, `resume`, `cancel` | [`EnglishAuctionHostile.t.sol`](../../test/sales/auction/EnglishAuctionHostile.t.sol): `test_ReentrantClaimerIsBlocked`, `test_ReentrantWinnerCannotReenterSettlement`, `test_ReentrantSellerWalletIsBlocked`, `test_CallbackTokenCannotReenter` |
 | AUC-32 | Gas: a steady-state ETH start uses at most 350,000 Prague gas and 6 new slots (7 with a bid). A first start under new terms is measured separately; it writes one slot more when its terms' hashed position collides (an accepted limitation, LIM-GAS-10). | measured, not enforced on-chain | [`GasReport.t.sol`](../../test/integration/GasReport.t.sol): `test_Gas_Start_SteadyState`, `test_Gas_StartWithBid_SteadyState`, `test_Gas_StartWithBid_ArtistsFirstWork_TwoParty`, `test_Gas_Table`; [`StreamTermsGrind.t.sol`](../../test/stream/StreamTermsGrind.t.sol): `test_GroundCollisionAddsOneSlotToTheFirstStart`; [`EnglishAuctionGas.t.sol`](../../test/sales/auction/EnglishAuctionGas.t.sol): `test_StartGas_SteadyState` |
-| AUC-33 | An unbid 6529 Stream work's pending delivery is claimed only by the museum recorded at settlement (the settlement records `_MUSEUM`): never by its artist, nor by a museum governance names later (ADR 0005). For any other token the artist, recorded or active, may also claim in the recipient's place (L-5). | `EnglishAuction.claimDelivery`, `_unbidClaimant` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_ClaimDelivery_NoBidsOnlyTheMuseum`, `test_ClaimDelivery_ANoBidDeliveryStaysWithTheRecordedMuseum`, `test_ClaimDelivery_AnotherListedTokensArtistClaims`, `test_ClaimDelivery_FederatedNoBidsOnlyTheArtist`, `test_ClaimDelivery_ANoBidClaimFollowsTheCurrentAuthority`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_TheMuseumsPendingDeliveryIsItsOwn` |
+| AUC-33 | An unbid 6529 Stream work is never pending: Stream moves it to the museum with no receiver callback (owner decision 17), so neither its artist nor a museum governance names later, nor anyone else, can claim it, and a museum account that would reject a safe transfer still receives it. For any other token the artist, recorded or active, may also claim a pending delivery in the recipient's place (L-5). | `Stream.settlePrimary`, `EnglishAuction.claimDelivery`, `_unbidClaimant` | [`EnglishAuction.t.sol`](../../test/sales/auction/EnglishAuction.t.sol): `test_ClaimDelivery_NoBidsNothingToClaim`, `test_ClaimDelivery_TheMuseumNamedAtSettlementKeepsTheWork`, `test_Settle_NoBidMuseumThatWouldRejectStillReceivesTheWork`, `test_ClaimDelivery_AnotherListedTokensArtistClaims`, `test_ClaimDelivery_FederatedNoBidsOnlyTheArtist`, `test_ClaimDelivery_ANoBidClaimFollowsTheCurrentAuthority`; [`Museum.t.sol`](../../test/integration/Museum.t.sol): `test_AMuseumThatWouldRejectStillReceivesTheWork` |
 | AUC-34 | The auction's views are answered by the lens its constructor created, which nothing can replace: its fallback forwards any call it does not declare with a `staticcall`, returns or reverts with the lens's answer unchanged, refuses ETH, and reverts with no data on a selector neither knows. Every moved view answers byte for byte as before the lens. The auction answers `auctionClock` itself (an integration view outside `IEnglishAuction` and ERC-165): exactly `auction`'s state and end, or `auction`'s revert. | `EnglishAuction.fallback`, `lens`, `storageWords`, `auctionClock`; `EnglishAuctionLens` | [`EnglishAuctionLensDifferential.t.sol`](../../test/sales/auction/EnglishAuctionLensDifferential.t.sol): `testFuzz_EveryMovedViewMatchesThePreLensBuild`, `test_EveryMovedViewMatchesThePreLensBuild_LongSequences`; [`EnglishAuctionLens.t.sol`](../../test/sales/auction/EnglishAuctionLens.t.sol): `test_Lens_IsTheAuctionsOwnFixedCreation`, `test_Lens_CannotBeSwapped`, `test_Fallback_RefusesEth`, `test_Fallback_RevertsOnUnknownSelectors`, `test_Fallback_IsAReadOnlyForwarder`, `test_Lens_ReadsTheAuctionsLayout`, `test_AuctionClock_IsAnsweredByTheCoreOutsideErc165`, `test_AuctionClock_MatchesAuctionThroughAPauseAndResume`; [`DeployScript.t.sol`](../../test/deploy/DeployScript.t.sol): `test_VerifyChecksTheAuctionsLens` |
 
 ## Events

@@ -17,7 +17,7 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 9,817 non-blank, non-comment lines in 81 files under `src/` (budget: 12,000) |
+| Source lines | 10,218 non-blank, non-comment lines in 83 files under `src/` (budget: 12,000) |
 | Deployed contracts | 21 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
@@ -33,10 +33,10 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 630 | 20,943 | 22,808 | 3,633 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 622 | 22,883 | 25,861 | 1,693 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 313 | 17,348 | 19,062 | 7,228 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 674 | 21,654 | 23,463 | 2,922 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 622 | 22,979 | 25,674 | 1,597 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 323 | 17,485 | 19,160 | 7,091 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 790 | 22,727 | 31,944 | **1,849** |
 
 ### Curation, identity and records
 
@@ -112,7 +112,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,763 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,801 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external

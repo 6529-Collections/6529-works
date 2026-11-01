@@ -5,6 +5,7 @@ import { IERC2981 } from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import { IMintTarget } from "./IMintTarget.sol";
 import { ItemKind, SeedPolicy } from "./types/PackageTypes.sol";
+import { PrimaryOutcome } from "./types/SaleTypes.sol";
 
 /// @title IStream
 /// @notice 6529 Stream core: the one shared, network-curated ERC-721 that holds every curated 1/1
@@ -119,9 +120,20 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param name The binding's label, as a left-aligned `bytes32` string.
     /// @param target The bound contract.
     event Bound(bytes32 indexed name, address target);
-    /// @notice The minting adapter marked a token's primary sale settled.
+    /// @notice The minting adapter settled a token's primary sale (owner decision 17). An UNBID
+    ///         or FROZEN_OUT work is followed by its `Transfer` to the museum.
     /// @param tokenId The token whose primary sale settled.
-    event PrimarySaleSettled(uint256 indexed tokenId);
+    /// @param outcome SOLD, UNBID or FROZEN_OUT.
+    /// @param buyer The buyer of record (the winning bidder); zero unless SOLD.
+    /// @param currency The sale's currency (`CURRENCY_ETH` or an ERC-20).
+    /// @param price The price paid, exact; zero unless SOLD.
+    event PrimarySaleSettled(
+        uint256 indexed tokenId,
+        PrimaryOutcome outcome,
+        address indexed buyer,
+        address currency,
+        uint256 price
+    );
     /// @notice The marketplace owner changed (the event marketplaces index for `owner()`).
     /// @param previousOwner The owner before the change (zero at deployment).
     /// @param newOwner The owner after the change.
@@ -145,8 +157,7 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error UnknownCollection(uint256 collectionId);
     /// @notice The caller is not the bound satellite this function serves.
     error UnboundCaller(address caller);
-    /// @notice The caller is not the adapter that minted the token (`burn`,
-    ///         `markPrimarySettled`).
+    /// @notice The caller is not the adapter that minted the token (`burn`, `settlePrimary`).
     error NotMintingAdapter(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
@@ -176,8 +187,11 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error InvalidRoyaltyRate(uint32 rate);
     /// @notice The token is not burned.
     error NotBurned(uint256 tokenId);
-    /// @notice The token's primary sale settled, so it can no longer be burned.
+    /// @notice The token's primary sale settled, so it can no longer be burned or settled again.
     error SaleAlreadySettled(uint256 tokenId);
+    /// @notice A `settlePrimary` report that is NONE, SOLD with no buyer, or UNBID or FROZEN_OUT
+    ///         with a buyer or a price.
+    error InvalidSaleOutcome();
     /// @notice The VRF seed of this item has not been delivered.
     error SeedNotDelivered(bytes32 itemHash);
     /// @notice The work is not an edition master, its primary sale has not settled, its edition
@@ -296,13 +310,24 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @param tokenId A live token ID.
     /// @return artistId The lead artist's ID.
     function artistOf(uint256 tokenId) external view returns (uint256 artistId);
-    /// @notice True once the minting adapter marked the token's primary sale settled
-    ///         (`IMintTarget.markPrimarySettled`: to a
-    ///         winner, a pending claim, or the artist); false before, and for burned or unminted
-    ///         IDs. A packed flag; it gates edition creation.
+    /// @notice True once the minting adapter settled the token's primary sale
+    ///         (`IMintTarget.settlePrimary`), whatever the outcome; false before, and for burned
+    ///         or unminted IDs. A packed flag; it gates edition creation.
     /// @param tokenId Any token ID.
     /// @return True for a live token whose primary sale settled.
     function primarySaleSettled(uint256 tokenId) external view returns (bool);
+    /// @notice How a token's primary sale ended (owner decision 17), as its minting adapter
+    ///         reported it: NONE before settlement and for burned or unminted IDs. SOLD carries
+    ///         the currency and the price, held in 96 bits, so `type(uint96).max` means at least
+    ///         that (the exact price is in `PrimarySaleSettled`); UNBID and FROZEN_OUT carry zero.
+    /// @param tokenId Any token ID.
+    /// @return outcome NONE, SOLD, UNBID or FROZEN_OUT.
+    /// @return currency The sale's currency when SOLD (`CURRENCY_ETH` or an ERC-20), else zero.
+    /// @return price The price paid when SOLD, else zero.
+    function primarySale(uint256 tokenId)
+        external
+        view
+        returns (PrimaryOutcome outcome, address currency, uint256 price);
 
     // ----- rendering -----
 

@@ -358,8 +358,8 @@ library DeployV1 {
             );
         }
         if (n == keccak256("EnglishAuction")) {
-            // Targets are genesis wiring, not constructor arguments (config/README.md); 6529
-            // Stream is also named here as the only token whose unbid works go to the museum.
+            // Targets are genesis wiring, not constructor arguments (config/README.md). 6529
+            // Stream sends its unsold works to the museum itself (owner decision 17).
             return _code(
                 type(EnglishAuction).creationCode,
                 abi.encode(
@@ -369,8 +369,7 @@ library DeployV1 {
                     d.statementLog,
                     auctionPermit2(p),
                     p.auction,
-                    new address[](0),
-                    d.stream
+                    new address[](0)
                 )
             );
         }

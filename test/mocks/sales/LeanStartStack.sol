@@ -16,7 +16,12 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { SignatureVerifier } from "src/libraries/SignatureVerifier.sol";
@@ -279,10 +284,21 @@ contract LeanStream is ERC721, IMintTarget {
         );
     }
 
-    /// @dev E11: only the minting adapter, while the token is still in its custody.
-    function markPrimarySettled(uint256 id) external {
+    /// @dev E11 and owner decision 17: only the minting adapter, while the token is still in
+    ///      its custody; an unsold work moves to the resolver's museum, as in Stream.
+    function settlePrimary(uint256 id, PrimaryOutcome outcome, address, address, uint256)
+        external
+        returns (PrimarySettlement memory p)
+    {
         require(isAdmittedMinter[msg.sender] && _ownerOf(id) == msg.sender, "adapter");
         artistSlot[id] |= 1 << 248;
+        uint256 work = workSlot[id];
+        (p.seller, p.feeRecipient, p.feeShare) =
+        (address(uint160(work)), resolver.feeRecipient(), uint32(work >> 224));
+        if (outcome != PrimaryOutcome.SOLD) {
+            p.holder = resolver.museum();
+            _transfer(msg.sender, p.holder, id);
+        }
     }
 
     /// @dev L-3: the adapter that minted the token (by minter ID), admitted or not.

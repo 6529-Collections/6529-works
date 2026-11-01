@@ -20,7 +20,7 @@ selection in [Rendering and tokenURI](../../docs/spec/rendering-and-tokenuri.md#
 
 | Caller | Calls | Rules |
 | --- | --- | --- |
-| An admitted adapter whose sale kind is the item's (the English auction at genesis; a later 1/1 method once governance admits it, owner decision 15) | `mint` at `start`, which consumes the item through the package registry in the same call; `markPrimarySettled` at settle; `burn` on an upheld dispute; `primaryTerms` (view) | AUC-1 to AUC-9, ENT-12 |
+| An admitted adapter whose sale kind is the item's (the English auction at genesis; a later 1/1 method once governance admits it, owner decision 15) | `mint` at `start`, which consumes the item through the package registry in the same call; `settlePrimary` at settle, which records the outcome and moves an unsold work to the museum; `burn` on an upheld dispute; `primaryTerms` (view) | AUC-1 to AUC-9, ENT-12 |
 | PLATFORM | `createCollection` | AUC-12 |
 | Editions | `linkEdition` once per settled master | AUC-11, ED-2 |
 | The bound `WorkRecords` | `setRoyaltyRate`, `emitMetadataUpdate` | AUC-6, WS-23 |
@@ -44,6 +44,12 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   at its first admission, after every earlier mapping, so the storage layout of the other
   slots is unchanged; `primaryTerms` reads it for a minted work, and `mint` compares it with
   the item's, so an adapter's later `saleKind()` answer changes nothing.
+- **Primary-sale outcome (owner decision 17).** `settlePrimary` keeps the outcome in two
+  `TokenData.flags` bits beside `SETTLED` (`SALE_SOLD`, `SALE_FROZEN_OUT`; neither is UNBID), in
+  the word it rewrites anyway, and a SOLD work's currency and price in `_sales` (declared last),
+  the only new slot. An unsold work moves to the museum through `_update`, checked for the
+  adapter's custody and a nonzero museum, with no receiver callback and no call out of Stream
+  but the resolver's `museum()`.
 - **Fault-tolerant metadata.** `rendererOf` reads the records satellite's `pinnedRenderer`
   with a fixed `RECORDS_GAS` and one word back; any fault but a changed pinned renderer's
   `DependencyCodeChanged` (WS-16) falls back to the default renderer.

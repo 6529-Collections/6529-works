@@ -14,6 +14,7 @@ import {
     PackageItem,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
+import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
@@ -193,7 +194,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
     /// @dev The minting adapter marks the sale settled, before or after delivery.
     function settle(uint256 seed) external {
         (bool ok, uint256 tokenId) = _live(seed);
-        if (!ok) return;
+        if (!ok || settled[tokenId]) return;
         auction.settle(stream, tokenId);
         settled[tokenId] = true;
     }
@@ -203,7 +204,7 @@ contract StreamHandler is CommonBase, StdCheats, StdUtils {
         (bool ok, uint256 tokenId) = _live(seed);
         if (!ok) return;
         vm.prank(actors[actorSeed % actors.length]);
-        try stream.markPrimarySettled(tokenId) {
+        try stream.settlePrimary(tokenId, PrimaryOutcome.SOLD, address(this), address(0), 0) {
             ++violations;
         } catch { }
     }

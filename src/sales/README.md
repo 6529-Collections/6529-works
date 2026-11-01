@@ -60,13 +60,15 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   ID, a 32-bit end time, a 16-bit reference to a shared terms record, the status and flags.
   A terms record (currency, opening bid, increment share, anti-snipe window, a federated
   token's registry fee) is written once per distinct combination; its increment floor is
-  written by the first bid. Seller and fee terms are read back from the token at settlement.
-- **The no-bid recipient (D140).** `settle` sends an unbid work of 6529 Stream (the immutable
-  `_stream`, a constructor argument) to the resolver's `museum()`, read only on that branch, and
-  records `_MUSEUM` beside `_RECIPIENT_SET`. Any other token's unbid work, listed or federated,
-  goes to the creator `_lockedTerms` reads from the token. `claimDelivery`'s no-bid claimant
-  (`_unbidClaimant`, L-5) is that creator unless `_MUSEUM` is set: a delivery pending for the
-  museum is the recorded museum's alone (AUC-33).
+  written by the first bid. Seller and fee terms come back from the token at settlement, from
+  the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
+- **The no-bid recipient (D140, owner decision 17).** `settle` reports SOLD, UNBID or
+  FROZEN_OUT to the token; 6529 Stream moves an unsold work to the museum itself and returns it
+  as `holder`, which the auction records as the recipient, delivering nothing. Any other
+  token's unsold work, listed or federated, goes to the creator the token reports
+  (`primaryTerms`). `claimDelivery`'s no-bid claimant (`_unbidClaimant`, L-5) is that creator;
+  a 6529 Stream work is never pending (AUC-33). The auction has no museum branch, no `_MUSEUM`
+  flag and no Stream constructor argument.
 - **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours
   from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
 - **ERC-20 transfers.** `TokenTransfer` requires exact balance deltas and exactly one `true`

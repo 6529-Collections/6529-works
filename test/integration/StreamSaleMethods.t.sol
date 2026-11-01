@@ -9,7 +9,9 @@ import {
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { SaleTerms } from "src/interfaces/types/PackageTypes.sol";
-import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { PrimaryOutcome, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { IStream } from "src/interfaces/IStream.sol";
+import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
@@ -129,9 +131,10 @@ contract StreamSaleMethodsTest is IntegrationBase {
         fixedPrice.buy{ value: PRICE }(address(stream), data);
     }
 
-    /// @dev The admission requirement (ADR 0005, owner decisions 9, 10 and 15): a second 1/1
-    ///      adapter that honours it sends an unbid 6529 Stream work to the 6529 Network Museum,
-    ///      read from the economics resolver at settlement, and never to the artist.
+    /// @dev Owner decision 17: a second 1/1 adapter only reports UNBID; Stream itself moves the
+    ///      work from the adapter's custody to the 6529 Network Museum its economics resolver
+    ///      names at settlement, never to the artist, and records the outcome. The adapter's code
+    ///      never touches the work (the mock's `closeUnsold` makes no transfer).
     function test_ASecondAdapterSendsAnUnbidWorkToTheMuseum() public {
         _admit(address(fixedPrice), true);
         Work[] memory works = _package(root);
@@ -144,11 +147,17 @@ contract StreamSaleMethodsTest is IntegrationBase {
         fixedPrice.closeUnsold(address(stream), tokenId);
 
         vm.warp(deadline);
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
+        vm.expectEmit(address(stream));
+        emit IERC721.Transfer(address(fixedPrice), museum, tokenId);
         fixedPrice.closeUnsold(address(stream), tokenId);
         assertEq(economics.museum(), museum);
         assertEq(stream.ownerOf(tokenId), museum, "the museum, not the artist");
         assertTrue(stream.primarySaleSettled(tokenId));
         assertEq(stream.balanceOf(artist), 0);
+        (PrimaryOutcome outcome,,) = stream.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.UNBID));
     }
 
     /// @dev The English auction works exactly as before beside a second adapter: it starts,

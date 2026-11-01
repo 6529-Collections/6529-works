@@ -418,13 +418,13 @@ sequenceDiagram
     participant Escrow as RevenueEscrow
     participant Stream
     Keeper->>Auction: settle(saleId)
-    Note over Auction: reads seller, fee terms and creator back from Stream
+    Auction->>Stream: settlePrimary(tokenId, SOLD, bidder, currency, price)
+    Stream-->>Auction: seller and fee terms (Stream records the sale)
     Auction->>Seller: price minus fee
     Auction->>Fee: fee
     alt a wallet or the token refuses
         Auction->>Escrow: credit for that wallet
     end
-    Auction->>Stream: markPrimarySettled(tokenId)
     Auction->>Stream: safeTransferFrom to the recipient, 300,000 gas
     alt delivery fails
         Note over Auction: DeliveryPending, the token stays in custody

@@ -11,6 +11,7 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
+import { Vm } from "forge-std/Vm.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -77,8 +78,7 @@ contract EnglishAuctionTest is AuctionBase {
                 address(statements),
                 address(0),
                 edge[i],
-                none,
-                address(stream)
+                none
             );
             assertEq(
                 IEnglishAuctionFull(address(a)).config().extensionWindow, edge[i].extensionWindow
@@ -100,36 +100,15 @@ contract EnglishAuctionTest is AuctionBase {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager),
-            eoa,
-            resolver,
-            address(statements),
-            address(0),
-            _config(),
-            none,
-            address(stream)
+            address(manager), eoa, resolver, address(statements), address(0), _config(), none
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager),
-            address(escrow),
-            resolver,
-            address(statements),
-            eoa,
-            _config(),
-            none,
-            address(stream)
+            address(manager), address(escrow), resolver, address(statements), eoa, _config(), none
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager),
-            address(escrow),
-            resolver,
-            eoa,
-            address(0),
-            _config(),
-            none,
-            address(stream)
+            address(manager), address(escrow), resolver, eoa, address(0), _config(), none
         );
         address[] memory bad = new address[](1);
         bad[0] = address(escrow);
@@ -143,8 +122,7 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            bad,
-            address(stream)
+            bad
         );
     }
 
@@ -162,8 +140,7 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            none,
-            address(stream)
+            none
         );
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(escrow))
@@ -175,8 +152,7 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            none,
-            address(stream)
+            none
         );
         resolver.setAllowlistOverride(eoa);
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
@@ -187,8 +163,7 @@ contract EnglishAuctionTest is AuctionBase {
             address(statements),
             address(0),
             _config(),
-            none,
-            address(stream)
+            none
         );
     }
 
@@ -210,8 +185,7 @@ contract EnglishAuctionTest is AuctionBase {
                 address(statements),
                 address(0),
                 bad[i],
-                none,
-                address(stream)
+                none
             );
         }
     }
@@ -1178,12 +1152,15 @@ contract EnglishAuctionTest is AuctionBase {
     }
 
     /// @dev Fail closed: a resolver that names no museum leaves an unbid canonical work in
-    ///      custody (the real resolver never does, so this guards a broken one).
+    ///      custody; 6529 Stream refuses the move (the real resolver never names zero, so this
+    ///      guards a broken one).
     function test_Settle_NoBidsRefusesAZeroMuseum() public {
         uint256 saleId = _start();
         resolver.setMuseumAccount(address(0));
         _end(saleId);
-        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.InvalidRecipient.selector, address(0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0))
+        );
         auction.settle(saleId);
         assertEq(stream.ownerOf(1), address(auction));
     }
@@ -1274,22 +1251,6 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(other.ownerOf(1), recovered);
     }
 
-    /// @dev 6529 Stream, named at construction, must be an ERC-721 with code.
-    function test_Constructor_RejectsAStreamThatIsNotAnErc721() public {
-        address eoa = makeAddr("notStream");
-        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
-        new EnglishAuction(
-            address(manager),
-            address(escrow),
-            resolver,
-            address(statements),
-            address(0),
-            _config(),
-            new address[](0),
-            eoa
-        );
-    }
-
     /// @dev IDENTITY-1, kept for federated works: with no active artist the no-bid settle
     ///      reverts and moves nothing.
     function test_Settle_FederatedNoBidsRefusesAnUnresolvedArtist() public {
@@ -1374,25 +1335,24 @@ contract EnglishAuctionTest is AuctionBase {
         }
     }
 
-    /// @dev D140: a museum contract that rejects the token gets a pending claim, and claims it
-    ///      to an address of its choice.
-    function test_Settle_NoBidMuseumThatRejectsGetsAPendingClaim() public {
+    /// @dev Owner decision 17: 6529 Stream moves an unsold work to the museum itself, with no
+    ///      receiver callback, so a museum contract that would reject a safe transfer still
+    ///      receives it, and nothing is left pending.
+    function test_Settle_NoBidMuseumThatWouldRejectStillReceivesTheWork() public {
         HostileActor museumSafe = new HostileActor();
         museumSafe.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
         resolver.setMuseumAccount(address(museumSafe));
         uint256 saleId = _start();
         _end(saleId);
-        vm.expectEmit(address(auction));
-        emit IEnglishAuction.DeliveryPending(saleId, address(museumSafe));
+        vm.recordLogs();
         auction.settle(saleId);
-        assertEq(auction.pendingDelivery(saleId), address(museumSafe));
-        address vault = makeAddr("museumVault");
-        vm.expectEmit(address(auction));
-        emit IEnglishAuction.DeliveryClaimed(saleId, address(museumSafe), vault);
-        museumSafe.execute(
-            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, vault))
-        );
-        assertEq(stream.ownerOf(_tokenIdOf(saleId)), vault);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != IEnglishAuction.DeliveryPending.selector, "no pending");
+        }
+        assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(museumSafe));
+        assertEq(auction.pendingDelivery(saleId), address(0));
+        assertEq(auction.auction(saleId).recipient, address(museumSafe));
     }
 
     /// @dev Owner decision 9: a federated artist that rejects the token gets a pending claim.
@@ -1429,12 +1389,15 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(stream.ownerOf(_tokenIdOf(saleId)), alice);
     }
 
+    /// @dev A settle that delivers (here a federated work to its artist) refuses a caller who
+    ///      cannot forward the delivery gas, and moves nothing.
     function test_Settle_RevertsWhenTheCallerStarvesDelivery() public {
-        uint256 saleId = _start();
+        MockMintTarget fed = _federated();
+        uint256 saleId = auction.start(address(fed), "");
         _end(saleId);
         vm.expectRevert(IEnglishAuction.DeliveryInsufficientGas.selector);
         auction.settle{ gas: 250_000 }(saleId);
-        assertEq(stream.ownerOf(_tokenIdOf(saleId)), address(auction));
+        assertEq(fed.ownerOf(1), address(auction));
     }
 
     /// Regression: MONEY-1 (docs/security/internal-review-2026-10.md); the review of #57
@@ -1518,20 +1481,17 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.pendingDelivery(saleId), address(0));
     }
 
-    /// @dev D140, the gap PLAN section 1.9 found: an unbid canonical work's pending delivery is
-    ///      the museum's alone. Its artist (the recorded authority and the current one alike)
-    ///      cannot take it, as the rc.1 no-bid claim (L-5) would have let it; nor can anyone else.
-    function test_ClaimDelivery_NoBidsOnlyTheMuseum() public {
-        HostileActor museumSafe = new HostileActor();
-        museumSafe.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
-        resolver.setMuseumAccount(address(museumSafe));
+    /// @dev D140, the gap PLAN section 1.9 found, now closed by Stream (owner decision 17): an
+    ///      unbid canonical work is never pending, so neither its artist (the recorded authority
+    ///      or the current one) nor anyone else, the museum included, has anything to claim.
+    function test_ClaimDelivery_NoBidsNothingToClaim() public {
         uint256 saleId = _start();
         _end(saleId);
         auction.settle(saleId);
-        assertEq(auction.pendingDelivery(saleId), address(museumSafe));
+        assertEq(stream.ownerOf(1), museum);
         address recovered = makeAddr("recoveredAuthority");
         stream.setCreatorNow(recovered);
-        address[3] memory refused = [artist, recovered, alice];
+        address[4] memory refused = [artist, recovered, alice, museum];
         for (uint256 i; i < refused.length; ++i) {
             vm.prank(refused[i]);
             vm.expectRevert(
@@ -1539,37 +1499,23 @@ contract EnglishAuctionTest is AuctionBase {
             );
             auction.claimDelivery(saleId, refused[i]);
         }
-        museumSafe.execute(
-            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, museum))
-        );
-        assertEq(stream.ownerOf(1), museum);
     }
 
-    /// @dev ADR 0005: a delivery pending for the museum stays with that museum. After a
-    ///      governed change the new museum cannot claim it (L-5 is for federated artists only);
-    ///      the recorded museum still can. The artist never can.
-    function test_ClaimDelivery_ANoBidDeliveryStaysWithTheRecordedMuseum() public {
-        HostileActor oldMuseum = new HostileActor();
-        oldMuseum.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
-        resolver.setMuseumAccount(address(oldMuseum));
+    /// @dev ADR 0005: the museum named at settlement holds the work; a later governed change of
+    ///      museum moves nothing, and nobody can claim it.
+    function test_ClaimDelivery_TheMuseumNamedAtSettlementKeepsTheWork() public {
+        address first = makeAddr("firstMuseum");
+        resolver.setMuseumAccount(first);
         uint256 saleId = _start();
         _end(saleId);
         auction.settle(saleId);
         address next = makeAddr("nextMuseum");
         resolver.setMuseumAccount(next);
-        address[2] memory refused = [next, artist];
-        for (uint256 i; i < refused.length; ++i) {
-            vm.prank(refused[i]);
-            vm.expectRevert(
-                abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId)
-            );
-            auction.claimDelivery(saleId, refused[i]);
-        }
-        assertEq(auction.pendingDelivery(saleId), address(oldMuseum));
-        oldMuseum.execute(
-            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, next))
-        );
-        assertEq(stream.ownerOf(1), next);
+        vm.prank(next);
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.NoPendingDelivery.selector, saleId));
+        auction.claimDelivery(saleId, next);
+        assertEq(stream.ownerOf(1), first);
+        assertEq(auction.auction(saleId).recipient, first);
     }
 
     /// @dev Owner decision 9: with no bids on a federated work only its artist may claim a

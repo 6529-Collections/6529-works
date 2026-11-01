@@ -37,7 +37,7 @@ import {
     PartyRole,
     SeedPolicy
 } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { PrimaryOutcome, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { EditionsBase } from "./EditionsBase.sol";
 import { StateGrowth } from "../helpers/StateGrowth.sol";
@@ -978,9 +978,9 @@ contract EditionsTest is EditionsBase {
         stranger.burnHeld(editions, id, 1);
     }
 
-    /// @dev Copies are sold at mint, so `markPrimarySettled` is a no-op for every adapter ever
-    ///      admitted (also after removal) and refused for anyone else.
-    function test_MarkPrimarySettled_NoOpForAdapters() public {
+    /// @dev Copies are sold at mint, so `settlePrimary` is a no-op returning nothing for every
+    ///      adapter ever admitted (also after removal) and refused for anyone else.
+    function test_SettlePrimary_NoOpForAdapters() public {
         uint256 id = _create(_item(5));
         adapter.buy(editions, id, buyer, 1);
         IEditions.Edition memory before = editions.edition(id);
@@ -995,7 +995,7 @@ contract EditionsTest is EditionsBase {
 
         vm.prank(outsider);
         vm.expectRevert(abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, outsider));
-        editions.markPrimarySettled(id);
+        editions.settlePrimary(id, PrimaryOutcome.SOLD, outsider, address(0), 1);
     }
 
     // ------------------------------------------------------------------ royalties

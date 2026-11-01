@@ -20,7 +20,7 @@ is a new adapter, never a new Editions. The rules are in
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone | `createEdition(workId, item, packageRoot, proof)`: proves the master's exact item under a registered root, locks the `PRODUCT_EDITIONS` economics, claims the content hash and links both sides | ED-1 to ED-4, ED-7 |
-| Admitted sale adapters | `mint`, `burn`, `markPrimarySettled`; `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
+| Admitted sale adapters | `mint`, `burn`, `settlePrimary` (a no-op); `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
 | The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
 | Governance | `setAdmittedMinter`, `setContractURI`, `setOwner`; the genesis bind `bindWorkRecords` | [Role matrix: Editions](../../docs/audit/roles.md#editions) |
 | Anyone (views) | `edition`, `masterOf`, `contentHashOf`, `exists`, `royaltyInfo`, `licenseOf`, `uri`, `name`, `symbol` | [Reading a work](../../docs/integrators/reading-a-work.md) |
@@ -51,7 +51,7 @@ The create flow, with every check in order, is under
   burns a settled token, so the cap and binding checks are local. Burned copies still count
   toward the cap.
 - **Minter status is three-valued** (never, admitted, removed), so a removed adapter can still
-  burn what it holds and call the no-op `markPrimarySettled`. Its binding ID survives removal,
+  burn what it holds and call the no-op `settlePrimary`. Its binding ID survives removal,
   so a re-admitted adapter mints its editions again; at most 65,535 adapters are ever admitted.
 - **Wiring.** Stream is immutable here: the constructor checks it (code, no EIP-7702
   delegation, ERC-165 `IStream`, the reviewed code hash). The package registry, economics

@@ -199,13 +199,16 @@ default when the sale starts".
      The resolver never accepts a fee recipient it can recognise as unable to
      be paid (the escrow, the claim router, a sale adapter, Stream, Editions,
      the registries, the work records, the release verifier).
-   - With no bids, a 6529 Stream token goes to the 6529 Network Museum,
-     `EconomicsResolver.museum()` resolved at settlement (D140; the auction is
-     deployed with Stream's address). Any other token's work, federated or
-     listed, goes to its artist's active authority, and while a recovery
-     override is pending its settlement waits.
-   - Settlement calls `IMintTarget.markPrimarySettled`, even when delivery is still
-     pending, so a winner who never claims cannot block the edition.
+   - Settlement reports the outcome to the token, `IMintTarget.settlePrimary`
+     (owner decision 17): SOLD with the buyer, currency and price, UNBID, or
+     FROZEN_OUT. Stream records it, even when delivery is still pending, so a
+     winner who never claims cannot block the edition, and returns the seller
+     and fee terms the auction pays by.
+   - With no bids, Stream itself moves a 6529 Stream work to the 6529 Network
+     Museum, `EconomicsResolver.museum()` resolved at settlement (D140), for
+     every admitted 1/1 adapter. Any other token's work, federated or listed,
+     goes to its artist's active authority, and while a recovery override is
+     pending its settlement waits.
 10. **Royalties.** `royaltyInfo` derives the receiver from the stored seller and
     fee terms, and reads the stored rate.
     - Payees `release` from split wallets, or batch through the claim router.
