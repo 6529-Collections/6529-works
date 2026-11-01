@@ -64,6 +64,15 @@ contract RevertingAuthorityStandIn is DependencyStandIn {
     }
 }
 
+/// @dev A replacement whose `authority()` answers one word that is not an address.
+contract DirtyAuthorityStandIn is DependencyStandIn {
+    constructor(bytes4 id) DependencyStandIn(id) { }
+
+    function authority() external pure returns (bytes32) {
+        return bytes32(type(uint256).max);
+    }
+}
+
 /// @dev A replacement entropy module that has a seed for every item, but not its predecessor's:
 ///      the worst replacement for the works minted before it.
 contract OtherSeedsEntropy is IERC165 {
@@ -433,6 +442,10 @@ contract StreamDependenciesTest is IntegrationBase {
             address(real),
             abi.encodeWithSelector(IStream.InvalidBinding.selector, address(real))
         );
+        // One word that is not an address is refused too (its decoding fails, with no data,
+        // which the manager reports as `FailedCall`).
+        address dirty = address(new DirtyAuthorityStandIn(_interfaceOf("ECONOMICS")));
+        _refuse("ECONOMICS", dirty, abi.encodeWithSignature("FailedCall()"));
 
         for (uint256 i; i < KINDS.length; ++i) {
             _replace(
