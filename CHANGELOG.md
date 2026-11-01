@@ -97,11 +97,14 @@
   chunks. It mints exactly the cleared count through `IMintTarget.mint` as bids are claimed.
   Its views (every view of `IUniformEditionAuction`) are the lens's, answered through a
   read-only fallback; `IUniformEditionAuctionStorage` documents the raw words they read.
-  `open` binds the edition to the adapter first (see the Editions entry below). Its views'
-  departure sort is `O(n log n)`. Its genesis selectors, deployment and wiring come with the
-  deploy lane. Gas rows, with exact slot and account counts, are in
+  `open` binds the edition to the adapter first (see the Editions entry below). Each settler
+  sweeps the departures on its own (its progress kept per sender, each call passing the rest
+  of its own sweep; the lens's `sweepOf` and `settlementOrderFor` read it), and the first to
+  sweep every one settles the sale, so an order that skips a departure strands only its own
+  sender. Its views' departure sort is `O(n log n)`; its genesis
+  wiring is the Deploy entry above. Gas rows, with exact slot and account counts, are in
   `test/integration/EditionAuctionGasReport.t.sol`; every settlement call stays within 350,000
-  execution gas, at most 211,539 in the worst case measured.
+  execution gas, at most 228,103 in the worst case measured.
 - Editions (ADR 0005 §6, an amendment of the frozen interface): `bindMinter(editionId, item)`
   binds an edition to the adapter whose sale opens it, before the edition exists if need be
   (the master's stored item proves its kind), so two admitted adapters of one kind can never

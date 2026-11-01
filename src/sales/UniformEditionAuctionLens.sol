@@ -368,10 +368,11 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
     /// @inheritdoc IUniformEditionAuctionLens
     /// @dev For a SETTLING sale, the departures its sweep has not passed yet: pass the whole
     ///      list (in chunks if long) to `settle`.
-    function settlementOrder(uint256 saleId) external view returns (uint256[] memory order) {
+    function settlementOrder(uint256 saleId) public view returns (uint256[] memory order) {
         IStorage.SaleWord memory a = _opened(saleId);
         // Before the clearing is stored (open, or a settlement scan still running), the order
-        // the live clearing needs; once stored, what is left of its sweep.
+        // the live clearing needs; once stored, the whole sweep order, for a settler that has
+        // not swept yet (`settlementOrderFor` gives a settler's rest).
         if (
             a.status == IUniformEditionAuction.AuctionStatus.OPEN
                 || (a.status == IUniformEditionAuction.AuctionStatus.SETTLING
@@ -386,6 +387,37 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
             IStorage.ResultWord memory r = _result(saleId);
             (order,) = _sorted(saleId, r.step, r.nextPosition);
         }
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function sweepOf(uint256 saleId, address settler)
+        public
+        view
+        returns (uint256 swept, uint256 nextPosition, uint256 cutoff)
+    {
+        uint256 w = _word(IStorage.Space.SWEEP, saleId, uint160(settler));
+        // Safe: three 32-bit fields of the packed progress word.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        (swept, nextPosition, cutoff) = (uint32(w), uint32(w >> 32), uint32(w >> 64));
+    }
+
+    /// @inheritdoc IUniformEditionAuctionLens
+    function settlementOrderFor(uint256 saleId, address settler)
+        external
+        view
+        returns (uint256[] memory order)
+    {
+        IStorage.SaleWord memory a = _opened(saleId);
+        // Cleared and sweeping: the departures from the settler's next position on.
+        if (
+            a.status == IUniformEditionAuction.AuctionStatus.SETTLING
+                && _word(IStorage.Space.SCAN, saleId, 0) == 0
+        ) {
+            (, uint256 next,) = sweepOf(saleId, settler);
+            (order,) = _sorted(saleId, _result(saleId).step, next);
+            return order;
+        }
+        return settlementOrder(saleId);
     }
 
     // --------------------------------------------------------------------------- internal

@@ -180,7 +180,11 @@ abstract contract EditionAuctionBase is Test {
         editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
         // Settlement runs in calls of bounded gas: call until it is done.
-        for (uint256 i; !auction.settle(saleId, ua.settlementOrder(saleId)); ++i) {
+        for (
+            uint256 i;
+            !auction.settle(saleId, lens.settlementOrderFor(saleId, address(this)));
+            ++i
+        ) {
             require(i < 64, "settlement does not advance");
         }
         paidOut += balance - address(auction).balance;

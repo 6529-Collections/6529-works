@@ -172,7 +172,7 @@ contract UniformEditionAuctionHostileTest is EditionAuctionBase {
             _closeOneOfOne(saleId);
             editions.setExists(ID, true);
             uint256 balance = address(auction).balance;
-            bool done = auction.settle(saleId, ua.settlementOrder(saleId));
+            bool done = auction.settle(saleId, lens.settlementOrderFor(saleId, address(this)));
             paidOut += balance - address(auction).balance;
             assertTrue(done, "settled in one call");
             assertEq(seller_.calls(), 1, "the seller was paid once, directly");

@@ -140,9 +140,31 @@ interface IUniformEditionAuctionLens {
         external
         view
         returns (IUniformEditionAuction.Departure[] memory);
-    /// @notice The order `settle` needs: the clearing step's departure indexes sorted by
-    ///         position; empty unless the live result is rationed.
+    /// @notice The order `settle` needs from a settler that has not swept yet: the clearing
+    ///         step's departure indexes sorted by position; empty unless the result is rationed,
+    ///         and once SETTLED.
     /// @param saleId The sale ID.
     /// @return order The departure indexes in position order.
     function settlementOrder(uint256 saleId) external view returns (uint256[] memory order);
+    /// @notice `settler`'s own departure sweep in progress: each settler sweeps on its own, and
+    ///         the first to sweep every departure settles the sale. All zero when it has none
+    ///         (it never swept, or it finished).
+    /// @param saleId The sale ID.
+    /// @param settler The settler (`settle`'s `msg.sender`).
+    /// @return swept The departures it has swept.
+    /// @return nextPosition The least position its next departure may have.
+    /// @return cutoff Its cutoff so far.
+    function sweepOf(uint256 saleId, address settler)
+        external
+        view
+        returns (uint256 swept, uint256 nextPosition, uint256 cutoff);
+    /// @notice What `settler` passes to its next `settle` call: the rest of the order after
+    ///         its own progress (`settlementOrder` for a settler with none).
+    /// @param saleId The sale ID.
+    /// @param settler The settler (`settle`'s `msg.sender`).
+    /// @return order The remaining departure indexes, in position order.
+    function settlementOrderFor(uint256 saleId, address settler)
+        external
+        view
+        returns (uint256[] memory order);
 }

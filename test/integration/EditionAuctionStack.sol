@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { CURRENCY_ETH, PRODUCT_EDITIONS } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -77,9 +78,14 @@ abstract contract EditionAuctionStack is IntegrationBase {
         IUniformEditionAuction.EndTimes memory e = ea.endTimes(saleId);
         if (block.timestamp < e.endTime) vm.warp(e.endTime);
         // Settlement runs in calls of bounded gas: call until it is done.
-        for (uint256 i; !editionAuction.settle(saleId, ea.settlementOrder(saleId)); ++i) {
+        for (uint256 i; !editionAuction.settle(saleId, _orderFor(saleId, address(this))); ++i) {
             require(i < 64, "settlement does not advance");
         }
+    }
+
+    /// @dev What `settler` passes to its next settle call: the rest of its own sweep.
+    function _orderFor(uint256 saleId, address settler) internal view returns (uint256[] memory) {
+        return IUniformEditionAuctionLens(editionAuction.lens()).settlementOrderFor(saleId, settler);
     }
 
     /// @dev The seller split wallet a master's edition pays (predicted, maybe undeployed).

@@ -124,7 +124,11 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         _closeOneOfOne(saleId);
         editions.setExists(ID, true);
         uint256 balance = address(auction).balance;
-        for (uint256 i; !auction.settle(saleId, ua.settlementOrder(saleId)); ++i) {
+        for (
+            uint256 i;
+            !auction.settle(saleId, lens.settlementOrderFor(saleId, address(this)));
+            ++i
+        ) {
             require(i < 16, "settlement does not advance");
         }
         paidOut += balance - address(auction).balance;
@@ -301,14 +305,18 @@ contract UniformEditionAuctionLensTest is EditionAuctionBase {
         assertEq(
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLING)
         );
-        // While settling: what is left of the order, the stored progress, the final outcomes.
-        uint256[] memory rest = ua.settlementOrder(saleId);
+        // While settling: the whole order for a new settler, the rest for this one, and the
+        // stored result without a final cutoff until a settler sweeps every departure.
+        assertEq(ua.settlementOrder(saleId), order);
+        assertEq(lens.settlementOrderFor(saleId, makeAddr("newcomer")), order);
+        uint256[] memory rest = lens.settlementOrderFor(saleId, address(this));
         assertEq(rest.length, 1);
         assertEq(rest[0], order[1]);
         IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
         assertEq(s.departures, 2);
-        assertEq(s.departuresSwept, 1);
-        assertEq(s.cutoff, 3);
+        assertEq(s.departuresSwept, 0);
+        assertEq(s.cutUnits, 1);
+        assertEq(s.cutoff, s.cutUnits, "cutUnits until a sweep completes");
         assertEq(ua.clearing(saleId).cutoff, 5, "the live view gives the full sweep's cutoff");
         IUniformEditionAuction.BidOutcome memory o = ua.bidOutcome(saleId, 3);
         assertEq(o.unitsWon, 1);

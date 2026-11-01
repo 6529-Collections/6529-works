@@ -1020,14 +1020,10 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         assertEq(
             uint8(ua.auction(saleId).status), uint8(IUniformEditionAuction.AuctionStatus.SETTLED)
         );
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IUniformEditionAuction.InvalidAuctionState.selector,
-                saleId,
-                IUniformEditionAuction.AuctionStatus.SETTLED
-            )
-        );
-        auction.settle(saleId, new uint256[](0));
+        // Settling a settled sale is a no-op that reports it settled (a late settler's call).
+        vm.recordLogs();
+        assertTrue(auction.settle(saleId, new uint256[](0)));
+        assertEq(vm.getRecordedLogs().length, 0);
         // Claims: the winners pay the clearing price, the loser gets everything back.
         vm.expectEmit(address(auction));
         emit IUniformEditionAuction.BidClaimed(saleId, 1, alice, alice, 1, 1 ether - 0.0511 ether);
@@ -1235,19 +1231,31 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
             abi.encodeWithSelector(IUniformEditionAuction.InvalidSettlementOrder.selector, 1)
         );
         auction.settle(saleId, twice);
-        // In two chunks, with extra entries after the end ignored.
+        // In two chunks. The first call sweeps one departure; the caller's next call passes
+        // the rest of its own sweep. An entry below the caller's progress is refused, and an
+        // empty slice changes nothing.
         uint256[] memory first = new uint256[](1);
         first[0] = 1;
         uint256 balance = address(auction).balance;
         assertFalse(auction.settle(saleId, first));
         paidOut += balance - address(auction).balance;
+        (uint256 swept, uint256 nextPosition, uint256 cutoff) = lens.sweepOf(saleId, address(this));
+        assertEq(swept, 1);
+        assertEq(nextPosition, 1);
+        assertEq(cutoff, 3, "position 0 is behind the cutoff: its 2 units move it");
+        assertEq(lens.settlementOrderFor(saleId, address(this)).length, 1);
+        assertEq(lens.settlementOrderFor(saleId, address(this))[0], 0);
         vm.expectRevert(
             abi.encodeWithSelector(IUniformEditionAuction.InvalidSettlementOrder.selector, 0)
         );
         auction.settle(saleId, first);
-        uint256[] memory rest = new uint256[](2);
-        (rest[0], rest[1]) = (0, 0);
+        assertFalse(auction.settle(saleId, new uint256[](0)), "nothing new to sweep");
+        // Extra entries after the end are ignored.
+        uint256[] memory rest = new uint256[](3);
+        (rest[0], rest[1], rest[2]) = (0, 0, 1);
         assertTrue(auction.settle(saleId, rest));
+        (swept,,) = lens.sweepOf(saleId, address(this));
+        assertEq(swept, 0, "a finished sweep leaves no progress behind");
         // Cap 5: 4 at step 11, 1 at step 10 to the first live unit (carol at position 4).
         assertEq(_claimAll(saleId), 5);
         assertEq(editions.balanceOf(carol, ID), 1);

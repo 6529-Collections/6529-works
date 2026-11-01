@@ -47,14 +47,17 @@ interface IUniformEditionAuctionStorage {
         uint32 id;
     }
 
-    /// @notice A sale's result and sweep progress, written at settlement (`Space.RESULT`).
+    /// @notice A sale's result, written at settlement (`Space.RESULT`). Each settler's sweep
+    ///      progress is kept apart, per sender; `cutoff`, `swept` and `nextPosition` are written
+    ///      here once a settler's sweep completes.
     /// @param count Copies sold.
     /// @param step The clearing step.
     /// @param rationed Whether the cap binds inside the clearing step.
     /// @param cutUnits The clearing step's winning units.
-    /// @param cutoff The sweep's cutoff so far (`cutUnits` before it starts).
-    /// @param swept Departures of the clearing step swept so far.
-    /// @param nextPosition The least position the next swept departure may have.
+    /// @param cutoff `cutUnits` until the sweep completes, then the final cutoff.
+    /// @param swept Zero until the sweep completes, then the clearing step's departures.
+    /// @param nextPosition Zero until the sweep completes, then one past the last swept
+    ///        position.
     /// @param id The edition ID, so a claim reads one word for its mint.
     struct ResultWord {
         uint32 count;
@@ -98,6 +101,9 @@ interface IUniformEditionAuctionStorage {
     ///      0-2 (64 bits each from bit 64), and word `w >= 1` entries `4w - 1` to `4w + 2` (64
     ///      bits each from bit 0); an entry is `position | quantity << 32`. TERMS: `key` a terms
     ///      ID (`IUniformEditionAuction.AuctionConfig`). FEE_RECIPIENT: `key` an interned index; the address.
+    ///      SWEEP: `key` a settler's address; its own departure sweep in progress, `swept |
+    ///      nextPosition << 32 | cutoff << 64`, zero when it has none (never swept, or
+    ///      finished).
     enum Space {
         SALE,
         PAYOUT,
@@ -107,7 +113,8 @@ interface IUniformEditionAuctionStorage {
         DEPARTURE,
         TERMS,
         FEE_RECIPIENT,
-        SCAN
+        SCAN,
+        SWEEP
     }
 
     /// @notice A settle call scanned part of a sale's book and stopped at its gas bound; the

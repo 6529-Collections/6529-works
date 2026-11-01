@@ -123,7 +123,10 @@ the seller, each through the revenue escrow if refused) and emits `SaleSettled` 
 the TDH pipeline weights (P29 §1.2). Copies sold need the edition, which `createEdition`
 (unchanged) creates once the master settles. When the cap binds inside the cut step, `settle`
 sweeps that step's departures in the position order the settler supplies, chunked and
-resumable; claims open when the sweep completes. `claimBid` mints a winner's copies and sends
+resumable. Each settler keeps its own progress and passes the rest of its own sweep on each
+call (`settlementOrderFor`), and the first to sweep every departure fixes the cutoff, so an
+order that skips a departure strands only its own sender; claims open when a sweep
+completes. `claimBid` mints a winner's copies and sends
 its refund to an address it names; `claimBidFor` lets anyone push a claim, crediting the
 refund. Supply reaches exactly k once every winner has claimed.
 
@@ -340,7 +343,11 @@ over as the edition auction lands.
 - **LIM-EA-4: a dense book's settlement cost.** Filling every step raises `settle` to about
   700,000 Prague gas (at most 1,000,000 with 512 steps), paid by the settler; it costs an
   attacker far more in bids. A capped auction's departure sweep adds about 2,500 gas per
-  departure at the cut step, chunked across calls.
+  departure at the cut step, chunked across calls (16 in the clearing call, 96 after), each
+  call carrying only its caller's remaining slice. Each settler sweeps on its own: a settler
+  whose order skips a departure strands only its own progress (it settles from another
+  address), and a griefer's progress never touches the result. `DeparturesSwept` reports the
+  caller's progress, so interleaved settlers' events can show `swept` going down.
 - **LIM-EA-5: demand reduction.** Marginal bidders bid the lowest step that gets in. It is
   inherent to a uniform price, and visible on the public ladder.
 - **LIM-EA-6: last-block ordering.** A block builder can reorder or censor bids in the final

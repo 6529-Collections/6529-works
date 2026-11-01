@@ -590,6 +590,10 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
   `totalSupply()` counts live tokens. A burned ID's views revert with `UnknownWork`.
 - **Edition ID equals master token ID.** `EditionCreated`, `EditionLinked` and
   `TransferSingle.id` all carry the same number.
+- **The edition auction's sweep is per settler.** `DeparturesSwept(saleId, swept, total,
+  cutoff)` reports the calling settler's own progress, so when settlers interleave `swept` can
+  go down from one event to the next. The sale's result is final at `AuctionSettled`; read
+  `settlement(saleId)` for it and `sweepOf(saleId, settler)` for a settler's progress.
 
 ### Derived state with no event
 

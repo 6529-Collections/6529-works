@@ -193,7 +193,7 @@ each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one col
 | Edition `withdrawBid`, capped, 1/1 paused | 94,687 | 97,000 (regression) | 1 | 0 | — |
 | Edition `settle`, 40 used steps | 160,751 | 400,000 | 1 | 0 | — |
 | Edition `settle`, capped, one departure swept | 158,321 | 159,000 (regression) | 1 | 0 | — |
-| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 211,539 of execution | 350,000 of execution | 0 or 1 | 0 | — |
+| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 228,103 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `claimBid`, a winner and new holder | 94,286 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,546 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,591 | 67,000 (regression) | 1 | 0 | — |

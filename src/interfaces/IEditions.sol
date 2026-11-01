@@ -32,7 +32,8 @@ import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 ///      (6529 Stream burns only before the primary sale settles), so minting reads nothing from
 ///      6529 Stream. There are no numbered editions.
 interface IEditions is IERC1155, IERC2981, IMintTarget {
-    /// @notice An edition's state; economics are locked at creation.
+    /// @notice An edition's state; economics are locked at creation, or earlier, by a binding
+    ///         (`bindMinter`) that precedes it.
     /// @param contentHash The master's content hash; unique in the Editions product.
     /// @param terms The edition terms from the approved package item.
     /// @param minted Copies minted so far.
@@ -71,8 +72,9 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param _toTokenId The last ID of the range, inclusive (this contract emits
     ///        `type(uint256).max`).
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
-    /// @notice An edition was bound to the adapter that minted its first copies; only that
-    ///         adapter may mint it from now on.
+    /// @notice An edition was bound to `minter`: by `bindMinter` when its sale opened (possibly
+    ///         before the edition exists), or else by its first mint. Only that adapter may mint
+    ///         it from now on.
     /// @param editionId The edition.
     /// @param minter The adapter.
     event EditionMinterBound(uint256 indexed editionId, address indexed minter);

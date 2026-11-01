@@ -92,6 +92,8 @@ NOTES: dict[tuple[str, str], str] = {
         "Compare-and-set; code hash re-checked at every artist statement.",
     ("*", "pause()"): "Stops `openSale` and `purchase`; closing a sale and claims still work.",
     ("EnglishAuction", "pause()"): "Stops new starts only; live auctions continue.",
+    ("UniformEditionAuction", "pause()"):
+        "Stops new `open` calls only; bids, raises, settlement and claims of open sales continue.",
     ("*", "unpause()"): "Refused until 48 hours after the pause, whenever it was scheduled.",
     ("EnglishAuction", "pause(uint256,bytes32)"):
         "Dispute pause: one per auction, lasting at most 7 days (`MAX_PAUSE`).",

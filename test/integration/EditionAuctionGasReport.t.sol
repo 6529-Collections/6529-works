@@ -349,9 +349,9 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     function test_Gas_EditionAuction_SettleWorstCase() public {
         _worstBook(336, 200_000_000, 40);
         // 42 words: the first call scans 24 (the scan word is new), the second scans 18,
-        // clears (the result word is new; the scan word is deleted) and sweeps 16; the third
-        // sweeps the remaining 24.
-        _settleCalls("settle, worst case 336 steps, call", _slots(1, 1), 0);
+        // clears (the result word is new; the scan word is deleted) and sweeps 16 (the keeper's
+        // sweep progress is new); the third sweeps the remaining 24 and deletes it.
+        _settleCalls("settle, worst case 336 steps, call", _slots(1, 2), 0);
     }
 
     /// @dev The same at the governed maximum of 512 steps (192 per decade from 0.1 ETH, the
@@ -366,9 +366,10 @@ contract EditionAuctionGasReport is EditionAuctionStack {
             abi.encodeCall(editionAuction.setConfig, (_editionConfig(), c))
         );
         _worstBook(512, 100_000, 40);
-        // 64 words: 24 (the scan word is new), 24, then 16 and the clearing (the result word).
+        // 64 words: 24 (the scan word is new), 24, then 16 and the clearing (the result word
+        // and the keeper's sweep progress).
         uint256[] memory slots = new uint256[](3);
-        (slots[0], slots[1], slots[2]) = (1, 0, 1);
+        (slots[0], slots[1], slots[2]) = (1, 0, 2);
         _settleCalls("settle, worst case 512 steps, call", slots, 0);
     }
 
@@ -377,7 +378,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     function test_Gas_EditionAuction_SweepChunkWorstCase() public {
         _worstBook(336, 200_000_000, 300);
         assertEq(ea.settlementOrder(saleId).length, 300);
-        _settleCalls("settle, 300 departures, call", _slots(1, 1), 0);
+        _settleCalls("settle, 300 departures, call", _slots(1, 2), 0);
     }
 
     /// @dev The new slots each settle call creates, by call: the given first ones, then none.
@@ -422,7 +423,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     }
 
     function _settleData() internal view returns (bytes memory) {
-        return abi.encodeCall(editionAuction.settle, (saleId, ea.settlementOrder(saleId)));
+        return abi.encodeCall(editionAuction.settle, (saleId, _orderFor(saleId, keeper)));
     }
 
     function _settled() internal view returns (bool) {

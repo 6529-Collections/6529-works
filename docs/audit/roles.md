@@ -167,7 +167,7 @@ Source: [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAu
 
 | Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops `openSale` and `purchase`; closing a sale and claims still work. |
+| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops new `open` calls only; bids, raises, settlement and claims of open sales continue. |
 | `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
 | `setConfig((…),(…))` | `0x3a59bb19` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, with bounds in code. An auction keeps the values locked at its open. |
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |

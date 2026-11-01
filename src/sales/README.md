@@ -70,6 +70,10 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   adapter), so a second adapter of the same kind cannot open the same edition. The binding
   also snapshots the edition's economics in 6529 Stream Editions, and the lens reads an
   existing edition's recorded economics, so the split paid is the split the edition reports.
+- **The sweep is per settler.** Each settler's progress lives in its own slot (`Space.SWEEP`),
+  written only when its call does not finish; each call passes the rest of its caller's sweep
+  (`settlementOrderFor`), and the first settler to sweep every departure writes the cutoff and
+  settles the sale. An order that skips a departure strands only its own sender.
 - **The lens's departure sort** is a heapsort of packed keys, `O(n log n)` whatever the log's
   order: 600 departures logged in reverse keep `settlementOrder`, `clearing` and `quote` near
   5.2M gas, far inside an `eth_call` cap.

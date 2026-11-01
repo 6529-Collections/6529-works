@@ -706,8 +706,13 @@ them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.
 2. **Create the edition once the 1/1 settles:** `Editions.createEdition(tokenId, item,
    packageRoot, proof)`. A sale with winners settles only once the edition exists
    (`EditionNotCreated`; LIM-EA-12).
-3. **Settle after the edition close:** call `settle(saleId, settlementOrder(saleId))` until it
-   returns `true`. Each call stays within 350,000 execution gas; a typical sale settles in one.
+3. **Settle after the edition close:** call `settle(saleId, order)` until it returns `true`,
+   with `order` the keeper's own rest, `settlementOrderFor(saleId, keeper)` (on the adapter or
+   its lens), cut to one chunk (16 entries in the call that clears, 96 after) to keep calldata
+   small. Each call stays within 350,000 execution gas; a typical sale settles in one. Each
+   settler sweeps on its own: a keeper that sent a wrong order strands only its own progress
+   (`sweepOf`), and settles from another address. A call after the sale settled returns
+   `true`.
 4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
    refund is credited to it.
 

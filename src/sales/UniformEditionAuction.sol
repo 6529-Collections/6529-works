@@ -105,8 +105,9 @@ contract UniformEditionAuction is
     uint256 private constant _HEAD_ENTRIES = 3;
     /// @dev Settlement runs in calls of bounded gas, each permissionless and each advancing it, so
     ///      every call fits the settlement budget whatever the book and its departure logs (ADR
-    ///      0004): a call scans at most {_SCAN_WORDS} live words (eight steps each), the call that finishes the scan sweeps at most {_SWEEP_FIRST} departures, and
-    ///      each later call at most {_SWEEP_CHUNK}.
+    ///      0004): a call scans at most {_SCAN_WORDS} live words (eight steps each), the call
+    ///      that finishes the scan sweeps at most {_SWEEP_FIRST} departures, and each later call
+    ///      at most {_SWEEP_CHUNK}.
     uint256 private constant _SCAN_WORDS = 24;
     uint256 private constant _SWEEP_FIRST = 16;
     uint256 private constant _SWEEP_CHUNK = 96;
@@ -150,6 +151,11 @@ contract UniformEditionAuction is
     mapping(uint256 saleId => mapping(uint256 word => uint256)) private _live;
     mapping(uint256 saleId => mapping(uint256 key => uint256)) private _departures;
     mapping(address account => uint256) private _credits;
+    /// @dev Each settler's own sweep in progress (`Space.SWEEP`), packed `swept | nextPosition
+    ///      << 32 | cutoff << 64`: written only by a call that sweeps without finishing, deleted
+    ///      when that settler finishes. Per settler, so an order that skips a departure strands only its own
+    ///      sender's progress, never the sale.
+    mapping(uint256 saleId => mapping(address settler => uint256)) private _sweeps;
 
     /// @param authority_ The AccessManager governing the setters and the pause.
     /// @param escrow_ The revenue escrow for refused payouts.
@@ -344,10 +350,14 @@ contract UniformEditionAuction is
     /// @notice Settles a closed sale, or voids it after a 1/1 cancel, in calls of bounded gas
     ///         (`IUniformEditionAuction.settle`): the first checks the close and the 1/1 and
     ///         starts scanning the book; each call scans up to 24 words of it; the call that
-    ///         finishes the scan stores the result, pays it and starts the departure sweep; later
-    ///         calls continue the sweep. Every call is permissionless and advances settlement.
+    ///         finishes the scan stores the result, pays it and starts its caller's departure
+    ///         sweep; later calls continue their caller's sweep. Every call is permissionless.
+    ///         Each settler sweeps on its own (`_sweeps`): `order` is the caller's remaining
+    ///         slice (`settlementOrderFor`), and the first settler to sweep every departure
+    ///         settles the sale. A call on a SETTLED sale returns `true`; on a VOID one it
+    ///         reverts.
     /// @param saleId The sale ID.
-    /// @param order The next departure indexes of the clearing step, in position order.
+    /// @param order The next departure indexes of the caller's own sweep, in position order.
     /// @return Whether the sale is now SETTLED or VOID.
     /// @dev Pays with `RevenuePayment.payETH`, {PAYOUT_GAS} per wallet: a refusal is escrowed for
     ///      that wallet and never blocks settlement.
@@ -357,16 +367,16 @@ contract UniformEditionAuction is
         if (status == IUniformEditionAuction.AuctionStatus.OPEN) {
             if (_begin(saleId, a)) return true;
         } else {
+            // Another settler finished first: nothing left to do.
+            if (status == IUniformEditionAuction.AuctionStatus.SETTLED) return true;
             _requireStatus(saleId, status, IUniformEditionAuction.AuctionStatus.SETTLING);
             // Cleared already: sweep the clearing step's departures.
-            if (_scans[saleId] == 0) {
-                return _sweep(saleId, a, order.length > _SWEEP_CHUNK ? order[:_SWEEP_CHUNK] : order);
-            }
+            if (_scans[saleId] == 0) return _sweep(saleId, a, order, _SWEEP_CHUNK);
         }
         (bool cleared, uint256 count, uint256 price) = _scanChunk(saleId, a);
         if (!cleared) return false;
         bool settled = a.status == IUniformEditionAuction.AuctionStatus.SETTLED
-            || _sweep(saleId, a, order.length > _SWEEP_FIRST ? order[:_SWEEP_FIRST] : order);
+            || _sweep(saleId, a, order, _SWEEP_FIRST);
         // The payout comes last, after every write of this call.
         _pay(saleId, _payouts[saleId], count, price);
         return settled;
@@ -533,6 +543,9 @@ contract UniformEditionAuction is
         if (space == Space.DEPARTURE) return _departures[saleId][key];
         if (space == Space.FEE_RECIPIENT) return uint160(_feeRecipients[key]);
         if (space == Space.SCAN) return _scans[saleId];
+        // Safe: a SWEEP key is a settler's address.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        if (space == Space.SWEEP) return _sweeps[saleId][address(uint160(key))];
         // Invariant: each block below only reads the slot Solidity computed for a storage pointer
         // (`.slot`), and the last loads that slot: no memory is touched.
         bytes32 slot;
@@ -758,40 +771,78 @@ contract UniformEditionAuction is
         emit IUniformEditionAuction.AuctionSettled(saleId, count, rationed ? cutUnits : 0);
     }
 
-    /// @dev Runs one chunk of the departure sweep of a SETTLING sale (ADR 0005; PLAN section
-    ///      1.6): each departure from the clearing step, in strictly increasing position, moves
-    ///      the cutoff past its units when it starts below the cutoff. The caller passes at
-    ///      most {_SWEEP_FIRST} or {_SWEEP_CHUNK} entries; the rest wait for the next call. Once every departure is swept
-    ///      the cutoff is exact, the sale is SETTLED and claims open.
-    function _sweep(uint256 saleId, SaleWord storage a, uint256[] calldata order)
+    /// @dev Runs one chunk of the caller's departure sweep of a SETTLING sale (ADR 0005; PLAN
+    ///      section 1.6): each departure from the clearing step, in strictly increasing
+    ///      position, moves the cutoff past its units when it starts below the cutoff. `order`
+    ///      is the caller's remaining slice: the departures after the ones it swept before
+    ///      (`settlementOrderFor`); the call sweeps at most `limit` of them.
+    ///
+    ///      Invariants. Positions strictly increase across a settler's calls (its `nextPosition`
+    ///      persists), so its swept departures are distinct, and `swept == total` means it swept
+    ///      every one: only then is its cutoff exact, written to the result, and the sale
+    ///      SETTLED. An order that skips a departure strands only its caller's progress: any
+    ///      other settler starts from scratch. A call that finishes writes no progress slot,
+    ///      and deletes its caller's.
+    function _sweep(uint256 saleId, SaleWord storage a, uint256[] calldata order, uint256 limit)
         private
         returns (bool)
     {
         ResultWord memory r = _results[saleId];
-        // Safe: reads of 32- and 64-bit fields of packed words, and writes of values that fit them.
+        // The clearing call (`limit == _SWEEP_FIRST`) starts every sweep, so no settler has
+        // progress yet and its slot is not read.
+        uint256 progress = limit == _SWEEP_FIRST ? 0 : _sweeps[saleId][msg.sender];
+        // Safe: reads of 32-bit fields of packed words, and writes of values that fit them.
         // forge-lint: disable-start(unsafe-typecast)
-        uint256 head = _departures[saleId][uint256(r.step) << 32];
+        uint256 total = uint32(_departures[saleId][uint256(r.step) << 32]);
+        uint256 swept = uint32(progress);
+        // This call sweeps the first `n` entries of `order`.
+        uint256 n = order.length < limit ? order.length : limit;
+        if (n > total - swept) n = total - swept;
+        // The sweep state `next | cutoff << 32`: the caller's, or the start (0, cutUnits).
+        uint256 state = _sweepRange(
+            saleId, r.step, order, n, progress == 0 ? uint256(r.cutUnits) << 32 : progress >> 32
+        );
+        swept += n;
+        emit IUniformEditionAuction.DeparturesSwept(saleId, swept, total, state >> 32);
+        if (swept < total) {
+            // A call that swept nothing leaves no slot behind.
+            if (n != 0) _sweeps[saleId][msg.sender] = swept | state << 32;
+            return false;
+        }
+        if (progress != 0) delete _sweeps[saleId][msg.sender];
+        (r.swept, r.cutoff, r.nextPosition) = (uint32(swept), uint32(state >> 32), uint32(state));
+        // forge-lint: disable-end(unsafe-typecast)
+        _results[saleId] = r;
+        a.status = IUniformEditionAuction.AuctionStatus.SETTLED;
+        emit IUniformEditionAuction.AuctionSettled(saleId, r.count, r.cutoff);
+        return true;
+    }
+
+    /// @dev Sweeps `order[:n]` from the state `next | cutoff << 32` with `UniformClearing.sweep`
+    ///      and returns the new state: each index must name a departure of `step`, at a
+    ///      position of at least `next`.
+    function _sweepRange(
+        uint256 saleId,
+        uint256 step,
+        uint256[] calldata order,
+        uint256 n,
+        uint256 state
+    ) private view returns (uint256) {
+        uint256 head = _departures[saleId][step << 32];
+        uint256 cutoff = state >> 32;
+        // Safe: reads of 32-bit fields of packed words.
+        // forge-lint: disable-start(unsafe-typecast)
         uint256 total = uint32(head);
-        uint256 swept = r.swept;
-        uint256 cutoff = r.cutoff;
-        uint256 next = r.nextPosition;
-        for (uint256 i; i < order.length && swept < total; ++i) {
-            if (order[i] >= total) revert IUniformEditionAuction.InvalidSettlementOrder(i);
-            uint256 entry = _departure(saleId, r.step, head, order[i]);
+        uint256 next = uint32(state);
+        for (uint256 i; i < n; ++i) {
+            uint256 index = order[i];
+            if (index >= total) revert IUniformEditionAuction.InvalidSettlementOrder(i);
+            uint256 entry = _departure(saleId, step, head, index);
             (cutoff, next) =
                 UniformClearing.sweep(cutoff, next, uint32(entry), uint32(entry >> 32), i);
-            ++swept;
         }
         // forge-lint: disable-end(unsafe-typecast)
-        // Safe: the cutoff is at most the step's entered units, and positions fit 32 bits.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        (r.swept, r.cutoff, r.nextPosition) = (uint32(swept), uint32(cutoff), uint32(next));
-        _results[saleId] = r;
-        emit IUniformEditionAuction.DeparturesSwept(saleId, swept, total, cutoff);
-        if (swept < total) return false;
-        a.status = IUniformEditionAuction.AuctionStatus.SETTLED;
-        emit IUniformEditionAuction.AuctionSettled(saleId, r.count, cutoff);
-        return true;
+        return next | cutoff << 32;
     }
 
     /// @dev Pays `count × price` of sale `saleId`: the network fee to the fee recipient, then

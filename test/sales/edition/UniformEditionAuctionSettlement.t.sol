@@ -101,9 +101,11 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         emit IUniformEditionAuction.AuctionCleared(
             saleId, live.count, live.step, live.price, live.revenue, live.rationed, live.cutUnits
         );
-        bool done = auction.settle(saleId, ua.settlementOrder(saleId));
+        bool done = auction.settle(saleId, lens.settlementOrderFor(saleId, address(this)));
         paidOut += balance - address(auction).balance;
-        if (!done) assertTrue(auction.settle(saleId, ua.settlementOrder(saleId)));
+        if (!done) {
+            assertTrue(auction.settle(saleId, lens.settlementOrderFor(saleId, address(this))));
+        }
         assertEq(auction.storageWord(IUniformEditionAuctionStorage.Space.SCAN, saleId, 0), 0);
         IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
         assertEq(s.count, live.count);
@@ -162,7 +164,11 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         assertEq(uint8(left), 40, "the cursor: 64 words less 24");
         assertEq(uint32(left >> 8), 192 * each, "the demand so far");
         uint256 balance = address(auction).balance;
-        for (uint256 i; !auction.settle(saleId, ua.settlementOrder(saleId)); ++i) {
+        for (
+            uint256 i;
+            !auction.settle(saleId, lens.settlementOrderFor(saleId, address(this)));
+            ++i
+        ) {
             require(i < 8, "settlement does not advance");
         }
         paidOut += balance - address(auction).balance;
@@ -199,8 +205,10 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
     ///      ladder is random (24, 48, 96 or 192 steps per decade, any governed base price and
     ///      any step count the bounds allow), so a resumed scan starts in any decade. The book is
     ///      spread or clustered on a few steps, with raises and dispute withdrawals leaving
-    ///      departures at the cut step. Settlement is fed random prefixes of the remaining order,
-    ///      so the sweep resumes at any boundary. Before settling, each live bid's `bidOutcome`
+    ///      departures at the cut step. A griefer settles first with a random skipping or
+    ///      out-of-order order (its progress, if any, is its own). The honest settler is then fed
+    ///      random prefixes of the order, so its sweep resumes at any boundary. Before settling,
+    ///      each live bid's `bidOutcome`
     ///      is read from the lens, which counts the live units ahead of a bid rather than
     ///      sweeping a cutoff; each claim must then pay exactly that outcome, and the sale must
     ///      mint exactly `k` and leave nothing behind.
@@ -224,6 +232,7 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         for (uint256 bidId = 1; bidId <= count; ++bidId) {
             if (_live(saleId, bidId)) outcomes[bidId] = ua.bidOutcome(saleId, bidId);
         }
+        _grief(saleId, seed);
         _settleInRandomSlices(saleId, seed);
         IUniformEditionAuction.Settlement memory s = ua.settlement(saleId);
         assertEq(s.count, live.count, "count");
@@ -281,13 +290,43 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
         }
     }
 
-    /// @dev Settles with a random nonempty prefix of the remaining order on each call, so the
-    ///      departure sweep stops and resumes at arbitrary points.
+    /// @dev A griefer's settle call with the order corrupted: one entry dropped (a strictly
+    ///      increasing subset) or two neighbours swapped. It may scan, clear and pay, or revert;
+    ///      it must never finish the sweep or strand the sale.
+    function _grief(uint256 saleId, uint256 seed) internal {
+        uint256[] memory order = ua.settlementOrder(saleId);
+        uint256 r = uint256(keccak256(abi.encode(seed, "grief")));
+        bool corrupted = order.length >= 2;
+        if (corrupted) {
+            uint256 k = r % order.length;
+            if ((r >> 64) % 2 == 0) {
+                for (uint256 i = k; i + 1 < order.length; ++i) {
+                    order[i] = order[i + 1];
+                }
+                uint256 shorter = order.length - 1;
+                assembly ("memory-safe") {
+                    mstore(order, shorter)
+                }
+            } else {
+                uint256 j = k + 1 == order.length ? k - 1 : k + 1;
+                (order[k], order[j]) = (order[j], order[k]);
+            }
+        }
+        uint256 balance = address(auction).balance;
+        vm.prank(makeAddr("griefer"));
+        try auction.settle(saleId, order) returns (bool settled) {
+            assertFalse(corrupted && settled, "a corrupted order never completes the sweep");
+        } catch { }
+        paidOut += balance - address(auction).balance;
+    }
+
+    /// @dev The honest settler: on each call, a random nonempty prefix of the rest of its own
+    ///      sweep (`settlementOrderFor`), so its sweep stops and resumes at arbitrary points.
     function _settleInRandomSlices(uint256 saleId, uint256 seed) internal {
         uint256 balance = address(auction).balance;
         for (uint256 call;; ++call) {
             require(call < 64, "settlement does not advance");
-            uint256[] memory order = ua.settlementOrder(saleId);
+            uint256[] memory order = lens.settlementOrderFor(saleId, address(this));
             uint256 take = order.length == 0
                 ? 0
                 : 1 + uint256(keccak256(abi.encode(seed, "slice", call))) % order.length;
@@ -297,6 +336,51 @@ contract UniformEditionAuctionSettlementTest is EditionAuctionBase {
             if (auction.settle(saleId, order)) break;
         }
         paidOut += balance - address(auction).balance;
+    }
+
+    /// @dev A 600-departure cut step settled by a fresh settler in slices of at most one chunk:
+    ///      each call's calldata carries only its chunk (16 entries in the clearing call, 96
+    ///      after), and each call stays within 350,000 gas.
+    function test_Settlement_SixHundredDeparturesInChunkSlices() public {
+        uint256 saleId = _open(900);
+        address crowd = makeAddr("crowd");
+        for (uint256 i; i < 1200; ++i) {
+            _bid(saleId, crowd, 100, 1);
+        }
+        for (uint256 bidId = 1200; bidId > 600; --bidId) {
+            _raise(saleId, bidId, 101);
+        }
+        IUniformEditionAuction.Clearing memory live = ua.clearing(saleId);
+        assertEq(live.step, 100);
+        _closeOneOfOne(saleId);
+        editions.setExists(ID, true);
+        address keeper = makeAddr("keeper");
+        uint256 balance = address(auction).balance;
+        uint256 calls;
+        for (bool settled; !settled; ++calls) {
+            require(calls < 16, "settlement does not advance");
+            uint256[] memory rest = lens.settlementOrderFor(saleId, keeper);
+            uint256 chunk = calls == 0 ? 16 : 96;
+            if (rest.length > chunk) {
+                assembly ("memory-safe") {
+                    mstore(rest, chunk)
+                }
+            }
+            bytes memory data = abi.encodeCall(auction.settle, (saleId, rest));
+            assertLe(data.length, 4 + 32 * (3 + 96), "calldata of one chunk");
+            vm.prank(keeper);
+            uint256 g = gasleft();
+            (bool ok, bytes memory ret) = address(auction).call(data);
+            uint256 used = g - gasleft();
+            assertTrue(ok);
+            assertLe(used, 350_000, "each call within the settlement budget");
+            settled = abi.decode(ret, (bool));
+        }
+        paidOut += balance - address(auction).balance;
+        assertEq(calls, 8, "16, then six chunks of 96, then 8");
+        assertEq(ua.settlement(saleId).cutoff, live.cutoff);
+        assertEq(_claimAll(saleId), 900);
+        _assertConserved();
     }
 
     /// @dev Claims every live bid for its bidder and checks each against `outcomes`; returns the

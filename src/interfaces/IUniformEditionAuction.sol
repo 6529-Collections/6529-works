@@ -198,8 +198,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param price The price every winner pays.
     /// @param rationed Whether the cap binds inside the clearing step.
     /// @param cutUnits The clearing step's winning units.
-    /// @param cutoff The sweep's cutoff so far; final once `departuresSwept == departures`.
-    /// @param departuresSwept Departures of the clearing step swept so far.
+    /// @param cutoff `cutUnits` until a settler's sweep completes, then the final cutoff.
+    /// @param departuresSwept Zero until a settler's sweep completes, then `departures`. A
+    ///        settler's own progress is in its `DeparturesSwept` events.
     /// @param departures Departures logged at the clearing step (zero unless rationed).
     struct Settlement {
         uint256 count;
@@ -328,11 +329,13 @@ interface IUniformEditionAuction is ISaleAdapter {
         bool rationed,
         uint256 cutUnits
     );
-    /// @notice Part of the clearing step's departures was swept.
+    /// @notice A settle call swept part of the clearing step's departures, for its caller.
+    ///         Progress is per caller, so `swept` can go down from one event to the next when
+    ///         settlers interleave.
     /// @param saleId The sale ID.
-    /// @param swept Departures swept so far.
+    /// @param swept Departures the caller has swept so far.
     /// @param total Departures to sweep.
-    /// @param cutoff The cutoff so far.
+    /// @param cutoff The caller's cutoff so far.
     event DeparturesSwept(uint256 indexed saleId, uint256 swept, uint256 total, uint256 cutoff);
     /// @notice A sale settled; its bids may be claimed.
     /// @param saleId The sale ID.
@@ -466,14 +469,20 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         refused; it emits `AuctionCleared` and `ISaleAdapter.SaleSettled` (buyer and
     ///         recipient zero, quantity the count). Copies sold need the edition to exist
     ///         (`EditionNotCreated`). When the cap binds inside the clearing step, that call and
-    ///         the next ones sweep a bounded number of the step's departures each, in the order
-    ///         given, which must continue the sweep:
-    ///         departure indexes (`departures(saleId, step)`) whose positions strictly increase,
-    ///         from the previous call's last; the sweep is chunked and resumes across calls
-    ///         until every departure is swept. The sale is SETTLED, and claims open, when it is.
+    ///         the next ones sweep a bounded number of the step's departures each. Each settler
+    ///         (`msg.sender`) sweeps on its own: `order` is the rest of the caller's sweep,
+    ///         departure indexes (`departures(saleId, step)`) whose positions strictly increase
+    ///         from its own progress (`settlementOrder` for a settler that has not swept; the
+    ///         lens's `settlementOrderFor(saleId, settler)` after), of which a call takes at most
+    ///         one chunk. The first settler to sweep every departure fixes the cutoff; the sale
+    ///         is then SETTLED and claims open. An order that skips or reorders a departure can
+    ///         never finish its caller's sweep, and leaves every other settler's untouched: a
+    ///         keeper that strands its own sweep settles from another address. A call on a
+    ///         SETTLED sale returns `true` and changes nothing; on a VOID sale it reverts with
+    ///         `InvalidAuctionState`.
     /// @param saleId The sale ID.
-    /// @param order The next departure indexes of the clearing step in position order
-    ///        (`settlementOrder` returns them all); empty when not rationed.
+    /// @param order The next departure indexes of the caller's own sweep, in position order;
+    ///        empty when not rationed.
     /// @return settled Whether the sale is now SETTLED or VOID.
     function settle(uint256 saleId, uint256[] calldata order) external returns (bool settled);
 
@@ -601,7 +610,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @return The departures; an index into this list is what `settle` takes.
     function departures(uint256 saleId, uint256 step) external view returns (Departure[] memory);
     /// @notice The order `settle` needs: the clearing step's departure indexes sorted by
-    ///         position; empty unless the live result is rationed.
+    ///         position: the order a settler that has not swept yet passes (each settler
+    ///         sweeps on its own; the lens's `settlementOrderFor` gives a settler's rest); empty
+    ///         unless the result is rationed, and once SETTLED.
     /// @param saleId The sale ID.
     /// @return order The departure indexes in position order.
     function settlementOrder(uint256 saleId) external view returns (uint256[] memory order);

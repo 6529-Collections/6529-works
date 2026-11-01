@@ -17,8 +17,8 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 11,202 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
-| Deployed contracts | 23 per deployment (the edition auction creates its lens), plus one `SplitWallet` per payee configuration, deployed on demand |
+| Source lines | 11,257 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
+| Deployed contracts | 22 per deployment without the optional VRF entropy module and 23 with it (the edition auction creates its lens), plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), checked by `tools/check_budgets.py` in CI |
@@ -37,8 +37,8 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,883 | 25,861 | 1,693 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 337 | 18,051 | 19,779 | 6,525 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 802 | 24,090 | 45,515 | 486 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 528 | 17,435 | 17,806 | 7,141 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 824 | 24,346 | 46,094 | 230 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 552 | 17,757 | 18,129 | 6,819 |
 
 ### Curation, identity and records
 
@@ -115,7 +115,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,868 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,877 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
