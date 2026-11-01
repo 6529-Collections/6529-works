@@ -16,7 +16,8 @@ dispute pause); how editions mint is in [Editions and sales](../../docs/spec/edi
 
 | File | What it is |
 | --- | --- |
-| `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start (mints into its own custody), bids with an anti-snipe window, pull credits, settlement with pending delivery and escrow fallback, the dispute pause, the currency freeze, the emergency pause. |
+| `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start (mints into its own custody), bids with an anti-snipe window, pull credits, settlement with pending delivery and escrow fallback, the dispute pause, the currency freeze, the emergency pause. Its views are answered by its lens, through a read-only `staticcall` fallback, except `saleKind` and the integration view [`auctionClock`](../interfaces/IEnglishAuctionClock.sol) (an auction's state and end), which contracts read on their hot paths. |
+| `EnglishAuctionLens.sol` | The auction's read side, created by its constructor: every view of `IEnglishAuction` and `ISaleAdapter` the auction does not declare (`auction`, `lockedTerms`, `minimumBid`, `pendingDelivery`, `config`, `openingBid`, `claimable`, `paused`, `isTarget`, `saleIdOf`, `federationRegistry`, `escrow`, `statementLog`, `supportsInterface`) and the constants and dependency getters, computed from the auction's storage words (`storageWords`). |
 | `UniformClearing.sol` | The pure core of the uniform-price edition auction (D138, ADR 0005), as an internal library: the one-pass clearing rule on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the first-in-first-out split of the cut step and the what-if quote. No adapter uses it yet; the auction adapter is being built on it. |
 
 Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
@@ -34,12 +35,27 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 
 ## Developer notes
 
-- **Bytecode: `EnglishAuction` is the tightest contract in the repository**, barely under
-  EIP-170 (current margin in the [audit scope](../../docs/audit/scope.md#products-and-sales)).
-  Any addition needs a matching cut; the governed rescue for tokens sent with a plain
-  `transferFrom` was declined for its size (LIM-SAL-10). The museum rule (D140) took about 200
-  bytes, partly paid back by two equivalent rewrites (`claimDelivery`'s single revert site,
-  `withdrawBid`'s redundant zero check).
+- **Bytecode and the lens.** `EnglishAuction`'s write path alone nearly fills EIP-170, so its
+  views moved to `EnglishAuctionLens` (about 1,800 bytes of headroom; current margin in the
+  [audit scope](../../docs/audit/scope.md#products-and-sales)). The auction creates the lens
+  in its constructor and keeps it in an immutable (`lens()`, never replaced); its non-payable
+  fallback copies the calldata to the lens with a `staticcall` and returns or reverts with the
+  answer unchanged, so a selector neither contract knows still reverts with no data, and ETH
+  is refused. The lens reads the auction's storage through `storageWords` and decodes it with
+  the auction's layout, so **a change to `EnglishAuction`'s storage layout or to a view's rules
+  must change the lens with it**: `EnglishAuctionLensDifferential.t.sol` compares every moved
+  view with the pre-lens build (`test/sales/auction/legacy/`), and `EnglishAuctionLens.t.sol`
+  pins the layout. A view through the lens costs about 7,000 more gas on chain than before
+  (one more cold account and two calls back for storage); nothing the auction does itself
+  calls one. **The views other contracts read on their hot paths stay on the auction**:
+  `saleKind`, which 6529 Stream and 6529 Stream Editions read in every mint, and
+  `auctionClock` (`IEnglishAuctionClock`, outside `IEnglishAuction` and ERC-165), which
+  answers `auction`'s state and end from one cold slot and which the edition auction reads in
+  `open`, `bid`, `settle` and `withdrawBid`. A new on-chain consumer of an auction view should
+  read `auctionClock`, or justify bytes for a new integration view here.
+- **The museum rule (D140)** took about 200 bytes before the lens, partly paid back by two
+  equivalent rewrites (`claimDelivery`'s single revert site, `withdrawBid`'s redundant zero
+  check).
 - **Auction storage.** A steady-state start writes one `Sale` word: the token, a 32-bit token
   ID, a 32-bit end time, a 16-bit reference to a shared terms record, the status and flags.
   A terms record (currency, opening bid, increment share, anti-snipe window, a federated

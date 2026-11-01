@@ -29,6 +29,7 @@ import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 
@@ -122,6 +123,8 @@ library DeployV1 {
         StatementLog statementLog;
         VrfEntropyModule entropyModule;
         EnglishAuction englishAuction;
+        /// The English auction's lens: its first CREATE, made by its constructor.
+        EnglishAuctionLens englishAuctionLens;
         /// The default renderer 6529 Stream pins (ADR 0001 §8).
         Renderer renderer;
         Stream stream;
@@ -159,6 +162,8 @@ library DeployV1 {
             assign(d, name, _create2(name, salt(p, name), initcode(p, d, name)));
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = d.configurator.worksManager();
+            } else if (_eq(name, "EnglishAuction")) {
+                d.englishAuctionLens = EnglishAuctionLens(d.englishAuction.lens());
             } else if (_eq(name, "ContentStore")) {
                 d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
             }
@@ -184,6 +189,8 @@ library DeployV1 {
             assign(d, name, a);
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = WorksAccessManager(vm.computeCreateAddress(a, 1));
+            } else if (_eq(name, "EnglishAuction")) {
+                d.englishAuctionLens = EnglishAuctionLens(vm.computeCreateAddress(a, 1));
             }
         }
     }
@@ -451,6 +458,7 @@ library DeployV1 {
         if (n == keccak256("StatementLog")) return address(d.statementLog);
         if (n == keccak256("EntropyModule")) return address(d.entropyModule);
         if (n == keccak256("EnglishAuction")) return address(d.englishAuction);
+        if (n == keccak256("EnglishAuctionLens")) return address(d.englishAuctionLens);
         if (n == keccak256("Renderer")) return address(d.renderer);
         if (n == keccak256("Stream")) return address(d.stream);
         if (n == keccak256("WorkRecords")) return address(d.workRecords);
@@ -495,6 +503,8 @@ library DeployV1 {
             d.entropyModule = VrfEntropyModule(a);
         } else if (n == keccak256("EnglishAuction")) {
             d.englishAuction = EnglishAuction(a);
+        } else if (n == keccak256("EnglishAuctionLens")) {
+            d.englishAuctionLens = EnglishAuctionLens(a);
         } else if (n == keccak256("Renderer")) {
             d.renderer = Renderer(a);
         } else if (n == keccak256("Stream")) {
@@ -510,7 +520,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[21] memory all = [
+        string[22] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -531,6 +541,7 @@ library DeployV1 {
             "Stream",
             "WorkRecords",
             "EnglishAuction",
+            "EnglishAuctionLens",
             "Editions"
         ];
         list = new string[](all.length);

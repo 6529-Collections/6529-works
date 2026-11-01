@@ -18,6 +18,7 @@ import {
     PRODUCT_FEDERATED,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
+import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
 /// @title VerifyV1
@@ -44,6 +45,9 @@ library VerifyV1 {
     error HolderSuspended(uint64 role, address account);
     /// @notice The economics resolver's museum is not the recorded one.
     error MuseumMismatch(address recorded, address actual);
+    /// @notice The English auction's `lens()` is not the recorded lens, or the lens does not name
+    ///         the auction.
+    error LensMismatch(address recorded, address actual);
 
     /// @notice Every contract in `recorded` is at the address `predicted` computes
     ///         (`DeployV1.predict` from the recorded constructor parameters), and nothing is
@@ -85,6 +89,19 @@ library VerifyV1 {
         if (actual != museum) revert MuseumMismatch(museum, actual);
     }
 
+    /// @notice The English auction answers its views through the lens it created (EIP-170
+    ///         headroom): `lens()` is the recorded lens, the auction's first CREATE (which
+    ///         `checkAddresses` recomputes from the auction's verified address), with code, and the
+    ///         lens names the auction as its `adapter`. `Verify.s.sol` also compares the lens's
+    ///         code hash with the record. Nothing can replace the lens: `lens` is immutable.
+    function checkLens(DeployV1.Deployment memory d) internal view {
+        address lens = d.englishAuction.lens();
+        if (
+            lens != address(d.englishAuctionLens) || lens.code.length == 0
+                || EnglishAuctionLens(lens).adapter() != address(d.englishAuction)
+        ) revert LensMismatch(address(d.englishAuctionLens), lens);
+    }
+
     /// @notice Reverts on the first difference between the deployment and `cfg` / `calls`.
     /// @dev Run at least `minSetback()` after genesis, when grant and target-admin delays are
     ///      effective (`GovernanceConfigurator.verify`).
@@ -109,6 +126,7 @@ library VerifyV1 {
                 revert HolderSuspended(g.role, g.account);
             }
         }
+        checkLens(d);
         // Roles, delays, holders and selectors; the configurator renounced ADMIN.
         d.configurator.verify(cfg);
         // ...and holds no other role (`verify` checks only ADMIN for it).

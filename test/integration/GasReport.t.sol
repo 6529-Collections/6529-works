@@ -5,6 +5,7 @@ import { console2 } from "forge-std/console2.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import {
@@ -79,6 +80,9 @@ contract IntegrationGasReport is IntegrationBase {
     uint256 internal constant RELEASE_FIRST_CEILING = 96_000;
     uint256 internal constant SIGNED_FIRST_CEILING = 145_000;
     uint256 internal constant SIGNED_LATER_CEILING = 92_000;
+    uint256 internal constant AUCTION_VIEW_CEILING = 41_000;
+    uint256 internal constant AUCTION_CLOCK_VIEW_CEILING = 25_000;
+    uint256 internal constant MINIMUM_BID_VIEW_CEILING = 39_000;
     /// @dev The edition master's creator cap (the Sepolia rehearsal's edition size).
     uint32 internal constant EDITION_CAP = 10;
     /// @dev A 6529 consolidation: use case 999 over all collections.
@@ -633,6 +637,45 @@ contract IntegrationGasReport is IntegrationBase {
         _growthIs(r, 1, 0);
     }
 
+    /// @dev A cold view call to the English auction, answered by its lens through the
+    ///      auction's fallback (the auction's own account is the transaction's target; the
+    ///      lens is reached cold): `auction(saleId)` of a live sale with a bid, which the edition
+    ///      auction's `open` also reads, and `minimumBid(saleId)`.
+    function _rowAuctionView() internal returns (Row memory r) {
+        _steadyState();
+        uint256 saleId = auction.saleIdOf(address(stream), 1);
+        r = _viewRow("auction (view, through the lens)", abi.encodeCall(auction.auction, (saleId)));
+        _gasAtMost(r, AUCTION_VIEW_CEILING, "regression ceiling");
+    }
+
+    function _rowMinimumBidView() internal returns (Row memory r) {
+        _steadyState();
+        uint256 saleId = auction.saleIdOf(address(stream), 1);
+        r = _viewRow(
+            "minimumBid (view, through the lens)", abi.encodeCall(auction.minimumBid, (saleId))
+        );
+        _gasAtMost(r, MINIMUM_BID_VIEW_CEILING, "regression ceiling");
+    }
+
+    /// @dev The integration view other contracts read on their hot paths, answered by the
+    ///      auction itself (no lens): one cold slot for a sale never paused.
+    function _rowAuctionClockView() internal returns (Row memory r) {
+        _steadyState();
+        uint256 saleId = auction.saleIdOf(address(stream), 1);
+        r = _viewRow(
+            "auctionClock (view, in the auction)",
+            abi.encodeCall(IEnglishAuctionClock.auctionClock, (saleId))
+        );
+        _gasAtMost(r, AUCTION_CLOCK_VIEW_CEILING, "regression ceiling");
+    }
+
+    function _viewRow(string memory label, bytes memory data) internal returns (Row memory r) {
+        r = _row(label, starter, address(auction), data, 0);
+        r.isView = true;
+        r.total = 21_000 + r.execution; // a view: the call itself, without its calldata
+        _growthIs(r, 0, 0);
+    }
+
     /// @dev `IPackageRegistry.consume` alone, as Stream calls it at steady state.
     function _rowConsume() internal returns (Row memory r) {
         _steadyState();
@@ -969,6 +1012,18 @@ contract IntegrationGasReport is IntegrationBase {
         _rowConsume();
     }
 
+    function test_Gas_AuctionView() public {
+        _rowAuctionView();
+    }
+
+    function test_Gas_AuctionClockView() public {
+        _rowAuctionClockView();
+    }
+
+    function test_Gas_MinimumBidView() public {
+        _rowMinimumBidView();
+    }
+
     function test_Gas_CreateEdition() public {
         _rowCreateEdition();
     }
@@ -1016,7 +1071,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[27] memory rows = [
+        function() internal returns (Row memory)[30] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1034,6 +1089,9 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSettleFirstPayout,
             _rowSettle,
             _rowSettleNoBid,
+            _rowAuctionView,
+            _rowMinimumBidView,
+            _rowAuctionClockView,
             _rowConsume,
             _rowCreateEdition,
             _rowReRate,
@@ -1045,7 +1103,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[27] memory measured;
+        Row[30] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

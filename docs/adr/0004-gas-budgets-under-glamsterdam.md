@@ -177,6 +177,8 @@ registry from Stream). No row writes a new slot. The binding row is 341,923, 8,0
 | `settle`, first payout to a seller wallet | 170,833 | 400,000 | 1 | 1 | 449,934 (sim.) |
 | `settle`, with a bid | 145,833 | 400,000 | 1 | 0 | 257,763 (r2) |
 | `settle`, no bid (to the museum, D140) | 136,274 | 400,000 | 1 | 0 | — |
+| `auction` (view, cold, answered by the auction's lens) | 39,342 | 41,000 (regression) | 0 | 0 | — |
+| `minimumBid` (view, cold, answered by the auction's lens) | 38,194 | 39,000 (regression) | 0 | 0 | — |
 | `consume`, as Stream calls it | 93,057 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 245,730 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | re-rate a work (governed `execute`) | 189,902 | 192,000 (regression) | 1 | 0 | — |

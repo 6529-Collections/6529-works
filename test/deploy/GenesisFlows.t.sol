@@ -34,6 +34,7 @@ import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { DeployV1 } from "script/DeployV1.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 
 /// @notice Integration finding G-1 on the deployed system: items priced in `CURRENCY_DEFAULT`
 ///         start without waiting out FUNDS_SETTER's 14-day `setDefaultCurrency`, because
@@ -217,7 +218,11 @@ contract GenesisFlowsTest is Test {
         (bytes memory mintData,,) = _curatedWork(ItemKind.ORIGINAL, CURRENCY_DEFAULT, _noEdition());
         uint256 saleId = d.englishAuction.start(address(d.stream), mintData);
         assertEq(d.stream.totalMinted(), 1, "the work is minted into the auction");
-        assertEq(d.englishAuction.lockedTerms(saleId).currency, CURRENCY_ETH, "auction in ETH");
+        assertEq(
+            IEnglishAuctionFull(address(d.englishAuction)).lockedTerms(saleId).currency,
+            CURRENCY_ETH,
+            "auction in ETH"
+        );
         assertEq(block.timestamp, genesisTime, "no time passed");
     }
 

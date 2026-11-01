@@ -17,6 +17,7 @@ import { Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
 import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import {
     BlockablePermitToken,
     HostileActor,
@@ -55,7 +56,7 @@ contract AuctionHaltsHandler is Test {
     uint256 internal constant MAX_SALES = 8;
 
     struct Setup {
-        EnglishAuction auction;
+        IEnglishAuctionFull auction;
         MockMintTarget stream;
         StatementLog statements;
         RevenueEscrow escrow;
@@ -72,7 +73,7 @@ contract AuctionHaltsHandler is Test {
         address network;
     }
 
-    EnglishAuction public immutable auction;
+    IEnglishAuctionFull public immutable auction;
     MockMintTarget public immutable stream;
     StatementLog public immutable statements;
     RevenueEscrow public immutable escrow;

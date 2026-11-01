@@ -5,7 +5,6 @@ import { AccessManaged } from "@openzeppelin/contracts/access/manager/AccessMana
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {
@@ -18,6 +17,7 @@ import { Splits } from "../economics/Splits.sol";
 import { TokenTransfer } from "../economics/TokenTransfer.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -40,6 +40,7 @@ import { Typehashes } from "../interfaces/types/Typehashes.sol";
 import { Roles } from "../governance/Roles.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
+import { EnglishAuctionLens } from "./EnglishAuctionLens.sol";
 
 /// @title EnglishAuction
 /// @notice The shared English auction: 6529 Stream's only primary sale (ADR 0001 sections 5 and
@@ -67,13 +68,14 @@ import { Dependency } from "../libraries/Dependency.sol";
 ///      re-admission in the auction's last window or after its end reopens it instead
 ///      (`AuctionResumed`). Refunds and claims never read the allowlist.
 contract EnglishAuction is
-    IEnglishAuction,
     IERC721Receiver,
+    IEnglishAuctionClock,
     AccessManaged,
     ReentrancyGuardTransient
 {
-    /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
-    uint64 public constant MAX_PAUSE = 7 days;
+    /// @dev The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12). The
+    ///      lens answers `MAX_PAUSE()` with the same value.
+    uint64 private constant _MAX_PAUSE = 7 days;
     /// @notice Bounds of the governed duration.
     uint32 internal constant MIN_DURATION = 1 hours;
     /// @notice Bounds of the governed duration.
@@ -84,16 +86,16 @@ contract EnglishAuction is
     uint32 internal constant MAX_EXTENSION_WINDOW = 1 days;
     /// @notice The smallest governed relative increment (1%, out of 100,000).
     uint32 internal constant MIN_INCREMENT_SHARE = 1_000;
-    /// @notice An opening bid is at most this many increment floors of its currency (1 ETH for
-    ///         the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the
-    ///         absolute ceiling of the governed opening bid.
-    uint256 public constant OPENING_BID_FLOORS = 1_000;
-    /// @notice Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
-    ///         Under the EIP-8037 draft it caps regular gas only: a wallet that writes new state
-    ///         draws state gas from the settler's EIP-8037 reservoir, so whether it is paid or
-    ///         escrowed can depend on the settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should
-    ///         send at most 2^24 gas.
-    uint256 public constant PAYOUT_GAS = 100_000;
+    /// @dev An opening bid is at most this many increment floors of its currency (1 ETH for
+    ///      the 0.001 ETH floor), and at most `type(uint96).max`, the largest bid: the absolute
+    ///      ceiling of the governed opening bid. The lens answers `OPENING_BID_FLOORS()`.
+    uint256 private constant _OPENING_BID_FLOORS = 1_000;
+    /// @dev Gas forwarded to a seller or fee wallet on an ETH payout; a refusal is escrowed.
+    ///      Under the EIP-8037 draft it caps regular gas only: a wallet that writes new state draws
+    ///      state gas from the settler's EIP-8037 reservoir, so whether it is paid or escrowed can
+    ///      depend on the settler's gas limit (CALLS-3, LIM-GAS-2). Settlers should send at most
+    ///      2^24 gas. The lens answers `PAYOUT_GAS()`.
+    uint256 private constant _PAYOUT_GAS = 100_000;
     /// @notice Gas forwarded to the token's `safeTransferFrom` when settling; a failure leaves a
     ///         pending claim. Under the EIP-8037 draft it caps regular gas only: a recipient whose
     ///         `onERC721Received` writes new state draws state gas from the settler's EIP-8037
@@ -135,7 +137,7 @@ contract EnglishAuction is
         uint32 tokenId;
         uint32 endTime;
         uint16 termsId;
-        AuctionState status;
+        IEnglishAuction.AuctionState status;
         uint8 flags;
         address bidder;
         uint96 bid;
@@ -167,26 +169,30 @@ contract EnglishAuction is
         bool federated;
     }
 
-    /// @inheritdoc IEnglishAuction
-    address public immutable escrow;
-    /// @inheritdoc IEnglishAuction
-    address public immutable statementLog;
-    /// @notice The asset allowlist: currencies, defaults and increment floors.
-    IAssetAllowlist public immutable allowlist;
-    /// @notice The economics resolver: the network fee recipient of federated sales (MARKET-3)
-    ///         and the museum an unbid 6529 Stream work goes to (D140).
-    IEconomicsResolver public immutable economicsResolver;
-    /// @notice The canonical Permit2, or zero when PERMIT2 payments are disabled.
-    address public immutable permit2;
+    /// @notice The lens, created by the constructor: it answers every view of `IEnglishAuction`
+    ///         and `ISaleAdapter` this contract does not declare, through {fallback}. Stateless
+    ///         and fixed: nothing can replace it.
+    address public immutable lens;
+    /// @dev The revenue escrow for refused payouts (`escrow()`, answered by the lens).
+    address private immutable _escrow;
+    /// @dev The statement log `cancel` reads (`statementLog()`, answered by the lens).
+    address private immutable _statementLog;
+    /// @dev The asset allowlist: currencies, defaults and increment floors (`allowlist()`).
+    IAssetAllowlist private immutable _allowlist;
+    /// @dev The economics resolver: the network fee recipient of federated sales (MARKET-3) and
+    ///      the museum an unbid 6529 Stream work goes to (D140) (`economicsResolver()`).
+    IEconomicsResolver private immutable _economicsResolver;
+    /// @dev The canonical Permit2, or zero when PERMIT2 payments are disabled (`permit2()`).
+    address private immutable _permit2;
     /// @dev 6529 Stream, the canonical token: only its unbid works go to the museum (D140, owner
     ///      decision 9). Any other token, listed or federated, keeps its artist.
     address private immutable _stream;
 
-    /// @inheritdoc ISaleAdapter
-    address public federationRegistry;
-    /// @notice The code hash pinned when the federation registry was installed; a registry whose
-    ///         code no longer matches serves no token.
-    bytes32 public federationRegistryCodeHash;
+    /// @dev Storage slot 1 (the lens reads it): the federation registry (`federationRegistry()`).
+    address private _federationRegistry;
+    /// @dev Storage slot 2: the code hash pinned when the federation registry was installed; a
+    ///      registry whose code no longer matches serves no token (`federationRegistryCodeHash()`).
+    bytes32 private _federationRegistryCodeHash;
     Settings private _settings;
     uint16 private _termsCount;
     mapping(address token => bool) private _listed;
@@ -213,7 +219,7 @@ contract EnglishAuction is
         IEconomicsResolver economicsResolver_,
         address statementLog_,
         address permit2_,
-        AuctionConfig memory config_,
+        IEnglishAuction.AuctionConfig memory config_,
         address[] memory targets,
         address stream_
     ) AccessManaged(authority) {
@@ -225,11 +231,14 @@ contract EnglishAuction is
         if (permit2_ != address(0)) Dependency.check(permit2_);
         Dependency.check(stream_, type(IERC721).interfaceId);
         _stream = stream_;
-        escrow = escrow_;
-        economicsResolver = economicsResolver_;
-        allowlist = allowlist_;
-        statementLog = statementLog_;
-        permit2 = permit2_;
+        _escrow = escrow_;
+        _economicsResolver = economicsResolver_;
+        _allowlist = allowlist_;
+        _statementLog = statementLog_;
+        _permit2 = permit2_;
+        lens = address(
+            new EnglishAuctionLens(escrow_, statementLog_, allowlist_, economicsResolver_, permit2_)
+        );
         _setConfig(config_);
         for (uint256 i; i < targets.length; ++i) {
             _setTarget(targets[i], true);
@@ -238,7 +247,11 @@ contract EnglishAuction is
 
     // ------------------------------------------------------------------------------- start
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Mints a work into custody and opens its auction. Permissionless.
+    /// @param token A served token contract.
+    /// @param mintData The token-specific mint request (for 6529 Stream,
+    ///        `abi.encode(StreamMintRequest)`).
+    /// @return saleId `saleIdOf(token, tokenId)`.
     /// @dev Reverts with `SalePaused` while the emergency pause is on.
     function start(address token, bytes calldata mintData)
         external
@@ -248,7 +261,15 @@ contract EnglishAuction is
         saleId = _start(token, mintData);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice `start` plus a first bid in one transaction. The bid is at most
+    ///         `type(uint96).max` base units (about 7.9e28), like every bid.
+    /// @param token A served token contract.
+    /// @param mintData The token-specific mint request (for 6529 Stream,
+    ///        `abi.encode(StreamMintRequest)`).
+    /// @param recipient Who receives the token if the bid wins, or zero for the payer.
+    /// @param payment The first bid's payment: `payment.amount` is the bid in the locked
+    ///        currency's base units; a PERMIT2 signature covers `Typehashes.START_BID_WITNESS`.
+    /// @return saleId `saleIdOf(token, tokenId)`.
     /// @dev A PERMIT2 payment signs `Typehashes.START_BID_WITNESS` over the token, the hash of
     ///      `mintData`, the resolved recipient (the payer when zero), the amount and the deadline.
     function startWithBid(
@@ -276,7 +297,12 @@ contract EnglishAuction is
 
     // ----------------------------------------------------------------------------- bidding
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Bids `payment.amount` for `recipient` (the payer when zero). A bid is at most
+    ///         `type(uint96).max` base units (about 7.9e28); a larger one reverts.
+    /// @param saleId The auction's sale ID.
+    /// @param recipient Who receives the token if the bid wins, or zero for the payer.
+    /// @param payment The bid's payment: `payment.amount` is the bid in the locked currency's
+    ///        base units; a PERMIT2 signature covers `Typehashes.BID_WITNESS`.
     /// @dev A PERMIT2 payment signs `Typehashes.BID_WITNESS` over the sale, the resolved recipient
     ///      (the payer when zero), the amount and the deadline.
     function bid(uint256 saleId, address recipient, Payment calldata payment)
@@ -295,31 +321,47 @@ contract EnglishAuction is
         _bid(saleId, recipient, payment, witness, false);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice The high bidder withdraws its bid while the auction is paused, or while its
+    ///         currency is deprecated and it has not settled (MARKET-2); it is credited back
+    ///         and the auction has no bid. The withdrawn amount stays as a reserve the next bid
+    ///         must reach, and the resumed auction runs at least the governed duration, so the
+    ///         refunded bidders can return (LIFECYCLE-1).
+    /// @param saleId The auction's sale ID; the caller must be its high bidder.
     /// @dev Also while the locked currency is deprecated (MARKET-2: the auction is frozen), so a
     ///      currency that never returns cannot hold the bid.
     function withdrawBid(uint256 saleId) external nonReentrant {
         Sale storage s = _sales[saleId];
         // MARKET-2: a live (or ended, unsettled) auction whose currency is deprecated is frozen.
         (bool active,,) = _currencyClock(s);
-        if (s.status != AuctionState.ACTIVE || active) s = _require(saleId, AuctionState.PAUSED);
+        if (s.status != IEnglishAuction.AuctionState.ACTIVE || active) {
+            s = _require(saleId, IEnglishAuction.AuctionState.PAUSED);
+        }
         address bidder = s.bidder;
         // With no bidder this reverts too: the caller is never the zero address.
-        if (msg.sender != bidder) revert NotHighBidder(msg.sender);
+        if (msg.sender != bidder) revert IEnglishAuction.NotHighBidder(msg.sender);
         uint256 amount = s.bid;
         _refundHighBid(saleId, s);
-        emit BidWithdrawn(saleId, bidder, amount);
-    }
-
-    /// @inheritdoc IEnglishAuction
-    function minimumBid(uint256 saleId) external view returns (uint256) {
-        Sale storage s = _existing(saleId);
-        return _minimumBid(s, _terms[s.termsId]);
+        emit IEnglishAuction.BidWithdrawn(saleId, bidder, amount);
     }
 
     // -------------------------------------------------------------------------- settlement
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Settles an ended auction: delivers the token (or records a pending claim) and pays
+    ///         the seller and the network fee. Permissionless. An ERC-20 payout runs in its own
+    ///         1,000,000-gas frame, which the caller must be able to forward in full (a call gas
+    ///         limit of about 1.11M); if it fails, even through the escrow, it is credited to its
+    ///         wallet (`Credited`, paid out later with `claimFor`), so delivery never depends on it
+    ///         (MONEY-1). While the locked currency is deprecated nothing settles
+    ///         (`AssetNotActive`; a standing bidder may withdraw). If it was re-admitted after
+    ///         the end, or within the sale's last anti-snipe window before it, the first call
+    ///         reopens the auction for the governed duration (or the anti-snipe window if longer)
+    ///         and emits `AuctionResumed` instead of settling. Once the currency has been
+    ///         deprecated for 30 days, the call ends the sale unsold: the standing bid is
+    ///         credited back and the work goes where an unbid work goes, the museum for 6529
+    ///         Stream and the artist for any other token (MARKET-2; ADR 0005, owner decision 10).
+    ///         A sale of a federated contract the registry has since delisted settles the same
+    ///         way, to its artist (MARKET-5).
+    /// @param saleId The ended auction's sale ID.
     /// @dev Reads the seller, the fee terms and the artist's active authority back from the token.
     ///      With no bids the recipient is recorded (D140, ADR 0005): for 6529 Stream, the token
     ///      this auction was deployed with, the museum the economics resolver names now, whether
@@ -332,12 +374,12 @@ contract EnglishAuction is
     ///      with `InvalidRecipient(address(0))` and moves nothing, the token staying in custody;
     ///      anyone may retry once the override executes, is vetoed or voided, or lapses.
     function settle(uint256 saleId) external nonReentrant {
-        Sale storage s = _require(saleId, AuctionState.ENDED);
+        Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
         if (_reopenedAfterFreeze(saleId, s)) return;
         // MARKET-5: a delisted federated contract cannot sell; its high bid is credited back and
         // the work goes to its artist, as with no bid. Nothing is confiscated.
         if (_delisted(s)) _refundHighBid(saleId, s);
-        s.status = AuctionState.SETTLED;
+        s.status = IEnglishAuction.AuctionState.SETTLED;
         (LockedTerms memory lt, address unbid) = _lockedTerms(s);
         // With no bidder, `s.bid` is at most a withdrawn bid's reserve: nothing is paid.
         uint256 price = 0;
@@ -345,9 +387,9 @@ contract EnglishAuction is
             // D140: an unbid 6529 Stream work goes to the museum; any other keeps its artist.
             uint8 flags = _RECIPIENT_SET;
             if (s.token == _stream) {
-                (unbid, flags) = (economicsResolver.museum(), _RECIPIENT_SET | _MUSEUM);
+                (unbid, flags) = (_economicsResolver.museum(), _RECIPIENT_SET | _MUSEUM);
             }
-            if (unbid == address(0)) revert InvalidRecipient(unbid);
+            if (unbid == address(0)) revert ISaleAdapter.InvalidRecipient(unbid);
             s.recipient = unbid;
             s.flags |= flags;
         } else {
@@ -362,7 +404,12 @@ contract EnglishAuction is
         _emitSettled(saleId, s, lt, price, fee);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice The winner whose delivery is pending names the recipient `to` and receives the
+    ///         token there. For an unbid work, the pending recipient (the museum, or another
+    ///         token's artist) claims it; only another token's current artist may also claim in
+    ///         its place (L-5), so no artist can take the museum's pending delivery (ADR 0005).
+    /// @param saleId The auction's sale ID.
+    /// @param to The address that receives the token; neither zero nor this adapter.
     /// @dev The pending recipient or the winning bidder (the payer of the high bid) may claim, to
     ///      any address except zero and this adapter, so a recipient contract that cannot make the
     ///      call does not strand the token. With no bids, for 6529 Stream only the museum
@@ -379,25 +426,21 @@ contract EnglishAuction is
                 || (msg.sender != pending
                     && msg.sender != bidder
                     && (bidder != address(0) || msg.sender != _unbidClaimant(s)))
-        ) revert NoPendingDelivery(saleId);
-        if (to == address(0) || to == address(this)) revert InvalidRecipient(to);
+        ) revert IEnglishAuction.NoPendingDelivery(saleId);
+        if (to == address(0) || to == address(this)) revert ISaleAdapter.InvalidRecipient(to);
         s.flags &= ~_DELIVERY_PENDING;
         IERC721(s.token).safeTransferFrom(address(this), to, s.tokenId);
-        emit DeliveryClaimed(saleId, pending, to);
-    }
-
-    /// @inheritdoc IEnglishAuction
-    function pendingDelivery(uint256 saleId) external view returns (address) {
-        Sale storage s = _sales[saleId];
-        return s.flags & _DELIVERY_PENDING != 0 ? _recipientOf(s) : address(0);
+        emit IEnglishAuction.DeliveryClaimed(saleId, pending, to);
     }
 
     // ---------------------------------------------------------------------------- disputes
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Pauses a live auction for a dispute, once per auction. GUARDIAN role (immediate).
+    /// @param saleId The live auction's sale ID.
+    /// @param disputeRef A reference to the dispute, emitted in `AuctionPaused`; not checked.
     function pause(uint256 saleId, bytes32 disputeRef) external restricted nonReentrant {
-        Sale storage s = _require(saleId, AuctionState.ACTIVE);
-        if (s.flags & _PAUSE_USED != 0) revert PauseExhausted(saleId);
+        Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ACTIVE);
+        if (s.flags & _PAUSE_USED != 0) revert IEnglishAuction.PauseExhausted(saleId);
         s.flags |= _PAUSE_USED;
         s.pausedAt = SafeCast.toUint32(block.timestamp);
         // LIFECYCLE-4: `cancel` must cite an outcome recorded after this pause, so one past the
@@ -406,26 +449,40 @@ contract EnglishAuction is
         // Safe: a statement-log position is far below 2^40.
         // forge-lint: disable-next-line(unsafe-typecast)
         if (entry != 0) s.outcomeFrom = uint40(index + 1);
-        emit AuctionPaused(saleId, disputeRef);
+        emit IEnglishAuction.AuctionPaused(saleId, disputeRef);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Resumes a paused auction after a rejected dispute, for its remaining time or the
+    ///         governed duration, whichever is longer (the anti-snipe window if longer still),
+    ///         even with a standing bid. UNPAUSER role (pause and unpause have separate holders).
+    ///         Refused until 48 hours (`Roles.STANDARD`) after the pause, so the guardians can
+    ///         always cancel a resume, even one scheduled before the pause. A pause also ends by
+    ///         itself 7 days (`MAX_PAUSE`) after it began, without any call.
+    /// @param saleId The paused auction's sale ID.
     /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function resume(uint256 saleId) external restricted nonReentrant {
-        Sale storage s = _require(saleId, AuctionState.PAUSED);
+        Sale storage s = _require(saleId, IEnglishAuction.AuctionState.PAUSED);
         uint256 pausedAt = s.pausedAt;
         _requireUnpausable(pausedAt);
         _endPause(saleId, s, block.timestamp - pausedAt);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Cancels a paused auction after an upheld dispute: credits the high bid back and
+    ///         burns the token. PARAMETER_SETTER role, while paused, and like `resume` no earlier
+    ///         than 48 hours after the pause (`UnpauseTooEarly`), and no later than
+    ///         `pausedAt + MAX_PAUSE` inclusive. `outcomeRef` must be nonzero and be the token's
+    ///         own latest outcome, `IStatementLog.disputeOutcomeOf(token, tokenId)` (no item
+    ///         fallback), recorded after the pause: an outcome recorded before the pause, or one
+    ///         about the package item, cannot cancel.
+    /// @param saleId The paused auction's sale ID.
+    /// @param outcomeRef The statement-log entry hash of the token's latest DISPUTE_OUTCOME.
     /// @dev The statement log does not record on-chain whether an outcome upheld or rejected
     ///      the dispute. The decision to cancel is the governed 48-hour action itself
     ///      (PARAMETER_SETTER, cancellable by the guardian during its delay); the recorded
     ///      DISPUTE_OUTCOME entry is the public record it must cite, so no auction is cancelled
     ///      without one. Accepted through `pausedAt + MAX_PAUSE` inclusive.
     function cancel(uint256 saleId, bytes32 outcomeRef) external restricted nonReentrant {
-        Sale storage s = _require(saleId, AuctionState.PAUSED);
+        Sale storage s = _require(saleId, IEnglishAuction.AuctionState.PAUSED);
         // As `resume`: not in the pause's own window, even when scheduled before the pause.
         _requireUnpausable(s.pausedAt);
         // LIFECYCLE-4: the cited outcome is the token's own latest one (no item fallback) and
@@ -433,26 +490,37 @@ contract EnglishAuction is
         // about the package item can cancel.
         (bytes32 entry, uint64 index) = _ownOutcome(s);
         if (outcomeRef == bytes32(0) || outcomeRef != entry || index < s.outcomeFrom) {
-            revert OutcomeNotRecorded(saleId, outcomeRef);
+            revert IEnglishAuction.OutcomeNotRecorded(saleId, outcomeRef);
         }
-        s.status = AuctionState.CANCELLED;
+        s.status = IEnglishAuction.AuctionState.CANCELLED;
         // Safe: a live pause is at most MAX_PAUSE (7 days) long, far below 2^24 seconds.
         // forge-lint: disable-next-line(unsafe-typecast)
         s.pausedTotal = uint24(block.timestamp - s.pausedAt);
         s.pausedAt = 0;
         _refundHighBid(saleId, s);
         IMintTarget(s.token).burn(s.tokenId, 1);
-        emit AuctionCancelled(saleId, outcomeRef);
+        emit IEnglishAuction.AuctionCancelled(saleId, outcomeRef);
     }
 
     // ----------------------------------------------------------------------------- credits
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Sends all of the caller's credits in `currency` to `to`.
+    /// @param currency The currency to claim, zero for ETH.
+    /// @param to The address that receives the credits; zero reverts.
+    /// @return amount The amount sent, in the currency's base units.
     function claim(address currency, address to) external nonReentrant returns (uint256) {
         return _claim(msg.sender, currency, to);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Sends all of `account`'s credits in ERC-20 `currency` to `account` itself.
+    ///         Permissionless: a seller split wallet or fee wallet whose ERC-20 payout failed at
+    ///         settlement and was credited here (MONEY-1) cannot call `claim`. The funds only ever
+    ///         go to `account`; a transfer that fails reverts and keeps the credit. ETH is refused
+    ///         (`IRevenueEscrow.InvalidAsset`): ETH credits are bidders' refunds, which only the
+    ///         bidder claims, to the address it chooses.
+    /// @param account The credited account, which also receives the funds.
+    /// @param currency The ERC-20 currency; zero (ETH) reverts.
+    /// @return amount The amount sent, in the currency's base units.
     function claimFor(address account, address currency) external nonReentrant returns (uint256) {
         // MONEY-1 credits only ERC-20 payouts; ETH credits are claimed by their account.
         if (currency == CURRENCY_ETH) revert IRevenueEscrow.InvalidAsset(currency);
@@ -466,73 +534,87 @@ contract EnglishAuction is
     ///        escrow for it.
     /// @param amount The payout, in the currency's base units.
     function settlePayout(address currency, address wallet, uint256 amount) external {
-        if (msg.sender != address(this)) revert InvalidRecipient(msg.sender);
-        RevenuePayment.payERC20(IRevenueEscrow(escrow), wallet, currency, amount);
-    }
-
-    /// @inheritdoc ISaleAdapter
-    function claimable(address account, address currency) external view returns (uint256) {
-        return _credits[account][currency];
+        if (msg.sender != address(this)) revert ISaleAdapter.InvalidRecipient(msg.sender);
+        RevenuePayment.payERC20(IRevenueEscrow(_escrow), wallet, currency, amount);
     }
 
     // -------------------------------------------------------------------------- governance
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Pauses the adapter: no new opens or purchases, and for the auction no new `start`.
+    ///         Bids on live auctions, settlements, claims and closes continue. PAUSER role
+    ///         (immediate).
     /// @dev On the auction the pause stops only `start` and `startWithBid`. Auctions already
     ///      started are untouched: bids, settlement, claims, refunds and withdrawals go on,
     ///      because stopping a live auction near its end would distort its outcome. The
     ///      per-auction dispute pause, `pause(saleId, disputeRef)`, is separate.
     function pause() external restricted {
-        if (_settings.pausedAt != 0) revert SalePaused();
+        if (_settings.pausedAt != 0) revert ISaleAdapter.SalePaused();
         _settings.pausedAt = uint40(block.timestamp);
-        emit Paused(msg.sender);
+        emit ISaleAdapter.Paused(msg.sender);
     }
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Unpauses the adapter. UNPAUSER role. Refused until 48 hours (`Roles.STANDARD`)
+    ///         after the pause, so the guardians always have the standard delay to cancel an
+    ///         unpause, even one scheduled before the pause.
     /// @dev Reverts with `UnpauseTooEarly` before `pausedAt + Roles.STANDARD` (GOV-5).
     function unpause() external restricted {
         uint256 pausedAt = _settings.pausedAt;
-        if (pausedAt == 0) revert NotPaused();
+        if (pausedAt == 0) revert ISaleAdapter.NotPaused();
         _requireUnpausable(pausedAt);
         _settings.pausedAt = 0;
-        emit Unpaused(msg.sender);
+        emit ISaleAdapter.Unpaused(msg.sender);
     }
 
-    /// @inheritdoc ISaleAdapter
-    function paused() external view returns (bool) {
-        return _settings.pausedAt != 0;
-    }
-
-    /// @inheritdoc ISaleAdapter
+    /// @notice Lists or unlists a token contract for new sales. SUCCESSOR_SETTER role. Running
+    ///         sales finish. Listing checks the token like any dependency
+    ///         (`Dependency.InvalidDependency`): code, not an EIP-7702 delegated account, and
+    ///         ERC-165 support for the surface the adapter calls.
+    /// @param token The token contract: one that reports `IMintTarget` through ERC-165 for the
+    ///        fixed-price and Dutch adapters (which also refuse zero, even to unlist), ERC-721
+    ///        for the auction.
+    /// @param listed True to list the token, false to unlist it.
     function setTarget(address token, bool listed) external restricted {
         _setTarget(token, listed);
     }
 
-    /// @inheritdoc ISaleAdapter
+    /// @notice Sets the federation registry. SUCCESSOR_SETTER role, compare-and-set.
+    /// @param expected The registry the caller expects is installed now; a stale value reverts.
+    /// @param next The new registry, or zero to remove it; a nonzero one must support
+    ///        `IFederationRegistry` through ERC-165.
     /// @dev A nonzero registry must have code, not be a delegated account, and support
     ///      `IFederationRegistry` through ERC-165 (D8); its code hash is pinned (L-6).
     function setFederationRegistry(address expected, address next) external restricted {
-        if (federationRegistry != expected) revert ExpectedValueMismatch();
+        if (_federationRegistry != expected) revert ISaleAdapter.ExpectedValueMismatch();
         if (next != address(0)) Dependency.check(next, type(IFederationRegistry).interfaceId);
-        federationRegistry = next;
-        federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
-        emit FederationRegistrySet(expected, next);
+        _federationRegistry = next;
+        _federationRegistryCodeHash = next == address(0) ? bytes32(0) : next.codehash;
+        emit ISaleAdapter.FederationRegistrySet(expected, next);
     }
 
-    /// @inheritdoc IEnglishAuction
-    function setConfig(AuctionConfig calldata expected, AuctionConfig calldata next)
-        external
-        restricted
-    {
+    /// @notice Sets the auction parameters, within the implementation's bounds: a duration of 1
+    ///         hour to 7 days, an anti-snipe window of 1 minute to 1 day and at most the
+    ///         duration, and an increment share of 1,000 to 100,000 (1% to 100%).
+    ///         PARAMETER_SETTER role, compare-and-set.
+    /// @param expected The parameters the caller expects are current; a stale value reverts.
+    /// @param next The new parameters, within the bounds above.
+    function setConfig(
+        IEnglishAuction.AuctionConfig calldata expected,
+        IEnglishAuction.AuctionConfig calldata next
+    ) external restricted {
         Settings memory c = _settings;
         if (
             c.duration != expected.duration || c.extensionWindow != expected.extensionWindow
                 || c.incrementShare != expected.incrementShare
-        ) revert ExpectedValueMismatch();
+        ) revert ISaleAdapter.ExpectedValueMismatch();
         _setConfig(next);
     }
 
-    /// @inheritdoc IEnglishAuction
+    /// @notice Sets a currency's opening bid, raising or lowering it up to the implementation's
+    ///         ceiling (zero at launch; the first bid is still at least 1). PARAMETER_SETTER role,
+    ///         compare-and-set.
+    /// @param currency The currency, zero for ETH; it must be active on the asset allowlist.
+    /// @param expected The opening bid the caller expects is current; a stale value reverts.
+    /// @param next The new opening bid, in the currency's base units.
     /// @dev Moves either way, zero included, within an absolute ceiling of {OPENING_BID_FLOORS}
     ///      increment floors, capped at `type(uint96).max` (the largest bid) so that a bid can
     ///      always meet it. The raise-only rule of ADR 0001 section 13.9 covers gas parameters,
@@ -540,82 +622,50 @@ contract EnglishAuction is
     ///      the allowlist.
     function setOpeningBid(address currency, uint256 expected, uint256 next) external restricted {
         uint256 current = _openingBids[currency];
-        if (current != expected) revert ExpectedValueMismatch();
+        if (current != expected) revert ISaleAdapter.ExpectedValueMismatch();
         uint256 ceiling =
-            Math.min(allowlist.incrementFloor(currency) * OPENING_BID_FLOORS, type(uint96).max);
-        if (next > ceiling) revert OpeningBidAboveCeiling(next, ceiling);
+            Math.min(_allowlist.incrementFloor(currency) * _OPENING_BID_FLOORS, type(uint96).max);
+        if (next > ceiling) revert IEnglishAuction.OpeningBidAboveCeiling(next, ceiling);
         _openingBids[currency] = next;
-        emit OpeningBidSet(currency, current, next);
+        emit IEnglishAuction.OpeningBidSet(currency, current, next);
     }
 
     // ------------------------------------------------------------------------------- views
 
-    /// @inheritdoc IEnglishAuction
-    function saleIdOf(address token, uint256 tokenId) public pure returns (uint256) {
-        return uint256(keccak256(abi.encode(token, tokenId)));
-    }
-
-    /// @inheritdoc IEnglishAuction
-    function auction(uint256 saleId) external view returns (Auction memory a) {
-        Sale storage s = _sales[saleId];
-        a.state = _state(s);
-        if (a.state == AuctionState.NONE) revert UnknownSale(saleId);
-        Terms storage t = _terms[s.termsId];
-        a.token = s.token;
-        a.tokenId = s.tokenId;
-        a.currency = t.currency;
-        a.incrementFloor = t.incrementFloor;
-        a.bidder = s.bidder;
-        a.recipient = _recipientOf(s);
-        a.bid = s.bid;
-        a.endTime = s.endTime;
-        a.pausedAt = s.pausedAt;
-        a.pausedTotal = s.pausedTotal;
-        // The pause clock is in seconds; a validator moves it by seconds, not days.
-        // forge-lint: disable-next-line(block-timestamp)
-        if (a.pausedAt != 0 && block.timestamp > a.pausedAt + MAX_PAUSE) {
-            a.endTime = uint64(_resumedEnd(s, MAX_PAUSE));
-            a.pausedAt = 0;
-            a.pausedTotal = MAX_PAUSE;
-        }
-    }
-
-    /// @inheritdoc IEnglishAuction
-    /// @dev `price` is zero, as for every English auction; a federated token's fee share is its
-    ///      registry entry's, locked at start.
-    function lockedTerms(uint256 saleId) external view returns (LockedTerms memory lt) {
-        (lt,) = _lockedTerms(_existing(saleId));
-    }
-
-    /// @inheritdoc IEnglishAuction
-    function config() external view returns (AuctionConfig memory) {
-        return _currentConfig();
-    }
-
-    /// @inheritdoc IEnglishAuction
-    function openingBid(address currency) external view returns (uint256) {
-        return _openingBids[currency];
-    }
-
-    /// @inheritdoc ISaleAdapter
+    /// @notice This adapter's `SaleKind` label: a token mints only for an admitted adapter whose
+    ///         label equals its terms' kind. A new sale method claims a new label (ADR 0005,
+    ///         owner decision 14).
+    /// @return `SaleKind.ENGLISH_AUCTION`, `SaleKind.UNIFORM_AUCTION`, rc.1's
+    ///         `SaleKind.FIXED_PRICE` or `SaleKind.DUTCH`, or a later adapter's own label.
     function saleKind() external pure returns (bytes32) {
         return SaleKind.ENGLISH_AUCTION;
     }
 
-    /// @inheritdoc ISaleAdapter
-    function isTarget(address token) public view returns (bool) {
-        if (_listed[token]) return true;
-        address registry = federationRegistry;
-        return registry != address(0) && registry.codehash == federationRegistryCodeHash
-            && IFederationRegistry(registry).isActive(token);
-    }
-
-    /// @inheritdoc IERC165
-    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IEnglishAuction).interfaceId
-            || interfaceId == type(ISaleAdapter).interfaceId
-            || interfaceId == type(IERC721Receiver).interfaceId
-            || interfaceId == type(IERC165).interfaceId;
+    /// @inheritdoc IEnglishAuctionClock
+    /// @dev Answered here, not through the lens, for contracts that read an auction on their own
+    ///      hot paths (the edition auction reads its 1/1 in `open`, `bid`, `settle` and
+    ///      `withdrawBid`): one cold slot for a sale never paused, against the lens's extra
+    ///      account and round trips.
+    function auctionClock(uint256 saleId)
+        external
+        view
+        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+    {
+        Sale storage s = _sales[saleId];
+        state = _state(s);
+        if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        endTime = s.endTime;
+        // Only a dispute pause sets `pausedAt`, and it sets `_PAUSE_USED` with it: an unpaused
+        // sale's slot 2 is not read.
+        if (s.flags & _PAUSE_USED != 0) {
+            uint256 pausedAt = s.pausedAt;
+            // forge-lint: disable-next-line(block-timestamp)
+            if (pausedAt != 0 && block.timestamp > pausedAt + _MAX_PAUSE) {
+                // Truncating as `auction` does: the end fits 32 bits.
+                // forge-lint: disable-next-line(unsafe-typecast)
+                endTime = uint64(_resumedEnd(s, _MAX_PAUSE));
+            }
+        }
     }
 
     /// @notice Accepts only a token minted into this adapter's custody during a start, so no
@@ -633,18 +683,76 @@ contract EnglishAuction is
         returns (bytes4)
     {
         if (operator != address(this) || from != address(0) || !_reentrancyGuardEntered()) {
-            revert InvalidTarget(msg.sender);
+            revert IEnglishAuction.InvalidTarget(msg.sender);
         }
         return IERC721Receiver.onERC721Received.selector;
     }
 
+    /// @notice Raw storage words, for the lens: `words[i]` is the word at slot `slots[i]`. Every
+    ///         word is public state already; the lens decodes them with this contract's layout.
+    /// @param slots The storage slots to read.
+    /// @return The words, in the order of `slots`.
+    function storageWords(bytes32[] calldata slots) external view returns (bytes32[] memory) {
+        // The ABI encoding of the words, written from memory offset 0 and returned at once: not
+        // memory-safe and need not be, since no Solidity code runs after the `return`.
+        assembly {
+            let n := slots.length
+            mstore(0x00, 0x20)
+            mstore(0x20, n)
+            for { let i := 0 } lt(i, n) { i := add(i, 1) } {
+                mstore(add(0x40, shl(5, i)), sload(calldataload(add(slots.offset, shl(5, i)))))
+            }
+            return(0x00, add(0x40, shl(5, n)))
+        }
+    }
+
+    /// @notice Answers every view of `IEnglishAuction` and `ISaleAdapter` this contract does not
+    ///         declare (`auction`, `lockedTerms`, `minimumBid`, `pendingDelivery`, `config`,
+    ///         `openingBid`, `claimable`, `paused`, `isTarget`, `saleIdOf`, `federationRegistry`,
+    ///         `escrow`, `statementLog`, `supportsInterface`), and the getters `MAX_PAUSE`,
+    ///         `OPENING_BID_FLOORS`, `PAYOUT_GAS`, `allowlist`, `economicsResolver`, `permit2` and
+    ///         `federationRegistryCodeHash`: it sends this call's calldata unchanged to the lens,
+    ///         which declares each with the same signature, and returns or reverts with its
+    ///         answer, byte for byte. Any other call reverts there. ETH is refused.
+    /// @dev A read-only `staticcall` to the fixed, stateless lens this contract created; no
+    ///      delegatecall. The views live there because this contract's write path alone nearly
+    ///      fills EIP-170.
+    fallback() external {
+        address target = lens;
+        // `target` is the immutable lens and `staticcall` cannot change state, so the answer is
+        // exactly the lens's. Calldata and returndata are copied over memory from offset 0,
+        // which is not memory-safe and need not be: the frame ends in `return` or `revert` at
+        // once, and no Solidity code reads memory again.
+        assembly {
+            calldatacopy(0, 0, calldatasize())
+            let ok := staticcall(gas(), target, 0, calldatasize(), 0, 0)
+            returndatacopy(0, 0, returndatasize())
+            if ok { return(0, returndatasize()) }
+            revert(0, returndatasize())
+        }
+    }
+
     // ---------------------------------------------------------------------------- internal
+
+    /// @dev The derived sale ID (`IEnglishAuction.saleIdOf`, which the lens answers).
+    function _saleIdOf(address token, uint256 tokenId) private pure returns (uint256) {
+        return uint256(keccak256(abi.encode(token, tokenId)));
+    }
+
+    /// @dev Whether the token may sell here (`ISaleAdapter.isTarget`, which the lens answers):
+    ///      listed, or active in the federation registry whose code hash was pinned.
+    function _isTarget(address token) private view returns (bool) {
+        if (_listed[token]) return true;
+        address registry = _federationRegistry;
+        return registry != address(0) && registry.codehash == _federationRegistryCodeHash
+            && IFederationRegistry(registry).isActive(token);
+    }
 
     function _start(address token, bytes calldata mintData) private returns (uint256 saleId) {
         Settings memory c = _settings;
-        if (c.pausedAt != 0) revert SalePaused();
+        if (c.pausedAt != 0) revert ISaleAdapter.SalePaused();
         bool listed = _listed[token];
-        if (!listed && !isTarget(token)) revert TargetNotAllowed(token);
+        if (!listed && !_isTarget(token)) revert ISaleAdapter.TargetNotAllowed(token);
         (uint256 tokenId, PrimaryTerms memory terms) =
             IMintTarget(token).mint(address(this), 0, 1, mintData);
         if (terms.saleKind != SaleKind.ENGLISH_AUCTION) {
@@ -655,17 +763,19 @@ contract EnglishAuction is
         // recipient is the escrow could never settle; it is refused while nothing is at stake.
         // A federated token's own fee recipient is never paid ({_lockTerms} checks the network's).
         if (
-            tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == escrow
+            tokenId >> 32 != 0 || terms.seller == address(0) || terms.seller == _escrow
                 || (!t.federated
-                    && (terms.feeRecipient == escrow
+                    && (terms.feeRecipient == _escrow
                         || (terms.feeRecipient == address(0) && terms.feeShare != 0)))
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
                 || IERC721(token).ownerOf(tokenId) != address(this)
-        ) revert InvalidSaleTerms(token, tokenId);
-        saleId = saleIdOf(token, tokenId);
+        ) revert ISaleAdapter.InvalidSaleTerms(token, tokenId);
+        saleId = _saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
-        if (s.status != AuctionState.NONE) revert InvalidAuctionState(saleId, s.status);
+        if (s.status != IEnglishAuction.AuctionState.NONE) {
+            revert IEnglishAuction.InvalidAuctionState(saleId, s.status);
+        }
         uint32 endTime = SafeCast.toUint32(block.timestamp + c.duration);
         s.token = token;
         // Safe: `tokenId >> 32 == 0` was checked above.
@@ -673,8 +783,8 @@ contract EnglishAuction is
         s.tokenId = uint32(tokenId);
         s.endTime = endTime;
         s.termsId = _termsId(t);
-        s.status = AuctionState.ACTIVE;
-        emit SaleStarted(
+        s.status = IEnglishAuction.AuctionState.ACTIVE;
+        emit ISaleAdapter.SaleStarted(
             saleId,
             token,
             tokenId,
@@ -698,8 +808,8 @@ contract EnglishAuction is
         Settings memory c
     ) private view returns (Terms memory t) {
         if (currency == CURRENCY_DEFAULT) {
-            currency = allowlist.defaultCurrency(listed ? PRODUCT_STREAM : PRODUCT_FEDERATED);
-        } else if (!allowlist.isActive(currency)) {
+            currency = _allowlist.defaultCurrency(listed ? PRODUCT_STREAM : PRODUCT_FEDERATED);
+        } else if (!_allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
         t.currency = currency;
@@ -713,14 +823,14 @@ contract EnglishAuction is
         t.extensionWindow = uint24(c.extensionWindow);
         if (!listed) {
             IFederationRegistry.Entry memory e =
-                IFederationRegistry(federationRegistry).entry(token);
+                IFederationRegistry(_federationRegistry).entry(token);
             // MARKET-3: the registry's fee goes to the network's federated recipient, which must
             // be payable when the fee is nonzero.
             address recipient = _federatedFeeRecipient();
             if (
                 e.codeHash != token.codehash || e.feeShare > Splits.DENOMINATOR
-                    || recipient == escrow || (recipient == address(0) && e.feeShare != 0)
-            ) revert InvalidSaleTerms(token, tokenId);
+                    || recipient == _escrow || (recipient == address(0) && e.feeShare != 0)
+            ) revert ISaleAdapter.InvalidSaleTerms(token, tokenId);
             t.federated = true;
             t.registryFee = e.feeShare;
         }
@@ -759,7 +869,9 @@ contract EnglishAuction is
             federated ? _federatedFeeRecipient() : p.feeRecipient,
             federated ? t.registryFee : p.feeShare
         );
-        if (lt.feeShare > Splits.DENOMINATOR) revert InvalidSaleTerms(s.token, s.tokenId);
+        if (lt.feeShare > Splits.DENOMINATOR) {
+            revert ISaleAdapter.InvalidSaleTerms(s.token, s.tokenId);
+        }
         creator = p.creator;
     }
 
@@ -772,9 +884,9 @@ contract EnglishAuction is
         bytes32 witness,
         bool starting
     ) private {
-        Sale storage s = _require(saleId, AuctionState.ACTIVE);
+        Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ACTIVE);
         // MARKET-5: a federated contract delisted since the start takes no more bids.
-        if (_delisted(s)) revert TargetNotAllowed(s.token);
+        if (_delisted(s)) revert ISaleAdapter.TargetNotAllowed(s.token);
         Terms storage t = _terms[s.termsId];
         address currency = t.currency;
         if (t.incrementFloor == 0) {
@@ -785,16 +897,16 @@ contract EnglishAuction is
             // runs once per sale, on its first bid.
             // forge-lint: disable-next-line(unsafe-typecast)
             locked.incrementFloor =
-                uint96(Math.min(allowlist.incrementFloor(currency), type(uint96).max));
+                uint96(Math.min(_allowlist.incrementFloor(currency), type(uint96).max));
             // `t` keeps pointing at the start record: the two differ only in the floor, which
             // the first bid does not use, and rereading the new record would cost a cold slot.
             s.termsId = _termsId(locked);
-        } else if (!allowlist.isActive(currency)) {
+        } else if (!_allowlist.isActive(currency)) {
             revert IAssetAllowlist.AssetNotActive(currency);
         }
-        if (recipient == address(this)) revert InvalidRecipient(recipient);
+        if (recipient == address(this)) revert ISaleAdapter.InvalidRecipient(recipient);
         uint256 required = _minimumBid(s, t);
-        if (payment.amount < required) revert BidTooLow(required, payment.amount);
+        if (payment.amount < required) revert IEnglishAuction.BidTooLow(required, payment.amount);
         address previous = s.bidder;
         if (previous != address(0)) _credit(previous, currency, saleId, s.bid);
         s.bidder = payment.payer;
@@ -819,8 +931,14 @@ contract EnglishAuction is
             s.endTime = SafeCast.toUint32(end);
         }
         // Safe: `end` fits 32 bits (checked when stored, or already stored).
-        // forge-lint: disable-next-line(unsafe-typecast)
-        emit BidPlaced(saleId, payment.payer, recipient, payment.amount, uint64(end));
+        emit IEnglishAuction.BidPlaced(
+            saleId,
+            payment.payer,
+            recipient,
+            payment.amount,
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint64(end)
+        );
         _collect(currency, payment, witness, starting);
     }
 
@@ -833,22 +951,22 @@ contract EnglishAuction is
         if (currency == CURRENCY_ETH) {
             if (p.method != PaymentMethod.DIRECT || p.payer != msg.sender || msg.value != p.amount)
             {
-                revert InvalidPayment();
+                revert ISaleAdapter.InvalidPayment();
             }
             return;
         }
-        if (msg.value != 0) revert InvalidPayment();
+        if (msg.value != 0) revert ISaleAdapter.InvalidPayment();
         // As in the fixed-price and Dutch adapters: an expired permit never pays, even where an
         // allowance would.
         // forge-lint: disable-next-line(block-timestamp)
         if (p.method != PaymentMethod.DIRECT && block.timestamp > p.deadline) {
-            revert PaymentExpired(p.deadline);
+            revert ISaleAdapter.PaymentExpired(p.deadline);
         }
         if (p.method == PaymentMethod.PERMIT2) {
-            if (permit2 == address(0)) revert InvalidPayment();
+            if (_permit2 == address(0)) revert ISaleAdapter.InvalidPayment();
             uint256 held = TokenTransfer.balanceOf(currency, address(this));
             uint256 payerHeld = TokenTransfer.balanceOf(currency, p.payer);
-            ISignatureTransfer(permit2)
+            ISignatureTransfer(_permit2)
                 .permitWitnessTransferFrom(
                     ISignatureTransfer.PermitTransferFrom(
                         ISignatureTransfer.TokenPermissions(currency, p.amount), p.nonce, p.deadline
@@ -866,9 +984,9 @@ contract EnglishAuction is
             ) revert TokenTransfer.TokenBalanceMismatch(currency);
             return;
         }
-        if (p.payer != msg.sender) revert InvalidPayment();
+        if (p.payer != msg.sender) revert ISaleAdapter.InvalidPayment();
         if (p.method == PaymentMethod.PERMIT) {
-            if (p.signature.length != 65) revert InvalidPayment();
+            if (p.signature.length != 65) revert ISaleAdapter.InvalidPayment();
             try IERC20Permit(currency)
                 .permit(
                     p.payer,
@@ -906,7 +1024,7 @@ contract EnglishAuction is
     function _pay(address currency, address wallet, uint256 amount, uint256 saleId) private {
         if (amount == 0) return;
         if (currency == CURRENCY_ETH) {
-            RevenuePayment.payETH(IRevenueEscrow(escrow), wallet, amount, PAYOUT_GAS);
+            RevenuePayment.payETH(IRevenueEscrow(_escrow), wallet, amount, _PAYOUT_GAS);
             return;
         }
         // The frame gets its gas in full, so a caller cannot force the credit route.
@@ -924,15 +1042,15 @@ contract EnglishAuction is
         private
         returns (uint256 amount)
     {
-        if (to == address(0)) revert InvalidRecipient(to);
+        if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
         amount = _credits[account][currency];
-        if (amount == 0) revert NothingToClaim(account, currency);
+        if (amount == 0) revert ISaleAdapter.NothingToClaim(account, currency);
         _credits[account][currency] = 0;
-        emit Claimed(account, currency, to, amount);
+        emit ISaleAdapter.Claimed(account, currency, to, amount);
         if (currency != CURRENCY_ETH) {
             TokenTransfer.transferExact(currency, to, amount);
         } else if (!TokenTransfer.sendETH(to, amount, gasleft())) {
-            revert ClaimFailed(to);
+            revert ISaleAdapter.ClaimFailed(to);
         }
     }
 
@@ -943,7 +1061,7 @@ contract EnglishAuction is
     function _deliver(uint256 saleId, Sale storage s) private {
         (address token, uint256 tokenId, address to) = (s.token, s.tokenId, _recipientOf(s));
         if (!BoundedCall.hasSufficientGas(gasleft(), DELIVERY_GAS, DELIVERY_RESERVE)) {
-            revert DeliveryInsufficientGas();
+            revert IEnglishAuction.DeliveryInsufficientGas();
         }
         bytes memory data = abi.encodeWithSelector(_SAFE_TRANSFER_FROM, address(this), to, tokenId);
         uint256 gasLimit = DELIVERY_GAS;
@@ -952,7 +1070,7 @@ contract EnglishAuction is
         }
         if (IERC721(token).ownerOf(tokenId) == address(this)) {
             s.flags |= _DELIVERY_PENDING;
-            emit DeliveryPending(saleId, to);
+            emit IEnglishAuction.DeliveryPending(saleId, to);
         }
     }
 
@@ -965,7 +1083,7 @@ contract EnglishAuction is
         uint256 price,
         uint256 fee
     ) private {
-        emit SaleSettled(
+        emit ISaleAdapter.SaleSettled(
             saleId,
             lt.token,
             lt.id,
@@ -995,7 +1113,7 @@ contract EnglishAuction is
 
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {
         _credits[account][currency] += amount;
-        emit Credited(account, currency, saleId, amount);
+        emit ISaleAdapter.Credited(account, currency, saleId, amount);
     }
 
     /// @dev MARKET-2: a currency freeze (deprecation) stops the auction, not just its bids. While
@@ -1019,7 +1137,7 @@ contract EnglishAuction is
         if (since + _terms[s.termsId].extensionWindow <= s.endTime) return false;
         uint32 end = SafeCast.toUint32(block.timestamp + _reopening(s));
         s.endTime = end;
-        emit AuctionResumed(saleId, end);
+        emit IEnglishAuction.AuctionResumed(saleId, end);
         return true;
     }
 
@@ -1032,25 +1150,19 @@ contract EnglishAuction is
     {
         currency = _terms[s.termsId].currency;
         IAssetAllowlist.Status status;
-        (status, since,) = allowlist.statusClock(currency);
+        (status, since,) = _allowlist.statusClock(currency);
         active = status == IAssetAllowlist.Status.Active;
     }
 
     /// @dev Whether the sale is of a federated contract the registry no longer serves (ADR 0001
     ///      section 16: a delisted contract cannot sell through the network's adapters).
     function _delisted(Sale storage s) private view returns (bool) {
-        return _terms[s.termsId].federated && !isTarget(s.token);
+        return _terms[s.termsId].federated && !_isTarget(s.token);
     }
 
     /// @dev The network fee recipient of federated sales (MARKET-3).
     function _federatedFeeRecipient() private view returns (address) {
-        return economicsResolver.networkFeeRecipient(PRODUCT_FEDERATED);
-    }
-
-    /// @dev A sale that exists.
-    function _existing(uint256 saleId) private view returns (Sale storage s) {
-        s = _sales[saleId];
-        if (s.status == AuctionState.NONE) revert UnknownSale(saleId);
+        return _economicsResolver.networkFeeRecipient(PRODUCT_FEDERATED);
     }
 
     /// @dev L-5: who besides the recorded recipient may claim an unbid work's pending delivery:
@@ -1064,23 +1176,26 @@ contract EnglishAuction is
     /// @dev The token's own latest dispute outcome in the statement log, and its position in
     ///      the token's chain.
     function _ownOutcome(Sale storage s) private view returns (bytes32 entry, uint64 index) {
-        (entry, index) = IStatementLog(statementLog).disputeOutcomeOf(s.token, s.tokenId);
+        (entry, index) = IStatementLog(_statementLog).disputeOutcomeOf(s.token, s.tokenId);
     }
 
     /// @dev Loads a sale after writing down an expired pause, and requires the `wanted` state.
-    function _require(uint256 saleId, AuctionState wanted) private returns (Sale storage s) {
+    function _require(uint256 saleId, IEnglishAuction.AuctionState wanted)
+        private
+        returns (Sale storage s)
+    {
         s = _sales[saleId];
         if (s.flags & _PAUSE_USED != 0) {
             uint256 pausedAt = s.pausedAt;
             // The pause clock is in seconds; a validator moves it by seconds, not days.
             // forge-lint: disable-next-line(block-timestamp)
-            if (pausedAt != 0 && block.timestamp > pausedAt + MAX_PAUSE) {
-                _endPause(saleId, s, MAX_PAUSE);
+            if (pausedAt != 0 && block.timestamp > pausedAt + _MAX_PAUSE) {
+                _endPause(saleId, s, _MAX_PAUSE);
             }
         }
-        AuctionState state = _state(s);
-        if (state == AuctionState.NONE) revert UnknownSale(saleId);
-        if (state != wanted) revert InvalidAuctionState(saleId, state);
+        IEnglishAuction.AuctionState state = _state(s);
+        if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        if (state != wanted) revert IEnglishAuction.InvalidAuctionState(saleId, state);
     }
 
     function _endPause(uint256 saleId, Sale storage s, uint256 length) private {
@@ -1090,23 +1205,27 @@ contract EnglishAuction is
         // forge-lint: disable-next-line(unsafe-typecast)
         s.pausedTotal = uint24(length);
         s.pausedAt = 0;
-        emit AuctionResumed(saleId, end);
+        emit IEnglishAuction.AuctionResumed(saleId, end);
     }
 
     /// @dev The derived state: PAUSED while a pause is live (through `pausedAt + MAX_PAUSE`
     ///      inclusive), ENDED once the end has passed.
-    function _state(Sale storage s) private view returns (AuctionState) {
-        AuctionState status = s.status;
-        if (status != AuctionState.ACTIVE) return status;
+    function _state(Sale storage s) private view returns (IEnglishAuction.AuctionState) {
+        IEnglishAuction.AuctionState status = s.status;
+        if (status != IEnglishAuction.AuctionState.ACTIVE) return status;
         uint256 end = s.endTime;
         uint256 pausedAt = s.flags & _PAUSE_USED == 0 ? 0 : s.pausedAt;
         if (pausedAt != 0) {
             // forge-lint: disable-next-line(block-timestamp)
-            if (block.timestamp <= pausedAt + MAX_PAUSE) return AuctionState.PAUSED;
-            end = _resumedEnd(s, MAX_PAUSE);
+            if (block.timestamp <= pausedAt + _MAX_PAUSE) {
+                return IEnglishAuction.AuctionState.PAUSED;
+            }
+            end = _resumedEnd(s, _MAX_PAUSE);
         }
         // forge-lint: disable-next-line(block-timestamp)
-        return block.timestamp < end ? AuctionState.ACTIVE : AuctionState.ENDED;
+        return block.timestamp < end
+            ? IEnglishAuction.AuctionState.ACTIVE
+            : IEnglishAuction.AuctionState.ENDED;
     }
 
     /// @dev The end after a pause of `length` seconds: the remaining time at the pause, but at
@@ -1128,7 +1247,7 @@ contract EnglishAuction is
     function _requireUnpausable(uint256 pausedAt) private view {
         uint256 allowedAt = pausedAt + Roles.STANDARD;
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < allowedAt) revert UnpauseTooEarly(allowedAt);
+        if (block.timestamp < allowedAt) revert ISaleAdapter.UnpauseTooEarly(allowedAt);
     }
 
     /// @dev The token's recipient: the stored one, or the bidder when none is stored.
@@ -1139,25 +1258,25 @@ contract EnglishAuction is
     function _setTarget(address token, bool listed) private {
         if (listed) Dependency.check(token, type(IERC721).interfaceId);
         _listed[token] = listed;
-        emit TargetSet(token, listed);
+        emit ISaleAdapter.TargetSet(token, listed);
     }
 
-    function _setConfig(AuctionConfig memory next) private {
+    function _setConfig(IEnglishAuction.AuctionConfig memory next) private {
         if (
             next.duration < MIN_DURATION || next.duration > MAX_DURATION
                 || next.extensionWindow < MIN_EXTENSION_WINDOW
                 || next.extensionWindow > MAX_EXTENSION_WINDOW
                 || next.extensionWindow > next.duration || next.incrementShare < MIN_INCREMENT_SHARE
                 || next.incrementShare > Splits.DENOMINATOR
-        ) revert InvalidConfig();
-        emit ConfigSet(_currentConfig(), next);
+        ) revert IEnglishAuction.InvalidConfig();
+        emit IEnglishAuction.ConfigSet(_currentConfig(), next);
         Settings storage st = _settings;
         (st.duration, st.extensionWindow, st.incrementShare) =
         (next.duration, next.extensionWindow, next.incrementShare);
     }
 
-    function _currentConfig() private view returns (AuctionConfig memory) {
+    function _currentConfig() private view returns (IEnglishAuction.AuctionConfig memory) {
         Settings storage st = _settings;
-        return AuctionConfig(st.duration, st.extensionWindow, st.incrementShare);
+        return IEnglishAuction.AuctionConfig(st.duration, st.extensionWindow, st.incrementShare);
     }
 }
