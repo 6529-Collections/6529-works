@@ -64,6 +64,22 @@ contract RevertingAuthorityStandIn is DependencyStandIn {
     }
 }
 
+/// @dev A replacement that answers `authority()` with a foreign manager, but only after spending
+///      more gas than Stream forwards to the read (`RECORDS_GAS`).
+contract SlowAuthorityStandIn is DependencyStandIn {
+    address internal immutable _authority;
+
+    constructor(bytes4 id, address authority_) DependencyStandIn(id) {
+        _authority = authority_;
+    }
+
+    function authority() external view returns (address) {
+        uint256 start = gasleft();
+        while (start - gasleft() < 120_000) { }
+        return _authority;
+    }
+}
+
 /// @dev A replacement whose `authority()` answers one word that is not an address.
 contract DirtyAuthorityStandIn is DependencyStandIn {
     constructor(bytes4 id) DependencyStandIn(id) { }
@@ -462,6 +478,14 @@ contract StreamDependenciesTest is IntegrationBase {
             _replace(KINDS[i], address(new SilentStandIn(_interfaceOf(KINDS[i]))));
             _replace(KINDS[i], address(new RevertingAuthorityStandIn(_interfaceOf(KINDS[i]))));
         }
+    }
+
+    /// @dev The read forwards at most `RECORDS_GAS` (GV-35): an `authority()` that needs more to
+    ///      answer is not read, so its replacement installs as one with no answer does. Its
+    ///      answer here would name a foreign manager.
+    function test_TheAuthorityReadIsBoundedByRecordsGas() public {
+        address foreign = address(new AccessManager(address(this)));
+        _replace("ECONOMICS", address(new SlowAuthorityStandIn(_interfaceOf("ECONOMICS"), foreign)));
     }
 
     /// @dev The permanence gap the review of #81 found, closed: the artist registry's only
