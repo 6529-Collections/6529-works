@@ -1212,9 +1212,9 @@ contract UniformEditionAuction is
     function _oneOfOneClock(uint256 saleId)
         private
         view
-        returns (IEnglishAuction.AuctionState, uint64, uint64)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
-        return IEnglishAuctionClock(englishAuction)
+        (state, endTime, pausedAt) = IEnglishAuctionClock(englishAuction)
             .auctionClock(saleIdOf(stream, _payouts[saleId].id));
     }
 
