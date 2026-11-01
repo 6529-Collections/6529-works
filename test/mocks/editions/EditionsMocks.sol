@@ -535,7 +535,9 @@ contract ReentrantReceiver1155 is ERC1155Holder {
 
 /// @dev A sale method whose parameters do not fit the two-word bound (ADR 0005 §12): its edition
 ///      terms carry `abi.encode(keccak256(extra))`, and its `open` takes the item and the full
-///      `extra` (`data = abi.encode(item, extra)`), refusing an `extra` of another hash.
+///      `extra` (`data = abi.encode(item, extra)`), refusing an `extra` of another hash. The
+///      hash is the edition's recorded one once it exists: `bindMinter` checks the caller's item
+///      against 6529 Stream only before then.
 contract HashedParamsAdapterMock is ERC1155Holder {
     bytes32 public constant saleKind = keccak256("HASHED_PARAMS");
     mapping(uint256 id => bytes) public extraOf;
@@ -548,10 +550,11 @@ contract HashedParamsAdapterMock is ERC1155Holder {
 
     function open(IEditions target, uint256 id, bytes calldata data) external {
         (PackageItem memory item, bytes memory extra) = abi.decode(data, (PackageItem, bytes));
-        if (
-            item.edition.params.length != 32
-                || abi.decode(item.edition.params, (bytes32)) != keccak256(extra)
-        ) revert ParamsMismatch(id);
+        bytes memory params =
+            target.exists(id) ? target.edition(id).terms.params : item.edition.params;
+        if (params.length != 32 || abi.decode(params, (bytes32)) != keccak256(extra)) {
+            revert ParamsMismatch(id);
+        }
         target.bindMinter(id, item);
         extraOf[id] = extra;
     }

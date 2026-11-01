@@ -449,12 +449,15 @@ after the rc.2 seven-lens review.
   down from 1,024: the master's 1/1 `start` carries the item, and at 1,024 bytes the binding
   start row (an artist's first two-party work with a bid and a VRF seed) was 361,211 Prague
   gas, over its budget; at 256, 348,132 and at 128, 345,988, both over the row's 5,000 margin.
-  At 64 every start row stays inside 350,000 less the margin: that row is 344,907 for a master
-  at the bound, and the steady-state master start 268,971. The design rule: a sale method
+  At 64 every start row stays inside 350,000 less the margin: that row is 344,887 for a master
+  at the bound, and the steady-state master start 268,959. The design rule: a sale method
   whose parameters do not fit two words commits to a hash of them in `params` and takes the
   full data when its sale opens, checking it against that hash, for example
   `params = abi.encode(keccak256(extra))` with `open`'s `data = abi.encode(item, extra)`.
-  `test_F10_AnAdapterTakesLongParamsByHash` proves the path with a mock adapter.
+  Once the edition exists, the hash is the one it records (`edition(id).terms.params`), never
+  the caller's copy of the item: `bindMinter` checks a caller's item against 6529 Stream only
+  before the edition exists. `test_F10_AnAdapterTakesLongParamsByHash` and
+  `test_F10_TheRecordedHashGovernsOnceTheEditionExists` prove the path with a mock adapter.
 
 ## What this amends
 

@@ -191,9 +191,11 @@ interface IUniformEditionAuctionLens {
     ///         position order, from the later of `fromPosition` and the settler's own next
     ///         position. `O(n log max)` over a log of `n` departures (a bounded heap), reading the
     ///         log four entries per word: a page of 96 from a log of 10,000 departures costs about
-    ///         22M gas in the log's worst order. A keeper pages with `fromPosition` one past the last position it got
-    ///         (`departures(saleId, step)` gives them), or passes each page to `settle` and asks
-    ///         again.
+    ///         22M gas in the log's worst order. Before the clearing is stored (an open sale, or
+    ///         a settlement scan still running), each page also computes the live clearing, as
+    ///         `clearing` does. A keeper pages with `fromPosition` one past the last position it
+    ///         got (`departures(saleId, step)` gives them), or passes each page to `settle` and
+    ///         asks again.
     /// @param saleId The sale ID.
     /// @param settler The settler (`settle`'s `msg.sender`).
     /// @param fromPosition The least position to return.

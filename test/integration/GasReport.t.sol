@@ -649,7 +649,7 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev An EDITION_MASTER whose edition terms carry `EditionRules.MAX_PARAMS_BYTES` of
-    ///      params (F10: 256 bytes), every byte nonzero: the most calldata and hashing a valid
+    ///      params (F10: 64 bytes), every byte nonzero: the most calldata and hashing a valid
     ///      master item adds to its start.
     function _maxParamsMaster(Work memory w) internal pure {
         bytes memory params = new bytes(EditionRules.MAX_PARAMS_BYTES);

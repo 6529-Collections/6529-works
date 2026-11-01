@@ -124,6 +124,23 @@ contract UniformEditionAuctionFixATest is EditionAuctionBase {
         auction.withdrawBid(saleId, a, alice);
     }
 
+    /// @dev The withdrawal reads the 1/1's `auction()` as eleven words: a shorter answer
+    ///      reverts, whatever the words it did return.
+    function test_F3_AShortAuctionAnswerReverts() public {
+        uint256 saleId = _open(10);
+        uint256 a = _bid(saleId, alice, 40, 1);
+        vm.warp(block.timestamp + 120);
+        _pause();
+        english.setShortAnswer(true);
+        vm.prank(alice);
+        vm.expectRevert(bytes(""));
+        auction.withdrawBid(saleId, a, alice);
+        english.setShortAnswer(false);
+        vm.prank(alice);
+        auction.withdrawBid(saleId, a, alice);
+        refundsOut += _price(saleId, 40);
+    }
+
     /// @dev A sale opened while its 1/1 is already paused: every bid comes after the pause.
     function test_F3_ASaleOpenedDuringThePause() public {
         _pause();

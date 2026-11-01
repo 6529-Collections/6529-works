@@ -45,9 +45,22 @@ contract MockOneOfOneAuction {
         _auctions[saleIdOf(token, id)].pausedAt = pausedAt;
     }
 
+    /// @dev Whether `auction` answers short: its first ten words, without `state`.
+    bool public shortAnswer;
+
+    function setShortAnswer(bool value) external {
+        shortAnswer = value;
+    }
+
     function auction(uint256 saleId) external view returns (IEnglishAuction.Auction memory a) {
         a = _auctions[saleId];
         if (a.state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        if (shortAnswer) {
+            bytes memory full = abi.encode(a);
+            assembly ("memory-safe") {
+                return(add(full, 0x20), 0x140)
+            }
+        }
     }
 
     function auctionClock(uint256 saleId)

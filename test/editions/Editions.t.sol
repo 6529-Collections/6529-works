@@ -844,6 +844,32 @@ contract EditionsTest is EditionsBase {
         assertEq(editions.edition(id).minted, 3);
     }
 
+    /// @dev F10: once the edition exists `bindMinter` no longer reads the caller's item, so a
+    ///      hashed-params method checks `extra` against the hash the edition records, never the
+    ///      caller's copy of the item.
+    function test_F10_TheRecordedHashGovernsOnceTheEditionExists() public {
+        HashedParamsAdapterMock hashed = new HashedParamsAdapterMock();
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(hashed), true);
+        bytes memory extra = hex"0102030405";
+        PackageItem memory item = _item(10);
+        item.edition =
+            EditionTerms(10, CURRENCY_ETH, hashed.saleKind(), abi.encode(keccak256(extra)));
+        uint256 id = _masterInAuction(item);
+        hashed.open(editions, id, abi.encode(item, extra));
+        stream.settle(id, COLLECTOR);
+        _createEdition(id, item);
+        bytes memory forged = hex"deadbeef";
+        PackageItem memory fake = item;
+        fake.edition =
+            EditionTerms(10, CURRENCY_ETH, hashed.saleKind(), abi.encode(keccak256(forged)));
+        vm.expectRevert(abi.encodeWithSelector(HashedParamsAdapterMock.ParamsMismatch.selector, id));
+        hashed.open(editions, id, abi.encode(fake, forged));
+        // The recorded hash governs, whatever the caller's copy of the item says.
+        hashed.open(editions, id, abi.encode(fake, extra));
+        assertEq(keccak256(hashed.extraOf(id)), keccak256(extra));
+    }
+
     /// @dev F4 (governance L-3): Editions compares the kind an adapter reported at its first
     ///      admission, as 6529 Stream does since owner decision 15, not its live `saleKind()`:
     ///      an adapter whose answer changes can neither take another kind's edition nor lose
