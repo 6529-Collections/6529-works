@@ -134,9 +134,11 @@ the clearing reads totals per step.
 - **`raise(saleId, bidId, newStep)`** is for the bidder only (`NotBidder`): it moves the whole
   bid to a higher step (`InvalidStep` otherwise) and pays exactly the difference on every unit.
 - **Firm bids.** A bid can be neither lowered nor withdrawn before the close, except while the
-  1/1 is paused for a dispute (owner decision 12), and then only a bid placed or last raised
-  before the pause began (ADR 0005 §12): `withdrawBid(saleId, bidId, to)` then sends its whole
-  escrow to `to`; otherwise it reverts with `WithdrawalsClosed`. Firm bids keep the public
+  1/1 is paused for a dispute (owner decision 12), and then only a bid placed or last raised in
+  a minute, counted from the sale's open, that ended before the pause began (ADR 0005 §12); a
+  bid placed or raised during the pause, in its minute, or in the withdrawal's own block stays.
+  `withdrawBid(saleId, bidId, to)` then sends its whole escrow to `to`; otherwise it reverts
+  with `WithdrawalsClosed`, and the lens's `canWithdraw(saleId, bidId)` answers for one bid. Firm bids keep the public
   live result honest, make every shill bid a real purchase, and let `R*` only rise.
 - **Public.** Every bid is an event (`BidPlaced`, `BidRaised`) and the book is readable
   (`stepTotals`, `bidOf`, `departures`), so anyone can recompute the result.
@@ -181,8 +183,9 @@ or VOID. `quote(saleId, step, quantity)` returns what a new bid would win, push 
 and `lowestWinningStep(saleId, quantity)` the lowest step at which it would win at least one unit
 (winning is monotone in the step, so it is a binary search). Both treat the bid as new: for a
 raise, `quote` counts the bid's units at its old step and its new one, so a client computes a
-raise's effect itself. Neither checks a step's capacity (a step's or a sale's units below 2^32),
-which `bid` enforces.
+raise's effect itself. Both enforce the sale-wide live-unit limit below 2^32, but neither
+enforces a capped sale's per-step position capacity (live plus departed units) or the bid-ID
+limit, which `bid` enforces.
 
 ### The cut step
 
@@ -236,7 +239,7 @@ and no departures.
   Any bid extends, winning or not; a bid exactly `softWindow` before the end leaves it where it
   is.
 - **A dispute pause of the 1/1.** While the 1/1 is paused, bids and raises are accepted whatever
-  the time and move no clock, and bids placed before the pause may be withdrawn (owner decision
+  the time and move no clock, and bids placed or last raised before the pause's minute may be withdrawn (owner decision
   12, ADR 0005 §12). The resumed 1/1 runs
   at least its governed duration, and the edition close follows it.
 - **Settling** needs the end passed and the 1/1 SETTLED, so the 1/1's end is final, or the 1/1
@@ -389,7 +392,7 @@ stateDiagram-v2
     Extended --> Extended : bid or raise in the window, up to the backstop
     Open --> Paused : the 1/1 is paused for a dispute
     Extended --> Paused : the 1/1 is paused for a dispute
-    Paused --> Paused : bid, raise, withdraw a bid placed before the pause
+    Paused --> Paused : bid, raise, withdraw a bid from before the pause's minute
     Paused --> Open : the 1/1 resumes, the close follows its new end
     Paused --> Void : the 1/1 is cancelled, then settle
     Open --> Closed : the clock passes the close
@@ -406,7 +409,7 @@ stateDiagram-v2
 | None to open | anyone | none | `open` |
 | Bidding, extending | anyone (the payer is the bidder); a raise by the bidder only | none | `bid`, `raise` |
 | Open to 1/1 paused | GUARDIAN, on the 1/1 | immediate | `EnglishAuction.pause(saleId, disputeRef)` |
-| 1/1 paused, a bid placed before the pause withdrawn | the bidder | none | `withdrawBid` |
+| 1/1 paused, a bid placed or last raised before the pause's minute withdrawn | the bidder | none | `withdrawBid` |
 | 1/1 paused to open | UNPAUSER, on the 1/1 | standard, 48 hours, no earlier than 48 hours after the pause | `EnglishAuction.resume`, or the 7-day lapse |
 | 1/1 paused to void | PARAMETER_SETTER on the 1/1, then anyone | standard, 48 hours; between 48 hours and 7 days after the pause | `EnglishAuction.cancel`, then `settle` |
 | Open to closed | the clock | none | `block.timestamp` reaches the close |
@@ -609,8 +612,8 @@ sequenceDiagram
     participant Bidder as Edition bidder
     participant Admin as Admin Safe
     Guardian->>Auction: pause(saleId, disputeRef) (GUARDIAN, immediate)
-    Note over EA: bidding continues at any time; bids placed before the pause may leave
-    Bidder->>EA: withdrawBid(saleId, bidId, to): the whole escrow back (a bid from before the pause)
+    Note over EA: bidding continues at any time; bids from before the pause's minute may leave
+    Bidder->>EA: withdrawBid(saleId, bidId, to): the whole escrow back (a bid from before the pause's minute)
     alt upheld
         Admin->>Auction: cancel(saleId, outcome) (PARAMETER_SETTER, 48 hours)
         Bidder->>EA: settle(editionSaleId, empty): VOID
@@ -717,7 +720,7 @@ cap: compare `edition(id).minted` with `terms.maxCount`.
 | The seller wallet or fee recipient refuses ETH or burns gas | The payout goes to the revenue escrow; settlement completes | The payee withdraws from the escrow ([Economics and payouts](economics-and-payouts.md)). |
 | A claim's ETH transfer fails | `ClaimFailed(to)`; the bid stays claimable | Claim to another address, or anyone calls `claimBidFor`, which credits the refund. |
 | The recipient's ERC-1155 hook reverts | The claim reverts; nothing is lost | Claim to another recipient. |
-| The 1/1 is paused for a dispute | Bidding at any time; bids placed before the pause may be withdrawn | The dispute's outcome: a resume moves the close; a cancel voids the sale. |
+| The 1/1 is paused for a dispute | Bidding at any time; bids placed or last raised before the pause's minute may be withdrawn | The dispute's outcome: a resume moves the close; a cancel voids the sale. |
 | The 1/1 is cancelled | The sale is VOID at the next `settle` | Every bidder claims a full refund. |
 
 ## Parameters and limits

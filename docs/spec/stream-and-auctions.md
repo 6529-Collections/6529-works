@@ -1,7 +1,8 @@
 # Stream and auctions
 
-6529 Stream is one shared ERC-721, `Stream`, holding every curated 1/1 work; its only primary
-sale is one shared English auction, `EnglishAuction`. Anyone may start a work's auction, which
+6529 Stream is one shared ERC-721, `Stream`, holding every curated 1/1 work. Its 1/1s sell
+through sale methods governance admits (owner decision 15); the one admitted at genesis is one
+shared English auction, `EnglishAuction`. Anyone may start a work's auction, which
 mints the work into the auction's custody for a package item consumed in the same call and opens
 its clock (24 hours at launch). Anyone may settle once the clock runs out: the winner receives the
 work and the seller wallet and fee recipient are paid; with no bid the work goes to the 6529
@@ -618,7 +619,7 @@ sequenceDiagram
   settled master ([AUC-11](#rules-and-invariants)).
 - **Independent outcomes.** Copies sell whether or not the 1/1 drew a bid: an unbid 1/1 goes to
   the museum ([settle with no bid](#settle-with-no-bid)) and its editions settle all the same. A
-  1/1 dispute pause lets edition bids placed before it be withdrawn, and a cancel voids the edition auction with
+  1/1 dispute pause lets edition bids placed or last raised before the pause's minute be withdrawn, and a cancel voids the edition auction with
   full refunds.
 
 ### Collections and marketplace metadata

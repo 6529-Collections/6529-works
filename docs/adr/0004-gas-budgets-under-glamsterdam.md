@@ -137,13 +137,14 @@ auction to end (on r2 the same method reproduced every later receipt exactly);
 one marked "r2" or "r1" is that rehearsal's receipt, for a row r3 has not run.
 "—" means no ceiling, or not run on Sepolia.
 
-**Scope.** The start rows measure packages of at most two parties. A package may name up to 16
+(Note, 1 November 2026, from the rc.2 review.) **Scope.** The start rows measure packages of
+at most two parties. A package may name up to 16
 parties; such starts cost more than the 350K budget (about 453K for 16 parties) and are outside
 it (LIM-GAS-12). Edition params are at most 64 bytes since
 [ADR 0005 §12](0005-stream-editions-auction.md#12-amendment-1-november-2026-fix-pass-a-of-the-rc2-review),
 and the start rows include a master at that bound. The edition auction's worst `bid` and its scattered-sweep `settle` call
 come from the rc.2 review's proofs of concept, re-measured on `main` after fix passes A and B
-(1 November 2026).
+(1 November 2026); no CI test gates those two rows yet.
 
 Re-measured for ADR 0005's edition terms and the museum rule (rc.2): `EditionTerms` shrank
 from seven fields to four, so every row that carries a package item lost calldata and hashing
@@ -310,14 +311,14 @@ Every start row with the genesis dependencies keeps its 5,000 of margin:
 | Edition `bid`, opens an 8-step word | 85,651 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 70,998 | 110,000 | 1 | 0 | — |
 | Edition `bid` near the close (1/1 read, soft close) | 77,845 | 110,000 | 1 | 0 | — |
-| Edition `bid`, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close) | 106,295 | 110,000 | 2 | 0 | — |
+| Edition `bid`, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close; review PoC, not in CI) | 106,295 | 110,000 | 2 | 0 | — |
 | Edition `raise`, same 8-step word | 53,607 | 56,000 (regression) | 0 | 0 | — |
 | Edition `raise`, capped (departure logged) | 78,833 | 81,000 (regression) | 1 | 0 | — |
 | Edition `withdrawBid`, capped, 1/1 paused | 88,019 | 90,000 (regression) | 1 | 0 | — |
 | Edition `settle`, 40 used steps | 151,492 | 400,000 | 1 | 0 | — |
 | Edition `settle`, capped, one departure swept | 149,598 | 153,000 (regression) | 1 | 0 | — |
 | Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 228,125 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
-| Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
+| Edition `settle`, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI | at most 307,070 of execution | 350,000 of execution | 0 to 2 | 0 | — |
 | Edition `claimBid`, a winner and new holder | 93,650 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,482 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,527 | 67,000 (regression) | 1 | 0 | — |

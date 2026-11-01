@@ -65,8 +65,10 @@ settles the sale, with no receiver callback (owner decision 17;
 [Stream and auctions](stream-and-auctions.md#settle-with-no-bid), AUC-24). It is
 `MUSEUM` in [`script/Deploy.s.sol`](../../script/Deploy.s.sol), which off anvil refuses an address
 with no code, balance or nonce, like the fee recipient, and should be a Safe or an EOA. The
-resolver refuses zero and every contract the fee-recipient rule refuses (ECO-3), since such a
-contract could never hold a work (`InvalidMuseum`). `setMuseum(expectedRevision, next)` changes
+resolver refuses zero and every contract the fee-recipient rule refuses (ECO-3): the resolver,
+its dependencies and the recognised protocol contracts, none of which may end up holding the
+network's works (`InvalidMuseum`). Since Stream moves a work with no receiver callback, any
+other account, a contract included, receives it. `setMuseum(expectedRevision, next)` changes
 it: FUNDS_SETTER, 14 days, compare-and-set on the museum's own revision (`museumRevision()`, 1 at
 deployment; `RevisionMismatch`), announced by `MuseumSet(previous, next, revision)` (ECO-37).
 Unlike the other settings it reaches sales already running: a change applies to every

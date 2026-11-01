@@ -573,7 +573,7 @@ function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
 - **Pay exactly.** `msg.value` must be `quantity × stepPrice(saleId, step)` for a bid and
   `quantity × (stepPrice(newStep) − stepPrice(step))` for a raise (`IncorrectPayment`).
 - **Bids are firm.** A bid can be raised but never lowered, and not withdrawn except while the
-  1/1 is paused for a dispute, and then only if it was placed before the pause (`withdrawBid`,
+  1/1 is paused for a dispute, and then only if it was placed or last raised before the pause's minute (`withdrawBid`,
   below). More copies means another bid. Tell the
   bidder before they sign.
 - **The bid ID** runs from 1 in each sale. `bidOf(saleId, bidId)` returns the bidder, step,
@@ -597,8 +597,9 @@ Every figure comes from the views, so no two clients disagree:
 | `stepTotals(saleId)` | Live units per step from the lowest used step | The demand ladder |
 
 The lowest winning step can sit below the current price, because of the breadth margin: such a
-bid lowers everyone's price. Say so. Neither view checks a step's capacity (units below 2^32),
-which `bid` enforces.
+bid lowers everyone's price. Say so. Both views enforce the sale-wide live-unit limit below
+2^32, but neither enforces a capped sale's per-step position capacity (live plus departed units)
+or the bid-ID limit, which `bid` enforces.
 
 ### Withdrawing during a dispute
 
@@ -609,9 +610,10 @@ function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
 Only while the 1/1 is paused for a dispute (`endTimes(saleId).withdrawalsOpen`), and only
 for a bid placed or last raised in a minute, counted from the sale's open, that ended before the
 pause began (`WithdrawalsClosed` otherwise; ADR 0005 §12): it sends the whole escrow to `to`. A
-bid placed during the pause stays until the outcome. `canWithdraw(saleId, bidId)` answers for
-one bid. If the dispute is upheld and
-the 1/1 cancelled, the sale is void and every remaining bid is refunded in full at its claim.
+bid placed or raised during the pause, in its minute, or in the withdrawal's own block stays
+until the outcome. `canWithdraw(saleId, bidId)` answers for one bid. If the dispute is upheld
+and the 1/1 cancelled, the sale is void and every remaining bid is refunded in full at its
+claim.
 
 ### Settling
 
