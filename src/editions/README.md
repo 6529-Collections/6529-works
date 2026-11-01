@@ -20,7 +20,7 @@ is a new adapter, never a new Editions. The rules are in
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone | `createEdition(workId, item, packageRoot, proof)`: proves the master's exact item under a registered root, locks the `PRODUCT_EDITIONS` economics, claims the content hash and links both sides | ED-1 to ED-4, ED-7 |
-| Admitted sale adapters | `bindMinter` when a sale opens (before the edition exists if need be), `mint`, `burn`, `markPrimarySettled`; `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
+| Admitted sale adapters | `bindMinter` when a sale opens (before the edition exists if need be), `mint`, `burn`, `settlePrimary` (a no-op); `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
 | The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
 | Governance | `setAdmittedMinter`, `setContractURI`, `setOwner`; the genesis bind `bindWorkRecords` | [Role matrix: Editions](../../docs/audit/roles.md#editions) |
 | Anyone (views) | `edition`, `masterOf`, `contentHashOf`, `exists`, `royaltyInfo`, `licenseOf`, `uri`, `name`, `symbol` | [Reading a work](../../docs/integrators/reading-a-work.md) |
@@ -53,7 +53,7 @@ The create flow, with every check in order, is under
   burns a settled token, so the cap and binding checks are local. Burned copies still count
   toward the cap.
 - **Minter status is three-valued** (never, admitted, removed), so a removed adapter can still
-  burn what it holds and call the no-op `markPrimarySettled`, and keeps minting the editions
+  burn what it holds and call the no-op `settlePrimary`, and keeps minting the editions
   bound to it (its winners claim after the seller was paid; ADR 0005 §6). It binds nothing new.
   Its binding ID survives removal and re-admission; at most 65,535 adapters are ever admitted.
 - **Binding at open (ADR 0005 §6).** An adapter binds an edition with `bindMinter` when its sale

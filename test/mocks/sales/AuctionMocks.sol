@@ -4,10 +4,18 @@ pragma solidity ^0.8.24;
 import { ERC721 } from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
-import { Payment, PaymentMethod, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    Payment,
+    PaymentMethod,
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
 import { MockFederationRegistry, PermitToken } from "./SaleMocks.sol";
 
 /// @notice English-auction mocks: a configurable ERC-721 mint target, a hostile bidder or
@@ -31,14 +39,23 @@ contract MockMintTarget is ERC721, IMintTarget {
     address public creatorNow;
     mapping(address => bool) public isAdmittedMinter;
     mapping(uint256 => address) public mintedBy;
-    mapping(uint256 => bool) public primarySettled;
     uint256 public nextId;
     uint256 public burned;
     Mode public mode;
     bool public safeMint = true;
     bool public checkKind = true;
+    /// @dev Set on the mock that stands in for 6529 Stream: an unsold work then moves to this
+    ///      resolver's museum in `settlePrimary`, as Stream moves it (owner decision 17).
+    IEconomicsResolver public museumResolver;
+    /// @dev The reported settlement, hashed into one word as 6529 Stream writes one: tests
+    ///      compare it with `settlementHash`, and gas measured on this mock stays Stream-like.
+    mapping(uint256 => bytes32) public settled;
 
     constructor() ERC721("Mock Stream", "MSTR") { }
+
+    function setMuseumResolver(IEconomicsResolver resolver) external {
+        museumResolver = resolver;
+    }
 
     function setAdmittedMinter(address adapter, bool admitted) external {
         isAdmittedMinter[adapter] = admitted;
@@ -87,14 +104,43 @@ contract MockMintTarget is ERC721, IMintTarget {
         else _mint(dest, tokenId);
     }
 
-    /// @dev E11: only the adapter that minted the token, while the token is still in its
-    ///      custody, may mark its primary sale settled. Enforcing custody here pins the
-    ///      adapter's settle order (mark before delivery) in every settlement test.
-    function markPrimarySettled(uint256 tokenId) external {
+    /// @dev E11 and owner decision 17: only the adapter that minted the token, while the token
+    ///      is still in its custody, settles it, once, with a coherent outcome. Enforcing custody
+    ///      here pins the adapter's settle order (settle before delivery) in every settlement
+    ///      test. As 6529 Stream's stand-in (`museumResolver` set), it moves an unsold work to
+    ///      the museum itself; otherwise it leaves it to the adapter.
+    function settlePrimary(
+        uint256 tokenId,
+        PrimaryOutcome outcome,
+        address buyer,
+        address currency,
+        uint256 price
+    ) external returns (PrimarySettlement memory p) {
         require(mintedBy[tokenId] == msg.sender, "not the minting adapter");
         require(_ownerOf(tokenId) == msg.sender, "not in custody");
-        require(!primarySettled[tokenId], "already settled");
-        primarySettled[tokenId] = true;
+        require(settled[tokenId] == 0, "already settled");
+        require(outcome != PrimaryOutcome.NONE, "outcome");
+        require((outcome == PrimaryOutcome.SOLD) == (buyer != address(0)), "buyer");
+        require(outcome == PrimaryOutcome.SOLD || price == 0, "price");
+        settled[tokenId] = settlementHash(outcome, buyer, currency, price);
+        PrimaryTerms storage t = _locked[tokenId];
+        (p.seller, p.feeRecipient, p.feeShare) = (t.seller, t.feeRecipient, t.feeShare);
+        if (outcome != PrimaryOutcome.SOLD && address(museumResolver) != address(0)) {
+            p.holder = museumResolver.museum();
+            _transfer(msg.sender, p.holder, tokenId);
+        }
+    }
+
+    function primarySettled(uint256 tokenId) external view returns (bool) {
+        return settled[tokenId] != 0;
+    }
+
+    function settlementHash(PrimaryOutcome outcome, address buyer, address currency, uint256 price)
+        public
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(outcome, buyer, currency, price));
     }
 
     function exists(uint256 id) external view returns (bool) {
@@ -234,8 +280,8 @@ contract BlockablePermitToken is PermitToken {
     }
 }
 
-/// @dev A minimal federated template: every `IMintTarget` function, with the settlement hook as a
-///      no-op (as 6529 Stream Editions implements it).
+/// @dev A minimal federated template: every `IMintTarget` function, with a settlement hook that
+///      records nothing and returns the terms.
 contract PlainMintTarget is ERC721, IMintTarget {
     PrimaryTerms internal _terms;
     mapping(address => bool) public isAdmittedMinter;
@@ -272,7 +318,15 @@ contract PlainMintTarget is ERC721, IMintTarget {
         _burn(id);
     }
 
-    function markPrimarySettled(uint256) external { }
+    /// @dev Records nothing; returns the terms, and leaves an unsold work to the adapter.
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        view
+        returns (PrimarySettlement memory p)
+    {
+        (p.seller, p.feeRecipient, p.feeShare) =
+        (_terms.seller, _terms.feeRecipient, _terms.feeShare);
+    }
 }
 
 /// @dev Mints a chosen token ID. An ID that already exists is reported again without a mint, as
@@ -315,7 +369,11 @@ contract HugeIdTarget is ERC721, IMintTarget {
 
     function burn(uint256, uint256) external { }
 
-    function markPrimarySettled(uint256) external { }
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        pure
+        returns (PrimarySettlement memory p)
+    { }
 }
 
 /// @dev A registry with different code, for the code-hash pin.

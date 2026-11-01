@@ -28,7 +28,7 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "../interfaces/types/PackageTypes.sol";
-import { PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
+import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "../interfaces/types/SaleTypes.sol";
 import { BoundedCall } from "../libraries/BoundedCall.sol";
 import { Dependency } from "../libraries/Dependency.sol";
 import { Utf8 } from "../libraries/Utf8.sol";
@@ -91,12 +91,15 @@ contract Stream is ERC721, AccessManaged, IStream {
     bytes32 private constant ENTROPY_MODULE = "ENTROPY_MODULE";
 
     /// @dev `TokenData.flags`: an EDITION_MASTER, the seed policy (two bits), the primary sale
-    ///      settled, the edition linked.
+    ///      settled, the edition linked, and how the sale settled (owner decision 17): sold,
+    ///      frozen out, or neither, unbid.
     uint8 private constant KIND_MASTER = 1;
     uint8 private constant SEED_SHIFT = 1;
     uint8 private constant SEED_MASK = 3;
     uint8 private constant SETTLED = 8;
     uint8 private constant LINKED = 16;
+    uint8 private constant SALE_SOLD = 32;
+    uint8 private constant SALE_FROZEN_OUT = 64;
     /// @dev Terms IDs below `OVERFLOW` are the hashed positions; from it, the overflow range.
     uint24 private constant HASHED = 0x7fffff;
     uint24 private constant OVERFLOW = 0x800000;
@@ -208,6 +211,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      one its mint checked, so `entropyModuleOf` answers each work with that module.
     ///      Declared last, so the earlier slots keep their positions.
     uint256[] private _entropyEras;
+    /// @dev A sold work's currency (the low 160 bits) and price (the high 96, saturated): one
+    ///      word, written only for SOLD (owner decision 17). Declared last.
+    mapping(uint256 tokenId => uint256 sale) private _sales;
 
     /// @param authority_ The AccessManager governing this contract.
     /// @param packageRegistry_ The package registry `mint` consumes items from.
@@ -335,7 +341,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev Only the adapter that minted the token, while it still holds it in custody and
     ///      before the primary sale settled: the auction's cancel after an upheld dispute
     ///      (ADR 0001 section 12). Gated on the minting adapter's index, not on current
-    ///      admission: like `markPrimarySettled`, it works after the adapter was removed, so a
+    ///      admission: like `settlePrimary`, it works after the adapter was removed, so a
     ///      running dispute can still finish, and another adapter holding the token can never
     ///      burn it. After a sale nothing is confiscated. The ID is never reused.
     function burn(uint256 id, uint256 amount) external {
@@ -377,7 +383,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @dev SUCCESSOR_SETTER role (the 30-day class). Admission checks code, ERC-165 for
     ///      `ISaleAdapter`, no EIP-7702 delegation and a nonzero sale kind, which the first
     ///      admission records with the adapter's index. Removal stops new mints only: the adapter
-    ///      keeps its index, so it can still settle (`markPrimarySettled`) and cancel (`burn`)
+    ///      keeps its index, so it can still settle (`settlePrimary`) and cancel (`burn`)
     ///      the sales it started; a live sale is never stranded.
     function setAdmittedMinter(address adapter, bool admitted) external restricted {
         Minter storage minter = _minters[adapter];
@@ -396,16 +402,54 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IMintTarget
-    /// @dev A repeat is a no-op.
-    function markPrimarySettled(uint256 tokenId) external {
-        TokenData storage t = _live(tokenId);
-        if (_minters[msg.sender].id != _terms[t.termsId].minterId) {
-            revert NotMintingAdapter(msg.sender);
-        }
+    /// @dev Gated, like `burn`, on the minting adapter's index, not on current admission, so a
+    ///      removed adapter still settles its sales. The outcome is two `TokenData.flags` bits
+    ///      beside `SETTLED`, in the word the call reads anyway; only SOLD writes a new slot
+    ///      (`_sales`). An unsold work moves from the adapter's custody (`ERC721IncorrectOwner`
+    ///      if it no longer holds it) to the museum the economics resolver names now (a zero
+    ///      museum reverts, `ERC721InvalidReceiver`), with no receiver callback: the museum is the
+    ///      governed account built to hold works, and the only external call is the resolver's
+    ///      `museum()`. This puts the museum rule (D140, owner decisions 9 and 10) on chain for
+    ///      every sale an admitted adapter settles, except a deliberately false SOLD report.
+    ///      Stream does not refuse transfers of unsettled works, so an adapter that never
+    ///      settles can still move or burn an unsold work it holds; the admission review covers
+    ///      both (ADR 0005). Stream resolves no creator here: an adapter of Stream never
+    ///      delivers an unsold work.
+    function settlePrimary(
+        uint256 tokenId,
+        PrimaryOutcome outcome,
+        address buyer,
+        address currency,
+        uint256 price
+    ) external returns (PrimarySettlement memory settlement) {
+        (TokenData storage t, Terms memory shared) = _shared(tokenId);
+        if (_minters[msg.sender].id != shared.minterId) revert NotMintingAdapter(msg.sender);
         uint8 flags = t.flags;
-        if (flags & SETTLED != 0) return;
-        t.flags = flags | SETTLED;
-        emit PrimarySaleSettled(tokenId);
+        if (flags & SETTLED != 0) revert SaleAlreadySettled(tokenId);
+        flags |= SETTLED;
+        if (outcome == PrimaryOutcome.SOLD) {
+            if (buyer == address(0)) revert InvalidSaleOutcome();
+            flags |= SALE_SOLD;
+            uint256 stored = price < type(uint96).max ? price : type(uint96).max;
+            _sales[tokenId] = uint256(uint160(currency)) | (stored << 160);
+        } else {
+            if (outcome == PrimaryOutcome.NONE || buyer != address(0) || price != 0) {
+                revert InvalidSaleOutcome();
+            }
+            if (outcome == PrimaryOutcome.FROZEN_OUT) flags |= SALE_FROZEN_OUT;
+        }
+        t.flags = flags;
+        emit PrimarySaleSettled(tokenId, outcome, buyer, currency, price);
+        if (outcome != PrimaryOutcome.SOLD) {
+            address museum = IEconomicsResolver(economics()).museum();
+            if (museum == address(0)) revert ERC721InvalidReceiver(museum);
+            address from = _update(museum, tokenId, address(0));
+            if (from != msg.sender) revert ERC721IncorrectOwner(msg.sender, tokenId, from);
+            settlement.holder = museum;
+        }
+        settlement.seller = t.seller;
+        settlement.feeRecipient = _feeRecipients[shared.feeRecipientId - 1];
+        settlement.feeShare = shared.feeShare;
     }
 
     // ----------------------------------------------------------------- collections and works
@@ -510,6 +554,24 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @inheritdoc IStream
     function primarySaleSettled(uint256 tokenId) external view returns (bool) {
         return _ownerOf(tokenId) != address(0) && _tokens[tokenId].flags & SETTLED != 0;
+    }
+
+    /// @inheritdoc IStream
+    /// @dev A settled token is never burned (`burn` refuses it), so its flags decide.
+    function primarySale(uint256 tokenId)
+        external
+        view
+        returns (PrimaryOutcome outcome, address currency, uint256 price)
+    {
+        uint8 flags = _tokens[tokenId].flags;
+        if (flags & SETTLED == 0) return (PrimaryOutcome.NONE, address(0), 0);
+        if (flags & SALE_SOLD == 0) {
+            outcome =
+                flags & SALE_FROZEN_OUT != 0 ? PrimaryOutcome.FROZEN_OUT : PrimaryOutcome.UNBID;
+            return (outcome, address(0), 0);
+        }
+        uint256 sale = _sales[tokenId];
+        return (PrimaryOutcome.SOLD, address(uint160(sale)), sale >> 160);
     }
 
     /// @inheritdoc IERC2981

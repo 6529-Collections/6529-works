@@ -35,8 +35,8 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 /// @dev An ID covers the functions an interface declares itself, not inherited ones.
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
-        assertEq(type(IMintTarget).interfaceId, bytes4(0x4f4f5133), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0x01cc497c), "IStream");
+        assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
+        assertEq(type(IStream).interfaceId, bytes4(0xdeb700c1), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
         assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
@@ -73,7 +73,7 @@ contract InterfacesCompileTest is Test {
             type(IMintTarget).interfaceId,
             IMintTarget.mint.selector ^ IMintTarget.primaryTerms.selector
                 ^ IMintTarget.burn.selector ^ IMintTarget.isAdmittedMinter.selector
-                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.markPrimarySettled.selector
+                ^ IMintTarget.setAdmittedMinter.selector ^ IMintTarget.settlePrimary.selector
         );
     }
 

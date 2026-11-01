@@ -87,7 +87,7 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 | `Transfer(address indexed from, address indexed to, uint256 indexed tokenId)` | `0xddf252ad…` | The mint (to the adapter), delivery at `settle` or `claimDelivery`, holder transfers, and the burn in `EnglishAuction.cancel` (to zero) | Ownership. A transfer clears the token's approval without an `Approval` event (OpenZeppelin 5). |
 | `Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)` | `0x8c5be1e5…` | `approve` | Standard ERC-721. |
 | `ApprovalForAll(address indexed owner, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-721. |
-| `PrimarySaleSettled(uint256 indexed tokenId)` | `0xbdf40a60…` | `markPrimarySettled`, by the adapter that minted the token, inside `settle` | The primary sale is final. Emitted before delivery is attempted, whether delivery then succeeds or is left pending ([AUC-21][auc]). At most once per token; it allows the master's edition ([ED-1][ed]). |
+| `PrimarySaleSettled(uint256 indexed tokenId, PrimaryOutcome outcome, address indexed buyer, address currency, uint256 price)` | `0xbb0a6d98…` | `settlePrimary`, by the adapter that minted the token, inside its `settle` (owner decision 17) | The primary sale is final. `outcome` is SOLD (1), UNBID (2) or FROZEN_OUT (3); `buyer` and the exact `price` are zero unless SOLD; `currency` is the sale's. For UNBID and FROZEN_OUT, Stream's `Transfer` of the work to the museum follows at once. Emitted before delivery is attempted, whether delivery then succeeds or is left pending ([AUC-8, AUC-21][auc]). At most once per token; it allows the master's edition ([ED-1][ed]). `primarySale(tokenId)` reads the outcome back, the price held in 96 bits. |
 | `CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash)` | `0x8966ba95…` | `createCollection` (PLATFORM, immediate) | Collection IDs run from 1. A collection's count, and its last serial, is the number of `WorkMinted` naming it. |
 | `RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate`, callable only by the bound work-records satellite, from `WorkRecords.setRoyaltyRate` | The ERC-2981 rate (out of 100,000) changed; the receiver never does ([AUC-6][auc]). Followed by the satellite's `RoyaltyRateSet`. |
 | `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero) and `setDefaultRenderer` (SUCCESSOR_SETTER, 30 days) | The renderer for every unfinalized work; `codeHash` is pinned. Followed by both tokens' `BatchMetadataUpdate`. Changes every unfinalized work's state hash, with no per-token event. |
@@ -196,7 +196,7 @@ for role 4 (`CURATION_SIGNER`). The signer's epoch also changes with a new grant
 | `AuctionCancelled(uint256 indexed saleId, bytes32 outcomeRef)` | `0x49d67654…` | `cancel` (PARAMETER_SETTER, 48 hours) | An upheld dispute. Preceded by `Credited` (the high bid) and 6529 Stream's `Transfer` to zero. `outcomeRef` is the token's own DISPUTE_OUTCOME entry hash ([DSP-18][dsp]). |
 | `DeliveryPending(uint256 indexed saleId, address indexed recipient)` | `0x96b5b68e…` | `settle`, when the token's transfer to the recipient failed | The token stays in custody until `claimDelivery`. |
 | `DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to)` | `0x97b1d318…` | `claimDelivery` (the recipient, the winning bidder, or with no bids the artist) | `recipient` is the recorded recipient; `to` is where the token went. Preceded by 6529 Stream's `Transfer`. |
-| `SaleSettled(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, address buyer, address recipient, uint256 quantity, address currency, uint256 price, address seller, uint256 sellerProceeds, address feeRecipient, uint256 fee)` | `0x16010625…` | `settle` (permissionless after the end) | The last event of a settlement. `quantity` is 1. With no standing bid (including a freeze exit or a delisted federated contract) `buyer` and `price` are zero and `recipient` is the artist's active authority. `price = sellerProceeds + fee`. |
+| `SaleSettled(uint256 indexed saleId, address indexed token, uint256 indexed tokenId, address buyer, address recipient, uint256 quantity, address currency, uint256 price, address seller, uint256 sellerProceeds, address feeRecipient, uint256 fee)` | `0x16010625…` | `settle` (permissionless after the end) | The last event of a settlement. `quantity` is 1. With no standing bid (including a freeze exit or a delisted federated contract) `buyer` and `price` are zero and `recipient` is the museum 6529 Stream moved the work to, or for any other token the artist's active authority. `price = sellerProceeds + fee`. |
 | `ConfigSet(AuctionConfig previous, AuctionConfig next)` | `0xb2088623…` | The constructor and `setConfig` (PARAMETER_SETTER, 48 hours) | `AuctionConfig` is `(uint32 duration, uint32 extensionWindow, uint32 incrementShare)`. What a start locks is [AUC-15][auc]. |
 | `OpeningBidSet(address indexed currency, uint256 previous, uint256 next)` | `0xdb7c74c4…` | `setOpeningBid` (PARAMETER_SETTER, 48 hours) | Applies to auctions that start afterwards. |
 | `TargetSet(address indexed token, bool listed)` | `0xd79dab7c…` | The constructor's targets and `setTarget` (SUCCESSOR_SETTER, 30 days; at genesis through the wiring) | A token contract listed or unlisted for new auctions. |
@@ -330,7 +330,7 @@ contract at a CREATE2 address.
 | `DefaultCurrencyChanged(bytes32 indexed product, address previous, address current, uint64 revision)` | `0x067a6334…` | `setDefaultCurrency` (FUNDS_SETTER, 14 days; each product's first at genesis through the wiring) | The currency a sale of `product` locks when its terms say `CURRENCY_DEFAULT`. |
 | `EconomicsSet(bytes32 indexed product, ProductEconomics previous, ProductEconomics next, uint64 revision)` | `0x7b619472…` | The resolver's constructor (once per product, from zeros, revision 1), `setFeeTerms` (FUNDS_SETTER, 14 days) and `setRoyaltyRate` (PARAMETER_SETTER, 48 hours) | `ProductEconomics` is `(address feeRecipient, uint32 feeShare, uint32 royaltyRate)`. Applies to new works and editions only ([ECO-6][eco]). `revision` is the changed setting's own counter: compare `previous` and `next` to tell fee terms from royalty rate. |
 | `DefaultLicenseSet(bytes32 indexed product, License previous, License next, uint64 revision)` | `0x45967214…` | The constructor (once per product) and `setDefaultLicense` (PARAMETER_SETTER, 48 hours) | The default license for new packages. |
-| `MuseumSet(address previous, address next, uint64 revision)` | `0x2a1c0960…` | The constructor (once, from zero, revision 1) and `setMuseum` (FUNDS_SETTER, 14 days) | The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. The auction reads it at settlement, so it applies to every settlement after the change, sales already running included; a delivery already pending for the previous museum stays with it ([AUC-24][auc], [ECO-37][eco]). Not indexed: filter by the resolver's address. |
+| `MuseumSet(address previous, address next, uint64 revision)` | `0x2a1c0960…` | The constructor (once, from zero, revision 1) and `setMuseum` (FUNDS_SETTER, 14 days) | The 6529 Network Museum (D140): where an unbid canonical 6529 Stream work goes. 6529 Stream reads it at settlement and moves the work there itself (owner decision 17), so it applies to every settlement after the change, sales already running included ([AUC-24][auc], [ECO-37][eco]). Not indexed: filter by the resolver's address. |
 
 ### GovernanceConfigurator and WorksAccessManager
 
@@ -450,11 +450,12 @@ Per `saleId`:
   `AuctionResumed` and settles nothing. After 30 days of deprecation (`_FREEZE_EXIT`), `settle`
   ends the sale unsold: `Credited` back to the bidder, then the settlement events with `buyer`
   zero.
-- **Settled.** In order: any refund `Credited`; the payouts (direct, an escrow `Credited` with
-  the auction as payer, or an auction `Credited` for a failed ERC-20 frame);
-  `PrimarySaleSettled`; `Transfer` or `DeliveryPending`; `SaleSettled`. A pending delivery ends
-  with 6529 Stream's `Transfer`, then `DeliveryClaimed`; meanwhile `pendingDelivery(saleId)` is
-  the recipient.
+- **Settled.** In order: any refund `Credited`; `PrimarySaleSettled` (with, for an unsold 6529
+  Stream work, its `Transfer` to the museum); the payouts (direct, an escrow `Credited` with
+  the auction as payer, or an auction `Credited` for a failed ERC-20 frame); for a sold work,
+  `Transfer` or `DeliveryPending`; `SaleSettled`. A pending delivery ends with 6529 Stream's
+  `Transfer`, then `DeliveryClaimed`; meanwhile `pendingDelivery(saleId)` is the recipient. An
+  unsold 6529 Stream work is never pending.
 - **Cancelled.** `Credited` (the high bid), `Transfer` to zero, `AuctionCancelled`.
 - **Credits.** Per account and currency on one adapter, `claimable` is the sum of `Credited`
   minus the sum of `Claimed`.
@@ -729,7 +730,7 @@ structs expanded to tuples: 121 signatures.
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
 | `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction |
 | `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |
-| `PrimarySaleSettled(uint256)` | `0xbdf40a602018a6fb327f9f11eb8f24f164a3439dc6bb06c5cf2317ff92121cea` | Stream |
+| `PrimarySaleSettled(uint256,uint8,address,address,uint256)` | `0xbb0a6d98d06d32ed01207833227c13c8ef140cc29411188e5f0e63d544ecd471` | Stream |
 | `RecordOpened(uint256,bytes32,bytes32)` | `0xaa2a63e255d7826a28755f26ec86b6a056cf997cc736f42a4b0af2b13dcb48b8` | WorkRecords |
 | `RecordSet(uint256,bytes32,bytes32)` | `0xe459e8a97a49d1b5f56a31c6ab1565c10a52e0bbc110dcccb81c2e3a745ec19a` | WorkRecords |
 | `Recovered(address,address,address,uint256,uint256)` | `0xc8e2b659b1d85626596b21f7945db0a7a6af6e14418d8abc2027b3bd5e86701b` | RevenueEscrow |

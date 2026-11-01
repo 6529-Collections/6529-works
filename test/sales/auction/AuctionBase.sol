@@ -8,6 +8,7 @@ import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
+import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
@@ -108,6 +109,8 @@ abstract contract AuctionBase is Test {
         resolver.setMuseumAccount(museum);
         auction = _deploy(address(permit2));
         stream.setTerms(_terms(ETH));
+        // 6529 Stream moves an unsold work to the museum itself (owner decision 17).
+        stream.setMuseumResolver(IEconomicsResolver(address(resolver)));
         _grant(GUARDIAN, guardian);
         _grant(PAUSER, pauser);
         _grant(UNPAUSER, unpauser);
@@ -135,8 +138,7 @@ abstract contract AuctionBase is Test {
                     address(statements),
                     permit2_,
                     _config(),
-                    targets,
-                    address(stream)
+                    targets
                 )
             )
         );

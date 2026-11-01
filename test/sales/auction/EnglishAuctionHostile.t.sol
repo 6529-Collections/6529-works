@@ -369,8 +369,9 @@ contract EnglishAuctionHostileTest is AuctionBase {
 
     // --------------------------------------------------------------------- hostile actors
 
-    /// @dev D140: an unbid canonical work goes to the museum, so a gas-burning museum account
-    ///      leaves a pending delivery and cannot block the settlement.
+    /// @dev D140 and owner decision 17: 6529 Stream moves an unbid canonical work to the museum
+    ///      itself, with no receiver callback, so a gas-burning museum account cannot block the
+    ///      settlement and nothing is left pending.
     function test_NoBidSettlementCannotBeBlockedByTheMuseum() public {
         HostileActor museumSafe = new HostileActor();
         museumSafe.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.BURN_GAS);
@@ -379,7 +380,8 @@ contract EnglishAuctionHostileTest is AuctionBase {
         _end(saleId);
         auction.settle(saleId);
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
-        assertEq(auction.pendingDelivery(saleId), address(museumSafe));
+        assertEq(stream.ownerOf(1), address(museumSafe));
+        assertEq(auction.pendingDelivery(saleId), address(0));
     }
 
     /// @dev Owner decision 9: an unbid federated work goes to its artist, whose gas-burning

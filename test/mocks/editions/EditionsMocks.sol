@@ -21,7 +21,7 @@ import {
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, License, PackageItem, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import { PrimaryOutcome, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 
 /// @notice Mocks of other lanes' contracts for the 6529 Stream Editions tests. Each implements only
@@ -415,7 +415,7 @@ contract EditionsAdapterMock is ERC1155Holder {
     }
 
     function markSettled(Editions target, uint256 id) external view {
-        target.markPrimarySettled(id);
+        target.settlePrimary(id, PrimaryOutcome.SOLD, address(this), address(0), 1);
     }
 
     function lastTerms() external view returns (PrimaryTerms memory) {

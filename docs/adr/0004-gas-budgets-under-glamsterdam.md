@@ -222,43 +222,53 @@ ceilings came down. The auction's own rows moved with its smaller dispatch: each
 each `startWithBid` −151, `bid` +66, each `settle` +21; no row writes a new slot or account.
 The binding row kept 10,588 gas of margin on `main`; with decision 16 and the review of #81 merged, 10,639 (339,361), and with a VRF seed 2,964 (347,036).
 
+Re-measured for owner decision 17 (Stream records each 1/1's primary-sale outcome), on `main`
+with decision 16 and the English auction's lens. `settle` with a bid writes **one more new
+slot**, the sale's currency and price in Stream, and rose by 11,287 gas to 157,140: the new
+slot, less the `primaryTerms` call it replaces, which read the minting adapter's kind (the #80
+review's Low) and the artist registry's replacement bit. `settle` with no bid fell by 14,786 to
+121,508: Stream moves the work to the museum itself, with no receiver callback, and records
+UNBID in a word it rewrites. The `start` rows moved by at most 32 with Stream's code; every
+row stays under its ceiling, and every start row with the genesis dependencies keeps its 5,000
+of margin: the binding row 338,212 (11,788 under 350K), with a VRF seed 343,740 (6,260 under).
+
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 267,819 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 309,828 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 276,112 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 318,108 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 273,351 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 267,842 | 350,000 | **5** | 0 | 736,477 |
-| `start`, an artist's first work | 287,931 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 329,940 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 338,200 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 343,760 | 350,000 | **7** | 0 | — |
+| `start`, steady state | 267,787 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 309,796 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 276,132 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 318,128 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 273,371 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 267,854 | 350,000 | **5** | 0 | 736,477 |
+| `start`, an artist's first work | 287,911 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 329,920 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 338,212 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 343,740 | 350,000 | **7** | 0 | — |
 | `startWithBid`, an artist's first work, two-party, all four dependencies replaced | 344,596 | 346,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF, all four dependencies replaced | 352,272 | 354,000 (regression; LIM-GAS-11) | 7 | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 354,882 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 267,842 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 436,982 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 379,977 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `startWithBid`, an artist's first work, two-party, VRF, all four dependencies replaced | 352,252 | 354,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 354,902 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 267,830 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 436,994 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 379,945 | 390,000 (regression) | 9 | 0 | 1,213,250 |
 | `bid` that outbids | 73,530 | 75,000 (regression) | 1 | 0 | 169,060 |
-| `settle`, first payout to a seller wallet | 170,853 | 400,000 | 1 | 1 | 449,934 (sim.) |
-| `settle`, with a bid | 145,853 | 400,000 | 1 | 0 | 257,763 (r2) |
-| `settle`, no bid (to the museum, D140) | 136,294 | 400,000 | 1 | 0 | — |
+| `settle`, first payout to a seller wallet | 182,140 | 400,000 | 2 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 157,140 | 400,000 | 2 | 0 | 257,763 (r2) |
+| `settle`, no bid (to the museum, D140) | 121,508 | 400,000 | 1 | 0 | — |
 | `auction` (view, cold, answered by the auction's lens) | 39,342 | 41,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold, answered by the auction's lens) | 38,194 | 39,000 (regression) | 0 | 0 | — |
 | `auctionClock` (view, cold, answered by the auction itself) | 24,207 | 25,000 (regression) | 0 | 0 | — |
-| `consume`, as Stream calls it | 93,130 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 246,295 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
+| `consume`, as Stream calls it | 93,098 | 97,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 246,427 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 144,169 | 148,000 (regression) | 2 | 0 | — |
-| re-rate a work (governed `execute`) | 189,585 | 192,000 (regression) | 1 | 0 | — |
+| re-rate a work (governed `execute`) | 189,631 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,730 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,127 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
-| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 36,426 |
-| `tokenURI` (view, the size matrix) | at most 2,734,782 | 8,000,000 | 0 | 0 | unchanged |
+| `royaltyInfo` (view) | 41,644 | 50,000 of execution | 0 | 0 | 36,426 |
+| `tokenURI` (view, the size matrix) | at most 2,734,739 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,241,422 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,452 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,176 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,196 | 92,000 (regression) | 0 | 0 | — |
 | Edition auction `open`, steady state (binds the edition) | 271,920 | 275,000 (regression) | 6 | 0 | — |
 | Edition auction `open`, the adapter's first (one-time) | 317,645 | 322,000 (regression) | 8 | 0 | — |
 | Edition `bid`, its 8-step word exists | 69,257 | 110,000 | 1 | 0 | — |

@@ -458,32 +458,38 @@ before each merge.
   Prague gas with no new slot, and the English auction's `settle` by about 2,200 (one more cold
   read, the minting adapter's kind) ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
 
-  **Admission requirement for a 1/1 sale adapter (decisions 9, 10 and 15).** The museum rule
-  is enforced inside the English auction, for 6529 Stream's tokens; nothing in Stream makes
-  another adapter follow it. Any 1/1 sale adapter admitted for 6529 Stream must therefore:
-  - send a work that ends its sale unbid, and a work that leaves the 30-day currency-freeze
-    exit unsold, to `IEconomicsResolver.museum()`, read at settlement;
-  - never send either to the work's artist (decision 9's artist branch is for federated works
-    only);
-  - and governance checks both in the 30-day review before `Stream.setAdmittedMinter(adapter,
-    true)` executes; a guardian vetoes an admission that does not hold them.
+  **Admission requirement for a 1/1 sale adapter (decisions 9, 10, 15 and 17).** Any 1/1 sale
+  adapter admitted for 6529 Stream must settle each sale with Stream
+  (`IMintTarget.settlePrimary`) and report its true outcome: SOLD with the buyer who paid, the
+  currency and the price; UNBID when the sale ended with no bid; FROZEN_OUT when it ended unsold
+  because its currency stayed frozen. Governance checks this in the 30-day review before
+  `Stream.setAdmittedMinter(adapter, true)` executes; a guardian vetoes an admission that does
+  not hold it.
 
+  **Enforced on-chain (owner decision 17).** For an UNBID or FROZEN_OUT report Stream itself
+  moves the work out of the adapter's custody to `IEconomicsResolver.museum()`, read at that
+  moment, and never to the artist; the adapter does not move it. So the museum rule holds for
+  every sale an admitted adapter settles, except for a deliberately false SOLD report, for
+  example one naming the artist as the buyer of a work nobody bought: Stream cannot tell a
+  false sale from a true one, and a rule refusing the artist as a buyer would block an artist
+  buying their own work. An adapter can also bypass the call: the work sits in its custody, and
+  Stream lets a holder transfer an unsettled work (`test_transfersDoNotSettle`) and the minting
+  adapter burn one, so an adapter that never settles can hand an unsold work to anyone. Such a
+  work stays NONE in `primarySale` and its edition can never be created. Refusing transfers of
+  unsettled works would close that path at about 2,100 gas on every later transfer of every
+  work (a cold read of the token's flags), so it is left to the review above, which covers
+  all three cases: a false SOLD, a work moved without settling, and a burn outside a cancel.
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
-  adapter sending a work that ends unbid to the museum; its mock has no currency-freeze exit,
-  so the test does not show that branch.
-
-  **Not enforced on-chain.** Stream never learns whether a sale had a buyer; a Stream-only
-  settle call declaring the buyer would not stop an adapter that names its artist as one; and a
-  transfer rule refusing the artist would block an artist buying their own work. The 30-day
-  review, with the guardians' veto, is the control.
+  adapter's unbid work landing in the museum without the adapter moving it.
 
   **The rest of the 1/1 adapter review.** Stream trusts an admitted adapter, unchecked, for the
   works it mints, so the same review also confirms that the adapter:
   - burns a work (`IMintTarget.burn`) only to cancel a sale after an upheld dispute, through a
     governed action like the English auction's `cancel` (48 hours): Stream lets the minting
     adapter burn any work it holds before the sale settles;
-  - marks the primary sale settled (`markPrimarySettled`) when the sale is final, and only then:
-    an edition of a master waits for it, and a settled work can no longer be burned;
+  - settles the primary sale (`settlePrimary`) when the sale is final, and only then, with the
+    true outcome: an edition of a master waits for it, a settled work can no longer be burned,
+    and Stream records the outcome and price for good;
   - pays the fee recipient and the seller wallet the shares `primaryTerms` reports;
   - claims, at its first admission, the kind it sells: Stream records it then and compares it
     at every mint and reports it in `primaryTerms`, so a later change of the adapter's
@@ -525,6 +531,22 @@ before each merge.
   two-party start with a bid is 339,511 (the kind kept in the minter word `mint` reads), and
   with a VRF seed 347,186, 2,814 under 350K
   ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
+
+- **Stream records each 1/1's primary-sale outcome (owner decision 17, 31 October 2026).** The
+  minting adapter's settlement call carries the outcome: `IMintTarget.settlePrimary(id,
+  outcome, buyer, currency, price)` replaces `markPrimarySettled(id)`. Stream stores SOLD,
+  UNBID or FROZEN_OUT in two bits of the token's flags word, and for SOLD the currency and the
+  price (96 bits, saturated) in one new word; `primarySale(id)` answers them, and
+  `PrimarySaleSettled` names the buyer with the exact price. For UNBID and FROZEN_OUT Stream
+  moves the work to the museum itself (above), so the English auction no longer has a museum
+  branch, a `_MUSEUM` flag or a Stream constructor argument: it reports the outcome and
+  delivers only what it sold, or another token's unsold work to its artist. The same call
+  returns the seller and fee terms the adapter pays by (`PrimarySettlement`), so the English
+  settle no longer reads `primaryTerms`, and no longer pays the cold read of the adapter's
+  kind the review of #80 found. Shape: the call stays on `IMintTarget`, so every adapter
+  settles every token the same way; 6529 Stream Editions answers it as a no-op (copies are sold
+  at mint); a token other than Stream returns `holder` zero and its adapter delivers an unsold
+  work to the creator. Also useful for TDH: P29 shares the Works pool by realized ETH price.
 
 - **Metadata survives a faulty records satellite (31 October 2026).** Stream is permanent and
   `WorkRecords` is bound once, so `rendererOf` reads `pinnedRenderer` with a fixed gas cap and

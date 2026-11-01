@@ -82,6 +82,34 @@ struct PrimaryTerms {
     address creator;
 }
 
+/// @notice How a 1/1's primary sale ended, as the adapter that minted it reports it to the token
+///         (`IMintTarget.settlePrimary`, owner decision 17). NONE is never reported: it is the
+///         answer of `IStream.primarySale` before settlement.
+/// @dev SOLD: a buyer paid a price. UNBID: the sale ended with no bid. FROZEN_OUT: the sale
+///      ended unsold because its currency stayed frozen (the English auction's 30-day freeze
+///      exit) or its token was delisted, any standing bid credited back. 6529 Stream moves an
+///      UNBID or FROZEN_OUT work to the 6529 Network Museum itself.
+enum PrimaryOutcome {
+    NONE,
+    SOLD,
+    UNBID,
+    FROZEN_OUT
+}
+
+/// @notice What a token answers when a 1/1's primary sale settles (`IMintTarget.settlePrimary`,
+///         owner decision 17): the terms the adapter pays by, and where the work went if the
+///         token moved it itself.
+/// @dev Static, so the adapter decodes it cheaply. `seller`, `feeRecipient` and `feeShare` are
+///      as in `PrimaryTerms`. `holder` is nonzero when the token moved the work out of the
+///      adapter's custody itself: 6529 Stream's museum, for UNBID and FROZEN_OUT. An adapter
+///      that is left an unsold work reads its creator from `IMintTarget.primaryTerms`.
+struct PrimarySettlement {
+    address seller;
+    address feeRecipient;
+    uint32 feeShare;
+    address holder;
+}
+
 /// @notice The terms a sale adapter locks for one sale, in the same shape in every adapter.
 /// @dev `id` is the token ID (an edition ID for 6529 Stream Editions). `price` is zero for the
 ///      English auction; another sale method defines its own.

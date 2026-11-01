@@ -125,7 +125,8 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | New `SaleKind.UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` stay as reserved labels; `DutchParams` is removed. |
 | [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | `FIXED_PRICE_SALE_NAME`, `PHASE`, `PHASE_CONFIGURATION`, `PURCHASE_WITNESS`, `DUTCH_PURCHASE_WITNESS` and their type strings are removed. |
 | [`types/Limits.sol`](../../src/interfaces/types/Limits.sol) | `MAX_PHASES` is removed. |
-| [`IStream.sol`](../../src/interfaces/IStream.sol) | New `setDependency(bytes32,address,address)` (`0x480b197d`), `entropyModuleOf(uint256)` (`0x24ca0202`), event `DependencySet(bytes32,address,address)` and error `UnknownDependency(bytes32)` (owner decision 16): `packageRegistry()`, `artistRegistry()`, `economics()` and `entropyModule()` are governed, no longer immutable, and `entropyModuleOf` answers the module each work minted under. |
+| [`IStream.sol`](../../src/interfaces/IStream.sol) | New `setDependency(bytes32,address,address)` (`0x480b197d`), `entropyModuleOf(uint256)` (`0x24ca0202`), event `DependencySet(bytes32,address,address)` and error `UnknownDependency(bytes32)` (owner decision 16): `packageRegistry()`, `artistRegistry()`, `economics()` and `entropyModule()` are governed, no longer immutable, and `entropyModuleOf` answers the module each work minted under. New view `primarySale(uint256)` (`0xdf7b49bd`), error `InvalidSaleOutcome()`, and `PrimarySaleSettled` carries the outcome, the buyer, the currency and the price (owner decision 17). |
+| [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol), [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | `markPrimarySettled(uint256)` is replaced by `settlePrimary(uint256,uint8,address,address,uint256)` (`0x10bdbdbf`), which returns a `PrimarySettlement`; new enum `PrimaryOutcome` (owner decision 17). |
 | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, implemented by `UniformEditionAuction` and `EconomicsResolver`. |
 | [`IUniformEditionAuctionStorage.sol`](../../src/interfaces/IUniformEditionAuctionStorage.sol), [`IUniformEditionAuctionLens.sol`](../../src/interfaces/IUniformEditionAuctionLens.sol) | New: the adapter's raw storage words and `SettlementScanned`, and the stateless lens that answers its views. Neither is advertised through ERC-165. |
 | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `bindMinter(editionId, item)` (ADR 0005 §6): an adapter binds an edition when its sale opens. |
@@ -143,10 +144,12 @@ surface on `main`; more lands with the edition auction and the museum.
 | `WorkRecords.setRoyaltyRate` | `0xe27fed56` | `0xc13560ef` |
 | `VrfEntropyModule.requestSeed` | `0x5c9c3014` | `0x68d50901` |
 | `EditionCreated` topic0 | `0xda49138a…` | `0x3a4f273b…` |
+| `PrimarySaleSettled` topic0 | `0xbdf40a60…` | `0xbb0a6d98…` |
 
 The interface IDs of `IWorkRecords`, `IEditions`, `IPackageRegistry` and `IEntropyModule`
-changed with them, `IStream`'s with `setDependency` and `entropyModuleOf`, `IArtistRegistry`'s with
-`setPackageRegistry`, and `IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
+changed with them, `IStream`'s with `setDependency`, `entropyModuleOf` and `primarySale`,
+`IMintTarget`'s with `settlePrimary`, `IArtistRegistry`'s with `setPackageRegistry`, and
+`IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
 the role matrix maps the new selectors.
 
 ## Changes since the Sepolia r2 build
@@ -209,7 +212,8 @@ On `IStream`, `InvalidMintRequest()` (`0xa6df31da`) moved to `IMintTarget` and n
 malformed call. Each Stream rule has its own error: `InvalidItemSale()`, `InvalidLeadArtist()`,
 `UnknownCollection(uint256)`, `InvalidSeedPolicy()`, `InvalidLicenseId()`, `InvalidWorkTerms()`
 and `TermsCapacityExceeded()`. `NotMintingAdapter(address)` (`0x271ce5c9`) replaces
-`NotAdmittedMinter` and `UnboundCaller` from `burn` and `markPrimarySettled`. The errors that
+`NotAdmittedMinter` and `UnboundCaller` from `burn` and `markPrimarySettled` (since
+`settlePrimary`, owner decision 17). The errors that
 only the implementations declared (Editions, the adapters, the entropy module, the renderer)
 are now declared in their interfaces, with unchanged selectors. The errors only the fixed-price
 and Dutch adapters raise (`InvalidAddress`, `SaleAlreadyOpen`, `NotSaleManager`, and the
@@ -248,8 +252,8 @@ selectors.
 
 | Interface | Source | ID on `main` | ID on r2 | Deployed contract that answers `supportsInterface` |
 | --- | --- | --- | --- | --- |
-| `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0x4f4f5133` | `0x4f4f5133` | Stream, Editions |
-| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0x01cc497c` | `0x4b62279d` | Stream |
+| `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0xba4ae536` | `0x4f4f5133` | Stream, Editions |
+| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0xdeb700c1` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
 | `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |

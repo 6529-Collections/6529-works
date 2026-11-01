@@ -25,10 +25,11 @@ import { LockedTerms, Payment } from "./types/SaleTypes.sol";
 ///      A bid in the last `extensionWindow` seconds moves the end to `extensionWindow` seconds
 ///      after it. Outbid bidders are credited (pull). Settlement is permissionless after the end
 ///      and never depends on the winner accepting the token: a failed delivery leaves a pending
-///      claim. With no bids (ADR 0005; 6529chain D140), a 6529 Stream work (the token the
-///      auction was deployed with) goes to the 6529 Network Museum, `IEconomicsResolver.museum()`
-///      read at settlement, so an artist gains nothing by letting a curated work go unsold and
-///      no artist restraint can hold it up. Any other token's work, federated or listed by
+///      claim. With no bids (ADR 0005; 6529chain D140), a 6529 Stream work goes to the 6529
+///      Network Museum: the auction reports the outcome (`IMintTarget.settlePrimary`, owner
+///      decision 17) and Stream itself moves the work to `IEconomicsResolver.museum()`, read
+///      then, so an artist gains nothing by letting a curated work go unsold and no artist
+///      restraint can hold it up. Any other token's work, federated or listed by
 ///      governance, goes to its artist's active authority, resolved at settlement, and while a
 ///      recovery override is pending there is none, so that settlement waits for its outcome
 ///      (owner decision 9). The edition auction
@@ -121,8 +122,9 @@ interface IEnglishAuction is ISaleAdapter {
     event BidWithdrawn(uint256 indexed saleId, address indexed bidder, uint256 amount);
     /// @notice Delivery to `recipient` failed at settlement; it may claim the token.
     /// @param saleId The auction's sale ID.
-    /// @param recipient The winning bid's recipient or, when no bid won, the museum (6529
-    ///        Stream) or the artist (any other token).
+    /// @param recipient The winning bid's recipient or, when no bid won, the artist of a token
+    ///        other than 6529 Stream (an unsold 6529 Stream work is never pending: Stream moved
+    ///        it to the museum).
     event DeliveryPending(uint256 indexed saleId, address indexed recipient);
     /// @notice A pending token was claimed.
     /// @param saleId The auction's sale ID.
@@ -208,9 +210,9 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param saleId The ended auction's sale ID.
     function settle(uint256 saleId) external;
     /// @notice The winner whose delivery is pending names the recipient `to` and receives the
-    ///         token there. For an unbid work, the pending recipient (the museum, or another
-    ///         token's artist) claims it; only another token's current artist may also claim in
-    ///         its place (L-5), so no artist can take the museum's pending delivery (ADR 0005).
+    ///         token there. For an unsold work of a token other than 6529 Stream, the artist
+    ///         recorded at settlement claims it, or the artist the token reports now (L-5). An
+    ///         unsold 6529 Stream work is never pending: Stream moved it to the museum.
     /// @param saleId The auction's sale ID.
     /// @param to The address that receives the token; neither zero nor this adapter.
     function claimDelivery(uint256 saleId, address to) external;

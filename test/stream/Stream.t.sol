@@ -28,7 +28,12 @@ import {
     SeedPolicy,
     StreamMintRequest
 } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
@@ -1000,7 +1005,10 @@ contract StreamTest is StreamFixture {
 
     // ---------------------------------------------------------------------- primary sale
 
-    function test_markPrimarySettled_byMintingAdapterOnly() public {
+    /// @dev Owner decision 17. Only the minting adapter settles, once. SOLD keeps the currency
+    ///      and price in one word and names the buyer in the event; the work stays with the
+    ///      adapter, which delivers it. The returned terms are `primaryTerms`' seller and fees.
+    function test_settlePrimary_soldRecordsTheSale() public {
         _mint(1);
         _mint(2);
         MockSaleAdapter other = new MockSaleAdapter(SaleKind.ENGLISH_AUCTION);
@@ -1010,24 +1018,129 @@ contract StreamTest is StreamFixture {
         other.settle(stream, 1);
         vm.expectRevert(abi.encodeWithSelector(IStream.NotMintingAdapter.selector, outsider));
         vm.prank(outsider);
-        stream.markPrimarySettled(1);
+        stream.settlePrimary(1, PrimaryOutcome.SOLD, outsider, address(0), 1);
 
+        address buyer = makeAddr("buyer");
+        address currency = makeAddr("currency");
+        (PrimaryOutcome outcome, address c, uint256 price) = stream.primarySale(1);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.NONE));
         vm.expectEmit(address(stream));
-        emit IStream.PrimarySaleSettled(1);
-        auction.settle(stream, 1);
+        emit IStream.PrimarySaleSettled(1, PrimaryOutcome.SOLD, buyer, currency, 3 ether);
+        PrimarySettlement memory p =
+            auction.settleWith(stream, 1, PrimaryOutcome.SOLD, buyer, currency, 3 ether);
+        assertEq(p.holder, address(0), "the adapter delivers");
+        PrimaryTerms memory t = stream.primaryTerms(1, "");
+        assertEq(p.seller, t.seller);
+        assertEq(p.feeRecipient, t.feeRecipient);
+        assertEq(p.feeShare, t.feeShare);
+        (outcome, c, price) = stream.primarySale(1);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
+        assertEq(c, currency);
+        assertEq(price, 3 ether);
         assertTrue(stream.primarySaleSettled(1));
-        assertFalse(stream.primarySaleSettled(2));
-        // Settled before delivery: a pending claim does not block the edition.
-        assertEq(stream.ownerOf(1), address(auction));
-        vm.recordLogs();
-        auction.settle(stream, 1);
-        assertEq(vm.getRecordedLogs().length, 0);
+        assertEq(stream.ownerOf(1), address(auction), "settled before delivery");
+
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, 1));
+        auction.settleWith(stream, 1, PrimaryOutcome.SOLD, buyer, currency, 3 ether);
+        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, 1));
+        auction.burn(stream, 1, 1);
 
         auction.burn(stream, 2, 1);
         assertFalse(stream.primarySaleSettled(2));
-        assertFalse(stream.primarySaleSettled(3));
+        (outcome,,) = stream.primarySale(2);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.NONE), "burned");
+        (outcome,,) = stream.primarySale(3);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.NONE), "unminted");
         vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 3));
         auction.settle(stream, 3);
+    }
+
+    /// @dev UNBID and FROZEN_OUT: Stream itself moves the work from the adapter's custody to the
+    ///      museum its economics resolver names at that moment, records the outcome with no
+    ///      currency or price, and returns the museum.
+    function test_settlePrimary_unsoldGoesToTheMuseumNamedNow() public {
+        _mint(1);
+        _mint(2);
+        address museum = makeAddr("museumNow");
+        econ.setMuseum(museum);
+        address currency = makeAddr("currency");
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(1, PrimaryOutcome.UNBID, address(0), currency, 0);
+        vm.expectEmit(address(stream));
+        emit IERC721.Transfer(address(auction), museum, 1);
+        PrimarySettlement memory p =
+            auction.settleWith(stream, 1, PrimaryOutcome.UNBID, address(0), currency, 0);
+        assertEq(p.holder, museum);
+        assertEq(p.seller, stream.primaryTerms(1, "").seller);
+        assertEq(stream.ownerOf(1), museum);
+        (PrimaryOutcome outcome, address c, uint256 price) = stream.primarySale(1);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.UNBID));
+        assertEq(c, address(0));
+        assertEq(price, 0);
+
+        address next = makeAddr("museumNext");
+        econ.setMuseum(next);
+        p = auction.settleWith(stream, 2, PrimaryOutcome.FROZEN_OUT, address(0), currency, 0);
+        assertEq(p.holder, next);
+        assertEq(stream.ownerOf(2), next);
+        (outcome,,) = stream.primarySale(2);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.FROZEN_OUT));
+        assertTrue(stream.primarySaleSettled(2), "an edition may follow");
+    }
+
+    /// @dev An incoherent report, an adapter that no longer holds the work, and a zero museum
+    ///      are refused, and nothing is recorded.
+    function test_settlePrimary_refusesAnIncoherentReport() public {
+        _mint(1);
+        address buyer = makeAddr("buyer");
+        vm.expectRevert(IStream.InvalidSaleOutcome.selector);
+        auction.settleWith(stream, 1, PrimaryOutcome.NONE, address(0), address(0), 0);
+        vm.expectRevert(IStream.InvalidSaleOutcome.selector);
+        auction.settleWith(stream, 1, PrimaryOutcome.SOLD, address(0), address(0), 1);
+        vm.expectRevert(IStream.InvalidSaleOutcome.selector);
+        auction.settleWith(stream, 1, PrimaryOutcome.UNBID, buyer, address(0), 0);
+        vm.expectRevert(IStream.InvalidSaleOutcome.selector);
+        auction.settleWith(stream, 1, PrimaryOutcome.FROZEN_OUT, address(0), address(0), 1);
+
+        address collector = makeAddr("collector");
+        auction.deliver(address(stream), 1, collector);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC721Errors.ERC721IncorrectOwner.selector, address(auction), 1, collector
+            )
+        );
+        auction.settleWith(stream, 1, PrimaryOutcome.UNBID, address(0), address(0), 0);
+
+        _mint(2);
+        econ.setMuseum(address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0))
+        );
+        auction.settleWith(stream, 2, PrimaryOutcome.UNBID, address(0), address(0), 0);
+        assertFalse(stream.primarySaleSettled(1));
+        assertFalse(stream.primarySaleSettled(2));
+    }
+
+    /// @dev The price is kept in 96 bits: a larger one saturates there, and the event keeps it
+    ///      exact.
+    function test_settlePrimary_saturatesAPriceAbove96Bits() public {
+        _mint(1);
+        address buyer = makeAddr("buyer");
+        uint256 huge = uint256(type(uint96).max) + 5;
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(1, PrimaryOutcome.SOLD, buyer, address(0), huge);
+        auction.settleWith(stream, 1, PrimaryOutcome.SOLD, buyer, address(0), huge);
+        (,, uint256 price) = stream.primarySale(1);
+        assertEq(price, type(uint96).max);
+    }
+
+    /// @dev A removed adapter still settles the sales it started (owner decision 15).
+    function test_settlePrimary_byARemovedAdapter() public {
+        _mint(1);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        auction.settleWith(stream, 1, PrimaryOutcome.UNBID, address(0), address(0), 0);
+        assertEq(stream.ownerOf(1), econ.museum());
     }
 
     function test_transfersDoNotSettle() public {

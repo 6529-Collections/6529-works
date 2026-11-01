@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- 6529 Stream records each 1/1's primary-sale outcome (owner decision 17).
+  `IMintTarget.markPrimarySettled(id)` is replaced by `settlePrimary(id, outcome, buyer,
+  currency, price)`, which returns the seller and fee terms (`PrimarySettlement`). Stream keeps
+  SOLD, UNBID or FROZEN_OUT in the token's flags word and, for SOLD, the currency and price in one
+  new word (`primarySale(id)`; the price in 96 bits, saturated); `PrimarySaleSettled` now carries
+  the outcome, the buyer, the currency and the exact price (new topic0). For UNBID and FROZEN_OUT
+  Stream itself moves the work from the adapter's custody to `IEconomicsResolver.museum()`, read
+  then, with no receiver callback: the museum rule (D140) holds for every sale an admitted 1/1
+  adapter settles but for a deliberately false SOLD report; that, and an adapter that moves a
+  work without settling it, are left to the admission review (ADR 0005). The
+  English auction loses its museum branch, the `_MUSEUM` flag and its Stream constructor
+  argument, reports FROZEN_OUT for the freeze exit and a delisting, and no longer reads
+  `primaryTerms` at settlement. `IMintTarget`'s and `IStream`'s interface IDs change. Prague
+  gas: `settle` with a bid 157,140 (one new slot, +11,287), with no bid 121,508 (−14,786);
+  the binding row 338,212. Bytes: Stream 23,471 (+1,073), the English auction 22,993 (+266),
+  6529 Stream Editions 18,362 (+199)
+  ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - 6529 Stream: the package registry, artist registry, economics resolver and entropy module are
   replaceable by governance (owner decision 16): `setDependency(kind, expected, next)`,
   SUCCESSOR_SETTER (30 days), compare-and-set, with the constructor's install checks; never
