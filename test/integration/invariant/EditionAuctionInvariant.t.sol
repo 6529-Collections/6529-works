@@ -84,6 +84,8 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
     ///         fixed seeds reach every action and the paths the invariants are about, with every
     ///         invariant holding along the way.
     function test_EveryActionRuns() public {
+        // 64 campaign-shaped runs exceed the test gas limit; the metering is not what is tested.
+        vm.pauseGasMetering();
         string[39] memory paths = [
             "startOneOfOne",
             "bidOneOfOne",
