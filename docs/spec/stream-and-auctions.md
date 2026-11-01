@@ -615,7 +615,7 @@ sequenceDiagram
   settled master ([AUC-11](#rules-and-invariants)).
 - **Independent outcomes.** Copies sell whether or not the 1/1 drew a bid: an unbid 1/1 goes to
   the museum ([settle with no bid](#settle-with-no-bid)) and its editions settle all the same. A
-  1/1 dispute pause lets edition bidders withdraw, and a cancel voids the edition auction with
+  1/1 dispute pause lets edition bids placed before it be withdrawn, and a cancel voids the edition auction with
   full refunds.
 
 ### Collections and marketplace metadata

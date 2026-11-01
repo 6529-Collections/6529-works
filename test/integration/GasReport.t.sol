@@ -5,6 +5,7 @@ import { console2 } from "forge-std/console2.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
+import { EditionRules } from "src/editions/EditionRules.sol";
 import { IEnglishAuctionClock } from "src/interfaces/IEnglishAuctionClock.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
@@ -647,6 +648,70 @@ contract IntegrationGasReport is IntegrationBase {
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
+    /// @dev An EDITION_MASTER whose edition terms carry `EditionRules.MAX_PARAMS_BYTES` of
+    ///      params (F10: 64 bytes), every byte nonzero: the most calldata and hashing a valid
+    ///      master item adds to its start.
+    function _maxParamsMaster(Work memory w) internal pure {
+        bytes memory params = new bytes(EditionRules.MAX_PARAMS_BYTES);
+        for (uint256 i; i < params.length; ++i) {
+            params[i] = bytes1(uint8(i % 251 + 1));
+        }
+        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.edition = EditionTerms(10, CURRENCY_ETH, SaleKind.FIXED_PRICE, params);
+    }
+
+    /// @dev The binding row with a VRF seed (an artist's first start, two-party, with a bid),
+    ///      its item an edition master at the params bound (fix pass A, F10).
+    function _rowStartWithBidArtistFirstTwoPartyVrfMaxParams() internal returns (Row memory r) {
+        _steadyState();
+        address lead = _actor("gasArtistC");
+        address collaborator = _actor("gasCollaborator");
+        Work[] memory works = new Work[](ITEMS);
+        for (uint256 i; i < ITEMS; ++i) {
+            works[i] = _work(lead, collectionId);
+            works[i].item.parties = new Party[](2);
+            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
+            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.payees = new ISplitWallet.Payee[](2);
+            works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
+            works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
+        }
+        works[0].item.seedPolicy = SeedPolicy.VRF;
+        _maxParamsMaster(works[0]);
+        bytes32 masterRoot = _publish(works);
+        uint256 requestId = entropy.requestSeed(works[0].item, masterRoot, _proofOf(works, 0));
+        coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
+        r = _row(
+            "startWithBid, an artist's first work, two-party, VRF, edition master, params at the bound",
+            bidder,
+            address(auction),
+            _startWithBidData(masterRoot, works, 0),
+            1 ether
+        );
+        console2.log(r.label, r.total);
+        // At 1,024 bytes this row was 361,211, at 256 348,132 and at 128 345,988 (ADR 0005 §12).
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _growthIs(r, 7, 0);
+    }
+
+    /// @dev A steady-state edition-master start at the params bound (F10).
+    function _rowStartMasterMaxParams() internal returns (Row memory r) {
+        _steadyState();
+        Work[] memory works = _eightWorks();
+        _maxParamsMaster(works[0]);
+        bytes32 masterRoot = _publish(works);
+        r = _row(
+            "start, edition master, params at the bound",
+            starter,
+            address(auction),
+            abi.encodeCall(auction.start, (address(stream), _mintData(masterRoot, works, 0))),
+            0
+        );
+        console2.log(r.label, r.total);
+        _gasAtMost(r, START_BUDGET - START_MARGIN, "350K start budget less its 5K margin");
+        _growthIs(r, 5, 0);
+    }
+
     /// @dev One-time: the first start on a new deployment (empty custody, the first fee terms
     ///      and sale terms).
     function _rowStartFirstEver() internal returns (Row memory r) {
@@ -1091,6 +1156,14 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartWithBidArtistFirstTwoPartyVrf();
     }
 
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf_MaxParams() public {
+        _rowStartWithBidArtistFirstTwoPartyVrfMaxParams();
+    }
+
+    function test_Gas_Start_EditionMaster_MaxParams() public {
+        _rowStartMasterMaxParams();
+    }
+
     function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Replaced() public {
         _rowStartWithBidArtistFirstTwoPartyReplaced();
     }
@@ -1186,7 +1259,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[33] memory rows = [
+        function() internal returns (Row memory)[35] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1199,6 +1272,8 @@ contract IntegrationGasReport is IntegrationBase {
             _rowStartWithBidArtistFirst,
             _rowStartWithBidArtistFirstTwoParty,
             _rowStartWithBidArtistFirstTwoPartyVrf,
+            _rowStartWithBidArtistFirstTwoPartyVrfMaxParams,
+            _rowStartMasterMaxParams,
             _rowStartWithBidArtistFirstTwoPartyReplaced,
             _rowStartWithBidArtistFirstTwoPartyVrfReplaced,
             _rowStartFirstEver,
@@ -1221,7 +1296,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[33] memory measured;
+        Row[35] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }

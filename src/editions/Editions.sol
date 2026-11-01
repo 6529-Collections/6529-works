@@ -101,11 +101,15 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         uint32 royaltyRate;
     }
 
-    /// @dev An admitted adapter: its status and the ID an edition binds it by. The ID is given
-    ///      at the first admission, from 1, and kept through a removal and a re-admission.
+    /// @dev An admitted adapter: its status, the ID an edition binds it by, and the key of the
+    ///      sale kind it reported at its first admission. The ID and the kind are given at the
+    ///      first admission and kept through a removal and a re-admission, so an adapter whose
+    ///      `saleKind()` answer changes later cannot sell another kind's editions (as 6529
+    ///      Stream records its 1/1 adapters' kinds since owner decision 15).
     struct Minter {
         uint8 status;
         uint16 id;
+        uint232 kindKey;
     }
 
     /// @dev An edition as stored (QUALITY-5), behind the interface's `Edition` view. An edition
@@ -146,6 +150,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     mapping(address adapter => Minter) private _minters;
     mapping(uint16 minterId => address) private _minterAddresses;
     mapping(uint256 editionId => Record) private _records;
+    /// @dev Each admitted adapter's sale kind, by its ID, recorded at its first admission: what
+    ///      a kind mismatch reports. Declared last, so the earlier slots keep their positions.
+    mapping(uint16 minterId => bytes32 saleKind) private _minterKinds;
 
     /// @param authority_ The AccessManager that governs this contract.
     /// @param stream_ The 6529 Stream contract; the other wiring is read from it.
@@ -255,9 +262,12 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         if (admitted) {
             Dependency.check(adapter, type(ISaleAdapter).interfaceId);
             if (status == MINTER_NONE) {
+                bytes32 kind = ISaleAdapter(adapter).saleKind();
+                if (kind == 0) revert Dependency.InvalidDependency(adapter);
                 uint16 id = ++_minterCount;
-                m.id = id;
+                (m.id, m.kindKey) = (id, _kindKey(kind));
                 _minterAddresses[id] = adapter;
+                _minterKinds[id] = kind;
             }
         }
         m.status = admitted ? MINTER_ADMITTED : MINTER_REMOVED;
@@ -339,13 +349,16 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      locks its `PRODUCT_EDITIONS` economics (seller, network fee, royalty receiver) from
     ///      the resolver, in the transaction in which the binding sale locks its own, and
     ///      `createEdition` keeps them: the edition reports the split its sale paid.
-    function bindMinter(uint256 editionId, PackageItem calldata item) external {
+    function bindMinter(uint256 editionId, PackageItem calldata item)
+        external
+        returns (WorkTerms memory terms)
+    {
         Minter memory m = _minters[msg.sender];
         if (m.status != MINTER_ADMITTED) revert NotAdmittedMinter(msg.sender);
         Record storage r = _records[editionId];
         if (r.contentHash != 0) {
             _bind(r, editionId, m, _saleKind(r));
-            return;
+            return _locked(r);
         }
         (bytes32 itemHash,,, ItemKind kind,,) = IStream(stream).coreOf(editionId);
         if (kind != ItemKind.EDITION_MASTER || WorksHashing.itemHashCalldata(item) != itemHash) {
@@ -353,7 +366,11 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         }
         bool unbound = r.minterId == 0;
         _bind(r, editionId, m, item.edition.saleKind);
-        if (unbound) _lockTerms(r, economics().newWorkTerms(PRODUCT_EDITIONS, item.payees));
+        if (!unbound) return _locked(r);
+        terms = economics().newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        _lockTerms(r, terms);
+        // The edition's rate is the master's, written by `createEdition`.
+        terms.royaltyRate = 0;
     }
 
     /// @inheritdoc IMintTarget
@@ -529,15 +546,34 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         r.feeRecipient = w.feeRecipient;
     }
 
-    /// @dev Checks that the caller's sale kind is `expected`, then binds an unbound edition to
-    ///      the caller, which must be admitted, or checks that the caller is its bound adapter.
-    ///      Returns the caller's kind.
+    /// @dev An edition's locked economics, as `bindMinter` returns them.
+    function _locked(Record storage r) private view returns (WorkTerms memory) {
+        return WorkTerms(r.seller, r.feeRecipient, r.feeShare, r.royaltyReceiver, r.royaltyRate);
+    }
+
+    /// @dev The key of a sale kind: its hash, cut to the bits `Minter` keeps beside the status
+    ///      and ID (as 6529 Stream keys its 1/1 adapters' kinds).
+    function _kindKey(bytes32 kind) private pure returns (uint232 key) {
+        assembly ("memory-safe") {
+            mstore(0, kind)
+            key := and(
+                keccak256(0, 0x20),
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            )
+        }
+    }
+
+    /// @dev Checks that the kind the caller was admitted with is `expected` (not its live
+    ///      `saleKind()`), then binds an unbound edition to the caller, which must be admitted,
+    ///      or checks that the caller is its bound adapter. Returns the kind.
     function _bind(Record storage r, uint256 editionId, Minter memory m, bytes32 expected)
         private
         returns (bytes32 kind)
     {
-        kind = ISaleAdapter(msg.sender).saleKind();
-        if (kind != expected) revert SaleKindMismatch(expected, kind);
+        kind = expected;
+        if (m.kindKey != _kindKey(expected)) {
+            revert SaleKindMismatch(expected, _minterKinds[m.id]);
+        }
         uint16 bound = r.minterId;
         if (bound == 0) {
             if (m.status != MINTER_ADMITTED) revert NotAdmittedMinter(msg.sender);

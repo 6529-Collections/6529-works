@@ -18,7 +18,7 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the outcome reported to the token (`settlePrimary`), the dispute pause, the currency freeze, the emergency pause. |
 | `EnglishAuctionLens.sol` | The English auction's read side, created by its constructor: every view the auction does not declare, decoded from its storage words (`storageWords`). |
 | `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, settlement in calls of bounded gas, claims through `IMintTarget.mint`, governance. |
-| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view, computed from the adapter's storage words, and the package-item check `open` consults. Stateless; the adapter creates it and forwards its views to it. |
+| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view, computed from the adapter's storage words, and the package-item check `open` consults. Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
 | `UniformClearing.sol` | Internal library, pure: the D138 clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
 
 Edition bids are ETH; only the English auction calls Permit2
@@ -68,8 +68,15 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **The edition is bound at open.** `open` calls `Editions.bindMinter(id, item)` before it
   records the sale (ADR 0005 §6), which also snapshots the edition's economics, so the split
   paid is the split the edition reports.
-- **The lens's departure sort** is a heapsort, `O(n log n)` in any log order
-  (`test_Lens_SixHundredDeparturesInReverseOrderStayCheap` holds the figures).
+- **Long departure logs.** The lens reads a log four entries per storage word and sorts with a
+  heap in Yul, `O(n log n)` in any log order. A keeper pages with
+  `settlementOrderFor(saleId, settler, fromPosition, max)`, `O(n log max)`: 21.9M gas for a page
+  of 96 at 10,000 departures (`test_F9_AKeeperPagesTenThousandDepartures`). `clearing` and
+  `quote` cost about 5,000 gas a departure at the cut step, within a 50M `eth_call` up to about
+  9,000; `settlementOrder` up to about 7,000.
+- **Withdrawals during a dispute pause** are open only to a bid placed or last raised in a
+  minute (from the sale's open) that ended before the pause began: the bid word keeps that
+  minute in its 16 spare bits, and `withdrawBid` reads the 1/1's `pausedAt` (ADR 0005 §12).
 - **The 1/1's end is cached.** It only moves later, so a bid reads `auctionClock` only within the
   soft-close window of the cached close; settlement and withdrawals always do.
 - **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours

@@ -6,6 +6,8 @@ import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctio
 import { CURRENCY_ETH, PRODUCT_EDITIONS } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
+import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @notice The edition auction on the real, wired v1 stack: the `UniformEditionAuction` that
@@ -22,6 +24,25 @@ abstract contract EditionAuctionStack is IntegrationBase {
             keccak256(abi.encode(editionAuction.config())),
             keccak256(abi.encode(_editionConfig())),
             "the genesis parameters"
+        );
+    }
+
+    /// @dev Another uniform auction against this stack, as an upgrade would deploy one: its lens
+    ///      in its own deployment, then the adapter pinning it (F8). Not admitted or listed.
+    function _newEditionAuction() internal returns (UniformEditionAuction) {
+        address l = address(
+            new UniformEditionAuctionLens(
+                address(editions), address(stream), address(auction), address(escrow)
+            )
+        );
+        return new UniformEditionAuction(
+            address(manager),
+            address(escrow),
+            address(editions),
+            address(auction),
+            l,
+            l.codehash,
+            _editionConfig()
         );
     }
 
@@ -85,7 +106,8 @@ abstract contract EditionAuctionStack is IntegrationBase {
 
     /// @dev What `settler` passes to its next settle call: the rest of its own sweep.
     function _orderFor(uint256 saleId, address settler) internal view returns (uint256[] memory) {
-        return IUniformEditionAuctionLens(editionAuction.lens()).settlementOrderFor(saleId, settler);
+        return
+            IUniformEditionAuctionLens(address(editionAuction)).settlementOrderFor(saleId, settler);
     }
 
     /// @dev The seller split wallet a master's edition pays (predicted, maybe undeployed).

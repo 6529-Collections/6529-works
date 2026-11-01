@@ -80,11 +80,11 @@ products pay 75% to the artist's side and 25% to the network, and royalties are 
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 727 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 619 |
-| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters | 349 |
+| [`Editions`](src/editions/README.md) | 6529 Stream Editions, the shared ERC-1155, linked to Stream masters | 374 |
 | [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 359 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md), [`EnglishAuctionLens`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause; its views answered by a lens | 790 + 293 |
-| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 826 + 553 |
+| [`UniformEditionAuction`](src/sales/README.md), [`UniformEditionAuctionLens`](src/sales/README.md) | The edition auction: firm ETH bids on a step ladder beside the 1/1, one clearing price, FIFO at a capped step, claims | 855 + 668 |
 | [`EconomicsResolver`](src/economics/README.md), [`AssetAllowlist`](src/economics/README.md) | Terms for new works, fee recipients, currencies and increment floors | 212 + 122 |
 | [`SplitFactory`](src/economics/README.md), [`SplitWallet`](src/economics/README.md) | Immutable pull-payment wallets at predicted addresses | 100 + 143 |
 | [`RevenueEscrow`](src/economics/README.md), [`ClaimRouter`](src/economics/README.md), [`ReleaseVerifier`](src/economics/README.md) | Failed-payment escrow, batch claims, signed releases | 89 + 99 + 41 |

@@ -573,7 +573,8 @@ function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
 - **Pay exactly.** `msg.value` must be `quantity × stepPrice(saleId, step)` for a bid and
   `quantity × (stepPrice(newStep) − stepPrice(step))` for a raise (`IncorrectPayment`).
 - **Bids are firm.** A bid can be raised but never lowered, and not withdrawn except while the
-  1/1 is paused for a dispute (`withdrawBid`, below). More copies means another bid. Tell the
+  1/1 is paused for a dispute, and then only if it was placed before the pause (`withdrawBid`,
+  below). More copies means another bid. Tell the
   bidder before they sign.
 - **The bid ID** runs from 1 in each sale. `bidOf(saleId, bidId)` returns the bidder, step,
   quantity and queue position.
@@ -605,8 +606,11 @@ which `bid` enforces.
 function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
 ```
 
-Only while the 1/1 is paused for a dispute (`endTimes(saleId).withdrawalsOpen`;
-`WithdrawalsClosed` otherwise): it sends the whole escrow to `to`. If the dispute is upheld and
+Only while the 1/1 is paused for a dispute (`endTimes(saleId).withdrawalsOpen`), and only
+for a bid placed or last raised in a minute, counted from the sale's open, that ended before the
+pause began (`WithdrawalsClosed` otherwise; ADR 0005 §12): it sends the whole escrow to `to`. A
+bid placed during the pause stays until the outcome. `canWithdraw(saleId, bidId)` answers for
+one bid. If the dispute is upheld and
 the 1/1 cancelled, the sale is void and every remaining bid is refunded in full at its claim.
 
 ### Settling
@@ -684,7 +688,7 @@ and Editions' `TransferSingle` per claim
 | `InvalidStep(step)`, `InvalidQuantity(quantity)` | A step past the ladder or a raise that does not move up; a zero quantity, units past 2^32 − 1, or a bid ID past 2^32 − 1. |
 | `IncorrectPayment(expected, paid)` | `msg.value` is not exactly the escrow or the top-up. |
 | `UnknownBid(saleId, bidId)`, `NotBidder(caller)` | No live bid with this ID; the caller is not its bidder. |
-| `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause. |
+| `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause, or of a bid placed or last raised during it (or in its minute). |
 | `SettlementNotReady(saleId)`, `EditionNotCreated(token, id)` | Too early to settle; create the edition first. |
 | `InvalidSettlementOrder(index)` | The order is out of range or not in increasing position. |
 | `InvalidAuctionState(saleId, status)` | The sale is not in a state that allows the call, such as a claim before settlement. |

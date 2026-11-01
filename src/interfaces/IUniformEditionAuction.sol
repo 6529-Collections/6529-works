@@ -31,12 +31,16 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      `IEnglishAuction.saleIdOf(master, id)`, where `master` is the token's
 ///      `IEditions.stream()`. Bids are accepted while `block.timestamp < endTime`, where
 ///      `closeAt` is the 1/1's current `endTime` (anti-snipe extensions and resumptions
-///      included) plus `closeOffset`, and `endTime = max(closeAt, softEnd)`. A bid or raise at or
-///      after `endTime - softWindow` sets `softEnd = min(block.timestamp + softWindow, backstop)`
-///      with `backstop = closeAt + maxExtension`. While the 1/1 is PAUSED for a dispute, bids
-///      and raises are accepted whatever the time and do not move `softEnd`, and bidders may
-///      withdraw; a resumed 1/1 runs at least its governed duration, and the edition close
-///      follows it. A CANCELLED 1/1 voids the sale: nothing is minted or paid, and every bid
+///      included) plus `closeOffset`, and `endTime = max(closeAt, softEnd)`. A bid or raise
+///      strictly inside the last `softWindow` (`block.timestamp + softWindow > endTime`; one
+///      exactly `softWindow` before the end does not extend) sets `softEnd =
+///      min(block.timestamp + softWindow, backstop)` with `backstop = closeAt + maxExtension`,
+///      a hard close. While the 1/1 is PAUSED for a dispute, bids and raises are accepted
+///      whatever the time and do not move `softEnd`; a resumed 1/1 runs at least its governed
+///      duration, and the edition close follows it. During the pause a bid may be withdrawn
+///      only if it was placed (or last raised) in a minute, counted from the sale's open, that
+///      ended before the pause began (decision 12, as amended 1 November 2026): demand added
+///      during a pause is as firm as any other, so a pause cannot be used to spoof it. A CANCELLED 1/1 voids the sale: nothing is minted or paid, and every bid
 ///      is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
 ///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
 ///      still be accepted; it is refunded in full with every other, and `EndTimes.biddingOpen`
@@ -135,7 +139,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param backstop `closeAt + maxExtension`: the soft close never moves past it.
     /// @param oneOfOneState The 1/1's state.
     /// @param biddingOpen Whether a bid would be accepted now.
-    /// @param withdrawalsOpen Whether bidders may withdraw now (the 1/1 is paused).
+    /// @param withdrawalsOpen Whether the 1/1 is paused, so that bids placed before the pause may
+    ///        be withdrawn now (the lens's `canWithdraw` answers for one bid).
     struct EndTimes {
         uint64 oneOfOneEnd;
         uint64 closeAt;
@@ -270,7 +275,10 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param step The bid's step.
     /// @param quantity Its units.
     /// @param position Its position at the step (capped sales; zero otherwise).
-    /// @param endTime The sale's end after this bid.
+    /// @param endTime The sale's end after this bid, as the bid saw it: `type(uint64).max`
+    ///        while the 1/1 is paused (no end), and stale if the 1/1's end moved since the
+    ///        adapter last read it (it reads the 1/1 only near the close); `endTimes` reads it
+    ///        live.
     event BidPlaced(
         uint256 indexed saleId,
         uint256 indexed bidId,
@@ -288,7 +296,8 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param toStep The step it joined, at the back of its queue.
     /// @param position Its new position (capped sales; zero otherwise).
     /// @param paid The top-up, `quantity * (price(toStep) - price(fromStep))`, in wei.
-    /// @param endTime The sale's end after this raise.
+    /// @param endTime The sale's end after this raise, as `BidPlaced.endTime`: `type(uint64).max`
+    ///        while the 1/1 is paused, and possibly stale.
     event BidRaised(
         uint256 indexed saleId,
         uint256 indexed bidId,
@@ -452,9 +461,12 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param newStep A step above the bid's step and below `stepCount`.
     function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
 
-    /// @notice Withdraws a bid and sends its whole escrow to `to`. The bidder only, and only
-    ///         while the 1/1 is PAUSED for a dispute (owner decision 12; `WithdrawalsClosed`
-    ///         otherwise). Leaves a departure in a capped sale.
+    /// @notice Withdraws a bid and sends its whole escrow to `to`. The bidder only, only while
+    ///         the 1/1 is PAUSED for a dispute (owner decision 12), and only for a bid placed or
+    ///         last raised in a minute, counted from the sale's open, that ended before the
+    ///         pause began (amended 1 November 2026): a bid placed during the pause, in its
+    ///         minute, or in the withdrawal's own block stays (`WithdrawalsClosed`). Leaves a
+    ///         departure in a capped sale.
     /// @param saleId The sale ID.
     /// @param bidId The bid's ID.
     /// @param to The address that receives the escrow; zero reverts, and a failed transfer
@@ -564,8 +576,11 @@ interface IUniformEditionAuction is ISaleAdapter {
     function bidOutcome(uint256 saleId, uint256 bidId) external view returns (BidOutcome memory);
     /// @notice Whether a new bid of `quantity` at `step` would win, how many copies, and what it
     ///         would change, if placed now and the sale then closed. `quote(saleId, s, 1)` is
-    ///         "what would one more bid at step s change". Reverts with `UnknownAuction` or
-    ///         `InvalidStep`.
+    ///         "what would one more bid at step s change". It adds a new bid: for a raise it
+    ///         counts the raised units twice (at their old step and the new one), so it is not
+    ///         a quote of a raise. It ignores a step's queue capacity (2^32 - 1 units ever
+    ///         entered in a capped sale), so a bid it quotes can still revert with
+    ///         `InvalidQuantity` at a full step. Reverts with `UnknownAuction` or `InvalidStep`.
     /// @param saleId The sale ID.
     /// @param step The step of the hypothetical bid.
     /// @param quantity Its units, from 1.
@@ -575,9 +590,10 @@ interface IUniformEditionAuction is ISaleAdapter {
         view
         returns (Quote memory);
     /// @notice The lowest step at which a new bid of `quantity` would win at least one copy if
-    ///         the sale closed now. Winning is monotone in the step (model-checked, with and
-    ///         without a cap), so this may be found by binary search. Reverts with
-    ///         `UnknownAuction`.
+    ///         the sale closed now: "wins at least one unit", not all `quantity` (at a split
+    ///         cut step it may win fewer). Winning is monotone in the step (model-checked, with
+    ///         and without a cap), so this may be found by binary search. Like `quote`, it adds
+    ///         a new bid and ignores a step's queue capacity. Reverts with `UnknownAuction`.
     /// @param saleId The sale ID.
     /// @param quantity The units of the hypothetical bid, from 1.
     /// @return found Whether any step would win (false only when even the top step would not).

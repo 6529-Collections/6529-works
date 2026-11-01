@@ -7,6 +7,7 @@ import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { IUniformEditionAuctionStorage } from "src/interfaces/IUniformEditionAuctionStorage.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
@@ -15,8 +16,9 @@ import { StepLadder } from "src/interfaces/types/StepLadder.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
+import { UniformEditionAuctionLens } from "src/sales/UniformEditionAuctionLens.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
-import { EthRefusingHolder } from "../../mocks/sales/EditionAuctionMocks.sol";
+import { EthRefusingHolder, MockOneOfOneAuction } from "../../mocks/sales/EditionAuctionMocks.sol";
 import { EditionAuctionBase } from "./EditionAuctionBase.sol";
 
 /// @notice Unit tests of `UniformEditionAuction` on mocks: every entry point's happy path,
@@ -30,54 +32,120 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
 
     // ================================================================== construction
 
-    function test_Constructor_WiresAndCreatesLens() public view {
+    function test_Constructor_WiresAndPinsItsLens() public view {
         assertEq(auction.editions(), address(editions));
         assertEq(auction.stream(), address(stream));
         assertEq(auction.englishAuction(), address(english));
         assertEq(auction.escrow(), address(escrow));
-        assertEq(lens.adapter(), address(auction));
-        assertTrue(auction.lens().code.length != 0);
+        assertEq(auction.lens(), lensAddress);
+        assertTrue(lensAddress.code.length != 0);
+        // The lens's immutables are the adapter's wiring (the fallback forwards their getters
+        // only when the adapter does not declare them: it does, so these are the lens's own).
+        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lensAddress);
+        assertEq(l.editions(), address(editions));
+        assertEq(l.stream(), address(stream));
+        assertEq(l.englishAuction(), address(english));
+        assertEq(l.escrow(), address(escrow));
         _assertConfig(auction.config(), defaultConfig());
         assertEq(auction.saleKind(), SaleKind.UNIFORM_AUCTION);
         assertEq(auction.PAYOUT_GAS(), 100_000);
     }
 
+    function _construct(
+        address escrow_,
+        address editions_,
+        address english_,
+        address lens_,
+        bytes32 lensHash,
+        IUniformEditionAuction.AuctionConfig memory c
+    ) internal returns (UniformEditionAuction) {
+        return new UniformEditionAuction(
+            address(manager), escrow_, editions_, english_, lens_, lensHash, c
+        );
+    }
+
     function test_Constructor_RejectsBadDependencies() public {
         IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+        address l = lensAddress;
+        bytes32 h = l.codehash;
         address notContract = makeAddr("notContract");
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, notContract));
-        new UniformEditionAuction(
-            address(manager), notContract, address(editions), address(english), c
-        );
+        _construct(notContract, address(editions), address(english), l, h, c);
         // Editions must answer IEditions.
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(english))
         );
-        new UniformEditionAuction(
-            address(manager), address(escrow), address(english), address(english), c
-        );
+        _construct(address(escrow), address(english), address(english), l, h, c);
         // The English auction must answer IEnglishAuction.
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(editions))
         );
-        new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(editions), c
-        );
+        _construct(address(escrow), address(editions), address(editions), l, h, c);
         // The master read from Editions must answer IStream.
         editions.setStream(address(english));
         vm.expectRevert(
             abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(english))
         );
-        new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(english), c
-        );
+        _construct(address(escrow), address(editions), address(english), l, h, c);
         editions.setStream(address(stream));
         // An invalid initial configuration.
         c.marginShare = 50_001;
         vm.expectRevert(IUniformEditionAuction.InvalidConfig.selector);
-        new UniformEditionAuction(
-            address(manager), address(escrow), address(editions), address(english), c
-        );
+        _construct(address(escrow), address(editions), address(english), l, h, c);
+    }
+
+    /// @dev F8: the lens is deployed on its own and pinned. The adapter refuses a lens with
+    ///      another code hash, no code, or immutables that are not its own wiring.
+    function test_Constructor_PinsItsLens() public {
+        IUniformEditionAuction.AuctionConfig memory c = defaultConfig();
+        address l = lensAddress;
+        // Another code hash.
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, l));
+        _construct(address(escrow), address(editions), address(english), l, keccak256("x"), c);
+        // No code.
+        address none = makeAddr("noLens");
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, none));
+        _construct(address(escrow), address(editions), address(english), none, none.codehash, c);
+        // Lenses deployed for another escrow, English auction, Editions: not this wiring.
+        address[3] memory others = [
+            address(
+                new UniformEditionAuctionLens(
+                    address(editions), address(stream), address(english), makeAddr("otherEscrow")
+                )
+            ),
+            address(
+                new UniformEditionAuctionLens(
+                    address(editions),
+                    address(stream),
+                    address(new MockOneOfOneAuction()),
+                    address(escrow)
+                )
+            ),
+            address(
+                new UniformEditionAuctionLens(
+                    makeAddr("otherEditions"), address(stream), address(english), address(escrow)
+                )
+            )
+        ];
+        for (uint256 i; i < 3; ++i) {
+            vm.expectRevert(
+                abi.encodeWithSelector(Dependency.InvalidDependency.selector, others[i])
+            );
+            _construct(
+                address(escrow),
+                address(editions),
+                address(english),
+                others[i],
+                others[i].codehash,
+                c
+            );
+        }
+        UniformEditionAuction pinned =
+            _construct(address(escrow), address(editions), address(english), l, l.codehash, c);
+        assertEq(pinned.lens(), l);
+        // The lens reads its caller: the same view answers for each adapter's own sales.
+        assertEq(IUniformEditionAuctionLens(l).editions(), address(editions));
+        assertEq(IUniformEditionAuctionLens(l).escrow(), address(escrow));
     }
 
     function test_SupportsInterface() public view {
@@ -912,6 +980,8 @@ contract UniformEditionAuctionTest is EditionAuctionBase {
         );
         auction.withdrawBid(saleId, 1, alice);
         uint64 end = uint64(block.timestamp + 1 days);
+        // The pause begins a minute after the bids (only bids placed before it may leave).
+        vm.warp(block.timestamp + 60);
         english.set(address(stream), ID, IEnglishAuction.AuctionState.PAUSED, end);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IUniformEditionAuction.NotBidder.selector, bob));

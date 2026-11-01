@@ -19,6 +19,32 @@
   96-departure chunk scattered over the log's words); ADR 0005 §4 lists the reachable ladders.
   `quote` and `lowestWinningStep` are documented as new-bid views that ignore capacity, and the
   economics spec notes that 6529 Stream has no per-collection royalty receiver.
+- Fix pass A of the rc.2 seven-lens review (the edition auction, its lens, 6529 Stream Editions
+  and `EditionRules`; ADR 0005 §12):
+  - F1 (LC-1, MONEY-L1, G-1): `IEditions.bindMinter` returns the `WorkTerms` it locks, and the
+    edition auction pays exactly those, so after an economics replacement (owner decision 16) a
+    sale pays the split its edition records. The lens no longer holds a copy of the resolver.
+  - F3 (markets M-1, clearing Info 1): during a 1/1 dispute pause, only a bid placed or last
+    raised in a minute (from the sale's open) that ended before the pause began may be
+    withdrawn; a bid placed during the pause, in its minute or in the withdrawal's block stays.
+    The bid word keeps that minute in its spare bits; the lens's `canWithdraw` answers for a bid.
+  - F4 (governance L-3): Editions compares the sale kind an adapter reported at its first
+    admission, not its live `saleKind()`, and refuses an adapter with no kind.
+  - F8 (gas M-2): the edition auction's lens is deployed in its own transaction (its own
+    `DeployV1` entry, `UniformEditionAuctionLens`) and pinned by the adapter's constructor (code
+    hash, code, and its Editions, Stream, English auction and escrow), so the adapter's deployment
+    fits a block. The lens reads its caller and has no `adapter()`.
+  - F9 (gas M-1): `settlementOrderFor(saleId, settler, fromPosition, max)` pages a long
+    departure log, `O(n log max)`; the lens reads a log four entries a word and sorts with a heap
+    in Yul. A page of 96 at 10,000 departures costs 21.9M gas; `clearing` and `quote` stay
+    within a 50M `eth_call` up to about 9,000 departures at the cut step.
+  - F10 (gas L-1): `EditionRules.MAX_PARAMS_BYTES` is 64 (two words), down from 1,024, so every
+    start row stays inside its budget less the 5K margin; a sale method needing more commits to a
+    hash in `params` and takes the data at open. Gas rows at the bound.
+  - NatSpec: the soft close is strict, a bid event's `endTime` can be stale or `type(uint64).max`
+    while paused, `lowestWinningStep` means "wins at least one unit", and `quote` double-counts a
+    raise and, with `lowestWinningStep`, ignores a step's queue capacity.
+
 - Docs: the edition auction's specification (rc.2 L6). Editions and sales specifies the
   uniform-price edition auction: the step ladder, bids, the D138 clearing and its one-pass
   algorithm, the cut step and each settler's own departure sweep, the clocks beside the 1/1,

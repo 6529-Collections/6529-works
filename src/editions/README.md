@@ -46,7 +46,7 @@ The create flow, with every check in order, is under
   [`GasReport.t.sol`](../../test/integration/GasReport.t.sol) and `EditionsGasReport.t.sol`
   assert exactly ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - **Generic minting (ADR 0005, owner decision 14).** `EditionTerms` carries no size, format or
-  price; `EditionRules` checks only a nonzero sale kind and at most 1,024 bytes of params, and
+  price; `EditionRules` checks only a nonzero sale kind and at most 64 bytes (two words) of params; a method needing more commits to a hash, and
   the kind's adapter validates its currency and params when it opens a sale.
 - **`mint` returns only the sale kind (QUALITY-2).** An adapter applies the terms it locked
   from `primaryTerms` when its sale opened; building full terms in `mint` would add the record

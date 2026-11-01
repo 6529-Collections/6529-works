@@ -389,6 +389,11 @@ contract EditionsAdapterMock is ERC1155Holder {
         saleKind = kind;
     }
 
+    /// @dev Changes the kind this adapter answers (an adapter whose answer is not constant).
+    function setKind(bytes32 kind) external {
+        saleKind = kind;
+    }
+
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
         return interfaceId == type(ISaleAdapter).interfaceId || super.supportsInterface(interfaceId);
     }
@@ -525,5 +530,36 @@ contract ReentrantReceiver1155 is ERC1155Holder {
             if (!ok) reentryError = reason;
         }
         return this.onERC1155Received.selector;
+    }
+}
+
+/// @dev A sale method whose parameters do not fit the two-word bound (ADR 0005 §12): its edition
+///      terms carry `abi.encode(keccak256(extra))`, and its `open` takes the item and the full
+///      `extra` (`data = abi.encode(item, extra)`), refusing an `extra` of another hash. The
+///      hash is the edition's recorded one once it exists: `bindMinter` checks the caller's item
+///      against 6529 Stream only before then.
+contract HashedParamsAdapterMock is ERC1155Holder {
+    bytes32 public constant saleKind = keccak256("HASHED_PARAMS");
+    mapping(uint256 id => bytes) public extraOf;
+
+    error ParamsMismatch(uint256 id);
+
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(ISaleAdapter).interfaceId || super.supportsInterface(interfaceId);
+    }
+
+    function open(IEditions target, uint256 id, bytes calldata data) external {
+        (PackageItem memory item, bytes memory extra) = abi.decode(data, (PackageItem, bytes));
+        bytes memory params =
+            target.exists(id) ? target.edition(id).terms.params : item.edition.params;
+        if (params.length != 32 || abi.decode(params, (bytes32)) != keccak256(extra)) {
+            revert ParamsMismatch(id);
+        }
+        target.bindMinter(id, item);
+        extraOf[id] = extra;
+    }
+
+    function buy(IMintTarget target, uint256 id, address to, uint256 amount) external {
+        target.mint(to, id, amount, "");
     }
 }
