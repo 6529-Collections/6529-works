@@ -59,17 +59,21 @@ delay ([`config/genesis.example.json`](../../config/genesis.example.json)). For 
 recipient from `networkFeeRecipient(PRODUCT_FEDERATED)`.
 
 The constructor also sets the **6529 Network Museum** (D140, owner decision 11), `museum()`: the
-account the English auction sends an unbid canonical 6529 Stream work to, reading it when the
-sale settles ([Stream and auctions](stream-and-auctions.md#settle-with-no-bid), AUC-24). It is
+account a 6529 Stream work goes to when its 1/1 sale ends unsold, unbid or frozen out. 6529 Stream
+moves the work there itself, reading `museum()` from its current resolver when the adapter
+settles the sale, with no receiver callback (owner decision 17;
+[Stream and auctions](stream-and-auctions.md#settle-with-no-bid), AUC-24). It is
 `MUSEUM` in [`script/Deploy.s.sol`](../../script/Deploy.s.sol), which off anvil refuses an address
 with no code, balance or nonce, like the fee recipient, and should be a Safe or an EOA. The
-resolver refuses zero and every contract the fee-recipient rule refuses (ECO-3), since such a
-contract could never hold a work (`InvalidMuseum`). `setMuseum(expectedRevision, next)` changes
+resolver refuses zero and every contract the fee-recipient rule refuses (ECO-3): the resolver,
+its dependencies and the recognised protocol contracts, none of which may end up holding the
+network's works (`InvalidMuseum`). Since Stream moves a work with no receiver callback, any
+other account, a contract included, receives it. `setMuseum(expectedRevision, next)` changes
 it: FUNDS_SETTER, 14 days, compare-and-set on the museum's own revision (`museumRevision()`, 1 at
 deployment; `RevisionMismatch`), announced by `MuseumSet(previous, next, revision)` (ECO-37).
 Unlike the other settings it reaches sales already running: a change applies to every
-settlement after it, while a work already delivered, or pending, for the previous museum stays
-with it. It moves to network control under D67 and D98.
+settlement after it, while a work already moved to the previous museum stays with it. Nothing is
+ever pending for the museum (AUC-33). It moves to network control under D67 and D98.
 
 ### Terms locked at mint
 
@@ -105,6 +109,11 @@ the pinned factory, about 41K Prague gas for the whole call
 ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table)). It reverts when gas runs
 short, never returning a zero royalty, and computes `floor(salePrice × rate / 100,000)` without
 overflow. `Editions.royaltyInfo` returns its stored receiver.
+
+**No per-collection receiver.** Each work's receiver comes from its own payees and the fee terms
+at mint; 6529 Stream has no receiver per collection. A collection whose royalties should all go
+to one account (a crowdfund, for example) needs a token contract of its own, a new collection
+outside Stream, or that account among each work's payees, which also shares its primary sale.
 
 ### Currencies
 

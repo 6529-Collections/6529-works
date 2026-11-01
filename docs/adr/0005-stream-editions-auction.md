@@ -221,6 +221,21 @@ The edition auction's parameters are one `AuctionConfig`, set by `setConfig(expe
 - The top-step floor is the integrator's: it stops a configuration that would cap every
   edition's price below plausible demand (a 1.2% ladder from 0.0001 ETH over 512 steps tops
   out at 0.046 ETH).
+- (Note, 1 November 2026, from the rc.2 review, with [§8](#8-amendment-31-october-2026-base-prices-are-powers-of-ten)'s
+  power-of-ten bases.) The 10 ETH top-step rule leaves these ladders reachable, each from the
+  fewest steps shown up to 512:
+
+  | Base | 24 per decade | 48 per decade | 96 per decade | 192 per decade |
+  | --- | --- | --- | --- | --- |
+  | 0.000001 ETH (10^12 wei) | 169 steps | 337 | no (top 0.21 ETH) | no |
+  | 0.00001 ETH | 145 | 289 | no (top 2.1 ETH) | no |
+  | 0.0001 ETH (the default) | 121 | 241 | 481 | no (top 0.046 ETH) |
+  | 0.001 ETH | 97 | 193 | 385 | no (top 0.46 ETH) |
+  | 0.01 ETH | 73 | 145 | 289 | no (top 4.6 ETH) |
+  | 0.1 ETH (10^17 wei) | 64 | 97 | 193 | 385 |
+
+  So 192 steps per decade works only from a 0.1 ETH base, and 96 per decade needs a base of at
+  least 0.0001 ETH.
 
 ### 5. Gas budgets (ADR 0004)
 
@@ -401,6 +416,10 @@ and amends the decision 15 note under [Open items](#open-items).
 - **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
   `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
   less. Also useful for TDH: P29 shares the Works pool by realized ETH price.
+- (Note, 1 November 2026, owner decision 22.) Every unsold canonical 6529 Stream 1/1 goes to
+  the museum whatever its sale method, with no exceptions: no 1/1 adapter admitted for 6529
+  Stream may return an unsold work to its creator. A sale that returns unsold works to their
+  creators belongs in its own collection, outside 6529 Stream.
 
 ### 12. Amendment (1 November 2026): fix pass A of the rc.2 review
 

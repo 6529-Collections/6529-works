@@ -460,13 +460,13 @@ a new seller wallet creates its account, at the settler's cost.
 | Outcome | How you see it | What to do |
 | --- | --- | --- |
 | Delivered | `Transfer` to the recipient, `SaleSettled` | Nothing. |
-| Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The recipient or the winning bidder calls `claimDelivery(saleId, to)`, `to` neither zero nor the auction. With no bids the recipient is the museum recorded at settlement, and only it may claim, never the artist nor a museum named later; for any other token (federated, or listed later), the artist's authority may too (AUC-33). |
+| Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The recipient or the winning bidder calls `claimDelivery(saleId, to)`, `to` neither zero nor the auction. An unsold 6529 Stream work is never pending: Stream moves it to the museum itself (owner decision 17). With no bids on any other token (federated, or listed later), the artist's authority may claim too (AUC-33). |
 | A payout refused by the wallet (ETH: reverted or needed over 100,000 gas) or by the token | The escrow's `Credited` | Anyone calls `RevenueEscrow.flush(wallet, asset)`, for a token once it allows it. |
 | An ERC-20 payout that failed even through the escrow (MONEY-1, AUC-23) | The auction's `Credited(wallet, token, saleId, amount)` | Anyone calls `claimFor(wallet, token)`; the funds only go to `wallet`. |
 | No bid (D140, AUC-24, owner decision 17) | The auction reports UNBID to the token (`settlePrimary`); 6529 Stream moves the work from the auction's custody to the 6529 Network Museum, `IEconomicsResolver.museum()` read then, even while the artist is [restrained](../glossary.md#restraint), and emits `PrimarySaleSettled` with the outcome. `SaleSettled` has `buyer == address(0)`, `price == 0` and the museum as recipient. Any other token's work (federated, or listed later by governance) goes to the creator the token reports. | Nothing. Its edition sale still sells and settles, by anyone's `settle` call after its close ([EA-11](../spec/editions-and-sales.md#rules-and-invariants)). |
 | No bid on another token's work while its artist is restrained (IDENTITY-1, AUC-24) | Reverts with `InvalidRecipient(address(0))`: the creator from `IMintTarget.primaryTerms(tokenId, "")` is zero | Retry once the recovery override executes, is vetoed or voided, or lapses. |
 | Locked currency deprecated under 30 days | Reverts with `AssetNotActive(currency)` | Wait; the high bidder may `withdrawBid`. |
-| Locked currency deprecated 30 days | The high bid is credited back; a 6529 Stream work goes to the museum, any other token's to its artist | The bidder claims its credit. |
+| Locked currency deprecated 30 days | The high bid is credited back; the auction reports FROZEN_OUT and 6529 Stream moves the work to the museum; any other token's goes to its artist | The bidder claims its credit. |
 | Currency re-admitted in the last window or after the end | `AuctionResumed(saleId, endTime)`, no `SaleSettled` | Bid again; settle after the new end. |
 | Paused for a dispute | Reverts with `InvalidAuctionState(saleId, PAUSED)` | Wait for the resume, the cancel, or 7 days. |
 
@@ -573,7 +573,8 @@ function raise(uint256 saleId, uint256 bidId, uint256 newStep) external payable;
 - **Pay exactly.** `msg.value` must be `quantity × stepPrice(saleId, step)` for a bid and
   `quantity × (stepPrice(newStep) − stepPrice(step))` for a raise (`IncorrectPayment`).
 - **Bids are firm.** A bid can be raised but never lowered, and not withdrawn except while the
-  1/1 is paused for a dispute (`withdrawBid`, below). More copies means another bid. Tell the
+  1/1 is paused for a dispute, and then only if it was placed or last raised before the pause's minute (`withdrawBid`,
+  below). More copies means another bid. Tell the
   bidder before they sign.
 - **The bid ID** runs from 1 in each sale. `bidOf(saleId, bidId)` returns the bidder, step,
   quantity and queue position.
@@ -591,12 +592,14 @@ Every figure comes from the views, so no two clients disagree:
 | --- | --- | --- |
 | `clearing(saleId)` | The result if the sale closed now: count, step, price, revenue, network fee, best revenue, whether the cut step is rationed | "Right now: 80 editions at 0.0511 ETH each" |
 | `bidOutcome(saleId, bidId)` | Copies won, price, escrow, refund, units ahead in the queue; final once settled | "In: 3 at 0.0511 (0.0828 ETH comes back)", "Partly in: 2 of 5" |
-| `quote(saleId, step, quantity)` | What a new bid would win, and how many existing units it would push out or pull in | "→ 81 at 0.0464 · you'd be in · 0 pushed out" |
-| `lowestWinningStep(saleId, quantity)` | The lowest step at which a new bid would win anything | "A bid of 1 gets in from 0.0464" |
+| `quote(saleId, step, quantity)` | What a new bid would win, and how many existing units it would push out or pull in. It prices a new bid: for a raise it counts the bid at its old step and its new one, so compute a raise's effect client-side | "→ 81 at 0.0464 · you'd be in · 0 pushed out" |
+| `lowestWinningStep(saleId, quantity)` | The lowest step at which a new bid would win at least one unit (not necessarily all `quantity`) | "A bid of 1 gets in from 0.0464" |
 | `stepTotals(saleId)` | Live units per step from the lowest used step | The demand ladder |
 
 The lowest winning step can sit below the current price, because of the breadth margin: such a
-bid lowers everyone's price. Say so.
+bid lowers everyone's price. Say so. Both views enforce the sale-wide live-unit limit below
+2^32, but neither enforces a capped sale's per-step position capacity (live plus departed units)
+or the bid-ID limit, which `bid` enforces.
 
 ### Withdrawing during a dispute
 
@@ -604,9 +607,13 @@ bid lowers everyone's price. Say so.
 function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
 ```
 
-Only while the 1/1 is paused for a dispute (`endTimes(saleId).withdrawalsOpen`;
-`WithdrawalsClosed` otherwise): it sends the whole escrow to `to`. If the dispute is upheld and
-the 1/1 cancelled, the sale is void and every remaining bid is refunded in full at its claim.
+Only while the 1/1 is paused for a dispute (`endTimes(saleId).withdrawalsOpen`), and only
+for a bid placed or last raised in a minute, counted from the sale's open, that ended before the
+pause began (`WithdrawalsClosed` otherwise; ADR 0005 §12): it sends the whole escrow to `to`. A
+bid placed or raised during the pause, in its minute, or in the withdrawal's own block stays
+until the outcome. `canWithdraw(saleId, bidId)` answers for one bid. If the dispute is upheld
+and the 1/1 cancelled, the sale is void and every remaining bid is refunded in full at its
+claim.
 
 ### Settling
 
@@ -683,7 +690,7 @@ and Editions' `TransferSingle` per claim
 | `InvalidStep(step)`, `InvalidQuantity(quantity)` | A step past the ladder or a raise that does not move up; a zero quantity, units past 2^32 − 1, or a bid ID past 2^32 − 1. |
 | `IncorrectPayment(expected, paid)` | `msg.value` is not exactly the escrow or the top-up. |
 | `UnknownBid(saleId, bidId)`, `NotBidder(caller)` | No live bid with this ID; the caller is not its bidder. |
-| `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause. |
+| `WithdrawalsClosed(saleId)` | A withdrawal outside a 1/1 dispute pause, or of a bid placed or last raised during it (or in its minute). |
 | `SettlementNotReady(saleId)`, `EditionNotCreated(token, id)` | Too early to settle; create the edition first. |
 | `InvalidSettlementOrder(index)` | The order is out of range or not in increasing position. |
 | `InvalidAuctionState(saleId, status)` | The sale is not in a state that allows the call, such as a claim before settlement. |
@@ -708,7 +715,7 @@ Refunds are never pushed; every amount owed has a pull function:
 | An edition bid's copies and refund | `UniformEditionAuction` | The bidder; anyone with `claimBidFor` | `claimBid(saleId, bidId, to)`, `claimBidFor(saleId, bidId)` |
 | A refund `claimBidFor` credited | `UniformEditionAuction` | The bidder | `claim(address(0), to)` |
 | An ERC-20 auction payout that failed (MONEY-1) | `EnglishAuction` | Anyone, for the wallet | `claimFor(wallet, token)` |
-| A token whose delivery failed | `EnglishAuction` | The recipient or the winning bidder; with no bids the museum (another token's artist) | `claimDelivery(saleId, to)` |
+| A token whose delivery failed | `EnglishAuction` | The recipient or the winning bidder; with no bids on a token other than 6529 Stream, also its artist | `claimDelivery(saleId, to)` |
 | A payout a wallet or token refused | `RevenueEscrow` | Anyone | `flush(wallet, asset)` |
 | A payee's share of sales or royalties | the `SplitWallet` | Depends on the payee (below) | `release`, `releaseTo`, `releaseWithAuthorization` |
 

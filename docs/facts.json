@@ -741,6 +741,17 @@
         "sepoliaGas": null
       },
       {
+        "operation": "Edition bid, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close; review PoC, not in CI)",
+        "pragueGas": 106295,
+        "pragueCeiling": {
+          "gas": 110000,
+          "kind": "budget"
+        },
+        "newSlots": 2,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
         "operation": "Edition raise, same 8-step word",
         "pragueGas": 53607,
         "pragueCeiling": {
@@ -810,6 +821,23 @@
           2
         ],
         "newSlotsNote": "the call that clears and leaves its sweep unfinished writes the result and its settler's progress",
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
+        "operation": "Edition settle, a 96-departure chunk with departures scattered over the log's words (336 steps), each call; review PoC, not in CI",
+        "pragueGas": 307070,
+        "pragueGasIsMaximum": true,
+        "pragueGasIsExecution": true,
+        "pragueCeiling": {
+          "gas": 350000,
+          "kind": "execution"
+        },
+        "newSlots": 2,
+        "newSlotsRange": [
+          0,
+          2
+        ],
         "newAccounts": 0,
         "sepoliaGas": null
       },

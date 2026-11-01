@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+- Docs and runbook after the rc.2 seven-lens review (fix pass C). The museum wording follows
+  owner decision 17 everywhere: 6529 Stream moves an unsold work itself, nothing is pending for
+  the museum, and after an economics replacement running sales use the new resolver's museum
+  (LIM-SAL-12, the threat model, the bidding guide, economics, the runbook). The runbook pauses
+  the English auction's starts with the edition auction (LC-2), opens every pending edition sale
+  before an adapter-set switch, keeps no edition sale with winners OPEN or SETTLING across a
+  package-registry switch (a successor MUST read its predecessor and keep `consume`'s ABI),
+  opens right after every edition-master start, warns that a dispute-outcome correction can
+  invalidate a scheduled cancel, and has keepers compute the settlement order off-chain beyond
+  the lens's limits. Known limitations: the backstop is a hard close (LIM-EA-1, LIM-EA-6), the
+  emergency pause (LIM-EA-11), and new rows for the lens views beyond several thousand departures
+  (LIM-EA-17), starts beyond ADR 0004's scope (LIM-GAS-12), `entropyModuleOf`'s eras
+  (LIM-ENT-6) and Stream's permanent couplings (LIM-GV-17). ADR 0004 states its scope (at most
+  two parties; params are bounded to 64 bytes by ADR 0005 §12) and adds the worst edition `bid`
+  (106,295) and the worst `settle` call with departures scattered over the log's words (307,070
+  execution gas), both re-measured after fix passes A and B; ADR 0005 §4 lists the reachable
+  ladders. After fix passes A and B: LIM-EA-17 and the keeper runbook page the settlement order,
+  LIM-GAS-12 keeps only large collaborations, the economics-replacement row follows
+  `bindMinter`'s one source of truth, and the docs describe pause withdrawals as open only to
+  bids placed before the pause.
+  `quote` and `lowestWinningStep` are documented as new-bid views that ignore capacity, and the
+  economics spec notes that 6529 Stream has no per-collection royalty receiver. The runbook's
+  overview and the editions spec's wiring paragraph no longer say the edition auction creates
+  its lens: it pins one deployed in its own transaction, and holds no economics resolver.
+- Owner decisions of 1 November 2026 in the docs: mainnet roles are network-held from day one
+  (decision 18: a community council for the delayed roles, a security council for PAUSER and
+  GUARDIAN, a dedicated curation signer, later on-chain TDH governance), in the runbook's
+  mainnet governance section and genesis checklist and in LIM-GV-18 (D67, D98; review finding
+  G-3). Still open there: the holders of the operational keys and the cold recovery admin, how
+  one security council fills the three guardian Safes the deploy requires, and a deploy-side
+  guard for the decision, which does not exist yet. LIM-GV-16 is accepted (decision 21); every unsold canonical 6529 Stream 1/1 goes to the
+  museum whatever its sale method, and return-to-creator sales belong in their own collections
+  (decision 22, ADR 0005 §11 and the Stream spec).
 - Fix pass B for the rc.2 seven-lens review.
   - `AssetAllowlist.deprecateAsset` refuses ETH (`EthNotDeprecable`): the native currency, in
     which edition auctions run, is never frozen (MONEY-M1, G-2). The freeze-exit tests now use
