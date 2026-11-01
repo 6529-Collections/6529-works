@@ -322,10 +322,32 @@ contract PlainMintTarget is ERC721, IMintTarget {
     function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
         external
         view
+        virtual
         returns (PrimarySettlement memory p)
     {
         (p.seller, p.feeRecipient, p.feeShare) =
         (_terms.seller, _terms.feeRecipient, _terms.feeShare);
+    }
+}
+
+/// @dev CALLS I-2 (rc.2 review): a listed token whose settlement hook REPORTS an unsold work as
+///      taken by `reportedHolder` without moving it. The adapter must not trust the report.
+contract HolderReportingTarget is PlainMintTarget {
+    address public reportedHolder;
+
+    function setReportedHolder(address holder) external {
+        reportedHolder = holder;
+    }
+
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        view
+        override
+        returns (PrimarySettlement memory p)
+    {
+        (p.seller, p.feeRecipient, p.feeShare) =
+        (_terms.seller, _terms.feeRecipient, _terms.feeShare);
+        p.holder = reportedHolder;
     }
 }
 

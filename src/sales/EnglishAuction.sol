@@ -751,7 +751,7 @@ contract EnglishAuction is
                         || (terms.feeRecipient == address(0) && terms.feeShare != 0)))
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
-                || IERC721(token).ownerOf(tokenId) != address(this)
+                || _ownerOf(token, tokenId) != address(this)
         ) revert ISaleAdapter.InvalidSaleTerms(token, tokenId);
         saleId = _saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
@@ -1048,17 +1048,24 @@ contract EnglishAuction is
         assembly ("memory-safe") {
             pop(call(gasLimit, token, 0, add(data, 0x20), mload(data), 0, 0))
         }
-        if (IERC721(token).ownerOf(tokenId) == address(this)) {
+        if (_ownerOf(token, tokenId) == address(this)) {
             s.flags |= _DELIVERY_PENDING;
             emit IEnglishAuction.DeliveryPending(saleId, to);
         }
     }
 
+    /// @dev The token's owner of `tokenId`: one call site for the custody checks at start, after
+    ///      a delivery and at an unsold settlement.
+    function _ownerOf(address token, uint256 tokenId) private view returns (address) {
+        return IERC721(token).ownerOf(tokenId);
+    }
+
     /// @dev Reports the outcome to the token (`IMintTarget.settlePrimary`, owner decision 17) and
-    ///      returns the terms to pay by. An unsold work's recipient is recorded: the holder the
-    ///      token moved it to itself (`taken`; 6529 Stream's museum), else the creator the token
-    ///      reports now (`primaryTerms`), which must not be zero (`InvalidRecipient`, while a
-    ///      recovery override is pending).
+    ///      returns the terms to pay by. An unsold work's recipient is recorded: where the token
+    ///      moved it out of custody itself (`taken`; 6529 Stream's museum), read with `ownerOf`
+    ///      rather than trusted from the reported `holder` (the rc.2 review's CALLS I-2), else,
+    ///      for a work still in custody, the creator the token reports now (`primaryTerms`),
+    ///      which must not be zero (`InvalidRecipient`, while a recovery override is pending).
     function _settleWithToken(Sale storage s, address bidder, uint256 price, bool frozenOut)
         private
         returns (LockedTerms memory lt, bool taken)
@@ -1070,8 +1077,9 @@ contract EnglishAuction is
             .settlePrimary(s.tokenId, outcome, bidder, _terms[s.termsId].currency, price);
         lt = _lock(s, p.seller, p.feeRecipient, p.feeShare);
         if (bidder == address(0)) {
-            taken = p.holder != address(0);
-            address to = taken ? p.holder : _unbidClaimant(s);
+            address owner = _ownerOf(s.token, s.tokenId);
+            taken = owner != address(this);
+            address to = taken ? owner : _unbidClaimant(s);
             if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
             s.recipient = to;
             s.flags |= _RECIPIENT_SET;

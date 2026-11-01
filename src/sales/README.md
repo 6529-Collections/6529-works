@@ -55,7 +55,8 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 - **The no-bid recipient (D140, owner decision 17).** `settle` reports SOLD, UNBID or
   FROZEN_OUT to the token; 6529 Stream moves an unsold work to the museum itself and returns it
   as `holder`, so a 6529 Stream work is never pending (AUC-33). Any other token's unsold work
-  goes to the creator the token reports. The auction has no museum branch of its own.
+  goes to the creator the token reports. Where the work went is read with `ownerOf` after the
+  call, not taken from the reported `holder`. The auction has no museum branch of its own.
 - **Edition auction storage.** Per sale, a state word (written by every bid), a payout word at
   open and a result word at settlement; live units eight steps to a word; one word per bid;
   departure logs only in capped sales.

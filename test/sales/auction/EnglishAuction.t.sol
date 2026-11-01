@@ -29,6 +29,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import {
     ForwardingBidder,
+    HolderReportingTarget,
     HostileActor,
     HugeIdTarget,
     MockMintTarget
@@ -1214,6 +1215,34 @@ contract EnglishAuctionTest is AuctionBase {
             other.settlementHash(PrimaryOutcome.UNBID, address(0), ETH, 0),
             "reported UNBID"
         );
+    }
+
+    /// @dev rc.2 review, CALLS I-2 (fix F5): delivery is derived from `ownerOf`, never from the
+    ///      holder a listed token's settlement hook reports. A token that reports its unbid work
+    ///      as taken by the artist without moving it still has the work delivered to the artist,
+    ///      out of the auction's custody, and no reported holder can strand it.
+    function test_Settle_AReportedHolderIsNotTrustedWithoutTheTransfer() public {
+        HolderReportingTarget other = new HolderReportingTarget();
+        other.setAdmittedMinter(address(auction), true);
+        other.setTerms(_terms(ETH));
+        vm.prank(successor);
+        auction.setTarget(address(other), true);
+        other.setReportedHolder(artist);
+        uint256 saleId = auction.start(address(other), "");
+        _end(saleId);
+
+        auction.settle(saleId);
+        assertEq(other.ownerOf(1), artist, "delivered to its artist");
+        assertEq(auction.auction(saleId).recipient, artist);
+        assertEq(auction.pendingDelivery(saleId), address(0), "nothing left pending");
+
+        // A report naming someone else changes nothing either: the work is still the auction's.
+        other.setReportedHolder(makeAddr("stranger"));
+        uint256 second = auction.start(address(other), "");
+        _end(second);
+        auction.settle(second);
+        assertEq(other.ownerOf(2), artist, "still its artist");
+        assertEq(auction.auction(second).recipient, artist);
     }
 
     /// @dev Owner decision 10 with decision 9: another listed token's 30-day freeze exit takes
