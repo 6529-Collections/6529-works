@@ -45,6 +45,25 @@ contract ManagedStandIn is DependencyStandIn {
     }
 }
 
+/// @dev A replacement with a silent fallback: `authority()` succeeds with no answer.
+contract SilentStandIn is DependencyStandIn {
+    constructor(bytes4 id) DependencyStandIn(id) { }
+
+    fallback() external { }
+}
+
+/// @dev A replacement whose `authority()` reverts with a one-word reason.
+contract RevertingAuthorityStandIn is DependencyStandIn {
+    constructor(bytes4 id) DependencyStandIn(id) { }
+
+    function authority() external pure returns (address) {
+        assembly ("memory-safe") {
+            mstore(0, 0xdead)
+            revert(0, 0x20)
+        }
+    }
+}
+
 /// @dev A replacement entropy module that has a seed for every item, but not its predecessor's:
 ///      the worst replacement for the works minted before it.
 contract OtherSeedsEntropy is IERC165 {
@@ -419,6 +438,16 @@ contract StreamDependenciesTest is IntegrationBase {
             _replace(
                 KINDS[i], address(new ManagedStandIn(_interfaceOf(KINDS[i]), address(manager)))
             );
+        }
+    }
+
+    /// @dev F7's other side: only a successful one-word `authority()` answer is compared. A
+    ///      replacement whose `authority()` succeeds with no answer (a silent fallback) or
+    ///      reverts, even with a one-word reason, installs for every kind.
+    function test_AReplacementWithNoAuthorityAnswerInstalls() public {
+        for (uint256 i; i < KINDS.length; ++i) {
+            _replace(KINDS[i], address(new SilentStandIn(_interfaceOf(KINDS[i]))));
+            _replace(KINDS[i], address(new RevertingAuthorityStandIn(_interfaceOf(KINDS[i]))));
         }
     }
 
