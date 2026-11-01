@@ -215,7 +215,7 @@ bid by `(saleId, bidId)`. The rules are [EA-1 to EA-16][ed].
 | --- | --- | --- | --- |
 | `AuctionOpened(uint256 indexed saleId, address indexed token, uint256 indexed id, address master, uint32 maxCount, AuctionConfig terms, uint64 closeAt)` | `0x54085347…` | `open` (anyone, from the 1/1's start until the close) | `AuctionConfig` is `(uint96 basePrice, uint16 stepsPerDecade, uint16 stepCount, uint32 marginShare, uint32 closeOffset, uint32 softWindow, uint32 maxExtension)`, the terms the sale locked. `maxCount` is the creator's cap, zero for none; `closeAt` the close at opening. Follows `SaleStarted`. |
 | `SaleStarted(…)` | `0x36e87edc…` | `open` | `saleKind` is `UNIFORM_AUCTION`, `currency` zero (ETH), `price` step 0's price, `endTime` the close at opening; it moves later with the 1/1 and the soft close. |
-| `BidPlaced(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 step, uint256 quantity, uint256 position, uint64 endTime)` | `0xea05b7c0…` | `bid` (anyone) | The escrow is `quantity × stepPrice(step)`. `position` is the bid's place in its step's queue (capped sales; zero otherwise). `endTime` is the sale's end after the bid: a soft-close extension shows here. |
+| `BidPlaced(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 step, uint256 quantity, uint256 position, uint64 endTime)` | `0xea05b7c0…` | `bid` (anyone) | The escrow is `quantity × stepPrice(step)`. `position` is the bid's place in its step's queue (capped sales; zero otherwise). `endTime` is the sale's end as the adapter knows it after the bid: a soft-close extension shows here, but the adapter reads the 1/1 only within `softWindow` of its cached close, so a 1/1 extension shows only from then on, and a bid that reads the 1/1 paused carries `type(uint64).max`. Read `endTimes(saleId)` for the live close. |
 | `BidRaised(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, uint256 fromStep, uint256 toStep, uint256 position, uint256 paid, uint64 endTime)` | `0x147e61d6…` | `raise` (the bidder) | The whole bid moved up; `paid` is the top-up. In a capped sale it leaves a departure at `fromStep` and joins `toStep` at `position`. |
 | `BidWithdrawn(uint256 indexed saleId, uint256 indexed bidId, address indexed bidder, address to, uint256 amount)` | `0xcc2c9bd2…` | `withdrawBid` (the bidder, only while the 1/1 is paused for a dispute) | The whole escrow went to `to`; the bid is gone. In a capped sale it leaves a departure. |
 | `AuctionCleared(uint256 indexed saleId, uint256 count, uint256 step, uint256 price, uint256 revenue, bool rationed, uint256 cutUnits)` | `0x0740a60e…` | The `settle` call that finishes the scan of the book (anyone) | The result: `count` copies at `price`, revenue paid out in the same call. `rationed` marks a cap binding inside the clearing step, which then sells `cutUnits`. Followed by `SaleSettled`. |
@@ -496,7 +496,8 @@ Per `saleId`:
   (`departures(saleId, step)`).
 - **The clocks.** The close is the 1/1's end plus the offset, or the last soft-close extension,
   whichever is later: watch the 1/1's `BidPlaced` and `AuctionResumed` too, or read
-  `endTimes(saleId)`. Each `BidPlaced` and `BidRaised` carries the end after it.
+  `endTimes(saleId)`. Each `BidPlaced` and `BidRaised` carries the end as the adapter knew it
+  after it: a lower bound of the live close, or `type(uint64).max` when it read the 1/1 paused.
 - **Settled.** Settlement runs in calls of bounded gas: a call that stops before the end of the
   book emits `SettlementScanned`; `AuctionCleared` and `SaleSettled` come in the call that
   finishes the scan, `DeparturesSwept` in each call of a sweep (the caller's own progress: each
@@ -505,7 +506,8 @@ Per `saleId`:
   1/1 gives `AuctionVoided` instead.
 - **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`, and
   6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction, any time after the
-  master's sale settled and before copies mint. Read `edition(editionId)` for the locked
+  master's sale settled; when copies sold, before the settle call that clears the edition sale
+  (`EditionNotCreated`). Read `edition(editionId)` for the locked
   economics.
 - **Bound.** `EditionMinterBound` names the adapter that sells the edition: emitted when its
   sale opens (`bindMinter`, often before `EditionCreated`), or else on the first mint;

@@ -406,13 +406,17 @@ over as the edition auction lands.
   Editions refuses mints from a removed adapter (ED-5). Governance therefore removes an edition
   auction only once its settled sales are claimed; `claimBidFor` lets anyone push the remaining
   claims first. The removal is a 30-day operation, visible in advance. (Amended by [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens): it now
-  reads "a removed adapter still mints the editions it sold".)
+  reads "a removed adapter still mints the editions it sold". Copies are minted at claim, after
+  the seller was paid, so Editions lets an edition's bound adapter mint it after removal and
+  governance cannot stop a removed adapter's claims on editions it already sold; the creator's
+  cap still bounds them, removal stops every new sale, and an adapter is admitted only after a
+  30-day review.)
 - **LIM-EA-11: an edition auction nobody opens in time.** (Added with [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens).) `open` is accepted until the 1/1's
   end plus the close offset. If nobody opens it by then, this adapter can never sell that
   work's editions. The edition is still unbound, so a later admitted adapter of its kind can
   open it (decision 14). The keeper opens the edition auction in the same batch as the 1/1's
   start (decision 7; [runbook](../../script/README.md#the-edition-auction-keeper)).
-- **LIM-EA-12: settlement waits for `createEdition`.** (Added with [§6](#6-amendment-31-october-2026-the-edition-is-bound-when-its-sale-opens).) A sale with winners settles only once
+- **LIM-EA-12: settlement waits for `createEdition`.** (Added 1 November 2026 with the adapter, PR #77.) A sale with winners settles only once
   the edition exists (`EditionNotCreated`). `createEdition` is permissionless and
   deterministic once the 1/1 settles, but it takes the master's item, its package root and a
   Merkle proof, which the frozen `settle(saleId, order)` and `claimBid` cannot carry, and the

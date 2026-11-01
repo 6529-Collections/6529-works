@@ -10,8 +10,10 @@ assertion, not the test's name; [Gaps](#gaps) lists what no campaign covers.
 
 Every campaign runs with `[profile.default.invariant]` in [`foundry.toml`](../../foundry.toml):
 `runs = 256`, `depth = 128` calls per run, `fail_on_revert = true`, `show_metrics = true`.
-Fuzz tests run 256 times (`[profile.default.fuzz] runs`). No `/// forge-config:` comment under
-`test/` changes the default runs or depth. Three campaigns check their invariant after every
+Fuzz tests run 256 times (`[profile.default.fuzz] runs`). Two `/// forge-config:` comments under
+`test/` change fuzz runs: `testFuzz_Clear_MatchesTheBruteForceOverUnits` runs 10,000 times, and
+`testFuzz_Settlement_EqualsTheLibraryClearing` 10,000 under the `deep` profile; none changes
+an invariant campaign's runs or depth. Three campaigns check their invariant after every
 fourth call (`check_interval = 4`; every call in the `deep` profile): the content store, the
 Stream lifecycle and the edition auction, whose checks read many contracts; each of their
 actions still checks its own effects.
@@ -158,7 +160,8 @@ Everything is real: the whole v1 stack deployed by `DeployV1` with the committed
 edition auction beside each master's English auction, `Editions`, the museum. Six edition
 masters by one artist with creator caps of none, none, 4, none, 6 and 2; five edition bidders
 on a narrow band of low steps (so steps collide, caps bind inside a step and raises leave holes
-at the cut step) and one bid in sixteen far above it; two 1/1 bidders. The oracle is
+at the cut step) and one bid in sixteen far above it; up to two books a run spread wider than
+one settle call scans (`wideBook`); two 1/1 bidders. The oracle is
 [`UniformClearingReference`](../../test/helpers/UniformClearingReference.sol): every bid
 expanded into unit bids, every count scanned, and the cut step filled in arrival order. The rules
 are on [Editions and sales][ed] (EA-n).
@@ -177,6 +180,7 @@ are on [Editions and sales][ed] (EA-n).
 | INV-EA-10 | Firm bids and single claims: a withdrawal outside a 1/1 dispute pause, a stranger's raise, a payment one wei off, a second open, a second claim, all revert; a withdrawal during a pause refunds the whole escrow. | handler check: `withdraw`, `raise`, `bid`, `open`, `claim` | as named |
 | INV-EA-11 | Beside the 1/1: a 1/1 bid in its anti-snipe window extends the 1/1 and never moves the edition end earlier; an unbid 1/1 settles to the museum. | handler check: `bidOneOfOne`, `settleOneOfOne` | as named |
 | INV-EA-12 | Per-settler sweeps and completability: a settler's call moves only its own progress (`sweepOf`); an order that skips a departure is accepted but never finishes its sender's sweep; a reordered one reverts with `InvalidSettlementOrder`; after any of these, a keeper settling from its own address completes settlement within a bounded number of calls, and a later call by another settler returns true and changes nothing. | handler check: `settle` (one keeper, a handoff, a stranded sweep, a refused reorder, interleaved keepers) | `settle` |
+| INV-EA-13 | No claim while SETTLING: while a sale's scan or sweep is unfinished, its bidder's claim and a pushed claim both revert with `InvalidAuctionState`. A book wider than one call's scan (24 words) settles over calls: the first stores scan progress and no result; an early call may advance the scan before the edition exists, and the call that would finish it waits for the edition. | handler check: `settle` | `wideBook`, `settle` |
 
 `test_EveryActionRuns` replays campaign-shaped sequences from fixed seeds and asserts that every
 action and path ran, among them the soft close, a rationed cut step with a swept hole, a settler
