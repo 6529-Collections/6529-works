@@ -16,7 +16,7 @@
   review of #80).
 - 6529 Stream: `rendererOf` reads the records satellite with a fixed gas cap (`RECORDS_GAS`) and
   serves the default renderer on any fault of it but a changed pinned renderer, which still
-  fails closed; one read instead of two. Stream grows by 696 bytes with the two entries above;
+  fails closed; one read instead of two. Stream grows by 711 bytes with the two entries above;
   `start` costs about 2,350 more Prague gas (the binding row 341,923, 8,077 under 350K),
   `settle` 2,281, `createEdition` 5,032, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).

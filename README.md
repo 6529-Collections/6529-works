@@ -76,7 +76,7 @@ royalties are 6.529% (ERC-2981, out of 100,000); a work keeps the terms it was m
 
 | Contract | Purpose | nSLOC |
 | --- | --- | ---: |
-| [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 632 |
+| [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 630 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 622 |
 | [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 313 |
 | [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 358 |
