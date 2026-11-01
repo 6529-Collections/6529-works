@@ -45,6 +45,8 @@ description of the contract.
 | `stream/WorkRecords.sol` | [`stream/WorkRecords.t.sol`](stream/WorkRecords.t.sol), [`PreferredLocation.t.sol`](stream/PreferredLocation.t.sol); on the real stack [`integration/WorkRecordsStack.t.sol`](integration/WorkRecordsStack.t.sol), `RecordAmendments`, `SyncOnChainResume` |
 | `stream/SpdxId.sol` | [`stream/SpdxId.t.sol`](stream/SpdxId.t.sol); the proof in `symbolic/` |
 | `sales/EnglishAuction.sol`, `sales/EnglishAuctionLens.sol` | [`sales/auction/EnglishAuction.t.sol`](sales/auction/EnglishAuction.t.sol) (start, bids, settlement, credits, 96-bit arithmetic), `EnglishAuctionLens` (the lens and the fallback), `EnglishAuctionLensDifferential` (every moved view against the pre-lens build in [`legacy/`](sales/auction/legacy/), a test-only copy), `EnglishAuctionDisputes` (pause, withdrawals, resume, cancel, governed setters), `EnglishAuctionFederation`, `EnglishAuctionHostile`, `EnglishAuctionGas`, `invariant/`; on the real stack the `Auction*.t.sol` suites beside them |
+| `sales/UniformEditionAuction.sol`, `UniformEditionAuctionLens.sol` | [`sales/edition/`](sales/edition/): `UniformEditionAuction` (configuration, opening, bids, the soft close, the 1/1 coupling, raises, withdrawals, settlement and the sweep, claims), `UniformEditionAuctionLens`, `UniformEditionAuctionSettlement` (settlement against `UniformClearing` at the numeric limits), `UniformEditionAuctionHostile`, `UniformEditionAuctionVectors` (the golden vectors), `SweepSkipRegression` (each settler's own sweep), on the mock harness `EditionAuctionBase`; on the real stack, through [`integration/EditionAuctionStack.sol`](integration/EditionAuctionStack.sol): `EditionAuction` (the flows), `EditionAuctionBinding` (the edition bound at open), `EditionAuctionGasReport`, `PieceLifecycle`, `EditionAuctionDifferential` (random books against the brute-force reference) and [`integration/invariant/EditionAuctionInvariant.t.sol`](integration/invariant/EditionAuctionInvariant.t.sol) |
+| `interfaces/types/StepLadder.sol` | [`interfaces/StepLadder.t.sol`](interfaces/StepLadder.t.sol) (the golden ladder) |
 | `sales/EnglishAuction.sol`, its pause windows | on the real stack: [`sales/PauseWindow.t.sol`](sales/PauseWindow.t.sol) |
 | `sales/UniformClearing.sol` | [`sales/uniform/UniformClearing.t.sol`](sales/uniform/UniformClearing.t.sol) (the ladder domain, the clearing against a brute force over units and against the reference model's golden vectors in `fixtures/edition-auction/`, the quote, the cut step), `UniformClearingGas`; the proofs in `symbolic/` |
 | `editions/Editions.sol`, `EditionRules.sol` | [`editions/`](editions/): `Editions`, `EditionRules`, `EditionsGasReport`, `Editions.invariant` |
@@ -66,7 +68,7 @@ description of the contract.
 | Directory | What lives there | Layers |
 | --- | --- | --- |
 | `content/`, `curation/`, `economics/`, `editions/`, `entropy/`, `governance/`, `identity/`, `interfaces/`, `libraries/`, `records/`, `stream/` | The suites of one `src/` module each, with the module's base or fixture (`*Base.sol`, `*Fixture.sol`) and its invariant handlers (`*Handler.sol`) | unit, fuzz, invariant, gas |
-| `sales/` | The sale adapters: `auction/` for the English auction; at the top, suites on the real stack through [`SalesStackBase.sol`](sales/SalesStackBase.sol) | unit, fuzz, invariant, gas, integration |
+| `sales/` | The two sale adapters: `auction/` for the English auction and `edition/` for the edition auction; at the top, suites that span the adapters, on the real stack through [`SalesStackBase.sol`](sales/SalesStackBase.sol) | unit, fuzz, invariant, gas, integration |
 | `sales/auction/Auction*.t.sol` | The auction's regression suites on the real stack: currency freeze, dispute pause and cancel, payout failures, custody, federated tokens | integration |
 | `*/invariant/` | Larger stateful campaigns, each test contract with its handler | invariant |
 | `content/tooling/` | The Python uploader's and the CID helper's golden vectors against the real `ContentStore` | differential |
@@ -74,7 +76,7 @@ description of the contract.
 | `deploy/` | The deploy library, the deploy and Verify scripts, genesis | integration |
 | `fork/` | The stack against the real delegation contract, Permit2 and the VRF coordinator; skipped without an RPC URL ([its README](fork/README.md)) | fork |
 | `symbolic/` | Halmos proofs (`check_*`), compiled only under the `symbolic` profile | symbolic |
-| `helpers/` | Shared fixtures (`GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`), the state-growth meter (`StateGrowth`, with its own test), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
+| `helpers/` | Shared fixtures (`GovernanceFixture`), oracles (`TextOracles`, the frozen RC1 code in `Pr744Utf8` and `Pr744Escape`, and `UniformClearingReference`, the edition auction's brute-force clearing and FIFO fill, with its own test), the state-growth meter (`StateGrowth`, with its own test), revert data (`SignatureReverts`) and locator builders (`ContentAddresses`) | support |
 | `mocks/` | Stand-ins and adversaries, by module ([below](#mocks)) | support |
 | `fixtures/` | Byte-exact data: the CC0 legal code, Permit2's mainnet runtime code, and the oracle vectors from `tools/content/oracles.py` | support |
 
