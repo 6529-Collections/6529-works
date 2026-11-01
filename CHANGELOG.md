@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Docs and runbook after the rc.2 seven-lens review (fix pass C). The museum wording follows
+  owner decision 17 everywhere: 6529 Stream moves an unsold work itself, nothing is pending for
+  the museum, and after an economics replacement running sales use the new resolver's museum
+  (LIM-SAL-12, the threat model, the bidding guide, economics, the runbook). The runbook pauses
+  the English auction's starts with the edition auction (LC-2), opens every pending edition sale
+  before an adapter-set switch, keeps no edition sale with winners OPEN or SETTLING across a
+  package-registry switch (a successor MUST read its predecessor and keep `consume`'s ABI),
+  opens right after every edition-master start, warns that a dispute-outcome correction can
+  invalidate a scheduled cancel, and has keepers compute the settlement order off-chain beyond
+  the lens's limits. Known limitations: the backstop is a hard close (LIM-EA-1, LIM-EA-6), the
+  emergency pause (LIM-EA-11), and new rows for the lens views beyond about 4,000 departures
+  (LIM-EA-17), starts beyond ADR 0004's scope (LIM-GAS-12), `entropyModuleOf`'s eras
+  (LIM-ENT-6) and Stream's permanent couplings (LIM-GV-17). ADR 0004 states its scope, adds the
+  worst edition `bid` (107,004) and raises the worst `settle` call to 307,070 execution gas (a
+  96-departure chunk scattered over the log's words); ADR 0005 §4 lists the reachable ladders.
+  `quote` and `lowestWinningStep` are documented as new-bid views that ignore capacity, and the
+  economics spec notes that 6529 Stream has no per-collection royalty receiver.
 - Docs: the edition auction's specification (rc.2 L6). Editions and sales specifies the
   uniform-price edition auction: the step ladder, bids, the D138 clearing and its one-pass
   algorithm, the cut step and each settler's own departure sweep, the clocks beside the 1/1,

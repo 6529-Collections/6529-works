@@ -717,6 +717,17 @@
         "sepoliaGas": null
       },
       {
+        "operation": "Edition bid, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close)",
+        "pragueGas": 107004,
+        "pragueCeiling": {
+          "gas": 110000,
+          "kind": "budget"
+        },
+        "newSlots": 2,
+        "newAccounts": 0,
+        "sepoliaGas": null
+      },
+      {
         "operation": "Edition raise, same 8-step word",
         "pragueGas": 53770,
         "pragueCeiling": {
@@ -772,8 +783,8 @@
         "sepoliaGas": null
       },
       {
-        "operation": "Edition settle, every step used (512 steps, departures at the cut), each call",
-        "pragueGas": 228103,
+        "operation": "Edition settle, every step used (512 steps), or a 96-departure chunk with departures scattered over the log's words (336 steps), each call",
+        "pragueGas": 307070,
         "pragueGasIsMaximum": true,
         "pragueGasIsExecution": true,
         "pragueCeiling": {

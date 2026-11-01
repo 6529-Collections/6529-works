@@ -137,6 +137,12 @@ auction to end (on r2 the same method reproduced every later receipt exactly);
 one marked "r2" or "r1" is that rehearsal's receipt, for a row r3 has not run.
 "—" means no ceiling, or not run on Sepolia.
 
+**Scope.** The start rows measure packages of at most two parties with empty or short edition
+params. A package may name up to 16 parties and 1,024 bytes of edition params; such starts cost
+more than the 350K budget (about 453K for 16 parties, about 361K for 1,024-byte params) and are
+outside it (LIM-GAS-12). The edition auction's worst `bid` and its scattered-sweep `settle` call
+are from the rc.2 review's measurements of 1 November 2026.
+
 Re-measured for ADR 0005's edition terms and the museum rule (rc.2): `EditionTerms` shrank
 from seven fields to four, so every row that carries a package item lost calldata and hashing
 (about 1,300 gas for a start), and `createEdition` writes 6 new slots, one fewer, now that no
@@ -275,12 +281,13 @@ of margin: the binding row 338,212 (11,788 under 350K), with a VRF seed 343,740 
 | Edition `bid`, opens an 8-step word | 86,327 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 71,674 | 110,000 | 1 | 0 | — |
 | Edition `bid` near the close (1/1 read, soft close) | 78,593 | 110,000 | 1 | 0 | — |
+| Edition `bid`, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close) | 107,004 | 110,000 | 2 | 0 | — |
 | Edition `raise`, same 8-step word | 53,770 | 56,000 (regression) | 0 | 0 | — |
 | Edition `raise`, capped (departure logged) | 78,996 | 81,000 (regression) | 1 | 0 | — |
 | Edition `withdrawBid`, capped, 1/1 paused | 87,761 | 90,000 (regression) | 1 | 0 | — |
 | Edition `settle`, 40 used steps | 151,701 | 400,000 | 1 | 0 | — |
 | Edition `settle`, capped, one departure swept | 149,787 | 153,000 (regression) | 1 | 0 | — |
-| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 228,103 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
+| Edition `settle`, every step used (512 steps), or a 96-departure chunk with departures scattered over the log's words (336 steps), each call | at most 307,070 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
 | Edition `claimBid`, a winner and new holder | 94,286 | 100,000 | 1 | 0 | — |
 | Edition `claimBid`, refund only | 47,546 | 49,000 (regression) | 0 | 0 | — |
 | Edition `claimBidFor`, refund credited | 64,591 | 67,000 (regression) | 1 | 0 | — |

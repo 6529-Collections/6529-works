@@ -123,7 +123,7 @@ or stores a key:
 | Platform | PLATFORM | EOA |
 | Curator | CURATOR | EOA |
 | Network fee recipient | No role (`NETWORK_FEE_RECIPIENT`) | An existing account: a Safe, or an EOA with a balance or a sent transaction ([below](#the-network-fee-recipient-must-exist)) |
-| 6529 Network Museum | No role (`MUSEUM`). Receives every unbid canonical 6529 Stream work (D140); FUNDS_SETTER can change it (`setMuseum`, 14 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
+| 6529 Network Museum | No role (`MUSEUM`). Receives every 6529 Stream work whose 1/1 sale ends unsold (D140), moved there by Stream (owner decision 17); FUNDS_SETTER can change it (`setMuseum`, 14 days) | An existing Safe or EOA that can hold ERC-721 tokens ([below](#the-museum-must-exist)) |
 | Marketplace owner | No role (`MARKETPLACE_OWNER`). Stream's `owner()`: collection admin on marketplaces, no protocol power; FUNDS_SETTER can change it (`setOwner`, 14 days) | Safe or EOA, separate from the platform key, so a stolen platform key does not also hold the marketplace listing |
 | VRF subscription owner | No role; owns the Chainlink subscription. It can cancel the subscription or remove the module at once, outside governance, so on mainnet it must be the hot admin Safe (Verify checks it) | Mainnet: the hot admin Safe. Sepolia: EOA or Safe |
 | Keeper | No role (`refreshStanding` is permissionless) | Any funded EOA |
@@ -169,15 +169,16 @@ Glamsterdam that costs whoever settles or buys about 184K more gas
 
 #### The museum must exist
 
-The English auction sends every unbid canonical work, and every work a 30-day currency freeze
-ends unsold, to the museum the economics resolver names when the sale settles
-([AUC-24](../docs/spec/stream-and-auctions.md#rules-and-invariants)).
+6529 Stream moves every work whose 1/1 sale ends unsold, unbid or by the 30-day currency
+freeze, to the museum its current economics resolver names when the adapter settles the sale,
+with no receiver callback (owner decision 17;
+[AUC-24, AUC-33](../docs/spec/stream-and-auctions.md#rules-and-invariants)).
 - Off anvil the script requires `MUSEUM` and refuses an empty one (`AccountDoesNotExist`), as
   for the fee recipient: an existing account is less likely to be a typo. On Sepolia a fresh
   test Safe or EOA is fine once it has a balance or has sent a transaction.
-- Name a Safe or an EOA. A Safe needs a fallback handler that accepts ERC-721 tokens (the
-  default compatibility handler does); otherwise each work stays pending in the auction until
-  the museum calls `claimDelivery` to another address.
+- Name a Safe or an EOA that can move ERC-721 tokens on. The move makes no
+  `onERC721Received` call, so the museum needs no ERC-721 fallback handler, and nothing is ever
+  pending for it.
 - `setMuseum(expectedRevision, next)` refuses zero and the protocol contracts the fee-recipient
   rule refuses (`InvalidMuseum`), nothing more. Before scheduling it, check that `next` exists and is
   not a contract of the deployment, and remember that it redirects auctions already running.
@@ -637,6 +638,17 @@ rules themselves, including the cancellation Rules 1 to 3 cited below, are in th
   guardian can cancel. The adapters and the auction also refuse an unpause, a `resume` or a
   dispute `cancel` until 48 hours after the pause they end (review finding GOV-5), so one
   scheduled before the pause cannot land inside it.
+- **Pausing the edition auction pauses the English auction's starts too** (LC-2). While the
+  edition auction is paused (at least 48 hours) it refuses `open`, and an edition master whose
+  1/1 starts and closes in that time can never get an edition sale from it (LIM-EA-11). Pause
+  `EnglishAuction` with it (its `pause()` stops `start` and `startWithBid`; running 1/1s are
+  unaffected) and unpause both together.
+- **A dispute cancel cites the latest outcome.** `EnglishAuction.cancel(saleId, outcomeRef)`
+  needs `outcomeRef` to be the token's latest `DISPUTE_OUTCOME` statement recorded after the
+  pause (`OutcomeNotRecorded` otherwise). A correction recorded after the cancel is scheduled
+  makes the scheduled call revert, and rescheduling takes another 48 hours, which can pass the
+  pause's 7-day lapse (`MAX_PAUSE`), after which the auction resumes. Record the final outcome
+  first, then schedule the cancel early in the window.
 - **A compromised operational key.** Any guardian Safe calls `manager.suspend(role, key)` for a
   PLATFORM, CURATOR or STORAGE_OPERATOR key; the key stops in the same block. Pause the affected
   targets as well where they have a pause. The hot admin then schedules `revokeRole(role, key)`
@@ -702,9 +714,11 @@ Deploy the target with `authority` set to the manager, then:
 Every step of an edition sale is permissionless; a keeper (any funded EOA, no role) batches
 them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
 
-1. **Open the edition auction in the same batch as the master's 1/1 start** (owner decision 7):
+1. **Open the edition auction right after every edition-master start** (owner decision 7):
    `UniformEditionAuction.open(editions, tokenId, abi.encode(item))`, the master's
-   EDITION_MASTER package item. `open` also binds the edition to the adapter. An auction nobody
+   EDITION_MASTER package item, in the same batch as the keeper's own starts, and for starts by
+   anyone else as soon as the English auction's `SaleStarted` for an `EDITION_MASTER` work
+   appears. `open` also binds the edition to the adapter. An auction nobody
    opens before the 1/1's end plus the close offset can never be opened by this adapter
    (LIM-EA-11); a later admitted adapter of the edition's kind still can.
 2. **Create the edition once the 1/1 settles:** `Editions.createEdition(tokenId, item,
@@ -713,7 +727,11 @@ them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.
 3. **Settle after the edition close:** call `settle(saleId, order)` until it returns `true`,
    with `order` the keeper's own rest, `settlementOrderFor(saleId, keeper)` (on the adapter or
    its lens), cut to one chunk (16 entries in the call that clears, 96 after) to keep calldata
-   small. Each call stays within 350,000 execution gas; a typical sale settles in one. Each
+   small. Each call stays within 350,000 execution gas; a typical sale settles in one. With
+   thousands of departures at the cut step the lens's order views exceed a 50M `eth_call`
+   (about 11,000 gas per departure, LIM-EA-17): compute the order off-chain from
+   `departures(saleId, step)`, which stays cheap, sorted by position and skipping the ones
+   already swept. Each
    settler sweeps on its own: a keeper that sent a wrong order strands only its own progress
    (`sweepOf`), and settles from another address. A call after the sale settled returns
    `true`.
@@ -738,11 +756,22 @@ existing Stream and Editions and switched in one governance batch: schedule ever
 the set together, execute them in one `multicall`, and onboard each new contract first
 ([above](#onboarding-a-target-after-genesis)).
 
+Before any switch:
+- **Open every pending edition sale on the old adapters** when the set replaces the English
+  auction or the edition auction. A master started on the old English auction whose edition
+  sale is not open yet can never be opened afterwards: the old edition auction is no longer
+  admitted, and the new one reads only the new English auction (`NoOneOfOneAuction`).
+- **No edition sale with winners may be OPEN or SETTLING across a package-registry switch**, and
+  every edition such a sale needs must exist: settle those sales and create their editions
+  first. A successor that cannot create an earlier master's edition leaves such a sale on
+  `EditionNotCreated`, its bidders unable to withdraw or claim until governance reverses the
+  switch (another 30 days).
+
 | Replaced | Who else holds it | The replacement set | Without a Stream redeploy? |
 | --- | --- | --- | --- |
 | Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. Seeds requested from the old module but not yet started are requested again from the new one. Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
-| Economics resolver | `EnglishAuction` (immutable: museum, federated fee recipient, asset allowlist) and `UniformEditionAuction` (its lens copies the resolver at construction; the auction reads the 1/1's clock from its immutable English auction, so it is replaced with it) | A new resolver whose `splitFactory()` is Stream's (Stream derives sellers with its own immutable factory and Editions with the resolver's; `setDependency` does not check it), a new `EnglishAuction` and a new edition auction on it; then `setDependency("ECONOMICS")`, `Stream.setAdmittedMinter` (the new auction in, the old out: one adapter per kind, ADR 0005) and the same on Editions. Sales running on the old adapters finish there, under the old resolver's museum and fees. | Yes |
-| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it; then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor must read its predecessor's state: approved packages, consumed content (or content minted before would mint again), edition claims (or `createEdition` refuses every master minted before) and releases (or `releaseContent` refuses every work burned before). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
+| Economics resolver | `EnglishAuction` (immutable: the federated fee recipient and the asset allowlist; since owner decision 17 Stream, not the auction, reads the museum) and `UniformEditionAuction` (its lens copies the resolver at construction; the auction reads the 1/1's clock from its immutable English auction, so it is replaced with it) | A new resolver whose `splitFactory()` is Stream's (Stream derives sellers with its own immutable factory and Editions with the resolver's; `setDependency` does not check it), a new `EnglishAuction` and a new edition auction on it; then `setDependency("ECONOMICS")`, `Stream.setAdmittedMinter` (the new auction in, the old out: one adapter per kind, ADR 0005) and the same on Editions. Sales running on the old adapters finish there: their fees follow the terms locked at mint or at open, while an unsold 1/1 goes to the NEW resolver's museum, since Stream reads `museum()` from its current resolver when it settles (owner decision 17). | Yes |
+| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it; then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor MUST read its predecessor's state: approved packages, consumed content (or content minted before would mint again), edition claims (or `createEdition` refuses every master minted before) and releases (or `releaseContent` refuses every work burned before); it must also keep `consume`'s ABI, which Stream calls (LIM-GV-17). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
 | Artist registry | `SplitFactory` and every `SplitWallet` (the payout resolver, pinned by code hash), `PackageRegistry` (pinned), `StatementLog` (`setArtistResolver`, 30 days) | A registry carrying every identity, authority, pending change and recovery; a successor package registry pinned to it (row above); `StatementLog.setArtistResolver`; the new registry's one-shot binds. | **No, not completely.** Stream's split factory is immutable, so every Stream work, existing or future, resolves its artist payouts through the genesis artist registry: a replacement moves authority (creator, records consent, statements) but never payouts, and an artist known only to the replacement cannot release Stream proceeds. The genesis registry would have to be kept in step for every identity change, by hand. |
 
 One limit follows ([LIM-GV-16](../docs/audit/known-limitations.md#trust-and-governance)): the

@@ -177,8 +177,11 @@ live units, and the cutoff its departures give; after the close the book is froz
 the settlement, which `settlement(saleId)` stores. `bidOutcome(saleId, bidId)` returns a bid's
 copies won, price, escrow, refund and units ahead in its queue, final once the sale is SETTLED
 or VOID. `quote(saleId, step, quantity)` returns what a new bid would win, push out or pull in,
-and `lowestWinningStep(saleId, quantity)` the lowest step at which it would win anything (winning
-is monotone in the step, so it is a binary search).
+and `lowestWinningStep(saleId, quantity)` the lowest step at which it would win at least one unit
+(winning is monotone in the step, so it is a binary search). Both treat the bid as new: for a
+raise, `quote` counts the bid's units at its old step and its new one, so a client computes a
+raise's effect itself. Neither checks a step's capacity (a step's or a sale's units below 2^32),
+which `bid` enforces.
 
 ### The cut step
 
