@@ -7,6 +7,7 @@ import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -173,8 +174,9 @@ library VerifyV1 {
     }
 
     /// @notice Reverts unless the wired getter reflects `call`. This is genesis readback: a
-    ///         default currency must still be at the revision its wiring produced, so a later
-    ///         (14-day) FUNDS_SETTER change makes it fail by design.
+    ///         default currency must still be at the revision its wiring produced, and the
+    ///         English auction's opening bid at its wired value, so a later governed change
+    ///         makes it fail by design.
     function checkWired(DeployV1.Deployment memory d, GovernanceConfig.Call memory call)
         internal
         view
@@ -195,6 +197,9 @@ library VerifyV1 {
             (bool configured, address current, uint64 revision) =
                 IAssetAllowlist(target).defaultCurrencyConfig(product);
             ok = configured && current == asset && revision == expected + 1;
+        } else if (selector == IEnglishAuction.setOpeningBid.selector) {
+            address currency = address(uint160(uint256(_word(data, 0))));
+            ok = IEnglishAuction(target).openingBid(currency) == uint256(_word(data, 2));
         } else {
             address arg = address(uint160(uint256(_word(data, 0))));
             if (selector == IStream.bindWorkRecords.selector) {

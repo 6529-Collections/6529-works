@@ -104,10 +104,12 @@ contract CuratedSaleFlowTest is IntegrationBase {
         );
         auction.start(address(stream), replay);
 
-        // Bids: a zero bid cannot claim the work; increments are max(5%, 0.001 ETH).
+        // Bids: the first is at least the genesis ETH opening bid of 0.05 ETH (owner decision
+        // 19), so neither a zero bid nor a token one claims the work; increments are max(5%,
+        // 0.001 ETH).
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, 1, 0));
+        vm.expectRevert(abi.encodeWithSelector(IEnglishAuction.BidTooLow.selector, 0.05 ether, 0));
         auction.bid(saleId, address(0), Payment(PaymentMethod.DIRECT, bidder1, 0, 0, 0, ""));
         _ethBid(saleId, bidder1, 1 ether);
         assertEq(auction.minimumBid(saleId), 1.05 ether);

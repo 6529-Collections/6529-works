@@ -10,6 +10,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
@@ -116,7 +117,7 @@ contract GenesisWiringTest is GovernanceFixture {
     }
 
     function test_GenesisSelectorsAreExactlyTheAllowList() public pure {
-        bytes4[11] memory allowed = [
+        bytes4[12] memory allowed = [
             IStream.bindWorkRecords.selector,
             IStream.bindEditions.selector,
             IPackageRegistry.bindStream.selector,
@@ -127,6 +128,7 @@ contract GenesisWiringTest is GovernanceFixture {
             IMintTarget.setAdmittedMinter.selector,
             ISaleAdapter.setTarget.selector,
             IAssetAllowlist.setDefaultCurrency.selector,
+            IEnglishAuction.setOpeningBid.selector,
             IStatementLog.appendGovernanceManifest.selector
         ];
         for (uint256 i; i < allowed.length; ++i) {

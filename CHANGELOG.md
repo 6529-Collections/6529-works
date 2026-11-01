@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Owner decisions 18 to 24 (1 November 2026), the contract and deploy side:
+  - Decision 20: `Stream.rescueToMuseum(tokenId)` (SUCCESSOR_SETTER, 30 days) moves a work
+    stranded in a removed sale adapter's custody to the museum, and nothing else. It applies
+    only to a work whose primary sale never settled, still held by the adapter that minted it,
+    90 days after governance removed that adapter. The work is then settled as UNBID
+    (`WorkRescued`), so the adapter can neither settle nor burn it. Each adapter's removal
+    time is kept in its minter word, whose sale-kind key is now 192 bits. AUC-35.
+  - Decision 19: genesis wires the English auction's ETH opening bid at 0.05 ETH
+    (`setOpeningBid`, now a genesis selector; `DeployV1.ETH_OPENING_BID`; Verify reads it
+    back). A self-bid at the floor still keeps a 1/1 from the museum, but it shows as SOLD and
+    costs the network fee on it, about 0.0125 ETH (LIM-SAL-1).
+  - Decision 24: ADR 0001's source-size budget rises from 12,000 to 13,000 lines, by a dated
+    amendment; `check_budgets.py` enforces it.
+  - Decision 18: on mainnet, Deploy and Verify refuse a genesis whose community council,
+    security council and curation signer roles share an account across groups, or name the
+    deployer EOA in any of them (`DeployGuards.checkRoleGroups`, GV-36).
 - Docs and runbook after the rc.2 seven-lens review (fix pass C). The museum wording follows
   owner decision 17 everywhere: 6529 Stream moves an unsold work itself, nothing is pending for
   the museum, and after an economics replacement running sales use the new resolver's museum

@@ -5,6 +5,7 @@ import { IAccessManager } from "@openzeppelin/contracts/access/manager/IAccessMa
 import { IAccessManaged } from "@openzeppelin/contracts/access/manager/IAccessManaged.sol";
 import { IAssetAllowlist } from "../economics/interfaces/IAssetAllowlist.sol";
 import { IArtistRegistry } from "../interfaces/IArtistRegistry.sol";
+import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { IPackageRegistry } from "../interfaces/IPackageRegistry.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
@@ -25,7 +26,8 @@ import { Roles } from "./Roles.sol";
 ///      `TargetAdminDelayUpdated` events for future effect times instead.
 ///
 ///      Genesis wiring: `install` also executes the genesis calls ({isGenesisSelector}: one-shot
-///      binds, admitted minters, sale targets, the epoch-0 manifest) as the zero-delay
+///      binds, admitted minters, sale targets, default currencies, the English auction's ETH
+///      opening bid (owner decision 19), the epoch-0 manifest) as the zero-delay
 ///      installer, after the roles and target admin delays are set and before any selector is
 ///      mapped. Every wired selector therefore still resolves to `ADMIN`; without this phase
 ///      those calls would wait the admins' 30-day delay.
@@ -145,6 +147,7 @@ library GovernanceConfig {
             || selector == IMintTarget.setAdmittedMinter.selector
             || selector == ISaleAdapter.setTarget.selector
             || selector == IAssetAllowlist.setDefaultCurrency.selector
+            || selector == IEnglishAuction.setOpeningBid.selector
             || selector == IStatementLog.appendGovernanceManifest.selector;
     }
 

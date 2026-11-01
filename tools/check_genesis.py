@@ -45,12 +45,12 @@ from typing import Callable
 CONFIG = "config/genesis.example.json"
 CLASS_DELAY = {"immediate": 0, "standard": 172_800, "funds": 1_209_600, "successor": 2_592_000}
 # Functions `GovernanceConfig.isGenesisSelector` admits (one-shot binds, admitted minters,
-# sale targets, first default currencies, the epoch-0 manifest). The Solidity tests pin the
-# selectors themselves.
+# sale targets, first default currencies, the English auction's ETH opening bid, the epoch-0
+# manifest). The Solidity tests pin the selectors themselves.
 GENESIS_FUNCTIONS = frozenset({
     "bindWorkRecords", "bindEditions", "bindStream", "bindPackageRegistry", "bindSplitFactory",
     "bindStatementLog", "bindFederationRegistry", "setAdmittedMinter", "setTarget",
-    "setDefaultCurrency", "appendGovernanceManifest",
+    "setDefaultCurrency", "setOpeningBid", "appendGovernanceManifest",
 })
 
 # Zero-delay roles a guardian may never suspend (check 8): the veto, the pause, and the curation

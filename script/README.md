@@ -258,7 +258,15 @@ python tools/check_genesis.py --config config/genesis.sepolia.json
   - any holder at or below `0xFFFF` (the placeholder range and the precompiles);
   - a system contract, the CREATE2 deployer, Permit2 or the delegation contract;
   - a contract of the deployment itself;
-  - fewer than three guardians or two curation signers.
+  - fewer than three guardians or two curation signers;
+  - on mainnet only (owner decision 18), an account holding roles of two groups, or a group
+    role held by the deployer EOA (`DeployGuards.checkRoleGroups`). The groups are:
+    - the community council: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
+      SUCCESSOR_SETTER;
+    - the security council: GUARDIAN and PAUSER;
+    - the curation signers: CURATION_SIGNER.
+
+    Verify repeats this check.
 
 Commit the Sepolia genesis file with the deployment record.
 
@@ -478,6 +486,11 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
     missing, the policy is the committed one, and no holder is a contract of the deployment.
 - **The sender is the deployer.** It becomes the configurator's `deployer`, the only account
   that can call `configure`.
+- **The opening bid.** The committed policy wires the English auction's ETH opening bid at
+  0.05 ETH (owner decision 19), on Sepolia as on mainnet: a rehearsal's first ETH bid on each
+  1/1 must be at least 0.05 ETH, so fund the bidders for it. `ETH_INCREMENT_FLOOR` must stay at
+  least 0.00005 ETH, or the wired bid is above the auction's ceiling (1,000 floors) and
+  `configure` reverts.
 - **Addresses are predictable.** Most depend on the deployer and `DEPLOY_NAMESPACE`;
   ContentStore, ReleaseVerifier and ClaimRouter depend on `DEPLOY_NAMESPACE` alone. To repeat a
   rehearsal, use a new `DEPLOY_NAMESPACE`.

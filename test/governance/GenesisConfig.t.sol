@@ -157,11 +157,15 @@ contract GenesisConfigTest is Test {
                 ],
                 7
             );
-            bytes4[] memory all = new bytes4[](9);
+            bytes4[] memory all = new bytes4[](10);
             for (uint256 i; i < 7; ++i) {
                 all[i] = out[i];
             }
-            (all[7], all[8]) = (IStream.releaseContent.selector, IStream.setDependency.selector);
+            (all[7], all[8], all[9]) = (
+                IStream.releaseContent.selector,
+                IStream.setDependency.selector,
+                IStream.rescueToMuseum.selector
+            );
             return all;
         }
         if (_eq(name, "WorkRecords")) {
@@ -421,7 +425,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 68, "58 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 69, "59 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

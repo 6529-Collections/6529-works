@@ -21,7 +21,7 @@
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step content
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step start -Index 0
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step settle -TokenId 6
-    ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 1000000000000000 -Label bid-2-antisnipe
+    ./flows.ps1 -SignerModule <path> -State <state.json> -Step bid -TokenId 2 -Bidder bidder1 -Amount 50000000000000000 -Label bid-2-antisnipe
     ./flows.ps1 -SignerModule <path> -State <r1-state.json> -Record deployments/11155111/1791746472.json -Step settle -TokenId 6
     ./flows.ps1 -SignerModule <path> -State <state.json> -Step prague
 

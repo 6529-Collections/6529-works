@@ -303,6 +303,13 @@
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000
+        },
+        {
+          "signature": "rescueToMuseum(uint256)",
+          "selector": "0xe9c794a4",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [
@@ -955,6 +962,17 @@
         true
       ],
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "EnglishAuction",
+      "signature": "setOpeningBid(address,uint256,uint256)",
+      "args": [
+        "0x0000000000000000000000000000000000000000",
+        0,
+        50000000000000000
+      ],
+      "note": "ETH opening bid 0.05 ETH (owner decision 19): a 1-wei self-bid can no longer take a 1/1 past the museum",
+      "calldata": "0x5d9183580000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000b1a2bc2ec50000"
     },
     {
       "contract": "UniformEditionAuction",

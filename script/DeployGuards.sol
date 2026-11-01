@@ -119,6 +119,21 @@ library DeployGuards {
     error PolicyMismatch(string what);
     /// @notice The genesis names something this deployment does not have.
     error DroppedFromGenesis(string what);
+    /// @notice On mainnet, a council or curation-signer role is held by the deployer EOA
+    ///         (owner decision 18).
+    error HolderIsTheDeployer(string role, address account);
+    /// @notice On mainnet, one account holds roles of two groups that must be held apart: the
+    ///         community council's, the security council's or the curation signer's (owner
+    ///         decision 18).
+    error RoleGroupsShareAHolder(address account, string role, string otherRole);
+
+    /// @notice The community council's roles (owner decision 18): ADMIN and the delayed
+    ///         setters, each acting 48 hours to 30 days after it is scheduled.
+    uint8 internal constant COMMUNITY_COUNCIL = 1;
+    /// @notice The security council's roles: the immediate GUARDIAN and PAUSER.
+    uint8 internal constant SECURITY_COUNCIL = 2;
+    /// @notice The dedicated key that signs the published curation result: CURATION_SIGNER.
+    uint8 internal constant CURATION_SIGNERS = 3;
 
     // ------------------------------------------------------------------ the genesis file
 
@@ -296,6 +311,51 @@ library DeployGuards {
             || account == 0x00000000219ab540356cBB839Cbe05303d7705Fa || account == CREATE2_FACTORY
             || account == DeployV1.CANONICAL_PERMIT2 || account == CANONICAL_DELEGATION
             || account == SEPOLIA_DELEGATION;
+    }
+
+    /// @notice Owner decision 18, at mainnet genesis (`Deploy.s.sol` and `Verify.s.sol` run it
+    ///         on chain 1 only): the community council, the security council and the curation
+    ///         signers ({roleGroup}) are held by distinct accounts, and none of them by the
+    ///         deployer EOA. An account may hold several roles of one group (the community
+    ///         council's Safe holds ADMIN and the setters); it may not hold roles of two groups
+    ///         (`RoleGroupsShareAHolder`), and the deployer may hold none of them
+    ///         (`HolderIsTheDeployer`). The operational roles (STORAGE_OPERATOR, MINTER, KEEPER,
+    ///         PLATFORM, CURATOR) belong to no group.
+    function checkRoleGroups(string memory json, address deployer) internal view {
+        uint256 holders;
+        while (vm.keyExistsJson(json, _holder(holders, ""))) ++holders;
+        address[] memory accounts = new address[](holders);
+        uint8[] memory groups = new uint8[](holders);
+        string[] memory roles = new string[](holders);
+        for (uint256 i; i < holders; ++i) {
+            string memory role = vm.parseJsonString(json, _holder(i, ".role"));
+            address account = vm.parseJsonAddress(json, _holder(i, ".account"));
+            uint8 group = roleGroup(role);
+            if (group == 0) continue;
+            if (account == deployer) revert HolderIsTheDeployer(role, account);
+            for (uint256 j; j < i; ++j) {
+                if (accounts[j] == account && groups[j] != group) {
+                    revert RoleGroupsShareAHolder(account, roles[j], role);
+                }
+            }
+            (accounts[i], groups[i], roles[i]) = (account, group, role);
+        }
+    }
+
+    /// @notice The owner decision 18 group of `role`: {COMMUNITY_COUNCIL} for ADMIN, UNPAUSER,
+    ///         PARAMETER_SETTER, FUNDS_SETTER and SUCCESSOR_SETTER; {SECURITY_COUNCIL} for
+    ///         GUARDIAN and PAUSER; {CURATION_SIGNERS} for CURATION_SIGNER; zero for the
+    ///         operational roles.
+    function roleGroup(string memory role) internal pure returns (uint8) {
+        bytes32 r = keccak256(bytes(role));
+        if (
+            r == keccak256("ADMIN") || r == keccak256("UNPAUSER")
+                || r == keccak256("PARAMETER_SETTER") || r == keccak256("FUNDS_SETTER")
+                || r == keccak256("SUCCESSOR_SETTER")
+        ) return COMMUNITY_COUNCIL;
+        if (r == keccak256("GUARDIAN") || r == keccak256("PAUSER")) return SECURITY_COUNCIL;
+        if (r == keccak256("CURATION_SIGNER")) return CURATION_SIGNERS;
+        return 0;
     }
 
     // ------------------------------------------------------------------ against the deployment

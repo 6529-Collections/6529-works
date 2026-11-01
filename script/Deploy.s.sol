@@ -142,6 +142,9 @@ contract Deploy is ScriptIO {
             (address[] memory singletons, bytes32[] memory codehashes) = safeSingletons();
             DeployGuards.checkHolders(r.json, _read(EXAMPLE_GENESIS), singletons, codehashes);
         }
+        if (block.chainid == DeployGuards.MAINNET_CHAIN_ID) {
+            DeployGuards.checkRoleGroups(r.json, msg.sender);
+        }
         r.p = params(r.local);
         r.p.deployer = msg.sender;
         (r.manifest, r.manifestPath) = manifest(r.local);

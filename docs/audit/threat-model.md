@@ -253,7 +253,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 - **Marketplace behavior:** ERC-2981 royalties are advisory ([LIM-SAL-8][lim-sal]).
 - **Availability of off-chain copies** before a work is on-chain complete ([LIM-CNT-1][lim-cnt]).
 - **Legal effect** of CC0 or any license text.
-- **Low prices**: zero opening bids, and demand reduction in the edition auction
+- **Low prices**: an opening bid of 0.05 ETH at genesis (zero in other currencies), a self-bid
+  at that floor, and demand reduction in the edition auction
   ([LIM-SAL-1][lim-sal], [LIM-EA-5][lim-ea]).
 - **Chain-level behavior:** censorship, reorganizations, and mainnet's final Glamsterdam and
   EIP-7825 parameters ([LIM-GAS-1, LIM-GAS-2][lim-gas]).
