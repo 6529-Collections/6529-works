@@ -393,7 +393,8 @@ contract MockWorkRecords is Supports165 {
     mapping(uint256 => bool) public isOpen;
     /// @notice 0 none; 1 revert; 2 run out of gas; 3 answer nothing; 4 answer two words;
     ///         5 a word that is not an address; 6 an address without code; 7 revert with
-    ///         `DependencyCodeChanged` for the pin.
+    ///         `DependencyCodeChanged` for the pin; 8 answer the pin only when given nearly all
+    ///         of `Stream.RECORDS_GAS`, else revert.
     uint8 public fault;
 
     function setFault(uint8 fault_) external {
@@ -401,7 +402,9 @@ contract MockWorkRecords is Supports165 {
     }
 
     function pinnedRenderer(uint256 tokenId) external view returns (address) {
+        uint256 given = gasleft();
         uint8 f = fault;
+        if (f == 8 && given < 99_000) revert("records starved");
         if (f == 1) revert("records fault");
         if (f == 2) {
             uint256 i;

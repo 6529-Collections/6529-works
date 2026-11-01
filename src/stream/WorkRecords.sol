@@ -188,12 +188,13 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             _licenses[tokenId] = item.license;
         }
         // The seed is fixed for good at open: an ARTIST seed from the item, a VRF seed from the
-        // entropy module, which a governed replacement (owner decision 16) can then not change.
+        // entropy module that was current at the work's mint, so a governed replacement of the
+        // module (owner decision 16) never changes it.
         if (item.seedPolicy == SeedPolicy.ARTIST) {
             _seeds[tokenId] = item.seed;
         } else if (item.seedPolicy == SeedPolicy.VRF) {
-            _seeds[tokenId] =
-                IEntropyModule(entropyModule()).seedOf(WorksHashing.itemHashCalldata(item));
+            _seeds[tokenId] = IEntropyModule(IStream(stream).entropyModuleOf(tokenId))
+                .seedOf(WorksHashing.itemHashCalldata(item));
         }
         emit RecordOpened(tokenId, item.recordFileId, item.mediaHash);
         _refresh(tokenId);
@@ -344,13 +345,6 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
     /// @return The artist registry.
     function artistRegistry() public view returns (address) {
         return IStream(stream).artistRegistry();
-    }
-
-    /// @notice The VRF entropy module: 6529 Stream's, read from it on every use (a work's VRF
-    ///         seed is fixed when its record opens).
-    /// @return The entropy module, or zero.
-    function entropyModule() public view returns (address) {
-        return IStream(stream).entropyModule();
     }
 
     /// @inheritdoc IWorkRecords

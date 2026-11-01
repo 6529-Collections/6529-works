@@ -39,7 +39,9 @@ Who calls what on `WorkRecords`, and what it calls out to, is tabulated under
   `setDependency` replaces one: it writes `_replaced[i]` (declared last, so the earlier slots
   keep their positions) and sets bit `i` of `Counts.replaced`, in the counter word every mint
   already reads, so a mint with no replacement reads no extra slot. The split factory stays
-  immutable.
+  immutable. Replacing the entropy module appends the module it replaces, with the last token
+  ID minted, to `_entropyEras` (declared after `_replaced`); `entropyModuleOf(tokenId)` walks it
+  so each work keeps the module its seed was delivered by (ENT-18).
 - **Pluggable 1/1 sale (owner decision 15).** `_minterKinds` records each adapter's sale kind
   at its first admission, after every earlier mapping, so the storage layout of the other
   slots is unchanged; `primaryTerms` reads it for a minted work, and `mint` compares it with

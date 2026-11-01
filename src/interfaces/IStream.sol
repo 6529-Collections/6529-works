@@ -219,14 +219,22 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     ///         `setDependency`).
     /// @return The entropy module, or zero.
     function entropyModule() external view returns (address);
+    /// @notice The entropy module that was current when `tokenId` minted, which held its VRF
+    ///         seed (`mint` checked the delivery there): `WorkRecords.openRecord` stores the seed
+    ///         from it, and the renderer reads it before the record opens, so replacing the
+    ///         module never changes an existing work's seed (owner decision 16).
+    /// @param tokenId A token ID; one not minted yet gets the current module.
+    /// @return The entropy module, or zero.
+    function entropyModuleOf(uint256 tokenId) external view returns (address);
     /// @notice Replaces one of Stream's dependencies (owner decision 16): `"PACKAGE_REGISTRY"`,
     ///         `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`. SUCCESSOR_SETTER role
     ///         (the 30-day class), compare-and-set. The replacement must have code, no EIP-7702
     ///         delegation and ERC-165 support for its interface; it is never zero. Stream's own
     ///         code and every existing token are unaffected: ownership, the terms and royalty
-    ///         receiver locked at mint (the split factory stays fixed) and a finalized work's
-    ///         pinned renderer. 6529 Stream Editions and the work-records satellite read these
-    ///         pointers from Stream, so they follow at once.
+    ///         receiver locked at mint (the split factory stays fixed), a finalized work's
+    ///         pinned renderer and a VRF work's seed (`entropyModuleOf`). 6529 Stream Editions
+    ///         and the work-records satellite read these pointers from Stream, so they follow at
+    ///         once.
     /// @param kind The dependency (`UnknownDependency` for any other).
     /// @param expected Its current address (`ExpectedValueMismatch` otherwise).
     /// @param next The replacement.

@@ -34,13 +34,16 @@ never zero, so an entropy module can be installed on a Stream deployed without o
 removed). The genesis contracts stay immutables; a replacement is stored with a bit in the
 counter word every mint reads, so a mint with no replacement reads no extra slot. Stream's code and address stay immutable, and existing tokens are unaffected: their
 owners, the terms and royalty receiver locked at mint (the split factory stays immutable), a
-finalized work's pinned renderer, and a work's seed once its record opens. 6529 Stream
+finalized work's pinned renderer, and a VRF work's seed, which comes from the entropy module the
+work minted under (`entropyModuleOf`, [ENT-18](entropy.md#rules-and-invariants)). 6529 Stream
 Editions and `WorkRecords` read these pointers from Stream, so they follow at once. Other
 contracts hold their own wiring to the same contracts (the package registry's artist registry
 and one-shot `bindStream`, the artist registry's one-shot `bindPackageRegistry`, the entropy
 module's pinned package registry, the English auction's and the edition auction's economics
-resolver): replacing a dependency in Stream does not reach them, so a replacement is a
-migration that governance plans with them.
+resolver, the split factory's payout resolver): replacing a dependency in Stream does not reach
+them, so a replacement is a set that governance plans with them
+([the procedure](../../script/README.md#replacing-one-of-streams-dependencies),
+[LIM-GV-16](../audit/known-limitations.md#trust-and-governance)).
 
 ## Concepts
 

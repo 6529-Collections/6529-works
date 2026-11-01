@@ -10,6 +10,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @dev A replacement dependency that only reports its interface: any other call reverts, so a
@@ -26,20 +27,45 @@ contract DependencyStandIn is IERC165 {
     }
 }
 
+/// @dev A replacement entropy module that has a seed for every item, but not its predecessor's:
+///      the worst replacement for the works minted before it.
+contract OtherSeedsEntropy is IERC165 {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IEntropyModule).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function isDelivered(bytes32) external pure returns (bool) {
+        return true;
+    }
+
+    function seedOf(bytes32 itemHash) external pure returns (bytes32) {
+        return keccak256(abi.encode("another module's seed", itemHash));
+    }
+}
+
 /// @notice Owner decision 16 on the real genesis deployment: Stream's package registry, artist
 ///         registry, economics resolver and entropy module are replaceable by governance in the
 ///         30-day class, and 6529 Stream Editions and the work-records satellite follow at once.
-///         Existing tokens are unaffected: their owner, the metadata of a finalized work (a VRF
-///         work's seed is fixed when its record opens) and their royalty info are byte for byte
-///         the same after every replacement, which reads none of the replaced contracts.
+///         Existing tokens are unaffected, finalized or not: their owner, their metadata (a VRF
+///         work's seed comes from the module current at its mint, `entropyModuleOf`) and their
+///         royalty info are byte for byte the same after every replacement.
 contract StreamDependenciesTest is IntegrationBase {
     bytes32[4] internal KINDS =
         [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
 
     address internal artist;
     address internal collector = makeAddr("dependencyCollector");
+    /// @dev Every existing token: finalized (an ARTIST work, a VRF work, an edition master),
+    ///      then not finalized (a record open, a VRF work and a VRF edition master whose records
+    ///      are not open yet, and a work still in its auction).
     uint256[] internal tokens;
-    uint256 internal editionId;
+    uint256[] internal editionIds;
+    /// @dev The works whose records are not open yet, by their index in `tokens`.
+    uint256 internal constant PENDING_VRF = 4;
+    uint256 internal constant PENDING_VRF_MASTER = 5;
+    bytes32 internal pendingRoot;
 
     function setUp() public override {
         super.setUp();
@@ -48,14 +74,11 @@ contract StreamDependenciesTest is IntegrationBase {
         works[0] = _work(artist, collectionId);
         works[1] = _work(artist, collectionId);
         works[1].item.seedPolicy = SeedPolicy.VRF;
-        works[2] = _work(artist, collectionId);
-        works[2].item.kind = ItemKind.EDITION_MASTER;
-        works[2].item.edition = EditionTerms(0, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
+        works[2] = _master(artist);
         bytes32 root = _publish(works);
         _keep(root, works);
         // The VRF work's seed is requested and delivered before its start.
-        uint256 requestId = entropy.requestSeed(works[1].item, root, _proofOf(works, 1));
-        coordinator.fulfill(requestId, uint256(keccak256("seed")));
+        _deliver(works, root, 1);
         for (uint256 i; i < works.length; ++i) {
             uint256 tokenId = _sell(root, works, i, collector, 1 ether);
             tokens.push(tokenId);
@@ -64,7 +87,44 @@ contract StreamDependenciesTest is IntegrationBase {
             vm.prank(artist);
             records.finalize(tokenId, state);
         }
-        editionId = editions.createEdition(tokens[2], works[2].item, root, _proofOf(works, 2));
+        editionIds.push(editions.createEdition(tokens[2], works[2].item, root, _proofOf(works, 2)));
+
+        // Works that are not finalized: a record open, two VRF works whose records are not open
+        // (one an edition master with an edition), and a work still in its auction.
+        Work[] memory pending = new Work[](4);
+        pending[0] = _work(artist, collectionId);
+        pending[1] = _work(artist, collectionId);
+        pending[1].item.seedPolicy = SeedPolicy.VRF;
+        pending[2] = _master(artist);
+        pending[2].item.seedPolicy = SeedPolicy.VRF;
+        pending[3] = _work(artist, collectionId);
+        pendingRoot = _publish(pending);
+        _keep(pendingRoot, pending);
+        _deliver(pending, pendingRoot, 1);
+        _deliver(pending, pendingRoot, 2);
+        for (uint256 i; i < 3; ++i) {
+            tokens.push(_sell(pendingRoot, pending, i, collector, 1 ether));
+        }
+        records.openRecord(tokens[3], pending[0].item, pending[0].media);
+        editionIds.push(
+            editions.createEdition(
+                tokens[PENDING_VRF_MASTER], pending[2].item, pendingRoot, _proofOf(pending, 2)
+            )
+        );
+        (, uint256 inAuction) = _start(pendingRoot, pending, 3);
+        tokens.push(inAuction);
+        assertEq(stream.ownerOf(inAuction), address(auction));
+    }
+
+    function _master(address lead) internal returns (Work memory w) {
+        w = _work(lead, collectionId);
+        w.item.kind = ItemKind.EDITION_MASTER;
+        w.item.edition = EditionTerms(0, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
+    }
+
+    function _deliver(Work[] memory works, bytes32 root, uint256 index) internal {
+        uint256 requestId = entropy.requestSeed(works[index].item, root, _proofOf(works, index));
+        coordinator.fulfill(requestId, uint256(keccak256(abi.encode("seed", root, index))));
     }
 
     function _interfaceOf(bytes32 kind) internal pure returns (bytes4) {
@@ -81,6 +141,22 @@ contract StreamDependenciesTest is IntegrationBase {
         return stream.entropyModule();
     }
 
+    /// @dev A 30-day SUCCESSOR_SETTER replacement through the real governance path.
+    function _replace(bytes32 kind, address next) internal {
+        address previous = _current(kind);
+        bytes memory call = abi.encodeCall(stream.setDependency, (kind, previous, next));
+        (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(stream), bytes4(call));
+        assertFalse(immediate);
+        assertEq(delay, 30 days, "the successor class");
+        _schedule(hotAdmin, address(stream), call);
+        vm.warp(block.timestamp + delay);
+        vm.expectEmit(address(stream));
+        emit IStream.DependencySet(kind, previous, next);
+        vm.prank(hotAdmin);
+        manager.execute(address(stream), call);
+        assertEq(_current(kind), next);
+    }
+
     /// @dev Everything an existing token shows the world.
     function _snapshot() internal view returns (bytes32) {
         bytes memory all;
@@ -90,31 +166,23 @@ contract StreamDependenciesTest is IntegrationBase {
                 all, stream.ownerOf(tokens[i]), stream.tokenURI(tokens[i]), receiver, amount
             );
         }
-        (address eReceiver, uint256 eAmount) = editions.royaltyInfo(editionId, 1 ether);
-        return keccak256(abi.encode(all, editions.uri(editionId), eReceiver, eAmount));
+        for (uint256 i; i < editionIds.length; ++i) {
+            (address receiver, uint256 amount) = editions.royaltyInfo(editionIds[i], 1 ether);
+            all = abi.encode(all, editions.uri(editionIds[i]), receiver, amount);
+        }
+        return keccak256(all);
     }
 
     /// @dev Each replacement is a 30-day SUCCESSOR_SETTER action; afterwards every existing
-    ///      token reads the same, and Editions and the work-records satellite name the new
-    ///      contract.
+    ///      token reads the same, finalized or not, and Editions and the work-records satellite
+    ///      name the new contract. The replacements are stand-ins that revert on any call but
+    ///      ERC-165, so no existing token's metadata or royalty reads a replaced contract.
     function test_ReplacingEachDependencyLeavesExistingTokensUnchanged() public {
         bytes32 before = _snapshot();
+        bytes32 vrfSeed = entropy.seedOf(stream.work(tokens[PENDING_VRF]).itemHash);
+        address genesisEntropy = stream.entropyModule();
         for (uint256 i; i < KINDS.length; ++i) {
-            bytes32 kind = KINDS[i];
-            address previous = _current(kind);
-            address next = address(new DependencyStandIn(_interfaceOf(kind)));
-            bytes memory call = abi.encodeCall(stream.setDependency, (kind, previous, next));
-            (bool immediate, uint32 delay) =
-                manager.canCall(hotAdmin, address(stream), bytes4(call));
-            assertFalse(immediate);
-            assertEq(delay, 30 days, "the successor class");
-            _schedule(hotAdmin, address(stream), call);
-            vm.warp(block.timestamp + delay);
-            vm.expectEmit(address(stream));
-            emit IStream.DependencySet(kind, previous, next);
-            vm.prank(hotAdmin);
-            manager.execute(address(stream), call);
-            assertEq(_current(kind), next);
+            _replace(KINDS[i], address(new DependencyStandIn(_interfaceOf(KINDS[i]))));
             assertEq(_snapshot(), before, "existing tokens are unaffected");
         }
         // One source of truth: the satellites read Stream's pointers.
@@ -122,10 +190,52 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(address(editions.economics()), stream.economics());
         assertEq(address(editions.artistRegistry()), stream.artistRegistry());
         assertEq(records.artistRegistry(), stream.artistRegistry());
-        assertEq(records.entropyModule(), stream.entropyModule());
-        // A finalized VRF work keeps the seed fixed at open.
+        // Every existing work keeps the module its seed was delivered by.
+        for (uint256 i; i < tokens.length; ++i) {
+            assertEq(stream.entropyModuleOf(tokens[i]), genesisEntropy);
+        }
+        // A finalized VRF work keeps the seed fixed at open, and a VRF work minted before the
+        // replacement opens its record with the seed it was minted with.
         (, bytes32 seed) = records.seedOf(tokens[1]);
         assertTrue(seed != 0);
+        _open(PENDING_VRF, 1);
+        (, seed) = records.seedOf(tokens[PENDING_VRF]);
+        assertEq(seed, vrfSeed, "the seed it was minted with");
+    }
+
+    /// @dev The worst entropy replacement: a module with a seed for every item, none of them its
+    ///      predecessor's. Works minted before it keep their seeds, before and after their
+    ///      records open; works minted after it take its seeds.
+    function test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed() public {
+        bytes32 before = _snapshot();
+        bytes32 itemHash = stream.work(tokens[PENDING_VRF]).itemHash;
+        bytes32 vrfSeed = entropy.seedOf(itemHash);
+        address genesisEntropy = address(entropy);
+        OtherSeedsEntropy other = new OtherSeedsEntropy();
+        _replace("ENTROPY_MODULE", address(other));
+        assertEq(_snapshot(), before, "existing tokens are unaffected");
+        assertEq(stream.entropyModuleOf(tokens[PENDING_VRF]), genesisEntropy);
+        _open(PENDING_VRF, 1);
+        (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
+        assertEq(seed, vrfSeed, "the seed it was minted with");
+        assertTrue(seed != other.seedOf(itemHash));
+
+        // A VRF work minted after the replacement takes the new module's seed.
+        Work memory w = _work(artist, collectionId);
+        w.item.seedPolicy = SeedPolicy.VRF;
+        Work[] memory one = _one(w);
+        bytes32 root = _publish(one);
+        (, uint256 later) = _start(root, one, 0);
+        assertEq(stream.entropyModuleOf(later), address(other));
+        records.openRecord(later, w.item, w.media);
+        (, seed) = records.seedOf(later);
+        assertEq(seed, other.seedOf(WorksHashing.itemHash(w.item)));
+    }
+
+    /// @dev Opens the record of `tokens[index]`, the `item`-th of the pending works.
+    function _open(uint256 index, uint256 item) internal {
+        Work[] memory pending = _package(pendingRoot);
+        records.openRecord(tokens[index], pending[item].item, pending[item].media);
     }
 
     /// @dev The replacement is what new works use: a new start consumes through the new

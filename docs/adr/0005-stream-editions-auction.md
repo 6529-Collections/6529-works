@@ -442,11 +442,16 @@ before each merge.
   governance (`setDependency`, SUCCESSOR_SETTER, the 30-day class, compare-and-set); Stream's
   code and address stay immutable, with no proxy, and the split factory stays fixed. Existing
   tokens are unaffected: ownership, the terms and royalty receiver locked at mint, a finalized
-  work's pinned renderer and, since a work's VRF seed is now stored when its record opens, its
-  seed. 6529 Stream Editions and `WorkRecords` read the pointers from Stream instead of copying
-  them, so a replacement reaches them at once. Contracts wired to the same dependencies on
-  their own (one-shot binds, pinned code hashes, the auctions' economics resolver) do not
-  follow, so a replacement is a migration planned with them. The genesis contracts stay
+  work's pinned renderer and a VRF work's seed, which always comes from the entropy module the
+  work minted under (`entropyModuleOf`; the review of #81 found that the renderer and
+  `openRecord` read the current module, so a replacement could change or break the seed of a
+  work whose record was not open yet). 6529 Stream Editions and `WorkRecords` read the pointers
+  from Stream instead of copying them, so a replacement reaches them at once. Contracts wired to
+  the same dependencies on their own (one-shot binds, pinned code hashes, the auctions'
+  economics resolver) do not follow, so a replacement is a set planned with them
+  ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
+  immutable split factory keeps the genesis artist registry as the payout resolver of every
+  Stream work, so that registry is only partly replaceable (LIM-GV-16). The genesis contracts stay
   immutables, with a replacement bit each in the counter word every mint already reads, so a
   start with no replacement reads no extra slot: about +820 Prague gas. With the #80 review's
   fix (`mint` compares the kind recorded at admission, about +1,530), the binding row is

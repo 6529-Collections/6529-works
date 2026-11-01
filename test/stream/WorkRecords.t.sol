@@ -32,7 +32,7 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.artistRegistry(), address(artists));
         assertEq(records.contentStore(), address(store));
         assertEq(records.cc0TextFileId(), _textFileId("cc0-1.0"));
-        assertEq(records.entropyModule(), address(entropy));
+        assertEq(stream.entropyModuleOf(1), address(entropy));
         assertTrue(records.supportsInterface(type(IWorkRecords).interfaceId));
         assertTrue(records.supportsInterface(0x01ffc9a7));
         assertFalse(records.supportsInterface(0xffffffff));

@@ -8,15 +8,20 @@
   zero. Stream's code and address, the split factory and every existing token stay as they are.
   The genesis contracts stay immutables, with a replacement bit each in the counter word
   every mint reads, so a start with no replacement reads no extra slot. 6529 Stream Editions
-  and `WorkRecords` read the pointers from Stream instead of holding immutable copies, and
-  `WorkRecords` stores a VRF seed when the record opens, so a replaced entropy module never
-  changes an opened work. `IStream`'s interface ID changes.
+  and `WorkRecords` read the pointers from Stream instead of holding immutable copies. Stream
+  records the entropy module each work minted under (`entropyModuleOf`), which `openRecord`
+  stores the VRF seed from and the renderer reads before the record opens, so a replaced
+  entropy module never changes an existing work's seed or metadata (ENT-18; the review of #81).
+  The replacement procedure for each dependency, and what it cannot reach (the genesis artist
+  registry stays the payout resolver of every Stream work, LIM-GV-16), is in the runbook.
+  `IStream`'s interface ID changes.
 - 6529 Stream: `mint` compares an item's sale kind with the adapter's kind recorded at its first
   admission, the kind `primaryTerms` reports, instead of the adapter's live `saleKind()` (the
   review of #80).
 - 6529 Stream: `rendererOf` reads the records satellite with a fixed gas cap (`RECORDS_GAS`) and
   serves the default renderer on any fault of it but a changed pinned renderer, which still
-  fails closed; one read instead of two. Stream grows by 711 bytes with the two entries above;
+  fails closed; one read instead of two. The gas check covers a cold satellite account, so the
+  satellite always gets all of `RECORDS_GAS`. Stream grows by 711 bytes with the two entries above;
   `start` costs about 2,350 more Prague gas (the binding row 341,923, 8,077 under 350K),
   `settle` 2,281, `createEdition` 5,032, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).

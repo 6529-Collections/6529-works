@@ -543,6 +543,39 @@ contract IntegrationGasReport is IntegrationBase {
         _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
     }
 
+    /// @dev The binding row with a VRF seed: an artist's first start, two-party, with a bid, of
+    ///      a work whose seed was delivered before. The VRF check reads the entropy module and
+    ///      its delivery (the review of #81 found this combination unmeasured).
+    function _rowStartWithBidArtistFirstTwoPartyVrf() internal returns (Row memory r) {
+        _steadyState();
+        address lead = _actor("gasArtistC");
+        address collaborator = _actor("gasCollaborator");
+        Work[] memory works = new Work[](ITEMS);
+        for (uint256 i; i < ITEMS; ++i) {
+            works[i] = _work(lead, collectionId);
+            works[i].item.parties = new Party[](2);
+            works[i].item.parties[0] = Party(lead, PartyRole.ARTIST);
+            works[i].item.parties[1] = Party(collaborator, PartyRole.COLLABORATOR);
+            works[i].item.payees = new ISplitWallet.Payee[](2);
+            works[i].item.payees[0] = ISplitWallet.Payee(0, collaborator, 20_000);
+            works[i].item.payees[1] = ISplitWallet.Payee(uint160(lead), address(0), 80_000);
+        }
+        works[0].item.seedPolicy = SeedPolicy.VRF;
+        bytes32 twoRoot = _publish(works);
+        uint256 requestId = entropy.requestSeed(works[0].item, twoRoot, _proofOf(works, 0));
+        coordinator.fulfill(requestId, uint256(keccak256("gas report randomness")));
+        r = _row(
+            "startWithBid, an artist's first work, two-party, VRF",
+            bidder,
+            address(auction),
+            _startWithBidData(twoRoot, works, 0),
+            1 ether
+        );
+        _gasAtMost(r, START_BUDGET, "350K start budget (ADR 0004)");
+        _growthIs(r, 7, 0);
+        _slotsAtMost(r, START_WITH_BID_MAX_SLOTS);
+    }
+
     /// @dev One-time: the first start on a new deployment (empty custody, the first fee terms
     ///      and sale terms).
     function _rowStartFirstEver() internal returns (Row memory r) {
@@ -941,6 +974,10 @@ contract IntegrationGasReport is IntegrationBase {
         _rowStartWithBidArtistFirstTwoParty();
     }
 
+    function test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf() public {
+        _rowStartWithBidArtistFirstTwoPartyVrf();
+    }
+
     function test_Gas_Start_FirstWorkEver() public {
         _rowStartFirstEver();
     }
@@ -1016,7 +1053,7 @@ contract IntegrationGasReport is IntegrationBase {
     ///      row before any recording, then once for its growth and cold accounts, which add the
     ///      cold-account surcharge.
     function test_Gas_Table() public {
-        function() internal returns (Row memory)[27] memory rows = [
+        function() internal returns (Row memory)[28] memory rows = [
             _rowStart,
             _rowStartWithBid,
             _rowStartTwoParty,
@@ -1028,6 +1065,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowStartArtistFirst,
             _rowStartWithBidArtistFirst,
             _rowStartWithBidArtistFirstTwoParty,
+            _rowStartWithBidArtistFirstTwoPartyVrf,
             _rowStartFirstEver,
             _rowStartWithBidNewTerms,
             _rowBid,
@@ -1045,7 +1083,7 @@ contract IntegrationGasReport is IntegrationBase {
             _rowSignedFirst,
             _rowSignedLater
         ];
-        Row[27] memory measured;
+        Row[28] memory measured;
         for (uint256 i; i < rows.length; ++i) {
             measured[i] = _runRow(rows[i], Pass.GAS);
         }
