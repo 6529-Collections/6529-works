@@ -33,9 +33,9 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 630 | 20,943 | 22,808 | 3,633 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 622 | 22,883 | 25,861 | 1,693 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 313 | 17,348 | 19,062 | 7,228 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 630 | 21,654 | 23,463 | 2,922 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 622 | 22,979 | 25,674 | 1,597 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 313 | 17,485 | 19,160 | 7,091 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
 
 ### Curation, identity and records
