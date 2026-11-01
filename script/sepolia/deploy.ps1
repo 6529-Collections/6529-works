@@ -10,7 +10,8 @@
     which runs the program with the account's signer options appended (for example
     `--keystore <file> --password-file <file>`), and
         Invoke-Tool <program> <arguments[]>
-    which runs it without them. Both return the program's output.
+    which runs it without them. Both return the program's output and throw when it exits
+    non-zero; this script checks the exit code as well.
 
     Sepolia runs Glamsterdam, which reprices state creation and which Foundry 1.7.1 cannot
     simulate: the broadcast skips forge's replay (--skip-simulation) and, with --slow, takes
@@ -48,5 +49,6 @@ if ($Broadcast) {
 else {
     $out = Invoke-Tool 'forge' $a
 }
+if ($LASTEXITCODE -ne 0) { throw "forge script failed ($LASTEXITCODE)" }
 if ($Log) { [IO.File]::WriteAllText($Log, $out, [Text.UTF8Encoding]::new($false)) }
 $out

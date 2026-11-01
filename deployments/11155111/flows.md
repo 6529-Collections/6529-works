@@ -167,15 +167,16 @@ from the pause on.
 
 From **3 November 2026, 12:48:00 UTC** (the schedule's ready time; it expires a week later, and
 the pause lapses on 8 November at 12:46:24 UTC), in the repository root with the operator's
-signer module (`Flow` is the helper under [Pending](#pending) below, with
-`-State deployments/11155111/flows/r4.json`):
+signer module (`Flow` is the helper under [Pending](#pending) below; r4 is the driver's
+default record):
 
 ```powershell
-Flow -Step executeCancel -TokenId 1                       # the hot admin Safe: cancel, burn
-Flow -Step editionSettle -TokenId 1 -Label editionSettle-1-void  # AuctionVoided
-Flow -Step claimBid -TokenId 1 -BidId 2                  # bidder 2: full refund
-Flow -Step claimBidFor -TokenId 1 -BidId 3               # bidder 3's during-pause bid
-Flow -Step claimCredits -Adapter edition -Bidder bidder3 -Label claimCredits-edition-bidder3-void
+$r4 = @('-State', 'deployments/11155111/flows/r4.json')
+Flow @r4 -Step executeCancel -TokenId 1                    # the hot admin Safe: cancel, burn
+Flow @r4 -Step editionSettle -TokenId 1 -Label editionSettle-1-void   # AuctionVoided
+Flow @r4 -Step claimBid -TokenId 1 -BidId 2               # bidder 2: full refund
+Flow @r4 -Step claimBidFor -TokenId 1 -BidId 3            # bidder 3's during-pause bid
+Flow @r4 -Step claimCredits -Adapter edition -Bidder bidder3 -Label claimCredits-edition-bidder3-void
 ```
 
 ### Gas (r4)
@@ -377,8 +378,10 @@ fixes, hence the different output sizes.
 Item 6, the VRF work, was not started on r3: its seed request is the next thing to run if
 the VRF path needs re-measuring.
 
-**To finish, from 16 October 2026, 20:35 UTC,** in the repository root (r3 is the driver's
-default record; `Flow` is the helper under [Pending](#pending) below):
+**To finish, from 16 October 2026, 20:35 UTC,** in a checkout of `e5fe78c`, whose driver has
+r3 as its default record and the `openSale` and `purchase` steps (`Flow` is the helper under
+[Pending](#pending) below). The driver on `main` has neither step, and its default record is
+r4's:
 
 ```powershell
 $r3 = @('-State', 'deployments/11155111/flows/r3.json')
@@ -843,7 +846,7 @@ Flow @r2 -Step bid -TokenId <id> -Bidder bidder1 -Amount <at least the minimum b
 ```
 
 `Flow` is a helper that runs `script/sepolia/flows.ps1` with the operator's signer
-module, and `@r2` passes r2's state file and record (r3 is the driver's default since the r3
+module, and `@r2` passes r2's state file and record (r4 is the driver's default since the r4
 run):
 
 ```powershell

@@ -262,6 +262,8 @@ function Send-Planned([string]$Label, [string]$Role, [string]$To, [string]$Value
         catch {
             $text = "$_"
             if ($text -match 'nothing to refuse') { throw }
+            # Only a revert is the expected refusal; an RPC or argument error is not.
+            if ($text -notmatch 'revert') { throw }
             $expected = if ($text -match '(execution reverted[^\n]*)') { $Matches[1] } else { $text }
             $expected = ($expected -split "`n")[0].Trim()
             Write-Host "expected revert: $expected"

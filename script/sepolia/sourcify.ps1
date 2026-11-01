@@ -26,6 +26,8 @@ param(
     [string] $Run = 'broadcast/Deploy.s.sol/11155111/run-latest.json'
 )
 $ErrorActionPreference = 'Stop'
+# `powershell -File` passes `-Only A,B` as one string.
+$Only = @($Only | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
 $Repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location $Repo
 $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
@@ -83,12 +85,18 @@ foreach ($name in $paths.Keys) {
         $previous = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         $text = (& forge @a 2>&1 | ForEach-Object { "$_" }) -join "`n"
+        $forgeCode = $LASTEXITCODE
         $ErrorActionPreference = $previous
+        if ($forgeCode -ne 0) { $text = "forge verify-contract exited $forgeCode`n$text" }
         Start-Sleep -Seconds 2
     }
     # The bare contract URL is cached by Sourcify's CDN for an hour, so a read right after the
     # submission can keep showing the job's first state; a `fields` query is a separate entry.
-    $status = curl.exe -s "https://sourcify.dev/server/v2/contract/11155111/$($addr)?fields=creationMatch,runtimeMatch,verifiedAt" | ConvertFrom-Json
+    $status = $null
+    try {
+        $status = Invoke-RestMethod -Uri "https://sourcify.dev/server/v2/contract/11155111/$($addr)?fields=creationMatch,runtimeMatch,verifiedAt"
+    }
+    catch { $text = "status read failed: $_`n$text" }
     $results[$name] = [ordered]@{
         address = $addr; path = $paths[$name]; creationTx = $tx
         match = $status.match; runtimeMatch = $status.runtimeMatch; creationMatch = $status.creationMatch

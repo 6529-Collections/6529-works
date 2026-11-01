@@ -53,13 +53,18 @@ def main(new, prev, commit, sim_path=None):
     m["genesis"] = {"path": genesis, "sha256": sha(genesis)}
     m["policy"] = {"path": "config/genesis.example.json", "sha256": sha("config/genesis.example.json")}
     m["deployer"] = e["DEPLOYER"]
+    duration = int(e.get("AUCTION_DURATION", 86400))
     m["parameters"] = {
         "networkFeeRecipient": e["NETWORK_FEE_RECIPIENT"],
         "marketplaceOwner": e["MARKETPLACE_OWNER"],
         "museum": e["MUSEUM"],
         "museumNote": "The testnet museum: a dedicated EOA the operator holds, with no role.",
-        "auctionDuration": int(e.get("AUCTION_DURATION", 86400)),
-        "auctionDurationNote": "Testnet deviation: 1 hour (the governed minimum); mainnet is 24 hours.",
+        "auctionDuration": duration,
+        "auctionDurationNote": (
+            "The mainnet default." if duration == 86400
+            else "Testnet deviation: 1 hour (the governed minimum); mainnet is 24 hours." if duration == 3600
+            else f"Testnet deviation: {duration} seconds; mainnet is 24 hours."
+        ),
     }
     vrf = m["dependencies"]["vrf"]
     vrf["coordinator"] = e["VRF_COORDINATOR"]
