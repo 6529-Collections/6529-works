@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The English auction closes the sale of a rescued work (owner decision 20). If 6529 Stream
+  already records the work as settled, which only `rescueToMuseum` does before the auction
+  settles, `settle` closes the sale with refunds only. It credits the standing bid back,
+  reports, pays, mints and delivers nothing, and marks the auction SETTLED
+  (`RescuedSaleClosed`), so the winner's bid and the master's edition sale are no longer
+  locked. Before, `settle` reverted `SaleAlreadySettled` for good. The guard is Stream's
+  recorded outcome (`primarySale`), never the auction's own state. LIM-SAL-14, AUC-36, and an
+  ADR 0005 admission requirement for every later 1/1 adapter.
 - Owner decisions 18 to 24 (1 November 2026), the contract and deploy side:
   - Decision 20: `Stream.rescueToMuseum(tokenId)` (SUCCESSOR_SETTER, 30 days) moves a work
     stranded in a removed sale adapter's custody to the museum, and nothing else. It applies

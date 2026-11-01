@@ -31,6 +31,7 @@ import {
     ForwardingBidder,
     HolderReportingTarget,
     HostileActor,
+    OutcomeReportingTarget,
     HugeIdTarget,
     MockMintTarget
 } from "../../mocks/sales/AuctionMocks.sol";
@@ -1279,6 +1280,74 @@ contract EnglishAuctionTest is AuctionBase {
         auction.settle(second);
         assertEq(other.ownerOf(2), artist, "still its artist");
         assertEq(auction.auction(second).recipient, artist);
+    }
+
+    /// @dev A listed `OutcomeReportingTarget`, on ETH terms.
+    function _outcomeToken() internal returns (OutcomeReportingTarget t) {
+        t = new OutcomeReportingTarget();
+        t.setAdmittedMinter(address(auction), true);
+        t.setTerms(_terms(ETH));
+        vm.prank(successor);
+        auction.setTarget(address(t), true);
+    }
+
+    /// @dev Owner decision 20: when the token already records the work's primary sale as
+    ///      settled (6529 Stream after `rescueToMuseum`), `settle` closes the sale with refunds
+    ///      only: the standing bid is credited back, nothing is reported, paid, minted or
+    ///      delivered, and the auction is SETTLED (`RescuedSaleClosed`).
+    function test_Settle_ATokenReportingTheWorkSettledClosesWithARefundOnly() public {
+        OutcomeReportingTarget t = _outcomeToken();
+        uint256 saleId = auction.start(address(t), "");
+        _bidEth(saleId, alice, 1 ether);
+        _end(saleId);
+        t.setOutcome(1, PrimaryOutcome.UNBID);
+        uint256 sellerBefore = seller.balance;
+        vm.expectCall(address(t), abi.encodeWithSelector(IMintTarget.settlePrimary.selector), 0);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.Credited(alice, ETH, saleId, 1 ether);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
+        auction.settle(saleId);
+        assertEq(t.ownerOf(1), address(auction), "nothing delivered");
+        assertEq(seller.balance, sellerBefore, "nothing paid");
+        assertEq(auction.claimable(alice, ETH), 1 ether, "the bid credited back");
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(auction.auction(saleId).bidder, address(0));
+    }
+
+    /// @dev The guard is the token's recorded outcome and nothing else: NONE, a short answer,
+    ///      a reverting view and a token with no such view (`MockMintTarget`) all settle as
+    ///      usual, reporting the outcome once and paying the seller.
+    function test_Settle_OnlyARecordedOutcomeClosesWithRefunds() public {
+        OutcomeReportingTarget t = _outcomeToken();
+        OutcomeReportingTarget.Answer[3] memory answers = [
+            OutcomeReportingTarget.Answer.FULL,
+            OutcomeReportingTarget.Answer.SHORT,
+            OutcomeReportingTarget.Answer.REVERT
+        ];
+        // Each of the three sales is reported to the token once.
+        vm.expectCall(address(t), abi.encodeWithSelector(IMintTarget.settlePrimary.selector), 3);
+        for (uint256 i; i < answers.length; ++i) {
+            t.setAnswer(answers[i]);
+            uint256 saleId = auction.start(address(t), "");
+            _bidEth(saleId, alice, 1 ether);
+            _end(saleId);
+            uint256 sellerBefore = seller.balance;
+            vm.recordLogs();
+            auction.settle(saleId);
+            Vm.Log[] memory logs = vm.getRecordedLogs();
+            for (uint256 j; j < logs.length; ++j) {
+                assertTrue(logs[j].topics[0] != IEnglishAuction.RescuedSaleClosed.selector);
+            }
+            assertGt(seller.balance, sellerBefore, "the seller is paid");
+            assertEq(t.ownerOf(i + 1), alice, "delivered");
+        }
+        // A token that answers nothing at all.
+        uint256 streamSale = _start();
+        _bidEth(streamSale, bob, 1 ether);
+        _end(streamSale);
+        auction.settle(streamSale);
+        assertEq(stream.ownerOf(1), bob);
     }
 
     /// @dev Owner decision 10 with decision 9: another listed token's 30-day freeze exit takes

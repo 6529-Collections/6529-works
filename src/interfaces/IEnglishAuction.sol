@@ -131,6 +131,12 @@ interface IEnglishAuction is ISaleAdapter {
     /// @param recipient The recipient the token was pending for.
     /// @param to The address the token was sent to, named by the claimer.
     event DeliveryClaimed(uint256 indexed saleId, address indexed recipient, address to);
+    /// @notice The sale of a work governance rescued to the museum (`IStream.rescueToMuseum`,
+    ///         owner decision 20) ended: the token already recorded the work as settled, so
+    ///         nothing was reported, paid, minted or delivered, and the standing bid, if any, was
+    ///         credited back to its bidder (`Credited`). The auction is SETTLED.
+    /// @param saleId The auction's sale ID.
+    event RescuedSaleClosed(uint256 indexed saleId);
     /// @notice The governed auction parameters changed.
     /// @param previous The parameters before the change (all zero in the constructor).
     /// @param next The parameters after the change.

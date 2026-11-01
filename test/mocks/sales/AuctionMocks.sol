@@ -351,6 +351,40 @@ contract HolderReportingTarget is PlainMintTarget {
     }
 }
 
+/// @dev A listed token that answers 6529 Stream's `primarySale(tokenId)` as the test sets it, to
+///      drive the English auction's rescue check (owner decision 20): an outcome per token,
+///      or a short answer, or a revert.
+contract OutcomeReportingTarget is PlainMintTarget {
+    enum Answer {
+        FULL,
+        SHORT,
+        REVERT
+    }
+
+    mapping(uint256 id => PrimaryOutcome) public outcomeOf;
+    Answer public answer;
+
+    function setOutcome(uint256 id, PrimaryOutcome outcome) external {
+        outcomeOf[id] = outcome;
+    }
+
+    function setAnswer(Answer answer_) external {
+        answer = answer_;
+    }
+
+    function primarySale(uint256 id) external view returns (PrimaryOutcome, address, uint256) {
+        if (answer == Answer.REVERT) revert("no outcome");
+        if (answer == Answer.SHORT) {
+            // Sixteen nonzero bytes: less than the word an outcome is.
+            assembly ("memory-safe") {
+                mstore(0, not(0))
+                return(0, 16)
+            }
+        }
+        return (outcomeOf[id], address(0), 0);
+    }
+}
+
 /// @dev Mints a chosen token ID. An ID that already exists is reported again without a mint, as
 ///      a template that re-issues a token ID would.
 contract HugeIdTarget is ERC721, IMintTarget {

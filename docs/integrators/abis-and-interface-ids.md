@@ -138,6 +138,7 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | New `isDeliveredContent(bytes32)` and `seedOfContent(bytes32)`, the one-word reads by content hash that 6529 Stream's `mint` and `WorkRecords.openRecord` use. |
 | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | New `setPackageRegistry(address,address)` (`0x00752cf1`) and event `PackageRegistrySet(address,address)`: the only `register` caller is replaceable by governance with Stream's package registry (owner decision 16). |
 | [`IStream.sol`](../../src/interfaces/IStream.sol) | New `rescueToMuseum(uint256)` (`0xe9c794a4`), event `WorkRescued(uint256,address,address)` and error `WorkNotRescuable(uint256)` (owner decision 20); the ID becomes `0x37709465`. |
+| [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | New event `RescuedSaleClosed(uint256)`: `settle` closes the sale of a work governance rescued to the museum with refunds only (owner decision 20). The interface ID is unchanged. |
 
 | Function or event | r3 | `main` |
 | --- | --- | --- |
