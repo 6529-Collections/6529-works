@@ -388,7 +388,7 @@ def parameters(root: Path) -> dict:
                 "default": str(deploy_default(root, "ETH_INCREMENT_FLOOR")),
                 "governedBy": "FUNDS_SETTER",
             },
-            "maxDisputePauseSeconds": c.integer(auction, "MAX_PAUSE"),
+            "maxDisputePauseSeconds": c.integer(auction, "_MAX_PAUSE"),
         },
         "editionAuction": edition_auction(root, c, denominator),
         "economics": {
