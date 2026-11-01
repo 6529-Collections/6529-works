@@ -10,7 +10,13 @@ import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { LockedTerms, PrimaryTerms, SaleKind } from "src/interfaces/types/SaleTypes.sol";
+import {
+    LockedTerms,
+    PrimaryOutcome,
+    PrimaryTerms,
+    SaleKind
+} from "src/interfaces/types/SaleTypes.sol";
+import { IStream } from "src/interfaces/IStream.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { HostileActor, MockMintTarget } from "../mocks/sales/AuctionMocks.sol";
 import { MockFederationRegistry } from "../mocks/sales/SaleMocks.sol";
@@ -20,8 +26,9 @@ import { IntegrationBase } from "./IntegrationBase.sol";
 ///         Museum is set in the economics resolver at genesis and changed only through the
 ///         14-day FUNDS_SETTER class. It receives every unbid canonical 6529 Stream 1/1, read
 ///         when the sale settles: after no bid, while the artist is restrained, and at the
-///         30-day currency-freeze exit, with the standing bid credited back. A pending delivery
-///         to it is its own to claim. An unbid federated work stays with its artist.
+///         30-day currency-freeze exit, with the standing bid credited back. Stream moves the
+///         work there itself when the auction reports the outcome (owner decision 17), so nothing
+///         is ever pending, and records the outcome. An unbid federated work stays with its artist.
 contract MuseumTest is IntegrationBase {
     address internal artist;
     address internal collector = makeAddr("museumCollector");
@@ -209,10 +216,13 @@ contract MuseumTest is IntegrationBase {
     // ------------------------------------------------------------------ unbid works
 
     /// @dev D140: with no bid the work goes to the museum, not its artist; nothing is paid.
+    ///      Stream records UNBID and moves the work itself (owner decision 17).
     function test_UnbidWorkGoesToTheMuseum() public {
         (uint256 saleId, uint256 tokenId) = _startItem(0);
         vm.warp(auction.auction(saleId).endTime);
         LockedTerms memory lt = auction.lockedTerms(saleId);
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(tokenId, PrimaryOutcome.UNBID, address(0), CURRENCY_ETH, 0);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.SaleSettled(
             saleId,
@@ -234,6 +244,11 @@ contract MuseumTest is IntegrationBase {
         assertEq(auction.auction(saleId).recipient, museum);
         assertTrue(stream.primarySaleSettled(tokenId));
         assertEq(address(auction).balance, 0);
+        assertEq(auction.pendingDelivery(saleId), address(0), "nothing pending");
+        (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.UNBID));
+        assertEq(currency, address(0));
+        assertEq(price, 0);
     }
 
     /// @dev The museum is read at settlement: a change that lands while the sale waits for its
@@ -248,11 +263,23 @@ contract MuseumTest is IntegrationBase {
         assertEq(stream.balanceOf(museum), 0);
     }
 
-    /// @dev A sold work is untouched by the rule: it goes to its winner.
+    /// @dev A sold work is untouched by the rule: it goes to its winner. Stream records SOLD,
+    ///      the currency and the price, and names the buyer in its event (owner decision 17).
     function test_ASoldWorkStillGoesToItsWinner() public {
-        uint256 tokenId = _sell(root, _package(root), 1, collector, 1 ether);
+        (uint256 saleId, uint256 tokenId) = _startItem(1);
+        _ethBid(saleId, collector, 1 ether);
+        vm.warp(auction.auction(saleId).endTime);
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(
+            tokenId, PrimaryOutcome.SOLD, collector, CURRENCY_ETH, 1 ether
+        );
+        auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), collector);
         assertEq(stream.balanceOf(museum), 0);
+        (PrimaryOutcome outcome, address currency, uint256 price) = stream.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.SOLD));
+        assertEq(currency, CURRENCY_ETH);
+        assertEq(price, 1 ether);
     }
 
     /// @dev Owner decision 10: the 30-day currency-freeze exit takes the no-bid branch. The
@@ -270,8 +297,14 @@ contract MuseumTest is IntegrationBase {
         vm.warp(frozenAt + 30 days);
         vm.expectEmit(address(auction));
         emit ISaleAdapter.Credited(collector, CURRENCY_ETH, saleId, 1 ether);
+        vm.expectEmit(address(stream));
+        emit IStream.PrimarySaleSettled(
+            tokenId, PrimaryOutcome.FROZEN_OUT, address(0), CURRENCY_ETH, 0
+        );
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), museum, "the work goes to the museum");
+        (PrimaryOutcome outcome,,) = stream.primarySale(tokenId);
+        assertEq(uint8(outcome), uint8(PrimaryOutcome.FROZEN_OUT));
         assertEq(stream.balanceOf(artist), 0, "not the artist");
         assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "the bid is credited back");
         assertEq(address(auction).balance, 1 ether, "only the credit is held");
@@ -281,20 +314,22 @@ contract MuseumTest is IntegrationBase {
         assertEq(address(auction).balance, 0);
     }
 
-    /// @dev A museum contract that cannot receive the token gets a pending delivery that only
-    ///      it can claim, even after governance names another museum; the artist cannot take it.
-    function test_TheMuseumsPendingDeliveryIsItsOwn() public {
+    /// @dev Owner decision 17: Stream moves the work to the museum with no receiver callback, so
+    ///      a museum contract that would reject a safe transfer still receives it. Nothing is
+    ///      pending, so nobody (the artist, a collector, a later museum, the museum itself) has
+    ///      anything to claim, and a later change of museum moves nothing.
+    function test_AMuseumThatWouldRejectStillReceivesTheWork() public {
         HostileActor museumSafe = new HostileActor();
         museumSafe.configure(HostileActor.Behaviour.ACCEPT, HostileActor.Behaviour.REVERT);
         _setMuseum(address(museumSafe));
         (uint256 saleId, uint256 tokenId) = _startItem(0);
         _settleAtEnd(saleId);
-        assertEq(auction.pendingDelivery(saleId), address(museumSafe));
-        assertEq(stream.ownerOf(tokenId), address(auction));
+        assertEq(stream.ownerOf(tokenId), address(museumSafe));
+        assertEq(auction.pendingDelivery(saleId), address(0));
 
         address next = makeAddr("nextMuseumSafe");
         _setMuseum(next);
-        address[3] memory refused = [artist, collector, next];
+        address[4] memory refused = [artist, collector, next, address(museumSafe)];
         for (uint256 i; i < refused.length; ++i) {
             vm.prank(refused[i]);
             vm.expectRevert(
@@ -302,20 +337,14 @@ contract MuseumTest is IntegrationBase {
             );
             auction.claimDelivery(saleId, refused[i]);
         }
-        address vault = makeAddr("museumVault");
-        museumSafe.execute(
-            address(auction), 0, abi.encodeCall(auction.claimDelivery, (saleId, vault))
-        );
-        assertEq(stream.ownerOf(tokenId), vault);
-        assertEq(auction.pendingDelivery(saleId), address(0));
+        assertEq(stream.ownerOf(tokenId), address(museumSafe));
     }
 
     // ------------------------------------------------------------------ other listed tokens
 
-    /// @dev Owner decision 9, enforced in code: the museum branch is for 6529 Stream, the token
-    ///      the auction was deployed with. A token governance lists later keeps its unbid works
-    ///      with its artist, as a federated token does, while Stream's own still go to the
-    ///      museum.
+    /// @dev Owner decision 9, enforced in code: 6529 Stream moves its own unbid works to the
+    ///      museum (owner decision 17). A token governance lists later leaves its unbid works to
+    ///      the auction, which delivers them to the artist, as for a federated token.
     function test_AnotherListedTokensUnbidWorkGoesToItsArtist() public {
         MockMintTarget other = _listedToken();
         uint256 saleId = auction.start(address(other), "");

@@ -52,8 +52,7 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
                     address(statements),
                     address(permit2),
                     _config(),
-                    targets,
-                    address(stream)
+                    targets
                 )
             )
             : address(
@@ -64,8 +63,7 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
                     address(statements),
                     address(permit2),
                     _config(),
-                    targets,
-                    address(stream)
+                    targets
                 )
             );
         AT = deployed;

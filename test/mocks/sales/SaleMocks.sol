@@ -18,7 +18,11 @@ import {
 } from "src/interfaces/types/EconomicsTypes.sol";
 import { ISplitWallet } from "src/economics/interfaces/ISplitWallet.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
-import { PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
+import {
+    PrimaryOutcome,
+    PrimarySettlement,
+    PrimaryTerms
+} from "src/interfaces/types/SaleTypes.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 
 /// @notice Sales-lane mocks: an edition-like mint target, the escrow and allowlist stand-ins, a
@@ -95,7 +99,13 @@ contract MockEditionTarget is ERC1155, IMintTarget {
     }
 
     /// @dev Editions record nothing at settlement: a no-op, as `IMintTarget` allows.
-    function markPrimarySettled(uint256) external { }
+    function settlePrimary(uint256, PrimaryOutcome, address, address, uint256)
+        external
+        pure
+        returns (PrimarySettlement memory nothing)
+    {
+        return nothing;
+    }
 
     /// @dev Reports `IMintTarget`, as the adapters require of a listed token.
     function supportsInterface(bytes4 interfaceId) public view override returns (bool) {

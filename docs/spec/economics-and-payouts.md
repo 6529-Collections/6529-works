@@ -295,7 +295,7 @@ sequenceDiagram
     participant Fee as Fee recipient Safe
     participant Escrow as RevenueEscrow
     Settler->>Auction: settle(saleId)
-    Auction->>Stream: primaryTerms(tokenId)
+    Auction->>Stream: settlePrimary(tokenId, SOLD, bidder, currency, price)
     Stream-->>Auction: seller, fee recipient, fee share
     Note over Auction: fee = floor(price x feeShare / 100,000)
     Auction->>Seller: price minus fee, ETH with PAYOUT_GAS
@@ -306,7 +306,6 @@ sequenceDiagram
     alt the recipient refuses
         Auction->>Escrow: depositETH(fee recipient)
     end
-    Auction->>Stream: markPrimarySettled(tokenId)
 ```
 
 - **Preconditions.** The auction ended with a bid. The seller wallet need not be deployed.

@@ -213,10 +213,11 @@ contract TermsHandler is Test {
         ++squats;
     }
 
-    /// @dev Only the minting adapter may settle; any other reverts.
+    /// @dev Only the minting adapter may settle, once (owner decision 17); any other reverts.
     function settle(uint256 tokenSeed, uint256 minterSeed) external {
         if (tokens.length == 0) return;
         uint256 tokenId = tokens[tokenSeed % tokens.length];
+        if (stream.primarySaleSettled(tokenId)) return;
         uint16 m = uint16(1 + minterSeed % 2);
         bool ok;
         try adapters[m].settle(stream, tokenId) {

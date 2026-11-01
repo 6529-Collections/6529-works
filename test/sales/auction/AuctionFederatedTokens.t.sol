@@ -5,7 +5,12 @@ import { IFederationRegistry } from "src/interfaces/IFederationRegistry.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { CURRENCY_ETH, PRODUCT_FEDERATED } from "src/interfaces/types/EconomicsTypes.sol";
-import { LockedTerms, Payment, PaymentMethod } from "src/interfaces/types/SaleTypes.sol";
+import {
+    LockedTerms,
+    Payment,
+    PaymentMethod,
+    PrimaryOutcome
+} from "src/interfaces/types/SaleTypes.sol";
 import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { SalesStackBase } from "../SalesStackBase.sol";
@@ -46,6 +51,11 @@ contract AuctionFederatedTokensTest is SalesStackBase {
         assertEq(auction.claimable(collector, CURRENCY_ETH), 0.5 ether, "the bid is credited");
         assertEq(address(auction).balance, 0.5 ether, "nothing was paid out");
         assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(
+            fed.settled(1),
+            fed.settlementHash(PrimaryOutcome.FROZEN_OUT, address(0), CURRENCY_ETH, 0),
+            "a delisting ends the sale FROZEN_OUT (owner decision 17)"
+        );
     }
 
     /// Regression: MARKET-5 (docs/security/internal-review-2026-10.md)

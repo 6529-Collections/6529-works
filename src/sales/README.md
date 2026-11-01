@@ -15,7 +15,7 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 
 | File | What it is |
 | --- | --- |
-| `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the museum, the dispute pause, the currency freeze, the emergency pause. |
+| `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the outcome reported to the token (`settlePrimary`), the dispute pause, the currency freeze, the emergency pause. |
 | `EnglishAuctionLens.sol` | The English auction's read side, created by its constructor: every view the auction does not declare, decoded from its storage words (`storageWords`). |
 | `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, settlement in calls of bounded gas, claims through `IMintTarget.mint`, governance. |
 | `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view, computed from the adapter's storage words, and the package-item check `open` consults. Stateless; the adapter creates it and forwards its views to it. |
@@ -50,11 +50,12 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   consumer should. A rescue for tokens sent by plain `transferFrom` was declined for its size
   (LIM-SAL-10).
 - **English auction storage.** A steady-state start writes one `Sale` word and shares a terms
-  record per distinct combination; seller and fee terms are read back from the token at
-  settlement.
-- **The no-bid recipient (D140).** An unbid work of 6529 Stream (the immutable `_stream`) goes
-  to the resolver's `museum()`, read only on that branch; any other token's goes to its creator.
-  A delivery pending for the museum is the recorded museum's alone (AUC-33).
+  record per distinct combination; seller and fee terms come back from the token at settlement,
+  from the call that reports the outcome (`IMintTarget.settlePrimary`, owner decision 17).
+- **The no-bid recipient (D140, owner decision 17).** `settle` reports SOLD, UNBID or
+  FROZEN_OUT to the token; 6529 Stream moves an unsold work to the museum itself and returns it
+  as `holder`, so a 6529 Stream work is never pending (AUC-33). Any other token's unsold work
+  goes to the creator the token reports. The auction has no museum branch of its own.
 - **Edition auction storage.** Per sale, a state word (written by every bid), a payout word at
   open and a result word at settlement; live units eight steps to a word; one word per bid;
   departure logs only in capped sales.

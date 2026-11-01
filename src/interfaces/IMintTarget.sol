@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import { PrimaryTerms } from "./types/SaleTypes.sol";
+import { PrimaryOutcome, PrimarySettlement, PrimaryTerms } from "./types/SaleTypes.sol";
 
 /// @title IMintTarget
 /// @notice The whole surface a shared sale adapter uses on a token contract: 6529 Stream,
@@ -75,14 +75,38 @@ interface IMintTarget {
     /// @param amount The number to burn: 1 for 6529 Stream, nonzero for 6529 Stream Editions.
     function burn(uint256 id, uint256 amount) external;
 
-    /// @notice Marks token `id`'s primary sale settled, at settlement, while the token is still
-    ///         in the calling adapter's custody and without waiting for delivery, so a winner who
-    ///         never claims cannot block what depends on it (6529 Stream: edition creation).
-    ///         6529 Stream: only the adapter that minted the token (`IStream.NotMintingAdapter`).
-    ///         Every mint target implements it, so a sale can always settle; a token with nothing
-    ///         to record (6529 Stream Editions) makes it a no-op for any adapter ever admitted.
-    /// @param id The token ID whose primary sale settled (ignored by 6529 Stream Editions).
-    function markPrimarySettled(uint256 id) external;
+    /// @notice Settles token `id`'s primary sale with its outcome (owner decision 17), at
+    ///         settlement, while the token is still in the calling adapter's custody and without
+    ///         waiting for delivery, so a winner who never claims cannot block what depends on it
+    ///         (6529 Stream: edition creation). Returns the terms the adapter pays by and, when the
+    ///         token took the work itself, where it went (`PrimarySettlement`). Every mint target
+    ///         implements it, so a sale can always settle.
+    ///         6529 Stream: only the adapter that minted the token (`IStream.NotMintingAdapter`),
+    ///         once (`IStream.SaleAlreadySettled`). It records the outcome (`IStream.primarySale`)
+    ///         and emits `IStream.PrimarySaleSettled` with the buyer. SOLD needs a buyer; UNBID
+    ///         and FROZEN_OUT take no buyer and no price (`IStream.InvalidSaleOutcome`), and
+    ///         Stream itself moves the work from the adapter's custody to the 6529 Network Museum
+    ///         (`IEconomicsResolver.museum()`, read now) and returns the museum as `holder`, with
+    ///         the seller and fee terms.
+    ///         6529 Stream Editions: every copy is sold at mint, so a no-op returning nothing, for
+    ///         any adapter ever admitted.
+    ///         Any other token returns its seller and fee terms, and `holder` zero if the adapter
+    ///         is to deliver the work: to its buyer, or unsold to the creator `primaryTerms`
+    ///         reports.
+    /// @param id The token ID (ignored by 6529 Stream Editions).
+    /// @param outcome SOLD, UNBID or FROZEN_OUT.
+    /// @param buyer The buyer of record (the winning bidder); zero unless SOLD.
+    /// @param currency The sale's currency (`CURRENCY_ETH` or an ERC-20).
+    /// @param price The price paid; zero unless SOLD.
+    /// @return The seller and fee terms the adapter pays by, and the holder the token moved the
+    ///         work to itself (zero when the adapter delivers it).
+    function settlePrimary(
+        uint256 id,
+        PrimaryOutcome outcome,
+        address buyer,
+        address currency,
+        uint256 price
+    ) external returns (PrimarySettlement memory);
 
     /// @notice Whether `adapter` may call `mint`.
     /// @param adapter The sale adapter.

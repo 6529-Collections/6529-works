@@ -693,7 +693,8 @@ contract IntegrationGasReport is IntegrationBase {
     }
 
     /// @dev The first sale to pay a payee configuration: its seller wallet's predicted address
-    ///      is still empty, so the payout creates the account (once per configuration).
+    ///      is still empty, so the payout creates the account (once per configuration). Stream
+    ///      writes one new word, the sale's currency and price (owner decision 17).
     function _rowSettleFirstPayout() internal returns (Row memory r) {
         _steadyState();
         (uint256 saleId,) = _start(root, _package(root), 2);
@@ -703,10 +704,11 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row("settle, first payout to the seller wallet", starter, address(auction), data, 0);
         _gasAtMost(r, SETTLE_CEILING, "400K test ceiling");
         assertEq(stream.ownerOf(auction.auction(saleId).tokenId), bidder);
-        _growthIs(r, 1, 1);
+        _growthIs(r, 2, 1);
     }
 
-    /// @dev A settlement once the seller wallet exists: the artist has been paid before.
+    /// @dev A settlement once the seller wallet exists: the artist has been paid before. Stream
+    ///      writes one new word, the sale's currency and price (owner decision 17).
     function _rowSettle() internal returns (Row memory r) {
         uint256 earlier = _steadyState();
         (uint256 saleId,) = _start(root, _package(root), 2);
@@ -717,12 +719,13 @@ contract IntegrationGasReport is IntegrationBase {
         r = _row("settle, with a bid", starter, address(auction), data, 0);
         _gasAtMost(r, SETTLE_CEILING, "400K test ceiling");
         assertEq(stream.ownerOf(auction.auction(saleId).tokenId), bidder);
-        _growthIs(r, 1, 0);
+        _growthIs(r, 2, 0);
     }
 
-    /// @dev A settlement with no bid (D140, ADR 0005): the economics resolver's museum receives
-    ///      the work and nothing is paid. Steady state: the museum already holds an earlier
-    ///      unbid work, so its token balance exists; the one new slot is the sale's recipient.
+    /// @dev A settlement with no bid (D140, ADR 0005): Stream moves the work to its economics
+    ///      resolver's museum itself (owner decision 17) and nothing is paid. Steady state: the
+    ///      museum already holds an earlier unbid work, so its token balance exists; the one new
+    ///      slot is the sale's recipient, and Stream records UNBID in a word it rewrites.
     function _rowSettleNoBid() internal returns (Row memory r) {
         _steadyState();
         uint256 earlier = auction.saleIdOf(address(stream), stream.totalMinted()); // unbid

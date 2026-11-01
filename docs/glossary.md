@@ -17,8 +17,10 @@ Governed delays are named by [delay class](#delay-class), and shares and rates a
 
 ### 6529 Network Museum
 
-The account that receives an unbid canonical 6529 Stream 1/1 at settlement
-(`EconomicsResolver.museum`, set by FUNDS_SETTER). An unbid federated work stays with its artist.
+The account that receives a 6529 Stream 1/1 whose sale ends unsold, unbid or frozen out
+(`EconomicsResolver.museum`, set by FUNDS_SETTER): 6529 Stream itself moves the work there when
+the adapter reports the outcome (`settlePrimary`, owner decision 17). Another token's unsold work
+goes to its creator.
 
 See: [stream and auctions](spec/stream-and-auctions.md).
 

@@ -173,8 +173,15 @@ by the genesis wiring and then locked ([GV-24][gv]).
   signature names no adapter, so an admitted adapter holds every work it starts. Admission
   (`setAdmittedMinter`) is therefore a 30-day action
   ([AUC-1][auc]).
-- **Removal stops new mints only.** The minting adapter keeps `burn` and `markPrimarySettled`, so
+- **Removal stops new mints only.** The minting adapter keeps `burn` and `settlePrimary`, so
   a running dispute can finish ([AUC-8, AUC-9][auc]).
+- **An adapter's SOLD report is trusted, and so is its settling at all.** Stream moves every
+  UNBID or FROZEN_OUT work to the museum itself (owner decision 17), so an adapter that settles
+  escapes the museum rule only with a deliberately false SOLD report, such as one naming the
+  artist as the buyer of a work nobody bought. An adapter that never settles can still transfer
+  (or burn) the unsold work it holds: Stream does not refuse transfers of unsettled works, and
+  such a work stays NONE in `primarySale`. The 30-day admission review covers both
+  ([ADR 0005](../adr/0005-stream-editions-auction.md)).
 - **On 6529 Stream Editions,** an admitted adapter of an edition's sale kind may mint copies up
   to the creator's cap. Each edition is bound to one adapter, the one whose sale opened it
   (`bindMinter`) or else the first to mint it, which alone mints it, even after governance

@@ -5,7 +5,7 @@ Status: Accepted by the owner, 31 October 2026, who approved every recommended d
 acting for the repository owner). Amends [ADR 0001](0001-v1-scope.md),
 [ADR 0003](0003-build-time-decisions.md) and [ADR 0004](0004-gas-budgets-under-glamsterdam.md).
 The text below is the record as accepted; changes made during the rc.2 delivery are dated
-amendments (§6 to §10), and each amended passage points to its amendment.
+amendments (§6 to §11), and each amended passage points to its amendment.
 
 This is this repository's ADR 0005. The "ADR 0005 (randomness)" that ADR 0001 cites under
 "Superseded or amended" is the 6529Stream repository's, a different record.
@@ -158,8 +158,8 @@ its artist. Governance lists 6529 Stream alone on the English auction (`setTarge
 so this is decision 9's rule; listing another token there would send its unbid works to the
 museum too. Only a federated work's artist may claim a pending delivery in the recipient's
 place (L-5), so no artist can take the museum's. The museum is a recipient chosen by the
-auction adapter and the resolver, not a hook in Core (ADR 0001 §15). (Amended by [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code): the
-English auction gates the museum branch on 6529 Stream in code.)
+auction adapter and the resolver, not a hook in Core (ADR 0001 §15). (Amended by [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code), then
+[§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): 6529 Stream itself moves an unsold work to the museum.)
 
 ### 3. Adding a sale method (decision 14)
 
@@ -279,6 +279,9 @@ seller had been paid.
 
 ### 7. Amendment (31 October 2026): the museum branch is gated on 6529 Stream in code
 
+Superseded by [§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): Stream now moves an unsold work to the museum itself, and the English
+auction has no museum branch. Kept as history.
+
 Made by the museum lane (PR #75). As accepted, §2 sent the unbid work of any token governance
 listed on the English auction to the museum, and relied on governance listing 6529 Stream alone
 for decision 9. The English auction now takes 6529 Stream as a constructor argument and gates
@@ -355,6 +358,47 @@ Made by PR #81, with the review fixes of #80 and #81.
   bound once, so `rendererOf` reads `pinnedRenderer` with a fixed gas cap and one word back, and
   serves the default renderer on any fault but a changed pinned renderer's
   `DependencyCodeChanged`, which still fails closed (WS-16, RND-28). Cost: Stream +224 bytes.
+
+### 11. Amendment (31 October 2026): Stream records each 1/1's primary-sale outcome (owner decision 17)
+
+Made by PR #82. It supersedes [§7](#7-amendment-31-october-2026-the-museum-branch-is-gated-on-6529-stream-in-code)
+and amends the decision 15 note under [Open items](#open-items).
+
+- **The outcome.** The minting adapter's settlement call carries it:
+  `IMintTarget.settlePrimary(id, outcome, buyer, currency, price)` replaces
+  `markPrimarySettled(id)`. Stream stores SOLD, UNBID or FROZEN_OUT in two bits of the token's
+  flags word, and for SOLD the currency and the price (96 bits, saturated) in one new word;
+  `primarySale(id)` answers them, and `PrimarySaleSettled` names the outcome, the buyer, the
+  currency and the exact price. The same call returns the seller and fee terms the adapter pays
+  by (`PrimarySettlement`), so the English auction's `settle` no longer reads `primaryTerms`.
+- **Stream moves unsold works to the museum.** For UNBID and FROZEN_OUT Stream itself moves the
+  work out of the adapter's custody to `IEconomicsResolver.museum()`, read at that moment, with
+  no receiver callback, and never to the artist. The English auction no longer has a museum
+  branch, a `_MUSEUM` flag or a Stream constructor argument: it reports the outcome (FROZEN_OUT
+  for the freeze exit and a delisting) and delivers only what it sold, or another token's
+  unsold work to its creator. 6529 Stream Editions answers `settlePrimary` as a no-op (copies
+  are sold at mint); a token other than Stream returns `holder` zero.
+- **Enforced on-chain.** The museum rule (D140, decisions 9 and 10) holds for every sale an
+  admitted adapter settles, except a deliberately false SOLD report, for example one naming the
+  artist as the buyer of a work nobody bought: Stream cannot tell a false sale from a true one,
+  and refusing the artist as a buyer would block an artist buying their own work. An adapter
+  can also bypass the call: Stream lets a holder transfer an unsettled work
+  (`test_transfersDoNotSettle`) and the minting adapter burn one, so an adapter that never
+  settles can hand an unsold work to anyone; such a work stays NONE in `primarySale` and its
+  edition can never be created. Refusing transfers of unsettled works would cost about 2,100 gas
+  on every later transfer of every work, so it is left to the admission review.
+- **The admission requirement** (decisions 9, 10, 15 and 17). Any 1/1 sale adapter admitted for
+  6529 Stream must settle each sale with Stream (`settlePrimary`) and report its true outcome:
+  SOLD with the buyer who paid, the currency and the price; UNBID when the sale ended with no
+  bid; FROZEN_OUT when it ended unsold because its currency stayed frozen. Governance checks this
+  in the 30-day review before `Stream.setAdmittedMinter(adapter, true)` executes, with the three
+  cases on-chain enforcement leaves to it (a false SOLD, a work moved without settling, a burn
+  outside a cancel); a guardian vetoes an admission that does not hold it.
+  `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
+  adapter's unbid work landing in the museum without the adapter moving it.
+- **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
+  `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
+  less. Also useful for TDH: P29 shares the Works pool by realized ETH price.
 
 ## What this amends
 
@@ -555,13 +599,18 @@ before each merge.
   transfer rule refusing the artist would block an artist buying their own work. The 30-day
   review, with the guardians' veto, is the control.
 
+  (Amended by [§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): Stream now records each sale's outcome and moves an unsold work to the
+  museum itself, so the rule is enforced on chain for every sale an admitted adapter settles,
+  except a deliberately false SOLD report; the requirement becomes reporting the true outcome.)
+
   **The rest of the 1/1 adapter review.** Stream trusts an admitted adapter, unchecked, for the
   works it mints, so the same review also confirms that the adapter:
   - burns a work (`IMintTarget.burn`) only to cancel a sale after an upheld dispute, through a
     governed action like the English auction's `cancel` (48 hours): Stream lets the minting
     adapter burn any work it holds before the sale settles;
   - marks the primary sale settled (`markPrimarySettled`) when the sale is final, and only then:
-    an edition of a master waits for it, and a settled work can no longer be burned;
+    an edition of a master waits for it, and a settled work can no longer be burned. (Amended by
+    [§11](#11-amendment-31-october-2026-stream-records-each-11s-primary-sale-outcome-owner-decision-17): `settlePrimary`, with the true outcome, which Stream records for good.)
   - pays the fee recipient and the seller wallet the shares `primaryTerms` reports;
   - reports a constant `saleKind()`: `mint` compares the live value with the item's, while
     `primaryTerms` reports the value recorded at the first admission, so an adapter whose kind

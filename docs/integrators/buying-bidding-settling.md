@@ -420,13 +420,13 @@ sequenceDiagram
     participant Escrow as RevenueEscrow
     participant Stream
     Keeper->>Auction: settle(saleId)
-    Note over Auction: reads seller, fee terms and creator back from Stream
+    Auction->>Stream: settlePrimary(tokenId, SOLD, bidder, currency, price)
+    Stream-->>Auction: seller and fee terms (Stream records the sale)
     Auction->>Seller: price minus fee
     Auction->>Fee: fee
     alt a wallet or the token refuses
         Auction->>Escrow: credit for that wallet
     end
-    Auction->>Stream: markPrimarySettled(tokenId)
     Auction->>Stream: safeTransferFrom to the recipient, 300,000 gas
     alt delivery fails
         Note over Auction: DeliveryPending, the token stays in custody
@@ -463,7 +463,7 @@ a new seller wallet creates its account, at the settler's cost.
 | Delivery failed (rejected, or the hook needed more than 300,000 gas) | `DeliveryPending(saleId, recipient)`; `pendingDelivery(saleId)` nonzero | The recipient or the winning bidder calls `claimDelivery(saleId, to)`, `to` neither zero nor the auction. With no bids the recipient is the museum recorded at settlement, and only it may claim, never the artist nor a museum named later; for any other token (federated, or listed later), the artist's authority may too (AUC-33). |
 | A payout refused by the wallet (ETH: reverted or needed over 100,000 gas) or by the token | The escrow's `Credited` | Anyone calls `RevenueEscrow.flush(wallet, asset)`, for a token once it allows it. |
 | An ERC-20 payout that failed even through the escrow (MONEY-1, AUC-23) | The auction's `Credited(wallet, token, saleId, amount)` | Anyone calls `claimFor(wallet, token)`; the funds only go to `wallet`. |
-| No bid (D140, AUC-24) | `SaleSettled` with `buyer == address(0)`, `price == 0`, and the 6529 Network Museum as recipient: `IEconomicsResolver.museum()` at settlement, even while the artist is [restrained](../glossary.md#restraint). Any other token's work (federated, or listed later by governance) names its artist's active authority. | Nothing. Its edition sale still sells and settles, by anyone's `settle` call after its close ([EA-11](../spec/editions-and-sales.md#rules-and-invariants)). |
+| No bid (D140, AUC-24, owner decision 17) | The auction reports UNBID to the token (`settlePrimary`); 6529 Stream moves the work from the auction's custody to the 6529 Network Museum, `IEconomicsResolver.museum()` read then, even while the artist is [restrained](../glossary.md#restraint), and emits `PrimarySaleSettled` with the outcome. `SaleSettled` has `buyer == address(0)`, `price == 0` and the museum as recipient. Any other token's work (federated, or listed later by governance) goes to the creator the token reports. | Nothing. Its edition sale still sells and settles, by anyone's `settle` call after its close ([EA-11](../spec/editions-and-sales.md#rules-and-invariants)). |
 | No bid on another token's work while its artist is restrained (IDENTITY-1, AUC-24) | Reverts with `InvalidRecipient(address(0))`: the creator from `IMintTarget.primaryTerms(tokenId, "")` is zero | Retry once the recovery override executes, is vetoed or voided, or lapses. |
 | Locked currency deprecated under 30 days | Reverts with `AssetNotActive(currency)` | Wait; the high bidder may `withdrawBid`. |
 | Locked currency deprecated 30 days | The high bid is credited back; a 6529 Stream work goes to the museum, any other token's to its artist | The bidder claims its credit. |
