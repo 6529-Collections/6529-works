@@ -58,10 +58,11 @@ A view through the lens costs a contract that calls it on chain about 7,000 more
 before (one more cold account and the lens's reads). **A contract that reads an auction on
 its own hot path should call `auctionClock(saleId)`**
 ([`IEnglishAuctionClock`](../../src/interfaces/IEnglishAuctionClock.sol)): the auction answers
-it itself, with exactly `auction(saleId).state` and `.endTime`, from one cold slot for a sale
-never paused (24,207 Prague gas cold as a transaction, against 39,342 for `auction`). It is an
+it itself, with exactly `auction(saleId).state`, `.endTime` and `.pausedAt`, from one cold
+slot for a sale never paused (24,207 Prague gas cold as a transaction, against 39,342 for `auction`). It is an
 integration view, outside `IEnglishAuction`: `supportsInterface` reports no ID for it, and
-`IEnglishAuction`'s ID does not change. The edition auction reads its 1/1 this way.
+`IEnglishAuction`'s ID does not change. The edition auction reads its 1/1 this way, including
+the pause start its `withdrawBid` compares a bid's minute with.
 
 ### Contract names
 

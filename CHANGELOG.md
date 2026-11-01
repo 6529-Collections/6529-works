@@ -14,7 +14,11 @@
     lens is now stateless and reads its caller. The auction's constructor takes the lens's
     address and code hash, and checks both together with the lens's dependencies.
     `DeployV1` deploys the lens as its own CREATE2 entry, and Verify checks the lens's
-    dependencies (GAS M-2).
+    dependencies (GAS M-2). Verify also checks the edition auction's lens's dependencies.
+  - `IEnglishAuctionClock.auctionClock` also returns the dispute pause's start (`pausedAt`,
+    exactly as `auction` reports it). Its interface ID is unchanged: return values are not part
+    of a selector. The edition auction's `withdrawBid` reads the pause start there instead of
+    through the lens, so it costs about 12,500 gas less.
 - Fix pass A of the rc.2 seven-lens review (the edition auction, its lens, 6529 Stream Editions
   and `EditionRules`; ADR 0005 §12):
   - F1 (LC-1, MONEY-L1, G-1): `IEditions.bindMinter` returns the `WorkTerms` it locks, and the
