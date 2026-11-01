@@ -129,6 +129,8 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, implemented by `UniformEditionAuction` and `EconomicsResolver`. |
 | [`IUniformEditionAuctionStorage.sol`](../../src/interfaces/IUniformEditionAuctionStorage.sol), [`IUniformEditionAuctionLens.sol`](../../src/interfaces/IUniformEditionAuctionLens.sol) | New: the adapter's raw storage words and `SettlementScanned`, and the stateless lens that answers its views. Neither is advertised through ERC-165. |
 | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `bindMinter(editionId, item)` (ADR 0005 §6): an adapter binds an edition when its sale opens. |
+| [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `consume` also returns the lead artist's active authority, `(bytes32 itemHash, uint256 artistId, address authority)`; its selector and the interface ID are unchanged. |
+| [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | New `isDeliveredContent(bytes32)` and `seedOfContent(bytes32)`, the one-word reads by content hash that 6529 Stream's `mint` and `WorkRecords.openRecord` use. |
 | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | New `setPackageRegistry(address,address)` (`0x00752cf1`) and event `PackageRegistrySet(address,address)`: the only `register` caller is replaceable by governance with Stream's package registry (owner decision 16). |
 
 | Function or event | r3 | `main` |
@@ -267,7 +269,7 @@ selectors.
 | `IArtistPayoutResolver` | [`IArtistPayoutResolver.sol`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | `0x9b2c1793` | ArtistRegistry |
 | `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0xee1e8c55` | `0x3e70f8a1` | ArtistRegistry |
 | `IConsolidationSource` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x88836e34` | `0x88836e34` | ConsolidationAdapter |
-| `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x0e083814` | `0x3a410101` | VrfEntropyModule |
+| `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x14c06eb4` | `0x3a410101` | VrfEntropyModule |
 | `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xeefee933` | `0xeefee933` | None: no implementation in v1 |
 | `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x31a9798a` (computed) | not answered on r2 | ClaimRouter (on `main` only) |
 | `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0x50267de3` (computed) | not answered on r2 | RevenueEscrow (on `main` only) |

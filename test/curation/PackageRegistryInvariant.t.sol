@@ -169,8 +169,12 @@ contract CurationHandler is CurationHelpers {
         );
         PackageItem memory item = abi.decode(encodedItems[t.i], (PackageItem));
         vm.prank(t.caller);
-        try registry.consume(t.root, item, proof, move) returns (bytes32 itemHash, uint256) {
-            if (!t.expected || itemHash != itemHashes[t.i]) unexpectedSuccess = true;
+        try registry.consume(t.root, item, proof, move) returns (
+            bytes32 itemHash, uint256, address
+        ) {
+            if (!t.expected || itemHash != itemHashes[t.i]) {
+                unexpectedSuccess = true;
+            }
             ++consumeCount[itemHash];
             streamItemOf[t.sha] = itemHash;
             spent[t.a][t.nonce] = true;

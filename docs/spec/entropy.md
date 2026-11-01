@@ -100,11 +100,15 @@ back to A) neither coordinator can deliver the other's requests; a pending draw 
 
 ### How the seed is read
 
-- **Start gate.** `Stream.mint` reverts with `SeedNotDelivered(itemHash)` after `consume`, which
-  the revert undoes. The auction does not check the seed itself.
+- **Start gate.** `Stream.mint` asks the module `isDeliveredContent(item.contentHash)`, one
+  storage word, and reverts with `SeedNotDelivered(itemHash)` after `consume`, which the revert
+  undoes. A seed belongs to its content, whichever package lists the item, and `consume` lets a
+  content hash be consumed by one item only (CUR-12), so an item of another package with the
+  same content starts on that content's seed without a link of its own. The auction does not
+  check the seed itself.
 - **Reads.** Stream never stores a VRF seed; it records which module each work minted under
   (`IStream.entropyModuleOf(tokenId)`: the module current at the mint, whose delivery `mint`
-  checked). `openRecord` stores that module's `seedOf(itemHash)`, which
+  checked). `openRecord` stores that module's `seedOfContent(item.contentHash)`, which
   `WorkRecords.seedOf(tokenId)` then returns; before the record opens the renderer reads the
   same module's `seedOf(itemHash)`, with a bounded gas allowance
   ([`Renderer.sol`](../../src/content/Renderer.sol), `_seed`). A replaced module therefore
@@ -143,7 +147,7 @@ stateDiagram-v2
     Unlinked --> LinkedPending : requestSeed requests or joins a pending draw
     Unlinked --> LinkedDelivered : requestSeed joins a delivered draw
     LinkedPending --> LinkedDelivered : delivery for the content
-    LinkedDelivered --> Started : start, Stream checks isDelivered
+    LinkedDelivered --> Started : start, Stream checks isDeliveredContent
     Started --> [*]
 ```
 
@@ -189,7 +193,7 @@ sequenceDiagram
     Anyone->>Auction: start(stream, mint data)
     Auction->>Stream: mint(auction, 0, 1, data)
     Stream->>Stream: consume the item through the registry
-    Stream->>Module: isDelivered(itemHash)
+    Stream->>Module: isDeliveredContent(item.contentHash)
     Stream-->>Auction: token minted, the clock starts
 ```
 
@@ -204,7 +208,7 @@ sequenceDiagram
   announced (no `SeedRequested`).
 - **Gas.** A first request for a content creates 4 slots in the module, a joining item 1
   (`test_Request_NewStorageSlots`). The request is off the start path, which only adds the
-  `isDelivered` read ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia:
+  `isDeliveredContent` read, one word ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia:
   [flows.md, section 6](../../deployments/11155111/flows.md#6-vrf)).
 
 ### Retry
@@ -287,7 +291,7 @@ the 30-day class (ENT-11; `InvalidConfig`).
 | ENT-9 | `setCoordinator` is `SUCCESSOR_SETTER` (30 days), compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetCoordinatorIsInTheSuccessorClass`, `test_AGuardianCancelsAPendingCoordinatorSwap` |
 | ENT-10 | `setConfig` is `PARAMETER_SETTER` (48 hours), compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`, `_validate`; `BoundedParameter.raise` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetConfigIsInTheStandardClass` |
 | ENT-11 | `lowerCallbackGasLimit` is `SUCCESSOR_SETTER` (30 days), compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
-| ENT-12 | A `VRF` work starts only once its item's seed is delivered, and only while Stream has an entropy module (deployed with one, or installed later by `setDependency`). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered` |
+| ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered (`isDeliveredContent(item.contentHash)`, one word: a seed belongs to its content and a content hash is consumed by one item only, CUR-12), and only while Stream has an entropy module (deployed with one, or installed later by `setDependency`). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_ContentReads_AnswerOnlyTheSeededContent` |
 | ENT-13 | The callback creates no storage slot and its cost stays at most half the 100,000 floor under Glamsterdam pricing. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Callback_CreatesNoStorageSlot`, `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`, `test_Callback_GasStaysUnderTheConfiguredLimit` |
 | ENT-14 | A reentrant call during a request cannot deliver the new request or overwrite a seed delivered meanwhile. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_ReentrancyFromTheCoordinatorFindsNothingToUse`, `test_Repeat_AnEarlierRequestDeliveredDuringTheRepeatIsNotOverwritten` |
 | ENT-15 | A coordinator's request ID must be nonzero and unused; a failing coordinator leaves no state. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_RejectsAZeroRequestId`, `test_Request_RejectsADuplicateRequestId`, `test_Request_CoordinatorFailureLeavesNoState` |

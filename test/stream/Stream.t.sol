@@ -471,7 +471,7 @@ contract StreamTest is StreamFixture {
         bytes memory data = _request(item);
         vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
         auction.start(stream, data);
-        entropy.deliver(itemHash, keccak256("vrf"));
+        entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(stream, data);
         assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
     }
@@ -563,7 +563,7 @@ contract StreamTest is StreamFixture {
         noVrf.setDependency("ENTROPY_MODULE", address(0), address(entropy));
         PackageItem memory item = _item(1);
         item.seedPolicy = SeedPolicy.VRF;
-        entropy.deliver(WorksHashing.itemHash(item), keccak256("vrf"));
+        entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(noVrf, _request(item));
         assertEq(uint8(noVrf.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
         assertEq(noVrf.entropyModuleOf(tokenId), address(entropy));
@@ -576,7 +576,7 @@ contract StreamTest is StreamFixture {
     function test_entropyModuleOf_answersTheModuleCurrentAtMint() public {
         PackageItem memory a = _item(1);
         a.seedPolicy = SeedPolicy.VRF;
-        entropy.deliver(WorksHashing.itemHash(a), keccak256("a"));
+        entropy.deliver(a, keccak256("a"));
         uint256 first = _mint(a);
         uint256 plain = _mint(2);
         assertEq(stream.entropyModuleOf(first), address(entropy));
@@ -589,7 +589,7 @@ contract StreamTest is StreamFixture {
         vm.stopPrank();
         PackageItem memory d = _item(3);
         d.seedPolicy = SeedPolicy.VRF;
-        c.deliver(WorksHashing.itemHash(d), keccak256("d"));
+        c.deliver(d, keccak256("d"));
         uint256 second = _mint(d);
 
         assertEq(stream.entropyModuleOf(first), address(entropy), "minted under the genesis");

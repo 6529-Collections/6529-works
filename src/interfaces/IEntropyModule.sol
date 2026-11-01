@@ -8,11 +8,12 @@ import { PackageItem } from "./types/PackageTypes.sol";
 /// @notice The optional VRF module for seeded 1/1s, revealed before any sale starts (ADR 0001
 ///         section 9).
 /// @dev Entropy is never in Core's mint path. Seeds are drawn once per content hash (one seed per
-///      work, whatever package lists it) and requested before any token exists. Reads are keyed
-///      by item hash, through the link `requestSeed` records: the auction's start (through 6529
-///      Stream's `mint`) requires `isDelivered(itemHash)` for a VRF item, and
-///      `IWorkRecords.seedOf` reads `seedOf(itemHash)`, so nothing ever sits in sale custody
-///      waiting for randomness. The VRF fulfillment stores the seed here, with no callback into
+///      work, whatever package lists it) and requested before any token exists. 6529 Stream's
+///      `mint` requires `isDeliveredContent(item.contentHash)` for a VRF item (one storage word)
+///      and `IWorkRecords.openRecord` stores `seedOfContent(item.contentHash)`, so nothing ever
+///      sits in sale custody waiting for randomness. The item-keyed reads (`isDelivered`,
+///      `seedOf`) go through the link `requestSeed` records; the renderer reads `seedOf` before a
+///      record opens. The VRF fulfillment stores the seed here, with no callback into
 ///      any token or adapter. Anyone may request, for an item of an approved package that is not
 ///      yet consumed and whose seed policy is VRF (checked against the package registry), which
 ///      keeps the subscription safe from spam. An item whose content already has a delivered or
@@ -84,6 +85,17 @@ interface IEntropyModule is IERC165 {
     /// @param itemHash The item's hash (`WorksHashing.itemHash`).
     /// @return True once the seed is delivered.
     function isDelivered(bytes32 itemHash) external view returns (bool);
+    /// @notice Whether the seed of `contentHash` was delivered: one storage word, read by 6529
+    ///         Stream's `mint` for a VRF item (a seed belongs to its content, whichever package
+    ///         lists it, and a content hash is consumed by one item only).
+    /// @param contentHash The content hash.
+    /// @return True once the content's seed is delivered.
+    function isDeliveredContent(bytes32 contentHash) external view returns (bool);
+    /// @notice The delivered seed of `contentHash`, which `IWorkRecords.openRecord` stores; reverts
+    ///         with `SeedNotDelivered(contentHash)` before delivery.
+    /// @param contentHash The content hash.
+    /// @return The seed.
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32);
     /// @notice The delivered seed of the item's content. Reverts with `SeedNotDelivered`.
     /// @param itemHash The item's hash (`WorksHashing.itemHash`).
     /// @return The seed: the delivered random word, unchanged.

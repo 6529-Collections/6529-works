@@ -140,7 +140,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         address packageRegistry;
         address artistRegistry;
         address economics;
-        address entropyModule;
+        uint8 replaced;
     }
 
     /// @dev `exists` keeps the counter word nonzero, so each mint pays a warm rewrite.
@@ -272,19 +272,22 @@ contract Stream is ERC721, AccessManaged, IStream {
         PackageItem calldata item = req.item;
         bytes32 itemHash;
         uint256 artistId;
+        WorkTerms memory w;
         Dependencies memory d = _dependencies();
         {
-            address entropy = _checkItem(item, d.entropyModule);
+            address entropy = _checkItem(item, d.replaced);
             if (minter.kindKey != _kindKey(item.sale.saleKind)) {
                 revert SaleKindMismatch(item.sale.saleKind, _minterKinds[minter.id]);
             }
-            (itemHash, artistId) = _consume(data, d.packageRegistry);
-            if (entropy != address(0) && !IEntropyModule(entropy).isDelivered(itemHash)) {
-                revert SeedNotDelivered(itemHash);
-            }
+            address creator;
+            (itemHash, artistId, creator) = _consume(data, d.packageRegistry);
+            if (
+                entropy != address(0)
+                    && !IEntropyModule(entropy).isDeliveredContent(item.contentHash)
+            ) revert SeedNotDelivered(itemHash);
+            (terms, w) = _quote(item, artistId, d);
+            terms.creator = creator;
         }
-        WorkTerms memory w;
-        (terms, w) = _quote(item, artistId, d);
         Terms memory shared = Terms(
             // `_consume` checked that `artistId` fits 160 bits.
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -321,10 +324,11 @@ contract Stream is ERC721, AccessManaged, IStream {
         }
         StreamMintRequest calldata req = _request(data);
         Dependencies memory d = _dependencies();
-        _checkItem(req.item, d.entropyModule);
+        _checkItem(req.item, d.replaced);
         uint256 artistId = IArtistRegistry(d.artistRegistry).artistIdOf(req.item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
         (terms,) = _quote(req.item, artistId, d);
+        terms.creator = IArtistRegistry(d.artistRegistry).activeAuthorityOf(artistId);
     }
 
     /// @inheritdoc IMintTarget
@@ -808,23 +812,26 @@ contract Stream is ERC721, AccessManaged, IStream {
         return (_counts.replaced & (uint8(1) << index)) == 0 ? genesis : _replaced[index];
     }
 
-    /// @dev All four dependencies from one read of `Counts.replaced`, for the mint path, which
-    ///      uses three of them (four for a VRF item).
+    /// @dev The three dependencies every mint uses, from one read of `Counts.replaced`, which is
+    ///      kept for the entropy module: `_checkItem` resolves it only for a VRF item, so a
+    ///      replaced module costs other mints nothing.
     function _dependencies() private view returns (Dependencies memory d) {
         uint8 replaced = _counts.replaced;
         d.packageRegistry = replaced & 1 == 0 ? _genesisPackageRegistry : _replaced[0];
         d.artistRegistry = replaced & 2 == 0 ? _genesisArtistRegistry : _replaced[1];
         d.economics = replaced & 4 == 0 ? _genesisEconomics : _replaced[2];
-        d.entropyModule = replaced & 8 == 0 ? _genesisEntropyModule : _replaced[3];
+        d.replaced = replaced;
     }
 
     /// @dev Forwards the request to `IPackageRegistry.consume` without re-encoding it: the tuple
     ///      after the leading offset word of `abi.encode(StreamMintRequest)` is exactly the ABI
     ///      encoding of `consume`'s four arguments, so the registry decodes the same values this
-    ///      contract read through `_request`.
+    ///      contract read through `_request`. The registry also returns the lead artist's active
+    ///      authority, which signed the move: the work's creator, with no second read of the
+    ///      artist registry.
     function _consume(bytes calldata data, address registry)
         private
-        returns (bytes32 itemHash, uint256 artistId)
+        returns (bytes32 itemHash, uint256 artistId, address creator)
     {
         (bool ok, bytes memory result) =
             registry.call(bytes.concat(IPackageRegistry.consume.selector, data[32:]));
@@ -833,8 +840,8 @@ contract Stream is ERC721, AccessManaged, IStream {
                 revert(add(result, 0x20), mload(result))
             }
         }
-        if (result.length != 64) revert InvalidMintRequest();
-        (itemHash, artistId) = abi.decode(result, (bytes32, uint256));
+        if (result.length != 96) revert InvalidMintRequest();
+        (itemHash, artistId, creator) = abi.decode(result, (bytes32, uint256, address));
         // The registry never returns zero; an artist ID is an address-sized value (D1).
         if (artistId == 0 || artistId > type(uint160).max) revert InvalidMintRequest();
     }
@@ -847,8 +854,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      most 32 files, the primary first with the item's content hash) are not visible
     ///      here, so the curation signer's tooling must simulate `openRecord` before attesting
     ///      an item. Returns the entropy module a VRF item's seed must be delivered by
-    ///      (`module`, Stream's current one); zero for any other item.
-    function _checkItem(PackageItem calldata item, address module)
+    ///      (Stream's current one, from `replaced`, the `Counts.replaced` bits); zero for any
+    ///      other item, which reads no module.
+    function _checkItem(PackageItem calldata item, uint8 replaced)
         private
         view
         returns (address entropy)
@@ -857,7 +865,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (item.parties.length == 0) revert InvalidLeadArtist();
         if (!_collections[item.collectionId].exists) revert UnknownCollection(item.collectionId);
         SeedPolicy policy = item.seedPolicy;
-        if (policy == SeedPolicy.VRF) entropy = module;
+        if (policy == SeedPolicy.VRF) {
+            entropy = replaced & 8 == 0 ? _genesisEntropyModule : _replaced[3];
+        }
         if (
             (policy == SeedPolicy.ARTIST) != (item.seed != 0)
                 || (policy == SeedPolicy.VRF && entropy == address(0))
@@ -893,7 +903,6 @@ contract Stream is ERC721, AccessManaged, IStream {
         terms.seller = w.seller;
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;
-        terms.creator = IArtistRegistry(d.artistRegistry).activeAuthorityOf(artistId);
     }
 
     /// @dev Assigns the next token ID and collection serial and writes the two work words.

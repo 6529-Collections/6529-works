@@ -63,7 +63,7 @@ contract InterfacesCompileTest is Test {
         );
         assertEq(type(IArtistRegistry).interfaceId, bytes4(0xee1e8c55), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x88836e34), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0x0e083814), "IEntropyModule");
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0x14c06eb4), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");
     }
 

@@ -7,8 +7,13 @@ import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEntropyModule } from "src/interfaces/IEntropyModule.sol";
 import { IPackageRegistry } from "src/interfaces/IPackageRegistry.sol";
 import { IStream } from "src/interfaces/IStream.sol";
-import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
-import { EditionTerms, ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
+import { CURRENCY_ETH, PRODUCT_STREAM } from "src/interfaces/types/EconomicsTypes.sol";
+import {
+    EditionTerms,
+    ItemKind,
+    PackageItem,
+    SeedPolicy
+} from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { PackageRegistry } from "src/curation/PackageRegistry.sol";
@@ -45,11 +50,20 @@ contract OtherSeedsEntropy is IERC165 {
     function seedOf(bytes32 itemHash) external pure returns (bytes32) {
         return keccak256(abi.encode("another module's seed", itemHash));
     }
+
+    function isDeliveredContent(bytes32) external pure returns (bool) {
+        return true;
+    }
+
+    function seedOfContent(bytes32 contentHash) external pure returns (bytes32) {
+        return keccak256(abi.encode("another module's seed for content", contentHash));
+    }
 }
 
 /// @dev A replacement entropy module that delivers the seeds the test gives it.
 contract DeliveringEntropy is IERC165 {
     mapping(bytes32 itemHash => bytes32 seed) internal _seeds;
+    mapping(bytes32 contentHash => bytes32 seed) internal _contentSeeds;
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return
@@ -57,8 +71,9 @@ contract DeliveringEntropy is IERC165 {
                 || interfaceId == type(IERC165).interfaceId;
     }
 
-    function deliver(bytes32 itemHash, bytes32 seed) external {
-        _seeds[itemHash] = seed;
+    function deliver(PackageItem memory item, bytes32 seed) external {
+        _seeds[WorksHashing.itemHash(item)] = seed;
+        _contentSeeds[item.contentHash] = seed;
     }
 
     function isDelivered(bytes32 itemHash) external view returns (bool) {
@@ -67,6 +82,14 @@ contract DeliveringEntropy is IERC165 {
 
     function seedOf(bytes32 itemHash) external view returns (bytes32) {
         return _seeds[itemHash];
+    }
+
+    function isDeliveredContent(bytes32 contentHash) external view returns (bool) {
+        return _contentSeeds[contentHash] != 0;
+    }
+
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32) {
+        return _contentSeeds[contentHash];
     }
 }
 
@@ -254,7 +277,7 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(stream.entropyModuleOf(later), address(other));
         records.openRecord(later, w.item, w.media);
         (, seed) = records.seedOf(later);
-        assertEq(seed, other.seedOf(WorksHashing.itemHash(w.item)));
+        assertEq(seed, other.seedOfContent(w.item.contentHash));
     }
 
     /// @dev Two replacements make three eras. A VRF work minted in each of the first two keeps
@@ -268,7 +291,7 @@ contract StreamDependenciesTest is IntegrationBase {
         w.item.seedPolicy = SeedPolicy.VRF;
         Work[] memory one = _one(w);
         bytes32 root = _publish(one);
-        second.deliver(WorksHashing.itemHash(w.item), keccak256("the second era's seed"));
+        second.deliver(w.item, keccak256("the second era's seed"));
         (, uint256 secondEra) = _start(root, one, 0);
         tokens.push(secondEra);
         bytes32 before = _snapshot();
@@ -305,7 +328,7 @@ contract StreamDependenciesTest is IntegrationBase {
         vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
         auction.start(address(stream), data);
 
-        next.deliver(itemHash, keccak256("the current module's seed"));
+        next.deliver(w.item, keccak256("the current module's seed"));
         (, uint256 tokenId) = _start(root, one, 0);
         assertEq(stream.entropyModuleOf(tokenId), address(next));
         records.openRecord(tokenId, w.item, w.media);
@@ -428,6 +451,64 @@ contract StreamDependenciesTest is IntegrationBase {
             "not a package registry"
         );
         assertEq(artists.packageRegistry(), current);
+    }
+
+    /// @dev The review of #81, option A: Stream's VRF check reads one word, the delivery of the
+    ///      item's content. A seed belongs to its content, whichever package lists it, and a
+    ///      content hash is consumed by one item only (`PackageRegistry.consume`, which refuses a
+    ///      used content hash with `ContentUsed`; CUR-12). So two approved items with the same
+    ///      content share one seed, and only one of them can ever exist as a work: here the
+    ///      second package's item, never requested itself, starts on its content's seed and
+    ///      opens its record with it, and the first package's item can then never start. An item
+    ///      whose own content has no seed cannot start, whatever other content is seeded.
+    function test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce() public {
+        Work memory w = _work(artist, collectionId);
+        w.item.seedPolicy = SeedPolicy.VRF;
+        Work[] memory first = _one(w);
+        bytes32 firstRoot = _publish(first);
+        uint256 requestId = entropy.requestSeed(w.item, firstRoot, _proofOf(first, 0));
+        coordinator.fulfill(requestId, uint256(keccak256("the content's seed")));
+
+        // The same content in another package, as a different item never requested itself.
+        Work memory again = abi.decode(abi.encode(w), (Work));
+        again.item.recordFileId = _record("The same content, listed again");
+        Work[] memory second = _one(again);
+        assertTrue(
+            WorksHashing.itemHash(again.item) != WorksHashing.itemHash(w.item), "another item"
+        );
+        assertEq(again.item.contentHash, w.item.contentHash, "the same content");
+        bytes32 secondRoot = _publish(second);
+        assertFalse(entropy.isDelivered(WorksHashing.itemHash(again.item)), "never linked");
+        assertTrue(entropy.isDeliveredContent(again.item.contentHash));
+
+        (, uint256 tokenId) = _start(secondRoot, second, 0);
+        records.openRecord(tokenId, again.item, again.media);
+        (, bytes32 seed) = records.seedOf(tokenId);
+        assertEq(seed, entropy.seedOfContent(w.item.contentHash), "the content's one seed");
+
+        bytes memory data = _mintData(firstRoot, first, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IPackageRegistry.ContentUsed.selector,
+                PRODUCT_STREAM,
+                w.item.contentHash,
+                WorksHashing.itemHash(again.item)
+            )
+        );
+        auction.start(address(stream), data);
+
+        // Another item, whose own content has no seed, cannot start.
+        Work memory unseeded = _work(artist, collectionId);
+        unseeded.item.seedPolicy = SeedPolicy.VRF;
+        Work[] memory third = _one(unseeded);
+        bytes32 thirdRoot = _publish(third);
+        bytes memory thirdData = _mintData(thirdRoot, third, 0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IStream.SeedNotDelivered.selector, WorksHashing.itemHash(unseeded.item)
+            )
+        );
+        auction.start(address(stream), thirdData);
     }
 }
 

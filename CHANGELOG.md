@@ -18,6 +18,15 @@
   artists (ID-30). The replacement procedure for each dependency, and what it cannot reach (the
   genesis artist registry stays the payout resolver of every Stream work, LIM-GV-16), is in the
   runbook. `IStream`'s and `IArtistRegistry`'s interface IDs change.
+- The start path, for 5,000 gas of margin under the 350K budget on every start row (the review
+  of #81): `PackageRegistry.consume` also returns the lead artist's active authority it checked
+  the move against, which 6529 Stream reports as the creator without a second artist-registry
+  call (every start about −1,160); the entropy module answers `isDeliveredContent(contentHash)`
+  and `seedOfContent(contentHash)` from one word, which Stream's VRF check and
+  `WorkRecords.openRecord` use (a VRF start about −2,140 more; a content hash is consumed once,
+  CUR-12); Stream resolves the entropy module only for a VRF item. The binding row is 338,200
+  and with a VRF seed 343,760. After governance replaces dependencies, the rarest start can pass
+  350K by up to about 3K (LIM-GAS-11). `IEntropyModule`'s interface ID changes.
 - 6529 Stream: `mint` compares an item's sale kind with the adapter's kind recorded at its first
   admission, the kind `primaryTerms` reports, instead of the adapter's live `saleKind()` (the
   review of #80). The kind is also kept, as 232 bits of its hash, in the minter word `mint`

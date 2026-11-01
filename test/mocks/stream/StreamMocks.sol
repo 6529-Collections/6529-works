@@ -94,7 +94,7 @@ contract MockPackageRegistry is Supports165 {
         PackageItem calldata item,
         bytes32[] calldata proof,
         MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId) {
+    ) external returns (bytes32 itemHash, uint256 artistId, address authority) {
         itemHash = WorksHashing.itemHashCalldata(item);
         if (isConsumed[itemHash]) revert ItemConsumedAlready(itemHash);
         bytes32 claimedBy = consumedItemOf[item.contentHash];
@@ -105,6 +105,11 @@ contract MockPackageRegistry is Supports165 {
         lastProofLength = proof.length;
         lastMoveNonce = move.nonce;
         artistId = overrideArtist ? artistOverride : uint256(uint160(item.parties[0].account));
+        // The active authority, as the real registry returns it once it checked the move: read
+        // from the caller's (Stream's) artist registry.
+        authority = overrideArtist
+            ? address(uint160(artistOverride))
+            : IArtistRegistry(IStream(msg.sender).artistRegistry()).activeAuthorityOf(artistId);
         address adapter = _reentryAdapter;
         if (adapter != address(0)) {
             delete _reentryAdapter;
@@ -133,9 +138,9 @@ contract ConstantPackageRegistry is Supports165 {
     function consume(bytes32, PackageItem calldata, bytes32[] calldata, MoveAuthorization calldata)
         external
         view
-        returns (bytes32, uint256)
+        returns (bytes32, uint256, address)
     {
-        return (keccak256(abi.encode(gasleft())), artist);
+        return (keccak256(abi.encode(gasleft())), artist, address(uint160(artist)));
     }
 }
 
@@ -254,13 +259,17 @@ contract ConstantEconomics is Supports165 {
 /// @notice Entropy module mock: seeds keyed by item hash, delivered by the test.
 contract MockEntropy is Supports165 {
     mapping(bytes32 => bytes32) internal _seeds;
+    mapping(bytes32 => bytes32) internal _contentSeeds;
 
     function _interface() internal pure override returns (bytes4) {
         return type(IEntropyModule).interfaceId;
     }
 
-    function deliver(bytes32 itemHash, bytes32 seed) external {
-        _seeds[itemHash] = seed;
+    /// @dev Delivers `item`'s seed, by item hash and by content hash, as the real module links
+    ///      them.
+    function deliver(PackageItem memory item, bytes32 seed) external {
+        _seeds[WorksHashing.itemHash(item)] = seed;
+        _contentSeeds[item.contentHash] = seed;
     }
 
     function isDelivered(bytes32 itemHash) external view returns (bool) {
@@ -269,6 +278,14 @@ contract MockEntropy is Supports165 {
 
     function seedOf(bytes32 itemHash) external view returns (bytes32) {
         return _seeds[itemHash];
+    }
+
+    function isDeliveredContent(bytes32 contentHash) external view returns (bool) {
+        return _contentSeeds[contentHash] != 0;
+    }
+
+    function seedOfContent(bytes32 contentHash) external view returns (bytes32) {
+        return _contentSeeds[contentHash];
     }
 }
 

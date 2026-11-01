@@ -188,13 +188,14 @@ contract WorkRecords is AccessManaged, EIP712, ERC165, IWorkRecords {
             _licenses[tokenId] = item.license;
         }
         // The seed is fixed for good at open: an ARTIST seed from the item, a VRF seed from the
-        // entropy module that was current at the work's mint, so a governed replacement of the
+        // entropy module that was current at the work's mint, read by the item's content (the
+        // word `mint` checked; a seed belongs to its content), so a governed replacement of the
         // module (owner decision 16) never changes it.
         if (item.seedPolicy == SeedPolicy.ARTIST) {
             _seeds[tokenId] = item.seed;
         } else if (item.seedPolicy == SeedPolicy.VRF) {
             _seeds[tokenId] = IEntropyModule(IStream(stream).entropyModuleOf(tokenId))
-                .seedOf(WorksHashing.itemHashCalldata(item));
+                .seedOfContent(item.contentHash);
         }
         emit RecordOpened(tokenId, item.recordFileId, item.mediaHash);
         _refresh(tokenId);
