@@ -84,7 +84,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
     ///         fixed seeds reach every action and the paths the invariants are about, with every
     ///         invariant holding along the way.
     function test_EveryActionRuns() public {
-        string[35] memory paths = [
+        string[39] memory paths = [
             "startOneOfOne",
             "bidOneOfOne",
             "oneOfOneSnipe",
@@ -107,6 +107,10 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "settle",
             "settleEmpty",
             "settleChunked",
+            "settlerHandoff",
+            "sweepStranded",
+            "completedAfterGrief",
+            "settlersInterleave",
             "fifoHole",
             "settleTooEarly",
             "settleWaits",
@@ -121,7 +125,7 @@ contract EditionAuctionInvariantTest is EditionAuctionHandler {
             "withdrawCredit",
             "warp"
         ];
-        uint256[35] memory totals;
+        uint256[39] memory totals;
         for (uint256 run; run < RUNS; ++run) {
             uint256 snapshot = vm.snapshotState();
             for (uint256 depth; depth < 128; ++depth) {

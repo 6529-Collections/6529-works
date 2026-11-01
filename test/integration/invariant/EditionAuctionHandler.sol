@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, PackageItem } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
@@ -81,6 +82,9 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
     address internal artist;
     address[BIDDERS] internal bidders;
     address[COLLECTORS] internal collectors;
+    /// @dev Two keepers and a griefer, each settling from its own address (its own sweep).
+    address[2] internal keepers;
+    address internal griefer;
     bytes32 internal root;
     Piece[MASTERS] internal pieces;
     uint32[MASTERS] internal caps = [uint32(0), 0, 4, 0, 6, 2];
@@ -109,6 +113,8 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         for (uint256 i; i < COLLECTORS; ++i) {
             collectors[i] = makeAddr(string.concat("eaCollector", vm.toString(i)));
         }
+        keepers = [makeAddr("eaKeeper0"), makeAddr("eaKeeper1")];
+        griefer = makeAddr("eaGriefer");
         Work[] memory works = new Work[](MASTERS);
         for (uint256 i; i < MASTERS; ++i) {
             works[i] = _work(artist, collectionId);
@@ -557,28 +563,100 @@ abstract contract EditionAuctionHandler is EditionAuctionStack {
         if (c.rationed && departures[i][c.step].length != 0) ++hits["holeSwept"];
     }
 
-    /// @dev Settles with the departure order, which must equal `settlementOrder`. Settlement runs
-    ///      in calls of bounded gas (a wide book's scan takes several, and each call sweeps a
-    ///      bounded number of departures). Half the time the first call gets only the first half
-    ///      of the sweep; every later call continues from the departures already swept, as a
-    ///      keeper would, until the sale settles.
+    /// @dev Settles as keepers would. Settlement runs in calls of bounded gas, and each settler
+    ///      (`msg.sender`) sweeps the cut step's departures on its own; the first to sweep them
+    ///      all settles the sale. The order a settler that has not swept passes must equal
+    ///      `settlementOrder`, the handler's own sort. By `mode`, when there are departures:
+    ///      0. one keeper settles, each call continuing its own sweep (`settlementOrderFor`);
+    ///      1. a keeper sweeps half, a second keeper settles alone from scratch, and the first
+    ///         keeper's next call returns true and changes nothing (a handoff);
+    ///      2. a griefer passes an order that skips the first departure: accepted, but its sweep
+    ///         can never finish, and it leaves the keepers' untouched (a stranded sweep);
+    ///      3. a reordered order is refused; two keepers interleave their chunks.
+    ///      Whatever came before, a keeper settles within a bounded number of calls
+    ///      (completability).
     function _sweep(uint256 i, uint256 mode) internal {
         uint256 sale = pieces[i].editionSaleId;
         uint256[] memory order = _hint(i);
         if (keccak256(abi.encode(order)) != keccak256(abi.encode(ea.settlementOrder(sale)))) {
             _violation("settlementOrder differs from the departures sorted by position");
         }
-        uint256 chunk = order.length > 1 && mode % 2 == 0 ? order.length / 2 : order.length;
-        bool done = ea.settle(sale, _slice(order, 0, chunk));
-        if (chunk < order.length) {
-            if (done) _violation("half a sweep settled");
+        uint256 kind = order.length > 1 ? mode % 4 : 0;
+        address finisher = keepers[0];
+        if (kind == 1) {
+            if (_settleAs(keepers[0], sale, _slice(order, 0, order.length / 2))) {
+                _violation("half a sweep settled");
+            }
+            (uint256 swept,,) = _lens().sweepOf(sale, keepers[0]);
+            if (ea.settlement(sale).rationed && swept != order.length / 2) {
+                _violation("a settler's progress is not its own swept departures");
+            }
+            finisher = keepers[1];
             ++hits["settleChunked"];
+        } else if (kind == 2) {
+            if (_settleAs(griefer, sale, _slice(order, 1, order.length))) {
+                _violation("a sweep that skipped a departure settled");
+            }
+            if (_settleAs(griefer, sale, _orderFor(sale, griefer))) {
+                _violation("a stranded sweep finished");
+            }
+            (uint256 kept,,) = _lens().sweepOf(sale, keepers[0]);
+            if (kept != 0) _violation("one settler's call moved another's sweep");
+            ++hits["sweepStranded"];
+        } else if (kind == 3) {
+            vm.prank(griefer);
+            try ea.settle(sale, _reversed(order)) {
+                _violation("a reordered sweep was accepted");
+            } catch (bytes memory reason) {
+                if (bytes4(reason) != IUniformEditionAuction.InvalidSettlementOrder.selector) {
+                    _violation("a reordered sweep failed for another reason");
+                }
+            }
+            _settleAs(keepers[0], sale, _slice(order, 0, 1));
+            _settleAs(keepers[1], sale, _slice(order, 0, 1));
+            finisher = keepers[1];
+            ++hits["settlersInterleave"];
         }
+        if (!_finish(finisher, sale)) {
+            _violation("a keeper could not complete settlement");
+            return;
+        }
+        (uint256 left, uint256 next, uint256 cutoff) = _lens().sweepOf(sale, finisher);
+        if (left != 0 || next != 0 || cutoff != 0) _violation("the finisher kept a sweep slot");
+        if (kind == 1) {
+            if (!_settleAs(keepers[0], sale, _orderFor(sale, keepers[0]))) {
+                _violation("a late settler's call on a settled sale returned false");
+            }
+            ++hits["settlerHandoff"];
+        }
+        if (kind == 2) ++hits["completedAfterGrief"];
+    }
+
+    /// @dev Settles as `settler`, each call continuing its own sweep, until the sale settles or
+    ///      64 calls pass.
+    function _finish(address settler, uint256 sale) internal returns (bool done) {
         for (uint256 calls; !done && calls < 64; ++calls) {
-            uint256 swept = ea.settlement(sale).departuresSwept;
-            done = ea.settle(sale, _slice(order, swept, order.length));
+            done = _settleAs(settler, sale, _orderFor(sale, settler));
         }
-        if (!done) _violation("settlement did not finish in 64 calls");
+    }
+
+    function _settleAs(address settler, uint256 sale, uint256[] memory order)
+        internal
+        returns (bool)
+    {
+        vm.prank(settler);
+        return ea.settle(sale, order);
+    }
+
+    function _lens() internal view returns (IUniformEditionAuctionLens) {
+        return IUniformEditionAuctionLens(editionAuction.lens());
+    }
+
+    function _reversed(uint256[] memory list) internal pure returns (uint256[] memory out) {
+        out = new uint256[](list.length);
+        for (uint256 j; j < list.length; ++j) {
+            out[j] = list[list.length - 1 - j];
+        }
     }
 
     /// @dev The settled count and price equal the per-unit reference's, within the cap and the
