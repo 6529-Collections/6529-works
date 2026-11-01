@@ -23,12 +23,16 @@
   `bindMinter`'s one source of truth, and the docs describe pause withdrawals as open only to
   bids placed before the pause.
   `quote` and `lowestWinningStep` are documented as new-bid views that ignore capacity, and the
-  economics spec notes that 6529 Stream has no per-collection royalty receiver.
+  economics spec notes that 6529 Stream has no per-collection royalty receiver. The runbook's
+  overview and the editions spec's wiring paragraph no longer say the edition auction creates
+  its lens: it pins one deployed in its own transaction, and holds no economics resolver.
 - Owner decisions of 1 November 2026 in the docs: mainnet roles are network-held from day one
   (decision 18: a community council for the delayed roles, a security council for PAUSER and
   GUARDIAN, a dedicated curation signer, later on-chain TDH governance), in the runbook's
   mainnet governance section and genesis checklist and in LIM-GV-18 (D67, D98; review finding
-  G-3); LIM-GV-16 is accepted (decision 21); every unsold canonical 6529 Stream 1/1 goes to the
+  G-3). Still open there: the holders of the operational keys and the cold recovery admin, how
+  one security council fills the three guardian Safes the deploy requires, and a deploy-side
+  guard for the decision, which does not exist yet. LIM-GV-16 is accepted (decision 21); every unsold canonical 6529 Stream 1/1 goes to the
   museum whatever its sale method, and return-to-creator sales belong in their own collections
   (decision 22, ADR 0005 §11 and the Stream spec).
 - Fix pass B for the rc.2 seven-lens review.

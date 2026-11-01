@@ -50,10 +50,13 @@ SUCCESSOR_SETTER class for any later one). `notifyMasterUpdated` and `setRoyalty
 that satellite; `notifyAllUpdated` accepts it or Stream (`UnboundCaller`).
 
 **The edition auction's wiring.** Its constructor checks and stores the revenue escrow, Editions
-and the English auction, reads Stream from Editions and the economics resolver from Stream (each
-checked by ERC-165), installs the launch configuration (`DeployV1.editionAuctionDefaults` at
-genesis) and creates its lens. It serves only the tokens `setTarget` lists, which in v1 is
-Editions alone; genesis lists it.
+and the English auction, and reads Stream from Editions (each checked by ERC-165). It holds no
+economics resolver: a sale pays the terms `Editions.bindMinter` returns (EA-2). It pins its
+lens, deployed before it in its own transaction (ADR 0005 §12): the lens must have the
+expected code hash, and its Editions, Stream, English auction and escrow must be the
+adapter's. It then installs the launch configuration (`DeployV1.editionAuctionDefaults` at
+genesis). It serves only the tokens `setTarget` lists, which in v1 is Editions alone; genesis
+lists it.
 
 ## Concepts
 

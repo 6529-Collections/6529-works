@@ -15,8 +15,9 @@ launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deplo
 The library deploys every v1 contract: identity, curation, economics, content and the
 renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
 Stream Editions, the English auction, and the edition auction of ADR 0005
-(`UniformEditionAuction`, which creates its stateless lens; genesis admits it on Editions and
-lists Editions as its target, and Verify checks the lens against the record). No stand-in
+(`UniformEditionAuction`, whose stateless lens is deployed first in its own transaction and
+pinned by the auction's constructor; genesis admits it on Editions and lists Editions as its
+target, and Verify checks the lens against the record). No stand-in
 remains. A Sepolia run needs the owner's accounts and keys (steps 1 and 2), and the inputs
 below.
 
@@ -626,9 +627,19 @@ whose rehearsals keep the owner's keys ([accounts](#1-accounts)).
 | Curation signer | CURATION_SIGNER | A dedicated key that signs only the published TDH-vote result |
 
 Later, on-chain TDH governance takes the roles over through ordinary role grants (and the
-revocation of the councils' roles), each in its class's delay. Decision 18 does not reassign the
-operational keys (PLATFORM, CURATOR, STORAGE_OPERATOR) or the cold recovery admin; their holders
-are part of the genesis plan below.
+revocation of the councils' roles), each in its class's delay.
+
+**Open before a mainnet genesis** (not decided yet):
+- **The operational keys and the cold recovery admin have no named holders.** Decision 18 does
+  not cover PLATFORM, CURATOR, STORAGE_OPERATOR or the cold recovery admin (the second ADMIN
+  Safe, which acts only for [admin recovery](#admin-recovery)). Who holds them on mainnet,
+  consistent with D67 and D98, needs an owner decision.
+- **Three guardian Safes.** Off anvil the deploy requires at least three GUARDIAN Safes whose
+  signers are disjoint from each other's and from the admin Safes' (`DeployGuards`), while
+  decision 18 names one security-council multisig. How the security council fills those seats
+  is not decided.
+- **No deploy-side guard for decision 18 exists yet.** Nothing in the scripts refuses a mainnet
+  configuration that breaks it; until one is built, the checklist below is the only check.
 
 ### Mainnet genesis checklist
 
@@ -638,13 +649,14 @@ Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) st
    above, and none of their signers is a 6529 entity or key; check each Safe's owners by hand
    ([Safe pre-flight](#2-safe-pre-flight)).
 2. The genesis configuration gives ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
-   SUCCESSOR_SETTER to the community council, and PAUSER and GUARDIAN to the security council
-   (the configuration needs at least three guardian accounts: plan the council's Safes for it).
+   SUCCESSOR_SETTER to the community council, and PAUSER and GUARDIAN to the security council,
+   in as many Safes as the deploy requires (the open item above).
 3. The curation signer keys are dedicated to signing the published TDH-vote result, and are
    held outside 6529.
-4. The holders of the operational keys and of the cold recovery admin are named and recorded.
-5. The deploy-side guard that refuses a mainnet configuration breaking decision 18 passes
-   (being built), and Verify reads every role holder back ([step 11](#11-verify-after-5-days)).
+4. The owner has decided who holds the operational keys and the cold recovery admin (the open
+   item above), and the genesis configuration names them.
+5. Every holder is checked against decision 18 by hand, or by a deploy-side guard once one
+   exists, and Verify reads every role holder back ([step 11](#11-verify-after-5-days)).
 6. The VRF subscription owner is the community council (it must hold ADMIN and
    PARAMETER_SETTER; Verify checks it).
 
@@ -806,7 +818,9 @@ Before any switch:
   admitted, and the new one reads only the new English auction (`NoOneOfOneAuction`).
 - **No edition sale with winners may be OPEN or SETTLING across a package-registry switch**, and
   every edition such a sale needs must exist: settle those sales and create their editions
-  first. A successor that cannot create an earlier master's edition leaves such a sale on
+  first. An open sale settles only after its close, so new 1/1 starts must stop (pausing
+  `EnglishAuction`, as in [Emergencies](#emergencies)) early enough for every running sale to
+  close and settle before the switch executes. A successor that cannot create an earlier master's edition leaves such a sale on
   `EditionNotCreated`, its bidders unable to withdraw or claim until governance reverses the
   switch (another 30 days).
 
