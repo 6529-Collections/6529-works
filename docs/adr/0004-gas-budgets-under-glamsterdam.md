@@ -142,7 +142,8 @@ parties; such starts cost more than the 350K budget (about 453K for 16 parties) 
 it (LIM-GAS-12). Edition params are at most 64 bytes since
 [ADR 0005 §12](0005-stream-editions-auction.md#12-amendment-1-november-2026-fix-pass-a-of-the-rc2-review),
 and the start rows include a master at that bound. The edition auction's worst `bid` and its scattered-sweep `settle` call
-are from the rc.2 review's measurements of 1 November 2026.
+come from the rc.2 review's proofs of concept, re-measured on `main` after fix passes A and B
+(1 November 2026).
 
 Re-measured for ADR 0005's edition terms and the museum rule (rc.2): `EditionTerms` shrank
 from seven fields to four, so every row that carries a package item lost calldata and hashing
@@ -309,7 +310,7 @@ Every start row with the genesis dependencies keeps its 5,000 of margin:
 | Edition `bid`, opens an 8-step word | 85,651 | 110,000 | 2 | 0 | — |
 | Edition `bid`, capped sale | 70,998 | 110,000 | 1 | 0 | — |
 | Edition `bid` near the close (1/1 read, soft close) | 77,845 | 110,000 | 1 | 0 | — |
-| Edition `bid`, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close) | 107,004 | 110,000 | 2 | 0 | — |
+| Edition `bid`, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close) | 106,295 | 110,000 | 2 | 0 | — |
 | Edition `raise`, same 8-step word | 53,607 | 56,000 (regression) | 0 | 0 | — |
 | Edition `raise`, capped (departure logged) | 78,833 | 81,000 (regression) | 1 | 0 | — |
 | Edition `withdrawBid`, capped, 1/1 paused | 88,019 | 90,000 (regression) | 1 | 0 | — |

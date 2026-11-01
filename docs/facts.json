@@ -742,7 +742,7 @@
       },
       {
         "operation": "Edition bid, worst path (capped, opens an 8-step word, the 1/1 read live after its dispute pause lapsed, soft close)",
-        "pragueGas": 107004,
+        "pragueGas": 106295,
         "pragueCeiling": {
           "gas": 110000,
           "kind": "budget"

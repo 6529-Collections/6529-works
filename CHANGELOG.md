@@ -12,11 +12,16 @@
   opens right after every edition-master start, warns that a dispute-outcome correction can
   invalidate a scheduled cancel, and has keepers compute the settlement order off-chain beyond
   the lens's limits. Known limitations: the backstop is a hard close (LIM-EA-1, LIM-EA-6), the
-  emergency pause (LIM-EA-11), and new rows for the lens views beyond about 4,000 departures
+  emergency pause (LIM-EA-11), and new rows for the lens views beyond several thousand departures
   (LIM-EA-17), starts beyond ADR 0004's scope (LIM-GAS-12), `entropyModuleOf`'s eras
-  (LIM-ENT-6) and Stream's permanent couplings (LIM-GV-17). ADR 0004 states its scope, adds the
-  worst edition `bid` (107,004) and raises the worst `settle` call to 307,070 execution gas (a
-  96-departure chunk scattered over the log's words); ADR 0005 §4 lists the reachable ladders.
+  (LIM-ENT-6) and Stream's permanent couplings (LIM-GV-17). ADR 0004 states its scope (at most
+  two parties; params are bounded to 64 bytes by ADR 0005 §12) and adds the worst edition `bid`
+  (106,295) and the worst `settle` call with departures scattered over the log's words (307,070
+  execution gas), both re-measured after fix passes A and B; ADR 0005 §4 lists the reachable
+  ladders. After fix passes A and B: LIM-EA-17 and the keeper runbook page the settlement order,
+  LIM-GAS-12 keeps only large collaborations, the economics-replacement row follows
+  `bindMinter`'s one source of truth, and the docs describe pause withdrawals as open only to
+  bids placed before the pause.
   `quote` and `lowestWinningStep` are documented as new-bid views that ignore capacity, and the
   economics spec notes that 6529 Stream has no per-collection royalty receiver.
 - Owner decisions of 1 November 2026 in the docs: mainnet roles are network-held from day one
