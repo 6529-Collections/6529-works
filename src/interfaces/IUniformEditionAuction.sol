@@ -36,9 +36,12 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      with `backstop = closeAt + maxExtension`. While the 1/1 is PAUSED for a dispute, bids
 ///      and raises are accepted whatever the time and do not move `softEnd`, and bidders may
 ///      withdraw; a resumed 1/1 runs at least its governed duration, and the edition close
-///      follows it. A CANCELLED 1/1 voids the sale: no bid is accepted, nothing is minted or
-///      paid, and every bid is refunded in full. Editions sell whether or not the 1/1 drew
-///      bids; no edition bids means no copies.
+///      follows it. A CANCELLED 1/1 voids the sale: nothing is minted or paid, and every bid
+///      is refunded in full. A bid reads the 1/1 live only within `softWindow` of the close (or
+///      later), so a bid placed earlier, after the cancel but before the sale is voided, can
+///      still be accepted; it is refunded in full with every other, and `EndTimes.biddingOpen`
+///      (read live) is already false. Any `settle` call voids the sale at once. Editions sell
+///      whether or not the 1/1 drew bids; no edition bids means no copies.
 ///
 ///      Clearing (D138). Scanning used steps from the top, step s is a candidate of
 ///      `k_s = min(D_s, cap)` copies at `price(s)`, `D_s` being the live units at or above s;
@@ -58,7 +61,8 @@ import { ISaleAdapter } from "./ISaleAdapter.sol";
 ///      Positions and departures exist only when a cap is set.
 interface IUniformEditionAuction is ISaleAdapter {
     /// @notice A sale's lifecycle. CLOSED is derived: OPEN with its end passed (it can reopen
-    ///         if the 1/1's end moves later). SETTLING: cleared and paid, the departure sweep not
+    ///         if the 1/1's end moves later). SETTLING: settlement under way, in calls of bounded
+    ///         gas: the book still being scanned, or cleared and paid with the departure sweep not
     ///         yet complete. SETTLED: claims are open. VOID: the 1/1 was cancelled; claims refund.
     enum AuctionStatus {
         NONE,
@@ -194,8 +198,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @param price The price every winner pays.
     /// @param rationed Whether the cap binds inside the clearing step.
     /// @param cutUnits The clearing step's winning units.
-    /// @param cutoff The sweep's cutoff so far; final once `departuresSwept == departures`.
-    /// @param departuresSwept Departures of the clearing step swept so far.
+    /// @param cutoff `cutUnits` until a settler's sweep completes, then the final cutoff.
+    /// @param departuresSwept Zero until a settler's sweep completes, then `departures`. A
+    ///        settler's own progress is in its `DeparturesSwept` events.
     /// @param departures Departures logged at the clearing step (zero unless rationed).
     struct Settlement {
         uint256 count;
@@ -324,11 +329,13 @@ interface IUniformEditionAuction is ISaleAdapter {
         bool rationed,
         uint256 cutUnits
     );
-    /// @notice Part of the clearing step's departures was swept.
+    /// @notice A settle call swept part of the clearing step's departures, for its caller.
+    ///         Progress is per caller, so `swept` can go down from one event to the next when
+    ///         settlers interleave.
     /// @param saleId The sale ID.
-    /// @param swept Departures swept so far.
+    /// @param swept Departures the caller has swept so far.
     /// @param total Departures to sweep.
-    /// @param cutoff The cutoff so far.
+    /// @param cutoff The caller's cutoff so far.
     event DeparturesSwept(uint256 indexed saleId, uint256 swept, uint256 total, uint256 cutoff);
     /// @notice A sale settled; its bids may be claimed.
     /// @param saleId The sale ID.
@@ -406,10 +413,13 @@ interface IUniformEditionAuction is ISaleAdapter {
     ///         auction's start until the edition close; refused while the adapter is paused
     ///         (`SalePaused`). Locks the creator's cap, the current `config()`, and the economics:
     ///         for 6529 Stream Editions, `IEconomicsResolver.newWorkTerms(PRODUCT_EDITIONS,
-    ///         item.payees)`. Emits `AuctionOpened` and `ISaleAdapter.SaleStarted` (price: step
-    ///         0's; end time: `closeAt`). Reverts with `TargetNotAllowed` for a token that is
-    ///         not served, `NoOneOfOneAuction`, `AuctionExists`, `BiddingClosed` after the close,
-    ///         and `InvalidSaleTerms` when the terms do not match or are not this kind's.
+    ///         item.payees)`, or the economics an existing edition recorded. Binds the edition
+    ///         to this adapter first (`IEditions.bindMinter`, ADR 0005 section 6), so an edition
+    ///         another adapter sells refuses the open with that token's `MinterMismatch`. Emits
+    ///         `AuctionOpened` and `ISaleAdapter.SaleStarted` (price: step 0's; end time:
+    ///         `closeAt`). Reverts with `TargetNotAllowed` for a token that is not served,
+    ///         `NoOneOfOneAuction`, `AuctionExists`, `BiddingClosed` after the close, and
+    ///         `InvalidSaleTerms` when the terms do not match or are not this kind's.
     /// @param token A served edition contract.
     /// @param id The edition ID (the master's token ID).
     /// @param data Token-specific terms. For 6529 Stream Editions: `abi.encode(PackageItem)`
@@ -451,19 +461,28 @@ interface IUniformEditionAuction is ISaleAdapter {
     function withdrawBid(uint256 saleId, uint256 bidId, address to) external;
 
     /// @notice Settles a closed sale. Permissionless; once the end has passed and the 1/1 is
-    ///         SETTLED or CANCELLED. A cancelled 1/1 makes the sale VOID. Otherwise the first
-    ///         call clears the book, stores the result and pays the revenue: the network fee to
+    ///         SETTLED or CANCELLED. A cancelled 1/1 makes the sale VOID. Otherwise settlement
+    ///         runs in calls of bounded gas, each advancing it: a call scans a bounded number of
+    ///         the book's words (a wide book takes several calls), and the call that finishes the
+    ///         scan clears the book, stores the result and pays the revenue: the network fee to
     ///         the fee recipient and the rest to the seller, each through the revenue escrow if
     ///         refused; it emits `AuctionCleared` and `ISaleAdapter.SaleSettled` (buyer and
     ///         recipient zero, quantity the count). Copies sold need the edition to exist
-    ///         (`EditionNotCreated`). When the cap binds inside the clearing step, the call then
-    ///         sweeps the step's departures in the order given, which must continue the sweep:
-    ///         departure indexes (`departures(saleId, step)`) whose positions strictly increase,
-    ///         from the previous call's last; the sweep is chunked and resumes across calls
-    ///         until every departure is swept. The sale is SETTLED, and claims open, when it is.
+    ///         (`EditionNotCreated`). When the cap binds inside the clearing step, that call and
+    ///         the next ones sweep a bounded number of the step's departures each. Each settler
+    ///         (`msg.sender`) sweeps on its own: `order` is the rest of the caller's sweep,
+    ///         departure indexes (`departures(saleId, step)`) whose positions strictly increase
+    ///         from its own progress (`settlementOrder` for a settler that has not swept; the
+    ///         lens's `settlementOrderFor(saleId, settler)` after), of which a call takes at most
+    ///         one chunk. The first settler to sweep every departure fixes the cutoff; the sale
+    ///         is then SETTLED and claims open. An order that skips or reorders a departure can
+    ///         never finish its caller's sweep, and leaves every other settler's untouched: a
+    ///         keeper that strands its own sweep settles from another address. A call on a
+    ///         SETTLED sale returns `true` and changes nothing; on a VOID sale it reverts with
+    ///         `InvalidAuctionState`.
     /// @param saleId The sale ID.
-    /// @param order The next departure indexes of the clearing step in position order
-    ///        (`settlementOrder` returns them all); empty when not rationed.
+    /// @param order The next departure indexes of the caller's own sweep, in position order;
+    ///        empty when not rationed.
     /// @return settled Whether the sale is now SETTLED or VOID.
     function settle(uint256 saleId, uint256[] calldata order) external returns (bool settled);
 
@@ -591,7 +610,9 @@ interface IUniformEditionAuction is ISaleAdapter {
     /// @return The departures; an index into this list is what `settle` takes.
     function departures(uint256 saleId, uint256 step) external view returns (Departure[] memory);
     /// @notice The order `settle` needs: the clearing step's departure indexes sorted by
-    ///         position; empty unless the live result is rationed.
+    ///         position: the order a settler that has not swept yet passes (each settler
+    ///         sweeps on its own; the lens's `settlementOrderFor` gives a settler's rest); empty
+    ///         unless the result is rationed, and once SETTLED.
     /// @param saleId The sale ID.
     /// @return order The departure indexes in position order.
     function settlementOrder(uint256 saleId) external view returns (uint256[] memory order);

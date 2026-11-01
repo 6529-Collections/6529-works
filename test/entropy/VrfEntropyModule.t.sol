@@ -243,7 +243,8 @@ contract VrfEntropyModuleTest is EntropyBase {
         bytes4 expected = IEntropyModule.requestSeed.selector ^ IEntropyModule.isDelivered.selector
             ^ IEntropyModule.seedOf.selector ^ IEntropyModule.requestOf.selector
             ^ IEntropyModule.retryDelay.selector ^ IEntropyModule.coordinator.selector
-            ^ IEntropyModule.setCoordinator.selector;
+            ^ IEntropyModule.setCoordinator.selector ^ IEntropyModule.isDeliveredContent.selector
+            ^ IEntropyModule.seedOfContent.selector;
         assertEq(type(IEntropyModule).interfaceId, expected);
     }
 
@@ -578,6 +579,32 @@ contract VrfEntropyModuleTest is EntropyBase {
             _fulfillAs(callers[i], id, 5);
         }
         assertFalse(module.isDelivered(items[0]));
+    }
+
+    /// @dev The one-word reads 6529 Stream's `mint` and `openRecord` use (the review of #81):
+    ///      `isDeliveredContent` is true only for the content actually seeded, never for another
+    ///      item's content, and `seedOfContent` answers the seed the item-keyed `seedOf` does.
+    function test_ContentReads_AnswerOnlyTheSeededContent() public {
+        PackageItem memory a = _item(0);
+        PackageItem memory b = _item(1);
+        uint256 id = _request(0);
+        assertFalse(module.isDeliveredContent(a.contentHash), "requested, not delivered");
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.SeedNotDelivered.selector, a.contentHash)
+        );
+        module.seedOfContent(a.contentHash);
+
+        coordinator.fulfill(id, 4242);
+        assertTrue(module.isDeliveredContent(a.contentHash));
+        assertEq(module.seedOfContent(a.contentHash), module.seedOf(items[0]));
+        assertEq(module.seedOfContent(a.contentHash), bytes32(uint256(4242)));
+        assertTrue(a.contentHash != b.contentHash);
+        assertFalse(module.isDeliveredContent(b.contentHash), "another item's content");
+        assertFalse(module.isDeliveredContent(bytes32(0)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IEntropyModule.SeedNotDelivered.selector, b.contentHash)
+        );
+        module.seedOfContent(b.contentHash);
     }
 
     /// @dev A repeat adds a request; it never invalidates the earlier one. The earlier request's

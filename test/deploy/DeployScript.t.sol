@@ -176,6 +176,7 @@ contract DeployScriptTest is Test {
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
+        p.editionAuction = DeployV1.editionAuctionDefaults();
     }
 
     // ------------------------------------------------------------------ anvil end to end
@@ -199,8 +200,8 @@ contract DeployScriptTest is Test {
         assertEq(vm.parseJsonAddress(record, ".params.museum"), address(0xC003), "placeholder");
         assertEq(d.economicsResolver.museum(), address(0xC003));
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 12);
-        assertEq(calls, 15);
+        assertEq(targets, 13);
+        assertEq(calls, 17);
         assertEq(holders, 17);
     }
 
@@ -278,8 +279,8 @@ contract DeployScriptTest is Test {
         verifier.setFile("config/manifest.json", MANIFEST);
         vm.warp(block.timestamp + 5 days);
         (uint256 targets, uint256 calls, uint256 holders) = verifier.verify(record);
-        assertEq(targets, 12);
-        assertEq(calls, 15);
+        assertEq(targets, 13);
+        assertEq(calls, 17);
         assertEq(holders, 17);
         // Against another pin it does not verify.
         verifier.setCc0Digest(keccak256("another text"));
@@ -1327,7 +1328,7 @@ contract DeployScriptTest is Test {
     function test_ChangedWiringIsRefused() public {
         DeployV1.Deployment memory d = DeployV1.deploy(_localParams());
         string memory hostile = vm.replace(
-            _filled(), '"EnglishAuction",\n        true', '"EnglishAuction",\n        false'
+            _filled(), '"EnglishAuction",\n        true', '"UniformEditionAuction",\n        true'
         );
         vm.expectRevert(abi.encodeWithSelector(DeployGuards.PolicyMismatch.selector, "wiring"));
         this.checkPolicyExternal(d, hostile);

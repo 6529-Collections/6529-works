@@ -125,14 +125,20 @@ surface on `main`; more lands with the edition auction and the museum.
 | [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | New `SaleKind.UNIFORM_AUCTION`; `FIXED_PRICE` and `DUTCH` stay as reserved labels; `DutchParams` is removed. |
 | [`types/Typehashes.sol`](../../src/interfaces/types/Typehashes.sol) | `FIXED_PRICE_SALE_NAME`, `PHASE`, `PHASE_CONFIGURATION`, `PURCHASE_WITNESS`, `DUTCH_PURCHASE_WITNESS` and their type strings are removed. |
 | [`types/Limits.sol`](../../src/interfaces/types/Limits.sol) | `MAX_PHASES` is removed. |
-| [`IStream.sol`](../../src/interfaces/IStream.sol) | New `setDependency(bytes32,address,address)` (`0x480b197d`), event `DependencySet(bytes32,address,address)` and error `UnknownDependency(bytes32)` (owner decision 16): `packageRegistry()`, `artistRegistry()`, `economics()` and `entropyModule()` are governed, no longer immutable. New view `primarySale(uint256)` (`0xdf7b49bd`), error `InvalidSaleOutcome()`, and `PrimarySaleSettled` carries the outcome, the buyer, the currency and the price (owner decision 17). |
+| [`IStream.sol`](../../src/interfaces/IStream.sol) | New `setDependency(bytes32,address,address)` (`0x480b197d`), `entropyModuleOf(uint256)` (`0x24ca0202`), event `DependencySet(bytes32,address,address)` and error `UnknownDependency(bytes32)` (owner decision 16): `packageRegistry()`, `artistRegistry()`, `economics()` and `entropyModule()` are governed, no longer immutable, and `entropyModuleOf` answers the module each work minted under. New view `primarySale(uint256)` (`0xdf7b49bd`), error `InvalidSaleOutcome()`, and `PrimarySaleSettled` carries the outcome, the buyer, the currency and the price (owner decision 17). |
 | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol), [`types/SaleTypes.sol`](../../src/interfaces/types/SaleTypes.sol) | `markPrimarySettled(uint256)` is replaced by `settlePrimary(uint256,uint8,address,address,uint256)` (`0x10bdbdbf`), which returns a `PrimarySettlement`; new enum `PrimaryOutcome` (owner decision 17). |
-| [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, not yet implemented. |
+| [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol), [`types/StepLadder.sol`](../../src/interfaces/types/StepLadder.sol), [`IEconomicsResolver.sol`](../../src/interfaces/IEconomicsResolver.sol) | ADR 0005's frozen interfaces for the edition auction and the 6529 Network Museum, implemented by `UniformEditionAuction` and `EconomicsResolver`. |
+| [`IUniformEditionAuctionStorage.sol`](../../src/interfaces/IUniformEditionAuctionStorage.sol), [`IUniformEditionAuctionLens.sol`](../../src/interfaces/IUniformEditionAuctionLens.sol) | New: the adapter's raw storage words and `SettlementScanned`, and the stateless lens that answers its views. Neither is advertised through ERC-165. |
+| [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `bindMinter(editionId, item)` (ADR 0005 §6): an adapter binds an edition when its sale opens. |
+| [`IPackageRegistry.sol`](../../src/interfaces/IPackageRegistry.sol) | `consume` also returns the lead artist's active authority, `(bytes32 itemHash, uint256 artistId, address authority)`; its selector and the interface ID are unchanged. |
+| [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | New `isDeliveredContent(bytes32)` and `seedOfContent(bytes32)`, the one-word reads by content hash that 6529 Stream's `mint` and `WorkRecords.openRecord` use. |
+| [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | New `setPackageRegistry(address,address)` (`0x00752cf1`) and event `PackageRegistrySet(address,address)`: the only `register` caller is replaceable by governance with Stream's package registry (owner decision 16). |
 
 | Function or event | r3 | `main` |
 | --- | --- | --- |
 | `PackageRegistry.consume` | `0xbe93e628` | `0xbf69b193` |
 | `Editions.createEdition` | `0xb44dd3d8` | `0x26c8844c` |
+| `Editions.bindMinter` (ADR 0005 §6) | none | `0x459e34d7` |
 | `WorkRecords.openRecord` | `0x22029b68` | `0x0068e575` |
 | `WorkRecords.relicense` | `0x291e2c27` | `0xd60ad0db` |
 | `WorkRecords.setRoyaltyRate` | `0xe27fed56` | `0xc13560ef` |
@@ -141,8 +147,9 @@ surface on `main`; more lands with the edition auction and the museum.
 | `PrimarySaleSettled` topic0 | `0xbdf40a60…` | `0xbb0a6d98…` |
 
 The interface IDs of `IWorkRecords`, `IEditions`, `IPackageRegistry` and `IEntropyModule`
-changed with them, `IStream`'s with `setDependency` and `primarySale`, `IMintTarget`'s with
-`settlePrimary`, and `IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
+changed with them, `IStream`'s with `setDependency`, `entropyModuleOf` and `primarySale`,
+`IMintTarget`'s with `settlePrimary`, `IArtistRegistry`'s with `setPackageRegistry`, and
+`IEconomicsResolver`'s with the museum ([below](#erc-165-interface-ids));
 the role matrix maps the new selectors.
 
 ## Changes since the Sepolia r2 build
@@ -246,13 +253,13 @@ selectors.
 | Interface | Source | ID on `main` | ID on r2 | Deployed contract that answers `supportsInterface` |
 | --- | --- | --- | --- | --- |
 | `IMintTarget` | [`IMintTarget.sol`](../../src/interfaces/IMintTarget.sol) | `0xba4ae536` | `0x4f4f5133` | Stream, Editions |
-| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0xfa7d02c3` | `0x4b62279d` | Stream |
+| `IStream` | [`IStream.sol`](../../src/interfaces/IStream.sol) | `0xdeb700c1` | `0x4b62279d` | Stream |
 | `IWorkRecords` | [`IWorkRecords.sol`](../../src/interfaces/IWorkRecords.sol) | `0xc109676d` | `0x3f3d6835` | WorkRecords |
-| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xa41d86b8` | `0xa5bd946e` | Editions |
+| `IEditions` | [`IEditions.sol`](../../src/interfaces/IEditions.sol) | `0xe183b26f` | `0xa5bd946e` | Editions |
 | `ISaleAdapter` | [`ISaleAdapter.sol`](../../src/interfaces/ISaleAdapter.sol) | `0x312dc1e1` | `0x312dc1e1` | EnglishAuction (and FixedPriceSale, DutchSale on r1 to r3) |
 | `IEnglishAuction` | [`IEnglishAuction.sol`](../../src/interfaces/IEnglishAuction.sol) | `0x75122f3e` | `0xc1a8b12f` | EnglishAuction |
 | `IEnglishAuctionClock` | [`IEnglishAuctionClock.sol`](../../src/interfaces/IEnglishAuctionClock.sol) | `0x968c7b07` | none | None: an integration view of EnglishAuction (`auctionClock`), never reported through ERC-165 |
-| `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | None yet: the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md), not implemented on `main` |
+| `IUniformEditionAuction` | [`IUniformEditionAuction.sol`](../../src/interfaces/IUniformEditionAuction.sol) | `0x69e7405b` | none | UniformEditionAuction, the edition auction of [ADR 0005](../adr/0005-stream-editions-auction.md) (its views are answered by its lens, through a read-only fallback) |
 | `IFixedPriceSale`, `IDutchSale`, `IMintSale` | Removed by ADR 0005 | none | `0xfedd2754`, `0xb1c10995`, none | FixedPriceSale and DutchSale on r1 to r3 (r3: `0x773a4920`, `0x382667e1`) |
 | `ICurationVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x492733ca` | `0x492733ca` | Eip712CurationVerifier |
 | `ICurationSignerVerifier` | [`ICurationVerifier.sol`](../../src/interfaces/ICurationVerifier.sol) | `0x9f12d97a` | `0xb7ab1d96` | Eip712CurationVerifier |
@@ -264,9 +271,9 @@ selectors.
 | `IStatementLog` | [`IStatementLog.sol`](../../src/interfaces/IStatementLog.sol) | `0xbb5574c7` | `0x276fbc56` | None: StatementLog does not implement ERC-165 |
 | `IArtistRoleResolver` | [`IArtistRoleResolver.sol`](../../src/interfaces/IArtistRoleResolver.sol) | `0x3074ca00` | `0x3074ca00` | ArtistRegistry |
 | `IArtistPayoutResolver` | [`IArtistPayoutResolver.sol`](../../src/economics/interfaces/IArtistPayoutResolver.sol) | `0x9b2c1793` | `0x9b2c1793` | ArtistRegistry |
-| `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0xee6ba0a4` | `0x3e70f8a1` | ArtistRegistry |
+| `IArtistRegistry` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0xee1e8c55` | `0x3e70f8a1` | ArtistRegistry |
 | `IConsolidationSource` | [`IArtistRegistry.sol`](../../src/interfaces/IArtistRegistry.sol) | `0x88836e34` | `0x88836e34` | ConsolidationAdapter |
-| `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x0e083814` | `0x3a410101` | VrfEntropyModule |
+| `IEntropyModule` | [`IEntropyModule.sol`](../../src/interfaces/IEntropyModule.sol) | `0x14c06eb4` | `0x3a410101` | VrfEntropyModule |
 | `IFederationRegistry` | [`IFederationRegistry.sol`](../../src/interfaces/IFederationRegistry.sol) | `0xeefee933` | `0xeefee933` | None: no implementation in v1 |
 | `IClaimRouter` | [`IClaimRouter.sol`](../../src/economics/interfaces/IClaimRouter.sol) | `0x31a9798a` (computed) | not answered on r2 | ClaimRouter (on `main` only) |
 | `IRevenueEscrow` | [`IRevenueEscrow.sol`](../../src/economics/interfaces/IRevenueEscrow.sol) | `0x50267de3` (computed) | not answered on r2 | RevenueEscrow (on `main` only) |

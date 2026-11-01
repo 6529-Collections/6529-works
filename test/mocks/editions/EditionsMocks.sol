@@ -401,6 +401,11 @@ contract EditionsAdapterMock is ERC1155Holder {
         _last = terms;
     }
 
+    /// @dev What a sale adapter does when its sale opens (`IEditions.bindMinter`).
+    function bind(IEditions target, uint256 id, PackageItem calldata item) external {
+        target.bindMinter(id, item);
+    }
+
     function buyWithData(IMintTarget target, uint256 id, address to, bytes calldata data) external {
         target.mint(to, id, 1, data);
     }

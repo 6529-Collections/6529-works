@@ -6,6 +6,7 @@ import { VmSafe } from "forge-std/Vm.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { VrfEntropyModule } from "src/entropy/VrfEntropyModule.sol";
 import { DelegatedEOA } from "src/libraries/DelegatedEOA.sol";
 import { DelegationManagementMock } from "test/mocks/identity/DelegationManagementMock.sol";
@@ -228,7 +229,25 @@ contract Deploy is ScriptIO {
             SafeCast.toUint32(_envUint("AUCTION_EXTENSION_WINDOW", 15 minutes)),
             SafeCast.toUint32(_envUint("AUCTION_INCREMENT_SHARE", 5_000))
         );
+        p.editionAuction = _editionAuction();
         _vrf(p, local);
+    }
+
+    /// @dev The edition auction's genesis parameters: `DeployV1.editionAuctionDefaults`, each
+    ///      overridable for a rehearsal (the auction's constructor enforces the bounds).
+    function _editionAuction()
+        internal
+        view
+        returns (IUniformEditionAuction.AuctionConfig memory c)
+    {
+        c = DeployV1.editionAuctionDefaults();
+        c.basePrice = SafeCast.toUint96(_envUint("EDITION_BASE_PRICE", c.basePrice));
+        c.stepsPerDecade = SafeCast.toUint16(_envUint("EDITION_STEPS_PER_DECADE", c.stepsPerDecade));
+        c.stepCount = SafeCast.toUint16(_envUint("EDITION_STEP_COUNT", c.stepCount));
+        c.marginShare = SafeCast.toUint32(_envUint("EDITION_MARGIN_SHARE", c.marginShare));
+        c.closeOffset = SafeCast.toUint32(_envUint("EDITION_CLOSE_OFFSET", c.closeOffset));
+        c.softWindow = SafeCast.toUint32(_envUint("EDITION_SOFT_WINDOW", c.softWindow));
+        c.maxExtension = SafeCast.toUint32(_envUint("EDITION_MAX_EXTENSION", c.maxExtension));
     }
 
     /// @dev Whether `account` exists: it has code, a balance or a nonce.
@@ -385,6 +404,13 @@ contract Deploy is ScriptIO {
         vm.serializeUint(o, "auctionDuration", p.auction.duration);
         vm.serializeUint(o, "auctionExtensionWindow", p.auction.extensionWindow);
         vm.serializeUint(o, "auctionIncrementShare", p.auction.incrementShare);
+        vm.serializeUint(o, "editionBasePrice", p.editionAuction.basePrice);
+        vm.serializeUint(o, "editionStepsPerDecade", p.editionAuction.stepsPerDecade);
+        vm.serializeUint(o, "editionStepCount", p.editionAuction.stepCount);
+        vm.serializeUint(o, "editionMarginShare", p.editionAuction.marginShare);
+        vm.serializeUint(o, "editionCloseOffset", p.editionAuction.closeOffset);
+        vm.serializeUint(o, "editionSoftWindow", p.editionAuction.softWindow);
+        vm.serializeUint(o, "editionMaxExtension", p.editionAuction.maxExtension);
         vm.serializeAddress(o, "vrfCoordinator", p.vrfCoordinator);
         vm.serializeBytes32(o, "vrfCoordinatorCodeHash", p.vrfCoordinatorCodeHash);
         vm.serializeString(o, "vrfSubscriptionId", vm.toString(p.vrf.subscriptionId));

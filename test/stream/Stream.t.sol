@@ -476,7 +476,7 @@ contract StreamTest is StreamFixture {
         bytes memory data = _request(item);
         vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
         auction.start(stream, data);
-        entropy.deliver(itemHash, keccak256("vrf"));
+        entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(stream, data);
         assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
     }
@@ -568,9 +568,46 @@ contract StreamTest is StreamFixture {
         noVrf.setDependency("ENTROPY_MODULE", address(0), address(entropy));
         PackageItem memory item = _item(1);
         item.seedPolicy = SeedPolicy.VRF;
-        entropy.deliver(WorksHashing.itemHash(item), keccak256("vrf"));
+        entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(noVrf, _request(item));
         assertEq(uint8(noVrf.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(noVrf.entropyModuleOf(tokenId), address(entropy));
+    }
+
+    /// @dev Every work answers the entropy module that was current at its mint, the one whose
+    ///      delivered seed the mint checked: a replacement reaches only later works, a module
+    ///      replaced before any work minted under it answers none, and putting an earlier module
+    ///      back changes no existing work's answer.
+    function test_entropyModuleOf_answersTheModuleCurrentAtMint() public {
+        PackageItem memory a = _item(1);
+        a.seedPolicy = SeedPolicy.VRF;
+        entropy.deliver(a, keccak256("a"));
+        uint256 first = _mint(a);
+        uint256 plain = _mint(2);
+        assertEq(stream.entropyModuleOf(first), address(entropy));
+
+        MockEntropy b = new MockEntropy();
+        MockEntropy c = new MockEntropy();
+        vm.startPrank(governor);
+        stream.setDependency("ENTROPY_MODULE", address(entropy), address(b));
+        stream.setDependency("ENTROPY_MODULE", address(b), address(c));
+        vm.stopPrank();
+        PackageItem memory d = _item(3);
+        d.seedPolicy = SeedPolicy.VRF;
+        c.deliver(d, keccak256("d"));
+        uint256 second = _mint(d);
+
+        assertEq(stream.entropyModuleOf(first), address(entropy), "minted under the genesis");
+        assertEq(stream.entropyModuleOf(plain), address(entropy));
+        assertEq(stream.entropyModuleOf(second), address(c), "minted under the third");
+        assertEq(stream.entropyModuleOf(second + 1), address(c), "not minted: the current");
+
+        vm.prank(governor);
+        stream.setDependency("ENTROPY_MODULE", address(c), address(entropy));
+        assertEq(stream.entropyModule(), address(entropy));
+        assertEq(stream.entropyModuleOf(first), address(entropy));
+        assertEq(stream.entropyModuleOf(second), address(c), "an existing work keeps its module");
+        assertEq(stream.entropyModuleOf(second + 1), address(entropy));
     }
 
     function test_mint_vrfRejectedWithoutEntropyModule() public {
@@ -1649,6 +1686,38 @@ contract StreamTest is StreamFixture {
                 BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
             )
         );
+    }
+
+    /// @dev The satellite gets all of `RECORDS_GAS` even when its account is cold (EIP-2929)
+    ///      and the caller holds the least gas `rendererOf` accepts: the answer is the pin or a
+    ///      refusal, never the default renderer for want of gas. Isolated, so each probe is its
+    ///      own transaction and the satellite's account starts cold (`vm.cool` cools only its
+    ///      storage); the probe's gas then includes the intrinsic cost.
+    /// forge-config: default.isolate = true
+    function test_rendererOf_givesAColdRecordsSatelliteItsFullGas() public {
+        _bindMocks();
+        _mint(1);
+        MockRenderer pinned = new MockRenderer("pinned");
+        recordsMock.setPin(1, address(pinned));
+        recordsMock.setFault(8);
+        bytes memory call = abi.encodeCall(stream.rendererOf, (1));
+        bool answered;
+        for (uint256 gas = 100_000; gas < 140_000; gas += 25) {
+            (bool ok, bytes memory answer) = address(stream).staticcall{ gas: gas }(call);
+            if (!ok) {
+                assertEq(
+                    answer,
+                    abi.encodeWithSelector(
+                        BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
+                    )
+                );
+                assertFalse(answered, "refused after answering with less gas");
+                continue;
+            }
+            answered = true;
+            assertEq(abi.decode(answer, (address)), address(pinned), "the pin, never the default");
+        }
+        assertTrue(answered);
     }
 
     function test_tokenURI_revertsForUnknownToken() public {

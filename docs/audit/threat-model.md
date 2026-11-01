@@ -97,7 +97,8 @@ rely on are in [trust assumptions](trust-assumptions.md), the per-selector roles
 
 | Entry point | Threat | Mitigation |
 | --- | --- | --- |
-| `Editions.mint` | A second admitted adapter adds copies to a sale another one ran, or copies pass the creator's cap | [ED-5, ED-6][ed]: an edition is bound to its first minter, and the cap holds for every minter |
+| `Editions.mint` | A second admitted adapter adds copies to a sale another one ran, or copies pass the creator's cap | [ED-5, ED-6][ed]: an edition is bound to the adapter whose sale opened it (or else its first minter), and the cap holds for every minter, a removed bound adapter included |
+| `Editions.bindMinter` | A second adapter of the same kind opens a sale of an edition another one sells, stranding one sale's winners; or a permissionless `open` binds an edition to the wrong adapter | [ED-5][ed]: the edition auction binds at `open`, before it records the sale, so the second open reverts (`MinterMismatch`); only an admitted adapter binds, and only one whose kind the master's stored item names (checked against its item hash) |
 
 ### Split wallets and releases
 

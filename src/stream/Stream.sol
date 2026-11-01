@@ -78,6 +78,9 @@ contract Stream is ERC721, AccessManaged, IStream {
     /// @notice The gas `rendererOf` gives the records satellite's `pinnedRenderer`: several
     ///         times the cold reads it makes, so only a fault exhausts it.
     uint256 public constant RECORDS_GAS = 100_000;
+    /// @dev EIP-2929's cold account access: the records satellite may not be warm when
+    ///      `rendererOf` calls it, unlike `BoundedCall.tryRead`'s targets.
+    uint256 private constant COLD_ACCOUNT_GAS = 2_600;
 
     bytes32 private constant WORK_RECORDS = "WORK_RECORDS";
     bytes32 private constant EDITIONS = "EDITIONS";
@@ -125,10 +128,22 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
-    ///      the sales it started. Its sale kind is recorded then too (`_minterKinds`).
+    ///      the sales it started. Its sale kind is recorded then too: in full in `_minterKinds`,
+    ///      which `primaryTerms` reports, and as `kindKey` (`_kindKey`, 232 bits of its hash) in
+    ///      this word, which `mint` reads anyway, so the kind check costs a mint no extra slot.
     struct Minter {
         bool admitted;
         uint16 id;
+        uint232 kindKey;
+    }
+
+    /// @dev The four dependencies as a mint uses them, resolved from one read of
+    ///      `Counts.replaced` (`_dependencies`).
+    struct Dependencies {
+        address packageRegistry;
+        address artistRegistry;
+        address economics;
+        uint8 replaced;
     }
 
     /// @dev `exists` keeps the counter word nonzero, so each mint pays a warm rewrite.
@@ -191,6 +206,11 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      `Counts.replaced` bit; read only while that bit is set. Declared last, so the
     ///      earlier slots keep their positions.
     address[4] private _replaced;
+    /// @dev Each entropy module governance replaced, oldest first, packed with the last token ID
+    ///      minted while it was current (`lastTokenId << 160 | module`): a work's VRF seed is the
+    ///      one its mint checked, so `entropyModuleOf` answers each work with that module.
+    ///      Declared last, so the earlier slots keep their positions.
+    uint256[] private _entropyEras;
     /// @dev A sold work's currency (the low 160 bits) and price (the high 96, saturated): one
     ///      word, written only for SOLD (owner decision 17). Declared last.
     mapping(uint256 tokenId => uint256 sale) private _sales;
@@ -256,16 +276,24 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (to != msg.sender || id != 0 || amount != 1) revert InvalidMintRequest();
         StreamMintRequest calldata req = _request(data);
         PackageItem calldata item = req.item;
-        _checkItem(item);
-        bytes32 kind = _minterKinds[minter.id];
-        if (kind != item.sale.saleKind) revert SaleKindMismatch(item.sale.saleKind, kind);
-        (bytes32 itemHash, uint256 artistId) = _consume(data);
-        if (
-            item.seedPolicy == SeedPolicy.VRF
-                && !IEntropyModule(entropyModule()).isDelivered(itemHash)
-        ) revert SeedNotDelivered(itemHash);
+        bytes32 itemHash;
+        uint256 artistId;
         WorkTerms memory w;
-        (terms, w) = _quote(item, artistId);
+        Dependencies memory d = _dependencies();
+        {
+            address entropy = _checkItem(item, d.replaced);
+            if (minter.kindKey != _kindKey(item.sale.saleKind)) {
+                revert SaleKindMismatch(item.sale.saleKind, _minterKinds[minter.id]);
+            }
+            address creator;
+            (itemHash, artistId, creator) = _consume(data, d.packageRegistry);
+            if (
+                entropy != address(0)
+                    && !IEntropyModule(entropy).isDeliveredContent(item.contentHash)
+            ) revert SeedNotDelivered(itemHash);
+            (terms, w) = _quote(item, artistId, d);
+            terms.creator = creator;
+        }
         Terms memory shared = Terms(
             // `_consume` checked that `artistId` fits 160 bits.
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -301,10 +329,12 @@ contract Stream is ERC721, AccessManaged, IStream {
             return terms;
         }
         StreamMintRequest calldata req = _request(data);
-        _checkItem(req.item);
-        uint256 artistId = IArtistRegistry(artistRegistry()).artistIdOf(req.item.parties[0].account);
+        Dependencies memory d = _dependencies();
+        _checkItem(req.item, d.replaced);
+        uint256 artistId = IArtistRegistry(d.artistRegistry).artistIdOf(req.item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
-        (terms,) = _quote(req.item, artistId);
+        (terms,) = _quote(req.item, artistId, d);
+        terms.creator = IArtistRegistry(d.artistRegistry).activeAuthorityOf(artistId);
     }
 
     /// @inheritdoc IMintTarget
@@ -363,7 +393,7 @@ contract Stream is ERC721, AccessManaged, IStream {
                 bytes32 kind = ISaleAdapter(adapter).saleKind();
                 if (kind == 0) revert Dependency.InvalidDependency(adapter);
                 uint16 id = ++_counts.minters;
-                minter.id = id;
+                (minter.id, minter.kindKey) = (id, _kindKey(kind));
                 _minterKinds[id] = kind;
             }
         }
@@ -377,11 +407,14 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      beside `SETTLED`, in the word the call reads anyway; only SOLD writes a new slot
     ///      (`_sales`). An unsold work moves from the adapter's custody (`ERC721IncorrectOwner`
     ///      if it no longer holds it) to the museum the economics resolver names now (a zero
-    ///      museum reverts, `ERC721InvalidReceiver`), with no receiver callback: the museum is the governed account built to hold works, and no
-    ///      call leaves Stream. This puts the museum rule (D140, owner decisions 9 and 10) on
-    ///      chain for every 1/1 adapter: only a deliberately false SOLD escapes it, which the
-    ///      admission review covers (ADR 0005). Stream resolves no creator here: an adapter of
-    ///      Stream never delivers an unsold work.
+    ///      museum reverts, `ERC721InvalidReceiver`), with no receiver callback: the museum is the
+    ///      governed account built to hold works, and the only external call is the resolver's
+    ///      `museum()`. This puts the museum rule (D140, owner decisions 9 and 10) on chain for
+    ///      every sale an admitted adapter settles, except a deliberately false SOLD report.
+    ///      Stream does not refuse transfers of unsettled works, so an adapter that never
+    ///      settles can still move or burn an unsold work it holds; the admission review covers
+    ///      both (ADR 0005). Stream resolves no creator here: an adapter of Stream never
+    ///      delivers an unsold work.
     function settlePrimary(
         uint256 tokenId,
         PrimaryOutcome outcome,
@@ -624,14 +657,28 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @inheritdoc IStream
+    /// @dev Bounded by the number of entropy replacements, each a 30-day governance action.
+    function entropyModuleOf(uint256 tokenId) external view returns (address) {
+        uint256 eras = _entropyEras.length;
+        for (uint256 i; i < eras; ++i) {
+            uint256 era = _entropyEras[i];
+            if (tokenId <= era >> 160) return address(uint160(era));
+        }
+        return entropyModule();
+    }
+
+    /// @inheritdoc IStream
     /// @dev SUCCESSOR_SETTER role (the 30-day class). The entropy module may be installed on a
-    ///      Stream deployed without one, but never removed: a VRF work's record reads its seed
-    ///      from it. A replacement is stored and its `Counts.replaced` bit set; putting the
-    ///      genesis contract back is a replacement like any other.
+    ///      Stream deployed without one, but never removed. A replacement is stored and its
+    ///      `Counts.replaced` bit set; putting the genesis contract back is a replacement like
+    ///      any other. Replacing the entropy module records the module it replaces with the last
+    ///      token ID minted so far, so every work minted before keeps its module
+    ///      (`entropyModuleOf`).
     function setDependency(bytes32 kind, address expected, address next) external restricted {
         (uint8 index, bytes4 interfaceId, address current) = _dependencyOf(kind);
         if (current != expected) revert ExpectedValueMismatch();
         Dependency.check(next, interfaceId);
+        if (index == 3) _entropyEras.push(uint256(_counts.minted) << 160 | uint160(current));
         _replaced[index] = next;
         _counts.replaced |= uint8(1) << index;
         emit DependencySet(kind, expected, next);
@@ -756,8 +803,9 @@ contract Stream is ERC721, AccessManaged, IStream {
 
     /// @dev The work's pin in the records satellite, or zero for the default renderer. The
     ///      satellite gets exactly {RECORDS_GAS} (a caller with too little gas to forward it
-    ///      reverts, so the answer never depends on the caller's gas) and at most one word is
-    ///      copied back. Any fault falls back to the default renderer: a revert (a record not
+    ///      reverts, so the answer never depends on the caller's gas; the reserve covers a cold
+    ///      satellite account, {COLD_ACCOUNT_GAS}) and at most one word is copied back. Any
+    ///      fault falls back to the default renderer: a revert (a record not
     ///      yet open reverts with `RecordNotOpen` by design), running out of gas, or an answer
     ///      that is not one word holding an address with code. A fault in the satellite can then
     ///      never take every work's metadata down with it. The one revert passed on is
@@ -768,9 +816,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         view
         returns (address renderer)
     {
-        if (!BoundedCall.hasSufficientGas(gasleft(), RECORDS_GAS, BoundedCall.CALL_RESERVE)) {
-            revert BoundedCall.BoundedCallInsufficientGas(RECORDS_GAS);
-        }
+        if (!BoundedCall.hasSufficientGas(
+                gasleft(), RECORDS_GAS, BoundedCall.CALL_RESERVE + COLD_ACCOUNT_GAS
+            )) revert BoundedCall.BoundedCallInsufficientGas(RECORDS_GAS);
         bytes4 selector = IWorkRecords.pinnedRenderer.selector;
         bytes4 codeChanged = Dependency.DependencyCodeChanged.selector;
         uint256 gasLimit = RECORDS_GAS;
@@ -795,6 +843,18 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (renderer != address(0) && renderer.code.length == 0) renderer = address(0);
     }
 
+    /// @dev A sale kind as `Minter.kindKey` holds it: the low 232 bits of its keccak256, so two
+    ///      kinds share a key only through a hash collision.
+    function _kindKey(bytes32 kind) private pure returns (uint232 key) {
+        assembly ("memory-safe") {
+            mstore(0, kind)
+            key := and(
+                keccak256(0, 0x20),
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            )
+        }
+    }
+
     /// @dev The `Counts.replaced` bit index, the ERC-165 interface and the current address of
     ///      the dependency `kind` names (`UnknownDependency` for any other).
     function _dependencyOf(bytes32 kind) private view returns (uint8, bytes4, address) {
@@ -814,20 +874,36 @@ contract Stream is ERC721, AccessManaged, IStream {
         return (_counts.replaced & (uint8(1) << index)) == 0 ? genesis : _replaced[index];
     }
 
+    /// @dev The three dependencies every mint uses, from one read of `Counts.replaced`, which is
+    ///      kept for the entropy module: `_checkItem` resolves it only for a VRF item, so a
+    ///      replaced module costs other mints nothing.
+    function _dependencies() private view returns (Dependencies memory d) {
+        uint8 replaced = _counts.replaced;
+        d.packageRegistry = replaced & 1 == 0 ? _genesisPackageRegistry : _replaced[0];
+        d.artistRegistry = replaced & 2 == 0 ? _genesisArtistRegistry : _replaced[1];
+        d.economics = replaced & 4 == 0 ? _genesisEconomics : _replaced[2];
+        d.replaced = replaced;
+    }
+
     /// @dev Forwards the request to `IPackageRegistry.consume` without re-encoding it: the tuple
     ///      after the leading offset word of `abi.encode(StreamMintRequest)` is exactly the ABI
     ///      encoding of `consume`'s four arguments, so the registry decodes the same values this
-    ///      contract read through `_request`.
-    function _consume(bytes calldata data) private returns (bytes32 itemHash, uint256 artistId) {
+    ///      contract read through `_request`. The registry also returns the lead artist's active
+    ///      authority, which signed the move: the work's creator, with no second read of the
+    ///      artist registry.
+    function _consume(bytes calldata data, address registry)
+        private
+        returns (bytes32 itemHash, uint256 artistId, address creator)
+    {
         (bool ok, bytes memory result) =
-            packageRegistry().call(bytes.concat(IPackageRegistry.consume.selector, data[32:]));
+            registry.call(bytes.concat(IPackageRegistry.consume.selector, data[32:]));
         if (!ok) {
             assembly ("memory-safe") {
                 revert(add(result, 0x20), mload(result))
             }
         }
-        if (result.length != 64) revert InvalidMintRequest();
-        (itemHash, artistId) = abi.decode(result, (bytes32, uint256));
+        if (result.length != 96) revert InvalidMintRequest();
+        (itemHash, artistId, creator) = abi.decode(result, (bytes32, uint256, address));
         // The registry never returns zero; an artist ID is an address-sized value (D1).
         if (artistId == 0 || artistId > type(uint160).max) revert InvalidMintRequest();
     }
@@ -839,15 +915,24 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      approved record file and license as they are; the media commitments it checks (at
     ///      most 32 files, the primary first with the item's content hash) are not visible
     ///      here, so the curation signer's tooling must simulate `openRecord` before attesting
-    ///      an item.
-    function _checkItem(PackageItem calldata item) private view {
+    ///      an item. Returns the entropy module a VRF item's seed must be delivered by
+    ///      (Stream's current one, from `replaced`, the `Counts.replaced` bits); zero for any
+    ///      other item, which reads no module.
+    function _checkItem(PackageItem calldata item, uint8 replaced)
+        private
+        view
+        returns (address entropy)
+    {
         if (item.sale.saleKind == 0) revert InvalidItemSale();
         if (item.parties.length == 0) revert InvalidLeadArtist();
         if (!_collections[item.collectionId].exists) revert UnknownCollection(item.collectionId);
         SeedPolicy policy = item.seedPolicy;
+        if (policy == SeedPolicy.VRF) {
+            entropy = replaced & 8 == 0 ? _genesisEntropyModule : _replaced[3];
+        }
         if (
             (policy == SeedPolicy.ARTIST) != (item.seed != 0)
-                || (policy == SeedPolicy.VRF && entropyModule() == address(0))
+                || (policy == SeedPolicy.VRF && entropy == address(0))
         ) revert InvalidSeedPolicy();
         if (!SpdxId.isValidCalldata(item.license.spdxId)) revert InvalidLicenseId();
     }
@@ -859,12 +944,12 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      Stream does lazily in `royaltyInfo` (`_royaltyReceiver`, the same address). The fee
     ///      terms must yield a valid royalty payee list: a fee share below 100,000 with a fee
     ///      recipient other than the seller, or no fee at all. `w.royaltyReceiver` is unset.
-    function _quote(PackageItem calldata item, uint256 artistId)
+    function _quote(PackageItem calldata item, uint256 artistId, Dependencies memory d)
         private
         view
         returns (PrimaryTerms memory terms, WorkTerms memory w)
     {
-        ProductEconomics memory e = IEconomicsResolver(economics()).economics(PRODUCT_STREAM);
+        ProductEconomics memory e = IEconomicsResolver(d.economics).economics(PRODUCT_STREAM);
         address seller = ISplitFactory(splitFactory).walletFor(item.payees, bytes32(0));
         if (
             e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
@@ -880,7 +965,6 @@ contract Stream is ERC721, AccessManaged, IStream {
         terms.seller = w.seller;
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;
-        terms.creator = IArtistRegistry(artistRegistry()).activeAuthorityOf(artistId);
     }
 
     /// @dev Assigns the next token ID and collection serial and writes the two work words.

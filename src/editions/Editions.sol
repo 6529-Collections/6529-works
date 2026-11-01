@@ -55,9 +55,13 @@ import { EditionRules } from "./EditionRules.sol";
 ///      selling editions whose terms name its kind, with no redeployment of this contract. The
 ///      terms' currency and params are opaque here (`EditionRules`). The sale decides how
 ///      many copies exist, so the terms fix no size: this contract enforces only the creator's
-///      optional cap (`maxCount`; burns do not free it) and binds each edition to the first
-///      admitted adapter that mints it, so no other adapter, admitted then or later, can add
-///      copies to a count its sale settled. A master with an edition is never burned (Stream
+///      optional cap (`maxCount`; burns do not free it) and binds each edition to one adapter:
+///      the one whose sale opened it (`bindMinter`, which may precede the edition: the edition
+///      auction opens with the master's 1/1, and the item proves the edition's kind), or else
+///      the first admitted adapter that mints it. No other adapter, admitted then or later, can
+///      open a sale of it or add copies to a count its sale settled. A bound adapter mints its
+///      edition even after governance removes it, within the cap: its sale has already paid the
+///      seller, so its winners must still claim. A master with an edition is never burned (Stream
 ///      refuses to burn a settled token), so minting reads nothing from Stream. The adapter owns
 ///      the currency and the params: `primaryTerms` returns them as approved, and `mint` returns
 ///      only the sale kind. Royalties are read from this contract's storage with no external
@@ -111,7 +115,9 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     ///      `SaleKind.UNIFORM_AUCTION`, the currency zero is ETH, and the params are empty), so
     ///      another sale method costs its own words and the auction none. A mint writes only the
     ///      seller's word: the creator's cap, the count minted and the bound adapter's ID share
-    ///      it, so the first mint writes no new slot. `minted` is a `uint48`: a capped edition
+    ///      it, so the first mint writes no new slot. `bindMinter` may write that word before the
+    ///      edition exists (only `minterId`); `createEdition` writes the other fields one by one
+    ///      and keeps it. `minted` is a `uint48`: a capped edition
     ///      stops at its `uint32` cap, and an uncapped one at 2^48 - 1, far past any sale's count.
     struct Record {
         bytes32 contentHash;
@@ -196,21 +202,21 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         (bytes32 itemHash, Master memory master) = _admit(workId, item, packageRoot, proof);
         EditionTerms calldata terms = item.edition;
         if (!EditionRules.isValid(terms)) revert InvalidEditionTerms(workId);
-        WorkTerms memory w = economics().newWorkTerms(PRODUCT_EDITIONS, item.payees);
 
         Record storage r = _records[workId];
+        // An edition a sale bound before it existed keeps the economics locked at the binding,
+        // which that sale pays (`bindMinter`); the seller, a split wallet, is never zero.
+        if (r.seller == address(0)) {
+            _lockTerms(r, economics().newWorkTerms(PRODUCT_EDITIONS, item.payees));
+        }
         r.contentHash = item.contentHash;
-        r.seller = w.seller;
         r.maxCount = terms.maxCount;
-        r.royaltyReceiver = w.royaltyReceiver;
         // The master's current rate, not the product default: a consented re-rate of the master
         // before the edition exists carries over; later ones arrive through `setRoyaltyRate`.
         r.royaltyRate = master.royaltyRate;
         // Stream mints only artist IDs below 2^160.
         // forge-lint: disable-next-line(unsafe-typecast)
         r.artistId = uint160(master.artistId);
-        r.feeShare = w.feeShare;
-        r.feeRecipient = w.feeRecipient;
         // The uniform auction's kind, ETH and empty params are the zero record (`_terms`).
         if (terms.saleKind != SaleKind.UNIFORM_AUCTION) r.saleKind = terms.saleKind;
         if (terms.currency != CURRENCY_ETH) r.currency = terms.currency;
@@ -325,10 +331,38 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     // ----------------------------------------------------------------------- minting
 
+    /// @inheritdoc IEditions
+    /// @dev Reverts with `NotAdmittedMinter` unless the caller is admitted now (a removed
+    ///      adapter opens no new sale), `NotEditionMaster` if the edition does not exist and
+    ///      `item` is not the master's stored EDITION_MASTER item, and `SaleKindMismatch` if the
+    ///      caller's kind is not the edition's. Binding an edition that does not exist yet also
+    ///      locks its `PRODUCT_EDITIONS` economics (seller, network fee, royalty receiver) from
+    ///      the resolver, in the transaction in which the binding sale locks its own, and
+    ///      `createEdition` keeps them: the edition reports the split its sale paid.
+    function bindMinter(uint256 editionId, PackageItem calldata item) external {
+        Minter memory m = _minters[msg.sender];
+        if (m.status != MINTER_ADMITTED) revert NotAdmittedMinter(msg.sender);
+        Record storage r = _records[editionId];
+        if (r.contentHash != 0) {
+            _bind(r, editionId, m, _saleKind(r));
+            return;
+        }
+        (bytes32 itemHash,,, ItemKind kind,,) = IStream(stream).coreOf(editionId);
+        if (kind != ItemKind.EDITION_MASTER || WorksHashing.itemHashCalldata(item) != itemHash) {
+            revert NotEditionMaster(editionId);
+        }
+        bool unbound = r.minterId == 0;
+        _bind(r, editionId, m, item.edition.saleKind);
+        if (unbound) _lockTerms(r, economics().newWorkTerms(PRODUCT_EDITIONS, item.payees));
+    }
+
     /// @inheritdoc IMintTarget
-    /// @dev `data` must be empty. The caller must be admitted, report the edition's sale kind,
-    ///      and be the edition's bound adapter: the first mint binds the edition to its caller
-    ///      (`EditionMinterBound`). The count is the sale's to decide; this contract enforces
+    /// @dev `data` must be empty. The caller must report the edition's sale kind and be the
+    ///      edition's bound adapter; an unbound edition is bound to its first minter, which must
+    ///      be admitted (`EditionMinterBound`). A bound adapter mints even after its removal, so
+    ///      the winners of a sale it settled always claim; the cap still bounds it. Any other
+    ///      caller ever admitted is refused with `MinterMismatch`, and one never admitted with
+    ///      `NotAdmittedMinter`. The count is the sale's to decide; this contract enforces
     ///      only the creator's cap. `terms` carries only the sale kind: an adapter locks the full
     ///      terms when its sale opens and never reads them from a mint, so a mint skips the
     ///      artist-registry call (QUALITY-2). Effects precede the ERC-1155 acceptance call, so a
@@ -338,19 +372,10 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         returns (uint256 tokenId, PrimaryTerms memory terms)
     {
         Minter memory m = _minters[msg.sender];
-        if (m.status != MINTER_ADMITTED) revert NotAdmittedMinter(msg.sender);
+        if (m.status == MINTER_NONE) revert NotAdmittedMinter(msg.sender);
         if (amount == 0 || data.length != 0) revert InvalidMintRequest();
         Record storage r = _edition(id);
-        bytes32 kind = ISaleAdapter(msg.sender).saleKind();
-        bytes32 expected = _saleKind(r);
-        if (kind != expected) revert SaleKindMismatch(expected, kind);
-        uint16 bound = r.minterId;
-        if (bound == 0) {
-            r.minterId = m.id;
-            emit EditionMinterBound(id, msg.sender);
-        } else if (bound != m.id) {
-            revert MinterMismatch(id, _minterAddresses[bound]);
-        }
+        bytes32 kind = _bind(r, id, m, _saleKind(r));
         uint256 cap = r.maxCount == 0 ? UNCAPPED : r.maxCount;
         if (amount > cap - r.minted) revert EditionUnavailable(id);
         // casting to 'uint48' is safe because amount <= cap - minted <= type(uint48).max - minted
@@ -493,6 +518,34 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         ) revert NotEditionMaster(workId);
         (, bytes32 evidenceHash,) = packageRegistry().packageOf(packageRoot);
         if (evidenceHash == 0) revert NotEditionMaster(workId);
+    }
+
+    /// @dev Writes the economics an edition locks: its seller, network fee and royalty receiver
+    ///      (the royalty rate is the master's, written by `createEdition`).
+    function _lockTerms(Record storage r, WorkTerms memory w) private {
+        r.seller = w.seller;
+        r.royaltyReceiver = w.royaltyReceiver;
+        r.feeShare = w.feeShare;
+        r.feeRecipient = w.feeRecipient;
+    }
+
+    /// @dev Checks that the caller's sale kind is `expected`, then binds an unbound edition to
+    ///      the caller, which must be admitted, or checks that the caller is its bound adapter.
+    ///      Returns the caller's kind.
+    function _bind(Record storage r, uint256 editionId, Minter memory m, bytes32 expected)
+        private
+        returns (bytes32 kind)
+    {
+        kind = ISaleAdapter(msg.sender).saleKind();
+        if (kind != expected) revert SaleKindMismatch(expected, kind);
+        uint16 bound = r.minterId;
+        if (bound == 0) {
+            if (m.status != MINTER_ADMITTED) revert NotAdmittedMinter(msg.sender);
+            r.minterId = m.id;
+            emit EditionMinterBound(editionId, msg.sender);
+        } else if (bound != m.id) {
+            revert MinterMismatch(editionId, _minterAddresses[bound]);
+        }
     }
 
     function _edition(uint256 editionId) private view returns (Record storage r) {

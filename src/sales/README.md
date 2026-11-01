@@ -4,8 +4,7 @@ The shared sale adapters. Each knows a token only through
 [`IMintTarget`](../interfaces/IMintTarget.sol), so the same adapters serve 6529 Stream, 6529
 Stream Editions and, from v1.1, federated contracts. The English auction is 6529 Stream's only
 primary sale. Editions are sold by rc.2's uniform-price edition auction
-([ADR 0005](../../docs/adr/0005-stream-editions-auction.md)), which is not in this folder yet;
-ADR 0005 removed the fixed-price and Dutch adapters, which remain at the `v1.0.0-rc.1` tag. A
+([ADR 0005](../../docs/adr/0005-stream-editions-auction.md)); ADR 0005 removed the fixed-price and Dutch adapters, which remain at the `v1.0.0-rc.1` tag. A
 token admits each adapter one by one with its own governed `setAdmittedMinter` (30 days), so a
 new sale type is a new adapter. The rules are in
 [Stream and auctions](../../docs/spec/stream-and-auctions.md) (`AUC-*`) and
@@ -18,7 +17,9 @@ dispute pause); how editions mint is in [Editions and sales](../../docs/spec/edi
 | --- | --- |
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start (mints into its own custody), bids with an anti-snipe window, pull credits, settlement with pending delivery and escrow fallback, the dispute pause, the currency freeze, the emergency pause. Its views are answered by its lens, through a read-only `staticcall` fallback, except `saleKind` and the integration view [`auctionClock`](../interfaces/IEnglishAuctionClock.sol) (an auction's state and end), which contracts read on their hot paths. |
 | `EnglishAuctionLens.sol` | The auction's read side, created by its constructor: every view of `IEnglishAuction` and `ISaleAdapter` the auction does not declare (`auction`, `lockedTerms`, `minimumBid`, `pendingDelivery`, `config`, `openingBid`, `claimable`, `paused`, `isTarget`, `saleIdOf`, `federationRegistry`, `escrow`, `statementLog`, `supportsInterface`) and the constants and dependency getters, computed from the auction's storage words (`storageWords`). |
-| `UniformClearing.sol` | The pure core of the uniform-price edition auction (D138, ADR 0005), as an internal library: the one-pass clearing rule on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the first-in-first-out split of the cut step and the what-if quote. No adapter uses it yet; the auction adapter is being built on it. |
+| `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol) (its writes) and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the edition auction's bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, settlement in calls of bounded gas, claims through `IMintTarget.mint`, governance. Its views are its lens's, answered through a read-only fallback. |
+| `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view of `IUniformEditionAuction`, computed from the adapter's storage words; the package-item check `open` consults. Stateless; the adapter creates it. |
+| `UniformClearing.sol` | The pure core of the uniform-price edition auction (D138, ADR 0005), as an internal library: the one-pass clearing rule on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the first-in-first-out split of the cut step and the what-if quote. `UniformEditionAuctionLens` runs it for every view; the adapter's settlement uses its `sweep` and `wonAtCut`, and a differential fuzz holds the adapter's own scan equal to its `clear`. |
 
 Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatureTransfer.sol).
 
@@ -29,6 +30,9 @@ Permit2 is called through [`ISignatureTransfer`](../interfaces/external/ISignatu
 | Anyone | `start`, `startWithBid`, `bid`, `settle`, `claimFor` | AUC-14 to AUC-25, AUC-29 |
 | A bidder | `claim` of its credits; `withdrawBid` (the high bidder, while paused or frozen); `claimDelivery` | AUC-18, AUC-21, DSP-15 |
 | Guardians and governance | The dispute `pause(saleId, …)`, `resume`, `cancel`; `pause()`, `unpause()`; `setConfig`, `setOpeningBid`, `setTarget`, `setFederationRegistry` | AUC-13, AUC-26, AUC-30, DSP-13 to DSP-19; [role matrix](../../docs/audit/roles.md#englishauction) |
+| Anyone (edition auction) | `open`, `bid`, `settle`, `claimBidFor`, every view | ADR 0005 |
+| An edition bidder | `raise`, `claimBid`; `withdrawBid` while the 1/1 is paused for a dispute; `claim` of its credits | ADR 0005, decision 12 |
+| Governance (edition auction) | `pause()`, `unpause()`, `setConfig`, `setTarget`, `setFederationRegistry` | ADR 0005 §4; [role matrix](../../docs/audit/roles.md#uniformeditionauction) |
 
 Call sequences and errors: [Buying, bidding and settling](../../docs/integrators/buying-bidding-settling.md);
 events and their ordering: [Events and indexing](../../docs/integrators/events-and-indexing.md#englishauction).
@@ -69,6 +73,28 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   (`primaryTerms`). `claimDelivery`'s no-bid claimant (`_unbidClaimant`, L-5) is that creator;
   a 6529 Stream work is never pending (AUC-33). The auction has no museum branch, no `_MUSEUM`
   flag and no Stream constructor argument.
+- **Edition auction storage and gas.** One state word per sale (written by every bid), a payout
+  word at open, a result word at settlement; live units eight steps per word; one word per bid;
+  departure logs only in capped sales. `settle` scans at most 24 live words per call (a scan
+  word keeps its place between calls) and sweeps at most 16 departures in the call that clears
+  and 96 in each later call, so every call fits ADR 0004's settlement budget whatever the book.
+  The scan is a Yul loop with a byte table of the mantissas; a differential fuzz holds it equal
+  to `UniformClearing.clear` (10,000 runs nightly).
+- **Edition auction bytecode.** The adapter's writes nearly fill EIP-170, so its views live on
+  the lens it creates, reached through a read-only `staticcall` fallback: one address and the
+  one frozen interface for callers.
+- **The edition is bound at open.** `open` calls `Editions.bindMinter(id, item)` before it
+  records the sale (ADR 0005 §6), re-framing the `data` it received (no item codec in the
+  adapter), so a second adapter of the same kind cannot open the same edition. The binding
+  also snapshots the edition's economics in 6529 Stream Editions, and the lens reads an
+  existing edition's recorded economics, so the split paid is the split the edition reports.
+- **The sweep is per settler.** Each settler's progress lives in its own slot (`Space.SWEEP`),
+  written only when its call does not finish; each call passes the rest of its caller's sweep
+  (`settlementOrderFor`), and the first settler to sweep every departure writes the cutoff and
+  settles the sale. An order that skips a departure strands only its own sender.
+- **The lens's departure sort** is a heapsort of packed keys, `O(n log n)` whatever the log's
+  order: 600 departures logged in reverse keep `settlementOrder`, `clearing` and `quote` near
+  5.2M gas, far inside an `eth_call` cap.
 - **Delays counted from the pause.** `unpause`, `resume` and the dispute `cancel` check 48 hours
   from the pause in code, because AccessManager counts a delay from scheduling (GV-23).
 - **ERC-20 transfers.** `TokenTransfer` requires exact balance deltas and exactly one `true`
@@ -87,8 +113,10 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
   so a book on locked terms always clears. Clearing every one of 336 steps costs about 188K
   Prague gas, plus about 100K to read the 42 words cold (`UniformClearingGas.t.sol`).
 - **Tests:** `forge test --match-path 'test/sales/**'` (the auction with its invariant suites;
-  `PauseWindow.t.sol` for the 48-hour floors); end to end, `CuratedSale.t.sol`,
-  `Dispute.t.sol` and `MasterEdition.t.sol` in [`test/integration/`](../../test/integration/);
+  `PauseWindow.t.sol` for the 48-hour floors; `test/sales/edition/` for the edition auction on
+  mocks, with the golden vectors and the shared `EditionAuctionBase` harness); end to end,
+  `CuratedSale.t.sol`, `Dispute.t.sol`, `MasterEdition.t.sol`, `EditionAuction.t.sol` and
+  `EditionAuctionGasReport.t.sol` in [`test/integration/`](../../test/integration/);
   coverage and mutation testing: [Testing](../../docs/testing/README.md).
 
 ## See also

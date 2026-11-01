@@ -36,9 +36,9 @@ import { SaleKind } from "../../src/interfaces/types/SaleTypes.sol";
 contract InterfacesCompileTest is Test {
     function test_interfaceIds() public pure {
         assertEq(type(IMintTarget).interfaceId, bytes4(0xba4ae536), "IMintTarget");
-        assertEq(type(IStream).interfaceId, bytes4(0xfa7d02c3), "IStream");
+        assertEq(type(IStream).interfaceId, bytes4(0xdeb700c1), "IStream");
         assertEq(type(IWorkRecords).interfaceId, bytes4(0xc109676d), "IWorkRecords");
-        assertEq(type(IEditions).interfaceId, bytes4(0xa41d86b8), "IEditions");
+        assertEq(type(IEditions).interfaceId, bytes4(0xe183b26f), "IEditions");
         assertEq(type(ISaleAdapter).interfaceId, bytes4(0x312dc1e1), "ISaleAdapter");
         assertEq(type(IEnglishAuction).interfaceId, bytes4(0x75122f3e), "IEnglishAuction");
         // An integration view, never reported through ERC-165.
@@ -61,9 +61,9 @@ contract InterfacesCompileTest is Test {
         assertEq(
             type(IArtistPayoutResolver).interfaceId, bytes4(0x9b2c1793), "IArtistPayoutResolver"
         );
-        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xee6ba0a4), "IArtistRegistry");
+        assertEq(type(IArtistRegistry).interfaceId, bytes4(0xee1e8c55), "IArtistRegistry");
         assertEq(type(IConsolidationSource).interfaceId, bytes4(0x88836e34), "IConsolidationSource");
-        assertEq(type(IEntropyModule).interfaceId, bytes4(0x0e083814), "IEntropyModule");
+        assertEq(type(IEntropyModule).interfaceId, bytes4(0x14c06eb4), "IEntropyModule");
         assertEq(type(IFederationRegistry).interfaceId, bytes4(0xeefee933), "IFederationRegistry");
     }
 

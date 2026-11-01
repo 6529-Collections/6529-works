@@ -164,6 +164,7 @@ by the genesis wiring and then locked ([GV-24][gv]).
 | `Editions.bindWorkRecords` | Code, no EIP-7702, ERC-165 | `setRoyaltyRate`, `notifyMasterUpdated`, `notifyAllUpdated` | [ED-7][ed] |
 | `PackageRegistry.bindStream`, `bindEditions` | Code, no EIP-7702, ERC-165 | `consume`, `releaseContent`; `claimContent` for the consumed item | [CUR-15][cur] |
 | `ArtistRegistry.bindPackageRegistry`, `bindStream`, `bindSplitFactory`, `bindStatementLog` | Code and no EIP-7702; ERC-165 for the first two; the log's resolver is this registry | `register`; `isWallet`; `latestDisputeOutcome` | [ID-29][id] |
+| `ArtistRegistry.setPackageRegistry` (a 30-day SUCCESSOR_SETTER action, compare-and-set) | As `bindPackageRegistry` | `register`, moved to Stream's successor package registry | [ID-30][id] |
 | `ArtistRegistry.bindFederationRegistry` (v1.1) | As above; a 30-day ADMIN action | `listFederatedContract`, at most 64 per artist | None in v1 |
 
 ### Admitted sale adapters
@@ -182,8 +183,10 @@ by the genesis wiring and then locked ([GV-24][gv]).
   such a work stays NONE in `primarySale`. The 30-day admission review covers both
   ([ADR 0005](../adr/0005-stream-editions-auction.md)).
 - **On 6529 Stream Editions,** an admitted adapter of an edition's sale kind may mint copies up
-  to the creator's cap, and the first adapter to mint an edition is the only one that may mint it
-  again ([ED-5, ED-6][ed]).
+  to the creator's cap. Each edition is bound to one adapter, the one whose sale opened it
+  (`bindMinter`) or else the first to mint it, which alone mints it, even after governance
+  removes it, so that winners already charged can claim ([ED-5, ED-6][ed]; LIM-EA-10 in
+  [ADR 0005](../adr/0005-stream-editions-auction.md#known-limitations)).
 - **The auction holds nothing it did not mint**
   ([AUC-29][auc]), except a token sent with a
   plain `transferFrom` ([LIM-SAL-10][lim-sal]).

@@ -140,6 +140,20 @@ library VerifyV1 {
             checkWired(d, calls[i]);
         }
         checkPlatformPath(d, cfg);
+        checkEditionAuctionLens(d);
+    }
+
+    /// @notice The edition auction's lens is the one its constructor created and the record
+    ///         names: `lens()` equals the recorded address (which `checkAddresses` matches to the
+    ///         auction's first CREATE) and holds code. `Verify.s.sol` also compares its code hash
+    ///         with the recorded one, as for every contract.
+    function checkEditionAuctionLens(DeployV1.Deployment memory d) internal view {
+        address auction = address(d.editionAuction);
+        if (auction == address(0)) return;
+        address lens = d.editionAuction.lens();
+        if (lens != d.editionAuctionLens || lens.code.length == 0) {
+            revert AddressMismatch("UniformEditionAuctionLens", d.editionAuctionLens, lens);
+        }
     }
 
     /// @notice Reverts unless the wired getter reflects `call`. This is genesis readback: a

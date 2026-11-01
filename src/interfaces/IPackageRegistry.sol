@@ -171,12 +171,14 @@ interface IPackageRegistry is IERC165 {
     /// @param move The lead artist's signed move authorization.
     /// @return itemHash The item hash.
     /// @return artistId The lead artist's ID.
+    /// @return authority The lead artist's active authority, which signed `move`: 6529 Stream
+    ///         reports it as the work's creator, with no second read of the artist registry.
     function consume(
         bytes32 packageRoot,
         PackageItem calldata item,
         bytes32[] calldata proof,
         MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId);
+    ) external returns (bytes32 itemHash, uint256 artistId, address authority);
     /// @notice Releases `contentHash` after an upheld-dispute burn to the artist `beneficiary`
     ///         the dispute outcome names: checks that `itemHash` consumed it, clears its
     ///         `PRODUCT_STREAM` claim, reserves it for items whose lead artist is `beneficiary`,

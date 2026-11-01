@@ -44,7 +44,9 @@ all.
 - Every existing ceiling keeps its number, now as Prague gas:
   - a steady-state `start` and `startWithBid` in ETH, at most **350K**, for
     one artist and for the two-party variants (decision 6 covers ERC-20
-    starts);
+    starts), with Stream's genesis dependencies; after governance replaced
+    them (owner decision 16) the rarest combination may exceed it by about
+    3K (LIM-GAS-11);
   - the first start in a new collection, and `settle`: 400K test ceilings;
   - `tokenURI`: 8M.
 - Every other measured operation gets a **regression ceiling**: its Prague gas
@@ -139,8 +141,12 @@ Re-measured for ADR 0005's edition terms and the museum rule (rc.2): `EditionTer
 from seven fields to four, so every row that carries a package item lost calldata and hashing
 (about 1,300 gas for a start), and `createEdition` writes 6 new slots, one fewer, now that no
 price is stored.
-The fixed-price and Dutch rows left with their adapters; the edition auction's rows come with
-it. The Sepolia column stays r3's receipts.
+The fixed-price and Dutch rows left with their adapters. The edition auction's rows follow
+the table's last row ([ADR 0005](0005-stream-editions-auction.md) §5 and §6), measured on the
+wired stack by `EditionAuctionGasReport.t.sol`; they have no Sepolia receipt yet. Since ADR 0005
+§6 the auction binds an edition when its sale opens, so `open` writes the edition's seller,
+royalty and fee words and `createEdition` of that edition writes 2 new slots, not 6. The
+Sepolia column stays r3's receipts.
 
 Re-measured for owner decision 15 (6529 Stream's pluggable 1/1 sale): every `start` row rose by
 about 230 gas (the item's sale kind is compared with the adapter's and its params returned) and
@@ -155,50 +161,129 @@ by about 2,350 gas (the recorded kind, and about 820 for three warm reads of the
 start about 2,900, with the entropy module's), each `settle` by 2,281 (`primaryTerms` reads the
 artist registry's bit, a cold word), `createEdition` by 5,032 (6529 Stream Editions reads the
 three pointers from Stream) and a re-rate by 2,991 (the records satellite reads the artist
-registry from Stream). No row writes a new slot. The binding row is 341,923, 8,077 under 350K.
-`tokenURI` fell by about 630 (one read of the records satellite instead of two).
+registry from Stream). No row writes a new slot. `tokenURI` fell by about 630 (one read of the
+records satellite instead of two).
 
-Re-measured for owner decision 17 (Stream records each 1/1's primary-sale outcome), on a head
-that also carries the English auction's lens (which moved the `start` rows by about −170 and
-`bid` by +66). `settle` with a bid writes **one more new slot**, the sale's currency and price
-in Stream, and rose by 11,285 gas to 157,118: the new slot, less the `primaryTerms` call it
-replaces, which read the minting adapter's kind (the #80 review's Low) and the artist
-registry. `settle` with no bid fell by 14,766 to 121,508: Stream moves the work to the museum
-itself, with no receiver callback, and records UNBID in a word it rewrites. Every row stays
-under its ceiling; the binding row is 341,664, 8,336 under 350K.
+The review of #81 measured the binding row with a VRF seed, which no row covered: 350,126 Prague
+gas, over 350K, since a VRF start read the entropy module twice. `mint` now reads it once, and
+the row is gated (`test_Gas_StartWithBid_ArtistsFirstWork_TwoParty_Vrf`): 349,668 after the
+merge of the edition auction (#77), 332 under 350K, the row with the smallest margin. With #77,
+6529 Stream Editions reads the package registry and economics resolver from Stream in the edition
+auction's `open` (281,104) and in `createEdition` of a bound edition (144,169, over its 144,000
+regression ceiling, which moves to 148,000). The same change records each work's entropy module
+(`entropyModuleOf`, ENT-18) without touching the start path. A VRF start fell by 426 gas; with
+the code added, the other rows moved by at most 337 (the plain binding row 341,781).
+
+The review of #81 then asked for 5,000 gas of margin on every start row. Two changes in Stream,
+with no change of design: the kind each admitted adapter had at its first admission is also kept,
+as 232 bits of its hash, in the minter word `mint` reads anyway, so the #80 fix no longer costs
+a cold word (every `start` row −2,016; Stream +114 bytes); and `mint` resolves its four
+dependencies from one read of the counter word (−223, −478 on a VRF start; +355 bytes). The
+plain binding row is 339,511, 10,489 under 350K; with a VRF seed 347,186, **2,814 under**, still
+short of 5,000 (with the English auction's lens merged, below: 339,361 and 347,036, 2,964
+under). A VRF start's delivery check is about 7,600 of it (a cold call to the entropy
+module, which reads two cold words: the item's content hash, then that content's seed); the
+rest of the gap needs a change of design, which the owner decides (an option list is with the
+integrator). Writing a token's two words in one assignment cost 86 more and was not kept.
+`setPackageRegistry` moved `refreshStanding` by +22.
+
+The integrator then chose two changes of interface, both pre-launch, so that every start row
+with Stream's genesis dependencies keeps at least 5,000 gas of margin (now gated:
+`START_MARGIN` in `GasReport.t.sol`). `PackageRegistry.consume` also returns the lead artist's
+active authority, which it resolved to check the move signature, so `mint` makes no second
+artist-registry call for the creator (every start −1,161). The entropy module answers
+`isDeliveredContent(contentHash)` from one word, the content's seed record, and `mint` asks it
+with the item's content hash (a VRF start −2,135 more); `openRecord` stores
+`seedOfContent(contentHash)`. A seed belongs to its content, and a content hash is consumed by
+one item only (CUR-12), so the check is the same one. `mint` also resolves the entropy module
+only for a VRF item. On the tree with the English auction's lens: the binding row 338,200
+(11,800 under 350K), with a VRF seed 343,760 (**6,240 under**), the steady `start` 267,819.
+
+After governance replaces Stream's dependencies (owner decision 16), each replaced dependency a
+mint uses costs about 2,100 more (a storage read instead of an immutable). With all four
+replaced, the binding row is 344,596 and the VRF binding row 352,272, 2,272 over the 350K
+budget. The integrator accepted this as a documented limit (LIM-GAS-11): replacements are rare
+governed actions, the transaction stays far under the block gas limit, and an artist can
+`start` and bid separately. The two rows have their own regression ceilings; the 350K rule and
+its 5,000 margin stay on the rows with the genesis dependencies.
+
+With decision 16 the edition auction's
+`open` reads the package registry and economics resolver from Stream: on the merged tree 271,920
+and 317,645 for the adapter's first, under the lens's lower ceilings.
+
+Re-measured for the English auction's lens (EIP-170 headroom): the auction's views moved to
+`EnglishAuctionLens`, answered through a read-only `staticcall` fallback. A cold `auction` or
+`minimumBid` costs about 7,000 more (one more cold account and the lens's reads), so the read
+other contracts make on their hot paths stays on the auction: `auctionClock`, `auction`'s
+state and end from one cold slot (24,207). The edition auction reads its 1/1 through it, so
+its `open` (−9,184), a bid near the close (−9,048), the first call of each `settle` (about
+−9,050) and `withdrawBid` while the 1/1 is paused (−6,926) cost less than before and their
+ceilings came down. The auction's own rows moved with its smaller dispatch: each `start` −63,
+each `startWithBid` −151, `bid` +66, each `settle` +21; no row writes a new slot or account.
+The binding row kept 10,588 gas of margin on `main`; with decision 16 and the review of #81 merged, 10,639 (339,361), and with a VRF seed 2,964 (347,036).
+
+Re-measured for owner decision 17 (Stream records each 1/1's primary-sale outcome), on `main`
+with decision 16 and the English auction's lens. `settle` with a bid writes **one more new
+slot**, the sale's currency and price in Stream, and rose by 11,287 gas to 157,140: the new
+slot, less the `primaryTerms` call it replaces, which read the minting adapter's kind (the #80
+review's Low) and the artist registry's replacement bit. `settle` with no bid fell by 14,786 to
+121,508: Stream moves the work to the museum itself, with no receiver callback, and records
+UNBID in a word it rewrites. The `start` rows moved by at most 32 with Stream's code; every
+row stays under its ceiling, and every start row with the genesis dependencies keeps its 5,000
+of margin: the binding row 338,212 (11,788 under 350K), with a VRF seed 343,740 (6,260 under).
 
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 271,260 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 313,269 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 279,564 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 321,560 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 279,477 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 271,315 | 350,000 | **5** | 0 | 736,477 |
-| `start`, an artist's first work | 291,384 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 333,393 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 341,664 | 350,000 | **7** | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 358,355 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 271,295 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 440,423 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 383,418 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `start`, steady state | 267,787 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 309,796 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 276,132 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 318,128 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 273,371 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 267,854 | 350,000 | **5** | 0 | 736,477 |
+| `start`, an artist's first work | 287,911 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 329,920 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 338,212 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 343,740 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, all four dependencies replaced | 344,596 | 346,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF, all four dependencies replaced | 352,252 | 354,000 (regression; LIM-GAS-11) | 7 | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 354,902 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 267,830 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 436,994 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 379,945 | 390,000 (regression) | 9 | 0 | 1,213,250 |
 | `bid` that outbids | 73,530 | 75,000 (regression) | 1 | 0 | 169,060 |
-| `settle`, first payout to a seller wallet | 182,118 | 400,000 | 2 | 1 | 449,934 (sim.) |
-| `settle`, with a bid | 157,118 | 400,000 | 2 | 0 | 257,763 (r2) |
+| `settle`, first payout to a seller wallet | 182,140 | 400,000 | 2 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 157,140 | 400,000 | 2 | 0 | 257,763 (r2) |
 | `settle`, no bid (to the museum, D140) | 121,508 | 400,000 | 1 | 0 | — |
 | `auction` (view, cold, answered by the auction's lens) | 39,342 | 41,000 (regression) | 0 | 0 | — |
 | `minimumBid` (view, cold, answered by the auction's lens) | 38,194 | 39,000 (regression) | 0 | 0 | — |
-| `consume`, as Stream calls it | 93,057 | 97,000 (regression) | 1 | 0 | part of `start` |
-| `createEdition` | 245,730 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
-| re-rate a work (governed `execute`) | 189,575 | 192,000 (regression) | 1 | 0 | — |
-| `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
-| `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
-| `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 36,426 |
-| `tokenURI` (view, the size matrix) | at most 2,734,643 | 8,000,000 | 0 | 0 | unchanged |
+| `auctionClock` (view, cold, answered by the auction itself) | 24,207 | 25,000 (regression) | 0 | 0 | — |
+| `consume`, as Stream calls it | 93,098 | 97,000 (regression) | 1 | 0 | part of `start` |
+| `createEdition` | 246,427 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
+| `createEdition`, an edition its sale bound at open | 144,169 | 148,000 (regression) | 2 | 0 | — |
+| re-rate a work (governed `execute`) | 189,631 | 192,000 (regression) | 1 | 0 | — |
+| `refreshStanding`, a first wallet | 129,730 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
+| `refreshStanding`, a further wallet | 159,127 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
+| `royaltyInfo` (view) | 41,644 | 50,000 of execution | 0 | 0 | 36,426 |
+| `tokenURI` (view, the size matrix) | at most 2,734,739 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,241,422 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,164 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,196 | 92,000 (regression) | 0 | 0 | — |
+| Edition auction `open`, steady state (binds the edition) | 271,920 | 275,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 317,645 | 322,000 (regression) | 8 | 0 | — |
+| Edition `bid`, its 8-step word exists | 69,257 | 110,000 | 1 | 0 | — |
+| Edition `bid`, opens an 8-step word | 86,327 | 110,000 | 2 | 0 | — |
+| Edition `bid`, capped sale | 71,674 | 110,000 | 1 | 0 | — |
+| Edition `bid` near the close (1/1 read, soft close) | 78,593 | 110,000 | 1 | 0 | — |
+| Edition `raise`, same 8-step word | 53,770 | 56,000 (regression) | 0 | 0 | — |
+| Edition `raise`, capped (departure logged) | 78,996 | 81,000 (regression) | 1 | 0 | — |
+| Edition `withdrawBid`, capped, 1/1 paused | 87,761 | 90,000 (regression) | 1 | 0 | — |
+| Edition `settle`, 40 used steps | 151,701 | 400,000 | 1 | 0 | — |
+| Edition `settle`, capped, one departure swept | 149,787 | 153,000 (regression) | 1 | 0 | — |
+| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 228,103 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
+| Edition `claimBid`, a winner and new holder | 94,286 | 100,000 | 1 | 0 | — |
+| Edition `claimBid`, refund only | 47,546 | 49,000 (regression) | 0 | 0 | — |
+| Edition `claimBidFor`, refund credited | 64,591 | 67,000 (regression) | 1 | 0 | — |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes
 and the state-growth diet; the flows file compares the two rehearsals row by

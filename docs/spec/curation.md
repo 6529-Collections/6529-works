@@ -314,11 +314,11 @@ sequenceDiagram
     Registry->>Registry: move deadline, then spend the nonce
     Registry->>Artists: activeAuthorityOf(lead artist ID)
     Registry->>Registry: verify the move signature, write the content word
-    Registry-->>Stream: (itemHash, artistId), emit ItemConsumed
+    Registry-->>Stream: (itemHash, artistId, authority), emit ItemConsumed
     opt seed policy VRF
-        Stream->>Entropy: isDelivered(itemHash)
+        Stream->>Entropy: isDeliveredContent(item.contentHash)
     end
-    Stream->>Stream: quote terms, store the token, emit WorkMinted, mint
+    Stream->>Stream: quote terms (the creator is the returned authority), store the token, emit WorkMinted, mint
     Stream-->>Auction: tokenId and primary terms
     Auction->>Auction: lock terms, check custody, emit SaleStarted
 ```
@@ -331,7 +331,9 @@ released and this item tombstoned); `InvalidItem` or `PartyNotAccepted` (CUR-9, 
 A revert anywhere in the start, including `SeedNotDelivered`, undoes the consume and the nonce.
 
 - **Consent reads, not calls.** The only external call in `consume` is `activeAuthorityOf` for
-  the lead (plus ERC-1271 if that authority is a contract).
+  the lead (plus ERC-1271 if that authority is a contract). `consume` returns that authority,
+  which signed the move, so 6529 Stream reports it as the work's creator without asking the
+  artist registry again.
 - **Restraint.** No move verifies, from the old key or the reserved new key, and `revokeMove`
   reverts with `NotAuthority`. After execution the new key signs.
 - **Rotated keys.** Unused moves signed by a rotated-away key stay void, unless the new authority

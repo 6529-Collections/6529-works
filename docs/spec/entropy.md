@@ -4,8 +4,10 @@ A seeded 1/1 on 6529 Stream gets its seed from the artist, in the package, or fr
 VRF v2.5 draw delivered before the work's auction can start. This page covers the draw:
 `VrfEntropyModule` requests one random word per content hash, keeps the first delivery for good,
 and answers `isDelivered` and `seedOf` by item hash. The module is optional per deployment: 6529
-Stream pins it immutably, or pins zero and refuses VRF items. For auditors, integrators and the
-operators of the VRF subscription.
+Stream is deployed with one, or with zero and refuses VRF items; governance can install or
+replace it later (`setDependency`, owner decision 16), and every work keeps the module it
+minted under (`entropyModuleOf`). For auditors, integrators and the operators of the VRF
+subscription.
 
 > Pre-audit. See the [project status](../../README.md#status).
 
@@ -15,8 +17,8 @@ operators of the VRF subscription.
 | --- | --- | --- | --- |
 | `VrfEntropyModule` | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | [`IEntropyModule`](../../src/interfaces/IEntropyModule.sol) | Gated seed requests, item links, deliveries, `isDelivered`, `seedOf`, `requestOf`; governed configuration and coordinator. |
 | `IVRFCoordinatorV2Plus` | [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol) | none | The one coordinator function the module calls (`requestRandomWords`), declared locally: the repository has no Chainlink dependency. |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | Holds the module's address (`entropyModule`), replaceable by governance in the 30-day class (`setDependency`, owner decision 16); `mint` refuses a VRF item without a delivered seed. |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) | `seedOf(tokenId)` returns the work's seed, stored when its record opens: the item's ARTIST seed, or Stream's module's seed by item hash, so a later replacement of the module never changes an opened work's seed. |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | [`IStream`](../../src/interfaces/IStream.sol) | Holds the module's address (`entropyModule`), replaceable by governance in the 30-day class (`setDependency`, owner decision 16), and answers the module each work minted under (`entropyModuleOf`); `mint` refuses a VRF item without a delivered seed. |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | [`IWorkRecords`](../../src/interfaces/IWorkRecords.sol) | `seedOf(tokenId)` returns the work's seed, stored when its record opens: the item's ARTIST seed, or by item hash the seed of the module the work minted under (`IStream.entropyModuleOf`), so a replacement of the module never changes a work's seed. |
 | `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | [`IPackageRegistry`](../../src/interfaces/IPackageRegistry.sol) | Answers the request gate: is the root approved, is the content consumed. See [curation.md](curation.md). |
 
 ## Concepts
@@ -37,7 +39,7 @@ is part of the approved item, so it cannot change without a new approval.
 | `VRF` | zero | `VrfEntropyModule`, drawn before the start. | From delivery, by item hash, before and after the record opens. |
 
 A nonzero seed is required exactly under `ARTIST` (CUR-9); Stream refuses a `VRF` item when its
-`entropyModule` is zero (`InvalidSeedPolicy`). Copies never get their own seeds.
+current `entropyModule` is zero (`InvalidSeedPolicy`). Copies never get their own seeds.
 
 ### One draw per content hash
 
@@ -98,12 +100,22 @@ back to A) neither coordinator can deliver the other's requests; a pending draw 
 
 ### How the seed is read
 
-- **Start gate.** `Stream.mint` reverts with `SeedNotDelivered(itemHash)` after `consume`, which
-  the revert undoes. The auction does not check the seed itself.
-- **Reads.** Stream never stores a VRF seed. `WorkRecords.seedOf(tokenId)` (after `openRecord`)
-  returns the module's `seedOf(itemHash)`; before the record opens the renderer reads
-  `IStream.entropyModule()` directly, with a bounded gas allowance
-  ([`Renderer.sol`](../../src/content/Renderer.sol), `_seed`).
+- **Start gate.** `Stream.mint` asks the module `isDeliveredContent(item.contentHash)`, one
+  storage word, and reverts with `SeedNotDelivered(itemHash)` after `consume`, which the revert
+  undoes. A seed belongs to its content, whichever package lists the item, and `consume` lets a
+  content hash be consumed by one item only (CUR-12), so an item of another package with the
+  same content starts on that content's seed without a link of its own. The auction does not
+  check the seed itself.
+- **Reads.** Stream never stores a VRF seed; it records which module each work minted under
+  (`IStream.entropyModuleOf(tokenId)`: the module current at the mint, whose delivery `mint`
+  checked). `openRecord` stores that module's `seedOfContent(item.contentHash)`, which
+  `WorkRecords.seedOf(tokenId)` then returns; before the record opens the renderer reads the
+  same module's `seedOf(itemHash)`, with a bounded gas allowance
+  ([`Renderer.sol`](../../src/content/Renderer.sol), `_seed`). A replaced module therefore
+  changes no existing work's seed, and stays readable for the works minted under it. A work
+  whose item never had a request of its own (it shares a seeded content with another package's
+  item) has no item link, so `seedOf(itemHash)` reverts and its `tokenURI` reverts until anyone
+  opens its record, which stores the content's seed; it never shows another seed.
 - **`requestOf(itemHash)`** returns the content's latest request ID (zero once delivered) and
   when it was made.
 
@@ -138,7 +150,7 @@ stateDiagram-v2
     Unlinked --> LinkedPending : requestSeed requests or joins a pending draw
     Unlinked --> LinkedDelivered : requestSeed joins a delivered draw
     LinkedPending --> LinkedDelivered : delivery for the content
-    LinkedDelivered --> Started : start, Stream checks isDelivered
+    LinkedDelivered --> Started : start, Stream checks isDeliveredContent
     Started --> [*]
 ```
 
@@ -184,7 +196,7 @@ sequenceDiagram
     Anyone->>Auction: start(stream, mint data)
     Auction->>Stream: mint(auction, 0, 1, data)
     Stream->>Stream: consume the item through the registry
-    Stream->>Module: isDelivered(itemHash)
+    Stream->>Module: isDeliveredContent(item.contentHash)
     Stream-->>Auction: token minted, the clock starts
 ```
 
@@ -199,7 +211,7 @@ sequenceDiagram
   announced (no `SeedRequested`).
 - **Gas.** A first request for a content creates 4 slots in the module, a joining item 1
   (`test_Request_NewStorageSlots`). The request is off the start path, which only adds the
-  `isDelivered` read ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia:
+  `isDeliveredContent` read, one word ([ADR 0004](../adr/0004-gas-budgets-under-glamsterdam.md#the-table); Sepolia:
   [flows.md, section 6](../../deployments/11155111/flows.md#6-vrf)).
 
 ### Retry
@@ -282,12 +294,13 @@ the 30-day class (ENT-11; `InvalidConfig`).
 | ENT-9 | `setCoordinator` is `SUCCESSOR_SETTER` (30 days), compare-and-set, never a no-op, and refuses a codeless or delegated coordinator. | `VrfEntropyModule.setCoordinator`; genesis role map | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetCoordinator_NeedsTheSuccessorClassRole`, `test_SetCoordinator_RejectsStaleAndCodelessValues`, `test_SetCoordinator_ASwapToTheCurrentCoordinatorIsRefused`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetCoordinatorIsInTheSuccessorClass`, `test_AGuardianCancelsAPendingCoordinatorSwap` |
 | ENT-10 | `setConfig` is `PARAMETER_SETTER` (48 hours), compare-and-set on the whole configuration, within bounds; the callback gas limit only rises, at most doubling per step, never above 2,500,000. | `VrfEntropyModule.setConfig`, `_validate`; `BoundedParameter.raise` | [`VrfEntropyGovernance.t.sol`](../../test/entropy/VrfEntropyGovernance.t.sol): `test_SetConfig_NeedsTheStandardClassRole`, `test_SetConfig_StaleExpectedValueReverts`, `test_SetConfig_GasLimitCanOnlyBeRaised`, `test_SetConfig_GasLimitAtMostDoublesPerStep`, `testFuzz_SetConfig_GasLimitRule`, `test_SetConfig_ScheduledThroughTheManagerAndStaleOperationsRevert`; [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_SetConfigIsInTheStandardClass` |
 | ENT-11 | `lowerCallbackGasLimit` is `SUCCESSOR_SETTER` (30 days), compare-and-set, strictly lower, never below 100,000. | `VrfEntropyModule.lowerCallbackGasLimit` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_ALoweredCoordinatorMaximumIsFollowedInTheSuccessorClass`, `test_ALoweringStaysAboveTheFloorAndBelowTheCurrentLimit`, `test_OnlyTheSettersCanCallTheGovernedFunctions` |
-| ENT-12 | A `VRF` work starts only once its item's seed is delivered, and only on a Stream deployed with an entropy module. | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered` |
+| ENT-12 | A `VRF` work starts only once the seed of its item's content is delivered (`isDeliveredContent(item.contentHash)`, one word: a seed belongs to its content and a content hash is consumed by one item only, CUR-12), and only while Stream has an entropy module (deployed with one, or installed later by `setDependency`). | `Stream.mint`, `Stream._checkItem` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_mint_vrfNeedsDeliveredSeed`, `test_mint_vrfRejectedWithoutEntropyModule`; [`VrfWork.t.sol`](../../test/integration/VrfWork.t.sol): `test_SeedRequestedDeliveredThenStartedAndRendered`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_AVrfStartChecksTheItemsContentAndContentIsMintedOnce`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_ContentReads_AnswerOnlyTheSeededContent` |
 | ENT-13 | The callback creates no storage slot and its cost stays at most half the 100,000 floor under Glamsterdam pricing. | `VrfEntropyModule.rawFulfillRandomWords` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Callback_CreatesNoStorageSlot`, `test_Callback_UsesUnderHalfTheFloorUnderGlamsterdam`, `test_Callback_GasStaysUnderTheConfiguredLimit` |
 | ENT-14 | A reentrant call during a request cannot deliver the new request or overwrite a seed delivered meanwhile. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_ReentrancyFromTheCoordinatorFindsNothingToUse`, `test_Repeat_AnEarlierRequestDeliveredDuringTheRepeatIsNotOverwritten` |
 | ENT-15 | A coordinator's request ID must be nonzero and unused; a failing coordinator leaves no state. | `VrfEntropyModule.requestSeed` | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_RejectsAZeroRequestId`, `test_Request_RejectsADuplicateRequestId`, `test_Request_CoordinatorFailureLeavesNoState` |
 | ENT-16 | Installation checks: `retryDelay` within 3 to 30 days; a valid configuration; the registry has code, is not delegated, answers ERC-165 for `IPackageRegistry` and has its pinned code hash. | `VrfEntropyModule` constructor | [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Constructor_RejectsBadRetryDelay`, `test_Constructor_TheMinimumRetryDelayIsThreeDays`, `test_Constructor_RejectsARegistryWithoutErc165Support`, `test_Constructor_PinsTheRegistryCodeHash`, `test_Constructor_RejectsADelegatedRegistry` |
 | ENT-17 | Anyone may request, under the real AccessManager; nothing is payable. | `VrfEntropyModule` | [`VrfEntropyManaged.t.sol`](../../test/entropy/VrfEntropyManaged.t.sol): `test_AnyoneMayRequestASeedUnderTheRealManager`, `test_NothingIsPayable`; [`VrfEntropyModule.t.sol`](../../test/entropy/VrfEntropyModule.t.sol): `test_Request_NoRoleIsNeeded`, `test_Request_IsNonPayable` |
+| ENT-18 | A work's VRF seed always comes from the entropy module that was current at its mint (`IStream.entropyModuleOf`), before and after its record opens: replacing the module (owner decision 16) changes no existing work's seed or metadata, and only later works use the new module. | `Stream.setDependency`, `Stream.entropyModuleOf`, `WorkRecords.openRecord`, `Renderer._seed` | [`Stream.t.sol`](../../test/stream/Stream.t.sol): `test_entropyModuleOf_answersTheModuleCurrentAtMint`; [`StreamDependencies.t.sol`](../../test/integration/StreamDependencies.t.sol): `test_ReplacingTheEntropyModuleNeverChangesAnExistingWorksSeed`, `test_TwoEntropyReplacementsLeaveEachErasWorksUnchanged`, `test_AVrfRequestInFlightAcrossAReplacement`, `test_ReplacingEachDependencyLeavesExistingTokensUnchanged` |
 
 ## Events
 

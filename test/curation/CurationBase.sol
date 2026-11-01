@@ -279,7 +279,7 @@ abstract contract CurationBase is CurationHelpers {
         MoveAuthorization memory move
     ) internal returns (bytes32 itemHash, uint256 artistId) {
         vm.prank(stream);
-        return registry.consume(root, item, proof, move);
+        (itemHash, artistId,) = registry.consume(root, item, proof, move);
     }
 
     function _claim(bytes32 contentHash, bytes32 itemHash) internal {

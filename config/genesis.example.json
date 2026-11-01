@@ -502,6 +502,13 @@
           "delay": 2592000
         },
         {
+          "signature": "setPackageRegistry(address,address)",
+          "selector": "0x00752cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
           "signature": "resolveContested(uint256,bool,bytes32)",
           "selector": "0xd16d1602",
           "role": "SUCCESSOR_SETTER",
@@ -626,6 +633,52 @@
         {
           "signature": "setOpeningBid(address,uint256,uint256)",
           "selector": "0x5d918358",
+          "role": "PARAMETER_SETTER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setTarget(address,bool)",
+          "selector": "0x80ffe77f",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setFederationRegistry(address,address)",
+          "selector": "0x747e3199",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        }
+      ],
+      "genesisOnly": [],
+      "deferred": []
+    },
+    {
+      "name": "UniformEditionAuction",
+      "artifact": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
+      "implementation": "src/sales/UniformEditionAuction.sol:UniformEditionAuction",
+      "address": "0x000000000000000000000000000000000000a009",
+      "status": "implemented on the edition-auction branch; lands with it",
+      "functions": [
+        {
+          "signature": "pause()",
+          "selector": "0x8456cb59",
+          "role": "PAUSER",
+          "class": "immediate",
+          "delay": 0
+        },
+        {
+          "signature": "unpause()",
+          "selector": "0x3f4ba83a",
+          "role": "UNPAUSER",
+          "class": "standard",
+          "delay": 172800
+        },
+        {
+          "signature": "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))",
+          "selector": "0x3a59bb19",
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800
@@ -885,6 +938,16 @@
       "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0080000000000000000000000000000000000000000000000000000000000000001"
     },
     {
+      "contract": "Editions",
+      "signature": "setAdmittedMinter(address,bool)",
+      "args": [
+        "UniformEditionAuction",
+        true
+      ],
+      "calldata": "0xa82ed63a000000000000000000000000000000000000000000000000000000000000a0090000000000000000000000000000000000000000000000000000000000000001",
+      "note": "The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)"
+    },
+    {
       "contract": "EnglishAuction",
       "signature": "setTarget(address,bool)",
       "args": [
@@ -892,6 +955,15 @@
         true
       ],
       "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0010000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "contract": "UniformEditionAuction",
+      "signature": "setTarget(address,bool)",
+      "args": [
+        "Editions",
+        true
+      ],
+      "calldata": "0x80ffe77f000000000000000000000000000000000000000000000000000000000000a0030000000000000000000000000000000000000000000000000000000000000001"
     },
     {
       "contract": "AssetAllowlist",

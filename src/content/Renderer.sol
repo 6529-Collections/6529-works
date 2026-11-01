@@ -894,8 +894,9 @@ contract Renderer is IRenderer {
     }
 
     /// @dev The seed of a seeded work, zero for none. Once the record is open the satellite has
-    ///      it; before, only a VRF seed can be read, from the entropy module by item hash (an
-    ///      ARTIST seed is stored when the record opens).
+    ///      it; before, only a VRF seed can be read, by item hash from the entropy module that
+    ///      was current at the work's mint (`IStream.entropyModuleOf`; an ARTIST seed is stored
+    ///      when the record opens).
     function _seed(Ctx memory c) private view returns (bytes32 seed) {
         if (c.core.seedPolicy == SeedPolicy.NONE) return 0;
         if (c.open) {
@@ -905,7 +906,8 @@ contract Renderer is IRenderer {
             );
         } else if (c.core.seedPolicy == SeedPolicy.VRF) {
             address entropy = abi.decode(
-                _read(c.stream, abi.encodeCall(IStream.entropyModule, ()), SMALL_GAS, 32), (address)
+                _word(c.stream, IStream.entropyModuleOf.selector, c.workId, SMALL_GAS, 32),
+                (address)
             );
             seed = abi.decode(
                 _word(

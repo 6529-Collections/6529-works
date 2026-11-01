@@ -16,6 +16,7 @@ import { WorksAccessManager } from "src/governance/WorksAccessManager.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEditions } from "src/interfaces/IEditions.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { IMintTarget } from "src/interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "src/interfaces/ISaleAdapter.sol";
 import { IStream } from "src/interfaces/IStream.sol";
@@ -124,9 +125,9 @@ contract GenesisConfigTest is Test {
 
     // ------------------------------------------------------------------ compiled selectors
 
-    function _s9(bytes4[9] memory xs) internal pure returns (bytes4[] memory out) {
-        out = new bytes4[](9);
-        for (uint256 i; i < 9; ++i) {
+    function _s10(bytes4[10] memory xs) internal pure returns (bytes4[] memory out) {
+        out = new bytes4[](10);
+        for (uint256 i; i < 10; ++i) {
             out[i] = xs[i];
         }
     }
@@ -220,11 +221,12 @@ contract GenesisConfigTest is Test {
             );
         }
         if (_eq(name, "ArtistRegistry")) {
-            return _s9(
+            return _s10(
                 [
                     IArtistRegistry.vetoChange.selector,
                     IArtistRegistry.stageOverride.selector,
                     IArtistRegistry.setConsolidationSource.selector,
+                    IArtistRegistry.setPackageRegistry.selector,
                     IArtistRegistry.resolveContested.selector,
                     IArtistRegistry.bindPackageRegistry.selector,
                     IArtistRegistry.bindStream.selector,
@@ -267,6 +269,20 @@ contract GenesisConfigTest is Test {
             }
             (all[7], all[8]) = (ISaleAdapter.setFederationRegistry.selector, DISPUTE_PAUSE);
             return all;
+        }
+        if (_eq(name, "UniformEditionAuction")) {
+            return _s(
+                [
+                    ISaleAdapter.pause.selector,
+                    ISaleAdapter.unpause.selector,
+                    IUniformEditionAuction.setConfig.selector,
+                    ISaleAdapter.setTarget.selector,
+                    ISaleAdapter.setFederationRegistry.selector,
+                    z,
+                    z
+                ],
+                5
+            );
         }
         if (_eq(name, "EconomicsResolver")) {
             return _s(
@@ -405,7 +421,7 @@ contract GenesisConfigTest is Test {
             }
             total += listed.length;
         }
-        assertEq(total, 62, "52 mapped, 9 genesis-only, 1 deferred");
+        assertEq(total, 68, "58 mapped, 9 genesis-only, 1 deferred");
     }
 
     function test_RoleTableMatchesRolesSol() public view {

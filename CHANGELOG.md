@@ -15,9 +15,9 @@
   English auction loses its museum branch, the `_MUSEUM` flag and its Stream constructor
   argument, reports FROZEN_OUT for the freeze exit and a delisting, and no longer reads
   `primaryTerms` at settlement. `IMintTarget`'s and `IStream`'s interface IDs change. Prague
-  gas: `settle` with a bid 157,118 (one new slot, +11,285), with no bid 121,508 (−14,766);
-  the binding row 341,664. Bytes: Stream 22,726 (+1,072), the English auction 22,993 (+266),
-  6529 Stream Editions 17,684 (+199)
+  gas: `settle` with a bid 157,140 (one new slot, +11,287), with no bid 121,508 (−14,786);
+  the binding row 338,212. Bytes: Stream 23,471 (+1,073), the English auction 22,993 (+266),
+  6529 Stream Editions 18,362 (+199)
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
 - 6529 Stream: the package registry, artist registry, economics resolver and entropy module are
   replaceable by governance (owner decision 16): `setDependency(kind, expected, next)`,
@@ -25,18 +25,63 @@
   zero. Stream's code and address, the split factory and every existing token stay as they are.
   The genesis contracts stay immutables, with a replacement bit each in the counter word
   every mint reads, so a start with no replacement reads no extra slot. 6529 Stream Editions
-  and `WorkRecords` read the pointers from Stream instead of holding immutable copies, and
-  `WorkRecords` stores a VRF seed when the record opens, so a replaced entropy module never
-  changes an opened work. `IStream`'s interface ID changes.
+  and `WorkRecords` read the pointers from Stream instead of holding immutable copies. Stream
+  records the entropy module each work minted under (`entropyModuleOf`), which `openRecord`
+  stores the VRF seed from and the renderer reads before the record opens, so a replaced
+  entropy module never changes an existing work's seed or metadata (ENT-18; the review of #81).
+  The artist registry's one `register` caller is governed too
+  (`ArtistRegistry.setPackageRegistry(expected, next)`, SUCCESSOR_SETTER, 30 days,
+  compare-and-set, event `PackageRegistrySet`), so a successor package registry onboards new
+  artists (ID-30). The replacement procedure for each dependency, and what it cannot reach (the
+  genesis artist registry stays the payout resolver of every Stream work, LIM-GV-16), is in the
+  runbook. `IStream`'s and `IArtistRegistry`'s interface IDs change.
+- The start path, for 5,000 gas of margin under the 350K budget on every start row (the review
+  of #81): `PackageRegistry.consume` also returns the lead artist's active authority it checked
+  the move against, which 6529 Stream reports as the creator without a second artist-registry
+  call (every start about −1,160); the entropy module answers `isDeliveredContent(contentHash)`
+  and `seedOfContent(contentHash)` from one word, which Stream's VRF check and
+  `WorkRecords.openRecord` use (a VRF start about −2,140 more; a content hash is consumed once,
+  CUR-12); Stream resolves the entropy module only for a VRF item. The binding row is 338,200
+  and with a VRF seed 343,760. After governance replaces dependencies, the rarest start can pass
+  350K by up to about 3K (LIM-GAS-11). `IEntropyModule`'s interface ID changes.
 - 6529 Stream: `mint` compares an item's sale kind with the adapter's kind recorded at its first
   admission, the kind `primaryTerms` reports, instead of the adapter's live `saleKind()` (the
-  review of #80).
+  review of #80). The kind is also kept, as 232 bits of its hash, in the minter word `mint`
+  reads anyway, so the check costs no extra slot; `mint` resolves its four dependencies from one
+  read of the counter word.
 - 6529 Stream: `rendererOf` reads the records satellite with a fixed gas cap (`RECORDS_GAS`) and
   serves the default renderer on any fault of it but a changed pinned renderer, which still
-  fails closed; one read instead of two. Stream grows by 711 bytes with the two entries above;
-  `start` costs about 2,350 more Prague gas (the binding row 341,923, 8,077 under 350K),
-  `settle` 2,281, `createEdition` 5,032, with no new slot
+  fails closed; one read instead of two. The gas check covers a cold satellite account, so the
+  satellite always gets all of `RECORDS_GAS`. Stream grows by 1,399 bytes with the two entries
+  above; `start` costs about 40 less Prague gas than before decision 16 at steady state (an
+  artist's first two-party start with a bid 338,200; with a VRF seed 343,760, a gated row,
+  6,240 under 350K), `settle` 2,280, `createEdition` 5,597, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- Tests: the edition auction's invariant suite also checks that nothing is claimed while a sale
+  is SETTLING (review of #84). `wideBook` spreads up to two sales a run wider than one settle
+  call scans (24 words), so settlement scans over calls; while a scan or a sweep is unfinished,
+  `claimBid` and `claimBidFor` must revert with `InvalidAuctionState`. An early settle call may
+  advance a wide book's scan before its edition exists; any other early success still fails.
+  `test_EveryActionRuns` replays 128 sequences instead of 64, so the multi-settler paths are hit
+  more than once.
+- Tests: the edition auction on the real stack (rc.2 L5). A stateful invariant suite,
+  `EditionAuctionInvariant.t.sol` with `EditionAuctionHandler`, runs six masters with and
+  without creator caps beside their 1/1 auctions: opens, bids, raises, soft-close bids, a FIFO
+  hole at the cut step, 1/1 anti-snipe bids, dispute pauses with withdrawals, cancels that void,
+  settlement by several settlers (a handoff, a sweep that skips a departure, a refused reorder,
+  interleaved keepers), claims and pushed claims. It checks no unsold or extra copies, ETH
+  conservation, clearing optimality and the breadth rule against a brute-force per-unit
+  reference (`test/helpers/UniformClearingReference.sol`), the cap, FIFO fills, the view equal
+  to settlement, the clocks, no settlement before the end, and that each settler's sweep is its
+  own and a keeper always completes settlement; `test_EveryActionRuns` asserts every action and
+  path runs. A differential fuzz (`EditionAuctionDifferential.t.sol`) holds the live clearing,
+  every bid's outcome and the settlement order equal to the reference under four margins and
+  five caps, lets other settlers make mangled sweeps, then settles and claims every bid.
+  `PieceLifecycle.t.sol` runs a piece end to end: the 1/1 and its editions side by side, a 1/1
+  anti-snipe moving the edition close, settlement and payouts, claims and the edition royalty;
+  and an unbid 1/1 going to the museum while its editions sell. The invariant campaign adds
+  about 45 seconds to the "other invariants" CI job. Mutation and coverage floors for the
+  edition auction's contracts follow their first weekly and `main` runs.
 - 6529 Stream: the 1/1 sale method is pluggable (ADR 0005, owner decision 15). `mint` takes any
   admitted adapter whose `saleKind()` is the item's sale kind, and `_checkItem` requires only a
   nonzero kind; the adapter checks the sale's currency and params (the English auction refuses
@@ -47,6 +92,15 @@
   and never strands a live sale (AUC-9). Stream's runtime grows by 181 bytes; `start` costs
   about 230 more Prague gas and `settle` 2,169 more, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- Deploy: genesis deploys the uniform-price edition auction (`UniformEditionAuction`, with
+  the stateless lens its constructor creates) at the launch parameters of ADR 0005 §4,
+  admits it on 6529 Stream Editions and lists Editions as its target (17 wiring calls, was
+  15). Its five governed selectors are in the role matrix: `pause` (PAUSER), `unpause`
+  (UNPAUSER), `setConfig` (PARAMETER_SETTER, 48 hours), `setTarget` and
+  `setFederationRegistry` (SUCCESSOR_SETTER, 30 days). Every sale adapter's admission,
+  `setAdmittedMinter` on Stream and on Editions, stays in the 30-day class. Verify checks the
+  lens is the auction's own and its code hash the recorded one. The anvil dry-run record in
+  `deployments/31337/` is regenerated.
 - 6529 Editions is renamed 6529 Stream Editions (ADR 0005, D139) in every current document and
   NatSpec comment; `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS`. The
   identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label do
@@ -75,14 +129,19 @@
   forwards every call it does not declare to the lens through a non-payable, read-only
   `staticcall` fallback (no delegatecall), and the lens reads the auction's storage through
   `storageWords`. No signature, selector or ERC-165 ID changes, and a differential test
-  compares every moved view, byte for byte, with the pre-lens build over random sequences.
+  compares every moved view, byte for byte, with the pre-lens build over random sequences;
+  a layout test pins every slot and offset the lens reads to the compiler's storage layout.
   A cold view call through the lens costs about 7,000 more Prague gas (LIM-SAL-13), so the
   reads other contracts make on their hot paths stay on the auction: `saleKind`, and a new
   integration view, `auctionClock(saleId)` (`IEnglishAuctionClock`, ID `0x968c7b07`, outside
   `IEnglishAuction` and never reported through ERC-165), which returns exactly
-  `auction(saleId).state` and `.endTime` from one cold slot. The auction goes from 52 to 1,849
-  bytes under EIP-170. ADR 0004's table gains `auction`, `minimumBid` and `auctionClock`
-  rows. The deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its
+  `auction(saleId).state` and `.endTime` from one cold slot. The edition auction reads its
+  1/1 through it (`UniformEditionAuction._oneOfOne` and its lens's `masterTerms`), so `open`,
+  a bid near the close, the first settle call and `withdrawBid` while the 1/1 is paused each
+  cost 6,900 to 9,200 less Prague gas, and their regression ceilings come down with them;
+  `UniformEditionAuction` shrinks by 131 bytes (361 under EIP-170). The English auction goes
+  from 52 to 1,849 bytes under EIP-170. ADR 0004's table gains
+  `auction`, `minimumBid` and `auctionClock` rows. The deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its
   address (the auction's first CREATE), its code hash and `lens()`.
 - ADR 0005, the edition auction and 6529 Stream Editions
   ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the
@@ -111,7 +170,8 @@
   settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
 - Sales: `src/sales/UniformClearing.sol`, the pure core of the 6529 Stream Editions
-  uniform-price auction (ADR 0005), as an internal library that no contract uses yet: the
+  uniform-price auction (ADR 0005), as an internal library (the edition auction's lens runs it, and its settlement sweeps and
+  splits the cut step with it): the
   clearing rule in one pass over the steps (the largest count whose revenue is within the
   breadth margin of the best, up to the creator's cap) on `StepLadder`'s prices, the
   first-in-first-out split of the cut step with the settler's departure sweep, and the what-if
@@ -127,6 +187,32 @@
   (`tools/edition_auction_ref.py`) now validates a bid or raise before it changes the book, and
   limits a capped step's entered units to 2^32 - 1 as `InvalidQuantity` states; the golden
   vectors are unchanged.
+- Sales: `UniformEditionAuction`, the uniform-price edition auction (ADR 0005, D138 to D141),
+  with the stateless `UniformEditionAuctionLens` it creates. Bids escrow ETH on the `StepLadder`
+  steps and can be raised, never lowered, and withdrawn only while the 1/1 is paused for a
+  dispute. The sale closes 15 minutes after the 1/1's final end, extended by its own soft
+  close up to the backstop. A cancelled 1/1 voids it. Settlement runs in permissionless calls
+  of bounded gas: at most 24 book words scanned per call, then the FIFO departure sweep in
+  chunks. It mints exactly the cleared count through `IMintTarget.mint` as bids are claimed.
+  Its views (every view of `IUniformEditionAuction`) are the lens's, answered through a
+  read-only fallback; `IUniformEditionAuctionStorage` documents the raw words they read.
+  `open` binds the edition to the adapter first (see the Editions entry below). Each settler
+  sweeps the departures on its own (its progress kept per sender, each call passing the rest
+  of its own sweep; the lens's `sweepOf` and `settlementOrderFor` read it), and the first to
+  sweep every one settles the sale, so an order that skips a departure strands only its own
+  sender. Its views' departure sort is `O(n log n)`; its genesis
+  wiring is the Deploy entry above. Gas rows, with exact slot and account counts, are in
+  `test/integration/EditionAuctionGasReport.t.sol`; every settlement call stays within 350,000
+  execution gas, at most 228,103 in the worst case measured.
+- Editions (ADR 0005 §6, an amendment of the frozen interface): `bindMinter(editionId, item)`
+  binds an edition to the adapter whose sale opens it, before the edition exists if need be
+  (the master's stored item proves its kind), so two admitted adapters of one kind can never
+  both sell an edition and strand one sale's winners. Binding before creation also locks the
+  edition's `PRODUCT_EDITIONS` economics, which `createEdition` keeps, so the edition reports
+  the split its sale paid. A bound adapter keeps minting its edition after removal, within the
+  creator's cap (LIM-EA-10); removal stops new bindings. The `IEditions` interface ID becomes
+  `0xe183b26f`. The edition auction's `open` writes 6 new slots (278,235 Prague gas) and
+  `createEdition` of an edition it bound 2 (140,201); an edition created unbound still writes 6.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

@@ -24,11 +24,13 @@ import { ArtistRegistry } from "src/identity/ArtistRegistry.sol";
 import { ConsolidationAdapter } from "src/identity/ConsolidationAdapter.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStatementLog, Statement } from "src/interfaces/IStatementLog.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { HashRef, HASH_SHA256 } from "src/interfaces/types/HashRef.sol";
 import { License } from "src/interfaces/types/PackageTypes.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { UniformEditionAuction } from "src/sales/UniformEditionAuction.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
@@ -96,6 +98,8 @@ library DeployV1 {
         /// Permit2 for the English auction (`auctionPermit2`).
         address permit2;
         IEnglishAuction.AuctionConfig auction;
+        /// The edition auction's governed parameters at genesis (`editionAuctionDefaults`).
+        IUniformEditionAuction.AuctionConfig editionAuction;
         /// Chainlink VRF v2.5 coordinator, or zero to deploy without the entropy module.
         address vrfCoordinator;
         bytes32 vrfCoordinatorCodeHash;
@@ -123,6 +127,10 @@ library DeployV1 {
         StatementLog statementLog;
         VrfEntropyModule entropyModule;
         EnglishAuction englishAuction;
+        /// The uniform-price edition auction: 6529 Stream Editions' genesis sale method.
+        UniformEditionAuction editionAuction;
+        /// Its stateless views, created by its constructor (`lens()`, its first CREATE).
+        address editionAuctionLens;
         /// The English auction's lens: its first CREATE, made by its constructor.
         EnglishAuctionLens englishAuctionLens;
         /// The default renderer 6529 Stream pins (ADR 0001 §8).
@@ -162,6 +170,8 @@ library DeployV1 {
             assign(d, name, _create2(name, salt(p, name), initcode(p, d, name)));
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = d.configurator.worksManager();
+            } else if (_eq(name, "UniformEditionAuction")) {
+                d.editionAuctionLens = d.editionAuction.lens();
             } else if (_eq(name, "EnglishAuction")) {
                 d.englishAuctionLens = EnglishAuctionLens(d.englishAuction.lens());
             } else if (_eq(name, "ContentStore")) {
@@ -189,6 +199,8 @@ library DeployV1 {
             assign(d, name, a);
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = WorksAccessManager(vm.computeCreateAddress(a, 1));
+            } else if (_eq(name, "UniformEditionAuction")) {
+                d.editionAuctionLens = vm.computeCreateAddress(a, 1);
             } else if (_eq(name, "EnglishAuction")) {
                 d.englishAuctionLens = EnglishAuctionLens(vm.computeCreateAddress(a, 1));
             }
@@ -198,7 +210,7 @@ library DeployV1 {
     /// @notice The contracts `deploy` creates with CREATE2, in order. The entropy module is
     ///         included only with a VRF coordinator; the manager is created by the configurator.
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[19] memory all = [
+        string[20] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -217,7 +229,8 @@ library DeployV1 {
             "Stream",
             "WorkRecords",
             "Editions",
-            "EnglishAuction"
+            "EnglishAuction",
+            "UniformEditionAuction"
         ];
         bool vrf = p.vrfCoordinator != address(0);
         list = new string[](all.length + (vrf ? 1 : 0));
@@ -373,7 +386,36 @@ library DeployV1 {
                 )
             );
         }
+        if (n == keccak256("UniformEditionAuction")) {
+            // It reads 6529 Stream and the economics resolver from Editions; its target is
+            // genesis wiring, like the English auction's.
+            return _code(
+                type(UniformEditionAuction).creationCode,
+                abi.encode(m, d.revenueEscrow, d.editions, d.englishAuction, p.editionAuction)
+            );
+        }
         revert UnknownContract(name);
+    }
+
+    /// @notice The edition auction's genesis parameters (ADR 0005 §4; D138, D140, D141, owner
+    ///         decisions 3 to 5): 0.0001 ETH at step 0, 48 steps per decade over 336 steps (to
+    ///         about 953 ETH), a 10% breadth margin (10,000 of 100,000), a close 15 minutes after
+    ///         the 1/1's, a 5-minute soft close and a 24-hour extension backstop. Each is
+    ///         governed (`setConfig`, PARAMETER_SETTER) and locked into a sale when it opens.
+    function editionAuctionDefaults()
+        internal
+        pure
+        returns (IUniformEditionAuction.AuctionConfig memory)
+    {
+        return IUniformEditionAuction.AuctionConfig({
+            basePrice: 0.0001 ether,
+            stepsPerDecade: 48,
+            stepCount: 336,
+            marginShare: 10_000,
+            closeOffset: 15 minutes,
+            softWindow: 5 minutes,
+            maxExtension: 24 hours
+        });
     }
 
     /// @notice Permit2 for the English auction, which takes zero where Permit2 has no code (a
@@ -457,6 +499,8 @@ library DeployV1 {
         if (n == keccak256("StatementLog")) return address(d.statementLog);
         if (n == keccak256("EntropyModule")) return address(d.entropyModule);
         if (n == keccak256("EnglishAuction")) return address(d.englishAuction);
+        if (n == keccak256("UniformEditionAuction")) return address(d.editionAuction);
+        if (n == keccak256("UniformEditionAuctionLens")) return d.editionAuctionLens;
         if (n == keccak256("EnglishAuctionLens")) return address(d.englishAuctionLens);
         if (n == keccak256("Renderer")) return address(d.renderer);
         if (n == keccak256("Stream")) return address(d.stream);
@@ -502,6 +546,10 @@ library DeployV1 {
             d.entropyModule = VrfEntropyModule(a);
         } else if (n == keccak256("EnglishAuction")) {
             d.englishAuction = EnglishAuction(a);
+        } else if (n == keccak256("UniformEditionAuction")) {
+            d.editionAuction = UniformEditionAuction(a);
+        } else if (n == keccak256("UniformEditionAuctionLens")) {
+            d.editionAuctionLens = a;
         } else if (n == keccak256("EnglishAuctionLens")) {
             d.englishAuctionLens = EnglishAuctionLens(a);
         } else if (n == keccak256("Renderer")) {
@@ -519,7 +567,7 @@ library DeployV1 {
 
     /// @notice Every contract name `addressOf` knows, for records and readback.
     function names() internal pure returns (string[] memory list) {
-        string[22] memory all = [
+        string[24] memory all = [
             "GovernanceConfigurator",
             "WorksAccessManager",
             "ContentStore",
@@ -541,6 +589,8 @@ library DeployV1 {
             "WorkRecords",
             "EnglishAuction",
             "EnglishAuctionLens",
+            "UniformEditionAuction",
+            "UniformEditionAuctionLens",
             "Editions"
         ];
         list = new string[](all.length);

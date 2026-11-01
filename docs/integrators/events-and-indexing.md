@@ -131,7 +131,7 @@ emits ERC-4906 events through both tokens ([refresh triggers](#erc-4906-refresh-
 | Event | topic0 | Emitted by | Meaning and indexing notes |
 | --- | --- | --- | --- |
 | `EditionCreated(uint256 indexed editionId, bytes32 indexed contentHash, EditionTerms terms)` | `0x3a4f273b…` | `createEdition` (permissionless, once the master's primary sale settled) | `EditionTerms` is `(uint32 maxCount, address currency, bytes32 saleKind, bytes params)`. The economics locked at creation are not emitted: read `edition(id)`. |
-| `EditionMinterBound(uint256 indexed editionId, address indexed minter)` | `0x35bb9c80…` | The first `mint` of an edition, by an admitted adapter | The edition is bound to `minter`, the only adapter that may mint it from now on ([ED-5][ed]). Precedes that mint's `TransferSingle`. |
+| `EditionMinterBound(uint256 indexed editionId, address indexed minter)` | `0x35bb9c80…` | `bindMinter`, when an adapter's sale of the edition opens; or else the first `mint` of an edition no sale bound | The edition is bound to `minter`, the only adapter that may mint it from now on ([ED-5][ed]). From `bindMinter` it may precede the edition's `EditionCreated` (the edition auction opens with the 1/1); from a mint it precedes that mint's `TransferSingle`. |
 | `TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)` | `0xc3d58168…` | Each mint (`operator` is the sale adapter, `from` zero), holder transfers, and an adapter's `burn` (to zero) | Copies minted is the sum of `value` with `from` zero. No v1 adapter calls `burn`. |
 | `TransferBatch(address indexed operator, address indexed from, address indexed to, uint256[] ids, uint256[] values)` | `0x4a39dc06…` | Holder batch transfers | Never from a mint: adapters mint one ID per call. |
 | `ApprovalForAll(address indexed account, address indexed operator, bool approved)` | `0x17307eab…` | `setApprovalForAll` | Standard ERC-1155. |
@@ -243,6 +243,7 @@ adapter.
 | `StandingRefreshSkipped(uint256 indexed artistId)` | `0x103bc6dd…` | Registration or execution, when the consolidation source could not read or no longer has its pinned code hash | Nobody lost standing; a later `refreshStanding` catches up. |
 | `FederatedContractListed(uint256 indexed artistId, address indexed token)` | `0x4004e60c…` | `listFederatedContract`, callable only by the v1.1 federation registry | Not emitted in v1. |
 | `ConsolidationSourceSet(address previous, address next)` | `0x5b375cc7…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | |
+| `PackageRegistrySet(address previous, address next)` | `0xf602f9bc…` | `setPackageRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The only `register` caller changed to Stream's successor package registry (owner decision 16); `packageRegistry()` reads it. The genesis bind emits `Bound` instead. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindPackageRegistry` (`"PACKAGE_REGISTRY"`), `bindStream` (`"STREAM"`), `bindFederationRegistry` (`"FEDERATION_REGISTRY"`), `bindSplitFactory` (`"SPLIT_FACTORY"`), `bindStatementLog` (`"STATEMENT_LOG"`) | Once per name. |
 
 ### ContentStore
@@ -464,8 +465,9 @@ Per `saleId`:
 - **Created.** `EditionCreated`, `MetadataUpdate(editionId)`, the registry's `ContentClaimed`,
   and 6529 Stream's `EditionLinked` and `MetadataUpdate`, in one transaction. Read
   `edition(editionId)` for the locked economics.
-- **Bound.** `EditionMinterBound` on the first mint names the adapter that sells the edition;
-  `edition(id).minter` reads it.
+- **Bound.** `EditionMinterBound` names the adapter that sells the edition: emitted when its
+  sale opens (`bindMinter`, often before `EditionCreated`), or else on the first mint;
+  `edition(id).minter` reads it once the edition exists.
 - **Mints.** `TransferSingle` from zero, with the sale adapter as `operator`; the adapter's own
   events tell the sale.
 - **Supply.** The sum of `TransferSingle.value` from zero equals `edition(id).minted`.
@@ -591,6 +593,10 @@ and a head that matches `chainOf`, and each collection's serials must run 1, 2, 
   `totalSupply()` counts live tokens. A burned ID's views revert with `UnknownWork`.
 - **Edition ID equals master token ID.** `EditionCreated`, `EditionLinked` and
   `TransferSingle.id` all carry the same number.
+- **The edition auction's sweep is per settler.** `DeparturesSwept(saleId, swept, total,
+  cutoff)` reports the calling settler's own progress, so when settlers interleave `swept` can
+  go down from one event to the next. The sale's result is final at `AuctionSettled`; read
+  `settlement(saleId)` for it and `sweepOf(saleId, settler)` for a settler's progress.
 
 ### Derived state with no event
 
@@ -720,6 +726,7 @@ structs expanded to tuples: 121 signatures.
 | `OwnershipTransferred(address,address)` | `0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0` | Stream, Editions |
 | `PackageAccepted(bytes32,uint256,address)` | `0x49639e3178859abe27d1fabf424f120e3144b903fbc59fb7a6d5666da877907d` | PackageRegistry |
 | `PackageRegistered(bytes32,bytes32,address,address)` | `0x0c1aff273f69c590d79d6ec4500fbec709412c9d6f5aca50140d6f1e72d8b821` | PackageRegistry |
+| `PackageRegistrySet(address,address)` | `0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93` | ArtistRegistry |
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
 | `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction |
 | `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |

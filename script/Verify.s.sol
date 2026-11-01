@@ -8,6 +8,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { GovernanceConfigurator } from "src/governance/GovernanceConfigurator.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { Role, Statement } from "src/interfaces/IStatementLog.sol";
 import { IStatementLog } from "src/interfaces/IStatementLog.sol";
 import { StatementKinds } from "src/interfaces/types/StatementKinds.sol";
@@ -179,6 +180,15 @@ contract Verify is ScriptIO {
             SafeCast.toUint32(_uint(record, "auctionDuration")),
             SafeCast.toUint32(_uint(record, "auctionExtensionWindow")),
             SafeCast.toUint32(_uint(record, "auctionIncrementShare"))
+        );
+        p.editionAuction = IUniformEditionAuction.AuctionConfig(
+            SafeCast.toUint96(_uint(record, "editionBasePrice")),
+            SafeCast.toUint16(_uint(record, "editionStepsPerDecade")),
+            SafeCast.toUint16(_uint(record, "editionStepCount")),
+            SafeCast.toUint32(_uint(record, "editionMarginShare")),
+            SafeCast.toUint32(_uint(record, "editionCloseOffset")),
+            SafeCast.toUint32(_uint(record, "editionSoftWindow")),
+            SafeCast.toUint32(_uint(record, "editionMaxExtension"))
         );
         p.vrfCoordinator = _address(record, "vrfCoordinator");
         p.vrfCoordinatorCodeHash = vm.parseJsonBytes32(record, ".params.vrfCoordinatorCodeHash");

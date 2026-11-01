@@ -30,6 +30,7 @@ import {
     WorkTerms
 } from "src/interfaces/types/EconomicsTypes.sol";
 import {
+    EditionTerms,
     ItemKind,
     License,
     PackageItem,
@@ -771,26 +772,178 @@ contract EditionsTest is EditionsBase {
         adapter.buy(editions, other, buyer, 1);
     }
 
-    /// @dev A bound adapter removed and re-admitted keeps its binding ID, so it can finish its
-    ///      edition; while removed, nothing mints the edition.
-    function test_Mint_BindingSurvivesRemovalAndReadmission() public {
-        uint256 id = _create(_item(0));
+    /// @dev A bound adapter that governance removes keeps minting its own edition, within the
+    ///      creator's cap: its sale has paid the seller, so its winners must still claim (ADR
+    ///      0005, amended 31 October 2026). It binds no new edition and mints no unbound one, no
+    ///      other adapter takes its edition, and a re-admission keeps its binding ID.
+    function test_Mint_RemovedBoundAdapterFinishesItsEditionWithinTheCap() public {
+        PackageItem memory item = _item(3);
+        uint256 id = _create(item);
+        uint256 other = _create(_item(0));
         adapter.buy(editions, id, buyer, 1);
         vm.prank(governor);
         editions.setAdmittedMinter(address(adapter), false);
+
+        // Its winners claim: the bound edition mints, up to the cap and no further.
+        adapter.buy(editions, id, buyer, 2);
+        assertEq(editions.edition(id).minted, 3);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.EditionUnavailable.selector, id));
+        adapter.buy(editions, id, buyer, 1);
+        // No new sale: it neither binds nor mints an unbound edition.
         vm.expectRevert(
             abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(adapter))
         );
-        adapter.buy(editions, id, buyer, 1);
+        adapter.buy(editions, other, buyer, 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(adapter))
+        );
+        adapter.bind(editions, other, item);
+        // Not even a no-op re-binding of its own edition: removal ends its sales.
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(adapter))
+        );
+        adapter.bind(editions, id, item);
+        // Another adapter cannot take the edition over.
         vm.expectRevert(
             abi.encodeWithSelector(IEditions.MinterMismatch.selector, id, address(adapter))
         );
         secondAdapter.buy(editions, id, buyer, 1);
         vm.prank(governor);
         editions.setAdmittedMinter(address(adapter), true);
-        adapter.buy(editions, id, buyer, 1);
-        assertEq(editions.edition(id).minted, 2);
         assertEq(editions.edition(id).minter, address(adapter));
+        adapter.buy(editions, other, buyer, 1);
+        assertEq(editions.edition(other).minter, address(adapter));
+    }
+
+    /// @dev `bindMinter` before the edition exists: the edition auction opens with the master's
+    ///      1/1, so it binds an edition `createEdition` writes only after the 1/1 settles. The
+    ///      item must be the master's stored EDITION_MASTER item, and the caller's kind its
+    ///      terms' kind. The binding emits once, is a no-op for the bound adapter, refuses any
+    ///      other, and survives `createEdition`.
+    function test_BindMinter_BeforeTheEditionExists() public {
+        PackageItem memory item = _item(10);
+        uint256 id = _masterInAuction(item);
+        assertFalse(editions.exists(id));
+
+        // Another item (same kind and terms) is not the master's.
+        PackageItem memory forged = _item(10);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, id));
+        adapter.bind(editions, id, forged);
+        // The adapter's kind must be the one the item's terms name.
+        EditionsAdapterMock fixedKind = new EditionsAdapterMock(FIXED_PRICE);
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(fixedKind), true);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, SaleKind.UNIFORM_AUCTION, FIXED_PRICE
+            )
+        );
+        fixedKind.bind(editions, id, item);
+        // Only admitted adapters bind.
+        EditionsAdapterMock stranger = new EditionsAdapterMock(SaleKind.UNIFORM_AUCTION);
+        vm.expectRevert(
+            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(stranger))
+        );
+        stranger.bind(editions, id, item);
+
+        vm.expectEmit(true, true, false, true, address(editions));
+        emit IEditions.EditionMinterBound(id, address(adapter));
+        adapter.bind(editions, id, item);
+        assertFalse(editions.exists(id), "binding creates no edition");
+        vm.recordLogs();
+        adapter.bind(editions, id, item);
+        assertEq(vm.getRecordedLogs().length, 0, "a no-op for the bound adapter");
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.MinterMismatch.selector, id, address(adapter))
+        );
+        secondAdapter.bind(editions, id, item);
+
+        stream.settle(id, COLLECTOR);
+        vm.recordLogs();
+        _createEdition(id, item);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            assertTrue(
+                logs[i].topics[0] != IEditions.EditionMinterBound.selector, "bound once, earlier"
+            );
+        }
+        assertEq(editions.edition(id).minter, address(adapter), "the binding survives creation");
+        vm.expectRevert(
+            abi.encodeWithSelector(IEditions.MinterMismatch.selector, id, address(adapter))
+        );
+        secondAdapter.buy(editions, id, buyer, 1);
+        adapter.buy(editions, id, buyer, 10);
+        assertEq(editions.edition(id).minted, 10);
+    }
+
+    /// @dev The item matters only before the edition exists: a master of another kind is
+    ///      refused, and after creation the stored kind is checked (any item is ignored).
+    function test_BindMinter_ChecksTheMasterAndTheStoredKind() public {
+        // A work that is not an edition master: its stored item kind is not EDITION_MASTER.
+        PackageItem memory plain = _item(0);
+        plain.kind = ItemKind.ORIGINAL;
+        uint256 work = _masterInAuction(plain);
+        vm.expectRevert(abi.encodeWithSelector(IEditions.NotEditionMaster.selector, work));
+        adapter.bind(editions, work, plain);
+        // A token Stream never minted: Stream refuses it.
+        PackageItem memory never = _item(0);
+        vm.expectRevert(abi.encodeWithSelector(IStream.UnknownWork.selector, 999_999));
+        adapter.bind(editions, 999_999, never);
+
+        // After creation: the stored kind, whatever item is passed.
+        PackageItem memory item = _item(0);
+        item.edition = EditionTerms(0, CURRENCY_ETH, FIXED_PRICE, "");
+        uint256 id = _create(item);
+        PackageItem memory unrelated = _item(0);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IMintTarget.SaleKindMismatch.selector, FIXED_PRICE, SaleKind.UNIFORM_AUCTION
+            )
+        );
+        adapter.bind(editions, id, unrelated);
+        EditionsAdapterMock fixedKind = new EditionsAdapterMock(FIXED_PRICE);
+        vm.prank(governor);
+        editions.setAdmittedMinter(address(fixedKind), true);
+        PackageItem memory empty;
+        fixedKind.bind(editions, id, empty);
+        assertEq(editions.edition(id).minter, address(fixedKind));
+        // Binding an existing edition locks nothing new: its economics are the creation's.
+        assertEq(editions.edition(id).feeShare, 25_000);
+    }
+
+    /// @dev The fee snapshot: an edition bound before it exists keeps the economics locked at
+    ///      the binding, the ones its sale locked and pays, through a `PRODUCT_EDITIONS` fee
+    ///      change before `createEdition`; an edition nobody bound locks them at creation.
+    function test_BindMinter_LocksTheEconomicsTheSalePays() public {
+        PackageItem memory item = _item(0);
+        uint256 id = _masterInAuction(item);
+        WorkTerms memory atOpen = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        adapter.bind(editions, id, item);
+        PackageItem memory unboundItem = _item(0);
+        uint256 unbound = _master(unboundItem);
+
+        address newRecipient = makeAddr("newFeeRecipient");
+        economics.setEconomics(ProductEconomics(newRecipient, 10_000, 6_529));
+        WorkTerms memory later = economics.newWorkTerms(PRODUCT_EDITIONS, item.payees);
+        assertTrue(later.royaltyReceiver != atOpen.royaltyReceiver, "the royalty split moves");
+
+        stream.settle(id, COLLECTOR);
+        _createEdition(id, item);
+        IEditions.Edition memory e = editions.edition(id);
+        assertEq(e.seller, atOpen.seller);
+        assertEq(e.feeRecipient, feeRecipient);
+        assertEq(e.feeShare, 25_000);
+        assertEq(e.royaltyReceiver, atOpen.royaltyReceiver);
+        (address receiver,) = editions.royaltyInfo(id, 1 ether);
+        assertEq(receiver, atOpen.royaltyReceiver);
+        PrimaryTerms memory p = editions.primaryTerms(id, "");
+        assertEq(p.feeRecipient, feeRecipient);
+        assertEq(p.feeShare, 25_000);
+
+        _createEdition(unbound, unboundItem);
+        IEditions.Edition memory u = editions.edition(unbound);
+        assertEq(u.feeRecipient, newRecipient, "unbound: locked at creation");
+        assertEq(u.feeShare, 10_000);
     }
 
     function test_Mint_RejectsUnknownEditionZeroAmountAndData() public {
@@ -964,10 +1117,6 @@ contract EditionsTest is EditionsBase {
         vm.prank(governor);
         editions.setAdmittedMinter(address(adapter), false);
         assertFalse(editions.isAdmittedMinter(address(adapter)));
-        vm.expectRevert(
-            abi.encodeWithSelector(IMintTarget.NotAdmittedMinter.selector, address(adapter))
-        );
-        adapter.buy(editions, id, buyer, 1);
         adapter.burnHeld(editions, id, 2);
         assertEq(editions.balanceOf(address(adapter), id), 0);
 

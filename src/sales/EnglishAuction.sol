@@ -553,9 +553,7 @@ contract EnglishAuction is
     ///         sales finish. Listing checks the token like any dependency
     ///         (`Dependency.InvalidDependency`): code, not an EIP-7702 delegated account, and
     ///         ERC-165 support for the surface the adapter calls.
-    /// @param token The token contract: one that reports `IMintTarget` through ERC-165 for the
-    ///        fixed-price and Dutch adapters (which also refuse zero, even to unlist), ERC-721
-    ///        for the auction.
+    /// @param token The token contract: an ERC-721 (checked through ERC-165 when listing).
     /// @param listed True to list the token, false to unlist it.
     function setTarget(address token, bool listed) external restricted {
         _setTarget(token, listed);
