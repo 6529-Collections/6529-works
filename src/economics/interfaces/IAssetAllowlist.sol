@@ -56,6 +56,10 @@ interface IAssetAllowlist {
     error InvalidStatusTransition(address asset, Status current);
     /// @notice `asset` is not active.
     error AssetNotActive(address asset);
+    /// @notice ETH, the native currency, is never deprecated: one guardian could otherwise
+    ///         freeze every ETH sale and, after the 30-day freeze exit, end each one unsold
+    ///         (MONEY-M1, G-2 in the rc.2 review).
+    error EthNotDeprecable();
     /// @notice A deprecated `asset` may be re-admitted only from `allowedAt`, 14 days
     ///         (`Roles.FUNDS`) after its deprecation.
     error ReadmissionTooEarly(address asset, uint256 allowedAt);
@@ -134,8 +138,10 @@ interface IAssetAllowlist {
     function admitAsset(address asset, uint64 expectedRevision, uint256 floor) external;
 
     /// @notice Stops new sales from using active `asset`. Immediate; bumps the asset's revision,
-    ///         so every operation queued against the earlier state reverts.
-    /// @param asset The asset to deprecate; must be active.
+    ///         so every operation queued against the earlier state reverts. ETH is refused
+    ///         (`EthNotDeprecable`): the native currency of every ETH sale, and the only currency
+    ///         of the edition auctions, is never frozen.
+    /// @param asset The asset to deprecate: an active token, never ETH.
     function deprecateAsset(address asset) external;
 
     /// @notice Sets the increment floor of active `asset` to `floor`, if the asset is at

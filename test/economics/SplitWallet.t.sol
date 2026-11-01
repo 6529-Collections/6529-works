@@ -5,6 +5,7 @@ import {
     ReentrancyGuardTransient
 } from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import { SplitWallet } from "src/economics/SplitWallet.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { TokenTransfer } from "src/economics/TokenTransfer.sol";
 import { IClaimRouter } from "src/economics/interfaces/IClaimRouter.sol";
 import { IReleaseVerifier } from "src/economics/interfaces/IReleaseVerifier.sol";
@@ -346,6 +347,8 @@ contract SplitWalletTest is EconomicsBase {
         token.mint(address(wallet), 100);
         allowlist.deprecateAsset(address(token));
         assertEq(wallet.release(address(token), iAlice), 50);
+        // ETH is never deprecated (`EthNotDeprecable`); it is always withdrawable.
+        vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
         allowlist.deprecateAsset(ETH);
         vm.deal(address(wallet), 1 ether);
         assertEq(wallet.release(ETH, iAlice), 0.5 ether);

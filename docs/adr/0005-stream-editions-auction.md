@@ -540,7 +540,7 @@ over as the edition auction lands.
   before attesting.
 - **LIM-EA-9: a frozen 1/1 delays editions.** An ERC-20 1/1 frozen by a currency deprecation
   (MARKET-2) delays the edition settlement until the 1/1 settles, up to 30 days. 6529 Stream
-  launches in ETH, which is never deprecated in practice.
+  launches in ETH, which can never be deprecated (`EthNotDeprecable`, the rc.2 review).
 - **LIM-EA-10: claims need the adapter admitted.** Copies are minted at claim, and 6529 Stream
   Editions refuses mints from a removed adapter (ED-5). Governance therefore removes an edition
   auction only once its settled sales are claimed; `claimBidFor` lets anyone push the remaining

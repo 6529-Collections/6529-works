@@ -353,6 +353,58 @@ abstract contract IntegrationBase is WorksDeployment {
         assertEq(saleId, auction.saleIdOf(address(stream), tokenId), "sale ID");
     }
 
+    // ------------------------------------------------------------------ an ERC-20 currency
+
+    /// @dev The test ERC-20's increment floor once admitted.
+    uint256 internal constant USD_FLOOR = 1e16;
+
+    /// @dev Admits the test ERC-20 (`usd`), a 14-day FUNDS_SETTER action. ETH is never
+    ///      deprecated (`IAssetAllowlist.EthNotDeprecable`), so the currency-freeze tests sell
+    ///      in this token.
+    function _admitUsd() internal {
+        _govern(
+            hotAdmin,
+            address(allowlist),
+            abi.encodeCall(allowlist.admitAsset, (address(usd), 0, USD_FLOOR))
+        );
+    }
+
+    /// @dev One guardian deprecates the test ERC-20 (immediate); returns when.
+    function _deprecateUsd() internal returns (uint256 frozenAt) {
+        _govern(
+            guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (address(usd)))
+        );
+        frozenAt = block.timestamp;
+    }
+
+    /// @dev Governance re-admits the test ERC-20 (14 days, and not before 14 days after its
+    ///      deprecation).
+    function _readmitUsd() internal {
+        (,, uint64 revision) = allowlist.assetConfig(address(usd));
+        _govern(
+            hotAdmin,
+            address(allowlist),
+            abi.encodeCall(allowlist.admitAsset, (address(usd), revision, USD_FLOOR))
+        );
+    }
+
+    /// @dev `works`, priced in the test ERC-20.
+    function _inUsd(Work[] memory works) internal view returns (Work[] memory) {
+        for (uint256 i; i < works.length; ++i) {
+            works[i].item.sale.currency = address(usd);
+        }
+        return works;
+    }
+
+    /// @dev A direct ERC-20 bid of `amount` by `bidder`, who is minted and approves it first.
+    function _usdBid(uint256 saleId, address bidder, uint256 amount) internal {
+        usd.mint(bidder, amount);
+        vm.startPrank(bidder);
+        usd.approve(address(auction), amount);
+        auction.bid(saleId, address(0), Payment(PaymentMethod.DIRECT, bidder, amount, 0, 0, ""));
+        vm.stopPrank();
+    }
+
     function _ethBid(uint256 saleId, address bidder, uint256 amount) internal {
         vm.deal(bidder, bidder.balance + amount);
         vm.prank(bidder);

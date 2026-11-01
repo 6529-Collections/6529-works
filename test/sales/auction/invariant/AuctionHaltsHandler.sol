@@ -443,6 +443,13 @@ contract AuctionHaltsHandler is Test {
     function toggleCurrency(uint256 seed) public {
         if (_active()) {
             vm.prank(admin);
+            if (currency == address(0)) {
+                // ETH is never deprecated (EthNotDeprecable): its sales never freeze.
+                vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
+                allowlist.deprecateAsset(currency);
+                ++hits["ethNotDeprecable"];
+                return;
+            }
             allowlist.deprecateAsset(currency);
             ++hits["deprecate"];
         } else {

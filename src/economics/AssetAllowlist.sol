@@ -82,6 +82,7 @@ contract AssetAllowlist is IAssetAllowlist, AccessManaged {
 
     /// @inheritdoc IAssetAllowlist
     function deprecateAsset(address asset) external restricted {
+        if (asset == ETH) revert EthNotDeprecable();
         AssetConfig storage config = _assets[asset];
         if (config.status != Status.Active) revert InvalidStatusTransition(asset, config.status);
         config.status = Status.Deprecated;
