@@ -226,8 +226,9 @@ default when the sale starts".
      `IStream.linkEdition`.
    - A burned or disputed master never gets an edition.
 3. Copies are minted through `IEditions.mint` by an admitted sale adapter whose
-   sale kind the edition's terms name, within the creator's optional cap. The
-   first adapter to mint an edition is bound to it. rc.2 sells editions by the
+   sale kind the edition's terms name, within the creator's optional cap. Each
+   edition is bound to one adapter: the one whose sale opened it
+   (`bindMinter`), or else the first to mint it. rc.2 sells editions by the
    uniform-price edition auction (ADR 0005), admitted once it lands; a new sale
    method is a new adapter, never a new Editions.
 4. The edition renders its master's media and record. `WorkRecords` calls

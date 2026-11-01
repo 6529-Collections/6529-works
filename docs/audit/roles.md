@@ -38,16 +38,16 @@ Docs).
 | --- | ---: | --- | --- | --- | ---: | --- |
 | `ADMIN` | 0 | 30 days | 30 days | Hot admin Safe, Cold recovery admin Safe | 0 | No |
 | `GUARDIAN` | 1 | immediate | 30 days | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 6 | No |
-| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 1 | No |
-| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 2 | No |
+| `PAUSER` | 2 | immediate | 48 hours | Guardian Safe 1, Guardian Safe 2, Guardian Safe 3 | 2 | No |
+| `UNPAUSER` | 3 | 48 hours | 48 hours | Hot admin Safe | 3 | No |
 | `CURATION_SIGNER` | 4 | immediate | 30 days | Curation signer key 1, Curation signer key 2 | 0 | No |
 | `STORAGE_OPERATOR` | 5 | immediate | 48 hours | Storage operator key | 3 | Yes |
 | `MINTER` | 6 | immediate | 30 days | none (unused in v1) | 0 | No |
 | `KEEPER` | 7 | immediate | 48 hours | none (unused in v1) | 0 | No |
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
-| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 13 | No |
+| `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 14 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 15 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 17 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -60,11 +60,11 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 
 | Class | Delay | Mapped selectors |
 | --- | --- | ---: |
-| Immediate | immediate | 14 |
-| Standard | 48 hours | 15 |
+| Immediate | immediate | 15 |
+| Standard | 48 hours | 17 |
 | Funds and recipients | 14 days | 8 |
-| Verifier and successor | 30 days | 15 |
-| **Total** | | **52** |
+| Verifier and successor | 30 days | 17 |
+| **Total** | | **57** |
 
 ## Matrix by contract
 
@@ -162,6 +162,18 @@ Source: [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol).
 | `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
 | `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
 
+### UniformEditionAuction
+
+Source: [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol).
+
+| Function | Selector | Role | Class | Delay | Guardian cancel | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `pause()` | `0x8456cb59` | `PAUSER` | Immediate | immediate | No: executes at once | Stops new `open` calls only; bids, raises, settlement and claims of open sales continue. |
+| `unpause()` | `0x3f4ba83a` | `UNPAUSER` | Standard | 48 hours | Yes: any guardian, during the delay | Refused until 48 hours after the pause, whenever it was scheduled. |
+| `setConfig((…),(…))` | `0x3a59bb19` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, with bounds in code. An auction keeps the values locked at its open. |
+| `setTarget(address,bool)` | `0x80ffe77f` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Also a genesis wiring call. |
+| `setFederationRegistry(address,address)` | `0x747e3199` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | v1.1: no registry is installed in v1. |
+
 ### EconomicsResolver
 
 Source: [`src/economics/EconomicsResolver.sol`](../../src/economics/EconomicsResolver.sol).
@@ -255,11 +267,13 @@ and renounces ADMIN. `GovernanceConfig.isGenesisSelector` admits nothing else.
 | 7 | ArtistRegistry | `bindSplitFactory(address)` | SplitFactory |
 | 8 | ArtistRegistry | `bindStatementLog(address)` | StatementLog |
 | 9 | Stream | `setAdmittedMinter(address,bool)` | EnglishAuction, `true` |
-| 10 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
-| 11 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
-| 12 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
-| 13 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
-| 14 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
+| 10 | Editions | `setAdmittedMinter(address,bool)` | UniformEditionAuction, `true` (The genesis edition sale; later sale methods are admitted the same way, in the 30-day class (owner decision 14)) |
+| 11 | EnglishAuction | `setTarget(address,bool)` | Stream, `true` |
+| 12 | UniformEditionAuction | `setTarget(address,bool)` | Editions, `true` |
+| 13 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x8d6f9a23…`, 0, `address(0)` (ETH) (PRODUCT_STREAM: ETH, revision 0) |
+| 14 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0xdda24e9b…`, 0, `address(0)` (ETH) (PRODUCT_EDITIONS: ETH, revision 0) |
+| 15 | AssetAllowlist | `setDefaultCurrency(bytes32,uint64,address)` | `0x12f6fbd5…`, 0, `address(0)` (ETH) (PRODUCT_FEDERATED: ETH, revision 0) |
+| 16 | StatementLog | `appendGovernanceManifest((…))` | the epoch-0 `GOVERNANCE_MANIFEST` statement about the manager |
 
 ## The AccessManager's own functions
 
@@ -297,4 +311,5 @@ for the call they carry.
 | `0xa054305a` | `appendCurator((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x8479b292` | `appendPlatform((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
 | `0x5cab7fab` | `appendGovernanceManifest((address,uint256,bytes32,bytes32,(uint16,bytes32),string,bytes32,bytes32))` |
+| `0x3a59bb19` | `setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),(uint96,uint16,uint16,uint32,uint32,uint32,uint32))` |
 | `0x058832db` | `setConfig((uint256,bytes32,uint32,uint16,bool),(uint256,bytes32,uint32,uint16,bool))` |

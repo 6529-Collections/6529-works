@@ -21,18 +21,24 @@ import { EditionTerms, License, PackageItem } from "./types/PackageTypes.sol";
 ///      (`EditionTerms.maxCount`): any adapter governance admits (`setAdmittedMinter`, 30-day
 ///      class), so a sale method is added by deploying and admitting an adapter, never by
 ///      redeploying this contract (ADR 0005, owner decision 14); in rc.2, the uniform-price
-///      edition auction, whose clearing decides how many copies exist. The first adapter to mint
-///      an edition is the only one that may mint it again (`MinterMismatch`), so a second
-///      admitted adapter of the same kind can never add copies to a sale another one ran. A
-///      master with an edition can never be burned (6529 Stream burns only before the primary
-///      sale settles), so minting reads nothing from 6529 Stream. There are no numbered editions.
+///      edition auction, whose clearing decides how many copies exist. An edition is bound to
+///      one adapter, the only one that may mint it (`MinterMismatch`): the adapter binds it when
+///      its sale opens (`bindMinter`, before the edition exists if need be), or else the first
+///      to mint it binds it. So a second admitted adapter of the same kind can never open a sale
+///      of an edition another one sells, and the winners of a sale are never locked out by
+///      another sale's claim. A bound adapter keeps minting its edition after governance
+///      removes it, within the creator's cap: its sale has paid the seller, and its winners
+///      claim (ADR 0005, amended 31 October 2026). A master with an edition can never be burned
+///      (6529 Stream burns only before the primary sale settles), so minting reads nothing from
+///      6529 Stream. There are no numbered editions.
 interface IEditions is IERC1155, IERC2981, IMintTarget {
-    /// @notice An edition's state; economics are locked at creation.
+    /// @notice An edition's state; economics are locked at creation, or earlier, by a binding
+    ///         (`bindMinter`) that precedes it.
     /// @param contentHash The master's content hash; unique in the Editions product.
     /// @param terms The edition terms from the approved package item.
     /// @param minted Copies minted so far.
-    /// @param minter The adapter the edition is bound to: the first that minted it; zero before
-    ///        the first mint.
+    /// @param minter The adapter the edition is bound to (`bindMinter`, or else its first
+    ///        mint); zero while unbound.
     /// @param seller The artist-portion split wallet (a predicted address).
     /// @param feeRecipient The network fee recipient.
     /// @param feeShare The network share of primary sales and royalties, out of 100,000.
@@ -66,8 +72,9 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     /// @param _toTokenId The last ID of the range, inclusive (this contract emits
     ///        `type(uint256).max`).
     event BatchMetadataUpdate(uint256 _fromTokenId, uint256 _toTokenId);
-    /// @notice An edition was bound to the adapter that minted its first copies; only that
-    ///         adapter may mint it from now on.
+    /// @notice An edition was bound to `minter`: by `bindMinter` when its sale opened (possibly
+    ///         before the edition exists), or else by its first mint. Only that adapter may mint
+    ///         it from now on.
     /// @param editionId The edition.
     /// @param minter The adapter.
     event EditionMinterBound(uint256 indexed editionId, address indexed minter);
@@ -124,8 +131,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     error InvalidRoyaltyRate(uint32 rate);
     /// @notice The work-records satellite is not bound yet, so no edition can be created.
     error WorkRecordsUnbound();
-    /// @notice `minter` is admitted, but another adapter already minted this edition, and only
-    ///         that one may mint it again (ADR 0005).
+    /// @notice The edition is bound to `minter`, another adapter: only that one may mint it or
+    ///         sell it (ADR 0005).
     error MinterMismatch(uint256 editionId, address minter);
 
     /// @notice The collection's name (D139): "6529 Stream Editions".
@@ -146,7 +153,8 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
     ///         registry must have registered (it may have been revoked since: a revocation stops
     ///         unconsumed items, not the edition of a master already sold). Claims the content
     ///         hash for the Editions product and locks `PRODUCT_EDITIONS` economics from the
-    ///         resolver.
+    ///         resolver, unless a sale bound the edition before it existed: then it keeps the
+    ///         economics locked at that binding (`bindMinter`), which that sale pays.
     /// @param workId The master's 6529 Stream token ID, which becomes the edition ID.
     /// @param item The master's EDITION_MASTER package item, whose hash must be the item hash
     ///        6529 Stream stored for `workId`.
@@ -161,6 +169,25 @@ interface IEditions is IERC1155, IERC2981, IMintTarget {
         bytes32 packageRoot,
         bytes32[] calldata proof
     ) external returns (uint256 editionId);
+
+    /// @notice Binds edition `editionId` to the calling adapter, so no other adapter can mint it
+    ///         or sell it. An adapter calls it when a sale of the edition opens, which may be
+    ///         before the edition exists (the edition auction opens with the master's 1/1). The
+    ///         caller must be admitted, and its `ISaleAdapter.saleKind` must be the edition's:
+    ///         the stored one once the edition exists, and before that the one in `item`, the
+    ///         master's EDITION_MASTER item, whose hash must be the item hash 6529 Stream stored
+    ///         for `editionId`. Binds and emits `EditionMinterBound` if the edition is unbound; a
+    ///         no-op if it is bound to the caller; reverts with `MinterMismatch` if it is bound
+    ///         to another adapter. Binding an edition that does not exist yet also locks its
+    ///         `PRODUCT_EDITIONS` economics, in the transaction in which the sale locks its own;
+    ///         the binding and those economics are kept when the edition is created.
+    /// @dev Added on 31 October 2026, an amendment of ADR 0005's frozen interface: binding at
+    ///      the first mint let two adapters of one kind both sell an edition, and the first
+    ///      claim locked out the other sale's winners after its seller was paid.
+    /// @param editionId The edition ID, equal to its master's 6529 Stream token ID.
+    /// @param item The master's EDITION_MASTER package item; read only while the edition does
+    ///        not exist.
+    function bindMinter(uint256 editionId, PackageItem calldata item) external;
 
     /// @notice Binds 6529 Stream's work-records satellite, once (ERC-165 for `IWorkRecords`, not
     ///         an EIP-7702 delegated account). ADMIN role.

@@ -17,8 +17,8 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 9,831 non-blank, non-comment lines in 81 files under `src/` (budget: 12,000) |
-| Deployed contracts | 21 per deployment, plus one `SplitWallet` per payee configuration, deployed on demand |
+| Source lines | 11,350 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
+| Deployed contracts | 22 per deployment without the optional VRF entropy module and 23 with it (the edition auction creates its lens), plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), checked by `tools/check_budgets.py` in CI |
@@ -35,8 +35,10 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 645 | 21,873 | 23,682 | 2,703 |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,994 | 25,688 | 1,582 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 313 | 17,485 | 19,159 | 7,091 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 339 | 18,163 | 19,844 | 6,413 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 824 | 24,346 | 46,093 | 230 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 552 | 17,757 | 18,129 | 6,819 |
 
 ### Curation, identity and records
 
@@ -88,7 +90,7 @@ Compiled into the contracts that use them; none is deployed or linked.
 | `JsonScan` | [`src/content/JsonScan.sol`](../../src/content/JsonScan.sol) | 444 | Renderer |
 | `GovernanceConfig` | [`src/governance/GovernanceConfig.sol`](../../src/governance/GovernanceConfig.sol) | 246 | GovernanceConfigurator |
 | `Utf8` | [`src/libraries/Utf8.sol`](../../src/libraries/Utf8.sol) | 152 | `Renderer`, `Stream`, `StatementLog` |
-| `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | The uniform-price edition auction (in progress, ADR 0005) |
+| `UniformClearing` | [`src/sales/UniformClearing.sol`](../../src/sales/UniformClearing.sol) | 149 | `UniformEditionAuction` (sweep, claims), `UniformEditionAuctionLens` (every clearing view) |
 | `TokenTransfer` | [`src/economics/TokenTransfer.sol`](../../src/economics/TokenTransfer.sol) | 134 | Sale adapters, `SplitWallet`, `RevenueEscrow`, `AssetAllowlist`, `RevenuePayment` |
 | `JsonEscape` | [`src/libraries/JsonEscape.sol`](../../src/libraries/JsonEscape.sol) | 129 | Renderer |
 | `BoundedCall` | [`src/libraries/BoundedCall.sol`](../../src/libraries/BoundedCall.sol) | 104 | `Renderer`, `ConsolidationAdapter`, `ArtistRegistry`, `StatementLog`, `EnglishAuction`, `ClaimRouter`, `SignatureVerifier`, `TokenTransfer`, `RevenuePayment` |
@@ -112,7 +114,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,764 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,881 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -133,7 +135,7 @@ are outside this scope, but their use (overrides, hooks, assumptions) is in scop
 | `ERC721` | `Stream` |
 | `ERC1155` | `Editions` |
 | `EIP712` | `PackageRegistry`, `Eip712CurationVerifier`, `ArtistRegistry`, `StatementLog`, `WorkRecords`, `ReleaseVerifier` |
-| `ReentrancyGuardTransient` | `EnglishAuction`, `SplitWallet`, `RevenueEscrow` |
+| `ReentrancyGuardTransient` | `EnglishAuction`, `SplitWallet`, `RevenueEscrow`, `UniformEditionAuction` |
 | `ERC165`, `ERC165Checker`, `MerkleProof`, `ECDSA`, `Math`, `SafeCast`, `Base64`, `Strings`, `Create2` | Utilities across modules |
 
 ## Out of scope

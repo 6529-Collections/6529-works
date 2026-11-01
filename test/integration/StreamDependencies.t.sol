@@ -45,6 +45,29 @@ contract OtherSeedsEntropy is IERC165 {
     }
 }
 
+/// @dev A replacement entropy module that delivers the seeds the test gives it.
+contract DeliveringEntropy is IERC165 {
+    mapping(bytes32 itemHash => bytes32 seed) internal _seeds;
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IEntropyModule).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
+    }
+
+    function deliver(bytes32 itemHash, bytes32 seed) external {
+        _seeds[itemHash] = seed;
+    }
+
+    function isDelivered(bytes32 itemHash) external view returns (bool) {
+        return _seeds[itemHash] != 0;
+    }
+
+    function seedOf(bytes32 itemHash) external view returns (bytes32) {
+        return _seeds[itemHash];
+    }
+}
+
 /// @notice Owner decision 16 on the real genesis deployment: Stream's package registry, artist
 ///         registry, economics resolver and entropy module are replaceable by governance in the
 ///         30-day class, and 6529 Stream Editions and the work-records satellite follow at once.
@@ -230,6 +253,62 @@ contract StreamDependenciesTest is IntegrationBase {
         records.openRecord(later, w.item, w.media);
         (, seed) = records.seedOf(later);
         assertEq(seed, other.seedOf(WorksHashing.itemHash(w.item)));
+    }
+
+    /// @dev Two replacements make three eras. A VRF work minted in each of the first two keeps
+    ///      its module and its metadata byte for byte through every later replacement, before
+    ///      and after its record opens with that module's seed.
+    function test_TwoEntropyReplacementsLeaveEachErasWorksUnchanged() public {
+        address genesisEntropy = address(entropy);
+        DeliveringEntropy second = new DeliveringEntropy();
+        _replace("ENTROPY_MODULE", address(second));
+        Work memory w = _work(artist, collectionId);
+        w.item.seedPolicy = SeedPolicy.VRF;
+        Work[] memory one = _one(w);
+        bytes32 root = _publish(one);
+        second.deliver(WorksHashing.itemHash(w.item), keccak256("the second era's seed"));
+        (, uint256 secondEra) = _start(root, one, 0);
+        tokens.push(secondEra);
+        bytes32 before = _snapshot();
+
+        _replace("ENTROPY_MODULE", address(new OtherSeedsEntropy()));
+        assertEq(_snapshot(), before, "both eras' tokens are unaffected");
+        assertEq(stream.entropyModuleOf(tokens[PENDING_VRF]), genesisEntropy);
+        assertEq(stream.entropyModuleOf(secondEra), address(second));
+
+        _open(PENDING_VRF, 1);
+        records.openRecord(secondEra, w.item, w.media);
+        (, bytes32 seed) = records.seedOf(tokens[PENDING_VRF]);
+        assertEq(seed, entropy.seedOf(stream.work(tokens[PENDING_VRF]).itemHash));
+        (, seed) = records.seedOf(secondEra);
+        assertEq(seed, keccak256("the second era's seed"));
+    }
+
+    /// @dev A VRF request in flight across a replacement is fulfilled by the module that took it,
+    ///      which keeps the seed. An item not started yet starts only on the current module's
+    ///      delivery (`mint` checks the current module), so it is requested again there.
+    function test_AVrfRequestInFlightAcrossAReplacement() public {
+        Work memory w = _work(artist, collectionId);
+        w.item.seedPolicy = SeedPolicy.VRF;
+        Work[] memory one = _one(w);
+        bytes32 root = _publish(one);
+        bytes32 itemHash = WorksHashing.itemHash(w.item);
+        uint256 requestId = entropy.requestSeed(w.item, root, _proofOf(one, 0));
+        DeliveringEntropy next = new DeliveringEntropy();
+        _replace("ENTROPY_MODULE", address(next));
+
+        coordinator.fulfill(requestId, uint256(keccak256("in flight")));
+        assertTrue(entropy.isDelivered(itemHash), "fulfilled by the module that took it");
+        bytes memory data = _mintData(root, one, 0);
+        vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
+        auction.start(address(stream), data);
+
+        next.deliver(itemHash, keccak256("the current module's seed"));
+        (, uint256 tokenId) = _start(root, one, 0);
+        assertEq(stream.entropyModuleOf(tokenId), address(next));
+        records.openRecord(tokenId, w.item, w.media);
+        (, bytes32 seed) = records.seedOf(tokenId);
+        assertEq(seed, keccak256("the current module's seed"));
     }
 
     /// @dev Opens the record of `tokens[index]`, the `item`-th of the pending works.

@@ -95,6 +95,8 @@ NOTES: dict[tuple[str, str], str] = {
         "Compare-and-set; code hash re-checked at every artist statement.",
     ("*", "pause()"): "Stops `openSale` and `purchase`; closing a sale and claims still work.",
     ("EnglishAuction", "pause()"): "Stops new starts only; live auctions continue.",
+    ("UniformEditionAuction", "pause()"):
+        "Stops new `open` calls only; bids, raises, settlement and claims of open sales continue.",
     ("*", "unpause()"): "Refused until 48 hours after the pause, whenever it was scheduled.",
     ("EnglishAuction", "pause(uint256,bytes32)"):
         "Dispute pause: one per auction, lasting at most 7 days (`MAX_PAUSE`).",
@@ -109,6 +111,10 @@ NOTES: dict[tuple[str, str], str] = {
         "Duration, anti-snipe window and increment share; compare-and-set.",
     ("*", "setTarget(address,bool)"): "Also a genesis wiring call.",
     ("*", "setFederationRegistry(address,address)"): "v1.1: no registry is installed in v1.",
+    ("UniformEditionAuction", "setConfig((uint96,uint16,uint16,uint32,uint32,uint32,uint32),"
+     "(uint96,uint16,uint16,uint32,uint32,uint32,uint32))"):
+        "Margin, step ladder, close offset, soft-close window and backstop; compare-and-set, "
+        "with bounds in code. An auction keeps the values locked at its open.",
     ("EconomicsResolver", "setFeeTerms(bytes32,uint64,address,uint32)"):
         "New works only; compare-and-set on the product's revision; refuses a fee recipient "
         "that could never be paid.",
