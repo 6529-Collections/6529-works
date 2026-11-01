@@ -22,6 +22,7 @@ import { IFederationRegistry } from "../interfaces/IFederationRegistry.sol";
 import { IMintTarget } from "../interfaces/IMintTarget.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStatementLog } from "../interfaces/IStatementLog.sol";
+import { IStream } from "../interfaces/IStream.sol";
 import { ISignatureTransfer } from "../interfaces/external/ISignatureTransfer.sol";
 import {
     CURRENCY_DEFAULT,
@@ -380,8 +381,20 @@ contract EnglishAuction is
     ///      (the token reports a zero creator while a recovery override is pending) it reverts
     ///      with `InvalidRecipient(address(0))` and moves nothing, the token staying in custody;
     ///      anyone may retry once the override executes, is vetoed or voided, or lapses.
+    ///      A work governance rescued to the museum before the sale settled (6529 Stream's
+    ///      `rescueToMuseum`, owner decision 20) is already settled in the token, which reports
+    ///      it through `primarySale`: the sale then closes with refunds only ({_rescued}), the
+    ///      standing bid credited back, nothing reported, paid, minted or delivered
+    ///      (`RescuedSaleClosed`), so the bidder's funds and the work's edition sale are never
+    ///      stranded.
     function settle(uint256 saleId) external nonReentrant {
         Sale storage s = _require(saleId, IEnglishAuction.AuctionState.ENDED);
+        if (_rescued(s)) {
+            s.status = IEnglishAuction.AuctionState.SETTLED;
+            _refundHighBid(saleId, s);
+            emit IEnglishAuction.RescuedSaleClosed(saleId);
+            return;
+        }
         (bool reopened, bool frozenOut) = _reopenedAfterFreeze(saleId, s);
         if (reopened) return;
         // MARKET-5: a delisted federated contract cannot sell; its high bid is credited back and
@@ -1130,6 +1143,25 @@ contract EnglishAuction is
             s.recipient = address(0);
         }
         // `s.bid` stays as the reserve the next bid must reach (LIFECYCLE-1).
+    }
+
+    /// @dev Whether the token already records this work's primary sale as settled, which only
+    ///      a rescue does before this adapter settles (6529 Stream's `rescueToMuseum`, owner
+    ///      decision 20; the adapter that minted a work is the only one that settles it). Read
+    ///      from the token, never from this adapter's state: `primarySale(tokenId)`'s first word,
+    ///      the outcome, is not NONE. A token without that view, or with a short or reverting
+    ///      answer, reports nothing, so its sale settles as usual.
+    function _rescued(Sale storage s) private view returns (bool rescued) {
+        address token = s.token;
+        uint256 tokenId = s.tokenId;
+        bytes4 selector = IStream.primarySale.selector;
+        // Scratch space only (0x00 to 0x3f): the selector and the ID in, the first word out.
+        assembly ("memory-safe") {
+            mstore(0, selector)
+            mstore(4, tokenId)
+            let ok := staticcall(gas(), token, 0, 0x24, 0, 0x20)
+            rescued := and(ok, and(iszero(lt(returndatasize(), 0x20)), iszero(iszero(mload(0)))))
+        }
     }
 
     function _credit(address account, address currency, uint256 saleId, uint256 amount) private {

@@ -417,6 +417,12 @@ and amends the decision 15 note under [Open items](#open-items).
   outside a cancel); a guardian vetoes an admission that does not hold it.
   `StreamSaleMethods.t.sol` (`test_ASecondAdapterSendsAnUnbidWorkToTheMuseum`) shows a second
   adapter's unbid work landing in the museum without the adapter moving it.
+  *Amended 1 November 2026 (owner decision 20):* the adapter must also complete a sale whose
+  work Stream reports as rescued (`primarySale` not NONE before the adapter settled it): with
+  refunds only, crediting every standing bid back to its bidder, paying no seller or fee,
+  minting and delivering nothing, and ending in its settled state, so the bidders' funds and
+  any edition sale that waits on the 1/1 are never stranded. The English auction does this
+  (`RescuedSaleClosed`, [AUC-36](../spec/stream-and-auctions.md#rules-and-invariants)).
 - **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
   `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
   less. Also useful for TDH: P29 shares the Works pool by realized ETH price.

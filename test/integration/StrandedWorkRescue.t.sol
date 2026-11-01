@@ -7,7 +7,9 @@ import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { IERC721Errors } from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import { console2 } from "forge-std/console2.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
+import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
 import { IStream } from "src/interfaces/IStream.sol";
+import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { PrimaryOutcome } from "src/interfaces/types/SaleTypes.sol";
 import { HostileActor } from "../mocks/sales/AuctionMocks.sol";
 import { FixedPriceOneOfOneMock } from "../mocks/stream/OneOfOneSaleMocks.sol";
@@ -91,7 +93,8 @@ contract StrandedWorkRescueTest is IntegrationBase {
 
     /// @dev The happy path: 90 days after its removal, the auction's unsettled work moves to
     ///      the museum, recorded UNBID, with `Transfer` then `WorkRescued`. The old adapter can
-    ///      then neither settle nor burn it, and the auction's own settlement reverts.
+    ///      then neither settle nor burn it, and the auction's own settlement closes the sale
+    ///      without touching the work (`RescuedSaleClosed`).
     function test_Rescue_MovesAStrandedWorkToTheMuseum() public {
         (uint256 saleId, uint256 tokenId) = _startItem(0);
         uint256 removedAt = _setAuctionAdmitted(false);
@@ -128,7 +131,10 @@ contract StrandedWorkRescueTest is IntegrationBase {
         );
         stream.burn(tokenId, 1);
         vm.stopPrank();
-        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, tokenId));
+        // The auction sees the rescue in Stream's record and closes the sale without a report,
+        // a payout or a delivery.
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), museum, "still in the museum");
         // And a second rescue is refused: the work is settled now.
@@ -262,8 +268,9 @@ contract StrandedWorkRescueTest is IntegrationBase {
 
     /// @dev LIM-SAL-14: the rescue checks Stream's record only, not the adapter's sale. Run
     ///      against an auction that ended with a standing bid nobody settled, it still moves the
-    ///      work, and the auction's settlement then reverts for good. Governance settles such a
-    ///      sale first (`settle` is permissionless) or a guardian cancels the rescue.
+    ///      work. The English auction then sees the rescue in Stream's record and closes the sale
+    ///      with a refund: the bid is credited back to its bidder, nothing is paid or delivered
+    ///      (`RescuedSaleClosed`; `RescuedSaleClose.t.sol` has the full path).
     function test_Rescue_CannotSeeTheAdaptersSale() public {
         (uint256 saleId, uint256 tokenId) = _startItem(0);
         _ethBid(saleId, collector, 1 ether);
@@ -273,9 +280,10 @@ contract StrandedWorkRescueTest is IntegrationBase {
         (bool ok,) = _governed(_rescueCall(tokenId));
         assertTrue(ok, "Stream cannot see the standing bid");
         assertEq(stream.ownerOf(tokenId), museum);
-        vm.expectRevert(abi.encodeWithSelector(IStream.SaleAlreadySettled.selector, tokenId));
         auction.settle(saleId);
-        assertEq(address(auction).balance, held, "the bid stays in the auction");
+        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "the bid, credited back");
+        assertEq(address(auction).balance, held, "held for the bidder's claim");
+        assertEq(stream.ownerOf(tokenId), museum, "the work stays in the museum");
     }
 
     /// @dev The destination is the museum the economics resolver names when the rescue runs,
