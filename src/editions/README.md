@@ -20,7 +20,7 @@ is a new adapter, never a new Editions. The rules are in
 | Caller | Calls | Rules |
 | --- | --- | --- |
 | Anyone | `createEdition(workId, item, packageRoot, proof)`: proves the master's exact item under a registered root, locks the `PRODUCT_EDITIONS` economics, claims the content hash and links both sides | ED-1 to ED-4, ED-7 |
-| Admitted sale adapters | `mint`, `burn`, `markPrimarySettled`; `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
+| Admitted sale adapters | `bindMinter` when a sale opens (before the edition exists if need be), `mint`, `burn`, `markPrimarySettled`; `primaryTerms` (view) when opening a sale | ED-5, ED-6, ED-8 |
 | The bound `WorkRecords` | `setRoyaltyRate` (with the master's re-rate), `notifyMasterUpdated`; `notifyAllUpdated` (also from Stream) | ED-7 |
 | Governance | `setAdmittedMinter`, `setContractURI`, `setOwner`; the genesis bind `bindWorkRecords` | [Role matrix: Editions](../../docs/audit/roles.md#editions) |
 | Anyone (views) | `edition`, `masterOf`, `contentHashOf`, `exists`, `royaltyInfo`, `licenseOf`, `uri`, `name`, `symbol` | [Reading a work](../../docs/integrators/reading-a-work.md) |
@@ -37,7 +37,9 @@ The create flow, with every check in order, is under
   fee recipient; and the sale kind, currency and params. The edition auction's kind, ETH and
   empty params are stored as zero, so its edition writes five words when its terms name a fee
   recipient, and another sale method pays for its own. The first mint writes no new slot: the
-  count and the binding share the seller's word. Changing the struct changes the
+  count and the binding share the seller's word. `bindMinter` before creation writes the
+  seller's, royalty and fee words early (the binding and the economics snapshot), and
+  `createEdition` then writes only the rest. Changing the struct changes the
   `createEdition` and mint slot counts, which
   [`GasReport.t.sol`](../../test/integration/GasReport.t.sol) and `EditionsGasReport.t.sol`
   assert exactly ([ADR 0004](../../docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
@@ -51,8 +53,14 @@ The create flow, with every check in order, is under
   burns a settled token, so the cap and binding checks are local. Burned copies still count
   toward the cap.
 - **Minter status is three-valued** (never, admitted, removed), so a removed adapter can still
-  burn what it holds and call the no-op `markPrimarySettled`. Its binding ID survives removal,
-  so a re-admitted adapter mints its editions again; at most 65,535 adapters are ever admitted.
+  burn what it holds and call the no-op `markPrimarySettled`, and keeps minting the editions
+  bound to it (its winners claim after the seller was paid; ADR 0005 §6). It binds nothing new.
+  Its binding ID survives removal and re-admission; at most 65,535 adapters are ever admitted.
+- **Binding at open (ADR 0005 §6).** An adapter binds an edition with `bindMinter` when its sale
+  opens, so a second adapter of the same kind cannot open the same edition. Before creation the
+  item proves the edition's kind, and the binding snapshots the `PRODUCT_EDITIONS` economics
+  that `createEdition` then keeps (`_lockTerms`), so the edition reports the split its sale
+  paid.
 - **Wiring is immutable.** The constructor checks Stream (code, no EIP-7702 delegation, ERC-165
   `IStream`, the reviewed code hash) and reads the package registry, economics resolver and
   artist registry from it. No edition exists before genesis binds `WorkRecords`

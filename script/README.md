@@ -14,8 +14,9 @@ code hashes with the record, but it does not rebuild the bytecode.
 launch; the rehearsals so far are recorded in [`deployments/11155111/`](../deployments/11155111/README.md).
 The library deploys every v1 contract: identity, curation, economics, content and the
 renderer, the statement log, the optional entropy module, 6529 Stream and WorkRecords, 6529
-Stream Editions, and the English auction. The edition auction of ADR 0005 is deployed and
-admitted once it lands; until then genesis admits no edition sale adapter. No stand-in
+Stream Editions, the English auction, and the edition auction of ADR 0005
+(`UniformEditionAuction`, which creates its stateless lens; genesis admits it on Editions and
+lists Editions as its target, and Verify checks the lens against the record). No stand-in
 remains. A Sepolia run needs the owner's accounts and keys (steps 1 and 2), and the inputs
 below.
 
@@ -691,6 +692,29 @@ Deploy the target with `authority` set to the manager, then:
 3. wait `minSetback()` (5 days);
 4. read the manager back with the target added to the configuration
    (`GovernanceConfigurator.verify`, `test_OnboardATargetAfterGenesis`).
+
+### The edition auction keeper
+
+Every step of an edition sale is permissionless; a keeper (any funded EOA, no role) batches
+them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.md)):
+
+1. **Open the edition auction in the same batch as the master's 1/1 start** (owner decision 7):
+   `UniformEditionAuction.open(editions, tokenId, abi.encode(item))`, the master's
+   EDITION_MASTER package item. `open` also binds the edition to the adapter. An auction nobody
+   opens before the 1/1's end plus the close offset can never be opened by this adapter
+   (LIM-EA-11); a later admitted adapter of the edition's kind still can.
+2. **Create the edition once the 1/1 settles:** `Editions.createEdition(tokenId, item,
+   packageRoot, proof)`. A sale with winners settles only once the edition exists
+   (`EditionNotCreated`; LIM-EA-12).
+3. **Settle after the edition close:** call `settle(saleId, order)` until it returns `true`,
+   with `order` the keeper's own rest, `settlementOrderFor(saleId, keeper)` (on the adapter or
+   its lens), cut to one chunk (16 entries in the call that clears, 96 after) to keep calldata
+   small. Each call stays within 350,000 execution gas; a typical sale settles in one. Each
+   settler sweeps on its own: a keeper that sent a wrong order strands only its own progress
+   (`sweepOf`), and settles from another address. A call after the sale settled returns
+   `true`.
+4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
+   refund is credited to it.
 
 ### Publishing a configuration epoch
 

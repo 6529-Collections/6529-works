@@ -8,6 +8,7 @@ import { GovernanceConfig } from "src/governance/GovernanceConfig.sol";
 import { IContentStore } from "src/interfaces/IContentStore.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
 import { IEnglishAuction } from "src/interfaces/IEnglishAuction.sol";
+import { IUniformEditionAuction } from "src/interfaces/IUniformEditionAuction.sol";
 import { Statement } from "src/interfaces/IStatementLog.sol";
 import { FileRole, MediaFile } from "src/interfaces/types/ContentTypes.sol";
 import {
@@ -38,7 +39,8 @@ import { DelegationManagementMock } from "../mocks/identity/DelegationManagement
 /// @notice Integration finding G-1 on the deployed system: items priced in `CURRENCY_DEFAULT`
 ///         start without waiting out FUNDS_SETTER's 14-day `setDefaultCurrency`, because
 ///         genesis wires each product's first default currency. Real contracts throughout: a
-///         curated 6529 Stream work starts its auction in the genesis block.
+///         curated 6529 Stream work starts its auction in the genesis block, and its 6529
+///         Stream Editions auction (ETH-only, so it needs no default currency) opens beside it.
 contract GenesisFlowsTest is Test {
     /// Holders from the example JSON (pranked: only their addresses matter here).
     address internal constant PLATFORM = address(0xB051);
@@ -76,6 +78,7 @@ contract GenesisFlowsTest is Test {
         p.ethIncrementFloor = 0.001 ether;
         p.permit2 = DeployV1.CANONICAL_PERMIT2;
         p.auction = IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000);
+        p.editionAuction = DeployV1.editionAuctionDefaults();
         DeployV1.Deployment memory deployed = DeployV1.deploy(p);
         d = deployed;
 
@@ -207,6 +210,11 @@ contract GenesisFlowsTest is Test {
         return EditionTerms(0, address(0), bytes32(0), "");
     }
 
+    /// @dev Edition terms for the uniform-price edition auction, capped at 100.
+    function _editionTerms() internal pure returns (EditionTerms memory) {
+        return EditionTerms(100, CURRENCY_ETH, SaleKind.UNIFORM_AUCTION, "");
+    }
+
     // ------------------------------------------------------------------ G-1
 
     /// G-1: in the genesis block, with no time passing, a curated 6529 Stream work priced in
@@ -218,6 +226,27 @@ contract GenesisFlowsTest is Test {
         uint256 saleId = d.englishAuction.start(address(d.stream), mintData);
         assertEq(d.stream.totalMinted(), 1, "the work is minted into the auction");
         assertEq(d.englishAuction.lockedTerms(saleId).currency, CURRENCY_ETH, "auction in ETH");
+        assertEq(block.timestamp, genesisTime, "no time passed");
+    }
+
+    /// G-1 for 6529 Stream Editions: in the genesis block, the edition auction opens beside its
+    /// master's 1/1 auction (anyone may open it from the 1/1's start; ADR 0005), on the genesis
+    /// wiring alone.
+    function test_TheEditionAuctionOpensBesideItsMasterInTheGenesisBlock() public {
+        _genesis(true);
+        uint256 genesisTime = block.timestamp;
+        (bytes memory mintData, PackageItem memory item,) =
+            _curatedWork(ItemKind.EDITION_MASTER, CURRENCY_ETH, _editionTerms());
+        d.englishAuction.start(address(d.stream), mintData);
+        uint256 workId = d.stream.totalMinted();
+        uint256 saleId = d.editionAuction.saleIdOf(address(d.editions), workId);
+        vm.prank(makeAddr("anyone"));
+        assertEq(d.editionAuction.open(address(d.editions), workId, abi.encode(item)), saleId);
+        IUniformEditionAuction.Auction memory a =
+            IUniformEditionAuction(address(d.editionAuction)).auction(saleId);
+        assertEq(uint8(a.status), uint8(IUniformEditionAuction.AuctionStatus.OPEN));
+        assertEq(a.maxCount, 100, "the creator's cap");
+        assertEq(a.master, address(d.stream));
         assertEq(block.timestamp, genesisTime, "no time passed");
     }
 

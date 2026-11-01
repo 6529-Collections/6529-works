@@ -12,6 +12,15 @@
   and never strands a live sale (AUC-9). Stream's runtime grows by 181 bytes; `start` costs
   about 230 more Prague gas and `settle` 2,169 more, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- Deploy: genesis deploys the uniform-price edition auction (`UniformEditionAuction`, with
+  the stateless lens its constructor creates) at the launch parameters of ADR 0005 §4,
+  admits it on 6529 Stream Editions and lists Editions as its target (17 wiring calls, was
+  15). Its five governed selectors are in the role matrix: `pause` (PAUSER), `unpause`
+  (UNPAUSER), `setConfig` (PARAMETER_SETTER, 48 hours), `setTarget` and
+  `setFederationRegistry` (SUCCESSOR_SETTER, 30 days). Every sale adapter's admission,
+  `setAdmittedMinter` on Stream and on Editions, stays in the 30-day class. Verify checks the
+  lens is the auction's own and its code hash the recorded one. The anvil dry-run record in
+  `deployments/31337/` is regenerated.
 - 6529 Editions is renamed 6529 Stream Editions (ADR 0005, D139) in every current document and
   NatSpec comment; `name()` is "6529 Stream Editions" and `symbol()` `STREAMEDITIONS`. The
   identifiers `Editions`, `IEditions`, `PRODUCT_EDITIONS` and the `"EDITIONS"` binding label do
@@ -62,7 +71,8 @@
   settlement and at the freeze exit. ADR 0004's table gains the no-bid settlement (1 new slot, no new
   account), and LIM-SAL-12 records the museum as a governed address.
 - Sales: `src/sales/UniformClearing.sol`, the pure core of the 6529 Stream Editions
-  uniform-price auction (ADR 0005), as an internal library that no contract uses yet: the
+  uniform-price auction (ADR 0005), as an internal library (the edition auction's lens runs it, and its settlement sweeps and
+  splits the cut step with it): the
   clearing rule in one pass over the steps (the largest count whose revenue is within the
   breadth margin of the best, up to the creator's cap) on `StepLadder`'s prices, the
   first-in-first-out split of the cut step with the settler's departure sweep, and the what-if
@@ -78,6 +88,32 @@
   (`tools/edition_auction_ref.py`) now validates a bid or raise before it changes the book, and
   limits a capped step's entered units to 2^32 - 1 as `InvalidQuantity` states; the golden
   vectors are unchanged.
+- Sales: `UniformEditionAuction`, the uniform-price edition auction (ADR 0005, D138 to D141),
+  with the stateless `UniformEditionAuctionLens` it creates. Bids escrow ETH on the `StepLadder`
+  steps and can be raised, never lowered, and withdrawn only while the 1/1 is paused for a
+  dispute. The sale closes 15 minutes after the 1/1's final end, extended by its own soft
+  close up to the backstop. A cancelled 1/1 voids it. Settlement runs in permissionless calls
+  of bounded gas: at most 24 book words scanned per call, then the FIFO departure sweep in
+  chunks. It mints exactly the cleared count through `IMintTarget.mint` as bids are claimed.
+  Its views (every view of `IUniformEditionAuction`) are the lens's, answered through a
+  read-only fallback; `IUniformEditionAuctionStorage` documents the raw words they read.
+  `open` binds the edition to the adapter first (see the Editions entry below). Each settler
+  sweeps the departures on its own (its progress kept per sender, each call passing the rest
+  of its own sweep; the lens's `sweepOf` and `settlementOrderFor` read it), and the first to
+  sweep every one settles the sale, so an order that skips a departure strands only its own
+  sender. Its views' departure sort is `O(n log n)`; its genesis
+  wiring is the Deploy entry above. Gas rows, with exact slot and account counts, are in
+  `test/integration/EditionAuctionGasReport.t.sol`; every settlement call stays within 350,000
+  execution gas, at most 228,103 in the worst case measured.
+- Editions (ADR 0005 §6, an amendment of the frozen interface): `bindMinter(editionId, item)`
+  binds an edition to the adapter whose sale opens it, before the edition exists if need be
+  (the master's stored item proves its kind), so two admitted adapters of one kind can never
+  both sell an edition and strand one sale's winners. Binding before creation also locks the
+  edition's `PRODUCT_EDITIONS` economics, which `createEdition` keeps, so the edition reports
+  the split its sale paid. A bound adapter keeps minting its edition after removal, within the
+  creator's cap (LIM-EA-10); removal stops new bindings. The `IEditions` interface ID becomes
+  `0xe183b26f`. The edition auction's `open` writes 6 new slots (278,235 Prague gas) and
+  `createEdition` of an edition it bound 2 (140,201); an edition created unbound still writes 6.
 - Tests: the mutation baseline's 78 open gaps are closed
   ([docs/testing/mutation-baseline.md](docs/testing/mutation-baseline.md)). 51 new and 4
   extended tests kill 69 of them (one-sided hash and code-hash comparisons, boundary seconds,

@@ -139,8 +139,12 @@ Re-measured for ADR 0005's edition terms and the museum rule (rc.2): `EditionTer
 from seven fields to four, so every row that carries a package item lost calldata and hashing
 (about 1,300 gas for a start), and `createEdition` writes 6 new slots, one fewer, now that no
 price is stored.
-The fixed-price and Dutch rows left with their adapters; the edition auction's rows come with
-it. The Sepolia column stays r3's receipts.
+The fixed-price and Dutch rows left with their adapters. The edition auction's rows follow
+the table's last row ([ADR 0005](0005-stream-editions-auction.md) §5 and §6), measured on the
+wired stack by `EditionAuctionGasReport.t.sol`; they have no Sepolia receipt yet. Since ADR 0005
+§6 the auction binds an edition when its sale opens, so `open` writes the edition's seller,
+royalty and fee words and `createEdition` of that edition writes 2 new slots, not 6. The
+Sepolia column stays r3's receipts.
 
 Re-measured for owner decision 15 (6529 Stream's pluggable 1/1 sale): every `start` row rose by
 about 230 gas (the item's sale kind is compared with the adapter's and its params returned) and
@@ -168,6 +172,7 @@ each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one col
 | `settle`, no bid (to the museum, D140) | 133,993 | 400,000 | 1 | 0 | — |
 | `consume`, as Stream calls it | 93,069 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 240,698 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
+| `createEdition`, an edition its sale bound at open | 140,201 | 144,000 (regression) | 2 | 0 | — |
 | re-rate a work (governed `execute`) | 186,911 | 192,000 (regression) | 1 | 0 | — |
 | `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
 | `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
@@ -177,6 +182,21 @@ each `settle` by 2,169 (`primaryTerms` reads the minting adapter's kind, one col
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
 | `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |
 | `claimSigned`, a later signed release (next nonce) | 90,164 | 92,000 (regression) | 0 | 0 | — |
+| Edition auction `open`, steady state (binds the edition) | 278,235 | 284,000 (regression) | 6 | 0 | — |
+| Edition auction `open`, the adapter's first (one-time) | 323,960 | 331,000 (regression) | 8 | 0 | — |
+| Edition `bid`, its 8-step word exists | 69,257 | 110,000 | 1 | 0 | — |
+| Edition `bid`, opens an 8-step word | 86,327 | 110,000 | 2 | 0 | — |
+| Edition `bid`, capped sale | 71,674 | 110,000 | 1 | 0 | — |
+| Edition `bid` near the close (1/1 read, soft close) | 87,641 | 110,000 | 1 | 0 | — |
+| Edition `raise`, same 8-step word | 53,770 | 56,000 (regression) | 0 | 0 | — |
+| Edition `raise`, capped (departure logged) | 78,996 | 81,000 (regression) | 1 | 0 | — |
+| Edition `withdrawBid`, capped, 1/1 paused | 94,687 | 97,000 (regression) | 1 | 0 | — |
+| Edition `settle`, 40 used steps | 160,751 | 400,000 | 1 | 0 | — |
+| Edition `settle`, capped, one departure swept | 158,321 | 159,000 (regression) | 1 | 0 | — |
+| Edition `settle`, every step used (512 steps, departures at the cut), each call | at most 228,103 of execution | 350,000 of execution | 0 to 2 (the call that clears and leaves its sweep unfinished writes the result and its settler's progress) | 0 | — |
+| Edition `claimBid`, a winner and new holder | 94,286 | 100,000 | 1 | 0 | — |
+| Edition `claimBid`, refund only | 47,546 | 49,000 (regression) | 0 | 0 | — |
+| Edition `claimBidFor`, refund credited | 64,591 | 67,000 (regression) | 1 | 0 | — |
 
 r2's Sepolia column, as accepted (receipts on `400f96d`, before the review fixes
 and the state-growth diet; the flows file compares the two rehearsals row by

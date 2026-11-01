@@ -78,7 +78,7 @@ royalties are 6.529% (ERC-2981, out of 100,000); a work keeps the terms it was m
 | --- | --- | ---: |
 | [`Stream`](src/stream/README.md) | The shared ERC-721: mints consumed items, locks terms, royalties, the edition link | 559 |
 | [`WorkRecords`](src/stream/README.md) | Each work's record, license, locators, preferred location, finalize and renderer pin | 619 |
-| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 311 |
+| [`Editions`](src/editions/README.md) | The shared ERC-1155, linked to Stream masters | 337 |
 | [`PackageRegistry`](src/curation/README.md) | Package roots, party consent, the move signature, consume-once items, content uniqueness | 358 |
 | [`Eip712CurationVerifier`](src/curation/README.md) | Accepts curation signers' EIP-712 approvals | 103 |
 | [`EnglishAuction`](src/sales/README.md) | Stream's primary sale: anti-snipe clock, pull refunds, pending claims, dispute pause | 774 |

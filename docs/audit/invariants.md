@@ -58,10 +58,10 @@ adapter of another kind. INV-ED-3, the OPEN window, left with the edition format
 
 | ID | Invariant | Test | Handler actions |
 | --- | --- | --- | --- |
-| INV-ED-1 | A mint succeeds only within the creator's cap, from an admitted minter (else `NotAdmittedMinter`) of the edition's sale kind (else `SaleKindMismatch`) that is the edition's bound adapter or the first to mint it (else `MinterMismatch`). | `invariant_MintsFollowEditionTerms` | `buy`, `buyWithWrongKind`, `mintAsOutsider`, `warp` |
+| INV-ED-1 | A mint succeeds only within the creator's cap, from an adapter of the edition's sale kind (else `SaleKindMismatch`) that is the edition's bound adapter, even after its removal, or else an admitted adapter that becomes bound by minting (else `NotAdmittedMinter` or `MinterMismatch`). | `invariant_MintsFollowEditionTerms` | `buy`, `buyWithWrongKind`, `mintAsOutsider`, `warp` |
 | INV-ED-2 | `edition(id).minted` counts every copy ever minted and never exceeds a nonzero cap, and balances sum to minted minus burned. | `invariant_SupplyAccounting` | `buy`, `burnFromCustody`, `transfer` |
 | INV-ED-4 | Through repeated `createEdition` calls and resales of the master, neither the link (`masterOf`: Stream, master ID, content hash; `Stream.editionOf`: Editions, edition ID) nor `royaltyInfo`'s receiver and amount change. | `invariant_LinkAndRoyaltyFixed` | `recreate`, `moveMaster` |
-| INV-ED-5 | An edition is bound to the first adapter that minted it and never rebinds; an edition never minted has no bound adapter. | `invariant_BoundToTheFirstMinter` | `buy` |
+| INV-ED-5 | An edition is bound to the adapter that bound it (`bindMinter`, when its sale opens) or first minted it, and never rebinds; an edition neither bound nor minted has no bound adapter. | `invariant_BoundToTheFirstMinter` | `buy` |
 
 ## Curation
 
