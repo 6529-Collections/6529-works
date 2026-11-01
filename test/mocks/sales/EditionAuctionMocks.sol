@@ -45,7 +45,8 @@ contract MockOneOfOneAuction {
         _auctions[saleIdOf(token, id)].pausedAt = pausedAt;
     }
 
-    /// @dev Whether `auction` answers short: its first ten words, without `state`.
+    /// @dev Whether `auction` and `auctionClock` answer short: `auction` its first ten words,
+    ///      without `state`; `auctionClock` its first two, without `pausedAt`.
     bool public shortAnswer;
 
     function setShortAnswer(bool value) external {
@@ -71,6 +72,12 @@ contract MockOneOfOneAuction {
         IEnglishAuction.Auction storage a = _auctions[saleId];
         (state, endTime, pausedAt) = (a.state, a.endTime, a.pausedAt);
         if (state == IEnglishAuction.AuctionState.NONE) revert ISaleAdapter.UnknownSale(saleId);
+        if (shortAnswer) {
+            bytes memory two = abi.encode(state, endTime);
+            assembly ("memory-safe") {
+                return(add(two, 0x20), 0x40)
+            }
+        }
     }
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {

@@ -424,7 +424,7 @@ after the rc.2 seven-lens review.
   *Amended 1 November 2026 (PR #89, fix pass B):* `IEnglishAuctionClock.auctionClock` also
   returns the 1/1's `pausedAt`, and `withdrawBid` reads it there, from the English auction
   itself rather than through its lens. The withdrawal costs about what it did before F3
-  (88,031; regression ceiling 90,000).
+  (88,019; regression ceiling 90,000).
 - **One source of truth for edition economics (LC-1, MONEY-L1, G-1).** The lens held a copy of
   the economics resolver taken at construction, while Editions reads 6529 Stream's current
   one, so after a resolver replacement (owner decision 16) a sale paid the old split and its

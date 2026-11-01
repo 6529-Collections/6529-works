@@ -490,7 +490,7 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
     auction's would have needed about 68.9M with Glamsterdam costs, over a 60M block and the
     50M `eth_estimateGas` cap of geth, reth and public RPCs. Deployed apart, every deploy
     transaction is at most about 39.9M with Sepolia's measured Glamsterdam costs (the edition
-    auction; its lens about 30.7M, the English auction about 37.5M and its lens about 10.4M),
+    auction; its lens about 30.7M, the English auction about 37.8M and its lens about 10.4M),
     so no gas limit needs setting by hand: `--slow` takes each from `eth_estimateGas`.
   - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
     6.19 times the Prague estimate. That cost about 0.022 ETH at a 0.05 gwei priority fee.
