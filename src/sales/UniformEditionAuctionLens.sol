@@ -5,6 +5,7 @@ import { Splits } from "../economics/Splits.sol";
 import { IEconomicsResolver } from "../interfaces/IEconomicsResolver.sol";
 import { IEditions } from "../interfaces/IEditions.sol";
 import { IEnglishAuction } from "../interfaces/IEnglishAuction.sol";
+import { IEnglishAuctionClock } from "../interfaces/IEnglishAuctionClock.sol";
 import { ISaleAdapter } from "../interfaces/ISaleAdapter.sol";
 import { IStream } from "../interfaces/IStream.sol";
 import { IUniformEditionAuction } from "../interfaces/IUniformEditionAuction.sol";
@@ -67,13 +68,13 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         view
         returns (MasterTerms memory m)
     {
-        try IEnglishAuction(_englishAuction).auction(_saleIdOf(_stream, id)) returns (
-            IEnglishAuction.Auction memory o
+        try IEnglishAuctionClock(_englishAuction).auctionClock(_saleIdOf(_stream, id)) returns (
+            IEnglishAuction.AuctionState state, uint64 endTime
         ) {
-            if (o.state == IEnglishAuction.AuctionState.CANCELLED) {
+            if (state == IEnglishAuction.AuctionState.CANCELLED) {
                 revert IUniformEditionAuction.NoOneOfOneAuction(_stream, id);
             }
-            (m.oneOfOneEnd, m.oneOfOneState) = (o.endTime, o.state);
+            (m.oneOfOneEnd, m.oneOfOneState) = (endTime, state);
         } catch {
             revert IUniformEditionAuction.NoOneOfOneAuction(_stream, id);
         }

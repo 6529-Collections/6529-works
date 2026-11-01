@@ -18,6 +18,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MockArtistResolver } from "../../mocks/economics/EconomicsMocks.sol";
 import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
@@ -64,7 +65,7 @@ abstract contract AuctionBase is Test {
     MockPermit2 internal permit2;
     MockMintTarget internal stream;
     PermitToken internal usd;
-    EnglishAuction internal auction;
+    IEnglishAuctionFull internal auction;
 
     address internal guardian = makeAddr("guardian");
     address internal pauser = makeAddr("pauser");
@@ -122,18 +123,22 @@ abstract contract AuctionBase is Test {
         return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE);
     }
 
-    function _deploy(address permit2_) internal returns (EnglishAuction a) {
+    function _deploy(address permit2_) internal returns (IEnglishAuctionFull a) {
         address[] memory targets = new address[](1);
         targets[0] = address(stream);
-        a = new EnglishAuction(
-            address(manager),
-            address(escrow),
-            resolver,
-            address(statements),
-            permit2_,
-            _config(),
-            targets,
-            address(stream)
+        a = IEnglishAuctionFull(
+            address(
+                new EnglishAuction(
+                    address(manager),
+                    address(escrow),
+                    resolver,
+                    address(statements),
+                    permit2_,
+                    _config(),
+                    targets,
+                    address(stream)
+                )
+            )
         );
         stream.setAdmittedMinter(address(a), true);
         _map(address(a), DISPUTE_PAUSE, GUARDIAN);

@@ -17,8 +17,8 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 11,257 non-blank, non-comment lines in 85 files under `src/` (budget: 12,000) |
-| Deployed contracts | 22 per deployment without the optional VRF entropy module and 23 with it (the edition auction creates its lens), plus one `SplitWallet` per payee configuration, deployed on demand |
+| Source lines | 11,568 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
+| Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it (the English auction and the edition auction each create their lens), plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), checked by `tools/check_budgets.py` in CI |
@@ -36,9 +36,10 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 559 | 20,943 | 22,808 | 3,633 |
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,883 | 25,861 | 1,693 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 337 | 18,051 | 19,779 | 6,525 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 774 | 24,524 | 26,864 | **52** |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 824 | 24,346 | 46,094 | 230 |
-| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 552 | 17,757 | 18,129 | 6,819 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 781 | 22,727 | 31,944 | 1,849 |
+| `EnglishAuctionLens` (created by `EnglishAuction`; answers its views) | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 293 | 6,459 | 6,774 | 18,117 |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 826 | 24,215 | 45,997 | 361 |
+| `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 553 | 17,791 | 18,163 | 6,785 |
 
 ### Curation, identity and records
 
@@ -114,7 +115,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,877 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,885 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -169,9 +170,10 @@ python tools/check_docs_facts.py --artifacts out --update  # refresh the figures
 ```
 
 Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
-sizes are the compiled `bytecode` and `deployedBytecode` lengths. `EnglishAuction` and
-`Renderer` have the smallest EIP-170 margins (see the tables); CI fails any change that crosses
-the limit.
+sizes are the compiled `bytecode` and `deployedBytecode` lengths. `Renderer` has the smallest
+EIP-170 margin, then `UniformEditionAuction`, `WorkRecords` and `EnglishAuction` (both
+auctions' views are answered by their lenses; see the tables); CI fails any change that
+crosses the limit.
 
 ## Related
 

@@ -44,6 +44,25 @@
   wiring calls, was 19). `FixedPriceSale` can be restored from `v1.0.0-rc.1` as a newly
   admitted adapter without redeploying Editions (ADR 0005 §3); `SaleKind.FIXED_PRICE` and
   `DUTCH` stay reserved.
+- Auction: EIP-170 headroom for the 7-lens review. `EnglishAuction`'s views move to
+  `EnglishAuctionLens`, which its constructor creates (`lens()`, immutable): the auction
+  forwards every call it does not declare to the lens through a non-payable, read-only
+  `staticcall` fallback (no delegatecall), and the lens reads the auction's storage through
+  `storageWords`. No signature, selector or ERC-165 ID changes, and a differential test
+  compares every moved view, byte for byte, with the pre-lens build over random sequences;
+  a layout test pins every slot and offset the lens reads to the compiler's storage layout.
+  A cold view call through the lens costs about 7,000 more Prague gas (LIM-SAL-13), so the
+  reads other contracts make on their hot paths stay on the auction: `saleKind`, and a new
+  integration view, `auctionClock(saleId)` (`IEnglishAuctionClock`, ID `0x968c7b07`, outside
+  `IEnglishAuction` and never reported through ERC-165), which returns exactly
+  `auction(saleId).state` and `.endTime` from one cold slot. The edition auction reads its
+  1/1 through it (`UniformEditionAuction._oneOfOne` and its lens's `masterTerms`), so `open`,
+  a bid near the close, the first settle call and `withdrawBid` while the 1/1 is paused each
+  cost 6,900 to 9,200 less Prague gas, and their regression ceilings come down with them;
+  `UniformEditionAuction` shrinks by 131 bytes (361 under EIP-170). The English auction goes
+  from 52 to 1,849 bytes under EIP-170. ADR 0004's table gains
+  `auction`, `minimumBid` and `auctionClock` rows. The deployment records the lens as `EnglishAuctionLens` and `Verify.s.sol` checks its
+  address (the auction's first CREATE), its code hash and `lens()`.
 - ADR 0005, the edition auction and 6529 Stream Editions
   ([docs/adr/0005-stream-editions-auction.md](docs/adr/0005-stream-editions-auction.md)): the
   owner's D138 to D141 and decisions 1 to 14 of 31 October 2026, the design, the governed
