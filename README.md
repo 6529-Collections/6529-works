@@ -4,8 +4,8 @@
 
 6529 Works is the 6529 network's art protocol. It holds two products: **6529 Stream**, one
 shared ERC-721 for curated 1/1 artworks, and **6529 Stream Editions**, one shared ERC-1155
-whose editions are each anchored by a Stream master. Works are approved by TDH-weighted votes in
-6529 waves and attested by a curation signer; every party named in a work signs before it
+whose editions are each anchored by a Stream master. Works are approved by TDH-weighted votes on
+6529's Main Stage, the only way in, and attested by a curation signer; every party named in a work signs before it
 can be sold. Anyone may start a work's 24-hour English auction, and anyone may settle it.
 Money moves by pull: proceeds and royalties collect in immutable split wallets that payees
 release from, with an escrow for payments that fail. Content is addressed by hash and stored on

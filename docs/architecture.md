@@ -128,7 +128,8 @@ default when the sale starts".
      terms.
    - Split wallets are not deployed; their CREATE2 addresses are predicted.
 2. **Vote and approve.**
-   - Voters approve the package root in a 6529 wave.
+   - Voters approve the package root on Main Stage, the only way into 6529 Stream (owner
+     decision 25).
    - The curation signer checks every declared SHA-256 against the decoded
      bytes, then signs `PackageApproval`; the attestation is
      `abi.encode(signer, signature)`.
