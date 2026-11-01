@@ -25,20 +25,25 @@ interface IEnglishAuctionStorage {
 
 /// @title EnglishAuctionLens
 /// @notice The read side of `EnglishAuction`: every view of `IEnglishAuction` and `ISaleAdapter`
-///         the auction does not declare itself, and its constants and dependencies. The auction
-///         creates it in its constructor and forwards those calls to it unchanged
-///         (`EnglishAuction.fallback`), so callers use the auction's address and
-///         `IEnglishAuction`; every answer, revert data included, is byte for byte what the
-///         auction answered when the views lived in it (the differential test,
-///         `EnglishAuctionLensDifferential.t.sol`, compares the two builds).
-/// @dev Stateless and fixed: its `adapter` is the auction that created it. It reads the
-///      auction's storage words through `IEnglishAuctionStorage.storageWords` and decodes them
-///      with the auction's layout (slot numbers below, struct packing in `EnglishAuction`), and
-///      it repeats the auction's derived-state rules (`_state`, `_resumedEnd`, the minimum bid).
-///      A call made directly to the lens answers the same as through the auction. The views
-///      call out to the token (`primaryTerms`), the economics resolver and the federation
-///      registry from this address instead of the auction's; those are views that do not read
-///      their caller.
+///         the auction does not declare itself, and its constants and dependencies. It is
+///         deployed in its own transaction before the auction, whose constructor pins its
+///         address, code hash and dependencies (the rc.2 review's GAS M-2: creating it inside
+///         the auction's deployment put both contracts' code in one transaction). The auction
+///         forwards those calls to it unchanged (`EnglishAuction.fallback`), so callers use the
+///         auction's address and `IEnglishAuction`; every answer, revert data included, is
+///         byte for byte what the auction answered when the views lived in it (the
+///         differential test, `EnglishAuctionLensDifferential.t.sol`, compares the two builds).
+/// @dev Stateless: no storage, and no record of any auction. It reads its CALLER's storage
+///      words through `IEnglishAuctionStorage.storageWords` and decodes them with the auction's
+///      layout (slot numbers below, struct packing in `EnglishAuction`), and it repeats the
+///      auction's derived-state rules (`_state`, `_resumedEnd`, the minimum bid). Called
+///      through the auction's fallback, the caller is the auction. A call made directly to the
+///      lens reads the direct caller instead: an account with no `storageWords` gets a revert,
+///      and a contract that answers it gets its own words decoded. Either way nothing changes:
+///      every function is a view, the lens has no state to change, and the auction's state is
+///      only ever written by the auction. The views call out to the token (`primaryTerms`), the
+///      economics resolver and the federation registry from this address instead of the
+///      auction's; those are views that do not read their caller.
 contract EnglishAuctionLens {
     /// @notice The longest a dispute pause lasts; one pause per auction (ADR 0001 section 12).
     uint64 public constant MAX_PAUSE = 7 days;
@@ -68,8 +73,6 @@ contract EnglishAuctionLens {
     uint8 private constant _DELIVERY_PENDING = 2;
     uint8 private constant _RECIPIENT_SET = 4;
 
-    /// @notice The auction this lens reads, which created it.
-    address public immutable adapter;
     /// @notice The revenue escrow for refused payouts (`IEnglishAuction.escrow`).
     address public immutable escrow;
     /// @notice The statement log `cancel` reads (`IEnglishAuction.statementLog`).
@@ -119,7 +122,6 @@ contract EnglishAuctionLens {
         IEconomicsResolver economicsResolver_,
         address permit2_
     ) {
-        adapter = msg.sender;
         (escrow, statementLog, allowlist, economicsResolver, permit2) =
         (escrow_, statementLog_, allowlist_, economicsResolver_, permit2_);
     }
@@ -322,11 +324,11 @@ contract EnglishAuctionLens {
         return keccak256(abi.encode(key, base));
     }
 
-    /// @dev The auction's words at `slots`, in one `storageWords` call, written over `slots`.
-    ///      The call is encoded and its answer decoded by hand (it is always `0x20`, the length,
-    ///      then one word per slot), which keeps a view's overhead small.
+    /// @dev The caller's words at `slots` (the auction's, through its fallback), in one
+    ///      `storageWords` call, written over `slots`. The call is encoded and its answer decoded
+    ///      by hand (it is always `0x20`, the length, then one word per slot), which keeps a
+    ///      view's overhead small.
     function _read(bytes32[] memory slots) private view returns (bytes32[] memory) {
-        address target = adapter;
         bytes4 selector = IEnglishAuctionStorage.storageWords.selector;
         assembly ("memory-safe") {
             let n := mload(slots)
@@ -336,7 +338,7 @@ contract EnglishAuctionLens {
             mstore(add(ptr, 0x04), 0x20)
             mstore(add(ptr, 0x24), n)
             mcopy(add(ptr, 0x44), add(slots, 0x20), size)
-            if iszero(staticcall(gas(), target, ptr, add(0x44, size), 0, 0)) {
+            if iszero(staticcall(gas(), caller(), ptr, add(0x44, size), 0, 0)) {
                 returndatacopy(ptr, 0, returndatasize())
                 revert(ptr, returndatasize())
             }

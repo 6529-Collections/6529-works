@@ -18,6 +18,7 @@ import { Editions } from "src/editions/Editions.sol";
 import { ContentStore } from "src/content/ContentStore.sol";
 import { VerifyV1 } from "script/VerifyV1.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
+import { StatementLog } from "src/records/StatementLog.sol";
 import { MockVrfCoordinator } from "../mocks/entropy/EntropyMocks.sol";
 import { DelegationManagementMock } from "../mocks/identity/DelegationManagementMock.sol";
 import {
@@ -1470,9 +1471,10 @@ contract DeployScriptTest is Test {
         verifier.verify(record);
     }
 
-    /// @dev The English auction's lens (its first CREATE, answering its views) is recorded with
-    ///      its code hash: Verify recomputes its address from the auction's, compares its code
-    ///      hash with the chain, and checks that `lens()` is it.
+    /// @dev The English auction's lens (deployed on its own before the auction, which pins it;
+    ///      F8) is recorded with its code hash: Verify recomputes its address from its creation
+    ///      code and arguments, compares its code hash with the chain, and checks that `lens()`
+    ///      is it, with the deployment's dependencies.
     function test_VerifyChecksTheAuctionsLens() public {
         (string memory record, DeployV1.Deployment memory d) = _anvilRecord();
         address lens = d.englishAuction.lens();
@@ -1502,6 +1504,11 @@ contract DeployScriptTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(VerifyV1.LensMismatch.selector, makeAddr("anotherLens"), lens)
         );
+        this.checkLensExternal(d);
+        // The auction's lens, but a deployment with other dependencies: refused too.
+        d.englishAuctionLens = EnglishAuctionLens(lens);
+        d.statementLog = StatementLog(makeAddr("anotherLog"));
+        vm.expectRevert(abi.encodeWithSelector(VerifyV1.LensMismatch.selector, lens, lens));
         this.checkLensExternal(d);
     }
 

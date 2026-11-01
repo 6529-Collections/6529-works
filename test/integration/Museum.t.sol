@@ -125,11 +125,14 @@ contract MuseumTest is IntegrationBase {
         assertTrue(auction.isTarget(address(token)));
     }
 
-    function _deprecateEth() internal returns (uint256 frozenAt) {
-        _govern(
-            guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (CURRENCY_ETH))
-        );
-        frozenAt = block.timestamp;
+    /// @dev A 6529 Stream 1/1 priced in the test ERC-20 (ETH is never deprecated, so the
+    ///      freeze exit is shown in a token).
+    function _startUsdItem() internal returns (uint256 saleId, uint256 tokenId) {
+        _admitUsd();
+        Work[] memory one = new Work[](1);
+        one[0] = _work(artist, collectionId);
+        bytes32 usdRoot = _publish(_inUsd(one));
+        (saleId, tokenId) = _start(usdRoot, one, 0);
     }
 
     // ------------------------------------------------------------------ genesis and governance
@@ -285,33 +288,33 @@ contract MuseumTest is IntegrationBase {
     /// @dev Owner decision 10: the 30-day currency-freeze exit takes the no-bid branch. The
     ///      standing bid is credited back in full and the work goes to the museum.
     function test_FreezeExitSendsTheWorkToTheMuseumAndCreditsTheBid() public {
-        (uint256 saleId, uint256 tokenId) = _startItem(0);
-        _ethBid(saleId, collector, 1 ether);
-        uint256 frozenAt = _deprecateEth();
+        (uint256 saleId, uint256 tokenId) = _startUsdItem();
+        _usdBid(saleId, collector, 100e18);
+        uint256 frozenAt = _deprecateUsd();
         vm.warp(frozenAt + 30 days - 1);
         vm.expectRevert(
-            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, CURRENCY_ETH)
+            abi.encodeWithSelector(IAssetAllowlist.AssetNotActive.selector, address(usd))
         );
         auction.settle(saleId);
 
         vm.warp(frozenAt + 30 days);
         vm.expectEmit(address(auction));
-        emit ISaleAdapter.Credited(collector, CURRENCY_ETH, saleId, 1 ether);
+        emit ISaleAdapter.Credited(collector, address(usd), saleId, 100e18);
         vm.expectEmit(address(stream));
         emit IStream.PrimarySaleSettled(
-            tokenId, PrimaryOutcome.FROZEN_OUT, address(0), CURRENCY_ETH, 0
+            tokenId, PrimaryOutcome.FROZEN_OUT, address(0), address(usd), 0
         );
         auction.settle(saleId);
         assertEq(stream.ownerOf(tokenId), museum, "the work goes to the museum");
         (PrimaryOutcome outcome,,) = stream.primarySale(tokenId);
         assertEq(uint8(outcome), uint8(PrimaryOutcome.FROZEN_OUT));
         assertEq(stream.balanceOf(artist), 0, "not the artist");
-        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "the bid is credited back");
-        assertEq(address(auction).balance, 1 ether, "only the credit is held");
+        assertEq(auction.claimable(collector, address(usd)), 100e18, "the bid is credited back");
+        assertEq(usd.balanceOf(address(auction)), 100e18, "only the credit is held");
         vm.prank(collector);
-        auction.claim(CURRENCY_ETH, collector);
-        assertEq(collector.balance, 1 ether, "refunded in full");
-        assertEq(address(auction).balance, 0);
+        auction.claim(address(usd), collector);
+        assertEq(usd.balanceOf(collector), 100e18, "refunded in full");
+        assertEq(usd.balanceOf(address(auction)), 0);
     }
 
     /// @dev Owner decision 17: Stream moves the work to the museum with no receiver callback, so
@@ -361,16 +364,25 @@ contract MuseumTest is IntegrationBase {
     ///      no-bid branch, so the work goes to its artist, with the bid credited back in full.
     function test_AnotherListedTokensFreezeExitGoesToItsArtist() public {
         MockMintTarget other = _listedToken();
+        _admitUsd();
+        _pricedInUsd(other);
         uint256 saleId = auction.start(address(other), "");
-        _ethBid(saleId, collector, 1 ether);
-        uint256 frozenAt = _deprecateEth();
+        _usdBid(saleId, collector, 100e18);
+        uint256 frozenAt = _deprecateUsd();
         vm.warp(frozenAt + 30 days);
         auction.settle(saleId);
         assertEq(other.ownerOf(1), federatedArtist, "its artist, not the museum");
-        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether, "the bid is credited back");
+        assertEq(auction.claimable(collector, address(usd)), 100e18, "the bid is credited back");
         vm.prank(collector);
-        auction.claim(CURRENCY_ETH, collector);
-        assertEq(collector.balance, 1 ether, "refunded in full");
+        auction.claim(address(usd), collector);
+        assertEq(usd.balanceOf(collector), 100e18, "refunded in full");
+    }
+
+    /// @dev `token`'s terms, priced in the test ERC-20.
+    function _pricedInUsd(MockMintTarget token) internal {
+        PrimaryTerms memory t = token.primaryTerms(0, "");
+        t.currency = address(usd);
+        token.setTerms(t);
     }
 
     // ------------------------------------------------------------------ federated works
@@ -389,12 +401,14 @@ contract MuseumTest is IntegrationBase {
     ///      branch too, so it goes to its artist, with the bid credited back.
     function test_FederatedFreezeExitGoesToItsArtist() public {
         MockMintTarget fed = _federatedToken();
+        _admitUsd();
+        _pricedInUsd(fed);
         uint256 saleId = auction.start(address(fed), "");
-        _ethBid(saleId, collector, 1 ether);
-        uint256 frozenAt = _deprecateEth();
+        _usdBid(saleId, collector, 100e18);
+        uint256 frozenAt = _deprecateUsd();
         vm.warp(frozenAt + 30 days);
         auction.settle(saleId);
         assertEq(fed.ownerOf(1), federatedArtist);
-        assertEq(auction.claimable(collector, CURRENCY_ETH), 1 ether);
+        assertEq(auction.claimable(collector, address(usd)), 100e18);
     }
 }

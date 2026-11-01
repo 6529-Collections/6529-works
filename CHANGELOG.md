@@ -26,6 +26,23 @@
   G-3); LIM-GV-16 is accepted (decision 21); every unsold canonical 6529 Stream 1/1 goes to the
   museum whatever its sale method, and return-to-creator sales belong in their own collections
   (decision 22, ADR 0005 §11 and the Stream spec).
+- Fix pass B for the rc.2 seven-lens review.
+  - `AssetAllowlist.deprecateAsset` refuses ETH (`EthNotDeprecable`): the native currency, in
+    which edition auctions run, is never frozen (MONEY-M1, G-2). The freeze-exit tests now use
+    an ERC-20.
+  - The English auction reads `ownerOf` after `settlePrimary` to learn where an unsold work
+    went. It no longer trusts the `holder` the token reports (CALLS I-2).
+  - `Stream.setDependency` refuses a replacement that answers `authority()` with an
+    AccessManager other than Stream's (G I-1, GV-35).
+  - The English auction's lens is deployed in its own transaction before the auction. The
+    lens is now stateless and reads its caller. The auction's constructor takes the lens's
+    address and code hash, and checks both together with the lens's dependencies.
+    `DeployV1` deploys the lens as its own CREATE2 entry, and Verify checks the lens's
+    dependencies (GAS M-2). Verify also checks the edition auction's lens's dependencies.
+  - `IEnglishAuctionClock.auctionClock` also returns the dispute pause's start (`pausedAt`,
+    exactly as `auction` reports it). Its interface ID is unchanged: return values are not part
+    of a selector. The edition auction's `withdrawBid` reads the pause start there instead of
+    through the lens, so it costs about 12,500 gas less.
 - Fix pass A of the rc.2 seven-lens review (the edition auction, its lens, 6529 Stream Editions
   and `EditionRules`; ADR 0005 §12):
   - F1 (LC-1, MONEY-L1, G-1): `IEditions.bindMinter` returns the `WorkTerms` it locks, and the
@@ -51,7 +68,6 @@
   - NatSpec: the soft close is strict, a bid event's `endTime` can be stale or `type(uint64).max`
     while paused, `lowestWinningStep` means "wins at least one unit", and `quote` double-counts a
     raise and, with `lowestWinningStep`, ignores a step's queue capacity.
-
 - Docs: the edition auction's specification (rc.2 L6). Editions and sales specifies the
   uniform-price edition auction: the step ladder, bids, the D138 clearing and its one-pass
   algorithm, the cut step and each settler's own departure sweep, the clocks beside the 1/1,

@@ -82,7 +82,7 @@ contract UniformEditionAuctionLens is IUniformEditionAuctionLens {
         returns (MasterTerms memory m)
     {
         try IEnglishAuctionClock(_englishAuction).auctionClock(_saleIdOf(_stream, id)) returns (
-            IEnglishAuction.AuctionState state, uint64 endTime
+            IEnglishAuction.AuctionState state, uint64 endTime, uint64
         ) {
             if (state == IEnglishAuction.AuctionState.CANCELLED) {
                 revert IUniformEditionAuction.NoOneOfOneAuction(_stream, id);

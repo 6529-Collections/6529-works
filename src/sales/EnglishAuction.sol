@@ -168,9 +168,9 @@ contract EnglishAuction is
         bool federated;
     }
 
-    /// @notice The lens, created by the constructor: it answers every view of `IEnglishAuction`
-    ///         and `ISaleAdapter` this contract does not declare, through {fallback}. Stateless
-    ///         and fixed: nothing can replace it.
+    /// @notice The lens, deployed before this contract and pinned by its constructor: it answers
+    ///         every view of `IEnglishAuction` and `ISaleAdapter` this contract does not declare,
+    ///         through {fallback}. Stateless and fixed: nothing can replace it.
     address public immutable lens;
     /// @dev The revenue escrow for refused payouts (`escrow()`, answered by the lens).
     address private immutable _escrow;
@@ -205,6 +205,12 @@ contract EnglishAuction is
     ///        bid and at settlement.
     /// @param statementLog_ The statement log `cancel` reads.
     /// @param permit2_ The canonical Permit2, or zero to disable PERMIT2 payments.
+    /// @param lens_ The lens, deployed beforehand in its own transaction (the rc.2 review's GAS
+    ///        M-2: so each deployment fits a block under Glamsterdam): it must have code, no
+    ///        EIP-7702 delegation, the code hash `lensCodeHash` and this contract's escrow,
+    ///        statement log, asset allowlist, economics resolver and Permit2
+    ///        (`Dependency.InvalidDependency` otherwise).
+    /// @param lensCodeHash The lens's reviewed code hash.
     /// @param config_ The initial auction parameters.
     /// @param targets Token contracts listed at genesis.
     constructor(
@@ -213,6 +219,8 @@ contract EnglishAuction is
         IEconomicsResolver economicsResolver_,
         address statementLog_,
         address permit2_,
+        address lens_,
+        bytes32 lensCodeHash,
         IEnglishAuction.AuctionConfig memory config_,
         address[] memory targets
     ) AccessManaged(authority) {
@@ -222,14 +230,20 @@ contract EnglishAuction is
         Dependency.check(address(allowlist_));
         Dependency.check(statementLog_);
         if (permit2_ != address(0)) Dependency.check(permit2_);
+        Dependency.checkPinned(lens_, lensCodeHash);
+        EnglishAuctionLens l = EnglishAuctionLens(lens_);
+        if (
+            l.escrow() != escrow_ || l.statementLog() != statementLog_
+                || address(l.allowlist()) != address(allowlist_)
+                || address(l.economicsResolver()) != address(economicsResolver_)
+                || l.permit2() != permit2_
+        ) revert Dependency.InvalidDependency(lens_);
         _escrow = escrow_;
         _economicsResolver = economicsResolver_;
         _allowlist = allowlist_;
         _statementLog = statementLog_;
         _permit2 = permit2_;
-        lens = address(
-            new EnglishAuctionLens(escrow_, statementLog_, allowlist_, economicsResolver_, permit2_)
-        );
+        lens = lens_;
         _setConfig(config_);
         for (uint256 i; i < targets.length; ++i) {
             _setTarget(targets[i], true);
@@ -626,12 +640,12 @@ contract EnglishAuction is
     /// @inheritdoc IEnglishAuctionClock
     /// @dev Answered here, not through the lens, for contracts that read an auction on their own
     ///      hot paths (the edition auction reads its 1/1 in `open`, `bid`, `settle` and
-    ///      `withdrawBid`): one cold slot for a sale never paused, against the lens's extra
-    ///      account and round trips.
+    ///      `withdrawBid`, which needs the pause start): one cold slot for a sale never paused,
+    ///      against the lens's extra account and round trips.
     function auctionClock(uint256 saleId)
         external
         view
-        returns (IEnglishAuction.AuctionState state, uint64 endTime)
+        returns (IEnglishAuction.AuctionState state, uint64 endTime, uint64 pausedAt)
     {
         Sale storage s = _sales[saleId];
         state = _state(s);
@@ -640,12 +654,13 @@ contract EnglishAuction is
         // Only a dispute pause sets `pausedAt`, and it sets `_PAUSE_USED` with it: an unpaused
         // sale's slot 2 is not read.
         if (s.flags & _PAUSE_USED != 0) {
-            uint256 pausedAt = s.pausedAt;
+            pausedAt = s.pausedAt;
             // forge-lint: disable-next-line(block-timestamp)
             if (pausedAt != 0 && block.timestamp > pausedAt + _MAX_PAUSE) {
-                // Truncating as `auction` does: the end fits 32 bits.
+                // Shown resumed, as `auction` shows it. Truncating as `auction` does: the end
+                // fits 32 bits.
                 // forge-lint: disable-next-line(unsafe-typecast)
-                endTime = uint64(_resumedEnd(s, _MAX_PAUSE));
+                (endTime, pausedAt) = (uint64(_resumedEnd(s, _MAX_PAUSE)), 0);
             }
         }
     }
@@ -696,9 +711,9 @@ contract EnglishAuction is
     ///         `federationRegistryCodeHash`: it sends this call's calldata unchanged to the lens,
     ///         which declares each with the same signature, and returns or reverts with its
     ///         answer, byte for byte. Any other call reverts there. ETH is refused.
-    /// @dev A read-only `staticcall` to the fixed, stateless lens this contract created; no
-    ///      delegatecall. The views live there because this contract's write path alone nearly
-    ///      fills EIP-170.
+    /// @dev A read-only `staticcall` to the fixed, stateless lens this contract pinned; the lens
+    ///      reads its caller, this contract. No delegatecall. The views live there because this
+    ///      contract's write path alone nearly fills EIP-170.
     fallback() external {
         address target = lens;
         // `target` is the immutable lens and `staticcall` cannot change state, so the answer is
@@ -1055,10 +1070,11 @@ contract EnglishAuction is
     }
 
     /// @dev Reports the outcome to the token (`IMintTarget.settlePrimary`, owner decision 17) and
-    ///      returns the terms to pay by. An unsold work's recipient is recorded: the holder the
-    ///      token moved it to itself (`taken`; 6529 Stream's museum), else the creator the token
-    ///      reports now (`primaryTerms`), which must not be zero (`InvalidRecipient`, while a
-    ///      recovery override is pending).
+    ///      returns the terms to pay by. An unsold work's recipient is recorded: where the token
+    ///      moved it out of custody itself (`taken`; 6529 Stream's museum), read with `ownerOf`
+    ///      rather than trusted from the reported `holder` (the rc.2 review's CALLS I-2), else,
+    ///      for a work still in custody, the creator the token reports now (`primaryTerms`),
+    ///      which must not be zero (`InvalidRecipient`, while a recovery override is pending).
     function _settleWithToken(Sale storage s, address bidder, uint256 price, bool frozenOut)
         private
         returns (LockedTerms memory lt, bool taken)
@@ -1070,8 +1086,9 @@ contract EnglishAuction is
             .settlePrimary(s.tokenId, outcome, bidder, _terms[s.termsId].currency, price);
         lt = _lock(s, p.seller, p.feeRecipient, p.feeShare);
         if (bidder == address(0)) {
-            taken = p.holder != address(0);
-            address to = taken ? p.holder : _unbidClaimant(s);
+            address owner = IERC721(s.token).ownerOf(s.tokenId);
+            taken = owner != address(this);
+            address to = taken ? owner : _unbidClaimant(s);
             if (to == address(0)) revert ISaleAdapter.InvalidRecipient(to);
             s.recipient = to;
             s.flags |= _RECIPIENT_SET;

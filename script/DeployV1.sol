@@ -132,7 +132,8 @@ library DeployV1 {
         UniformEditionAuction editionAuction;
         /// Its stateless views, created by its constructor (`lens()`, its first CREATE).
         address editionAuctionLens;
-        /// The English auction's lens: its first CREATE, made by its constructor.
+        /// The English auction's lens: deployed in its own CREATE2 entry just before the auction,
+        /// which pins its address and code hash (F8, the rc.2 review's GAS M-2).
         EnglishAuctionLens englishAuctionLens;
         /// The default renderer 6529 Stream pins (ADR 0001 §8).
         Renderer renderer;
@@ -171,8 +172,6 @@ library DeployV1 {
             assign(d, name, _create2(name, salt(p, name), initcode(p, d, name)));
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = d.configurator.worksManager();
-            } else if (_eq(name, "EnglishAuction")) {
-                d.englishAuctionLens = EnglishAuctionLens(d.englishAuction.lens());
             } else if (_eq(name, "ContentStore")) {
                 d.cc0TextFileId = uploadText(d.contentStore, p.cc0Text, "text/plain");
             }
@@ -198,16 +197,16 @@ library DeployV1 {
             assign(d, name, a);
             if (_eq(name, "GovernanceConfigurator")) {
                 d.manager = WorksAccessManager(vm.computeCreateAddress(a, 1));
-            } else if (_eq(name, "EnglishAuction")) {
-                d.englishAuctionLens = EnglishAuctionLens(vm.computeCreateAddress(a, 1));
             }
         }
     }
 
     /// @notice The contracts `deploy` creates with CREATE2, in order. The entropy module is
     ///         included only with a VRF coordinator; the manager is created by the configurator.
+    ///         Each lens is its own entry, just before its auction, so no deployment carries two
+    ///         contracts' code (F8, the rc.2 review's GAS M-2).
     function order(Params memory p) internal pure returns (string[] memory list) {
-        string[21] memory all = [
+        string[22] memory all = [
             "GovernanceConfigurator",
             "ContentStore",
             "DependencyRegistry",
@@ -226,6 +225,7 @@ library DeployV1 {
             "Stream",
             "WorkRecords",
             "Editions",
+            "EnglishAuctionLens",
             "EnglishAuction",
             "UniformEditionAuctionLens",
             "UniformEditionAuction"
@@ -368,9 +368,24 @@ library DeployV1 {
                 abi.encode(m, d.stream, address(d.stream).codehash, p.marketOwner)
             );
         }
+        if (n == keccak256("EnglishAuctionLens")) {
+            // The auction's own dependencies; its allowlist is the economics resolver's.
+            return _code(
+                type(EnglishAuctionLens).creationCode,
+                abi.encode(
+                    d.revenueEscrow,
+                    d.statementLog,
+                    d.assetAllowlist,
+                    d.economicsResolver,
+                    auctionPermit2(p)
+                )
+            );
+        }
         if (n == keccak256("EnglishAuction")) {
             // Targets are genesis wiring, not constructor arguments (config/README.md). 6529
-            // Stream sends its unsold works to the museum itself (owner decision 17).
+            // Stream sends its unsold works to the museum itself (owner decision 17). The
+            // auction pins its lens's address and code hash, read from the chain.
+            address lens = address(d.englishAuctionLens);
             return _code(
                 type(EnglishAuction).creationCode,
                 abi.encode(
@@ -379,6 +394,8 @@ library DeployV1 {
                     d.economicsResolver,
                     d.statementLog,
                     auctionPermit2(p),
+                    lens,
+                    lens.codehash,
                     p.auction,
                     new address[](0)
                 )

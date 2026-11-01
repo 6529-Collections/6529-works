@@ -161,7 +161,8 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     error NotMintingAdapter(address caller);
     /// @notice `name` is already bound.
     error AlreadyBound(bytes32 name);
-    /// @notice The satellite serves another Stream: its `stream()` is not this contract.
+    /// @notice The satellite serves another Stream (its `stream()` is not this contract), or a
+    ///         dependency replacement answers `authority()` with another AccessManager.
     error InvalidBinding(address target);
     /// @notice The item names no sale kind. Its sale currency and params are the adapter's
     ///         to check (the English auction takes empty params).
@@ -243,7 +244,9 @@ interface IStream is IERC4906, IERC2981, IMintTarget {
     /// @notice Replaces one of Stream's dependencies (owner decision 16): `"PACKAGE_REGISTRY"`,
     ///         `"ARTIST_REGISTRY"`, `"ECONOMICS"` or `"ENTROPY_MODULE"`. SUCCESSOR_SETTER role
     ///         (the 30-day class), compare-and-set. The replacement must have code, no EIP-7702
-    ///         delegation and ERC-165 support for its interface; it is never zero. Stream's own
+    ///         delegation and ERC-165 support for its interface; it is never zero. If it answers
+    ///         `authority()` with one word, that must be Stream's own AccessManager
+    ///         (`InvalidBinding` otherwise). Stream's own
     ///         code and every existing token are unaffected: ownership, the terms and royalty
     ///         receiver locked at mint (the split factory stays fixed), a finalized work's
     ///         pinned renderer and a VRF work's seed (`entropyModuleOf`). 6529 Stream Editions

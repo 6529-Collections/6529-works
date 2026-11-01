@@ -36,7 +36,7 @@ contract EditionAuctionGasReport is EditionAuctionStack {
     uint256 internal constant RAISE_CAPPED_CEILING = 81_000;
     uint256 internal constant CLAIM_LOSER_CEILING = 49_000;
     uint256 internal constant CLAIM_FOR_CEILING = 67_000;
-    uint256 internal constant WITHDRAW_CEILING = 103_000;
+    uint256 internal constant WITHDRAW_CEILING = 90_000;
     uint256 internal constant SWEEP_SETTLE_CEILING = 153_000;
 
     address internal artist;

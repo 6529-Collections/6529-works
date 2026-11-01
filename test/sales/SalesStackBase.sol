@@ -36,7 +36,7 @@ abstract contract SalesStackBase is IntegrationBase {
     address internal fan = makeAddr("allowlistedFan");
     bytes32 internal root;
 
-    function setUp() public override {
+    function setUp() public virtual override {
         super.setUp();
         artist = _actor("marketArtist");
         Work[] memory works = new Work[](4);
@@ -101,21 +101,6 @@ abstract contract SalesStackBase is IntegrationBase {
                 10_000,
                 IFederationRegistry.Status.ACTIVE
             )
-        );
-    }
-
-    function _deprecateEth() internal {
-        _govern(
-            guardian1, address(allowlist), abi.encodeCall(allowlist.deprecateAsset, (CURRENCY_ETH))
-        );
-    }
-
-    function _readmitEth() internal {
-        (,, uint64 revision) = allowlist.assetConfig(CURRENCY_ETH);
-        _govern(
-            hotAdmin,
-            address(allowlist),
-            abi.encodeCall(allowlist.admitAsset, (CURRENCY_ETH, revision, 0.001 ether))
         );
     }
 }
