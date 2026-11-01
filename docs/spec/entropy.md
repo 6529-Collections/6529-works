@@ -112,7 +112,10 @@ back to A) neither coordinator can deliver the other's requests; a pending draw 
   `WorkRecords.seedOf(tokenId)` then returns; before the record opens the renderer reads the
   same module's `seedOf(itemHash)`, with a bounded gas allowance
   ([`Renderer.sol`](../../src/content/Renderer.sol), `_seed`). A replaced module therefore
-  changes no existing work's seed, and stays readable for the works minted under it.
+  changes no existing work's seed, and stays readable for the works minted under it. A work
+  whose item never had a request of its own (it shares a seeded content with another package's
+  item) has no item link, so `seedOf(itemHash)` reverts and its `tokenURI` reverts until anyone
+  opens its record, which stores the content's seed; it never shows another seed.
 - **`requestOf(itemHash)`** returns the content's latest request ID (zero once delivered) and
   when it was made.
 
