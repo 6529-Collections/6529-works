@@ -570,20 +570,7 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      from it. A replacement is stored and its `Counts.replaced` bit set; putting the
     ///      genesis contract back is a replacement like any other.
     function setDependency(bytes32 kind, address expected, address next) external restricted {
-        bytes4 interfaceId;
-        uint8 index;
-        address current;
-        if (kind == PACKAGE_REGISTRY) {
-            (interfaceId, current) = (type(IPackageRegistry).interfaceId, packageRegistry());
-        } else if (kind == ARTIST_REGISTRY) {
-            (interfaceId, index, current) = (type(IArtistRegistry).interfaceId, 1, artistRegistry());
-        } else if (kind == ECONOMICS) {
-            (interfaceId, index, current) = (type(IEconomicsResolver).interfaceId, 2, economics());
-        } else if (kind == ENTROPY_MODULE) {
-            (interfaceId, index, current) = (type(IEntropyModule).interfaceId, 3, entropyModule());
-        } else {
-            revert UnknownDependency(kind);
-        }
+        (uint8 index, bytes4 interfaceId, address current) = _dependencyOf(kind);
         if (current != expected) revert ExpectedValueMismatch();
         Dependency.check(next, interfaceId);
         _replaced[index] = next;
@@ -747,6 +734,20 @@ contract Stream is ERC721, AccessManaged, IStream {
             }
         }
         if (renderer != address(0) && renderer.code.length == 0) renderer = address(0);
+    }
+
+    /// @dev The `Counts.replaced` bit index, the ERC-165 interface and the current address of
+    ///      the dependency `kind` names (`UnknownDependency` for any other).
+    function _dependencyOf(bytes32 kind) private view returns (uint8, bytes4, address) {
+        if (kind == PACKAGE_REGISTRY) {
+            return (0, type(IPackageRegistry).interfaceId, packageRegistry());
+        }
+        if (kind == ARTIST_REGISTRY) {
+            return (1, type(IArtistRegistry).interfaceId, artistRegistry());
+        }
+        if (kind == ECONOMICS) return (2, type(IEconomicsResolver).interfaceId, economics());
+        if (kind == ENTROPY_MODULE) return (3, type(IEntropyModule).interfaceId, entropyModule());
+        revert UnknownDependency(kind);
     }
 
     /// @dev Dependency `index`: its replacement once governance set one, else `genesis`.
