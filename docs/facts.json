@@ -238,7 +238,7 @@
       },
       {
         "operation": "start, two-party work",
-        "pragueGas": 276112,
+        "pragueGas": 276100,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -250,7 +250,7 @@
       },
       {
         "operation": "startWithBid, two-party work",
-        "pragueGas": 318108,
+        "pragueGas": 318096,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -262,7 +262,7 @@
       },
       {
         "operation": "start, VRF work",
-        "pragueGas": 273371,
+        "pragueGas": 273351,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -277,7 +277,7 @@
       },
       {
         "operation": "start, edition master",
-        "pragueGas": 267854,
+        "pragueGas": 267874,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -292,7 +292,7 @@
       },
       {
         "operation": "start, edition master with 64 bytes of params (the bound)",
-        "pragueGas": 268959,
+        "pragueGas": 268971,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -304,7 +304,7 @@
       },
       {
         "operation": "start, an artist's first work",
-        "pragueGas": 287919,
+        "pragueGas": 287911,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -316,7 +316,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work",
-        "pragueGas": 329928,
+        "pragueGas": 329920,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -352,7 +352,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, VRF, edition master with 64 bytes of params (the bound)",
-        "pragueGas": 344887,
+        "pragueGas": 344907,
         "pragueCeiling": {
           "gas": 350000,
           "kind": "budget"
@@ -364,7 +364,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, all four dependencies replaced",
-        "pragueGas": 344616,
+        "pragueGas": 344596,
         "pragueCeiling": {
           "gas": 346000,
           "kind": "regression",
@@ -376,7 +376,7 @@
       },
       {
         "operation": "startWithBid, an artist's first work, two-party, VRF, all four dependencies replaced",
-        "pragueGas": 352272,
+        "pragueGas": 352240,
         "pragueCeiling": {
           "gas": 354000,
           "kind": "regression",
@@ -388,7 +388,7 @@
       },
       {
         "operation": "startWithBid, ERC-20 by relayed Permit2",
-        "pragueGas": 354882,
+        "pragueGas": 354890,
         "pragueCeiling": {
           "gas": 365000,
           "kind": "regression"
@@ -399,7 +399,7 @@
       },
       {
         "operation": "start, first work in a new collection",
-        "pragueGas": 267822,
+        "pragueGas": 267830,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -413,7 +413,7 @@
       },
       {
         "operation": "start, first work ever (one-time)",
-        "pragueGas": 437014,
+        "pragueGas": 436994,
         "pragueCeiling": {
           "gas": 449000,
           "kind": "regression"
@@ -441,7 +441,7 @@
       },
       {
         "operation": "bid that outbids",
-        "pragueGas": 73530,
+        "pragueGas": 73518,
         "pragueCeiling": {
           "gas": 75000,
           "kind": "regression"
@@ -455,7 +455,7 @@
       },
       {
         "operation": "settle, first payout to a seller wallet",
-        "pragueGas": 182140,
+        "pragueGas": 182128,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -469,7 +469,7 @@
       },
       {
         "operation": "settle, with a bid",
-        "pragueGas": 157140,
+        "pragueGas": 157128,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -483,7 +483,7 @@
       },
       {
         "operation": "settle, no bid (to the museum, D140)",
-        "pragueGas": 121508,
+        "pragueGas": 122665,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -494,7 +494,7 @@
       },
       {
         "operation": "auction (view, cold, answered by the auction's lens)",
-        "pragueGas": 39342,
+        "pragueGas": 39294,
         "pragueCeiling": {
           "gas": 41000,
           "kind": "regression"
@@ -505,7 +505,7 @@
       },
       {
         "operation": "minimumBid (view, cold, answered by the auction's lens)",
-        "pragueGas": 38194,
+        "pragueGas": 38168,
         "pragueCeiling": {
           "gas": 39000,
           "kind": "regression"
@@ -516,7 +516,7 @@
       },
       {
         "operation": "auctionClock (view, cold, answered by the auction itself)",
-        "pragueGas": 24207,
+        "pragueGas": 24260,
         "pragueCeiling": {
           "gas": 25000,
           "kind": "regression"
@@ -565,7 +565,7 @@
       },
       {
         "operation": "re-rate a work (governed execute)",
-        "pragueGas": 189651,
+        "pragueGas": 189619,
         "pragueCeiling": {
           "gas": 192000,
           "kind": "regression"
@@ -654,7 +654,7 @@
       },
       {
         "operation": "claimSigned, the artist's first signed release",
-        "pragueGas": 141484,
+        "pragueGas": 141464,
         "pragueCeiling": {
           "gas": 145000,
           "kind": "regression"
@@ -676,7 +676,7 @@
       },
       {
         "operation": "Edition auction open, steady state (binds the edition)",
-        "pragueGas": 271966,
+        "pragueGas": 272119,
         "pragueCeiling": {
           "gas": 275000,
           "kind": "regression"
@@ -687,7 +687,7 @@
       },
       {
         "operation": "Edition auction open, the adapter's first (one-time)",
-        "pragueGas": 317691,
+        "pragueGas": 317844,
         "pragueCeiling": {
           "gas": 322000,
           "kind": "regression"
@@ -731,7 +731,7 @@
       },
       {
         "operation": "Edition bid near the close (1/1 read, soft close)",
-        "pragueGas": 77621,
+        "pragueGas": 77845,
         "pragueCeiling": {
           "gas": 110000,
           "kind": "budget"
@@ -764,9 +764,9 @@
       },
       {
         "operation": "Edition withdrawBid, capped, 1/1 paused",
-        "pragueGas": 100511,
+        "pragueGas": 88019,
         "pragueCeiling": {
-          "gas": 103000,
+          "gas": 90000,
           "kind": "regression"
         },
         "newSlots": 1,
@@ -775,7 +775,7 @@
       },
       {
         "operation": "Edition settle, 40 used steps",
-        "pragueGas": 151269,
+        "pragueGas": 151492,
         "pragueCeiling": {
           "gas": 400000,
           "kind": "budget"
@@ -786,7 +786,7 @@
       },
       {
         "operation": "Edition settle, capped, one departure swept",
-        "pragueGas": 149375,
+        "pragueGas": 149598,
         "pragueCeiling": {
           "gas": 153000,
           "kind": "regression"

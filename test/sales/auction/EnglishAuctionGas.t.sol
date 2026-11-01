@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Test, console2 } from "forge-std/Test.sol";
 import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { AssetAllowlist } from "src/economics/AssetAllowlist.sol";
+import { IAssetAllowlist } from "src/economics/interfaces/IAssetAllowlist.sol";
 import { ReleaseVerifier } from "src/economics/ReleaseVerifier.sol";
 import { RevenueEscrow } from "src/economics/RevenueEscrow.sol";
 import { SplitFactory } from "src/economics/SplitFactory.sol";
@@ -27,6 +28,7 @@ import { Payment, PaymentMethod, SaleKind } from "src/interfaces/types/SaleTypes
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { MockArtistResolver } from "../../mocks/economics/EconomicsMocks.sol";
 import {
@@ -92,14 +94,27 @@ contract EnglishAuctionGasTest is Test {
         address[] memory targets = new address[](1);
         targets[0] = address(stream);
         resolver.setAssetAllowlist(address(allowlist));
+        address escrow_ = address(new RevenueEscrow(address(manager), factory));
+        address log_ = address(new StatementLog(address(manager), address(0), bytes32(0)));
+        address lens_ = address(
+            new EnglishAuctionLens(
+                escrow_,
+                log_,
+                IAssetAllowlist(address(allowlist)),
+                IEconomicsResolver(address(resolver)),
+                address(0)
+            )
+        );
         auction = IEnglishAuctionFull(
             address(
                 new EnglishAuction(
                     address(manager),
-                    address(new RevenueEscrow(address(manager), factory)),
+                    escrow_,
                     IEconomicsResolver(address(resolver)),
-                    address(new StatementLog(address(manager), address(0), bytes32(0))),
+                    log_,
                     address(0),
+                    lens_,
+                    lens_.codehash,
                     IEnglishAuction.AuctionConfig(24 hours, 15 minutes, 5_000),
                     targets
                 )

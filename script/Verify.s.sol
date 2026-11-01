@@ -32,9 +32,10 @@ import { VerifyV1 } from "./VerifyV1.sol";
 ///            contract are the canonical ones with their pinned code (no delegation mock).
 ///         2. Every recorded address is where CREATE2 puts that contract given the recorded
 ///            constructor parameters and CREATE2 deployer (`DeployV1.predict`, which reads
-///            each pinned code hash from the chain; the English auction's lens is the
-///            auction's first CREATE), and every recorded code hash, the lens's included, is on
-///            chain; `lens()` is that lens (`VerifyV1.checkLens`, in check 6).
+///            each pinned code hash from the chain; each auction's lens is its own entry, and
+///            the auction's initcode carries the lens's code hash), and every recorded code
+///            hash, the lenses' included, is on chain; `lens()` is that lens, with the
+///            deployment's dependencies (`VerifyV1.checkLens`, in check 6).
 ///         3. The default license (`VerifyV1.checkCc0`): WorkRecords and every product's
 ///            default name the recorded CC0 file, complete, hashing to the recorded digest;
 ///            off anvil that digest must be the pinned canonical one.

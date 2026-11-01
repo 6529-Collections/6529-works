@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
@@ -31,6 +32,60 @@ contract DependencyStandIn is IERC165 {
 
     function supportsInterface(bytes4 interfaceId) external view returns (bool) {
         return interfaceId == _id || interfaceId == type(IERC165).interfaceId;
+    }
+}
+
+/// @dev A replacement dependency governed by `authority`: it also answers `authority()`, as
+///      every genesis dependency does (they are all AccessManaged).
+contract ManagedStandIn is DependencyStandIn {
+    address public immutable authority;
+
+    constructor(bytes4 id, address authority_) DependencyStandIn(id) {
+        authority = authority_;
+    }
+}
+
+/// @dev A replacement with a silent fallback: `authority()` succeeds with no answer.
+contract SilentStandIn is DependencyStandIn {
+    constructor(bytes4 id) DependencyStandIn(id) { }
+
+    fallback() external { }
+}
+
+/// @dev A replacement whose `authority()` reverts with a one-word reason.
+contract RevertingAuthorityStandIn is DependencyStandIn {
+    constructor(bytes4 id) DependencyStandIn(id) { }
+
+    function authority() external pure returns (address) {
+        assembly ("memory-safe") {
+            mstore(0, 0xdead)
+            revert(0, 0x20)
+        }
+    }
+}
+
+/// @dev A replacement that answers `authority()` with a foreign manager, but only after spending
+///      more gas than Stream forwards to the read (`RECORDS_GAS`).
+contract SlowAuthorityStandIn is DependencyStandIn {
+    address internal immutable _authority;
+
+    constructor(bytes4 id, address authority_) DependencyStandIn(id) {
+        _authority = authority_;
+    }
+
+    function authority() external view returns (address) {
+        uint256 start = gasleft();
+        while (start - gasleft() < 120_000) { }
+        return _authority;
+    }
+}
+
+/// @dev A replacement whose `authority()` answers one word that is not an address.
+contract DirtyAuthorityStandIn is DependencyStandIn {
+    constructor(bytes4 id) DependencyStandIn(id) { }
+
+    function authority() external pure returns (bytes32) {
+        return bytes32(type(uint256).max);
     }
 }
 
@@ -205,6 +260,18 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(_current(kind), next);
     }
 
+    /// @dev A 30-day replacement that governance schedules and waits out, but Stream refuses.
+    function _refuse(bytes32 kind, address next, bytes memory reason) internal {
+        address previous = _current(kind);
+        bytes memory call = abi.encodeCall(stream.setDependency, (kind, previous, next));
+        _schedule(hotAdmin, address(stream), call);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(reason);
+        manager.execute(address(stream), call);
+        assertEq(_current(kind), previous, "unchanged");
+    }
+
     /// @dev Everything an existing token shows the world.
     function _snapshot() internal view returns (bytes32) {
         bytes memory all;
@@ -366,6 +433,59 @@ contract StreamDependenciesTest is IntegrationBase {
         );
         auction.start(address(stream), _mintData(root, one, 0));
         assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+    }
+
+    /// @dev The rc.2 review's G I-1 (fix F7): a replacement that answers `authority()` must name
+    ///      Stream's own AccessManager, so a dependency governed elsewhere can never be
+    ///      installed. Refused for every kind, the real package registry included; under Stream's
+    ///      manager the same stand-in installs, and one with no `authority()` installs too
+    ///      (`test_ReplacingEachDependencyLeavesExistingTokensUnchanged`).
+    function test_AReplacementUnderAForeignAuthorityIsRefused() public {
+        address foreign = address(new AccessManager(address(this)));
+        for (uint256 i; i < KINDS.length; ++i) {
+            address next = address(new ManagedStandIn(_interfaceOf(KINDS[i]), foreign));
+            _refuse(KINDS[i], next, abi.encodeWithSelector(IStream.InvalidBinding.selector, next));
+        }
+        PackageRegistry real = new PackageRegistry(
+            foreign,
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(artists),
+            address(artists).codehash
+        );
+        _refuse(
+            "PACKAGE_REGISTRY",
+            address(real),
+            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(real))
+        );
+        // One word that is not an address is refused too (its decoding fails, with no data,
+        // which the manager reports as `FailedCall`).
+        address dirty = address(new DirtyAuthorityStandIn(_interfaceOf("ECONOMICS")));
+        _refuse("ECONOMICS", dirty, abi.encodeWithSignature("FailedCall()"));
+
+        for (uint256 i; i < KINDS.length; ++i) {
+            _replace(
+                KINDS[i], address(new ManagedStandIn(_interfaceOf(KINDS[i]), address(manager)))
+            );
+        }
+    }
+
+    /// @dev F7's other side: only a successful one-word `authority()` answer is compared. A
+    ///      replacement whose `authority()` succeeds with no answer (a silent fallback) or
+    ///      reverts, even with a one-word reason, installs for every kind.
+    function test_AReplacementWithNoAuthorityAnswerInstalls() public {
+        for (uint256 i; i < KINDS.length; ++i) {
+            _replace(KINDS[i], address(new SilentStandIn(_interfaceOf(KINDS[i]))));
+            _replace(KINDS[i], address(new RevertingAuthorityStandIn(_interfaceOf(KINDS[i]))));
+        }
+    }
+
+    /// @dev The read forwards at most `RECORDS_GAS` (GV-35): an `authority()` that needs more to
+    ///      answer is not read, so its replacement installs as one with no answer does. Its
+    ///      answer here would name a foreign manager.
+    function test_TheAuthorityReadIsBoundedByRecordsGas() public {
+        address foreign = address(new AccessManager(address(this)));
+        _replace("ECONOMICS", address(new SlowAuthorityStandIn(_interfaceOf("ECONOMICS"), foreign)));
     }
 
     /// @dev The permanence gap the review of #81 found, closed: the artist registry's only

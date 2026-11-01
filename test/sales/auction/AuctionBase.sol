@@ -19,6 +19,7 @@ import { Typehashes } from "src/interfaces/types/Typehashes.sol";
 import { Roles } from "src/governance/Roles.sol";
 import { StatementLog } from "src/records/StatementLog.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
+import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { ISignatureTransfer } from "src/interfaces/external/ISignatureTransfer.sol";
 import { MockArtistResolver } from "../../mocks/economics/EconomicsMocks.sol";
@@ -86,6 +87,9 @@ abstract contract AuctionBase is Test {
     uint256 internal bobPk = 0xB0B;
     uint256 internal carolPk = 0xCA201;
     address internal alice;
+    /// @dev A lens with no Permit2, for the constructor tests (deployed before them, so it is
+    ///      never the call an `expectRevert` applies to).
+    address internal bareLens;
     address internal bob;
     address internal carol;
 
@@ -108,6 +112,7 @@ abstract contract AuctionBase is Test {
         resolver.set(PRODUCT_FEDERATED, federatedNetwork, 10_000);
         resolver.setMuseumAccount(museum);
         auction = _deploy(address(permit2));
+        bareLens = _lens(address(0));
         stream.setTerms(_terms(ETH));
         // 6529 Stream moves an unsold work to the museum itself (owner decision 17).
         stream.setMuseumResolver(IEconomicsResolver(address(resolver)));
@@ -126,9 +131,24 @@ abstract contract AuctionBase is Test {
         return IEnglishAuction.AuctionConfig(DURATION, WINDOW, SHARE);
     }
 
+    /// @dev A lens on this test's escrow, statement log, allowlist and resolver, deployed on its
+    ///      own as DeployV1 deploys it (F8, the rc.2 review's GAS M-2).
+    function _lens(address permit2_) internal returns (address) {
+        return address(
+            new EnglishAuctionLens(
+                address(escrow),
+                address(statements),
+                IAssetAllowlist(address(allowlist)),
+                resolver,
+                permit2_
+            )
+        );
+    }
+
     function _deploy(address permit2_) internal returns (IEnglishAuctionFull a) {
         address[] memory targets = new address[](1);
         targets[0] = address(stream);
+        address lens_ = _lens(permit2_);
         a = IEnglishAuctionFull(
             address(
                 new EnglishAuction(
@@ -137,6 +157,8 @@ abstract contract AuctionBase is Test {
                     resolver,
                     address(statements),
                     permit2_,
+                    lens_,
+                    lens_.codehash,
                     _config(),
                     targets
                 )

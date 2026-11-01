@@ -18,6 +18,7 @@ import {
     PRODUCT_FEDERATED,
     PRODUCT_STREAM
 } from "src/interfaces/types/EconomicsTypes.sol";
+import { IUniformEditionAuctionLens } from "src/interfaces/IUniformEditionAuctionLens.sol";
 import { EnglishAuctionLens } from "src/sales/EnglishAuctionLens.sol";
 import { DeployV1 } from "./DeployV1.sol";
 
@@ -45,8 +46,8 @@ library VerifyV1 {
     error HolderSuspended(uint64 role, address account);
     /// @notice The economics resolver's museum is not the recorded one.
     error MuseumMismatch(address recorded, address actual);
-    /// @notice The English auction's `lens()` is not the recorded lens, or the lens does not name
-    ///         the auction.
+    /// @notice The English auction's `lens()` is not the recorded lens, or the lens has no code
+    ///         or other dependencies than the recorded deployment's.
     error LensMismatch(address recorded, address actual);
 
     /// @notice Every contract in `recorded` is at the address `predicted` computes
@@ -89,16 +90,24 @@ library VerifyV1 {
         if (actual != museum) revert MuseumMismatch(museum, actual);
     }
 
-    /// @notice The English auction answers its views through the lens it created (EIP-170
-    ///         headroom): `lens()` is the recorded lens, the auction's first CREATE (which
-    ///         `checkAddresses` recomputes from the auction's verified address), with code, and the
-    ///         lens names the auction as its `adapter`. `Verify.s.sol` also compares the lens's
-    ///         code hash with the record. Nothing can replace the lens: `lens` is immutable.
+    /// @notice The English auction answers its views through the lens it pinned (EIP-170
+    ///         headroom; deployed on its own, F8): `lens()` is the recorded lens, with code, and
+    ///         the lens's dependencies are the recorded deployment's escrow, statement log, asset
+    ///         allowlist and economics resolver (its Permit2 is checked on mainnet by
+    ///         `Verify.s.sol`). Its code hash is verified twice over: `checkAddresses` recomputes
+    ///         the lens's CREATE2 address from its creation code and these arguments, and the
+    ///         auction's from initcode that carries the lens's code hash read from the chain, the
+    ///         one the auction's constructor checked; `Verify.s.sol` also compares it with the
+    ///         record. Nothing can replace the lens: `lens` is immutable.
     function checkLens(DeployV1.Deployment memory d) internal view {
         address lens = d.englishAuction.lens();
+        EnglishAuctionLens l = EnglishAuctionLens(lens);
         if (
             lens != address(d.englishAuctionLens) || lens.code.length == 0
-                || EnglishAuctionLens(lens).adapter() != address(d.englishAuction)
+                || l.escrow() != address(d.revenueEscrow)
+                || l.statementLog() != address(d.statementLog)
+                || address(l.allowlist()) != address(d.assetAllowlist)
+                || address(l.economicsResolver()) != address(d.economicsResolver)
         ) revert LensMismatch(address(d.englishAuctionLens), lens);
     }
 
@@ -143,17 +152,24 @@ library VerifyV1 {
         checkEditionAuctionLens(d);
     }
 
-    /// @notice The edition auction's lens is the one its constructor created and the record
-    ///         names: `lens()` equals the recorded address (which `checkAddresses` matches to the
-    ///         auction's first CREATE) and holds code. `Verify.s.sol` also compares its code hash
-    ///         with the recorded one, as for every contract.
+    /// @notice The edition auction's lens is the one its constructor pinned and the record
+    ///         names (deployed on its own before the auction, F8): `lens()` equals the recorded
+    ///         address, with code, and the lens's Editions, Stream, English auction and escrow are
+    ///         the deployment's. Its code hash is verified as the English auction's lens's is
+    ///         (`checkLens`): `checkAddresses` recomputes the lens's CREATE2 address from its
+    ///         creation code and arguments, and the auction's from initcode carrying the lens's
+    ///         code hash read from the chain; `Verify.s.sol` also compares it with the record.
     function checkEditionAuctionLens(DeployV1.Deployment memory d) internal view {
         address auction = address(d.editionAuction);
         if (auction == address(0)) return;
         address lens = d.editionAuction.lens();
-        if (lens != d.editionAuctionLens || lens.code.length == 0) {
-            revert AddressMismatch("UniformEditionAuctionLens", d.editionAuctionLens, lens);
-        }
+        IUniformEditionAuctionLens l = IUniformEditionAuctionLens(lens);
+        if (
+            lens != d.editionAuctionLens || lens.code.length == 0
+                || l.editions() != address(d.editions) || l.stream() != address(d.stream)
+                || l.englishAuction() != address(d.englishAuction)
+                || l.escrow() != address(d.revenueEscrow)
+        ) revert AddressMismatch("UniformEditionAuctionLens", d.editionAuctionLens, lens);
     }
 
     /// @notice Reverts unless the wired getter reflects `call`. This is genesis readback: a

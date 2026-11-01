@@ -421,6 +421,10 @@ after the rc.2 seven-lens review.
   `canWithdraw(saleId, bidId)` answers for one bid; `EndTimes.withdrawalsOpen` still means "the
   1/1 is paused". `withdrawBid` reads the 1/1 through `auction()`, about 10,000 more gas (the
   regression ceiling is 103,000).
+  *Amended 1 November 2026 (PR #89, fix pass B):* `IEnglishAuctionClock.auctionClock` also
+  returns the 1/1's `pausedAt`, and `withdrawBid` reads it there, from the English auction
+  itself rather than through its lens. The withdrawal costs about what it did before F3
+  (88,019; regression ceiling 90,000).
 - **One source of truth for edition economics (LC-1, MONEY-L1, G-1).** The lens held a copy of
   the economics resolver taken at construction, while Editions reads 6529 Stream's current
   one, so after a resolver replacement (owner decision 16) a sale paid the old split and its
@@ -541,6 +545,10 @@ over as the edition auction lands.
 - **LIM-EA-9: a frozen 1/1 delays editions.** An ERC-20 1/1 frozen by a currency deprecation
   (MARKET-2) delays the edition settlement until the 1/1 settles, up to 30 days. 6529 Stream
   launches in ETH, which is never deprecated in practice.
+  *Amended 1 November 2026 (PR #89, the rc.2 review's MONEY-M1 and G-2):* ETH can no longer
+  be deprecated at all. `AssetAllowlist.deprecateAsset` refuses it (`EthNotDeprecable`,
+  [ECO-38](../spec/economics-and-payouts.md#rules-and-invariants)), so an ETH 1/1 never
+  freezes.
 - **LIM-EA-10: claims need the adapter admitted.** Copies are minted at claim, and 6529 Stream
   Editions refuses mints from a removed adapter (ED-5). Governance therefore removes an edition
   auction only once its settled sales are claimed; `claimBidFor` lets anyone push the remaining

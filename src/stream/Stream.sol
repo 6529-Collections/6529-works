@@ -673,11 +673,20 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      `Counts.replaced` bit set; putting the genesis contract back is a replacement like
     ///      any other. Replacing the entropy module records the module it replaces with the last
     ///      token ID minted so far, so every work minted before keeps its module
-    ///      (`entropyModuleOf`).
+    ///      (`entropyModuleOf`). A replacement that answers `authority()` with one word must
+    ///      name Stream's own AccessManager (the rc.2 review's G I-1): every genesis dependency
+    ///      is governed by it, so one under a foreign manager is refused (`InvalidBinding`), and
+    ///      so is a word that is not an address. A contract with no `authority()` passes. The
+    ///      read forwards at most {RECORDS_GAS}: a caller too short of gas for it to answer has
+    ///      too little left to finish the replacement, so the check cannot be starved away.
     function setDependency(bytes32 kind, address expected, address next) external restricted {
         (uint8 index, bytes4 interfaceId, address current) = _dependencyOf(kind);
         if (current != expected) revert ExpectedValueMismatch();
         Dependency.check(next, interfaceId);
+        (bool ok, bytes memory a) =
+            next.staticcall{ gas: RECORDS_GAS }(abi.encodeCall(this.authority, ()));
+        bool foreign = ok && a.length == 32 && abi.decode(a, (address)) != authority();
+        if (foreign) revert InvalidBinding(next);
         if (index == 3) _entropyEras.push(uint256(_counts.minted) << 160 | uint160(current));
         _replaced[index] = next;
         _counts.replaced |= uint8(1) << index;

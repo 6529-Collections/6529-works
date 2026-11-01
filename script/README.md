@@ -482,9 +482,16 @@ forge script script/Deploy.s.sol --rpc-url "$SEPOLIA_RPC_URL" --sender <deployer
 - **Resuming.** `--slow` waits for each receipt. If a broadcast stops partway, rerun the
   broadcast command with `--resume` added.
 - **Gas.**
-  - **On anvil, with Prague costs,** the whole system is 25 transactions and about 64.7M gas,
-    including the delegation mock. The largest transaction is the renderer's creation, at
-    about 5.4M, within the 16,777,216-gas EIP-7825 cap.
+  - **On anvil, with Prague costs,** the whole system is 26 transactions and about 71.7M gas,
+    including the delegation mock. The largest transaction is the edition auction's creation,
+    at about 5.5M, within the 16,777,216-gas EIP-7825 cap.
+  - **Each auction's lens is its own transaction** (the rc.2 review's GAS M-2). Created inside
+    its auction's deployment, a lens put both contracts' code in one transaction: the edition
+    auction's would have needed about 68.9M with Glamsterdam costs, over a 60M block and the
+    50M `eth_estimateGas` cap of geth, reth and public RPCs. Deployed apart, every deploy
+    transaction is at most about 39.9M with Sepolia's measured Glamsterdam costs (the edition
+    auction; its lens about 30.7M, the English auction about 37.8M and its lens about 10.4M),
+    so no gas limit needs setting by hand: `--slow` takes each from `eth_estimateGas`.
   - **On Sepolia r1, with Glamsterdam costs,** the deploy took 445M gas over 25 transactions,
     6.19 times the Prague estimate. That cost about 0.022 ETH at a 0.05 gwei priority fee.
     The per-transaction table is `deployments/11155111/README.md`, added in

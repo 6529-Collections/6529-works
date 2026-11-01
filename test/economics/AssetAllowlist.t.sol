@@ -115,6 +115,24 @@ contract AssetAllowlistTest is EconomicsBase {
         allowlist.admitAsset(ETH, 1, 1);
     }
 
+    /// Regression: MONEY-M1 and G-2 in the rc.2 review
+    /// @dev ETH, the native currency, can never be deprecated: the call reverts, nothing
+    ///      changes (status, revision, floor), and ETH stays usable for every sale.
+    function test_DeprecateAsset_RefusesEth() public {
+        (IAssetAllowlist.Status before, uint256 floor, uint64 revision) = allowlist.assetConfig(ETH);
+        vm.recordLogs();
+        vm.expectRevert(IAssetAllowlist.EthNotDeprecable.selector);
+        allowlist.deprecateAsset(ETH);
+        assertEq(vm.getRecordedLogs().length, 0, "no event");
+        (IAssetAllowlist.Status status, uint256 floorAfter, uint64 revisionAfter) =
+            allowlist.assetConfig(ETH);
+        assertEq(uint8(status), uint8(before));
+        assertEq(uint8(status), uint8(IAssetAllowlist.Status.Active));
+        assertEq(floorAfter, floor);
+        assertEq(revisionAfter, revision);
+        assertTrue(allowlist.isActive(ETH));
+    }
+
     function test_DeprecateThenReadmit() public {
         allowlist.admitAsset(address(usdc), 0, 1e6);
         vm.expectEmit(true, false, false, true, address(allowlist));

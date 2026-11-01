@@ -645,7 +645,7 @@ contract EnglishAuctionPreLens is
                         || (terms.feeRecipient == address(0) && terms.feeShare != 0)))
                 || terms.creator == address(0) || terms.feeShare > Splits.DENOMINATOR
                 || terms.price != 0 || terms.params.length != 0
-                || IERC721(token).ownerOf(tokenId) != address(this)
+                || _ownerOf(token, tokenId) != address(this)
         ) revert InvalidSaleTerms(token, tokenId);
         saleId = saleIdOf(token, tokenId);
         Sale storage s = _sales[saleId];
@@ -747,11 +747,17 @@ contract EnglishAuctionPreLens is
         creator = p.creator;
     }
 
+    /// @dev The token's owner of `tokenId`, as in `EnglishAuction`.
+    function _ownerOf(address token, uint256 tokenId) private view returns (address) {
+        return IERC721(token).ownerOf(tokenId);
+    }
+
     /// @dev Decision 17, as in `EnglishAuction`: the token records the outcome and takes an
     ///      unsold work itself (6529 Stream's museum), else the creator receives it. To stay
     ///      within EIP-170 this copy pays by the terms `primaryTerms` reports (the mocks report
-    ///      the same seller and fee terms from both calls) and reads only the settlement's
-    ///      `holder`, the fourth word of its answer.
+    ///      the same seller and fee terms from both calls) and, like `EnglishAuction` (the rc.2
+    ///      review's CALLS I-2), reads where an unsold work went with `ownerOf`, never the
+    ///      settlement's reported `holder`.
     function _settleWithToken(Sale storage s, address bidder, uint256 price, bool frozenOut)
         private
         returns (LockedTerms memory lt, bool taken)
@@ -763,7 +769,6 @@ contract EnglishAuctionPreLens is
             : frozenOut ? PrimaryOutcome.FROZEN_OUT : PrimaryOutcome.UNBID;
         (address token, uint256 id, address currency) = (s.token, s.tokenId, lt.currency);
         bytes4 selector = IMintTarget.settlePrimary.selector;
-        address holder;
         assembly ("memory-safe") {
             let out := mload(0x40)
             mstore(out, selector)
@@ -776,13 +781,13 @@ contract EnglishAuctionPreLens is
                 returndatacopy(out, 0, returndatasize())
                 revert(out, returndatasize())
             }
-            // Fail closed, as the typed call does: a short answer leaves calldata in `out`.
+            // Fail closed, as the typed call does on a short answer.
             if lt(returndatasize(), 0x80) { revert(0, 0) }
-            holder := mload(add(out, 0x60))
         }
         if (bidder == address(0)) {
-            taken = holder != address(0);
-            address to = taken ? holder : creator;
+            address owner = _ownerOf(token, id);
+            taken = owner != address(this);
+            address to = taken ? owner : creator;
             if (to == address(0)) revert InvalidRecipient(to);
             s.recipient = to;
             s.flags |= _RECIPIENT_SET;
@@ -976,7 +981,7 @@ contract EnglishAuctionPreLens is
         assembly ("memory-safe") {
             pop(call(gasLimit, token, 0, add(data, 0x20), mload(data), 0, 0))
         }
-        if (IERC721(token).ownerOf(tokenId) == address(this)) {
+        if (_ownerOf(token, tokenId) == address(this)) {
             s.flags |= _DELIVERY_PENDING;
             emit DeliveryPending(saleId, to);
         }

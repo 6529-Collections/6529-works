@@ -124,9 +124,9 @@ contract UniformEditionAuctionFixATest is EditionAuctionBase {
         auction.withdrawBid(saleId, a, alice);
     }
 
-    /// @dev The withdrawal reads the 1/1's `auction()` as eleven words: a shorter answer
-    ///      reverts, whatever the words it did return.
-    function test_F3_AShortAuctionAnswerReverts() public {
+    /// @dev The withdrawal reads the 1/1's `auctionClock` as three words (state, end and pause
+    ///      start, fix pass B): a shorter answer reverts, whatever the words it did return.
+    function test_F3_AShortClockAnswerReverts() public {
         uint256 saleId = _open(10);
         uint256 a = _bid(saleId, alice, 40, 1);
         vm.warp(block.timestamp + 120);
