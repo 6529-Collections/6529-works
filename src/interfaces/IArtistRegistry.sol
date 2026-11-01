@@ -154,6 +154,11 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param previous The source before the change (zero at deployment).
     /// @param next The source after the change.
     event ConsolidationSourceSet(address previous, address next);
+    /// @notice Governance replaced the package registry, the only `register` caller
+    ///         (`setPackageRegistry`), with Stream's (owner decision 16).
+    /// @param previous The package registry before.
+    /// @param next The package registry after.
+    event PackageRegistrySet(address previous, address next);
     /// @notice A contract was bound under `name` (PACKAGE_REGISTRY, STREAM, FEDERATION_REGISTRY,
     ///         SPLIT_FACTORY or STATEMENT_LOG), once.
     /// @param name The binding's name as a `bytes32` string.
@@ -249,10 +254,20 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @notice The artist already lists the maximum number of federated contracts.
     error FederatedListFull(uint256 artistId);
 
-    /// @notice Binds the package registry (the only `register` caller), once. ADMIN role.
+    /// @notice Binds the package registry (the only `register` caller), once, at genesis.
+    ///         ADMIN role. A later replacement goes through `setPackageRegistry`.
     /// @param target The package registry: a contract supporting `IPackageRegistry` (ERC-165),
     ///        not an EIP-7702 delegated account.
     function bindPackageRegistry(address target) external;
+    /// @notice Replaces the package registry, the only `register` caller, so that a successor
+    ///         registry installed in 6529 Stream (`IStream.setDependency`, owner decision 16) can
+    ///         register new artists. SUCCESSOR_SETTER role (the 30-day class), compare-and-set,
+    ///         scheduled in the same batch as Stream's replacement. Existing artists are
+    ///         unaffected.
+    /// @param expected The current package registry (`ExpectedValueMismatch` otherwise).
+    /// @param next The successor: a contract supporting `IPackageRegistry` (ERC-165), not an
+    ///        EIP-7702 delegated account.
+    function setPackageRegistry(address expected, address next) external;
     /// @notice Binds 6529 Stream, which `isArtist` reads (`IStream.artistOf`), once. ADMIN role.
     /// @param target 6529 Stream: a contract supporting `IStream` (ERC-165), not an EIP-7702
     ///        delegated account.
@@ -440,7 +455,8 @@ interface IArtistRegistry is IArtistRoleResolver, IArtistPayoutResolver {
     /// @param artistId The artist ID.
     /// @return The listed contracts, in listing order.
     function federatedContracts(uint256 artistId) external view returns (address[] memory);
-    /// @notice The bound package registry.
+    /// @notice The package registry, the only `register` caller: bound at genesis, replaceable
+    ///         by governance (`setPackageRegistry`).
     /// @return The package registry, or zero before it is bound.
     function packageRegistry() external view returns (address);
     /// @notice The bound 6529 Stream.

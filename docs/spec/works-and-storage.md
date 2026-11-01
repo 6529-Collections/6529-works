@@ -30,8 +30,10 @@ Shared types and constants: [`ContentTypes.sol`](../../src/interfaces/types/Cont
 ### Who calls `WorkRecords`, and what it calls
 
 `WorkRecords` is bound once into 6529 Stream and 6529 Stream Editions
-([bindings](governance.md#one-shot-bindings-instead-of-a-system-role)); its constructor reads
-Stream's `artistRegistry` and `entropyModule` once. "The artist" below is the lead artist's
+([bindings](governance.md#one-shot-bindings-instead-of-a-system-role)); it reads Stream's
+`artistRegistry` on every use and, at `openRecord`, the entropy module the work minted under
+(`entropyModuleOf`), so a governed replacement in Stream (owner decision 16) applies at once and
+never changes an existing work's seed. "The artist" below is the lead artist's
 active authority (Stream's `artistOf`, then the artist registry's `activeAuthorityOf`).
 
 | Function | Who may call | Calls out to |
@@ -45,7 +47,7 @@ active authority (Stream's `artistOf`, then the artist registry's `activeAuthori
 | `addLocator` | The artist before finalize; anyone else only as the AccessManager allows (PLATFORM, immediate at genesis) | For a caller other than the artist, the AccessManager's `canCall` |
 | `setPreferredKind`, `setCollectionPreferredKind`, `setFilePreference` | STORAGE_OPERATOR, immediate | `setCollectionPreferredKind`: Stream `collectionCount` |
 | `setAuthority` | The current AccessManager (OpenZeppelin `AccessManaged`) | None |
-| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `seedOf` the entropy module's `seedOf` |
+| Views: `isOpen`, `record`, `mediaOf`, `licenseOf`, `workStateHash`, `pinnedRenderer`, `seedOf`, `locators`, `preferredLocator`, `preferredKind`, `collectionPreferredKind`, `filePreference`, `stream` | Anyone; Stream reads `stream`, `isOpen` and `pinnedRenderer`, Editions `licenseOf`, and the renderer the rest it needs | Stream `coreOf`; `workStateHash` also Stream `defaultRenderer`; `mediaOf` the content store's `sha256Of`; `openRecord` Stream's `entropyModuleOf`, then that module's `seedOf` (a VRF seed is stored at open) |
 
 Per-token functions also read Stream's `coreOf` and `editionOf`. Metadata refreshes follow
 WS-23: `emitMetadataUpdate(id, id)` and `notifyMasterUpdated` per token, or
@@ -239,7 +241,7 @@ sequenceDiagram
     loop each media file
         WR->>CS: sha256Of(fileId), or fileInfo(fileId) for a PREVIEW
     end
-    Note over WR: store record file ID, media, roles, non-default license, ARTIST seed
+    Note over WR: store record file ID, media, roles, non-default license, the seed (ARTIST or VRF)
     WR-->>A: RecordOpened(tokenId, recordFileId, mediaHash)
     WR->>S: emitMetadataUpdate(tokenId, tokenId)
     opt the work is a linked edition master

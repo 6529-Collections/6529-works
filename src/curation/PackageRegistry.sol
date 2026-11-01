@@ -232,7 +232,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         PackageItem calldata item,
         bytes32[] calldata proof,
         MoveAuthorization calldata move
-    ) external returns (bytes32 itemHash, uint256 artistId) {
+    ) external returns (bytes32 itemHash, uint256 artistId, address authority) {
         if (msg.sender != stream) revert UnboundCaller(msg.sender);
         _requireApproved(packageRoot);
         itemHash = WorksHashing.itemHashCalldata(item);
@@ -253,7 +253,7 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
         if (prior == RELEASED && artistId != _releasedTo[contentHash]) {
             revert ContentReserved(contentHash, _releasedTo[contentHash]);
         }
-        _useMove(packageRoot, itemHash, artistId, move);
+        authority = _useMove(packageRoot, itemHash, artistId, move);
         _streamItems[contentHash] = itemHash;
         emit ItemConsumed(packageRoot, itemHash, artistId, contentHash);
     }
@@ -497,16 +497,18 @@ contract PackageRegistry is IPackageRegistry, AccessManaged, EIP712 {
 
     /// @dev Checks the deadline, spends the nonce and checks the signature of the lead artist's
     ///      active authority (`IArtistRegistry.activeAuthorityOf`).
+    /// @dev Returns the active authority that signed the move.
     function _useMove(
         bytes32 packageRoot,
         bytes32 itemHash,
         uint256 artistId,
         MoveAuthorization calldata move
-    ) private {
+    ) private returns (address authority) {
         SignatureVerifier.checkDeadline(move.deadline);
         _spendMoveNonce(artistId, move.nonce);
         bytes32 digest = moveDigest(packageRoot, itemHash, move.nonce, move.deadline);
-        SignatureVerifier.check(_artists.activeAuthorityOf(artistId), digest, move.signature);
+        authority = _artists.activeAuthorityOf(artistId);
+        SignatureVerifier.check(authority, digest, move.signature);
     }
 
     function _spendMoveNonce(uint256 artistId, uint256 nonce) private {

@@ -716,6 +716,32 @@ them so that nothing waits ([ADR 0005](../docs/adr/0005-stream-editions-auction.
 4. **Optionally push claims** with `claimBidFor(saleId, bidId)`: copies go to the bidder and the
    refund is credited to it.
 
+### Replacing one of Stream's dependencies
+
+`Stream.setDependency(kind, expected, next)` (SUCCESSOR_SETTER, 30 days, owner decision 16)
+replaces Stream's package registry, artist registry, economics resolver or entropy module.
+Stream, 6529 Stream Editions and `WorkRecords` follow at once; existing tokens do not change
+(`test_ReplacingEachDependencyLeavesExistingTokensUnchanged`): ownership, the terms and royalty
+receivers locked at mint through Stream's immutable split factory, finalized renderer pins, and
+VRF seeds, which always come from the module a work minted under
+([ENT-18](../docs/spec/entropy.md#rules-and-invariants)). Other contracts hold their own wiring
+to the same dependencies and do not follow, so each replacement is a set, deployed against the
+existing Stream and Editions and switched in one governance batch: schedule every operation of
+the set together, execute them in one `multicall`, and onboard each new contract first
+([above](#onboarding-a-target-after-genesis)).
+
+| Replaced | Who else holds it | The replacement set | Without a Stream redeploy? |
+| --- | --- | --- | --- |
+| Entropy module | Nobody: the renderer and `WorkRecords` ask Stream | A new `VrfEntropyModule` pinned to Stream's current package registry, added as a consumer of a funded subscription ([step 7](#7-chainlink-vrf-the-entropy-module)); then `setDependency("ENTROPY_MODULE")`. Seeds requested from the old module but not yet started are requested again from the new one. Keep the old module deployed: the works minted under it read their seeds from it. | Yes |
+| Economics resolver | `EnglishAuction` (immutable: museum, federated fee recipient, asset allowlist) and `UniformEditionAuction` (its lens copies the resolver at construction; the auction reads the 1/1's clock from its immutable English auction, so it is replaced with it) | A new resolver whose `splitFactory()` is Stream's (Stream derives sellers with its own immutable factory and Editions with the resolver's; `setDependency` does not check it), a new `EnglishAuction` and a new edition auction on it; then `setDependency("ECONOMICS")`, `Stream.setAdmittedMinter` (the new auction in, the old out: one adapter per kind, ADR 0005) and the same on Editions. Sales running on the old adapters finish there, under the old resolver's museum and fees. | Yes |
+| Package registry | `VrfEntropyModule` (pinned registry), `ArtistRegistry` (its only `register` caller: `setPackageRegistry`, SUCCESSOR_SETTER, 30 days) | A successor registry pinned to the current artist registry, bound to the existing Stream and Editions (`bindStream`, `bindEditions`: one-shot per instance, so a new instance binds), plus a new entropy module pinned to it; then, in one batch, `setDependency("PACKAGE_REGISTRY")`, `ArtistRegistry.setPackageRegistry(old, successor)`, so new artists register through the successor (`test_AReplacementPackageRegistryRegistersNewArtists`), and `setDependency("ENTROPY_MODULE")`. The successor must read its predecessor's state: approved packages, consumed content (or content minted before would mint again), edition claims (or `createEdition` refuses every master minted before) and releases (or `releaseContent` refuses every work burned before). Today's `PackageRegistry` reads none of it: the successor is new code. | Yes, with new code |
+| Artist registry | `SplitFactory` and every `SplitWallet` (the payout resolver, pinned by code hash), `PackageRegistry` (pinned), `StatementLog` (`setArtistResolver`, 30 days) | A registry carrying every identity, authority, pending change and recovery; a successor package registry pinned to it (row above); `StatementLog.setArtistResolver`; the new registry's one-shot binds. | **No, not completely.** Stream's split factory is immutable, so every Stream work, existing or future, resolves its artist payouts through the genesis artist registry: a replacement moves authority (creator, records consent, statements) but never payouts, and an artist known only to the replacement cannot release Stream proceeds. The genesis registry would have to be kept in step for every identity change, by hand. |
+
+One limit follows ([LIM-GV-16](../docs/audit/known-limitations.md#trust-and-governance)): the
+genesis artist registry is permanent for Stream's payouts. A replacement package registry does
+onboard new artists: the artist registry's one `register` caller is replaced with it, in the
+same batch (`ArtistRegistry.setPackageRegistry`).
+
 ### Publishing a configuration epoch
 
 Schedule `StatementLog.appendGovernanceManifest` (SUCCESSOR_SETTER, 30 days) with the epoch's

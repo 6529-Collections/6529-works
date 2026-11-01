@@ -132,12 +132,6 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
     /// @inheritdoc IEditions
     address public immutable stream;
-    /// @notice The package registry that approved the packages and claims edition content.
-    IPackageRegistry public immutable packageRegistry;
-    /// @notice The economics resolver whose `PRODUCT_EDITIONS` terms editions lock.
-    IEconomicsResolver public immutable economics;
-    /// @notice The artist registry that resolves each edition's creator.
-    IArtistRegistry public immutable artistRegistry;
 
     /// @inheritdoc IEditions
     address public workRecords;
@@ -158,17 +152,37 @@ contract Editions is IEditions, ERC1155, AccessManaged {
     {
         Dependency.checkPinned(stream_, type(IStream).interfaceId, streamCodeHash);
         IStream s = IStream(stream_);
-        (address registry, address resolver, address artists) =
-            (s.packageRegistry(), s.economics(), s.artistRegistry());
-        if (registry == address(0) || resolver == address(0) || artists == address(0)) {
-            revert ZeroAddress();
-        }
+        if (
+            s.packageRegistry() == address(0) || s.economics() == address(0)
+                || s.artistRegistry() == address(0)
+        ) revert ZeroAddress();
         stream = stream_;
-        packageRegistry = IPackageRegistry(registry);
-        economics = IEconomicsResolver(resolver);
-        artistRegistry = IArtistRegistry(artists);
         _owner = owner_;
         emit OwnershipTransferred(address(0), owner_);
+    }
+
+    // ------------------------------------------------------------------- dependencies
+
+    /// @notice The package registry that approved the packages and claims edition content:
+    ///         6529 Stream's, read from it on every use, so a governed replacement there
+    ///         (`IStream.setDependency`, owner decision 16) applies here at once.
+    /// @return The package registry.
+    function packageRegistry() public view returns (IPackageRegistry) {
+        return IPackageRegistry(IStream(stream).packageRegistry());
+    }
+
+    /// @notice The economics resolver whose `PRODUCT_EDITIONS` terms new editions lock: 6529
+    ///         Stream's, read from it on every use.
+    /// @return The economics resolver.
+    function economics() public view returns (IEconomicsResolver) {
+        return IEconomicsResolver(IStream(stream).economics());
+    }
+
+    /// @notice The artist registry that resolves each edition's creator: 6529 Stream's, read
+    ///         from it on every use.
+    /// @return The artist registry.
+    function artistRegistry() public view returns (IArtistRegistry) {
+        return IArtistRegistry(IStream(stream).artistRegistry());
     }
 
     // ----------------------------------------------------------------------- the link
@@ -188,7 +202,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         // An edition a sale bound before it existed keeps the economics locked at the binding,
         // which that sale pays (`bindMinter`); the seller, a split wallet, is never zero.
         if (r.seller == address(0)) {
-            _lockTerms(r, economics.newWorkTerms(PRODUCT_EDITIONS, item.payees));
+            _lockTerms(r, economics().newWorkTerms(PRODUCT_EDITIONS, item.payees));
         }
         r.contentHash = item.contentHash;
         r.maxCount = terms.maxCount;
@@ -207,7 +221,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
 
         // Protocol calls, after every effect above: a reentrant `createEdition` hits EditionExists.
         // The registry accepts only the item Stream consumed for this content hash, once.
-        packageRegistry.claimContent(item.contentHash, itemHash);
+        packageRegistry().claimContent(item.contentHash, itemHash);
         IStream(stream).linkEdition(workId, workId);
         (address linked, uint256 linkedId) = IStream(stream).editionOf(workId);
         if (linked != address(this) || linkedId != workId) revert LinkFailed(workId);
@@ -334,7 +348,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
         }
         bool unbound = r.minterId == 0;
         _bind(r, editionId, m, item.edition.saleKind);
-        if (unbound) _lockTerms(r, economics.newWorkTerms(PRODUCT_EDITIONS, item.payees));
+        if (unbound) _lockTerms(r, economics().newWorkTerms(PRODUCT_EDITIONS, item.payees));
     }
 
     /// @inheritdoc IMintTarget
@@ -491,7 +505,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
                 || proof.length > Limits.MAX_PROOF_DEPTH
                 || !MerkleProof.verifyCalldata(proof, packageRoot, WorksHashing.leaf(itemHash))
         ) revert NotEditionMaster(workId);
-        (, bytes32 evidenceHash,) = packageRegistry.packageOf(packageRoot);
+        (, bytes32 evidenceHash,) = packageRegistry().packageOf(packageRoot);
         if (evidenceHash == 0) revert NotEditionMaster(workId);
     }
 
@@ -537,7 +551,7 @@ contract Editions is IEditions, ERC1155, AccessManaged {
             seller: r.seller,
             feeRecipient: r.feeRecipient,
             feeShare: r.feeShare,
-            creator: artistRegistry.activeAuthorityOf(r.artistId)
+            creator: artistRegistry().activeAuthorityOf(r.artistId)
         });
     }
 

@@ -175,6 +175,17 @@ contract ArtistRegistry is IArtistRegistry, AccessManaged, EIP712 {
     }
 
     /// @inheritdoc IArtistRegistry
+    /// @dev SUCCESSOR_SETTER role (the 30-day class): the same class as Stream's
+    ///      `setDependency`, so both run in one governance batch. The install check is
+    ///      `bindPackageRegistry`'s.
+    function setPackageRegistry(address expected, address next) external restricted {
+        if (expected != packageRegistry) revert ExpectedValueMismatch();
+        Dependency.check(next, type(IPackageRegistry).interfaceId);
+        packageRegistry = next;
+        emit PackageRegistrySet(expected, next);
+    }
+
+    /// @inheritdoc IArtistRegistry
     function bindStream(address target) external restricted {
         Dependency.check(target, type(IStream).interfaceId);
         stream = _bind("STREAM", stream, target);

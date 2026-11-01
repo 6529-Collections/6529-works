@@ -7,7 +7,7 @@ import { IStream } from "src/interfaces/IStream.sol";
 
 /// @notice The minimal 6529 Stream stand-in: the reads other contracts make of Stream, answered
 ///         from fixtures the test sets. The renderer reads `work`, `collection`, `workRecords`
-///         and `entropyModule`; the artist registry binds it (ERC-165 for `IStream`) and reads
+///         and `entropyModuleOf`; the artist registry binds it (ERC-165 for `IStream`) and reads
 ///         `artistOf` and `editions`. `artistOf` reverts with `UnknownWork` for a token with no
 ///         artist ID, as Stream does for an unminted or burned token, and `fail(selector, true)`
 ///         makes one read revert.
@@ -67,6 +67,12 @@ contract StreamMock {
     function work(uint256 id) external view returns (IStream.WorkCore memory) {
         _gate(msg.sig);
         return cores[id];
+    }
+
+    /// @dev One module for every work: the mock models no replacement.
+    function entropyModuleOf(uint256) external view returns (address) {
+        _gate(msg.sig);
+        return entropyModule;
     }
 
     function collection(uint256 id) external view returns (IStream.Collection memory) {

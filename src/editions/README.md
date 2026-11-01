@@ -61,9 +61,11 @@ The create flow, with every check in order, is under
   item proves the edition's kind, and the binding snapshots the `PRODUCT_EDITIONS` economics
   that `createEdition` then keeps (`_lockTerms`), so the edition reports the split its sale
   paid.
-- **Wiring is immutable.** The constructor checks Stream (code, no EIP-7702 delegation, ERC-165
-  `IStream`, the reviewed code hash) and reads the package registry, economics resolver and
-  artist registry from it. No edition exists before genesis binds `WorkRecords`
+- **Wiring.** Stream is immutable here: the constructor checks it (code, no EIP-7702
+  delegation, ERC-165 `IStream`, the reviewed code hash). The package registry, economics
+  resolver and artist registry are read from Stream on every use (`packageRegistry()`,
+  `economics()`, `artistRegistry()`), so a governed replacement there (owner decision 16)
+  reaches Editions at once. No edition exists before genesis binds `WorkRecords`
   (`WorkRecordsUnbound`).
 - **Bytecode:** well inside EIP-170; current figures in the
   [audit scope](../../docs/audit/scope.md#products-and-sales).

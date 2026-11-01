@@ -32,7 +32,7 @@ contract WorkRecordsTest is RecordsFixture {
         assertEq(records.artistRegistry(), address(artists));
         assertEq(records.contentStore(), address(store));
         assertEq(records.cc0TextFileId(), _textFileId("cc0-1.0"));
-        assertEq(records.entropyModule(), address(entropy));
+        assertEq(stream.entropyModuleOf(1), address(entropy));
         assertTrue(records.supportsInterface(type(IWorkRecords).interfaceId));
         assertTrue(records.supportsInterface(0x01ffc9a7));
         assertFalse(records.supportsInterface(0xffffffff));
@@ -1499,7 +1499,7 @@ contract WorkRecordsTest is RecordsFixture {
     function test_seedOf_byPolicy() public {
         (uint256 none, PackageItem memory noneItem) = _work(1);
         // A work without a seed policy never asks the entropy module, even if it has a seed.
-        entropy.deliver(WorksHashing.itemHash(noneItem), keccak256("not asked"));
+        entropy.deliver(noneItem, keccak256("not asked"));
         (SeedPolicy policy, bytes32 seed) = records.seedOf(none);
         assertEq(uint8(policy), uint8(SeedPolicy.NONE));
         assertEq(seed, bytes32(0));
@@ -1518,7 +1518,7 @@ contract WorkRecordsTest is RecordsFixture {
         item = _recordsItem(3, media);
         item.seedPolicy = SeedPolicy.VRF;
         bytes32 itemHash = WorksHashing.itemHash(item);
-        entropy.deliver(itemHash, keccak256("vrf seed"));
+        entropy.deliver(item, keccak256("vrf seed"));
         uint256 vrf = _mint(item);
         records.openRecord(vrf, item, media);
         (policy, seed) = records.seedOf(vrf);

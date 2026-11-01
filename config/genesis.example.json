@@ -296,6 +296,13 @@
           "role": "PARAMETER_SETTER",
           "class": "standard",
           "delay": 172800
+        },
+        {
+          "signature": "setDependency(bytes32,address,address)",
+          "selector": "0x480b197d",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
         }
       ],
       "genesisOnly": [
@@ -490,6 +497,13 @@
         {
           "signature": "setConsolidationSource(address,address,bytes32)",
           "selector": "0x741cbdad",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
+          "signature": "setPackageRegistry(address,address)",
+          "selector": "0x00752cf1",
           "role": "SUCCESSOR_SETTER",
           "class": "successor",
           "delay": 2592000

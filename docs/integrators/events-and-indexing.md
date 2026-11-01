@@ -91,6 +91,7 @@ ERC-721 events come from OpenZeppelin 5.7.0's `ERC721`; ERC-4906 events from `IE
 | `CollectionCreated(uint256 indexed collectionId, string name, bytes32 metadataHash)` | `0x8966ba95…` | `createCollection` (PLATFORM, immediate) | Collection IDs run from 1. A collection's count, and its last serial, is the number of `WorkMinted` naming it. |
 | `RoyaltyRateChanged(uint256 indexed tokenId, uint32 previous, uint32 next)` | `0x2114cdf5…` | `setRoyaltyRate`, callable only by the bound work-records satellite, from `WorkRecords.setRoyaltyRate` | The ERC-2981 rate (out of 100,000) changed; the receiver never does ([AUC-6][auc]). Followed by the satellite's `RoyaltyRateSet`. |
 | `DefaultRendererSet(address previous, address next, bytes32 codeHash)` | `0xe2fab5e9…` | The constructor (`previous` zero) and `setDefaultRenderer` (SUCCESSOR_SETTER, 30 days) | The renderer for every unfinalized work; `codeHash` is pinned. Followed by both tokens' `BatchMetadataUpdate`. Changes every unfinalized work's state hash, with no per-token event. |
+| `DependencySet(bytes32 indexed kind, address previous, address next)` | `0xb584a2a6…` | `setDependency` (SUCCESSOR_SETTER, 30 days, compare-and-set) | Stream's package registry, artist registry, economics resolver or entropy module (`kind` is the right-padded ASCII name, such as `"ECONOMICS"`) was replaced; new works use `next`. Existing tokens are unaffected, so no metadata event follows. 6529 Stream Editions and `WorkRecords` read the pointer from Stream and follow at once (owner decision 16). |
 | `EditionLinked(uint256 indexed tokenId, address indexed editions, uint256 editionId)` | `0xbab490db…` | `linkEdition`, callable only by bound 6529 Stream Editions, from `createEdition` | The master's edition exists; `editionId` always equals `tokenId`. Followed by `MetadataUpdate(tokenId)`. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindWorkRecords` (`"WORK_RECORDS"`), `bindEditions` (`"EDITIONS"`), run by the genesis wiring | Once per name, never changed. |
 | `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c…` | The constructor (from zero) and `setOwner` (FUNDS_SETTER, 14 days) | The marketplace owner (`owner()`); no on-chain powers. |
@@ -242,6 +243,7 @@ adapter.
 | `StandingRefreshSkipped(uint256 indexed artistId)` | `0x103bc6dd…` | Registration or execution, when the consolidation source could not read or no longer has its pinned code hash | Nobody lost standing; a later `refreshStanding` catches up. |
 | `FederatedContractListed(uint256 indexed artistId, address indexed token)` | `0x4004e60c…` | `listFederatedContract`, callable only by the v1.1 federation registry | Not emitted in v1. |
 | `ConsolidationSourceSet(address previous, address next)` | `0x5b375cc7…` | The constructor and `setConsolidationSource` (SUCCESSOR_SETTER, 30 days) | |
+| `PackageRegistrySet(address previous, address next)` | `0xf602f9bc…` | `setPackageRegistry` (SUCCESSOR_SETTER, 30 days, compare-and-set) | The only `register` caller changed to Stream's successor package registry (owner decision 16); `packageRegistry()` reads it. The genesis bind emits `Bound` instead. |
 | `Bound(bytes32 indexed name, address target)` | `0xd18d9295…` | `bindPackageRegistry` (`"PACKAGE_REGISTRY"`), `bindStream` (`"STREAM"`), `bindFederationRegistry` (`"FEDERATION_REGISTRY"`), `bindSplitFactory` (`"SPLIT_FACTORY"`), `bindStatementLog` (`"STATEMENT_LOG"`) | Once per name. |
 
 ### ContentStore
@@ -693,6 +695,7 @@ structs expanded to tuples: 121 signatures.
 | `DeliveryPending(uint256,address)` | `0x96b5b68e86af123b788e4434fa8a32249a60a4f022f6bb2451d03055a8dfcb26` | EnglishAuction |
 | `DependencyDeprecated(bytes32,bytes32)` | `0x1ec1691a0ca2ee98d4fbcf4e43b0bb0e0a14423b3295cb62e5b0e3ab1f57cae5` | DependencyRegistry |
 | `DependencyRegistered(bytes32,bytes32,bytes32)` | `0x5e1b96d09ad31255e23f0b0144c328663f9dcfd03600de24ba76bed97f415716` | DependencyRegistry |
+| `DependencySet(bytes32,address,address)` | `0xb584a2a692666686fcb905c82c0288fcf5affc0262d8ee91245238fdd26cc677` | Stream |
 | `EconomicsSet(bytes32,(address,uint32,uint32),(address,uint32,uint32),uint64)` | `0x7b619472492d3cc46abfe0e47b5d8d9cda2fc6d6d600c6419416f2216b2ae7d3` | EconomicsResolver |
 | `EditionCreated(uint256,bytes32,(uint32,address,bytes32,bytes))` | `0x3a4f273bace47a11e8e5de24d0acbc869a740c271e97cfecf75bd80c2cb740da` | Editions |
 | `EditionMinterBound(uint256,address)` | `0x35bb9c806dab754b3f2ba332514b28be18c8c25f824111ab5ca68be3d8fbbc93` | Editions |
@@ -722,6 +725,7 @@ structs expanded to tuples: 121 signatures.
 | `OwnershipTransferred(address,address)` | `0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0` | Stream, Editions |
 | `PackageAccepted(bytes32,uint256,address)` | `0x49639e3178859abe27d1fabf424f120e3144b903fbc59fb7a6d5666da877907d` | PackageRegistry |
 | `PackageRegistered(bytes32,bytes32,address,address)` | `0x0c1aff273f69c590d79d6ec4500fbec709412c9d6f5aca50140d6f1e72d8b821` | PackageRegistry |
+| `PackageRegistrySet(address,address)` | `0xf602f9bca87ed171d7fdb8fdcbde47a70bb58e7a2029620f431ea07ddb8edb93` | ArtistRegistry |
 | `PackageRevoked(bytes32,bytes32)` | `0x6d695ea27d607e410f90e6b81ed7be5aacde025347b8885f0eef8a60c796dd90` | PackageRegistry |
 | `Paused(address)` | `0x62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a258` | EnglishAuction |
 | `PreferredKindSet(uint8,uint8)` | `0x0c7addff33115506eceb32af47e39cfa360f77cd274f7a61785628f220a420e8` | WorkRecords |

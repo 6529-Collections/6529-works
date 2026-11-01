@@ -17,8 +17,8 @@ an audit.
 | --- | --- |
 | Language and compiler | Solidity 0.8.37, EVM `prague`, optimizer on (200 runs), `via_ir` off ([`foundry.toml`](../../foundry.toml)) |
 | Dependencies | OpenZeppelin Contracts 5.7.0 and forge-std 1.17.0, as git submodules in `lib/` |
-| Source lines | 11,568 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
-| Deployed contracts | 23 per deployment without the optional VRF entropy module and 24 with it (the English auction and the edition auction each create their lens), plus one `SplitWallet` per payee configuration, deployed on demand |
+| Source lines | 11,718 non-blank, non-comment lines in 87 files under `src/` (budget: 12,000) |
+| Deployed contracts | 22 per deployment without the optional VRF entropy module and 23 with it (the edition auction creates its lens), plus one `SplitWallet` per payee configuration, deployed on demand |
 | Linked libraries | None: every library function is `internal` |
 | Proxies and `delegatecall` | None in `src/`. The one exception is OpenZeppelin `Multicall` inside `AccessManager` ([ADR 0002](../adr/0002-access-manager-hardening.md)) |
 | Contract size | Every contract within EIP-170 (24,576 bytes of runtime) and EIP-3860 (49,152 bytes of initcode), checked by `tools/check_budgets.py` in CI |
@@ -33,24 +33,23 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 559 | 20,943 | 22,808 | 3,633 |
-| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,883 | 25,861 | 1,693 |
-| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 337 | 18,051 | 19,779 | 6,525 |
-| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 781 | 22,727 | 31,944 | 1,849 |
-| `EnglishAuctionLens` (created by `EnglishAuction`; answers its views) | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 293 | 6,459 | 6,774 | 18,117 |
-| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 826 | 24,215 | 45,997 | 361 |
+| `Stream` | [`src/stream/Stream.sol`](../../src/stream/Stream.sol) | 683 | 22,398 | 24,235 | 2,178 |
+| `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,990 | 25,684 | 1,586 |
+| `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 339 | 18,163 | 19,844 | 6,413 |
+| `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 781 | 22,727 | 31,944 | **1,849** |
+| `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 826 | 24,215 | 45,996 | 361 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 553 | 17,791 | 18,163 | 6,785 |
 
 ### Curation, identity and records
 
 | Contract | Source | nSLOC | Runtime (bytes) | Initcode (bytes) | EIP-170 margin |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 358 | 13,951 | 15,367 | 10,625 |
+| `PackageRegistry` | [`src/curation/PackageRegistry.sol`](../../src/curation/PackageRegistry.sol) | 359 | 13,975 | 15,391 | 10,601 |
 | `Eip712CurationVerifier` | [`src/curation/Eip712CurationVerifier.sol`](../../src/curation/Eip712CurationVerifier.sol) | 103 | 5,694 | 6,385 | 18,882 |
-| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 561 | 20,329 | 21,597 | 4,247 |
+| `ArtistRegistry` | [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.sol) | 567 | 20,583 | 21,851 | 3,993 |
 | `ConsolidationAdapter` | [`src/identity/ConsolidationAdapter.sol`](../../src/identity/ConsolidationAdapter.sol) | 133 | 3,059 | 3,371 | 21,517 |
 | `StatementLog` | [`src/records/StatementLog.sol`](../../src/records/StatementLog.sol) | 314 | 11,742 | 13,038 | 12,834 |
-| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 218 | 8,184 | 10,122 | 16,392 |
+| `VrfEntropyModule` (optional) | [`src/entropy/VrfEntropyModule.sol`](../../src/entropy/VrfEntropyModule.sol) | 226 | 8,344 | 10,282 | 16,232 |
 
 ### Economics
 
@@ -70,7 +69,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | --- | --- | ---: | ---: | ---: | ---: |
 | `ContentStore` | [`src/content/ContentStore.sol`](../../src/content/ContentStore.sol) | 240 | 7,257 | 7,285 | 17,319 |
 | `DependencyRegistry` | [`src/content/DependencyRegistry.sol`](../../src/content/DependencyRegistry.sol) | 66 | 3,007 | 3,452 | 21,569 |
-| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 769 | 24,397 | 24,712 | **179** |
+| `Renderer` | [`src/content/Renderer.sol`](../../src/content/Renderer.sol) | 770 | 24,365 | 24,680 | **211** |
 
 ### Governance
 
@@ -115,7 +114,7 @@ The "Used by" column is a reading aid; the import graph is authoritative.
 
 ### Interfaces and shared types
 
-1,885 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
+1,893 nSLOC in [`src/interfaces/`](../../src/interfaces/) (with `types/` and `external/`) and
 [`src/economics/interfaces/`](../../src/economics/interfaces/), plus the 14-line Chainlink
 coordinator interface [`src/entropy/IVRFCoordinatorV2Plus.sol`](../../src/entropy/IVRFCoordinatorV2Plus.sol).
 `WorksHashing` is counted here and listed with the libraries above. They carry the external
@@ -170,10 +169,9 @@ python tools/check_docs_facts.py --artifacts out --update  # refresh the figures
 ```
 
 Per-file nSLOC uses `strip_solidity` and `count_code_lines` from `tools/check_budgets.py`;
-sizes are the compiled `bytecode` and `deployedBytecode` lengths. `Renderer` has the smallest
-EIP-170 margin, then `UniformEditionAuction`, `WorkRecords` and `EnglishAuction` (both
-auctions' views are answered by their lenses; see the tables); CI fails any change that
-crosses the limit.
+sizes are the compiled `bytecode` and `deployedBytecode` lengths. `EnglishAuction` and
+`Renderer` have the smallest EIP-170 margins (see the tables); CI fails any change that crosses
+the limit.
 
 ## Related
 

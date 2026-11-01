@@ -33,8 +33,10 @@ import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
 import { Stream } from "src/stream/Stream.sol";
 import { WorkRecords } from "src/stream/WorkRecords.sol";
 import {
+    MockArtistRegistry,
     MockEconomics,
     MockEditions,
+    MockEntropy,
     MockPackageRegistry,
     MockRenderer,
     MockSaleAdapter,
@@ -43,6 +45,7 @@ import {
 } from "../mocks/stream/StreamMocks.sol";
 import { RecordsFixture } from "./RecordsFixture.sol";
 import { StreamFixture } from "./StreamFixture.sol";
+import { BoundedCall } from "src/libraries/BoundedCall.sol";
 import { Dependency } from "src/libraries/Dependency.sol";
 
 contract StreamTest is StreamFixture {
@@ -468,9 +471,138 @@ contract StreamTest is StreamFixture {
         bytes memory data = _request(item);
         vm.expectRevert(abi.encodeWithSelector(IStream.SeedNotDelivered.selector, itemHash));
         auction.start(stream, data);
-        entropy.deliver(itemHash, keccak256("vrf"));
+        entropy.deliver(item, keccak256("vrf"));
         (uint256 tokenId,) = auction.start(stream, data);
         assertEq(uint8(stream.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+    }
+
+    // --------------------------------------------------- governed dependencies (decision 16)
+
+    /// @dev Each dependency is replaced by SUCCESSOR_SETTER, compare-and-set, after the same
+    ///      install checks as the constructor's; the getter follows and the event names both.
+    function test_setDependency_replacesEachDependency() public {
+        bytes32[4] memory kinds =
+            [bytes32("PACKAGE_REGISTRY"), "ARTIST_REGISTRY", "ECONOMICS", "ENTROPY_MODULE"];
+        address[4] memory nexts = [
+            address(new MockPackageRegistry()),
+            address(new MockArtistRegistry()),
+            address(new MockEconomics(_defaultTerms(), address(splitFactory))),
+            address(new MockEntropy())
+        ];
+        address[4] memory previous =
+            [address(registry), address(artists), address(econ), address(entropy)];
+        for (uint256 i; i < 4; ++i) {
+            vm.expectEmit(address(stream));
+            emit IStream.DependencySet(kinds[i], previous[i], nexts[i]);
+            vm.prank(governor);
+            stream.setDependency(kinds[i], previous[i], nexts[i]);
+        }
+        assertEq(stream.packageRegistry(), nexts[0]);
+        assertEq(stream.artistRegistry(), nexts[1]);
+        assertEq(stream.economics(), nexts[2]);
+        assertEq(stream.entropyModule(), nexts[3]);
+        assertEq(stream.splitFactory(), address(splitFactory), "the split factory stays");
+    }
+
+    function test_setDependency_reverts() public {
+        address next = address(new MockPackageRegistry());
+        vm.prank(outsider);
+        vm.expectRevert(
+            abi.encodeWithSelector(IAccessManaged.AccessManagedUnauthorized.selector, outsider)
+        );
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), next);
+
+        vm.startPrank(governor);
+        vm.expectRevert(
+            abi.encodeWithSelector(IStream.UnknownDependency.selector, bytes32("SPLIT_FACTORY"))
+        );
+        stream.setDependency("SPLIT_FACTORY", address(splitFactory), next);
+        vm.expectRevert(IStream.ExpectedValueMismatch.selector);
+        stream.setDependency("PACKAGE_REGISTRY", next, next);
+        // An EOA, zero, and a contract that is not the dependency's kind are refused.
+        address eoa = makeAddr("eoa");
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), eoa);
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(0)));
+        stream.setDependency("ENTROPY_MODULE", address(entropy), address(0));
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.InvalidDependency.selector, address(econ))
+        );
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), address(econ));
+        vm.stopPrank();
+        assertEq(stream.packageRegistry(), address(registry));
+    }
+
+    /// @dev A replaced package registry is the one new works consume from; works already
+    ///      minted are untouched.
+    function test_setDependency_newWorksUseTheReplacement() public {
+        uint256 first = _mint(1);
+        MockPackageRegistry next = new MockPackageRegistry();
+        vm.prank(governor);
+        stream.setDependency("PACKAGE_REGISTRY", address(registry), address(next));
+        (uint256 second,) = auction.start(stream, _request(_item(2)));
+        assertEq(second, first + 1);
+        assertEq(stream.ownerOf(first), address(auction));
+        assertEq(stream.work(first).itemHash, WorksHashing.itemHash(_item(1)));
+    }
+
+    /// @dev A Stream deployed without an entropy module can install one later; VRF works then
+    ///      mint. It can never remove it again.
+    function test_setDependency_installsAnEntropyModuleLater() public {
+        Stream noVrf = _deploy(
+            address(registry), address(artists), address(econ), address(0), address(renderer)
+        );
+        _map(address(noVrf), noVrf.setAdmittedMinter.selector, Roles.SUCCESSOR_SETTER);
+        _map(address(noVrf), noVrf.createCollection.selector, Roles.PLATFORM);
+        _map(address(noVrf), noVrf.setDependency.selector, Roles.SUCCESSOR_SETTER);
+        vm.prank(governor);
+        noVrf.setAdmittedMinter(address(auction), true);
+        vm.prank(platform);
+        noVrf.createCollection("c", bytes32(0));
+        vm.prank(governor);
+        noVrf.setDependency("ENTROPY_MODULE", address(0), address(entropy));
+        PackageItem memory item = _item(1);
+        item.seedPolicy = SeedPolicy.VRF;
+        entropy.deliver(item, keccak256("vrf"));
+        (uint256 tokenId,) = auction.start(noVrf, _request(item));
+        assertEq(uint8(noVrf.work(tokenId).seedPolicy), uint8(SeedPolicy.VRF));
+        assertEq(noVrf.entropyModuleOf(tokenId), address(entropy));
+    }
+
+    /// @dev Every work answers the entropy module that was current at its mint, the one whose
+    ///      delivered seed the mint checked: a replacement reaches only later works, a module
+    ///      replaced before any work minted under it answers none, and putting an earlier module
+    ///      back changes no existing work's answer.
+    function test_entropyModuleOf_answersTheModuleCurrentAtMint() public {
+        PackageItem memory a = _item(1);
+        a.seedPolicy = SeedPolicy.VRF;
+        entropy.deliver(a, keccak256("a"));
+        uint256 first = _mint(a);
+        uint256 plain = _mint(2);
+        assertEq(stream.entropyModuleOf(first), address(entropy));
+
+        MockEntropy b = new MockEntropy();
+        MockEntropy c = new MockEntropy();
+        vm.startPrank(governor);
+        stream.setDependency("ENTROPY_MODULE", address(entropy), address(b));
+        stream.setDependency("ENTROPY_MODULE", address(b), address(c));
+        vm.stopPrank();
+        PackageItem memory d = _item(3);
+        d.seedPolicy = SeedPolicy.VRF;
+        c.deliver(d, keccak256("d"));
+        uint256 second = _mint(d);
+
+        assertEq(stream.entropyModuleOf(first), address(entropy), "minted under the genesis");
+        assertEq(stream.entropyModuleOf(plain), address(entropy));
+        assertEq(stream.entropyModuleOf(second), address(c), "minted under the third");
+        assertEq(stream.entropyModuleOf(second + 1), address(c), "not minted: the current");
+
+        vm.prank(governor);
+        stream.setDependency("ENTROPY_MODULE", address(c), address(entropy));
+        assertEq(stream.entropyModule(), address(entropy));
+        assertEq(stream.entropyModuleOf(first), address(entropy));
+        assertEq(stream.entropyModuleOf(second), address(c), "an existing work keeps its module");
+        assertEq(stream.entropyModuleOf(second + 1), address(entropy));
     }
 
     function test_mint_vrfRejectedWithoutEntropyModule() public {
@@ -507,17 +639,32 @@ contract StreamTest is StreamFixture {
         auction.startRaw(stream, address(auction), 0, 2, data);
     }
 
-    function test_mint_revertsForWrongAdapterKind() public {
+    /// @dev `mint` compares the item's kind with the adapter's kind recorded at its first
+    ///      admission, the kind `primaryTerms` reports, never with what `saleKind()` answers
+    ///      now: an adapter whose kind changes after admission still mints only its recorded
+    ///      kind's items, and a removal and re-admission records nothing new.
+    function test_mint_comparesTheKindRecordedAtAdmission() public {
         auction.setSaleKind(SaleKind.UNIFORM_AUCTION);
-        bytes memory data = _request(_item(1));
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IMintTarget.SaleKindMismatch.selector,
-                SaleKind.ENGLISH_AUCTION,
-                SaleKind.UNIFORM_AUCTION
-            )
+        PackageItem memory item = _item(1);
+        item.sale.saleKind = SaleKind.UNIFORM_AUCTION;
+        bytes memory expected = abi.encodeWithSelector(
+            IMintTarget.SaleKindMismatch.selector,
+            SaleKind.UNIFORM_AUCTION,
+            SaleKind.ENGLISH_AUCTION
         );
-        auction.start(stream, data);
+        vm.expectRevert(expected);
+        auction.start(stream, _request(item));
+
+        uint256 tokenId = _mint(2);
+        assertEq(stream.primaryTerms(tokenId, "").saleKind, SaleKind.ENGLISH_AUCTION);
+
+        vm.startPrank(governor);
+        stream.setAdmittedMinter(address(auction), false);
+        stream.setAdmittedMinter(address(auction), true);
+        vm.stopPrank();
+        vm.expectRevert(expected);
+        auction.start(stream, _request(item));
+        assertEq(stream.primaryTerms(_mint(3), "").saleKind, SaleKind.ENGLISH_AUCTION);
     }
 
     /// @dev `_consume` forwards `data[32:]` as `consume`'s arguments without re-encoding. This
@@ -741,13 +888,15 @@ contract StreamTest is StreamFixture {
                 IMintTarget.SaleKindMismatch.selector, low, SaleKind.ENGLISH_AUCTION
             )
         );
-        auction.setSaleKind(low);
+        MockSaleAdapter lowAdapter = new MockSaleAdapter(low);
+        vm.prank(governor);
+        stream.setAdmittedMinter(address(lowAdapter), true);
         vm.expectRevert(
             abi.encodeWithSelector(
                 IMintTarget.SaleKindMismatch.selector, SaleKind.ENGLISH_AUCTION, low
             )
         );
-        auction.start(stream, _request(_item(1)));
+        lowAdapter.start(stream, _request(_item(1)));
     }
 
     /// @dev The economics resolver accepts a royalty rate of exactly 100%, and so does a mint.
@@ -1382,6 +1531,80 @@ contract StreamTest is StreamFixture {
         recordsMock.setPin(1, address(pinned));
         assertEq(stream.rendererOf(1), address(pinned));
         assertEq(stream.tokenURI(1), pinned.tokenURI(address(stream), 1));
+    }
+
+    /// @dev A fault in the records satellite never takes metadata down: a revert, running out
+    ///      of gas, an empty or over-long answer, a word that is not an address, and an address
+    ///      without code each fall back to the default renderer. A finalized work's pin whose
+    ///      code changed still fails closed (WS-16).
+    function test_rendererOf_fallsBackOnARecordsFault() public {
+        _bindMocks();
+        _mint(1);
+        MockRenderer pinned = new MockRenderer("pinned");
+        recordsMock.setPin(1, address(pinned));
+        assertEq(stream.rendererOf(1), address(pinned));
+        string memory fallbackUri = renderer.tokenURI(address(stream), 1);
+        for (uint8 fault = 1; fault <= 6; ++fault) {
+            recordsMock.setFault(fault);
+            assertEq(stream.rendererOf(1), address(renderer), "the default renderer");
+            assertEq(stream.tokenURI(1), fallbackUri);
+        }
+        recordsMock.setFault(7);
+        vm.expectRevert(
+            abi.encodeWithSelector(Dependency.DependencyCodeChanged.selector, address(pinned))
+        );
+        stream.rendererOf(1);
+        recordsMock.setFault(0);
+        assertEq(stream.rendererOf(1), address(pinned), "a sound answer is used again");
+    }
+
+    /// @dev The satellite always gets its full gas: a caller holding too little to forward it
+    ///      is refused, never answered with the default renderer.
+    function test_rendererOf_refusesACallerTooShortOfGasForTheRecords() public {
+        _bindMocks();
+        _mint(1);
+        recordsMock.setPin(1, address(new MockRenderer("pinned")));
+        (bool ok, bytes memory answer) =
+            address(stream).staticcall{ gas: 90_000 }(abi.encodeCall(stream.rendererOf, (1)));
+        assertFalse(ok);
+        assertEq(
+            answer,
+            abi.encodeWithSelector(
+                BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
+            )
+        );
+    }
+
+    /// @dev The satellite gets all of `RECORDS_GAS` even when its account is cold (EIP-2929)
+    ///      and the caller holds the least gas `rendererOf` accepts: the answer is the pin or a
+    ///      refusal, never the default renderer for want of gas. Isolated, so each probe is its
+    ///      own transaction and the satellite's account starts cold (`vm.cool` cools only its
+    ///      storage); the probe's gas then includes the intrinsic cost.
+    /// forge-config: default.isolate = true
+    function test_rendererOf_givesAColdRecordsSatelliteItsFullGas() public {
+        _bindMocks();
+        _mint(1);
+        MockRenderer pinned = new MockRenderer("pinned");
+        recordsMock.setPin(1, address(pinned));
+        recordsMock.setFault(8);
+        bytes memory call = abi.encodeCall(stream.rendererOf, (1));
+        bool answered;
+        for (uint256 gas = 100_000; gas < 140_000; gas += 25) {
+            (bool ok, bytes memory answer) = address(stream).staticcall{ gas: gas }(call);
+            if (!ok) {
+                assertEq(
+                    answer,
+                    abi.encodeWithSelector(
+                        BoundedCall.BoundedCallInsufficientGas.selector, stream.RECORDS_GAS()
+                    )
+                );
+                assertFalse(answered, "refused after answering with less gas");
+                continue;
+            }
+            answered = true;
+            assertEq(abi.decode(answer, (address)), address(pinned), "the pin, never the default");
+        }
+        assertTrue(answered);
     }
 
     function test_tokenURI_revertsForUnknownToken() public {

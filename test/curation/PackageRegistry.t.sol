@@ -600,9 +600,12 @@ contract PackageRegistryTest is CurationBase {
         bytes32 itemHash = _hash(item);
         vm.expectEmit(address(registry));
         emit IPackageRegistry.ItemConsumed(root, itemHash, _id(lead), SHA_A);
-        (bytes32 h, uint256 artistId) = _consume(root, item, new bytes32[](0), move);
+        vm.prank(stream);
+        (bytes32 h, uint256 artistId, address authority) =
+            registry.consume(root, item, new bytes32[](0), move);
         assertEq(h, itemHash);
         assertEq(artistId, _id(lead));
+        assertEq(authority, lead, "the active authority that signed the move");
         assertEq(registry.consumedItemOf(SHA_A), itemHash);
         assertEq(registry.editionClaimOf(SHA_A), bytes32(0));
         assertTrue(registry.isMoveNonceUsed(_id(lead), 0));
