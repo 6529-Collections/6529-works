@@ -41,16 +41,18 @@ errors of the libraries they use, such as `Dependency` and `SignatureVerifier`).
 come from a contract further down the call, so decode it against every contract on the path.
 
 **The English auction is the exception: call it with `IEnglishAuction`.** Its views live on its
-lens, `EnglishAuctionLens`, which its constructor creates (`lens()`): the auction forwards every
-call it does not declare to the lens with a read-only `staticcall` and returns the lens's answer
-byte for byte. The views keep their signatures, selectors and ERC-165 IDs, so a caller using the
+lens, `EnglishAuctionLens`, deployed on its own just before the auction and pinned by its
+constructor (`lens()`): the auction forwards every call it does not declare to the lens with a
+read-only `staticcall` and returns the lens's answer byte for byte. The lens reads the storage
+of its caller, so call the auction, not the lens: called directly, the lens reverts or decodes
+your own contract's words. The views keep their signatures, selectors and ERC-165 IDs, so a caller using the
 auction's address and `IEnglishAuction` (or `ISaleAdapter`) sees no change. The
 `EnglishAuction` artifact's `abi` lists only the functions the contract declares (the writes,
 `saleKind`, `auctionClock`, `onERC721Received`, `lens`, `storageWords`, `settlePayout` and
 AccessManaged's); for the whole surface, merge it with the `EnglishAuctionLens` artifact's `abi`
 (the views, and the getters `MAX_PAUSE`, `OPENING_BID_FLOORS`, `PAYOUT_GAS`, `allowlist`,
 `economicsResolver`, `permit2` and `federationRegistryCodeHash`), or use the `IEnglishAuction`
-artifact. The lens's own `adapter()` is answered through the auction too.
+artifact. The lens records no auction: it has no `adapter()`.
 
 A view through the lens costs a contract that calls it on chain about 7,000 more gas than
 before (one more cold account and the lens's reads). **A contract that reads an auction on
@@ -90,7 +92,7 @@ Deployment records name contracts by their contract name, except `CurationVerifi
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) |
-| `EnglishAuctionLens` (created by the auction: its first `CREATE`) | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) |
+| `EnglishAuctionLens` (deployed before the auction, which pins its address and code hash) | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol); its views are answered by `UniformEditionAuctionLens` ([`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol)), which its constructor creates (`lens()`), through the adapter's own address |
 | `FixedPriceSale`, `DutchSale` | Sepolia r1 to r3 only: removed by [ADR 0005](../adr/0005-stream-editions-auction.md); the source is at the `v1.0.0-rc.1` tag |
 

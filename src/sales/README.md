@@ -16,7 +16,7 @@ dispute pause) and [Editions and sales](../../docs/spec/editions-and-sales.md) (
 | File | What it is |
 | --- | --- |
 | `EnglishAuction.sol` | [`IEnglishAuction`](../interfaces/IEnglishAuction.sol): permissionless start into its own custody, anti-snipe bids, pull credits, settlement with pending delivery and escrow fallback, the outcome reported to the token (`settlePrimary`), the dispute pause, the currency freeze, the emergency pause. |
-| `EnglishAuctionLens.sol` | The English auction's read side, created by its constructor: every view the auction does not declare, decoded from its storage words (`storageWords`). |
+| `EnglishAuctionLens.sol` | The English auction's read side, deployed before it and pinned by its constructor: every view the auction does not declare, decoded from its caller's storage words (`storageWords`). |
 | `UniformEditionAuction.sol` | [`IUniformEditionAuction`](../interfaces/IUniformEditionAuction.sol)'s writes and [`IUniformEditionAuctionStorage`](../interfaces/IUniformEditionAuctionStorage.sol): the bid book (step totals, bids, FIFO departure logs), the coupling with the 1/1's end, settlement in calls of bounded gas, claims through `IMintTarget.mint`, governance. |
 | `UniformEditionAuctionLens.sol` | [`IUniformEditionAuctionLens`](../interfaces/IUniformEditionAuctionLens.sol): every view, computed from the adapter's storage words, and the package-item check `open` consults. Stateless and bound to no adapter (it reads its caller): deployed in its own transaction, then pinned by the adapter's constructor (code hash and wiring) and forwards its views to it. |
 | `UniformClearing.sol` | Internal library, pure: the D138 clearing on [`StepLadder`](../interfaces/types/StepLadder.sol)'s prices, the FIFO split of the cut step and the what-if quote, shared by the lens, the adapter's sweep and the Halmos proofs. |
@@ -42,8 +42,9 @@ events and their ordering: [Events and indexing](../../docs/integrators/events-a
 
 - **Bytecode and the lenses.** Both auctions' write paths nearly fill EIP-170
   ([audit scope](../../docs/audit/scope.md#products-and-sales)), so each answers its views from
-  a lens it creates (`lens()`), through a fallback that `staticcall`s it: one address, one
-  interface, about 7,000 more gas a view. A change to `EnglishAuction`'s storage layout or view
+  a lens deployed in its own transaction before it and pinned by its constructor (`lens()`;
+  address, code hash and dependencies), through a fallback that `staticcall`s it: one address,
+  one interface, about 7,000 more gas a view. A lens is stateless and reads its caller. A change to `EnglishAuction`'s storage layout or view
   rules must change its lens too (`EnglishAuctionLensDifferential.t.sol`,
   `EnglishAuctionLens.t.sol`). Hot-path views stay on the auction: `saleKind`, and
   `auctionClock` (`IEnglishAuctionClock`), which the edition auction reads and any new on-chain

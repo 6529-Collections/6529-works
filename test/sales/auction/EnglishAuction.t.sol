@@ -79,6 +79,8 @@ contract EnglishAuctionTest is AuctionBase {
                 resolver,
                 address(statements),
                 address(0),
+                bareLens,
+                bareLens.codehash,
                 edge[i],
                 none
             );
@@ -102,15 +104,39 @@ contract EnglishAuctionTest is AuctionBase {
         address eoa = makeAddr("eoa");
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), eoa, resolver, address(statements), address(0), _config(), none
+            address(manager),
+            eoa,
+            resolver,
+            address(statements),
+            address(0),
+            bareLens,
+            bareLens.codehash,
+            _config(),
+            none
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), resolver, address(statements), eoa, _config(), none
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            eoa,
+            bareLens,
+            bareLens.codehash,
+            _config(),
+            none
         );
         vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, eoa));
         new EnglishAuction(
-            address(manager), address(escrow), resolver, eoa, address(0), _config(), none
+            address(manager),
+            address(escrow),
+            resolver,
+            eoa,
+            address(0),
+            bareLens,
+            bareLens.codehash,
+            _config(),
+            none
         );
         address[] memory bad = new address[](1);
         bad[0] = address(escrow);
@@ -123,6 +149,8 @@ contract EnglishAuctionTest is AuctionBase {
             resolver,
             address(statements),
             address(0),
+            bareLens,
+            bareLens.codehash,
             _config(),
             bad
         );
@@ -141,6 +169,8 @@ contract EnglishAuctionTest is AuctionBase {
             IEconomicsResolver(eoa),
             address(statements),
             address(0),
+            bareLens,
+            bareLens.codehash,
             _config(),
             none
         );
@@ -153,6 +183,8 @@ contract EnglishAuctionTest is AuctionBase {
             IEconomicsResolver(address(escrow)),
             address(statements),
             address(0),
+            bareLens,
+            bareLens.codehash,
             _config(),
             none
         );
@@ -164,6 +196,8 @@ contract EnglishAuctionTest is AuctionBase {
             resolver,
             address(statements),
             address(0),
+            bareLens,
+            bareLens.codehash,
             _config(),
             none
         );
@@ -186,6 +220,8 @@ contract EnglishAuctionTest is AuctionBase {
                 resolver,
                 address(statements),
                 address(0),
+                bareLens,
+                bareLens.codehash,
                 bad[i],
                 none
             );

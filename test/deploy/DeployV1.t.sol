@@ -182,6 +182,14 @@ contract DeployV1Test is Test {
         assertEq(d.artistRegistry.stream(), address(d.stream));
         assertTrue(d.stream.isAdmittedMinter(address(d.englishAuction)));
         assertTrue(IEnglishAuctionFull(address(d.englishAuction)).isTarget(address(d.stream)));
+        // The English auction's lens is deployed in its own CREATE2 entry just before it (F8),
+        // with the auction's dependencies, and pinned by it.
+        assertEq(d.englishAuction.lens(), address(d.englishAuctionLens));
+        assertTrue(address(d.englishAuctionLens).code.length != 0);
+        assertEq(d.englishAuctionLens.escrow(), address(d.revenueEscrow));
+        assertEq(d.englishAuctionLens.statementLog(), address(d.statementLog));
+        assertEq(address(d.englishAuctionLens.allowlist()), address(d.assetAllowlist));
+        assertEq(address(d.englishAuctionLens.economicsResolver()), address(d.economicsResolver));
         assertEq(d.stream.owner(), makeAddr("marketOwner"));
         // The real renderer, pinned by Stream.
         assertEq(d.stream.defaultRenderer(), address(d.renderer));

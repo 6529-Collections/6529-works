@@ -11,30 +11,194 @@ import { LockedTerms, PrimaryTerms } from "src/interfaces/types/SaleTypes.sol";
 import { EnglishAuction } from "src/sales/EnglishAuction.sol";
 import { EnglishAuctionLens, IEnglishAuctionStorage } from "src/sales/EnglishAuctionLens.sol";
 import { Roles } from "src/governance/Roles.sol";
+import { Dependency } from "src/libraries/Dependency.sol";
 import { MockMintTarget } from "../../mocks/sales/AuctionMocks.sol";
 import { MockFederationRegistry } from "../../mocks/sales/SaleMocks.sol";
 import { IEnglishAuctionFull } from "test/helpers/IEnglishAuctionFull.sol";
 import { AuctionBase } from "./AuctionBase.sol";
 
-/// @notice The lens the English auction creates for its views (EIP-170 headroom): the auction
-///         forwards every call it does not declare to it with a read-only `staticcall`, refuses
-///         ETH, reverts on a selector the lens does not know either, and can never point
-///         anywhere else. The answers themselves are compared with the pre-lens build in
+/// @dev A contract that calls the lens directly and answers `storageWords` with zero words: the
+///      lens reads its caller, so it is answered from these, never from an auction.
+contract ZeroWordsCaller {
+    function storageWords(bytes32[] calldata slots) external pure returns (bytes32[] memory) {
+        return new bytes32[](slots.length);
+    }
+
+    function configOf(EnglishAuctionLens lens) external view returns (uint32, uint32, uint32) {
+        IEnglishAuction.AuctionConfig memory c = lens.config();
+        return (c.duration, c.extensionWindow, c.incrementShare);
+    }
+
+    function claimableOf(EnglishAuctionLens lens, address account, address currency)
+        external
+        view
+        returns (uint256)
+    {
+        return lens.claimable(account, currency);
+    }
+
+    function auctionOf(EnglishAuctionLens lens, uint256 saleId) external view {
+        lens.auction(saleId);
+    }
+}
+
+/// @notice The lens that answers the English auction's views (EIP-170 headroom), deployed on its
+///         own and pinned by the auction's constructor (F8): the auction forwards every call it
+///         does not declare to it with a read-only `staticcall`, refuses ETH, reverts on a
+///         selector the lens does not know either, and can never point anywhere else. The
+///         answers themselves are compared with the pre-lens build in
 ///         `EnglishAuctionLensDifferential.t.sol`.
 contract EnglishAuctionLensTest is AuctionBase {
-    /// @dev The lens is the auction's first creation, fixed in an immutable, and knows its
-    ///      auction and dependencies.
-    function test_Lens_IsTheAuctionsOwnFixedCreation() public view {
+    /// @dev The lens is fixed in an immutable and holds the auction's dependencies.
+    function test_Lens_IsPinnedWithTheAuctionsDependencies() public view {
         address lens = auction.lens();
-        assertEq(lens, vm.computeCreateAddress(address(auction), 1), "the auction's first CREATE");
         assertGt(lens.code.length, 0);
         EnglishAuctionLens l = EnglishAuctionLens(lens);
-        assertEq(l.adapter(), address(auction));
         assertEq(l.escrow(), address(escrow));
         assertEq(l.statementLog(), address(statements));
         assertEq(address(l.allowlist()), address(allowlist));
         assertEq(address(l.economicsResolver()), address(resolver));
         assertEq(l.permit2(), address(permit2));
+    }
+
+    /// @dev F8 (the rc.2 review's GAS M-2): the constructor takes a lens deployed beforehand and
+    ///      checks it has code, no EIP-7702 delegation, the code hash it was given and each of
+    ///      the auction's own dependencies; anything else is refused with
+    ///      `Dependency.InvalidDependency(lens)`. The matching lens is installed.
+    function test_Constructor_PinsTheLens() public {
+        address[] memory none = new address[](0);
+        address good = _lens(address(0));
+        IAssetAllowlist al = IAssetAllowlist(address(allowlist));
+        address eoa = makeAddr("eoa");
+        address[6] memory bad = [
+            eoa,
+            address(
+                new EnglishAuctionLens(
+                    address(statements), address(statements), al, resolver, address(0)
+                )
+            ),
+            address(
+                new EnglishAuctionLens(address(escrow), address(escrow), al, resolver, address(0))
+            ),
+            address(
+                new EnglishAuctionLens(
+                    address(escrow),
+                    address(statements),
+                    IAssetAllowlist(address(usd)),
+                    resolver,
+                    address(0)
+                )
+            ),
+            address(
+                new EnglishAuctionLens(
+                    address(escrow),
+                    address(statements),
+                    al,
+                    IEconomicsResolver(address(escrow)),
+                    address(0)
+                )
+            ),
+            address(
+                new EnglishAuctionLens(
+                    address(escrow), address(statements), al, resolver, address(permit2)
+                )
+            )
+        ];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, bad[i]));
+            new EnglishAuction(
+                address(manager),
+                address(escrow),
+                resolver,
+                address(statements),
+                address(0),
+                bad[i],
+                bad[i].codehash,
+                _config(),
+                none
+            );
+        }
+        // The right lens under the wrong code hash: another build would be refused.
+        vm.expectRevert(abi.encodeWithSelector(Dependency.InvalidDependency.selector, good));
+        new EnglishAuction(
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            address(0),
+            good,
+            keccak256("another build"),
+            _config(),
+            none
+        );
+        EnglishAuction a = new EnglishAuction(
+            address(manager),
+            address(escrow),
+            resolver,
+            address(statements),
+            address(0),
+            good,
+            good.codehash,
+            _config(),
+            none
+        );
+        assertEq(a.lens(), good);
+    }
+
+    /// @dev F8: the lens is stateless and reads its caller, so a third party calling it directly
+    ///      changes nothing. An account gets a revert from every view that reads storage (it
+    ///      answers no `storageWords`) and the constants as they are; a contract that answers
+    ///      `storageWords` is answered from its own words, not the auction's. No call writes to
+    ///      the lens or the auction, the lens holds no storage, and the auction answers as before.
+    function test_Lens_ADirectCallFromAThirdPartyChangesNothing() public {
+        uint256 saleId = _start();
+        _bidEth(saleId, alice, 1 ether);
+        _bidEth(saleId, bob, 2 ether);
+        EnglishAuctionLens l = EnglishAuctionLens(auction.lens());
+        bytes memory before = abi.encode(
+            auction.auction(saleId),
+            auction.config(),
+            auction.claimable(alice, ETH),
+            auction.paused()
+        );
+        ZeroWordsCaller caller = new ZeroWordsCaller();
+        address stranger = makeAddr("stranger");
+
+        vm.record();
+        vm.startPrank(stranger);
+        vm.expectRevert(bytes(""));
+        l.auction(saleId);
+        vm.expectRevert(bytes(""));
+        l.config();
+        vm.expectRevert(bytes(""));
+        l.claimable(alice, ETH);
+        assertEq(l.escrow(), address(escrow), "a constant answers");
+        assertEq(l.saleIdOf(address(stream), 1), saleId, "so does a pure view");
+        vm.stopPrank();
+        // From a contract, the caller's own (zero) words: no sale, no config, no credit.
+        vm.expectRevert(abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, saleId));
+        caller.auctionOf(l, saleId);
+        (uint32 duration,,) = caller.configOf(l);
+        assertEq(duration, 0, "the caller's words, not the auction's");
+        assertEq(caller.claimableOf(l, alice, ETH), 0);
+        (, bytes32[] memory lensWrites) = vm.accesses(address(l));
+        (, bytes32[] memory auctionWrites) = vm.accesses(address(auction));
+        assertEq(lensWrites.length, 0, "the lens writes nothing");
+        assertEq(auctionWrites.length, 0, "nor does the auction");
+
+        for (uint256 slot; slot < 16; ++slot) {
+            assertEq(vm.load(address(l), bytes32(slot)), bytes32(0), "the lens has no storage");
+        }
+        assertEq(
+            abi.encode(
+                auction.auction(saleId),
+                auction.config(),
+                auction.claimable(alice, ETH),
+                auction.paused()
+            ),
+            before
+        );
+        assertEq(auction.claimable(alice, ETH), 1 ether, "the outbid credit is still there");
     }
 
     /// @dev No function of the auction changes its lens: every governed setter and every sale
@@ -107,13 +271,14 @@ contract EnglishAuctionLensTest is AuctionBase {
         assertEq(ret, abi.encodeWithSelector(ISaleAdapter.UnknownSale.selector, unknown));
     }
 
-    /// @dev Called directly, the lens answers exactly what the auction answers for it: every
-    ///      function the lens declares, so none is shadowed by one the auction declares.
+    /// @dev Called directly with the auction as its caller (the lens reads its caller), the lens
+    ///      answers exactly what the auction answers for it: every function the lens declares, so
+    ///      none is shadowed by one the auction declares.
     function test_Lens_AnswersTheSameCalledDirectly() public {
         uint256 saleId = _start();
         _bidEth(saleId, alice, 1 ether);
         _bidEth(saleId, bob, 2 ether);
-        bytes[22] memory calls = [
+        bytes[21] memory calls = [
             abi.encodeCall(IEnglishAuction.auction, (saleId)),
             abi.encodeCall(IEnglishAuction.lockedTerms, (saleId)),
             abi.encodeCall(IEnglishAuction.minimumBid, (saleId)),
@@ -132,7 +297,6 @@ contract EnglishAuctionLensTest is AuctionBase {
             abi.encodeCall(IEnglishAuctionFull.MAX_PAUSE, ()),
             abi.encodeCall(IEnglishAuctionFull.OPENING_BID_FLOORS, ()),
             abi.encodeCall(IEnglishAuctionFull.PAYOUT_GAS, ()),
-            abi.encodeWithSignature("adapter()"),
             abi.encodeCall(IEnglishAuction.escrow, ()),
             abi.encodeCall(IEnglishAuction.statementLog, ()),
             abi.encodeCall(IEnglishAuctionFull.allowlist, ()),
@@ -141,7 +305,9 @@ contract EnglishAuctionLensTest is AuctionBase {
         ];
         for (uint256 i; i < calls.length; ++i) {
             (bool viaAuction, bytes memory a) = address(auction).staticcall(calls[i]);
-            (bool direct, bytes memory b) = auction.lens().staticcall(calls[i]);
+            address lens = auction.lens();
+            vm.prank(address(auction));
+            (bool direct, bytes memory b) = lens.staticcall(calls[i]);
             assertTrue(viaAuction && direct);
             assertEq(a, b);
         }
@@ -265,7 +431,7 @@ contract EnglishAuctionLensEdgesTest is Test {
     error Boom(uint256 code);
 
     function setUp() public {
-        // The lens takes its creator as its auction: this test.
+        // The lens reads its caller: this test plays the auction.
         lens = new EnglishAuctionLens(
             address(0xE5C),
             address(0x106),
@@ -293,7 +459,6 @@ contract EnglishAuctionLensEdgesTest is Test {
 
     /// @dev An auction that reverts in `storageWords` makes the view revert with its data.
     function test_Lens_PassesOnTheAuctionsRevert() public {
-        assertEq(lens.adapter(), address(this));
         mode = 1;
         vm.expectRevert(abi.encodeWithSelector(Boom.selector, 7));
         lens.config();

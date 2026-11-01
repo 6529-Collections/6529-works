@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Fix pass B for the rc.2 seven-lens review.
+  - `AssetAllowlist.deprecateAsset` refuses ETH (`EthNotDeprecable`): the native currency, in
+    which edition auctions run, is never frozen (MONEY-M1, G-2). The freeze-exit tests now use
+    an ERC-20.
+  - The English auction reads `ownerOf` after `settlePrimary` to learn where an unsold work
+    went. It no longer trusts the `holder` the token reports (CALLS I-2).
+  - `Stream.setDependency` refuses a replacement that answers `authority()` with an
+    AccessManager other than Stream's (G I-1, GV-35).
+  - The English auction's lens is deployed in its own transaction before the auction. The
+    lens is now stateless and reads its caller. The auction's constructor takes the lens's
+    address and code hash, and checks both together with the lens's dependencies.
+    `DeployV1` deploys the lens as its own CREATE2 entry, and Verify checks the lens's
+    dependencies (GAS M-2).
 - Fix pass A of the rc.2 seven-lens review (the edition auction, its lens, 6529 Stream Editions
   and `EditionRules`; ADR 0005 §12):
   - F1 (LC-1, MONEY-L1, G-1): `IEditions.bindMinter` returns the `WorkTerms` it locks, and the
@@ -27,7 +40,6 @@
   - NatSpec: the soft close is strict, a bid event's `endTime` can be stale or `type(uint64).max`
     while paused, `lowestWinningStep` means "wins at least one unit", and `quote` double-counts a
     raise and, with `lowestWinningStep`, ignores a step's queue capacity.
-
 - Docs: the edition auction's specification (rc.2 L6). Editions and sales specifies the
   uniform-price edition auction: the step ladder, bids, the D138 clearing and its one-pass
   algorithm, the cut step and each settler's own departure sweep, the clocks beside the 1/1,

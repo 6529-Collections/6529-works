@@ -168,9 +168,9 @@ contract EnglishAuction is
         bool federated;
     }
 
-    /// @notice The lens, created by the constructor: it answers every view of `IEnglishAuction`
-    ///         and `ISaleAdapter` this contract does not declare, through {fallback}. Stateless
-    ///         and fixed: nothing can replace it.
+    /// @notice The lens, deployed before this contract and pinned by its constructor: it answers
+    ///         every view of `IEnglishAuction` and `ISaleAdapter` this contract does not declare,
+    ///         through {fallback}. Stateless and fixed: nothing can replace it.
     address public immutable lens;
     /// @dev The revenue escrow for refused payouts (`escrow()`, answered by the lens).
     address private immutable _escrow;
@@ -205,6 +205,12 @@ contract EnglishAuction is
     ///        bid and at settlement.
     /// @param statementLog_ The statement log `cancel` reads.
     /// @param permit2_ The canonical Permit2, or zero to disable PERMIT2 payments.
+    /// @param lens_ The lens, deployed beforehand in its own transaction (the rc.2 review's GAS
+    ///        M-2: so each deployment fits a block under Glamsterdam): it must have code, no
+    ///        EIP-7702 delegation, the code hash `lensCodeHash` and this contract's escrow,
+    ///        statement log, asset allowlist, economics resolver and Permit2
+    ///        (`Dependency.InvalidDependency` otherwise).
+    /// @param lensCodeHash The lens's reviewed code hash.
     /// @param config_ The initial auction parameters.
     /// @param targets Token contracts listed at genesis.
     constructor(
@@ -213,6 +219,8 @@ contract EnglishAuction is
         IEconomicsResolver economicsResolver_,
         address statementLog_,
         address permit2_,
+        address lens_,
+        bytes32 lensCodeHash,
         IEnglishAuction.AuctionConfig memory config_,
         address[] memory targets
     ) AccessManaged(authority) {
@@ -222,14 +230,20 @@ contract EnglishAuction is
         Dependency.check(address(allowlist_));
         Dependency.check(statementLog_);
         if (permit2_ != address(0)) Dependency.check(permit2_);
+        Dependency.checkPinned(lens_, lensCodeHash);
+        EnglishAuctionLens l = EnglishAuctionLens(lens_);
+        if (
+            l.escrow() != escrow_ || l.statementLog() != statementLog_
+                || address(l.allowlist()) != address(allowlist_)
+                || address(l.economicsResolver()) != address(economicsResolver_)
+                || l.permit2() != permit2_
+        ) revert Dependency.InvalidDependency(lens_);
         _escrow = escrow_;
         _economicsResolver = economicsResolver_;
         _allowlist = allowlist_;
         _statementLog = statementLog_;
         _permit2 = permit2_;
-        lens = address(
-            new EnglishAuctionLens(escrow_, statementLog_, allowlist_, economicsResolver_, permit2_)
-        );
+        lens = lens_;
         _setConfig(config_);
         for (uint256 i; i < targets.length; ++i) {
             _setTarget(targets[i], true);
@@ -696,9 +710,9 @@ contract EnglishAuction is
     ///         `federationRegistryCodeHash`: it sends this call's calldata unchanged to the lens,
     ///         which declares each with the same signature, and returns or reverts with its
     ///         answer, byte for byte. Any other call reverts there. ETH is refused.
-    /// @dev A read-only `staticcall` to the fixed, stateless lens this contract created; no
-    ///      delegatecall. The views live there because this contract's write path alone nearly
-    ///      fills EIP-170.
+    /// @dev A read-only `staticcall` to the fixed, stateless lens this contract pinned; the lens
+    ///      reads its caller, this contract. No delegatecall. The views live there because this
+    ///      contract's write path alone nearly fills EIP-170.
     fallback() external {
         address target = lens;
         // `target` is the immutable lens and `staticcall` cannot change state, so the answer is
