@@ -32,7 +32,8 @@ economics resolver and entropy module are replaceable by governance: `setDepende
 expected, next)`, SUCCESSOR_SETTER in the 30-day class, compare-and-set, with the
 constructor's install checks (code, no EIP-7702 delegation, ERC-165 for the kind's interface;
 never zero, so an entropy module can be installed on a Stream deployed without one but never
-removed). The genesis contracts stay immutables; a replacement is stored with a bit in the
+removed), and, for a replacement that answers `authority()`, Stream's own AccessManager
+(`InvalidBinding` otherwise, [GV-35](governance.md#rules-and-invariants)). The genesis contracts stay immutables; a replacement is stored with a bit in the
 counter word every mint reads, so a mint with no replacement reads no extra slot. Stream's code and address stay immutable, and existing tokens are unaffected: their
 owners, the terms and royalty receiver locked at mint (the split factory stays immutable), a
 finalized work's pinned renderer, and a VRF work's seed, which comes from the entropy module the

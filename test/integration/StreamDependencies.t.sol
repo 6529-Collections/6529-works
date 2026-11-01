@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import { AccessManager } from "@openzeppelin/contracts/access/manager/AccessManager.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IArtistRegistry } from "src/interfaces/IArtistRegistry.sol";
 import { IEconomicsResolver } from "src/interfaces/IEconomicsResolver.sol";
@@ -31,6 +32,16 @@ contract DependencyStandIn is IERC165 {
 
     function supportsInterface(bytes4 interfaceId) external view returns (bool) {
         return interfaceId == _id || interfaceId == type(IERC165).interfaceId;
+    }
+}
+
+/// @dev A replacement dependency governed by `authority`: it also answers `authority()`, as
+///      every genesis dependency does (they are all AccessManaged).
+contract ManagedStandIn is DependencyStandIn {
+    address public immutable authority;
+
+    constructor(bytes4 id, address authority_) DependencyStandIn(id) {
+        authority = authority_;
     }
 }
 
@@ -205,6 +216,18 @@ contract StreamDependenciesTest is IntegrationBase {
         assertEq(_current(kind), next);
     }
 
+    /// @dev A 30-day replacement that governance schedules and waits out, but Stream refuses.
+    function _refuse(bytes32 kind, address next, bytes memory reason) internal {
+        address previous = _current(kind);
+        bytes memory call = abi.encodeCall(stream.setDependency, (kind, previous, next));
+        _schedule(hotAdmin, address(stream), call);
+        vm.warp(block.timestamp + 30 days);
+        vm.prank(hotAdmin);
+        vm.expectRevert(reason);
+        manager.execute(address(stream), call);
+        assertEq(_current(kind), previous, "unchanged");
+    }
+
     /// @dev Everything an existing token shows the world.
     function _snapshot() internal view returns (bytes32) {
         bytes memory all;
@@ -366,6 +389,37 @@ contract StreamDependenciesTest is IntegrationBase {
         );
         auction.start(address(stream), _mintData(root, one, 0));
         assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
+    }
+
+    /// @dev The rc.2 review's G I-1 (fix F7): a replacement that answers `authority()` must name
+    ///      Stream's own AccessManager, so a dependency governed elsewhere can never be
+    ///      installed. Refused for every kind, the real package registry included; under Stream's
+    ///      manager the same stand-in installs, and one with no `authority()` installs too
+    ///      (`test_ReplacingEachDependencyLeavesExistingTokensUnchanged`).
+    function test_AReplacementUnderAForeignAuthorityIsRefused() public {
+        address foreign = address(new AccessManager(address(this)));
+        for (uint256 i; i < KINDS.length; ++i) {
+            address next = address(new ManagedStandIn(_interfaceOf(KINDS[i]), foreign));
+            _refuse(KINDS[i], next, abi.encodeWithSelector(IStream.InvalidBinding.selector, next));
+        }
+        PackageRegistry real = new PackageRegistry(
+            foreign,
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(artists),
+            address(artists).codehash
+        );
+        _refuse(
+            "PACKAGE_REGISTRY",
+            address(real),
+            abi.encodeWithSelector(IStream.InvalidBinding.selector, address(real))
+        );
+
+        for (uint256 i; i < KINDS.length; ++i) {
+            _replace(
+                KINDS[i], address(new ManagedStandIn(_interfaceOf(KINDS[i]), address(manager)))
+            );
+        }
     }
 
     /// @dev The permanence gap the review of #81 found, closed: the artist registry's only

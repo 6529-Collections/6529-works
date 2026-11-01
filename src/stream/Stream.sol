@@ -673,11 +673,24 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      `Counts.replaced` bit set; putting the genesis contract back is a replacement like
     ///      any other. Replacing the entropy module records the module it replaces with the last
     ///      token ID minted so far, so every work minted before keeps its module
-    ///      (`entropyModuleOf`).
+    ///      (`entropyModuleOf`). A replacement that answers `authority()` with one word must
+    ///      name Stream's own AccessManager (the rc.2 review's G I-1): every genesis dependency
+    ///      is governed by it, so one under a foreign manager is refused (`InvalidBinding`). The
+    ///      read is bounded as `_pinnedRenderer`'s is; a contract with no `authority()` passes.
     function setDependency(bytes32 kind, address expected, address next) external restricted {
         (uint8 index, bytes4 interfaceId, address current) = _dependencyOf(kind);
         if (current != expected) revert ExpectedValueMismatch();
         Dependency.check(next, interfaceId);
+        uint256 gasLimit = _recordsGas();
+        bytes4 selector = AccessManaged.authority.selector;
+        address manager = authority();
+        bool foreign;
+        assembly ("memory-safe") {
+            mstore(0, selector)
+            let ok := staticcall(gasLimit, next, 0, 4, 0, 0x20)
+            foreign := and(and(ok, eq(returndatasize(), 0x20)), iszero(eq(mload(0), manager)))
+        }
+        if (foreign) revert InvalidBinding(next);
         if (index == 3) _entropyEras.push(uint256(_counts.minted) << 160 | uint160(current));
         _replaced[index] = next;
         _counts.replaced |= uint8(1) << index;
@@ -816,12 +829,9 @@ contract Stream is ERC721, AccessManaged, IStream {
         view
         returns (address renderer)
     {
-        if (!BoundedCall.hasSufficientGas(
-                gasleft(), RECORDS_GAS, BoundedCall.CALL_RESERVE + COLD_ACCOUNT_GAS
-            )) revert BoundedCall.BoundedCallInsufficientGas(RECORDS_GAS);
+        uint256 gasLimit = _recordsGas();
         bytes4 selector = IWorkRecords.pinnedRenderer.selector;
         bytes4 codeChanged = Dependency.DependencyCodeChanged.selector;
-        uint256 gasLimit = RECORDS_GAS;
         assembly ("memory-safe") {
             let ptr := mload(0x40)
             mstore(ptr, selector)
@@ -841,6 +851,16 @@ contract Stream is ERC721, AccessManaged, IStream {
             }
         }
         if (renderer != address(0) && renderer.code.length == 0) renderer = address(0);
+    }
+
+    /// @dev {RECORDS_GAS}, once the caller holds enough to forward it in full and finish (the
+    ///      reserve covers a cold account, {COLD_ACCOUNT_GAS}); a shortfall reverts, so a bounded
+    ///      read's answer never depends on the caller's gas.
+    function _recordsGas() private view returns (uint256) {
+        if (!BoundedCall.hasSufficientGas(
+                gasleft(), RECORDS_GAS, BoundedCall.CALL_RESERVE + COLD_ACCOUNT_GAS
+            )) revert BoundedCall.BoundedCallInsufficientGas(RECORDS_GAS);
+        return RECORDS_GAS;
     }
 
     /// @dev A sale kind as `Minter.kindKey` holds it: the low 232 bits of its keccak256, so two
