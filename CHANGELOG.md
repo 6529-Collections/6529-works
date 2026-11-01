@@ -9,12 +9,15 @@
   machine, sequence diagrams, a worked example, rules EA-1 to EA-16 with their tests, failure
   modes and the governed parameters. Stream and auctions shows the 1/1 beside its editions. The
   glossary, architecture, integrator guides (bidding and settling, events with the topic0
-  appendix, ABIs), threat model, trust assumptions, invariants (INV-EA-1 to INV-EA-12) and the
+  appendix, ABIs), threat model, trust assumptions, invariants (INV-EA-1 to INV-EA-13) and the
   differences register follow. Known limitations take over ADR 0005's LIM-EA-1 to LIM-EA-12 as
   amended and add LIM-EA-13 to LIM-EA-16.
 - ADR 0005 is restructured as the text accepted on 31 October 2026 plus dated amendments: §6
-  (the binding at open), §7 (the museum branch gated on 6529 Stream in code), §8 (power-of-ten
-  base prices) and §9 (per-settler sweeps); each amended passage points to its amendment.
+  (the binding at open), §7 (the museum branch gated on 6529 Stream in code, now history), §8
+  (power-of-ten base prices), §9 (per-settler sweeps), §10 (Stream's governed dependency
+  pointers, owner decision 16) and §11 (Stream records each 1/1's primary-sale outcome and moves
+  unsold works to the museum, owner decision 17); each amended passage points to its
+  amendment.
 - The edition auction keeper runbook: settle directly or through the keeper's own contract,
   never through a shared public relayer such as Multicall3, whose callers would share one
   sweep. NatSpec: `InvalidQuantity`'s entered-units limit applies only to capped sales, and the
