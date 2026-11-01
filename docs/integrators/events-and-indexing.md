@@ -486,6 +486,9 @@ Per `saleId`:
   `Transfer` or `DeliveryPending`; `SaleSettled`. A pending delivery ends with 6529 Stream's
   `Transfer`, then `DeliveryClaimed`; meanwhile `pendingDelivery(saleId)` is the recipient. An
   unsold 6529 Stream work is never pending.
+- **Closed after a rescue.** When 6529 Stream already records the work settled because
+  governance rescued it to the museum (`WorkRescued` earlier, owner decision 20): any refund
+  `Credited`, then `RescuedSaleClosed`, and neither `PrimarySaleSettled` nor `SaleSettled`.
 - **Cancelled.** `Credited` (the high bid), `Transfer` to zero, `AuctionCancelled`.
 - **Credits.** Per account and currency on one adapter, `claimable` is the sum of `Credited`
   minus the sum of `Claimed`.

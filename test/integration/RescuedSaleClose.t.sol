@@ -112,8 +112,37 @@ contract RescuedSaleCloseTest is EditionAuctionStack {
         auction.claim(CURRENCY_ETH, winner);
         assertEq(winner.balance - winnerBefore, 1 ether, "the winning bid, in full");
         // Settling again is refused, as for any settled sale.
-        vm.expectRevert();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IEnglishAuction.InvalidAuctionState.selector,
+                oneSaleId,
+                IEnglishAuction.AuctionState.SETTLED
+            )
+        );
         auction.settle(oneSaleId);
+    }
+
+    /// @dev The close reads Stream's record, never where the work is. A later holder of the
+    ///      rescued work who sends it back to the adapter with a plain `transferFrom`, which the
+    ///      adapter cannot refuse (CALLS-5), cannot re-strand the standing bid or the edition
+    ///      sale: the sale still closes with the refund. The work stays in the adapter, its
+    ///      sender's loss.
+    function test_ARescuedWorkSentBackToTheAuctionStillCloses() public {
+        (,, uint256 oneSaleId, uint256 tokenId,) = _startMaster(artist, 0);
+        _ethBid(oneSaleId, winner, 1 ether);
+        vm.warp(auction.auction(oneSaleId).endTime);
+        _rescue(tokenId);
+        vm.prank(museum);
+        stream.transferFrom(museum, address(auction), tokenId);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.Credited(winner, CURRENCY_ETH, oneSaleId, 1 ether);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(oneSaleId);
+        auction.settle(oneSaleId);
+        assertEq(
+            uint8(auction.auction(oneSaleId).state), uint8(IEnglishAuction.AuctionState.SETTLED)
+        );
+        assertEq(auction.claimable(winner, CURRENCY_ETH), 1 ether, "the bid, credited back");
     }
 
     /// @dev A rescue with no standing bid: the sale closes with nothing to credit.

@@ -1282,11 +1282,11 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.auction(second).recipient, artist);
     }
 
-    /// @dev A listed `OutcomeReportingTarget`, on ETH terms.
-    function _outcomeToken() internal returns (OutcomeReportingTarget t) {
+    /// @dev A listed `OutcomeReportingTarget`, on `currency` terms.
+    function _outcomeToken(address currency) internal returns (OutcomeReportingTarget t) {
         t = new OutcomeReportingTarget();
         t.setAdmittedMinter(address(auction), true);
-        t.setTerms(_terms(ETH));
+        t.setTerms(_terms(currency));
         vm.prank(successor);
         auction.setTarget(address(t), true);
     }
@@ -1296,7 +1296,7 @@ contract EnglishAuctionTest is AuctionBase {
     ///      only: the standing bid is credited back, nothing is reported, paid, minted or
     ///      delivered, and the auction is SETTLED (`RescuedSaleClosed`).
     function test_Settle_ATokenReportingTheWorkSettledClosesWithARefundOnly() public {
-        OutcomeReportingTarget t = _outcomeToken();
+        OutcomeReportingTarget t = _outcomeToken(ETH);
         uint256 saleId = auction.start(address(t), "");
         _bidEth(saleId, alice, 1 ether);
         _end(saleId);
@@ -1315,11 +1315,34 @@ contract EnglishAuctionTest is AuctionBase {
         assertEq(auction.auction(saleId).bidder, address(0));
     }
 
+    /// @dev The recorded outcome is read before the currency freeze (MARKET-2): a sale whose
+    ///      work the token already records settled closes with the refund at once, even while
+    ///      its currency is deprecated, without waiting for the 30-day freeze exit.
+    function test_Settle_ARecordedOutcomeClosesWithoutWaitingOutAFreeze() public {
+        OutcomeReportingTarget t = _outcomeToken(address(usd));
+        uint256 saleId = auction.start(address(t), "");
+        usd.mint(alice, 100e18);
+        vm.startPrank(alice);
+        usd.approve(address(auction), 100e18);
+        auction.bid(saleId, address(0), _direct(alice, 100e18));
+        vm.stopPrank();
+        _end(saleId);
+        allowlist.deprecateAsset(address(usd));
+        t.setOutcome(1, PrimaryOutcome.UNBID);
+        vm.expectEmit(address(auction));
+        emit ISaleAdapter.Credited(alice, address(usd), saleId, 100e18);
+        vm.expectEmit(address(auction));
+        emit IEnglishAuction.RescuedSaleClosed(saleId);
+        auction.settle(saleId);
+        assertEq(uint8(auction.auction(saleId).state), uint8(IEnglishAuction.AuctionState.SETTLED));
+        assertEq(auction.claimable(alice, address(usd)), 100e18, "the bid credited back");
+    }
+
     /// @dev The guard is the token's recorded outcome and nothing else: NONE, a short answer,
     ///      a reverting view and a token with no such view (`MockMintTarget`) all settle as
     ///      usual, reporting the outcome once and paying the seller.
     function test_Settle_OnlyARecordedOutcomeClosesWithRefunds() public {
-        OutcomeReportingTarget t = _outcomeToken();
+        OutcomeReportingTarget t = _outcomeToken(ETH);
         OutcomeReportingTarget.Answer[3] memory answers = [
             OutcomeReportingTarget.Answer.FULL,
             OutcomeReportingTarget.Answer.SHORT,

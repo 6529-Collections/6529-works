@@ -375,10 +375,10 @@ contract OutcomeReportingTarget is PlainMintTarget {
     function primarySale(uint256 id) external view returns (PrimaryOutcome, address, uint256) {
         if (answer == Answer.REVERT) revert("no outcome");
         if (answer == Answer.SHORT) {
-            // Sixteen nonzero bytes: less than the word an outcome is.
+            // Thirty-one nonzero bytes: one short of the word an outcome is.
             assembly ("memory-safe") {
                 mstore(0, not(0))
-                return(0, 16)
+                return(0, 31)
             }
         }
         return (outcomeOf[id], address(0), 0);
