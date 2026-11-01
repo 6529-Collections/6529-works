@@ -19,6 +19,13 @@
   96-departure chunk scattered over the log's words); ADR 0005 §4 lists the reachable ladders.
   `quote` and `lowestWinningStep` are documented as new-bid views that ignore capacity, and the
   economics spec notes that 6529 Stream has no per-collection royalty receiver.
+- Owner decisions of 1 November 2026 in the docs: mainnet roles are network-held from day one
+  (decision 18: a community council for the delayed roles, a security council for PAUSER and
+  GUARDIAN, a dedicated curation signer, later on-chain TDH governance), in the runbook's
+  mainnet governance section and genesis checklist and in LIM-GV-18 (D67, D98; review finding
+  G-3); LIM-GV-16 is accepted (decision 21); every unsold canonical 6529 Stream 1/1 goes to the
+  museum whatever its sale method, and return-to-creator sales belong in their own collections
+  (decision 22, ADR 0005 §11 and the Stream spec).
 - Fix pass A of the rc.2 seven-lens review (the edition auction, its lens, 6529 Stream Editions
   and `EditionRules`; ADR 0005 §12):
   - F1 (LC-1, MONEY-L1, G-1): `IEditions.bindMinter` returns the `WorkTerms` it locks, and the

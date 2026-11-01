@@ -87,7 +87,9 @@ adds:
   report each sale's true outcome through `settlePrimary`, and Stream moves an UNBID or
   FROZEN_OUT work to `IEconomicsResolver.museum()`, read at settlement, never to the artist
   ([ADR 0005](../adr/0005-stream-editions-auction.md#open-items)); governance checks the
-  reporting before the admission executes.
+  reporting before the admission executes. Every unsold 6529 Stream 1/1 goes to the museum
+  whatever its sale method, with no exceptions (owner decision 22): a sale method that returns
+  unsold works to their creators belongs in its own collection, outside 6529 Stream.
 - **The museum.** The 6529 Network Museum (D140) is an account the economics resolver names,
   `IEconomicsResolver.museum()`: set at genesis, changed by FUNDS_SETTER in the 14-day class
   ([Economics and payouts](economics-and-payouts.md#products-and-launch-terms), ECO-37). An unbid

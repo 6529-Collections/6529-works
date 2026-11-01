@@ -416,6 +416,10 @@ and amends the decision 15 note under [Open items](#open-items).
 - **Cost** ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)): the English
   `settle` with a bid writes one new slot (the sale record) and costs more; with no bid it costs
   less. Also useful for TDH: P29 shares the Works pool by realized ETH price.
+- (Note, 1 November 2026, owner decision 22.) Every unsold canonical 6529 Stream 1/1 goes to
+  the museum whatever its sale method, with no exceptions: no 1/1 adapter admitted for 6529
+  Stream may return an unsold work to its creator. A sale that returns unsold works to their
+  creators belongs in its own collection, outside 6529 Stream.
 
 ### 12. Amendment (1 November 2026): fix pass A of the rc.2 review
 

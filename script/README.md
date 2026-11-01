@@ -605,6 +605,42 @@ caller's gas limit. Sepolia has so far shown only that transactions above 2^24 g
 4. Record both receipts in [`deployments/11155111/flows.md`](../deployments/11155111/flows.md),
    then update the NatSpec and LIM-GAS-2: confirmed, or corrected.
 
+## Mainnet governance (owner decision 18)
+
+D67 and D98 say no 6529 entity holds a privileged role from 2027-01-01, and a role handover
+takes 60, 44 or 32 days (the 30-day grant operation plus the role's grant delay), so the owner
+decided on 1 November 2026 that mainnet roles are network-held from day one. This does not apply to Sepolia,
+whose rehearsals keep the owner's keys ([accounts](#1-accounts)).
+
+| Holder | Roles | Who |
+| --- | --- | --- |
+| Community council multisig | The delayed roles: ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER, SUCCESSOR_SETTER (the hot admin Safe's roles, with execution delays of 48 hours to 30 days) | A Safe of about 5 of 9 independent signers, none from 6529 |
+| Security council multisig | The immediate roles: PAUSER and GUARDIAN | A smaller Safe of independent signers |
+| Curation signer | CURATION_SIGNER | A dedicated key that signs only the published TDH-vote result |
+
+Later, on-chain TDH governance takes the roles over through ordinary role grants (and the
+revocation of the councils' roles), each in its class's delay. Decision 18 does not reassign the
+operational keys (PLATFORM, CURATOR, STORAGE_OPERATOR) or the cold recovery admin; their holders
+are part of the genesis plan below.
+
+### Mainnet genesis checklist
+
+Before the mainnet broadcast, besides the [Sepolia runbook](#sepolia-runbook) steps:
+
+1. The community council and the security council Safes exist, with the signers and thresholds
+   above, and none of their signers is a 6529 entity or key; check each Safe's owners by hand
+   ([Safe pre-flight](#2-safe-pre-flight)).
+2. The genesis configuration gives ADMIN, UNPAUSER, PARAMETER_SETTER, FUNDS_SETTER and
+   SUCCESSOR_SETTER to the community council, and PAUSER and GUARDIAN to the security council
+   (the configuration needs at least three guardian accounts: plan the council's Safes for it).
+3. The curation signer keys are dedicated to signing the published TDH-vote result, and are
+   held outside 6529.
+4. The holders of the operational keys and of the cold recovery admin are named and recorded.
+5. The deploy-side guard that refuses a mainnet configuration breaking decision 18 passes
+   (being built), and Verify reads every role holder back ([step 11](#11-verify-after-5-days)).
+6. The VRF subscription owner is the community council (it must hold ADMIN and
+   PARAMETER_SETTER; Verify checks it).
+
 ## Operating procedures
 
 The contracts do not enforce these procedures; they make the enforced rules effective. The
