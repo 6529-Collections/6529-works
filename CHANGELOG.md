@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Tests: the edition auction's invariant suite also checks that nothing is claimed while a sale
+  is SETTLING (review of #84). `wideBook` spreads up to two sales a run wider than one settle
+  call scans (24 words), so settlement scans over calls; while a scan or a sweep is unfinished,
+  `claimBid` and `claimBidFor` must revert with `InvalidAuctionState`. An early settle call may
+  advance a wide book's scan before its edition exists; any other early success still fails.
+  `test_EveryActionRuns` replays 128 sequences instead of 64, so the multi-settler paths are hit
+  more than once.
 - Tests: the edition auction on the real stack (rc.2 L5). A stateful invariant suite,
   `EditionAuctionInvariant.t.sol` with `EditionAuctionHandler`, runs six masters with and
   without creator caps beside their 1/1 auctions: opens, bids, raises, soft-close bids, a FIFO
