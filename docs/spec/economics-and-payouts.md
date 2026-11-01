@@ -216,7 +216,7 @@ stateDiagram-v2
     [*] --> Active : ETH, admitted by the constructor
     NotAdmitted --> Active : admitAsset (FUNDS_SETTER, 14 days)
     Active --> Active : setIncrementFloor (PARAMETER_SETTER, 48 hours)
-    Active --> Deprecated : deprecateAsset (GUARDIAN, immediate)
+    Active --> Deprecated : deprecateAsset (GUARDIAN, immediate), an ERC-20, never ETH
     Deprecated --> Active : admitAsset, no earlier than 14 days after deprecation
     note right of Deprecated
         Withdrawals are unaffected.

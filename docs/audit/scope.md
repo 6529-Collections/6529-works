@@ -37,6 +37,7 @@ from `forge build --sizes` on the `default` profile. The margin is what remains 
 | `WorkRecords` | [`src/stream/WorkRecords.sol`](../../src/stream/WorkRecords.sol) | 619 | 22,990 | 25,685 | 1,586 |
 | `Editions` | [`src/editions/Editions.sol`](../../src/editions/Editions.sol) | 374 | 19,003 | 20,685 | 5,573 |
 | `EnglishAuction` | [`src/sales/EnglishAuction.sol`](../../src/sales/EnglishAuction.sol) | 790 | 22,993 | 32,140 | **1,583** |
+| `EnglishAuctionLens` | [`src/sales/EnglishAuctionLens.sol`](../../src/sales/EnglishAuctionLens.sol) | 290 | 6,372 | 6,665 | 18,204 |
 | `UniformEditionAuction` | [`src/sales/UniformEditionAuction.sol`](../../src/sales/UniformEditionAuction.sol) | 855 | 24,263 | 28,311 | 313 |
 | `UniformEditionAuctionLens` | [`src/sales/UniformEditionAuctionLens.sol`](../../src/sales/UniformEditionAuctionLens.sol) | 668 | 19,085 | 19,444 | 5,491 |
 
