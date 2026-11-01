@@ -24,7 +24,7 @@ also in [Disputes and statements](../../docs/spec/disputes-and-statements.md#ide
 | The authority | `revokeNonce`; `heartbeat` (also an established wallet) | ID-7, ID-19 |
 | The previous authority or a captured wallet | `cancelChange`: cancels a STANDARD change, contests an override during its notice | ID-9, ID-13 |
 | Anyone | `executeChange` once due; `refreshStanding`; `expireContest` after 365 days | ID-8, ID-15, ID-20 to ID-23 |
-| Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`; the genesis binds | ID-10 to ID-14, ID-27, ID-29; [role matrix](../../docs/audit/roles.md#artistregistry) |
+| Governance | `stageOverride` (with the new authority's acceptance), `resolveContested` citing a recorded vote, `vetoChange`, `setConsolidationSource`, `setPackageRegistry` (Stream's successor package registry, owner decision 16); the genesis binds | ID-10 to ID-14, ID-27, ID-29, ID-30; [role matrix](../../docs/audit/roles.md#artistregistry) |
 | The statement log; split wallets; every creator power | `isArtist`; `payoutAddress`; `activeAuthorityOf` (zero while restrained) | ID-16, ID-18, ID-28 |
 | The v1.1 federation registry | `listFederatedContract` (deferred: `bindFederationRegistry` is not wired at genesis) | [Deferred](../../docs/audit/roles.md#deferred) |
 

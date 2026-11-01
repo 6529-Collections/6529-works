@@ -38,7 +38,8 @@ finalized work's pinned renderer, and a VRF work's seed, which comes from the en
 work minted under (`entropyModuleOf`, [ENT-18](entropy.md#rules-and-invariants)). 6529 Stream
 Editions and `WorkRecords` read these pointers from Stream, so they follow at once. Other
 contracts hold their own wiring to the same contracts (the package registry's artist registry
-and one-shot `bindStream`, the artist registry's one-shot `bindPackageRegistry`, the entropy
+and one-shot `bindStream`, the artist registry's `register` caller (governed:
+`setPackageRegistry`), the entropy
 module's pinned package registry, the English auction's and the edition auction's economics
 resolver, the split factory's payout resolver): replacing a dependency in Stream does not reach
 them, so a replacement is a set that governance plans with them

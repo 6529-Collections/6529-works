@@ -11,6 +11,8 @@ import { CURRENCY_ETH } from "src/interfaces/types/EconomicsTypes.sol";
 import { EditionTerms, ItemKind, SeedPolicy } from "src/interfaces/types/PackageTypes.sol";
 import { SaleKind } from "src/interfaces/types/SaleTypes.sol";
 import { WorksHashing } from "src/interfaces/types/WorksHashing.sol";
+import { PackageRegistry } from "src/curation/PackageRegistry.sol";
+import { ICurationVerifier } from "src/interfaces/ICurationVerifier.sol";
 import { IntegrationBase } from "./IntegrationBase.sol";
 
 /// @dev A replacement dependency that only reports its interface: any other call reverts, so a
@@ -342,4 +344,90 @@ contract StreamDependenciesTest is IntegrationBase {
         auction.start(address(stream), _mintData(root, one, 0));
         assertEq(stream.ownerOf(stream.totalMinted()), address(auction));
     }
+
+    /// @dev The permanence gap the review of #81 found, closed: the artist registry's only
+    ///      `register` caller is governed too (`setPackageRegistry`, SUCCESSOR_SETTER, 30
+    ///      days), so a successor package registry installed in Stream registers new artists,
+    ///      and their works mint. The genesis registry then registers nobody.
+    function test_AReplacementPackageRegistryRegistersNewArtists() public {
+        PackageRegistry old = registry;
+        PackageRegistry next = new PackageRegistry(
+            address(manager),
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(artists),
+            address(artists).codehash
+        );
+        // The successor's one-shot binds (a new target: ADMIN, on the hot admin's delay).
+        _govern(hotAdmin, address(next), abi.encodeCall(next.bindStream, (address(stream))));
+        _govern(hotAdmin, address(next), abi.encodeCall(next.bindEditions, (address(editions))));
+
+        // Stream and the artist registry switch together, both in the 30-day class.
+        _replace("PACKAGE_REGISTRY", address(next));
+        bytes memory rebind =
+            abi.encodeCall(artists.setPackageRegistry, (address(old), address(next)));
+        (bool immediate, uint32 delay) = manager.canCall(hotAdmin, address(artists), bytes4(rebind));
+        assertFalse(immediate);
+        assertEq(delay, 30 days, "the successor class");
+        _schedule(hotAdmin, address(artists), rebind);
+        vm.warp(block.timestamp + delay);
+        vm.expectEmit(address(artists));
+        emit IArtistRegistry.PackageRegistrySet(address(old), address(next));
+        vm.prank(hotAdmin);
+        manager.execute(address(artists), rebind);
+        assertEq(artists.packageRegistry(), address(next));
+
+        // A new artist registers through the successor, and their work mints.
+        registry = next;
+        address newcomer = _actor("newcomerArtist");
+        assertEq(artists.artistIdOf(newcomer), 0);
+        Work[] memory one = _one(_work(newcomer, collectionId));
+        bytes32 root = _publish(one);
+        uint256 artistId = artists.artistIdOf(newcomer);
+        assertTrue(artistId != 0, "registered through the successor");
+        (, uint256 tokenId) = _start(root, one, 0);
+        assertEq(stream.ownerOf(tokenId), address(auction));
+        assertEq(stream.artistOf(tokenId), artistId);
+
+        // The genesis registry registers nobody now.
+        vm.prank(address(old));
+        vm.expectRevert(
+            abi.encodeWithSelector(IArtistRegistry.UnboundCaller.selector, address(old))
+        );
+        artists.register(makeAddr("late"), bytes32(0), bytes32(0));
+    }
+
+    /// @dev `setPackageRegistry` is compare-and-set, refuses a contract that is not a package
+    ///      registry, and only governance calls it.
+    function test_SetPackageRegistryChecks() public {
+        address current = artists.packageRegistry();
+        PackageRegistry next = new PackageRegistry(
+            address(manager),
+            ICurationVerifier(address(verifier)),
+            address(verifier).codehash,
+            address(artists),
+            address(artists).codehash
+        );
+        vm.prank(makeAddr("outsider"));
+        vm.expectRevert();
+        artists.setPackageRegistry(current, address(next));
+        assertFalse(
+            _governTry(
+                hotAdmin,
+                address(artists),
+                abi.encodeCall(artists.setPackageRegistry, (address(next), address(next)))
+            ),
+            "a stale expected value"
+        );
+        assertFalse(
+            _governTry(
+                hotAdmin,
+                address(artists),
+                abi.encodeCall(artists.setPackageRegistry, (current, address(stream)))
+            ),
+            "not a package registry"
+        );
+        assertEq(artists.packageRegistry(), current);
+    }
 }
+

@@ -47,7 +47,7 @@ Docs).
 | `PLATFORM` | 8 | immediate | 48 hours | Platform key | 3 | Yes |
 | `PARAMETER_SETTER` | 9 | 48 hours | 48 hours | Hot admin Safe | 14 | No |
 | `FUNDS_SETTER` | 10 | 14 days | 14 days | Hot admin Safe | 8 | No |
-| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 17 | No |
+| `SUCCESSOR_SETTER` | 11 | 30 days | 30 days | Hot admin Safe | 18 | No |
 | `CURATOR` | 12 | immediate | 30 days | Curator key | 1 | Yes |
 
 Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its guardian
@@ -63,8 +63,8 @@ Every role's admin is ADMIN, and every role except ADMIN has GUARDIAN as its gua
 | Immediate | immediate | 15 |
 | Standard | 48 hours | 17 |
 | Funds and recipients | 14 days | 8 |
-| Verifier and successor | 30 days | 17 |
-| **Total** | | **57** |
+| Verifier and successor | 30 days | 18 |
+| **Total** | | **58** |
 
 ## Matrix by contract
 
@@ -133,6 +133,7 @@ Source: [`src/identity/ArtistRegistry.sol`](../../src/identity/ArtistRegistry.so
 | `vetoChange(uint256)` | `0xc86a97ee` | `GUARDIAN` | Immediate | immediate | No: executes at once | Deletes a pending change; never redirects one. |
 | `stageOverride(uint256,uint8,(…),bytes32,uint64,bytes)` | `0xf27323a6` | `PARAMETER_SETTER` | Standard | 48 hours | Yes: any guardian, during the delay | Starts a 180-day notice. An override that moves the authority restrains the artist until it ends. |
 | `setConsolidationSource(address,address,bytes32)` | `0x741cbdad` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Compare-and-set; code hash re-checked at every use. |
+| `setPackageRegistry(address,address)` | `0x00752cf1` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Replaces the only `register` caller with Stream's successor package registry (owner decision 16); compare-and-set. |
 | `resolveContested(uint256,bool,bytes32)` | `0xd16d1602` | `SUCCESSOR_SETTER` | Verifier and successor | 30 days | Yes: any guardian, during the delay | Must cite the DISPUTE_OUTCOME statement recorded after the contest. |
 
 ### StatementLog

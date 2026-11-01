@@ -172,38 +172,50 @@ regression ceiling, which moves to 148,000). The same change records each work's
 (`entropyModuleOf`, ENT-18) without touching the start path. A VRF start fell by 426 gas; with
 the code added, the other rows moved by at most 337 (the plain binding row 341,781).
 
+The review of #81 then asked for 5,000 gas of margin on every start row. Two changes in Stream,
+with no change of design: the kind each admitted adapter had at its first admission is also kept,
+as 232 bits of its hash, in the minter word `mint` reads anyway, so the #80 fix no longer costs
+a cold word (every `start` row −2,016; Stream +114 bytes); and `mint` resolves its four
+dependencies from one read of the counter word (−223, −478 on a VRF start; +355 bytes). The
+plain binding row is 339,511, 10,489 under 350K; with a VRF seed 347,186, **2,814 under**, still
+short of 5,000. A VRF start's delivery check is about 7,600 of it (a cold call to the entropy
+module, which reads two cold words: the item's content hash, then that content's seed); the
+rest of the gap needs a change of design, which the owner decides (an option list is with the
+integrator). Writing a token's two words in one assignment cost 86 more and was not kept.
+`setPackageRegistry` moved `refreshStanding` by +22.
+
 | Operation | Prague gas | Prague ceiling | New slots | New accounts | Sepolia gas |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `start`, steady state | 271,281 | 350,000 | **5** | 0 | 735,859 |
-| `startWithBid`, steady state | 313,378 | 350,000 | **6** | 0 | 871,980 |
-| `start`, two-party work | 279,561 | 350,000 | **5** | 0 | — |
-| `startWithBid`, two-party work | 321,645 | 350,000 | **6** | 0 | — |
-| `start`, VRF work | 279,202 | 350,000 | **5** | 0 | 852,868 (r2) |
-| `start`, edition master | 271,336 | 350,000 | **5** | 0 | 736,477 |
-| `start`, an artist's first work | 291,361 | 350,000 | **6** | 0 | — |
-| `startWithBid`, an artist's first work | 333,458 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party | 341,781 | 350,000 | **7** | 0 | — |
-| `startWithBid`, an artist's first work, two-party, VRF | 349,668 | 350,000 | **7** | 0 | — |
-| `startWithBid`, ERC-20 by relayed Permit2 | 358,432 | 365,000 (regression) | 6 | 0 | — |
-| `start`, first work in a new collection | 271,284 | 400,000 | 5 | 0 | 846,977 (r2) |
-| `start`, first work ever (one-time) | 440,476 | 449,000 (regression) | 13 | 0 | 1,601,871 |
-| `startWithBid`, first bid under new sale terms (one-time) | 383,527 | 390,000 (regression) | 9 | 0 | 1,213,250 |
+| `start`, steady state | 269,042 | 350,000 | **5** | 0 | 735,859 |
+| `startWithBid`, steady state | 311,139 | 350,000 | **6** | 0 | 871,980 |
+| `start`, two-party work | 277,335 | 350,000 | **5** | 0 | — |
+| `startWithBid`, two-party work | 319,419 | 350,000 | **6** | 0 | — |
+| `start`, VRF work | 276,709 | 350,000 | **5** | 0 | 852,868 (r2) |
+| `start`, edition master | 269,097 | 350,000 | **5** | 0 | 736,477 |
+| `start`, an artist's first work | 289,134 | 350,000 | **6** | 0 | — |
+| `startWithBid`, an artist's first work | 331,231 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party | 339,511 | 350,000 | **7** | 0 | — |
+| `startWithBid`, an artist's first work, two-party, VRF | 347,186 | 350,000 | **7** | 0 | — |
+| `startWithBid`, ERC-20 by relayed Permit2 | 356,205 | 365,000 (regression) | 6 | 0 | — |
+| `start`, first work in a new collection | 269,065 | 400,000 | 5 | 0 | 846,977 (r2) |
+| `start`, first work ever (one-time) | 438,205 | 449,000 (regression) | 13 | 0 | 1,601,871 |
+| `startWithBid`, first bid under new sale terms (one-time) | 381,288 | 390,000 (regression) | 9 | 0 | 1,213,250 |
 | `bid` that outbids | 73,464 | 75,000 (regression) | 1 | 0 | 169,060 |
-| `settle`, first payout to a seller wallet | 170,820 | 400,000 | 1 | 1 | 449,934 (sim.) |
-| `settle`, with a bid | 145,820 | 400,000 | 1 | 0 | 257,763 (r2) |
-| `settle`, no bid (to the museum, D140) | 136,261 | 400,000 | 1 | 0 | — |
+| `settle`, first payout to a seller wallet | 170,832 | 400,000 | 1 | 1 | 449,934 (sim.) |
+| `settle`, with a bid | 145,832 | 400,000 | 1 | 0 | 257,763 (r2) |
+| `settle`, no bid (to the museum, D140) | 136,273 | 400,000 | 1 | 0 | — |
 | `consume`, as Stream calls it | 93,069 | 97,000 (regression) | 1 | 0 | part of `start` |
 | `createEdition` | 246,295 | 275,000 (regression) | 6 | 0 | 887,954 (sim.) |
 | `createEdition`, an edition its sale bound at open | 144,169 | 148,000 (regression) | 2 | 0 | — |
-| re-rate a work (governed `execute`) | 189,585 | 192,000 (regression) | 1 | 0 | — |
-| `refreshStanding`, a first wallet | 129,708 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
-| `refreshStanding`, a further wallet | 159,105 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
+| re-rate a work (governed `execute`) | 189,565 | 192,000 (regression) | 1 | 0 | — |
+| `refreshStanding`, a first wallet | 129,730 | 131,000 (regression) | 2 | 0 | 299,112 (r1) |
+| `refreshStanding`, a further wallet | 159,127 | 161,000 (regression) | 1 | 0 | 247,970 (r2) |
 | `royaltyInfo` (view) | 41,622 | 50,000 of execution | 0 | 0 | 36,426 |
 | `tokenURI` (view, the size matrix) | at most 2,734,782 | 8,000,000 | 0 | 0 | unchanged |
 | `createWallet`, a seller wallet (one artist payee) | 1,241,422 | 1,262,000 (regression) | 4 | 1 | — |
 | `release`, the artist's first ETH release | 93,402 | 96,000 (regression) | 2 | 0 | — |
-| `claimSigned`, the artist's first signed release | 141,464 | 145,000 (regression) | 3 | 0 | — |
-| `claimSigned`, a later signed release (next nonce) | 90,164 | 92,000 (regression) | 0 | 0 | — |
+| `claimSigned`, the artist's first signed release | 141,452 | 145,000 (regression) | 3 | 0 | — |
+| `claimSigned`, a later signed release (next nonce) | 90,176 | 92,000 (regression) | 0 | 0 | — |
 | Edition auction `open`, steady state (binds the edition) | 281,104 | 284,000 (regression) | 6 | 0 | — |
 | Edition auction `open`, the adapter's first (one-time) | 326,829 | 331,000 (regression) | 8 | 0 | — |
 | Edition `bid`, its 8-step word exists | 69,257 | 110,000 | 1 | 0 | — |

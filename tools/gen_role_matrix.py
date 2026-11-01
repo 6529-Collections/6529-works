@@ -79,6 +79,9 @@ NOTES: dict[tuple[str, str], str] = {
     ("ArtistRegistry", "stageOverride(uint256,uint8,(address,address,bytes32,bytes32),bytes32,"
      "uint64,bytes)"): "Starts a 180-day notice. An override that moves the authority "
      "restrains the artist until it ends.",
+    ("ArtistRegistry", "setPackageRegistry(address,address)"):
+        "Replaces the only `register` caller with Stream's successor package registry (owner "
+        "decision 16); compare-and-set.",
     ("ArtistRegistry", "setConsolidationSource(address,address,bytes32)"):
         "Compare-and-set; code hash re-checked at every use.",
     ("ArtistRegistry", "resolveContested(uint256,bool,bytes32)"):

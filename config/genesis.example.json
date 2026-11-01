@@ -502,6 +502,13 @@
           "delay": 2592000
         },
         {
+          "signature": "setPackageRegistry(address,address)",
+          "selector": "0x00752cf1",
+          "role": "SUCCESSOR_SETTER",
+          "class": "successor",
+          "delay": 2592000
+        },
+        {
           "signature": "resolveContested(uint256,bool,bytes32)",
           "selector": "0xd16d1602",
           "role": "SUCCESSOR_SETTER",

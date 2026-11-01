@@ -516,11 +516,14 @@ before each merge.
   economics resolver) do not follow, so a replacement is a set planned with them
   ([the procedure](../../script/README.md#replacing-one-of-streams-dependencies)). Stream's
   immutable split factory keeps the genesis artist registry as the payout resolver of every
-  Stream work, so that registry is only partly replaceable (LIM-GV-16). The genesis contracts stay
+  Stream work, so that registry is only partly replaceable (LIM-GV-16). The artist registry's
+  one `register` caller is governed (`setPackageRegistry`, 30 days), so a successor package
+  registry onboards new artists. The genesis contracts stay
   immutables, with a replacement bit each in the counter word every mint already reads, so a
   start with no replacement reads no extra slot: about +820 Prague gas. With the #80 review's
   fix (`mint` compares the kind recorded at admission, about +1,530), an artist's first
-  two-party start with a bid is 341,781, and with a VRF seed 349,668, 332 under 350K
+  two-party start with a bid is 339,511 (the kind kept in the minter word `mint` reads), and
+  with a VRF seed 347,186, 2,814 under 350K
   ([ADR 0004's table](0004-gas-budgets-under-glamsterdam.md#the-table)).
 
 - **Metadata survives a faulty records satellite (31 October 2026).** Stream is permanent and

@@ -125,10 +125,22 @@ contract Stream is ERC721, AccessManaged, IStream {
     }
 
     /// @dev `id` is assigned on first admission and kept, so a removed adapter still settles
-    ///      the sales it started. Its sale kind is recorded then too (`_minterKinds`).
+    ///      the sales it started. Its sale kind is recorded then too: in full in `_minterKinds`,
+    ///      which `primaryTerms` reports, and as `kindKey` (`_kindKey`, 232 bits of its hash) in
+    ///      this word, which `mint` reads anyway, so the kind check costs a mint no extra slot.
     struct Minter {
         bool admitted;
         uint16 id;
+        uint232 kindKey;
+    }
+
+    /// @dev The four dependencies as a mint uses them, resolved from one read of
+    ///      `Counts.replaced` (`_dependencies`).
+    struct Dependencies {
+        address packageRegistry;
+        address artistRegistry;
+        address economics;
+        address entropyModule;
     }
 
     /// @dev `exists` keeps the counter word nonzero, so each mint pays a warm rewrite.
@@ -260,17 +272,19 @@ contract Stream is ERC721, AccessManaged, IStream {
         PackageItem calldata item = req.item;
         bytes32 itemHash;
         uint256 artistId;
+        Dependencies memory d = _dependencies();
         {
-            address entropy = _checkItem(item);
-            bytes32 kind = _minterKinds[minter.id];
-            if (kind != item.sale.saleKind) revert SaleKindMismatch(item.sale.saleKind, kind);
-            (itemHash, artistId) = _consume(data);
+            address entropy = _checkItem(item, d.entropyModule);
+            if (minter.kindKey != _kindKey(item.sale.saleKind)) {
+                revert SaleKindMismatch(item.sale.saleKind, _minterKinds[minter.id]);
+            }
+            (itemHash, artistId) = _consume(data, d.packageRegistry);
             if (entropy != address(0) && !IEntropyModule(entropy).isDelivered(itemHash)) {
                 revert SeedNotDelivered(itemHash);
             }
         }
         WorkTerms memory w;
-        (terms, w) = _quote(item, artistId);
+        (terms, w) = _quote(item, artistId, d);
         Terms memory shared = Terms(
             // `_consume` checked that `artistId` fits 160 bits.
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -306,10 +320,11 @@ contract Stream is ERC721, AccessManaged, IStream {
             return terms;
         }
         StreamMintRequest calldata req = _request(data);
-        _checkItem(req.item);
-        uint256 artistId = IArtistRegistry(artistRegistry()).artistIdOf(req.item.parties[0].account);
+        Dependencies memory d = _dependencies();
+        _checkItem(req.item, d.entropyModule);
+        uint256 artistId = IArtistRegistry(d.artistRegistry).artistIdOf(req.item.parties[0].account);
         if (artistId == 0) revert InvalidLeadArtist();
-        (terms,) = _quote(req.item, artistId);
+        (terms,) = _quote(req.item, artistId, d);
     }
 
     /// @inheritdoc IMintTarget
@@ -368,7 +383,7 @@ contract Stream is ERC721, AccessManaged, IStream {
                 bytes32 kind = ISaleAdapter(adapter).saleKind();
                 if (kind == 0) revert Dependency.InvalidDependency(adapter);
                 uint16 id = ++_counts.minters;
-                minter.id = id;
+                (minter.id, minter.kindKey) = (id, _kindKey(kind));
                 _minterKinds[id] = kind;
             }
         }
@@ -762,6 +777,18 @@ contract Stream is ERC721, AccessManaged, IStream {
         if (renderer != address(0) && renderer.code.length == 0) renderer = address(0);
     }
 
+    /// @dev A sale kind as `Minter.kindKey` holds it: the low 232 bits of its keccak256, so two
+    ///      kinds share a key only through a hash collision.
+    function _kindKey(bytes32 kind) private pure returns (uint232 key) {
+        assembly ("memory-safe") {
+            mstore(0, kind)
+            key := and(
+                keccak256(0, 0x20),
+                0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            )
+        }
+    }
+
     /// @dev The `Counts.replaced` bit index, the ERC-165 interface and the current address of
     ///      the dependency `kind` names (`UnknownDependency` for any other).
     function _dependencyOf(bytes32 kind) private view returns (uint8, bytes4, address) {
@@ -781,13 +808,26 @@ contract Stream is ERC721, AccessManaged, IStream {
         return (_counts.replaced & (uint8(1) << index)) == 0 ? genesis : _replaced[index];
     }
 
+    /// @dev All four dependencies from one read of `Counts.replaced`, for the mint path, which
+    ///      uses three of them (four for a VRF item).
+    function _dependencies() private view returns (Dependencies memory d) {
+        uint8 replaced = _counts.replaced;
+        d.packageRegistry = replaced & 1 == 0 ? _genesisPackageRegistry : _replaced[0];
+        d.artistRegistry = replaced & 2 == 0 ? _genesisArtistRegistry : _replaced[1];
+        d.economics = replaced & 4 == 0 ? _genesisEconomics : _replaced[2];
+        d.entropyModule = replaced & 8 == 0 ? _genesisEntropyModule : _replaced[3];
+    }
+
     /// @dev Forwards the request to `IPackageRegistry.consume` without re-encoding it: the tuple
     ///      after the leading offset word of `abi.encode(StreamMintRequest)` is exactly the ABI
     ///      encoding of `consume`'s four arguments, so the registry decodes the same values this
     ///      contract read through `_request`.
-    function _consume(bytes calldata data) private returns (bytes32 itemHash, uint256 artistId) {
+    function _consume(bytes calldata data, address registry)
+        private
+        returns (bytes32 itemHash, uint256 artistId)
+    {
         (bool ok, bytes memory result) =
-            packageRegistry().call(bytes.concat(IPackageRegistry.consume.selector, data[32:]));
+            registry.call(bytes.concat(IPackageRegistry.consume.selector, data[32:]));
         if (!ok) {
             assembly ("memory-safe") {
                 revert(add(result, 0x20), mload(result))
@@ -806,14 +846,18 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      approved record file and license as they are; the media commitments it checks (at
     ///      most 32 files, the primary first with the item's content hash) are not visible
     ///      here, so the curation signer's tooling must simulate `openRecord` before attesting
-    ///      an item. Returns the entropy module a VRF item's seed must be delivered by, read
-    ///      once for the whole mint; zero for any other item.
-    function _checkItem(PackageItem calldata item) private view returns (address entropy) {
+    ///      an item. Returns the entropy module a VRF item's seed must be delivered by
+    ///      (`module`, Stream's current one); zero for any other item.
+    function _checkItem(PackageItem calldata item, address module)
+        private
+        view
+        returns (address entropy)
+    {
         if (item.sale.saleKind == 0) revert InvalidItemSale();
         if (item.parties.length == 0) revert InvalidLeadArtist();
         if (!_collections[item.collectionId].exists) revert UnknownCollection(item.collectionId);
         SeedPolicy policy = item.seedPolicy;
-        if (policy == SeedPolicy.VRF) entropy = entropyModule();
+        if (policy == SeedPolicy.VRF) entropy = module;
         if (
             (policy == SeedPolicy.ARTIST) != (item.seed != 0)
                 || (policy == SeedPolicy.VRF && entropy == address(0))
@@ -828,12 +872,12 @@ contract Stream is ERC721, AccessManaged, IStream {
     ///      Stream does lazily in `royaltyInfo` (`_royaltyReceiver`, the same address). The fee
     ///      terms must yield a valid royalty payee list: a fee share below 100,000 with a fee
     ///      recipient other than the seller, or no fee at all. `w.royaltyReceiver` is unset.
-    function _quote(PackageItem calldata item, uint256 artistId)
+    function _quote(PackageItem calldata item, uint256 artistId, Dependencies memory d)
         private
         view
         returns (PrimaryTerms memory terms, WorkTerms memory w)
     {
-        ProductEconomics memory e = IEconomicsResolver(economics()).economics(PRODUCT_STREAM);
+        ProductEconomics memory e = IEconomicsResolver(d.economics).economics(PRODUCT_STREAM);
         address seller = ISplitFactory(splitFactory).walletFor(item.payees, bytes32(0));
         if (
             e.royaltyRate > Splits.DENOMINATOR || e.feeShare >= Splits.DENOMINATOR
@@ -849,7 +893,7 @@ contract Stream is ERC721, AccessManaged, IStream {
         terms.seller = w.seller;
         terms.feeRecipient = w.feeRecipient;
         terms.feeShare = w.feeShare;
-        terms.creator = IArtistRegistry(artistRegistry()).activeAuthorityOf(artistId);
+        terms.creator = IArtistRegistry(d.artistRegistry).activeAuthorityOf(artistId);
     }
 
     /// @dev Assigns the next token ID and collection serial and writes the two work words.
