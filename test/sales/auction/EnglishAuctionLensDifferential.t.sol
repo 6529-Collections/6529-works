@@ -94,9 +94,15 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
     uint256 internal constant SEEN_FROZEN = 1 << 10;
     uint256 internal constant SEEN_RESERVE = 1 << 11;
     uint256 internal constant SEEN_FEDERATED = 1 << 12;
+    /// @dev A dispute pause past `MAX_PAUSE` that no call has written down yet.
+    uint256 internal constant SEEN_LAPSED = 1 << 13;
+    /// @dev A claimable credit.
+    uint256 internal constant SEEN_CREDIT = 1 << 14;
+    /// @dev A high bid for another recipient.
+    uint256 internal constant SEEN_RECIPIENT = 1 << 15;
     /// @dev ACTIVE, PAUSED, ENDED, SETTLED and CANCELLED (bits 1 to 5), and every flag.
-    uint256 internal constant SEEN_ALL =
-        0x3E | SEEN_PENDING | SEEN_START_PAUSE | SEEN_FROZEN | SEEN_RESERVE | SEEN_FEDERATED;
+    uint256 internal constant SEEN_ALL = 0x3E | SEEN_PENDING | SEEN_START_PAUSE | SEEN_FROZEN
+        | SEEN_RESERVE | SEEN_FEDERATED | SEEN_LAPSED | SEEN_CREDIT | SEEN_RECIPIENT;
 
     /// @dev Runs the sequence for `seed` on one build. Returns, per step, one hash over every
     ///      view's raw answer in order (entry 0 is before the first action), and the states the
@@ -150,6 +156,19 @@ contract EnglishAuctionLensDifferentialTest is AuctionBase {
             if (auction.pendingDelivery(sales[i]) != address(0)) seen |= SEEN_PENDING;
             if (x.bidder == address(0) && x.bid != 0) seen |= SEEN_RESERVE;
             if (x.token == address(fed) && address(fed) != address(0)) seen |= SEEN_FEDERATED;
+            if (x.bidder != address(0) && x.recipient != x.bidder) seen |= SEEN_RECIPIENT;
+            // Reported resumed (`pausedAt` zero) while the sale's third word still holds the
+            // pause (`pausedAt`, bytes 20 to 23; `_sales` is slot 8): a lapse no call wrote down.
+            uint256 slot = uint256(keccak256(abi.encode(sales[i], uint256(8)))) + 2;
+            if (x.pausedAt == 0 && uint32(uint256(vm.load(AT, bytes32(slot))) >> 160) != 0) {
+                seen |= SEEN_LAPSED;
+            }
+        }
+        for (uint256 j; j < actors.length; ++j) {
+            if (auction.claimable(actors[j], ETH) + auction.claimable(actors[j], address(usd)) != 0)
+            {
+                seen |= SEEN_CREDIT;
+            }
         }
         if (auction.paused()) seen |= SEEN_START_PAUSE;
         if (!allowlist.isActive(address(usd)) || !allowlist.isActive(ETH)) seen |= SEEN_FROZEN;

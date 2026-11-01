@@ -49,7 +49,8 @@
   forwards every call it does not declare to the lens through a non-payable, read-only
   `staticcall` fallback (no delegatecall), and the lens reads the auction's storage through
   `storageWords`. No signature, selector or ERC-165 ID changes, and a differential test
-  compares every moved view, byte for byte, with the pre-lens build over random sequences.
+  compares every moved view, byte for byte, with the pre-lens build over random sequences;
+  a layout test pins every slot and offset the lens reads to the compiler's storage layout.
   A cold view call through the lens costs about 7,000 more Prague gas (LIM-SAL-13), so the
   reads other contracts make on their hot paths stay on the auction: `saleKind`, and a new
   integration view, `auctionClock(saleId)` (`IEnglishAuctionClock`, ID `0x968c7b07`, outside
