@@ -626,10 +626,12 @@ def _gas_row(cells: list[str], rehearsal: str) -> dict:
         row["pragueGasIsMaximum"] = True
     if m.group(3):
         row["pragueGasIsExecution"] = True
-    m = re.fullmatch(r"([\d,]+)(?: \((regression)\)| (of execution))?", ceiling)
+    m = re.fullmatch(r"([\d,]+)(?: \((regression)(?:; ([^)]+))?\)| (of execution))?", ceiling)
     if m:
-        kind = "regression" if m.group(2) else "execution" if m.group(3) else "budget"
+        kind = "regression" if m.group(2) else "execution" if m.group(4) else "budget"
         row["pragueCeiling"] = {"gas": _number(m.group(1)), "kind": kind}
+        if m.group(3):
+            row["pragueCeiling"]["note"] = _plain(m.group(3))
     elif ceiling == "—":
         row["pragueCeiling"] = None
     else:

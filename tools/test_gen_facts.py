@@ -128,6 +128,15 @@ class GasRowTest(unittest.TestCase):
         self.assertEqual((row["newSlots"], row["newSlotsRange"]), (2, [0, 2]))
         self.assertEqual(row["newSlotsNote"], "the call that clears writes the result")
 
+    def test_a_regression_ceiling_with_a_note(self) -> None:
+        row = gf._gas_row(
+            ["`startWithBid`, replaced", "343,200", "346,000 (regression; LIM-GAS-11)", "7", "0", "—"],
+            "Sepolia r3",
+        )
+        self.assertEqual(
+            row["pragueCeiling"], {"gas": 346_000, "kind": "regression", "note": "LIM-GAS-11"}
+        )
+
     def test_malformed_cells_fail(self) -> None:
         bad = [
             ("x", "about 70K", "75,000", "1", "0", "—"),
