@@ -37,9 +37,34 @@
   fails closed; one read instead of two. The gas check covers a cold satellite account, so the
   satellite always gets all of `RECORDS_GAS`. Stream grows by 1,399 bytes with the two entries
   above; `start` costs about 40 less Prague gas than before decision 16 at steady state (an
-  artist's first two-party start with a bid 339,511; with a VRF seed 347,186, a gated row,
-  2,814 under 350K), `settle` 2,280, `createEdition` 5,597, with no new slot
+  artist's first two-party start with a bid 338,200; with a VRF seed 343,760, a gated row,
+  6,240 under 350K), `settle` 2,280, `createEdition` 5,597, with no new slot
   ([ADR 0004](docs/adr/0004-gas-budgets-under-glamsterdam.md#the-table)).
+- Tests: the edition auction's invariant suite also checks that nothing is claimed while a sale
+  is SETTLING (review of #84). `wideBook` spreads up to two sales a run wider than one settle
+  call scans (24 words), so settlement scans over calls; while a scan or a sweep is unfinished,
+  `claimBid` and `claimBidFor` must revert with `InvalidAuctionState`. An early settle call may
+  advance a wide book's scan before its edition exists; any other early success still fails.
+  `test_EveryActionRuns` replays 128 sequences instead of 64, so the multi-settler paths are hit
+  more than once.
+- Tests: the edition auction on the real stack (rc.2 L5). A stateful invariant suite,
+  `EditionAuctionInvariant.t.sol` with `EditionAuctionHandler`, runs six masters with and
+  without creator caps beside their 1/1 auctions: opens, bids, raises, soft-close bids, a FIFO
+  hole at the cut step, 1/1 anti-snipe bids, dispute pauses with withdrawals, cancels that void,
+  settlement by several settlers (a handoff, a sweep that skips a departure, a refused reorder,
+  interleaved keepers), claims and pushed claims. It checks no unsold or extra copies, ETH
+  conservation, clearing optimality and the breadth rule against a brute-force per-unit
+  reference (`test/helpers/UniformClearingReference.sol`), the cap, FIFO fills, the view equal
+  to settlement, the clocks, no settlement before the end, and that each settler's sweep is its
+  own and a keeper always completes settlement; `test_EveryActionRuns` asserts every action and
+  path runs. A differential fuzz (`EditionAuctionDifferential.t.sol`) holds the live clearing,
+  every bid's outcome and the settlement order equal to the reference under four margins and
+  five caps, lets other settlers make mangled sweeps, then settles and claims every bid.
+  `PieceLifecycle.t.sol` runs a piece end to end: the 1/1 and its editions side by side, a 1/1
+  anti-snipe moving the edition close, settlement and payouts, claims and the edition royalty;
+  and an unbid 1/1 going to the museum while its editions sell. The invariant campaign adds
+  about 45 seconds to the "other invariants" CI job. Mutation and coverage floors for the
+  edition auction's contracts follow their first weekly and `main` runs.
 - 6529 Stream: the 1/1 sale method is pluggable (ADR 0005, owner decision 15). `mint` takes any
   admitted adapter whose `saleKind()` is the item's sale kind, and `_checkItem` requires only a
   nonzero kind; the adapter checks the sale's currency and params (the English auction refuses
